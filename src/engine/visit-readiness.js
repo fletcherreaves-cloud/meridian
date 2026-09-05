@@ -92,9 +92,20 @@ export const READINESS_GAPS = [
   { area: 'DFSC completion %',      pace: 'EcoSure FS31 (Daily Food Safety Checklist ≥90% over 60 days)',
     status: 'gap — not yet ingested',
     detail: 'Named in the standards as the single best food-safety leading indicator, but no DFSC completion feed exists in Meridian today.' },
+  // ✅ MEASURED 2026-09-05 (dispatch #231 follow-on) — this used to read "unvalidated — no
+  // sample." A real sample now exists (244 EcoSure visits, 2022-2026) and the leak-free
+  // backtest the detail below describes has actually been run (backtestFoodSafetyProxy,
+  // computeVisitReadiness's own fsBacktest — see the Visit Readiness panel's Model Check
+  // card). Result: Spearman r=0.07 (n=240), direction hit rate 53% (127/240), and the proxy
+  // flagged only 2 of the 4 visits carrying a real critical fail. This CONFIRMS at district
+  // scale — not just the single Ardmore-Broadway anecdote that first raised the question —
+  // that the waste/variance proxy has essentially no predictive relationship with real
+  // EcoSure outcomes. It was never claimed to (see the Food Safety criticals gap above), and
+  // this measurement is the reason not to relax that claim, not a reason to remove the flag —
+  // it still tracks a real thing (waste/holding discipline) on its own terms.
   { area: 'EcoSure calibration',    pace: '3rd-Party Food Safety visit outcome',
-    status: 'unvalidated — no sample',
-    detail: 'The model check below validates predicted readiness against the actual graded-visit scores on record. If no EcoSure result has been loaded, readiness has never been validated against an EcoSure outcome — treat food-safety inference as untested.' },
+    status: 'measured — near-zero correlation (r=0.07, n=240)',
+    detail: 'The Model Check card below runs a leak-free "as of visit date" backtest: the waste/variance proxy reconstructed from ONLY data on record before each real EcoSure visit, compared against that visit\'s real score. Measured 2026-09-05 across 240 visits (2022-2026): Spearman r=0.07, direction hit rate 53%, and the proxy caught only 2 of 4 real critical fails — confirms the proxy should never be read as a food-safety prediction, only as its own waste/holding discipline signal.' },
 ];
 
 // Metric specs. tgt: a DEFAULT_TARGETS key (per-store) OR a literal number (standard).
@@ -301,13 +312,72 @@ export function calibrateReadiness(stores) {
   return { ...pooled, rows: rows.sort((a, b) => a.predicted - b.predicted), byType };
 }
 
+// ── Food-safety proxy backtest (follow-on to dispatch #231, 2026-09-05) ─────────────────────────
+// memory/finding-ecosure-propel-api-2026-08-22.md prescribes this exact check: does the waste/
+// variance proxy (fsFlag/fs.score, FOODSAFETY above) actually predict real EcoSure outcomes? A
+// naive check — today's live fs.score vs a visit from months ago — would compare data the store
+// didn't have yet at visit time against an outcome that already happened, which is not evidence
+// of predictive power in either direction. This recomputes fs.score using ONLY data on record
+// BEFORE each real EcoSure visit's own date (via subScore/pickValue's asOfMs param, threaded
+// through specifically for this), then compares that reconstructed proxy against the visit's
+// real score — the leak-free "as of visit date" check the finding demands, reusing
+// _calibratePairs' own Spearman/hit-rate methodology (calibrateReadiness, just above) rather
+// than inventing a second statistic for what is fundamentally the same question.
+export function backtestFoodSafetyProxy(ds) {
+  const visits = (ds?.gradedVisits || ds?.graded_visits || [])
+    .filter(v => v && v.reportType === 'EcoSure' && v.score != null && (v.dateISO || v.date));
+  const rows = visits.map(v => {
+    const loc = _normLoc(v.store || v.loc);
+    const asOfMs = _ms(v.dateISO || v.date);
+    if (!loc || isNaN(asOfMs)) return null;
+    // Fresh cache per visit — pickValue's cache key does not include asOfMs (see its own
+    // comment), so reusing one cache across different historical points would leak a later
+    // visit's resolved values into an earlier one's computation.
+    const fs = subScore(ds, FOODSAFETY, loc, {}, asOfMs);
+    if (fs.score == null) return null;
+    const proxyFlag = fs.score >= 75 ? 'low' : fs.score >= 55 ? 'watch' : 'elevated';
+    return {
+      loc, dateISO: v.dateISO || v.date, predicted: fs.score,
+      band: proxyFlag === 'low' ? 'ready' : 'not-ready', // _calibratePairs' own vocabulary
+      actual: +v.score, pass: v.pass, criticalFailCount: v.modules?.criticalFailCount ?? null,
+      proxyFlag, proxyN: fs.n,
+    };
+  }).filter(Boolean);
+
+  const pooled = _calibratePairs(rows);
+  // A critical fail is the one outcome the finding file specifically warns must never be
+  // hidden behind a good pooled correlation (the measured Ardmore-Broadway case: the proxy
+  // flagged elevated risk on a store that scored 86/100 and passed — wrong in that direction,
+  // too). Report it directly: of the visits that actually carried a critical, how many did the
+  // leak-free proxy flag 'elevated'?
+  const criticalRows = rows.filter(r => r.criticalFailCount > 0);
+  const criticalCaught = criticalRows.filter(r => r.proxyFlag === 'elevated').length;
+
+  return {
+    ...pooled,
+    rows: rows.sort((a, b) => (a.dateISO || '').localeCompare(b.dateISO || '')),
+    nCritical: criticalRows.length,
+    criticalCaught,
+    method: 'Proxy score reconstructed from ONLY data on record before each visit\'s own date ' +
+      '(leak-free "as of" backtest) — not the live/current fs.score. See ' +
+      'memory/finding-ecosure-propel-api-2026-08-22.md for the prescribed methodology.',
+  };
+}
+
 const _isoDay = ms => (ms == null || isNaN(ms)) ? null : new Date(ms).toISOString().slice(0, 10);
 
 // Per-store recent value for a (source, field): daily → mean over last RECENT_DAYS;
 // monthly → the single latest-dated value. Returns { [loc]: {v, n, firstMs, lastMs} }.
 // n / firstMs / lastMs exist purely for provenance: the report states how many
 // observations each number averages and the date of the most recent one.
-function valuesByLoc(ds, source, field, monthly) {
+// asOfMs (default: now — every existing caller is unaffected) is the leak-free cutoff: a
+// backtest simulating an earlier "now" passes the historical instant instead, so this only
+// ever sees data that would genuinely have existed at that point. Follow-on to dispatch #231
+// (2026-09-05) — backtestFoodSafetyProxy() below is what needs this; both the monthly branch's
+// previous "latest ever" scan and the daily branch's previous lower-bound-only cutoff had no
+// upper bound at all, which is harmless live (there is no future data in production) but would
+// leak forward when asked to reconstruct an earlier "now".
+function valuesByLoc(ds, source, field, monthly, asOfMs = Date.now()) {
   const rows = ds?.[source] || [];
   const out = {};
   if (monthly) {
@@ -316,15 +386,16 @@ function valuesByLoc(ds, source, field, monthly) {
       const v = _num(r[field]); if (v == null) continue;
       const d = r.date || (r.year ? new Date(r.year, (r.month || 1) - 1, 1) : null); if (!d) continue;
       const loc = _normLoc(r.loc); const ms = _ms(d);
+      if (ms > asOfMs) continue;
       if (!latest[loc] || ms > latest[loc].ms) latest[loc] = { ms, v };
     }
     for (const loc in latest) out[loc] = { v: latest[loc].v, n: 1, firstMs: latest[loc].ms, lastMs: latest[loc].ms };
     return out;
   }
-  const cutoff = Date.now() - RECENT_DAYS * 864e5;
+  const cutoff = asOfMs - RECENT_DAYS * 864e5;
   const agg = {}; // loc → {sum,n,firstMs,lastMs}
   for (const r of rows) {
-    if (!r.date) continue; const ms = _ms(r.date); if (isNaN(ms) || ms < cutoff) continue;
+    if (!r.date) continue; const ms = _ms(r.date); if (isNaN(ms) || ms < cutoff || ms > asOfMs) continue;
     const v = _num(r[field]); if (v == null || v === 0) continue;
     const loc = _normLoc(r.loc);
     const a = (agg[loc] || (agg[loc] = { sum: 0, n: 0, firstMs: ms, lastMs: ms }));
@@ -366,11 +437,11 @@ const MONTHLY_LOOKBACK_DAYS = 1095;
 // actively wrong for mode:'any' ones — it silently turned every in-window day of a real 0%
 // park rate into "no data for this store," masking real (non-zero) data sitting in opsRows
 // one priority slot down. Trust metric-source.js's own mode to say what counts as a value.
-function msValueForLoc(ds, msKey, loc, monthly) {
-  const now = Date.now();
+// asOfMs — see valuesByLoc's own comment just above; same leak-free-backtest reasoning.
+function msValueForLoc(ds, msKey, loc, monthly, asOfMs = Date.now()) {
   const range = monthly
-    ? { s: new Date(now - MONTHLY_LOOKBACK_DAYS * 864e5), e: new Date(now) }
-    : { s: new Date(now - RECENT_DAYS * 864e5), e: new Date(now) };
+    ? { s: new Date(asOfMs - MONTHLY_LOOKBACK_DAYS * 864e5), e: new Date(asOfMs) }
+    : { s: new Date(asOfMs - RECENT_DAYS * 864e5), e: new Date(asOfMs) };
   const series = metricSeriesWithSource(ds, loc, range, msKey);
   const days = Object.keys(series).sort();
   if (!days.length) return null;
@@ -397,11 +468,15 @@ function msValueForLoc(ds, msKey, loc, monthly) {
 // A spec carrying its own `srcs:` (accB2B/problem/osat/schedGap — see the comment above
 // SPEED/ACCURACY/etc.) uses the legacy local resolver; every other spec is resolved through
 // metric-source.js's shared auto-first chain.
-function pickValue(ds, spec, loc, cache) {
+// asOfMs — threaded straight through to valuesByLoc/msValueForLoc (see their own comments).
+// Callers doing a leak-free backtest MUST pass a fresh `cache` per distinct asOfMs (the cache
+// key does not include it) — computeVisitReadiness's own live call site is unaffected since it
+// always uses one cache for one "now" already.
+function pickValue(ds, spec, loc, cache, asOfMs = Date.now()) {
   if (spec.srcs) {
     for (const [source, field] of spec.srcs) {
       const key = source + '|' + field + '|' + (spec.monthly ? 'm' : 'd');
-      const map = cache[key] || (cache[key] = valuesByLoc(ds, source, field, spec.monthly));
+      const map = cache[key] || (cache[key] = valuesByLoc(ds, source, field, spec.monthly, asOfMs));
       const hit = map[loc];
       if (hit && hit.v != null) {
         const val = spec.pct ? asPct(hit.v) : hit.v;
@@ -412,7 +487,7 @@ function pickValue(ds, spec, loc, cache) {
   }
   const msKey = _msKeyFor(spec);
   const cacheKey = 'ms|' + msKey + '|' + (spec.monthly ? 'm' : 'd') + '|' + loc;
-  const hit = cacheKey in cache ? cache[cacheKey] : (cache[cacheKey] = msValueForLoc(ds, msKey, loc, spec.monthly));
+  const hit = cacheKey in cache ? cache[cacheKey] : (cache[cacheKey] = msValueForLoc(ds, msKey, loc, spec.monthly, asOfMs));
   if (hit && hit.v != null) {
     const val = spec.pct ? asPct(hit.v) : hit.v;
     return { value: val, source: hit.source, field: hit.field, n: hit.n, from: _isoDay(hit.firstMs), asOf: _isoDay(hit.lastMs) };
@@ -451,10 +526,10 @@ function scoreMetric(spec, actual, loc) {
 // `missing` names every metric in the group that could NOT be scored and why — the
 // score is a plain mean of the metrics that DID resolve, so the reader has to be able
 // to see what was left out rather than assume full coverage.
-function subScore(ds, specs, loc, cache) {
+function subScore(ds, specs, loc, cache, asOfMs = Date.now()) {
   let sum = 0, n = 0; const drivers = []; const missing = [];
   for (const spec of specs) {
-    const picked = pickValue(ds, spec, loc, cache);
+    const picked = pickValue(ds, spec, loc, cache, asOfMs);
     if (!picked) {
       // Migrated specs have no local `srcs:` any more — read the LIVE metric-source.js
       // chain instead, or this message drifts stale exactly like the bug this dispatch
@@ -789,6 +864,13 @@ export function computeVisitReadiness(ds, opts = {}) {
   // Model check: how well predicted readiness tracks the actual graded-visit scores.
   const calibration = calibrateReadiness(stores);
 
+  // Follow-on to dispatch #231 (2026-09-05) — the leak-free "as of visit date" backtest
+  // memory/finding-ecosure-propel-api-2026-08-22.md prescribes for the waste/variance proxy
+  // specifically. Deliberately UNSCOPED (runs over the full ds, not opts.locs) — this validates
+  // the MODEL/proxy itself, a district-wide property, not something meaningful to shrink to a
+  // filtered subset (a single-store filter would leave n in the single digits).
+  const fsBacktest = backtestFoodSafetyProxy(ds);
+
   // Which graded-visit types are actually on record — drives the honest EcoSure gap
   // note (an EcoSure/food-safety result has to exist before we can claim the model
   // was ever checked against one).
@@ -800,7 +882,7 @@ export function computeVisitReadiness(ds, opts = {}) {
     (s.audit || []).flatMap(a => (a.drivers || []).map(d => d.source))))].sort();
 
   return {
-    stores, district, weights, calibration,
+    stores, district, weights, calibration, fsBacktest,
     areas: READINESS_AREAS,
     gaps: READINESS_GAPS,
     hasEcoSure, visitTypes, sourcesUsed,
