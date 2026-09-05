@@ -162,3 +162,17 @@ and pass it into `Stores/Paged`; if fixed, expect 17 → 27. Task 1/3's real num
 (190 visits captured / 189 enriched across the 17 stores this scoping did reach) — Task 2's scale
 estimate should be revisited once the entity-scoping fix is confirmed, since the real per-run call
 count will be larger across the full 27.
+
+**Fix attempted same day, NOT YET verified against a real run.** `GetEntities`' real shape is now
+confirmed: `{EntityTypes:[{EntityList:[{Id,Name,Description1,...}],EntityCount}]}`. The one live
+account measured has `EntityCount:1` — a single entity, `Id:"8685"`, `Description1:"1000890759"`.
+That `Description1` value is not a coincidence: it is byte-identical to `ORG_ROOT_NODE` already
+hardcoded in this repo's Propel scripts (`browser-ecosure-bulk-capture.js`) for the SAME
+organization — strong cross-system corroboration that `1000890759` is a real, meaningful scope id,
+not a random guess. The capture script now extracts this entity and sends its `Id`/`Description1`
+into every `Stores/Paged` call under several plausible key-casings (`entityId`/`EntityId`/
+`entityID`/`hierarchyNode`/`HierarchyNode`) alongside `page` — unrecognized extra JSON keys are
+normally ignored server-side, so sending several costs nothing if all are wrong. **UNCONFIRMED
+until the next live run shows the store count actually reach 27** (or doesn't, in which case the
+per-page log will show what each key attempt's response looked like, same diagnostic discipline as
+the last three rounds).
