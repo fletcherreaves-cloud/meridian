@@ -7,6 +7,7 @@ import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { oepeSeconds } from '../utils/oepe.js';
 import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -129,6 +130,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [loading, setLoading] = useState(true);
   const [selLoc, setSelLoc] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  // null = All time. Graded visits are sparse (a handful per store per YEAR, not per day like
+  // most DateRangeControl consumers), so unlike those panels this one does NOT default to a
+  // narrow preset (e.g. 90d) -- that would silently hide most of a store's history behind a
+  // filter nobody chose. The user opts INTO a range; "All" is always one click back.
+  const [dateRange, setDateRange] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [skipList, setSkipList] = useState([]);
@@ -215,8 +221,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
   }, [selLoc]);
   const filtered = useMemo(() => visits.filter(v =>
     (activeLocs === null || activeLocs.has(locNum(v.store))) &&
-    (typeFilter === 'all' || (v.reportType || 'CFV') === typeFilter)
-  ), [visits, activeLocs, typeFilter]);
+    (typeFilter === 'all' || (v.reportType || 'CFV') === typeFilter) &&
+    (!dateRange || (v.dateISO && v.dateISO >= dateRange.s && v.dateISO <= dateRange.e))
+  ), [visits, activeLocs, typeFilter, dateRange]);
   const types = useMemo(() => [...new Set(visits.map(v => v.reportType || 'CFV'))], [visits]);
   const stats = useMemo(() => {
     const scored = filtered.filter(v => v.score != null);
@@ -609,6 +616,14 @@ export function GradedVisitsPanel({ ds, onClose }) {
           ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
         h('optgroup', { label: '— Oklahoma —' },
           ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+        btn({
+          onClick: () => setDateRange(null), title: 'Show every visit on file, regardless of date',
+          style: { padding: '4px 12px', borderRadius: 'var(--r)', border: '.5px solid ' + (dateRange ? 'var(--bdr)' : 'rgba(245,158,11,.4)'),
+            background: dateRange ? 'transparent' : 'var(--adim)', color: dateRange ? 'var(--text2)' : 'var(--amber)',
+            fontSize: 10, fontWeight: dateRange ? 400 : 700, cursor: 'pointer' },
+        }, 'All'),
+        h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange })),
       btn({ onClick: exportCSV, disabled: !filtered.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '⬇ CSV'),
       btn({ onClick: () => setPrintCtx(x => !x), title: 'Include each visit’s Day / hour-before / visit-hour context in the printed report',
         style: { padding: '3px 8px', borderRadius: 6, border: '1px solid ' + (printCtx ? 'var(--amber)' : 'var(--bdr)'), background: printCtx ? 'var(--amber)' : 'var(--surf)', color: printCtx ? '#1a1a1a' : 'var(--text3)', fontSize: 10, fontWeight: 700, cursor: 'pointer' } }, (printCtx ? '✓ ' : '+ ') + 'context'),
