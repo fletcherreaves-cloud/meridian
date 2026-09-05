@@ -120,7 +120,11 @@
     return null;
   }
   function pickId(obj) {
-    for (const key of ['Id', 'id', 'StoreId', 'storeId', 'LocationId', 'locationId', 'EntityId', 'entityId']) {
+    // 'ID' (all-caps) confirmed 2026-09-05 as the real field on a Stores/Paged store entry (a live
+    // run's console log showed {Name, ID, LocalCode, Address1, ...} -- checked first since it's now
+    // the known-real shape; the rest stay as fallbacks in case a differently-shaped entity (e.g.
+    // GetEntities' own response) needs this same helper.
+    for (const key of ['ID', 'Id', 'id', 'StoreId', 'storeId', 'LocationId', 'locationId', 'EntityId', 'entityId']) {
       if (obj?.[key] != null) return obj[key];
     }
     return null;
