@@ -1476,3 +1476,50 @@ carries `overallPercentage` + one populated channel field
 **Not yet run against real CFV/RGR data** — the consolidated script hasn't been executed yet
 (only the EcoSure-only predecessor has, successfully). Same never-commit-real-data rule as the
 EcoSure seed applies to `memory/data/graded-visits-bulk-seed.json`.
+
+**✅ UPDATE 2026-09-05 — the above paragraph is now stale; do not re-raise "not yet run."** The
+consolidated script WAS run against a real capture the same day: 225 CFV / 116 RGR / 244 EcoSure
+raw entries, **584 rows upserted** (225 CFV / 90 RGR / 25 RGR-HealthSafety / 244 EcoSure),
+independently verified via a live Supabase read (`content-range: 0-0/584`). One real data issue
+surfaced and was fixed in the same pass: store 33222 had two RGR rows both dated 2025-05-21,
+colliding on the `(loc, visit_date, report_type)` key — Postgres rejects an upsert batch naming
+the same conflict key twice. Inspected against the store's full RGR history: visitId `7933673`
+scored a flat 100.0 on every single category (the only such row in that store's history, vs.
+realistic varied scores on every other visit) — an incomplete/placeholder Propel record, not a
+real second visit; excluded. The real visit (`7770310`, 94.0 overall) was kept. Fixed generally
+(not just for this one case) in `chunkedUpsertGradedVisits()`: it now dedupes by conflict key
+**before** chunking (a Postgres same-key rejection is per-statement, not per-chunk), keeps the
+last row per key, and warns on any collision so a future case is visible instead of silently
+dropped or crashing the whole import. The same latent bug exists in the older
+`import-ecosure-history.mjs` (identical unguarded shape) — it just never hit a same-day double
+visit before. Shipped as v5.354.
+
+## Two follow-on gaps surfaced while working with the real data (owner-raised 2026-09-05)
+
+**1. Per-visit detail (questions/comments/points) — EcoSure has it, RGR/CFV bulk doesn't.**
+`parseEcoSureVisit()`'s `modules` object (written verbatim to `graded_visits.modules` JSONB) DOES
+already carry real per-visit detail: `citedItems` (per cited/failed question — code, section,
+critical flag, points lost, and reviewer `reasons`/comments) plus the visit's own free-text
+`comments` (`visitComments`). This is already queryable per visit today, no new work needed for
+EcoSure. It does NOT store the full list of *passing* questions, only the cited/failed subset plus
+aggregate counts (`questionCount`/`citedCount`/`criticalFailCount`/`sections`).
+`parseRGRBulkVisit()`/`parseCfvBulkVisit()`, by contrast, only have aggregate per-category
+percentages — no per-question detail and no comments — because `getCfvHistory`/
+`getBrandProtectionVisits` are LIST endpoints that never returned that level of detail in the
+first place (that's the entire premise this file's own bulk-enumeration work rests on: those list
+rows already have everything the *aggregate* HTML parsers need). **Open question, unconfirmed
+either way:** does Propel expose a per-visit CFV/RGR detail endpoint analogous to EcoSure's
+`getThirdPartyFoodSafetyVisitReport` (which is exactly where the question/comment/points detail
+came from for EcoSure)? Nothing in this session's HAR captures answered this — it needs a live
+Propel session captured while opening an individual CFV or RGR visit's own detail view (not the
+history list) to find out. If such an endpoint exists, storing its output the same way EcoSure's
+is stored (verbatim into `modules`) would let any CFV/RGR visit be pulled up for full review too,
+not just its aggregate score.
+
+**2. Graded Visits panel has no date-range selector.** Confirmed by reading `src/views/graded-visits.js`:
+the panel's only filter is `activeLocs` (location) — `filtered` has no date-range predicate at
+all, so there's no way to scope the table/CSV/print views to a period. This is a real gap against
+this repo's own `memory/panel-contract.md` convention (date-picker mode is one of the checked
+items on every panel). Adding one is a reasonably contained UI task once someone picks it up:
+follow whatever date-range-picker pattern another already-compliant panel uses (see
+`panel-contract.md` for the current list) rather than inventing a new one.
