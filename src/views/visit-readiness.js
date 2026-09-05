@@ -69,7 +69,7 @@ function storeReportHTML(s) {
   // Recommended focus = the worst 3 drivers, phrased as actions.
   const focus = (s.topDrivers || []).filter(d => d.score < 0.85).slice(0, 3)
     .map(d => `<li><b>${esc(d.label.split('(')[0].trim())}</b> — currently ${esc(fmt(d.actual, d.unit))}, target ${esc(fmt(d.target, d.unit))}. Close this gap to lift readiness.</li>`).join('');
-  const lv = s.lastVisit ? `Last actual visit: ${esc(s.lastVisit.type || 'visit')} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' (did not pass)' : s.lastVisit.pass ? ' (pass)' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}` : 'No recent actual graded visit on record.';
+  const lv = s.lastVisit ? `Last actual visit: ${esc(s.lastVisit.type || 'visit')} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' (did not pass)' : s.lastVisit.pass ? ' (pass)' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}${s.lastVisit.criticalFailCount ? ` · ${s.lastVisit.criticalFailCount} CRITICAL FAIL${s.lastVisit.criticalFailCount > 1 ? 'S' : ''}` : ''}` : 'No recent actual graded visit on record.';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Visit Readiness coaching report — ${esc(sName(s.loc))} — ${new Date().toISOString().slice(0, 10)}</title><style>
     body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:860px;margin:32px auto;font-size:12px;line-height:1.5}
     h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}
@@ -173,7 +173,10 @@ function StoreRow({ s, expanded, onToggle }) {
           h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
           h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
           s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, (s.coverage * 100).toFixed(2) + '% data'),
-          s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`))),
+          s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`),
+          // Critical fail count surfaced SEPARATELY from score, per the EcoSure finding's own
+          // explicit instruction — a store can rank well on score while holding a critical.
+          s.lastVisit?.criticalFailCount > 0 && h('span', { title: 'Critical fail(s) on the last EcoSure visit — cited regardless of overall score', style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: '#ef4444', background: '#ef444422' } }, `⚠ ${s.lastVisit.criticalFailCount} critical`))),
       h('div', { style: { display: 'flex', gap: 8 } },
         ...STATS.map(([key]) => h(StatCol, { key, sc: s.subs[key].score }))),
       h('div', { style: { width: DAYS_SINCE_W, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: 'var(--text2)' } },
@@ -609,6 +612,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
         stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
         stat('Watch', d.watch, '#f59e0b'),
         stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
+        d.criticalFails > 0 && stat('EcoSure criticals', d.criticalFails, '#ef4444'),
         stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
         stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
 
