@@ -1558,6 +1558,16 @@ this repo's own `PEAK replaces GDCT` note in `project-graded-visits-pace.md`) �
 PEAK pull is being built separately is finished.** No PEAK API pull exists in this repo today;
 this is a noted future direction, not in-flight work.
 
+**✅ UPDATE 2026-09-05, same day — the fallback found something before Propel did.** A live PEAK
+HAR capture confirmed a working per-visit detail API (`RoipSurvey/<visitId>`) with real per-
+question comments and scores for a real CFV visit — every question, not just cited/failed ones,
+strictly richer than EcoSure's own Propel capture. Full writeup, the enumeration chain, and what's
+still unconfirmed (RGR untested, EcoSure's presence in PEAK unconfirmed, real auth mechanism
+unclear from this capture): `memory/finding-peak-visit-detail-api-2026-09-05.md`. This may
+supersede the Propel per-visit-detail question for CFV/RGR rather than merely answer it — see
+that file's own "why this changes the plan" section. This paragraph's own Propel question stays
+open regardless (never confirmed either way there), but is now lower-priority.
+
 **2. Graded Visits panel has no date-range selector.** Confirmed by reading `src/views/graded-visits.js`:
 the panel's only filter is `activeLocs` (location) — `filtered` has no date-range predicate at
 all, so there's no way to scope the table/CSV/print views to a period. This is a real gap against
