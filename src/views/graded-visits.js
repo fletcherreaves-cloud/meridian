@@ -42,6 +42,16 @@ function VisitPatternBar({ patterns }) {
     chip('Day', patterns.dow && patterns.dow[0]),
     chip('Weekpart', patterns.weekpart && patterns.weekpart[0]));
 }
+// CFV/RGR's `modules` is a map of category name -> {pct}. EcoSure's is a totally different shape
+// (pointsReceived/citedItems/sections/comments -- comments can be null) that flows through this
+// SAME `v.modules` field on the SAME table (graded_visits' polymorphic report_type design) --
+// confirmed live 2026-09-04, the moment real EcoSure rows first existed in production: reading
+// `.pct` off an EcoSure row's `comments: null` entry threw "null is not an object" and crashed
+// this panel outright (every consumer below had assumed report-type-agnostically that every
+// module entry is {pct}-shaped, since only CFV/RGR data had ever existed before). Filters to
+// entries that actually look like {pct: number} so EcoSure/any future non-{pct} shape is simply
+// excluded from "components" displays, rather than crashing them.
+export const moduleEntries = v => Object.entries(v.modules || {}).filter(([, m]) => m && typeof m === 'object' && typeof m.pct === 'number');
 const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
 const fmtPct = v => v == null ? '—' : v.toFixed(2) + '%';
 const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
@@ -226,7 +236,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const cols = ['Type', 'Store', 'NSN', 'Date', 'Daypart', 'Channel', 'Score', 'Result', 'Status', 'Modules'];
     const lines = [cols.map(csvCell).join(',')];
     for (const v of filtered) {
-      const mods = Object.entries(v.modules || {}).map(([k, m]) => `${k} ${fmtPct(m.pct)}`).join('; ');
+      const mods = moduleEntries(v).map(([k, m]) => `${k} ${fmtPct(m.pct)}`).join('; ');
       lines.push([v.reportType || 'CFV', storeName(v.store), locNum(v.store), v.dateISO || '', v.daypart || '',
         v.channel || '',
         v.score == null ? '' : v.score, v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail'), v.status || '', mods].map(csvCell).join(','));
@@ -263,7 +273,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const printReport = async () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const rows = filtered.map(v => {
-      const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
+      const mods = moduleEntries(v).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
       const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
       return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(storeLabel(v.store))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
     }).join('');
@@ -658,8 +668,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
                   h('tbody', null, ...filtered.map((v, i) => {
                     const isRGR = (v.reportType || 'CFV') === 'RGR';
                     const isOpen = expanded === v.id;
-                    const compTip = Object.entries(v.modules || {}).map(([k, m]) => `${k}: ${fmtPct(m.pct)}`).join('  ·  ');
-                    const belowN = Object.values(v.modules || {}).filter(m => m.pct < 80).length;
+                    const compTip = moduleEntries(v).map(([k, m]) => `${k}: ${fmtPct(m.pct)}`).join('  ·  ');
+                    const belowN = moduleEntries(v).filter(([, m]) => m.pct < 80).length;
                     const detail = isRGR
                       ? span({ title: compTip },
                           v.status ? span({ style: { fontWeight: 600, color: 'var(--text2)' } }, v.status) : null,
