@@ -12,6 +12,7 @@ import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_N
 import { fetchAllRows } from './paginate.js';
 import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
 import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
+import { aggregateSmgFullscale, SMG_STANDARDS, SMG_NOTE } from './smg-agg.js';
 // dispatch-226.md Task 1 -- verified directly (deno run, real relative import + execution against
 // a synthetic fixture) that Deno CAN resolve and run a relative import reaching outside
 // supabase/functions/ into src/engine/. This is the FIRST edge function in this repo to do so --
@@ -217,6 +218,29 @@ Returns: district totals (stores improving/worsened/mixed/no-action, $ moved tow
         period: {
           type: 'string',
           description: 'EOM month to analyze, "YYYY-MM" (e.g. "2026-07"). Required -- this is a monthly EOM-close concept, not a date range. For "last month" compute YYYY-MM from today.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for every store the caller can see.',
+        },
+      },
+      required: ['period'],
+    },
+  },
+  {
+    name: 'query_smg',
+    description: `Query SMG VOICE customer-satisfaction survey scores (the McDonald's-mandated third-party guest survey program) -- OSAT / Top-2-Box / OSAT B2B / Accuracy B2B / Drive-Thru problem rate / Overall problem rate, from the monthly FullScale scorecard (smg_fullscale, the same table src/views/smg-voice.js's dashboard reads).
+Use for questions about: guest satisfaction, OSAT, "how are we doing on customer surveys", Accuracy B2B, problem rates, which stores are below the SMG standard.
+This is uploaded data (SMG VOICE has no live pull yet -- an owner drops the FullScale Excel export monthly), so a period with no rows means "not yet uploaded," not "no visits." Say that plainly rather than implying zero guests were surveyed.
+Standards (McDonald's corporate, hard-coded the same as the in-app panel): OSAT Top-2/OSAT B2B/Accuracy B2B >= the store's own std (Top-2 & OSAT B2B 90%, Accuracy B2B 95%); DT Problem & Overall Problem rate <= 10% (lower is better, since these are "% of guests who had a problem"). District figures are response-count-weighted (Σ metric×n / Σn) wherever n exists, falling back to a plain mean only for rows missing n -- never averaged store-to-store blind, per this app's own "never average averages" rule.
+Returns: district totals + per-store rows with each metric and a pass/fail flag against standard, sorted worst-Top2-first so the stores needing attention surface first.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        period: {
+          type: 'string',
+          description: 'Month to analyze, "YYYY-MM" (e.g. "2026-07"). Required -- FullScale scores are monthly, not daily. For "last month" compute YYYY-MM from today.',
         },
         locs: {
           type: 'array',
@@ -751,6 +775,40 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       })),
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: EOM_RECOUNT_NOTE,
+    });
+  }
+
+  if (name === 'query_smg') {
+    const period = String(input.period || '').trim();
+    const m = period.match(/^(\d{4})-(\d{1,2})$/);
+    if (!m) return 'Provide a period as "YYYY-MM" (e.g. "2026-07"). SMG FullScale scores are monthly, not daily.';
+    const year = +m[1], month = +m[2];
+    const locs = input.locs as string[] | undefined;
+
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('smg_fullscale')
+        .select('loc,osat_top2,osat_5,osat_b2b,accuracy_b2b,dt_problem,overall_problem,n')
+        .eq('year', year).eq('month', month)
+        // Full PK order (loc, year, month) -- year/month are already pinned by eq() above, so loc
+        // alone gives a deterministic total order over the filtered set.
+        .order('loc');
+      if (locs?.length && !allowed) q = q.in('loc', locs);
+      return q;
+    });
+    if (error) return `Database error: ${error.message}`;
+    if (!data?.length) return `No SMG VOICE data found for ${period}. SMG VOICE has no automated pull yet -- the FullScale Excel export is uploaded manually each month, so a missing period most likely just hasn't been uploaded. Say that plainly, don't imply zero guests were surveyed.`;
+
+    const { stores, district } = aggregateSmgFullscale(data as Array<{ loc: string; osat_top2: number | null; osat_5: number | null; osat_b2b: number | null; accuracy_b2b: number | null; dt_problem: number | null; overall_problem: number | null; n: number | null }>, STORE_NAMES);
+
+    const sc = applyScope(stores, allowed);
+    return JSON.stringify({
+      period,
+      standards: { osat_top2_min: SMG_STANDARDS.osatTop2Min, osat_b2b_min: SMG_STANDARDS.osatB2BMin, accuracy_b2b_min: SMG_STANDARDS.accuracyB2BMin, dt_problem_max: SMG_STANDARDS.dtProblemMax, overall_problem_max: SMG_STANDARDS.overallProblemMax },
+      district,
+      stores: sc.stores,
+      ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
+      note: SMG_NOTE,
     });
   }
 

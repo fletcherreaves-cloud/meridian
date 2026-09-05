@@ -508,7 +508,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have seven tools — six query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
+You have nine tools — six query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), two search reference material:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -543,15 +543,21 @@ You have seven tools — six query live Supabase data (updated daily via automat
    Method: same-store, same-item, session-count vs final-count within the EOM close window (the last 3 calendar days of the month) — NOT a between-store comparison (stores recount BECAUSE they saw a bad number, so that comparison would be confounded by self-selection).
    CAVEAT: this measures FOB (inventory variance) impact ONLY. Total food cost % / "Base Food %" is NOT in Meridian's data model anywhere — if asked about food cost broadly, answer the FOB slice and say plainly that total food cost % can't currently be measured, don't imply this tool covers it. period is required, "YYYY-MM" (e.g. "2026-07"), not a date range.
 
-7. search_qsr_kb(query, limit?)
+7. query_smg(period, locs?)
+   Returns: for one month, SMG VOICE FullScale scores — OSAT Top-2-Box, OSAT (5-only), OSAT B2B, Accuracy B2B, DT Problem rate, Overall Problem rate — district (response-count-weighted where n exists) + per store, each flagged below_standard against McDonald's corporate thresholds (Top-2/OSAT B2B ≥90%, Accuracy B2B ≥95%, DT/Overall Problem ≤10%), sorted worst-Top2-first.
+   USE FOR: guest satisfaction / OSAT / "how are we doing on customer surveys" / Accuracy B2B / problem rates / which stores are below SMG standard, for a SPECIFIC month different from the static 60-day summary below.
+   CAVEAT: SMG VOICE has no automated pull yet — a period with no rows means "not yet uploaded," not "no guests surveyed." Say that plainly. period is required, "YYYY-MM" (e.g. "2026-07"), not a date range.
+
+8. search_qsr_kb(query, limit?)
    Returns: the most relevant QSRSoft Help Center articles (title, section, body excerpt, url) — the vendor's own documentation.
    USE FOR: how QSRSoft works / what a QSRSoft metric, report, or field MEANS / how to do something in QSRSoft — e.g. "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?", "what does a red model mean?", "how does eBOS handle transfers?"
-   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–6 for those).
+   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–7 for those).
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
 - ALWAYS call query_labor_summary for any OT-dollar or over/under-staffed question about the current/recent period — see tool 3's caveat on why NOT to answer these from the static 60-day summary or from query_lifelenz_labor
 - ALWAYS call query_eom_recount_impact for any question about EOM recounts, item variance, or how recounting affected FOB/food cost for a given month — this is a monthly-close question the static summaries below cannot answer at all. Still name the FOB-vs-total-food-cost caveat from tool 6 whenever "food cost" is asked about broadly.
+- ALWAYS call query_smg for a guest-satisfaction/OSAT question naming a SPECIFIC month — the static SMG FullScale summary below shows only each store's single most-recently-uploaded period (whatever that happens to be, not a fixed window), never a requested past month.
 - For "today" use ${today}; for "yesterday" use the previous calendar day
 - You can call multiple tools simultaneously if a question spans domains
 - The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.
@@ -822,6 +828,7 @@ const DATA_SOURCES = [
   { kw: /\b(forecast|mape|projection accuracy|snapshot|model accuracy)\b/i, tool: 'query_forecast_snapshots', table: 'forecast_snapshots', label: 'Forecast snapshots' },
   { kw: /\b(promo|promotion|discount|coupon|give.?away|roi|paying off|margin.*(spend|give))\b/i, tool: 'query_promo_roi', table: 'daily_glimpse_daily / ctrl_rows', label: 'Promo / Discount ROI' },
   { kw: /\b(recount|re-count|eom close|end.?of.?month (invent|count)|item variance|count ledger)\b/i, tool: 'query_eom_recount_impact', table: 'qsr_raw_item_detail', label: 'EOM recount / FOB impact' },
+  { kw: /\b(osat|smg|voice|guest satisfaction|customer satisfaction|top.?2|accuracy b2b|b2b)\b/i, tool: 'query_smg', table: 'smg_fullscale', label: 'SMG VOICE (OSAT / B2B)' },
 ];
 const detectSource = text => DATA_SOURCES.find(s => s.kw.test(text || '')) || null;
 // Language that suggests SAGE couldn't get the data (→ a troubleshooting Task).
