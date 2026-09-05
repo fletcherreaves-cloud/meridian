@@ -117,6 +117,14 @@ CFV (EcoSure already had one via Propel; RGR and CFV never did).
    before designing automation, same caution as before, just with a sharper hypothesis to test.
 4. Whether `Stores/Paged` genuinely returns every store in one small paginated set (27 stores / 3
    pages observed here) at any scale, or is itself capped, wasn't stress-tested.
+   ⚠️ **Sharpened, not resolved, 2026-09-05 (dispatch #230's real bulk-capture run):** a live run of
+   `scripts/browser-peak-visit-detail-bulk-capture.js` found only **17** stores, not this item's own
+   recorded 27/3-pages. Not yet determined whether that run's pagination silently dropped a later
+   page (the same failure mode PRs #1138/#1139 already fixed one level down the chain, at
+   `GetStoreDetails` and the store id field) or whether this signed-in account's PEAK view is
+   genuinely narrower than the original capture's. The capture script now logs every page's raw
+   response (not just page 1) to settle this on the next run. See dispatch #230 for the missing-
+   store list and status — do not treat 17 as the confirmed store count until that log is read.
 5. ✅ **RESOLVED same day — owner ran the migration, import completed end-to-end.**
    `graded_visits.peak_detail` did not exist in production (`ALTER TABLE graded_visits ADD COLUMN
    IF NOT EXISTS peak_detail jsonb;`, added alongside the parser at PR #1123, had never actually
@@ -131,6 +139,16 @@ CFV (EcoSure already had one via Propel; RGR and CFV never did).
    working — not a plaintext name). **This is the first real PEAK per-visit detail data live in
    Meridian.** The local seed file holding the real captures was deleted after the import; the
    committed seed path stays the empty shell it always was.
+6. ✅ **Bulk backfill ran end-to-end the same day (dispatch #230).** After two live-run fixes to
+   `scripts/browser-peak-visit-detail-bulk-capture.js` (PRs #1138/#1139 — a store id-field name and
+   a `GetStoreDetails` visit-array key, both wrong guesses caught by the owner's own console log,
+   not anticipated in advance), a full capture across 17 stores produced **190 raw `RoipSurvey`
+   responses**, and `scripts/import-peak-visit-detail.mjs` enriched **189 of 190** into
+   `graded_visits` (1 no-match: a 2026-09-04 CFV visit too recent to have a row yet from the
+   separate CFV bulk-import pipeline — expected, not a bug). This is real, verified scale, not a
+   projection. **Open question this surfaced:** only 17 of the ~27 known stores were captured — see
+   item #4 above and `memory/dispatch-230-peak-visit-detail-bulk-backfill.md` for the missing-store
+   list and status.
 
 ## Why this changes the plan, not just answers the question
 

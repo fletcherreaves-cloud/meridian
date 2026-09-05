@@ -169,7 +169,11 @@
       break;
     }
     const pageResults = firstArray(json);
-    if (page === 1) console.log('[peak-detail-capture] Stores/Paged page 1 raw response (for shape confirmation only):', json);
+    // Log EVERY page, not just page 1 -- a live run found only 17 of ~27 known stores (dispatch
+    // #230), and the only way to tell "PEAK genuinely doesn't show the other ~10 to this account"
+    // apart from "a later page's response used a shape firstArray() missed" is to see what each
+    // page actually returned, not assume page 1's shape holds for the rest.
+    console.log(`[peak-detail-capture] Stores/Paged page ${page}: extracted ${pageResults ? pageResults.length : 0} store(s), raw response:`, json);
     if (!pageResults || !pageResults.length) break;
     stores.push(...pageResults);
     await sleep(DELAY_MS);
