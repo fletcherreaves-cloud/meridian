@@ -3364,6 +3364,7 @@ export async function loadGradedVisits() {
     score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app, status: r.status,
     completionTime: r.completion_time,
     modules: r.modules || {}, title: r.raw_title,
+    peakDetail: r.peak_detail,
   }));
 }
 

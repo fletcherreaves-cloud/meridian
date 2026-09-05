@@ -55,7 +55,9 @@ function VisitPatternBar({ patterns }) {
 export const moduleEntries = v => Object.entries(v.modules || {}).filter(([, m]) => m && typeof m === 'object' && typeof m.pct === 'number');
 const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
 
-// PEAK per-question detail (peak_detail, enriched via scripts/import-peak-visit-detail.mjs --
+// PEAK per-question detail (v.peakDetail, from the DB's peak_detail column -- loadGradedVisits()
+// remaps snake_case DB columns to camelCase, matching every other field on this row shape;
+// enriched via scripts/import-peak-visit-detail.mjs --
 // see memory/finding-peak-visit-detail-api-2026-09-05.md) -- every question asked on the visit,
 // not just cited/failed ones, richer than Propel's own EcoSure-only detail capture. Defaults to
 // showing only the COMMENTED questions (the actionable ones -- a real RGR visit ran 193 questions
@@ -67,7 +69,7 @@ const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >
 export function PeakDetailBlock({ v }) {
   const { useState } = React;
   const [showAll, setShowAll] = useState(false);
-  const pd = v.peak_detail;
+  const pd = v.peakDetail;
   if (!pd) return null;
   const questions = pd.questions || [];
   const commented = questions.filter(q => q.comment);
@@ -743,7 +745,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
                       h('tr', { onClick: () => toggleContext(v), title: 'Show operational context at time of visit', style: { cursor: 'pointer', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' } },
                         h('td', { style: { ...tdS, textAlign: 'left' } },
                           span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV'),
-                          v.peak_detail && span({ title: `PEAK detail: ${v.peak_detail.questionCount} questions, ${v.peak_detail.commentedCount} commented`, style: { marginLeft: 4, fontSize: 9 } }, '🔎')),
+                          v.peakDetail && span({ title: `PEAK detail: ${v.peakDetail.questionCount} questions, ${v.peakDetail.commentedCount} commented`, style: { marginLeft: 4, fontSize: 9 } }, '🔎')),
                         h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } },
                           storeName(v.store),
                           span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 5 } }, '#' + locNum(v.store))),
