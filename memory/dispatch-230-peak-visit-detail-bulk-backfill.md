@@ -144,27 +144,21 @@ The script needed two live-run fix-forward passes before it worked (both shipped
   matching this dispatch's own Task 3 note that some visits will legitimately have no match).
   This is far beyond the original 2 manually-captured visits — Task 1/3 are functionally done.
 
-**⚠️ New open question this run surfaced: only 17 of ~27 known stores were found**, not the full
-estate. Cross-referencing the captured store names against `CLAUDE.md`'s org roster, these are
-named there but did NOT appear in the capture: **FL** — Cottondale, Bonifay, DeFuniak Springs,
-Chipley-St.Rd.77; **OK** — Duncan, Ardmore, Atoka, Ada, Chickasha (9 named, possibly more inside
-CLAUDE.md's own "and others" for OK — the doc doesn't enumerate the full ~20). **Not yet
-determined whether this is real** (those stores lack an active CFV/RGR program in PEAK, or aren't
-visible to this signed-in account/role) **or a capture bug** (`Stores/Paged` pagination silently
-dropped a later page whose response used yet another unrecognized shape — the same failure mode
-as the two fixes above, one level up the chain). The script only logged page 1's raw response, not
-every page, so this couldn't be told apart from the first run's console output alone.
-**The capture-bug theory is the leading one, not a coin flip**: `finding-peak-visit-detail-
-api-2026-09-05.md`'s own enumeration-chain section — written from the ORIGINAL HAR capture, before
-any of this dispatch's script work — already recorded `Stores/Paged` returning "ALL stores under
-that organization, paginated (~10/page, **3 pages for 27 stores**)". That is a real, already-
-measured fact in this repo, not a new guess, and it directly conflicts with this run's 17. Treat
-17 as unconfirmed until the per-page log (below) is read; do not assume 27 is stale just because
-17 is what a run produced.
-**Fixed same day, not yet re-run:** the script now logs every `Stores/Paged` page's raw response
-and extracted count, not just page 1 — the next capture run will show definitively whether
-pagination silently lost a page (bug, fixable the same way as the last two) or whether PEAK
-genuinely stops at 17 for this account (real, and the answer to "why" becomes a Propel/PEAK access-
-scope question, not a script bug). **Task 2's real-scale numbers are now known** (190 visits / ~400
-total calls at `DELAY_MS=250` / a few minutes wall-clock for 17 stores) even though the store-count
-question is open — do not re-litigate Task 2 itself, only the store-count gap above.
+**Sharpened again same day, still OPEN — pagination itself is clean, but 17 is confirmed NOT the
+real total.** A per-page-logged re-run measured `Stores/Paged` page-by-page — page 1 → 10 stores,
+page 2 → 7 stores, **page 3 → 0 stores under the identical `{stores:[...]}` shape that worked on
+pages 1-2** (genuinely empty, not an unrecognized shape the extractor missed). `10 + 7 + 0 = 17`,
+pagination terminated cleanly with no dropped/misread page — so this specific failure mode (the
+class PRs #1138/#1139 fixed) is ruled out. **But the owner directly checked the PEAK UI itself
+under this same login and confirmed all 27 stores are visible there.** So `Stores/Paged` as this
+script currently calls it (`{page:N}`, no entity scoping) is returning a real subset, not the full
+org — most likely because it needs an entity/franchise id from `GetEntities` that the script
+currently only logs and never uses (see the script header's own long-standing caveat on this).
+`finding-peak-visit-detail-api-2026-09-05.md`'s old "27 stores / 3 pages" line has still been
+corrected (it was never actually measured that way) — but the underlying open question it gestured
+at (is `Stores/Paged` scoped correctly?) turns out to be real, just for a different reason than
+originally guessed. **Next step:** inspect `GetEntities`'s full response for an entity/franchise id
+and pass it into `Stores/Paged`; if fixed, expect 17 → 27. Task 1/3's real numbers stand regardless
+(190 visits captured / 189 enriched across the 17 stores this scoping did reach) — Task 2's scale
+estimate should be revisited once the entity-scoping fix is confirmed, since the real per-run call
+count will be larger across the full 27.
