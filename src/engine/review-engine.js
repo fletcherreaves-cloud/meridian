@@ -62,12 +62,17 @@ export const DEFAULT_REVIEW_CONFIG = {
       // Dispatch #132 item 2, investigated (NOT wired to t1800Contacts): the yearly workbook's
       // "1-800 Contacts" column is a raw per-store COUNT target, not a /100K rate — confirmed by
       // reading parseYearlyTargets() (src/parsers/index.js), which parses it with a plain
-      // parseFloat, no guest-count normalization anywhere near it. This metric is also a rate
-      // ("/100K"), and no guest-count-normalized ACTUAL is captured anywhere in the app either,
-      // so `src` stays 'manual' for the actual. The TARGET side can now resolve from a Targets-
-      // editor override (tComplaintsTarget, REVIEW_METRIC_TARGET_FIELD) once the owner sets one —
-      // see target-overrides.js's TARGET_OVERRIDE_FIELDS note on this exact field.
-      { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'manual',                    note:'Absolute count vs target (not auto-sourced — see the mapping investigation above this entry)' },
+      // parseFloat, no guest-count normalization anywhere near it. The TARGET side resolves from a
+      // Targets-editor override (tComplaintsTarget, REVIEW_METRIC_TARGET_FIELD) once the owner
+      // sets one — see target-overrides.js's TARGET_OVERRIDE_FIELDS note on this exact field.
+      // ✅ Dispatch #231 (2026-09-05) — the ACTUAL side now has a real auto source:
+      // customer_complaints (Propel Customer Care, one-time/periodic bulk backfill, not a live
+      // stream — see memory/finding-complaints-propel-api-2026-08-26.md), case count for the
+      // review month ÷ guest count for the same month × 100,000, computed in autoPopulateKPIs
+      // below. `src:'auto'` now matches salesVsTgt/foodOB's own convention for an auto-first
+      // metric — mo.complaints simply stays unset (falls through to manual entry) until a real
+      // capture has been run, same as those metrics' own empty-series fallback behavior.
+      { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'auto',                    note:'Auto from Propel Customer Care case count ÷ guest count × 100K (dispatch #231)' },
       { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% of target audits completed' },
       { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% score vs target' },
       { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
@@ -1637,6 +1642,28 @@ export function autoPopulateKPIs(review, ds) {
     } else if (lr.length) {
       const s = sum(lr, 'sales');
       if (s != null) mo.salesVsTgt = s;
+    }
+    // Dispatch #231 — Complaint Contacts/100K actual (mo.complaints): count customer_complaints
+    // rows for this store within the review month's calendar range, bucketed by incidentDate (the
+    // owner's decided authoritative date field, finding-complaints-propel-api-2026-08-26.md),
+    // divided by guest count for the same range (auto-first 'gc' chain, same
+    // Object.values(metricSeries(...)).reduce(...) pattern as salesVsTgt just above) × 100,000.
+    // ds.complaintCases loads from customer_complaints (5-digit Propel-convention loc) while 'gc'
+    // reads QSRSoft-convention streams (7-digit) — _unpadLoc (already defined above for
+    // qsrFobRowsForLoc) normalizes both sides, same cross-table loc-format mismatch this function
+    // already handles elsewhere. ds.complaintCases is loaded once at app startup (App.js's
+    // _stComplaintCases) from a manual/periodic Propel bulk backfill, not a live stream — an empty
+    // array here means no capture has been run yet, not a real zero, so this stays a no-op until
+    // real data exists (src:'manual' remains the effective behavior until then).
+    if (Array.isArray(ds.complaintCases) && ds.complaintCases.length) {
+      const caseCount = ds.complaintCases.filter(c =>
+        _unpadLoc(c.loc) === _unpadLoc(loc) && c.incidentDate >= range.s && c.incidentDate <= range.e
+      ).length;
+      const gcVals = Object.values(metricSeries(ds, loc, range, 'gc'));
+      const gcSum = gcVals.length ? gcVals.reduce((a, b) => a + b, 0) : null;
+      if (gcSum > 0) {
+        mo.complaints = (caseCount / gcSum) * 100000;
+      }
     }
     // Dispatch #161 — auto-first: fobByRange() over this month's calendar range (`range`,
     // just resolved above), reading the qsr_fob dollar shape (prodSalesAmt/compWasteAmt/…),

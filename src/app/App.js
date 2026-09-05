@@ -295,7 +295,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1646,6 +1646,16 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${gv.length} graded visits from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Graded visits load failed:',e);} };
+      const _stComplaintCases = async () => {
+      try{
+        // Customer complaint cases (Propel Customer Care, dispatch #231) — feeds
+        // review-engine.js's Complaint Contacts/100K actual side, replacing its old src:'manual'.
+        const cc = await loadCustomerComplaints();
+        if(cc.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev, complaintCases: cc};});
+          console.log(`[Meridian] ✓ Loaded ${cc.length} customer complaint case(s) from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Customer complaints load failed:',e);} };
       // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
       const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       const _stFobRows = async () => {
@@ -2071,6 +2081,7 @@ function App() {
         _timedStage('T2 lifelenz', _stLifelenz, _t2Start),
         _timedStage('T2 lifelenzJobHours', _stLifelenzJobHours, _t2Start),
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
+        _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
         _timedStage('T2 peaksRows', _stPeaksRows, _t2Start),
         _timedStage('T2 darRows', _stDarRows, _t2Start),

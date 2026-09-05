@@ -749,6 +749,29 @@ export async function loadSmgFullscale({ year, month } = {}) {
   }));
 }
 
+// ── Customer Complaints (Propel Customer Care, dispatch #231) ───────────────
+// Read-only from the app's perspective -- rows are written ONLY by
+// scripts/import-complaints-history.mjs (a manual/periodic Propel bulk backfill, SSO+MFA gated,
+// same status as graded_visits' Propel sources). See supabase/schema-customer-complaints.sql and
+// memory/dispatch-231-complaints-metric.md.
+export async function loadCustomerComplaints() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) =>
+    supabase.from('customer_complaints').select('*').order('incident_date', { ascending: false }).range(from, to)
+  );
+  return (data || []).map(r => ({
+    childCaseId: r.child_case_id,
+    parentCaseId: r.parent_case_id,
+    loc: r.loc,
+    issueCode: r.issue_code,
+    issueSubCode: r.issue_sub_code,
+    incidentDate: r.incident_date,
+    receivedDate: r.received_date,
+    caseStatus: r.case_status,
+    customerComments: r.customer_comments,
+  }));
+}
+
 // ── SMG VOICE Performance persistence ────────────────────────────────────────
 // rows: array of { period, report_type, operator_id, operator_name, loc, loc_name,
 //                  dt_sat, dt_dissat, ir_sat, ir_dissat, accuracy_b2b, quality_b2b,
