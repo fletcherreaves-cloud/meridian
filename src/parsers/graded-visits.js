@@ -187,11 +187,15 @@ const _ecoIsCritical = q => q?.criticalFlag === 1 || q?.criticalFlag === true ||
 const _ecoIsCited = q => Number(q?.result) === 1;               // 0 = pass, 1 = cited/fail, -1 = N/A
 const _ecoIsNA = q => Number(q?.result) === -1;
 
-// visitDate's raw wire format was never captured -- try ISO first, then the CFV/RGR "DD-Mon-YYYY"
-// shape (parseVisitDate above) in case the API uses the same convention as the exported reports,
-// then a plain Date parse as a last resort. Returns null (never throws) if none match, matching
-// every other date field in this file -- an unparseable date is a skip, not a guess.
-function parseEcoSureDate(s) {
+// A wire date's raw format varies by API action (EcoSure's getThirdPartyFoodSafetyVisitReport,
+// RGR/EcoSure's getBrandProtectionVisits, CFV's getCfvHistory all use slightly different shapes) --
+// try ISO first, then the CFV/RGR "DD-Mon-YYYY" shape (parseVisitDate above) in case an action uses
+// the same convention as the exported reports, then a plain Date parse as a last resort (covers
+// getBrandProtectionVisits' "2026-08-10T00:00:00" and Date-parseable variants alike). Returns null
+// (never throws) if none match, matching every other date field in this file -- an unparseable date
+// is a skip, not a guess. Exported (renamed from the EcoSure-only parseEcoSureDate) since the same
+// chain is reused by the RGR and CFV bulk-JSON parsers below.
+export function parseApiVisitDate(s) {
   if (!s) return null;
   const str = String(s).trim();
   const iso = str.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -245,7 +249,7 @@ export function parseEcoSureVisit(input) {
     store: v.restaurantNumber != null ? String(v.restaurantNumber) : null,
     name: v.restaurantName ?? null,
     date: v.visitDate ?? null,
-    dateISO: parseEcoSureDate(v.visitDate),
+    dateISO: parseApiVisitDate(v.visitDate),
     daypart: null,
     weekpart: null,
     owner: null,
@@ -269,5 +273,104 @@ export function parseEcoSureVisit(input) {
       citedItems,
       comments: v.visitComments ?? null,
     },
+  };
+}
+
+// ── RGR / RGR Health & Safety bulk JSON path -- from Propel's getBrandProtectionVisits ─────────
+// Unlike EcoSure, the getBrandProtectionVisits LIST row itself already carries every component
+// percentage parseRGR() extracts from the HTML export (Quality/Service/Cleanliness/Shift
+// Leadership/Food Safety) -- no per-visit detail call needed. visitTypeId 105 = RGR, 111 = RGR
+// Health & Safety, a separate program with its own visit dates (measured live: distinct dates, not
+// overlapping instances of the same visit) -- given its own report_type so an RGR row and an
+// RGR-Health&Safety row for the same store+date, if that ever happens, never collide on the
+// (loc, visit_date, report_type) key. Trusts visitMeetsTargetFlag for pass, same reasoning as
+// parseEcoSureVisit(): the report's own pass rule (parseRGR()'s HTML-derived "no critical missed,
+// no more than one component below 80%") isn't re-derivable from a summary row with no
+// critical-gate detail, so this doesn't try to reinvent it.
+// `storeMeta` ({store, name}) is required -- getBrandProtectionVisits is called per LOCATION
+// (locationId=<node>), so the visit row itself carries no store identity of its own.
+const _rgrPct = s => (s == null ? null : parseFloat(String(s)));
+export function parseRGRBulkVisit(v, storeMeta = {}) {
+  const isHealthSafety = v?.visitTypeDescription === 'visits.rgrHealthAndSafety';
+  const modules = {};
+  const put = (label, pct) => { if (pct != null && !isNaN(pct)) modules[label] = { pct }; };
+  put('Quality', _rgrPct(v?.qualityPercentage));
+  put('Service', _rgrPct(v?.servicePercentage));
+  put('Cleanliness', _rgrPct(v?.cleanlinessPercentage));
+  put('Shift Leadership', _rgrPct(v?.shiftLeadershipPercentage));
+  put('Food Safety', _rgrPct(v?.foodSafetyPercentage));
+  put('People', _rgrPct(v?.peoplePercentage));
+  put('Health & Safety', _rgrPct(v?.healthSafetyPercentage));
+  return {
+    reportType: isHealthSafety ? 'RGR-HealthSafety' : 'RGR',
+    title: isHealthSafety ? 'RGR Health & Safety' : 'Running Great Restaurants',
+    store: storeMeta.store != null ? String(storeMeta.store) : null,
+    name: storeMeta.name ?? null,
+    date: v?.visitDate ?? null,
+    dateISO: parseApiVisitDate(v?.visitDate),
+    daypart: null,
+    weekpart: null,
+    owner: null,
+    manager: null,
+    visitBy: null,
+    completionTime: null,
+    score: _rgrPct(v?.overallPercentage),
+    pass: v?.visitMeetsTargetFlag === 1 || v?.visitMeetsTargetFlag === true,
+    status: v?.foodSafetyResult ?? null,
+    channel: null,
+    mobileApp: null,
+    modules,
+  };
+}
+
+// ── CFV bulk JSON path -- from Propel's getCfvHistory ────────────────────────────────────────
+// Same "the list row already has everything" property as RGR above -- getCfvHistory's per-visit
+// row carries overallPercentage plus one non-null channel-specific percentage field
+// (driveThruPercentage/curbsidePercentage/inRestaurantPercentage/deliveryPercentage) and
+// behindTheCounterPercentage, matching exactly what the HTML-based parseCFV()'s own `channel` +
+// `modules` fields represent -- just without the raw ach/pos point counts the HTML export carries
+// (a summary row only has percentages), so those two fields are simply absent here rather than
+// fabricated. Pass is NOT returned by this action (no visitMeetsTargetFlag equivalent) -- derived
+// via the same score >= 80 threshold scripts/import-cfv-history.mjs's own CFV_PASS_THRESHOLD
+// already established and verified against Propel's own published CFV card (dispatch #74). Kept as
+// a SEPARATE constant here rather than importing that Node script's export into this browser-
+// bundled file -- same value (80), duplicated deliberately rather than crossing that module
+// boundary; if either ever needs to change, change both.
+export const CFV_BULK_PASS_THRESHOLD = 80;
+const _CFV_CHANNEL_FIELDS = [
+  ['driveThruPercentage', 'Drive Thru'],
+  ['curbsidePercentage', 'Curbside'],
+  ['inRestaurantPercentage', 'In Restaurant'],
+  ['deliveryPercentage', 'Delivery'],
+];
+export function parseCfvBulkVisit(v, storeMeta = {}) {
+  let channel = null, channelPct = null;
+  for (const [field, label] of _CFV_CHANNEL_FIELDS) {
+    if (v?.[field] != null) { channel = label; channelPct = _rgrPct(v[field]); break; }
+  }
+  const score = _rgrPct(v?.overallPercentage);
+  const behindTheCounterPct = _rgrPct(v?.behindTheCounterPercentage);
+  const modules = {};
+  if (channel != null && channelPct != null && !isNaN(channelPct)) modules[channel] = { pct: channelPct };
+  if (behindTheCounterPct != null && !isNaN(behindTheCounterPct)) modules['Behind the Counter'] = { pct: behindTheCounterPct };
+  return {
+    reportType: 'CFV',
+    title: 'Customer First Visit',
+    store: storeMeta.store != null ? String(storeMeta.store) : null,
+    name: storeMeta.name ?? null,
+    date: v?.visitDate ?? null,
+    dateISO: parseApiVisitDate(v?.visitDate),
+    daypart: null,
+    weekpart: null,
+    owner: null,
+    manager: null,
+    visitBy: null,
+    completionTime: null,
+    score,
+    pass: score != null ? score >= CFV_BULK_PASS_THRESHOLD : null,
+    status: null,
+    channel,
+    mobileApp: null,
+    modules,
   };
 }
