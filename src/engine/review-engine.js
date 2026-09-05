@@ -74,7 +74,12 @@ export const DEFAULT_REVIEW_CONFIG = {
       // capture has been run, same as those metrics' own empty-series fallback behavior.
       { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'auto',                    note:'Auto from Propel Customer Care case count ÷ guest count × 100K (dispatch #231)' },
       { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% of target audits completed' },
-      { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% score vs target' },
+      // ✅ Follow-on to dispatch #231 (2026-09-05) — real EcoSure visit data now exists
+      // (graded_visits, report_type='EcoSure'; see memory/finding-ecosure-propel-api-
+      // 2026-08-22.md). ACTUAL side now auto-fills in autoPopulateKPIs below from that visit's
+      // score, same "src:'auto', falls through to manual until real data exists" convention
+      // `complaints` just above established.
+      { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'auto',                pctInput:true, note:'Auto from the store\'s most recent EcoSure visit score this month (dispatch #231 follow-on)' },
       { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
       // Dispatch #145 — EAP and EAD. OSAT B2B and EPB2B are BOTH deliberately excluded from
       // this pass (owner-held pending his own investigation into osat_b2b_pct — see
@@ -1663,6 +1668,27 @@ export function autoPopulateKPIs(review, ds) {
       const gcSum = gcVals.length ? gcVals.reduce((a, b) => a + b, 0) : null;
       if (gcSum > 0) {
         mo.complaints = (caseCount / gcSum) * 100000;
+      }
+    }
+    // Follow-on to dispatch #231 (2026-09-05) — Food Safety EcoSure (%) actual (mo.fsEcoSure):
+    // real EcoSure visit data now exists in graded_visits (report_type='EcoSure') — see
+    // memory/finding-ecosure-propel-api-2026-08-22.md, which found this exact metric slot was
+    // still src:'manual' with zero automated source despite the real data existing to fill it,
+    // the same gap dispatch #231 closed for `complaints` above. Averages this store's EcoSure
+    // visit score(s) (0-100 scale — same convention graded-visits.js's own fmtPct/PASS-threshold
+    // code uses on this field) whose dateISO falls in the review month, converted to the
+    // pctInput:true fraction (÷100) every other pctInput metric here stores actual/target in
+    // (see performance-reviews.js's sc=m.pctInput?100:1 display convention). ds.gradedVisits is
+    // loaded once at app startup (App.js's _stGradedVisits) from a periodic Propel/PEAK bulk
+    // backfill, not a live stream — a store with no EcoSure visit yet this month leaves
+    // mo.fsEcoSure unset (falls through to manual entry), never a fabricated zero.
+    if (Array.isArray(ds.gradedVisits) && ds.gradedVisits.length) {
+      const ecoScores = ds.gradedVisits.filter(v =>
+        v.reportType === 'EcoSure' && _unpadLoc(v.store) === _unpadLoc(loc) &&
+        v.dateISO >= range.s && v.dateISO <= range.e && v.score != null
+      ).map(v => v.score);
+      if (ecoScores.length) {
+        mo.fsEcoSure = (ecoScores.reduce((a, b) => a + b, 0) / ecoScores.length) / 100;
       }
     }
     // Dispatch #161 — auto-first: fobByRange() over this month's calendar range (`range`,

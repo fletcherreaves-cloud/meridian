@@ -205,7 +205,7 @@ function storeAuditHtml(s) {
           <td class="tiny">${esc(m.system)} · <span class="mono">${esc(m.table)}</span></td></tr>`; }).join('')}</table>`
     : `<p class="note">No waste / variance data on record for this store — the food-safety flag reads "no data", not "low risk".</p>`;
   const lv = s.lastVisit
-    ? `Last actual graded visit: <b>${esc(s.lastVisit.type || 'visit')} ${s.lastVisit.score.toFixed(2)}%</b>${s.lastVisit.pass === false ? ' <span class="bad">(did not pass)</span>' : s.lastVisit.pass ? ' <span class="ok">(pass)</span>' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}`
+    ? `Last actual graded visit: <b>${esc(s.lastVisit.type || 'visit')} ${s.lastVisit.score.toFixed(2)}%</b>${s.lastVisit.pass === false ? ' <span class="bad">(did not pass)</span>' : s.lastVisit.pass ? ' <span class="ok">(pass)</span>' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}${s.lastVisit.criticalFailCount ? ` <span class="bad">· ${s.lastVisit.criticalFailCount} CRITICAL FAIL${s.lastVisit.criticalFailCount > 1 ? 'S' : ''}</span>` : ''}`
     : 'No actual graded visit on record for this store — its readiness has never been checked against a real outcome.';
   return `<div class="store">
     <h2 class="storeh">${esc(sName(s.loc))} <span class="nsn">#${esc(s.loc)}</span>
@@ -245,7 +245,7 @@ export function readinessReportHTML(res, opts = {}) {
       ${cell('speed')}${cell('accuracy')}${cell('quality')}${cell('leadership')}
       <td class="n">${pct2(s.coverage)}</td>
       <td>${esc(FS_L[s.fsFlag] || s.fsFlag)}</td>
-      <td class="tiny">${s.lastVisit ? esc((s.lastVisit.type || 'visit') + ' ' + s.lastVisit.score.toFixed(2) + '%' + (s.lastVisit.pass === false ? ' ✗' : '')) : '—'}</td>
+      <td class="tiny">${s.lastVisit ? esc((s.lastVisit.type || 'visit') + ' ' + s.lastVisit.score.toFixed(2) + '%' + (s.lastVisit.pass === false ? ' ✗' : '') + (s.lastVisit.criticalFailCount ? ` — ${s.lastVisit.criticalFailCount} CRITICAL` : '')) : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -312,6 +312,7 @@ export function readinessReportHTML(res, opts = {}) {
       <div class="kpi"><div class="kv" style="color:${P_WARN}">${d.watch}</div><div class="kl">Watch (70–84)</div></div>
       <div class="kpi"><div class="kv" style="color:${P_OK}">${d.ready}</div><div class="kl">Ready (85+)</div></div>
       <div class="kpi"><div class="kv" style="color:${d.fsElevated ? P_BAD : P_OK}">${d.fsElevated}</div><div class="kl">Food-safety elevated</div></div>
+      ${d.criticalFails ? `<div class="kpi"><div class="kv" style="color:${P_BAD}">${d.criticalFails}</div><div class="kl">EcoSure criticals</div></div>` : ''}
     </div>
     <p class="note">${esc(res.method?.district || '')}</p>
   </div>

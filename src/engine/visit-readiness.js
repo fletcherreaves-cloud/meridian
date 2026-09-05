@@ -692,7 +692,18 @@ export function computeVisitReadiness(ds, opts = {}) {
   for (const v of gv) {
     const loc = _normLoc(v.store || v.loc); if (!loc || v.score == null) continue;
     const ms = _ms(v.dateISO || v.date || 0);
-    if (!lastVisitByLoc[loc] || ms > lastVisitByLoc[loc].ms) lastVisitByLoc[loc] = { ms, score: v.score, pass: v.pass, type: v.reportType, dateISO: v.dateISO || v.date };
+    if (!lastVisitByLoc[loc] || ms > lastVisitByLoc[loc].ms) lastVisitByLoc[loc] = {
+      ms, score: v.score, pass: v.pass, type: v.reportType, dateISO: v.dateISO || v.date,
+      // Follow-on to dispatch #231 (2026-09-05) — memory/finding-ecosure-propel-api-2026-08-22.md's
+      // explicit 📌 instruction: "whatever replaces the waste flag must surface
+      // criticalFailQuantity separately from score" — a store can rank well on overall score
+      // while carrying the estate's only critical fail (measured live: ADA 06972 ranked 7th of
+      // 26 on score but held the only critical). Already parsed by parseEcoSureVisit()
+      // (src/parsers/graded-visits.js) onto every EcoSure row's modules.criticalFailCount; just
+      // never carried through to this per-store summary until now. null (not 0) for a non-
+      // EcoSure visit type, which never has this field at all.
+      criticalFailCount: v.modules?.criticalFailCount ?? null,
+    };
   }
 
   const stores = [];
@@ -764,6 +775,9 @@ export function computeVisitReadiness(ds, opts = {}) {
     watch: stores.filter(s => s.band === 'watch').length,
     ready: stores.filter(s => s.band === 'ready').length,
     fsElevated: stores.filter(s => s.fsFlag === 'elevated').length,
+    // Critical fail count, separate from fsFlag (the waste/variance proxy) — a real EcoSure
+    // critical, not inferred. See lastVisitByLoc's own comment for why this stays separate.
+    criticalFails: stores.filter(s => s.lastVisit?.criticalFailCount > 0).length,
     subs: {
       speed: mean(stores.map(s => s.subs.speed.score).filter(x => x != null)),
       accuracy: mean(stores.map(s => s.subs.accuracy.score).filter(x => x != null)),
