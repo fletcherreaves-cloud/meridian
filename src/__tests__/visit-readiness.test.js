@@ -101,6 +101,28 @@ describe('visit-readiness', () => {
     expect(g.lastVisit.score).toBe(88);
   });
 
+  // Follow-on to dispatch #231 (2026-09-05) — memory/finding-ecosure-propel-api-2026-08-22.md's
+  // explicit instruction: a critical fail must surface separately from score, since a store can
+  // rank well overall while still carrying a critical (measured live on ADA 06972).
+  it('surfaces criticalFailCount from an EcoSure visit\'s modules, separate from score', () => {
+    const ds = mkDs(goodRows(GOOD));
+    ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'EcoSure', score: 86,
+      modules: { criticalFailCount: 1, questionCount: 36 } }];
+    const res = computeVisitReadiness(ds);
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.lastVisit.criticalFailCount).toBe(1);
+    expect(res.district.criticalFails).toBe(1);
+  });
+
+  it('leaves criticalFailCount null for a non-EcoSure visit type, which never carries the field', () => {
+    const ds = mkDs(goodRows(GOOD));
+    ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'CFV', score: 88, pass: true }];
+    const res = computeVisitReadiness(ds);
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.lastVisit.criticalFailCount).toBeNull();
+    expect(res.district.criticalFails).toBe(0);
+  });
+
   it('produces a district rollup', () => {
     const res = computeVisitReadiness(mkDs(goodRows(GOOD), badRows(BAD)));
     expect(res.district.nStores).toBe(2);
