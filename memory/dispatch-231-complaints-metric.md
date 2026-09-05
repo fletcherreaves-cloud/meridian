@@ -9,6 +9,43 @@ since been resolved (2026-09-05, same day): the denominator (guest count), all 5
 values, whether `rowsPerPage` caps, and the owner's design decision for the "no single-month
 option" problem. This dispatch is the actual build.
 
+## ✅ Tasks 1-3 BUILT same day (2026-09-05) — not yet verified against a real live run
+
+All three tasks are implemented and committed:
+- **Task 1**: `scripts/browser-complaints-bulk-capture.js` — reuses the proven Propel enumeration
+  chain (`navigation`/`getDescendants`, same as `browser-ecosure-bulk-capture.js`) and pulls
+  `timeFrame=5` (History) per store, paging defensively. Output wraps each raw case as
+  `{store, name, case}` (NSN attached at capture time, since `customer-care`'s own response never
+  carries it) — same convention as `browser-graded-visits-bulk-capture.js`.
+- **Task 2**: `src/parsers/complaints.js` (`parseComplaintEntry`, flattens `childCases[]`),
+  `supabase/schema-customer-complaints.sql` (`customer_complaints`, `tenant_id`+RLS, 5-digit
+  zero-padded `loc` matching `graded_visits`' convention, primary key `child_case_id`), and
+  `scripts/import-complaints-history.mjs` (idempotent upsert, logs distinct `caseStatus` values
+  seen so that open question resolves from real data on the first real run).
+- **Task 3**: `loadCustomerComplaints()` (`src/lib/supabase.js`) loads into `ds.complaintCases` at
+  app startup (`App.js`'s `_stComplaintCases`, wired into the T2 stage batch alongside
+  `gradedVisits`/`smgFullscale`). `review-engine.js`'s `complaints` metric moved from
+  `src:'manual'` to `src:'auto'`: `autoPopulateKPIs` now computes case count (bucketed by
+  `incidentDate`, filtered to the review month) ÷ guest count for the same month (auto-first `gc'`
+  chain, `Object.values(metricSeries(...)).reduce(...)`, same pattern as `salesVsTgt`) × 100,000.
+  `_unpadLoc` (already defined in that function for `qsrFobRowsForLoc`) normalizes the loc-
+  convention mismatch between `customer_complaints` (5-digit) and the QSRSoft-origin `gc` streams
+  (7-digit). An empty/absent `ds.complaintCases` leaves `mo.complaints` unset (falls through to
+  manual entry), not a real zero.
+
+**Test coverage**: `dispatch-231-complaints-parser.test.js` (parser, including the "Multiple
+Issues" flattening case), `dispatch-231-import-complaints-history.test.js` (`buildRow`/`padLoc`),
+`dispatch-231-review-complaints-metric.test.js` (5 tests on the `autoPopulateKPIs` wiring —
+correct computation, no-capture-yet fallback, month bucketing, no cross-store leak, no
+divide-by-zero). Full suite green, build clean.
+
+**What genuinely remains, since none of this has touched real data yet:**
+- Run the capture script against production and the import — this dispatch's own required
+  verification items 2-4 (real case counts, `caseStatus` values found, `issueSubCode` encoding
+  quirks, a real `review-engine.js` number spot-checked by hand) are still open until that happens.
+- The 10-second visual dropdown check for the `timeFrame` label mapping was already done
+  separately (see the finding file) — not blocking this dispatch's own remaining verification.
+
 ## What already exists (measured, not assumed)
 
 - **Endpoint confirmed working, full payload shape documented.** `locationId` = the existing

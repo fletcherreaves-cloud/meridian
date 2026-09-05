@@ -1,0 +1,6 @@
+{
+  "_source": "propel.mcd.com -- GET /api/customer-care?action=getCustomerCareRestaurantCaseList. See memory/finding-complaints-propel-api-2026-08-26.md for the full endpoint documentation.",
+  "_note": "Raw case entries wrapped as {store, name, case}. scripts/import-complaints-history.mjs reads this file and maps every entry through parseComplaintEntry() (src/parsers/complaints.js), flattening any childCases[] into their own rows. This is a bulk backfill, not an enrichment -- it upserts on customer_complaints' own child_case_id primary key, so re-running is always safe.",
+  "_doNotCommitRealData": "Real customer-submitted complaint text (customerComments/abbreviatedCustomerComments) is present in a real capture. Never commit a version of this file populated with real captured cases. Keep this committed file as the empty shell it is; point COMPLAINTS_SEED_PATH (env var, see import-complaints-history.mjs) at a local, gitignored/uncommitted file holding real captures instead, and run the import from there.",
+  "cases": []
+}
