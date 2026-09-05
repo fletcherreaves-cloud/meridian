@@ -28,8 +28,34 @@ metadata:
 - [x] **`forecast_snapshots` table** — v4.374. Table SQL in schema.sql, save/load in supabase.js, backtest auto-upserts per-day rows. ⚠️ User must run schema.sql block in Supabase SQL Editor to create table.
 - [x] **DT Speed-of-Service Analytics panel** — v4.371. 🚗 nav item under Signals. loadDtHistory(), 30/60/90d period, store ranking, hour-of-day table, FL/OK filter.
 - [x] **SAGE tool use** — v4.373. query_daily_activity + query_lifelenz_labor tools. Streaming-first: text streams immediately, tool calls run server-side. Live "Querying…" status indicator in UI.
-- [ ] **Info icon scraper** — Playwright → each QSRSoft report page → click ℹ → extract field definitions → qsr_field_definitions table. Powers tooltips + SAGE context.
-- [ ] **Field dictionary** — src/constants.js: DB column → QSRSoft display label → description
+- [x] **Info icon scraper** — already substantially shipped (v4.388), this line had gone stale.
+  Re-verified directly 2026-09-05 while building the Field Dictionary item below: `qsr_field_definitions`
+  table exists (`supabase/schema.sql`), `scripts/qsrsoft-field-scraper.mjs` (Playwright ℹ-dialog
+  capture) and `scripts/parse-field-defs.mjs` (structures the capture into `{page,label,description}`)
+  both exist, `loadQsrFieldDefs()` (`src/lib/supabase.js:3065`) loads the table into `ds.qsrFieldDefs`
+  at startup (`App.js` T2 stage), and it's consumed in two real places: `FOBAnalysisPanel`'s
+  per-row tooltip lookup (`analytics.js`) and SAGE's system-prompt field-definitions section
+  (`sage.js`'s `buildFieldDefsSection`). A real capture already sits in the repo too —
+  `screenshots/field-definitions-parsed.json`, 418 structured entries across 14 QSRSoft report
+  pages. What's still open: `qsr_field_definitions.db_col` (the column exists in the schema) is
+  never populated by anything — nothing currently links a scraped QSRSoft label back to our
+  internal db column name. Not blocking (the two live consumers above key off page+label, not
+  db_col), but real follow-on scope if that linkage is ever wanted.
+- [x] **Field dictionary** — 2026-09-05. `src/constants.js`: `QSR_DAR_FIELDS`/`QSR_FOB_FIELDS`/
+  `QSR_EBOS_FIELDS`, db column → {label, desc, unit}, sourced from QSRSoft's own scraped field
+  definitions (`screenshots/field-definitions-parsed.json`) plus the pull scripts' real columns.
+  Also fixed: the pre-existing `QSR_DAR_FIELDS` was stale (named columns that don't exist on
+  `qsr_daily_activity` at all) and was dead code — exported but never imported anywhere. Wired
+  into SAGE's field-definitions context (`sage.js`'s `buildFieldDefsSection`) as a static
+  fallback merged under the live-scraped `qsr_field_definitions` table, so SAGE always has real
+  field definitions to answer "what is X" with, not only when that table happens to be populated.
+  Guarded by a test that re-derives each table's real column list from the pull script/schema.sql
+  source of truth so it can't silently go stale again (`src/__tests__/dispatch-qsr-field-dict.test.js`).
+  Scoped to the 3 tables above (DAR/FOB/eBOS) in this pass — the JSONB-metrics ops-pull tables
+  (cash sheet, labor summary, service stats, sales mix, peaks) and product mix are real follow-on
+  scope, not done here. The companion **Info icon scraper** item (line above) was found to already
+  be ~90% built — table, scraper script, parser script, and 418 real scraped field definitions
+  already sitting in the repo — see the researched inventory in this commit's PR description.
 - [x] **SMG VOICE thresholds** — v4.375. OSAT/Top-2/OSAT B2B → 90%, Accuracy B2B → 95%, Any Problem → 10%, avgStd → 4.5. Settings key bumped to v2.
 - [x] **Performance Reviews** — v4.376. Wage inputs now use dollar formatting (FormattedNumInput). Print, blank form, and 1:1 checkpoint were already implemented.
 - [x] **Data policy statement** — v4.377. Fixed-bottom banner, dismissed via mf_data_policy_v1 in localStorage. States data stored in Supabase, authorized access only, no third-party sharing.

@@ -3,7 +3,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, setSagePromptShared, searchQsrKb } from '../lib/supabase.js';
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
@@ -413,18 +413,35 @@ export function buildScheduleSummary(ds) {
 }
 
 // ── QSRSoft field definitions section for SAGE ───────────────────────────────
+// STATIC_FIELD_DEFS — src/constants.js's QSR_*_FIELDS dictionaries, reshaped to the same
+// {page: {label: desc}} shape as the live-scraped ds.qsrFieldDefs (loaded from the
+// qsr_field_definitions Supabase table — see memory files on the info-icon scraper pipeline).
+// That live table is populated by an owner-run Playwright capture pass and is not guaranteed to
+// be loaded in every environment/deployment; these static dictionaries are hand-built from the
+// same real QSRSoft source (screenshots/field-definitions-parsed.json + the pull scripts' own
+// documented columns) so SAGE still has real field definitions to fall back on when the live
+// table is empty, rather than silently dropping this whole section (buildFieldDefsSection used to
+// return '' outright when qsrFieldDefs was falsy).
+const STATIC_FIELD_DEFS = {
+  dar:  qsrFieldLabelMap(QSR_DAR_FIELDS),
+  fob:  qsrFieldLabelMap(QSR_FOB_FIELDS),
+  ebos: qsrFieldLabelMap(QSR_EBOS_FIELDS),
+};
+
 function buildFieldDefsSection(qsrFieldDefs) {
-  if (!qsrFieldDefs) return '';
   const PAGES = [
     { key: 'fob',  label: 'FOB / Food Cost' },
     { key: 'dar',  label: 'Daily Activity Report (DAR)' },
     { key: 'ops',  label: 'Operations Report' },
     { key: 'cash', label: 'Cash / Controls' },
+    { key: 'ebos', label: 'eBOS Purchases' },
   ];
   let out = '';
   for (const p of PAGES) {
-    const fields = qsrFieldDefs[p.key];
-    if (!fields) continue;
+    // Live (scraped) definitions win when present; the static dictionary fills any label the
+    // live table doesn't have (or the whole page, when the live table isn't loaded at all).
+    const fields = { ...STATIC_FIELD_DEFS[p.key], ...qsrFieldDefs?.[p.key] };
+    if (!Object.keys(fields).length) continue;
     out += `\n${p.label}:\n`;
     for (const [label, desc] of Object.entries(fields)) {
       out += `  ${label}: ${desc}\n`;
