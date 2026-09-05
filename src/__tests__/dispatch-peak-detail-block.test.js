@@ -1,7 +1,7 @@
 // @ts-nocheck
 // PeakDetailBlock (src/views/graded-visits.js) is the UI half of the PEAK per-visit-detail work
 // -- the parser + enrichment import (dispatch, memory/finding-peak-visit-detail-api-2026-09-05.md)
-// wrote peak_detail onto real graded_visits rows, but nothing rendered it until this component.
+// wrote peakDetail onto real graded_visits rows, but nothing rendered it until this component.
 // Rendered with react-dom/server (no jsdom needed for static markup), same pattern
 // shell-nav-snapshot.test.js already uses for a different component in this app.
 import { describe, it, expect } from 'vitest';
@@ -11,12 +11,12 @@ import { PeakDetailBlock } from '../views/graded-visits.js';
 
 const h = React.createElement;
 
-function fixtureVisit(peak_detail) {
-  return { id: 'v1', reportType: 'RGR', store: '06972', dateISO: '2026-02-10', peak_detail };
+function fixtureVisit(peakDetail) {
+  return { id: 'v1', reportType: 'RGR', store: '06972', dateISO: '2026-02-10', peakDetail };
 }
 
 describe('PeakDetailBlock', () => {
-  it('renders nothing when the visit has no peak_detail', () => {
+  it('renders nothing when the visit has no peakDetail', () => {
     const html = ReactDOMServer.renderToStaticMarkup(h(PeakDetailBlock, { v: fixtureVisit(null) }));
     expect(html).toBe('');
   });
