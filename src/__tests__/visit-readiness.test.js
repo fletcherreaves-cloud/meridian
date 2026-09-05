@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits, READINESS_GAPS, srcMeta,
-  calibrateReadiness, CFV_CORRELATION_CEILING } from '../engine/visit-readiness.js';
+  calibrateReadiness, CFV_CORRELATION_CEILING, backtestFoodSafetyProxy } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase } from '../views/visit-readiness-report.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
@@ -575,5 +575,74 @@ describe('visit-readiness', () => {
       expect(cal.byType.RGR.n).toBe(2);
       expect(cal.byType.RGR.r).toBeNull();
     });
+  });
+});
+
+// Follow-on to dispatch #231 (2026-09-05) — memory/finding-ecosure-propel-api-2026-08-22.md
+// prescribes a leak-free "as of visit date" backtest of the waste/variance proxy against real
+// EcoSure scores, specifically BECAUSE the proxy was already measured wrong on a live store
+// (Ardmore-Broadway flagged elevated while its real EcoSure audit scored 86/100 and passed).
+describe('backtestFoodSafetyProxy', () => {
+  const past = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+
+  it('reconstructs the proxy from data on record BEFORE the visit date, ignoring data dated after it', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    // Old (pre-visit) FOB row: comfortably beats target -- proxy should read healthy/'low'.
+    // Future (post-visit) FOB row: badly misses target -- must NOT leak into the "as of" score.
+    const ds = {
+      fobRows: [
+        { loc: GOOD, date: new Date(Date.now() - 200 * 864e5), compWaste: t.tCompWaste * 0.5, rawWaste: t.tRawWaste * 0.5, statVar: t.tStatLoss * 0.5 },
+        { loc: GOOD, date: new Date(Date.now() - 10 * 864e5),  compWaste: t.tCompWaste * 5,   rawWaste: t.tRawWaste * 5,   statVar: t.tStatLoss * 5 },
+      ],
+      gradedVisits: [{ store: GOOD, reportType: 'EcoSure', dateISO: past(150), score: 86, pass: true, modules: { criticalFailCount: 0 } }],
+    };
+    const bt = backtestFoodSafetyProxy(ds);
+    expect(bt.rows).toHaveLength(1);
+    // Reconstructed AS OF the visit date sees only the good (200-days-ago) row -- 'low' risk.
+    // A leaky implementation would see the future bad row too (or instead) and read 'elevated'.
+    expect(bt.rows[0].proxyFlag).toBe('low');
+    expect(bt.rows[0].predicted).toBeGreaterThanOrEqual(75);
+  });
+
+  it('reports how many visits carrying a real critical fail the proxy actually flagged elevated', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const ds = {
+      fobRows: [{ loc: GOOD, date: new Date(Date.now() - 200 * 864e5), compWaste: t.tCompWaste * 5, rawWaste: t.tRawWaste * 5, statVar: t.tStatLoss * 5 }],
+      gradedVisits: [{ store: GOOD, reportType: 'EcoSure', dateISO: past(150), score: 40, pass: false, modules: { criticalFailCount: 1 } }],
+    };
+    const bt = backtestFoodSafetyProxy(ds);
+    expect(bt.nCritical).toBe(1);
+    expect(bt.criticalCaught).toBe(1); // bad waste data -> proxy correctly reads 'elevated' here
+  });
+
+  it('excludes non-EcoSure visit types (CFV/RGR are not food-safety visits)', () => {
+    const ds = {
+      fobRows: [{ loc: GOOD, date: new Date(Date.now() - 200 * 864e5), compWaste: 1, rawWaste: 1, statVar: 1 }],
+      gradedVisits: [{ store: GOOD, reportType: 'CFV', dateISO: past(150), score: 95, pass: true }],
+    };
+    expect(backtestFoodSafetyProxy(ds).rows).toEqual([]);
+  });
+
+  it('excludes a visit whose store has no waste/variance data on record at all — never fabricates a score', () => {
+    const ds = { gradedVisits: [{ store: GOOD, reportType: 'EcoSure', dateISO: past(150), score: 86, pass: true }] };
+    expect(backtestFoodSafetyProxy(ds).rows).toEqual([]);
+  });
+
+  it('returns a well-formed empty result when there are no EcoSure visits at all', () => {
+    const bt = backtestFoodSafetyProxy({ gradedVisits: [] });
+    expect(bt.rows).toEqual([]);
+    expect(bt.n).toBe(0);
+    expect(bt.nCritical).toBe(0);
+    expect(bt.criticalCaught).toBe(0);
+  });
+
+  it('is wired into computeVisitReadiness as res.fsBacktest', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const ds = mkDs(goodRows(GOOD));
+    ds.fobRows.push({ loc: GOOD, date: new Date(Date.now() - 200 * 864e5), compWaste: t.tCompWaste * 0.5, rawWaste: t.tRawWaste * 0.5, statVar: t.tStatLoss * 0.5 });
+    ds.gradedVisits = [{ store: GOOD, reportType: 'EcoSure', dateISO: past(150), score: 90, pass: true, modules: { criticalFailCount: 0 } }];
+    const res = computeVisitReadiness(ds);
+    expect(res.fsBacktest).toBeTruthy();
+    expect(res.fsBacktest.rows).toHaveLength(1);
   });
 });

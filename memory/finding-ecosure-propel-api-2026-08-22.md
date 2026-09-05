@@ -1575,3 +1575,41 @@ this repo's own `memory/panel-contract.md` convention (date-picker mode is one o
 items on every panel). Adding one is a reasonably contained UI task once someone picks it up:
 follow whatever date-range-picker pattern another already-compliant panel uses (see
 `panel-contract.md` for the current list) rather than inventing a new one.
+
+---
+
+## ✅ RESOLVED 2026-09-05 — the leak-free backtest this file's own methodology section prescribed has been RUN, on real data
+
+This file's own "What this unlocks" section said EcoSure "replaces the waste-based food safety
+proxy… and proves that proxy wrong on a live store" — but that was one anecdote (Ardmore-Broadway:
+flagged `elevated` while the real audit scored 86/100 and passed). The prescribed leak-free
+backtest (proxy score reconstructed from ONLY data on record before each visit's own date,
+compared against that visit's real score, across every EcoSure visit on record) is now built and
+has been run for real:
+
+- **Engine**: `src/engine/visit-readiness.js`'s `backtestFoodSafetyProxy(ds)`, threading a new
+  `asOfMs` cutoff through `valuesByLoc`/`msValueForLoc`/`pickValue`/`subScore` (default
+  `Date.now()` — every existing live call site is unaffected). Wired into
+  `computeVisitReadiness()`'s own return as `res.fsBacktest`, and shown live in the Visit
+  Readiness panel as a new "Waste & variance proxy check" card, right next to the existing Model
+  Check card.
+- **Measured 2026-09-05, real Supabase data** (`graded_visits` × `fob_rows`/`qsr_fob`, service-role
+  read, 244 EcoSure visits 2022-2026, 240 with a reconstructible leak-free proxy score):
+  **Spearman r = 0.07. Direction hit rate 53% (127/240) — barely above chance. Of the 4 visits
+  carrying a real critical fail, the proxy flagged only 2 as 'elevated.'**
+- **This confirms the Ardmore anecdote was not a fluke — it's the norm.** At district scale and
+  with a proper leak-free methodology (not just "today's live score vs an old visit," which would
+  have been comparing data the store didn't have yet against an outcome already known), the waste/
+  variance proxy has essentially no relationship with real EcoSure outcomes. `READINESS_GAPS`'
+  "EcoSure calibration" entry (`visit-readiness.js`) now states this measured result directly,
+  replacing the old "unvalidated — no sample" placeholder.
+- **This is not a reason to remove the flag** — Waste & variance was already reframed under
+  dispatch #69 as its own waste/holding discipline signal, explicitly NOT a food-safety
+  prediction (see the "Food Safety criticals" gap entry, unchanged). This measurement is exactly
+  why that framing must stay firm, not a reason to walk it back toward implying food-safety
+  predictive power the data has now shown it doesn't have.
+- **What this does NOT do**: replace the proxy with a real EcoSure-derived score. A store's actual
+  readiness for its NEXT EcoSure visit still has no daily-data proxy at all (the DFSC-completion
+  gap two entries up is still the named real fix, and is still not ingested). This backtest
+  answers "does the existing waste proxy predict EcoSure" (measured: no) — it does not itself
+  produce a working alternative.

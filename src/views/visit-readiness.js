@@ -320,6 +320,38 @@ function CalibrationCard({ cal }) {
       types.map(type => h(TypeCalibrationLine, { key: type, type, stat: cal.byType[type] }))));
 }
 
+// Follow-on to dispatch #231 (2026-09-05) — the leak-free "as of visit date" backtest of the
+// Waste & variance proxy against real EcoSure scores (engine's backtestFoodSafetyProxy, wired
+// into computeVisitReadiness's own res.fsBacktest). Same card shape/vocabulary as
+// CalibrationCard just above (rank corr + direction hit rate) for a reader who already knows
+// how to read that card, but this one is validating the W&V PROXY specifically, not the overall
+// readiness composite -- a genuinely different question (see READINESS_GAPS' 'EcoSure
+// calibration' entry for the full methodology note).
+function FoodSafetyBacktestCard({ bt }) {
+  if (!bt) return null;
+  if (!bt.n || bt.n < 3) {
+    return h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.5, margin: '0 0 12px', padding: '9px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+      h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, 'Waste & variance proxy check: '),
+      `only ${bt.n || 0} EcoSure visit${bt.n === 1 ? '' : 's'} with reconstructible waste data as of their own visit date — not enough yet to validate the proxy against real outcomes.`);
+  }
+  const rC = bt.r == null ? 'var(--text3)' : bt.r >= 0.3 ? '#10b981' : bt.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  return h('div', { style: { margin: '0 0 12px', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 } },
+      h('span', { style: { fontSize: 11, fontWeight: 800, color: 'var(--text)' } }, 'Waste & variance proxy check'),
+      h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `leak-free, as of each visit's own date, vs real EcoSure score — ${bt.n} visit${bt.n === 1 ? '' : 's'} on record`)),
+    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' } },
+      h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rC } }, bt.r == null ? '—' : bt.r.toFixed(2)),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr vs real EcoSure score')),
+      bt.hitRate != null && h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: bt.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, (bt.hitRate * 100).toFixed(2) + '%'),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${bt.hits}/${bt.n})`)),
+      bt.nCritical > 0 && h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: bt.criticalCaught === bt.nCritical ? '#10b981' : '#ef4444' } }, `${bt.criticalCaught}/${bt.nCritical}`),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'real criticals flagged \'elevated\''))),
+    h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginTop: 8 } }, bt.method));
+}
+
 // One channel's row across every year -- title + one cell per year, in the engine's own year
 // order (calendar order, since analyzeGradedVisits already sorts `years`).
 function _channelYearRow(channel, cby, pr, prCol) {
@@ -617,6 +649,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
         stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
 
       h(CalibrationCard, { cal: res.calibration }),
+      h(FoodSafetyBacktestCard, { bt: res.fsBacktest }),
 
       h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
         h(StoreListHeader),
