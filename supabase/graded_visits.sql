@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   status          text,                              -- RGR rating word (Acceptable / Outstanding / ...)
   completion_time text,                              -- visit completion time as shown, e.g. "09:30 AM"
   modules      jsonb,                                -- { "Drive Thru": {pct,ach,pos}, "Behind the Counter": {...} }
+  peak_detail  jsonb,                                -- full per-question detail from peak.mcd.com's
+                                                       -- RoipSurvey (every question, scores, comments) --
+                                                       -- ENRICHMENT ONLY, applied by a targeted UPDATE
+                                                       -- keyed on (loc, visit_date, report_type), never
+                                                       -- by upsert -- see import-peak-visit-detail.mjs
   raw_title    text,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now(),
@@ -29,6 +34,7 @@ CREATE INDEX IF NOT EXISTS graded_visits_loc_date_idx ON graded_visits (loc, vis
 -- Patch already-deployed tables (CREATE TABLE IF NOT EXISTS won't add columns to
 -- an existing table). Safe to re-run.
 ALTER TABLE graded_visits ADD COLUMN IF NOT EXISTS completion_time text;
+ALTER TABLE graded_visits ADD COLUMN IF NOT EXISTS peak_detail jsonb;
 
 -- RLS — mirror the proven client-writable pattern (see reviews table in
 -- schema.sql): any authenticated user can read/write. WITH CHECK gates INSERT and
