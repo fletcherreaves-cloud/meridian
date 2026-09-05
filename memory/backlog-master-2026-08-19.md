@@ -547,9 +547,15 @@ for full detail on each.
   framing: *"`changelog-version.test.js` guards desync between `changelog-data.js` and
   `changelog-latest.js`, NOT monotonicity — a backwards version ships green."* The gap is real; the
   claim that the original 20-file sweep couldn't have found it is not — `pm-handoff-2026-08-15.md`
-  simply wasn't one of the 20 files swept. **Fix is cheap:** one assertion that the newest entry's
-  version is strictly greater than the runner-up. Until it exists, the mitigation is manual and
-  must be repeated on every changelog-touching PR.
+  simply wasn't one of the 20 files swept. ✅ **SHIPPED — CORRECTED 2026-09-05 (pass 3):**
+  `src/__tests__/changelog-version.test.js` now has exactly the guard this item called for —
+  `'the most-recently-dated entry holds the global-max version (a backwards version-number typo
+  would ship green otherwise)'` (v5.332, PR #1043, confirmed via `git log -S`). It deliberately
+  checks only the newest-dated file(s) against the global max version (not full pairwise ordering
+  across all ~370 entries — the test's own comment explains why: many older entries carry
+  hand-typed dates that don't reflect true merge order, and pairwise ordering would fail on that
+  pre-existing noise without catching a real bug). That is the same "cheap fix" this item asked
+  for. Do not re-file; the manual-mitigation instruction is obsolete.
 - [ ] ⚠️ **CORRECTED PROVENANCE (made during PM review of PR #434) — this PII/credential-handling
   content already exists, in detail, in two memory files the original sweep didn't cover.** Not
   "unwritten, exists only in conversation" as originally framed — the sweep's 20-file list simply
@@ -635,12 +641,16 @@ first below.
   **107**. `project-audit-2026-07-27.md`'s critical finding A1. `project-rls-hardening-plan.md`'s
   two-phase fix (Phase 1: close ~30 anonymous-access tables; Phase 2: per-loc isolation via
   `can_see_loc()`) has been owner-approved-to-draft since 2026-07-27 and never executed — and the
-  real count (92-107) is 3-4× the ~30-table scope the plan assumed.~~ Two more related,
-  unconfirmed pieces, still open regardless of the correction above: whether
-  `supabase/schema-multitenant-phase3-registry-rls.sql` (closes the `tenants`/`tenant_stores` RLS
-  gap specifically) was ever run in production (`rls-table-audit-119.md`), and whether the
-  Supabase service-role key that was pasted into a chat log ever got rotated
-  (`session-2026-08-07-perf-and-rls.md`) — no evidence either way in the codebase.
+  real count (92-107) is 3-4× the ~30-table scope the plan assumed.~~ One more related piece, still
+  unconfirmed: whether `supabase/schema-multitenant-phase3-registry-rls.sql` (closes the
+  `tenants`/`tenant_stores` RLS gap specifically) was ever run in production (`rls-table-audit-119.md`).
+  **The service-role-key-rotation half is now settled — CORRECTED 2026-09-05 (pass 3):** CLAUDE.md's
+  own Top Priorities section documents the owner migrating the whole Supabase account to the new
+  `sb_secret_…`/`sb_publishable_…` API key format and disabling every legacy key at
+  `2026-08-24T14:53:50Z` (confirmed live at the time: the old key returned `401 "Legacy API keys
+  are disabled"`). That is an account-wide rotation covering every legacy key, service-role
+  included — whatever key was pasted into the 2026-08-07 chat log is dead. Do not re-raise this as
+  open; if a *new* leak is ever suspected, that's a fresh finding, not a reopening of this one.
 - [ ] `xlsx@0.18.5` has unpatched CVEs on npm (`project-audit-2026-07-27.md` B3) — deferred by its
   own follow-on doc (`project-security-notes.md`) until untrusted uploads exist; noted here so the
   two files aren't rediscovered as separate gaps later.
@@ -658,11 +668,17 @@ first below.
 
 ### Data pipeline / automation
 
-- [ ] QSRSoft Cognito auth conversion is mostly unstarted. ✅ **Re-measured today:**
-  `grep -rl getFreshToken scripts/*.mjs` → 2 files (`turnover-pull`, `ops-pull`);
-  `grep -rl "QSRSOFT_TOKEN\|QSRSOFT_COGNITO_TOKEN" scripts/*.mjs` → 15 files still on the stale
-  ~1h-TTL token, falling through to Playwright on nearly every run (`project-qsrsoft-cognito-
-  auth-312.md`).
+- [x] ✅ **DONE — CORRECTED 2026-09-05 (pass 3). This line's own "2 files migrated, 15 still
+  stale" measurement was already superseded by 2026-08-24 (dispatch #82) and CLAUDE.md has
+  carried the corrected status since; this backlog-master entry was simply never updated to
+  match. Re-measured directly today:** `grep -rl getFreshToken scripts/*.mjs` → **25 files**
+  (`qsrsoft-dar-pull`, `-ebos-pull`, `-ops-pull`, `-register-audit-pull`, `-pmix-pull`,
+  `-turnover-pull`, `-variance-pull`, `-store-controls-pull`, `-menu-item-recipe-pull`,
+  `-product-outage-pull`, `-menu-price-comparison-pull`, and 14 more); `grep -rn
+  "process\.env\.QSRSOFT_TOKEN" scripts/*.mjs` → **exactly one hit**, `qsrsoft-explore.mjs:14`,
+  an ad-hoc manual probe script in no scheduled workflow. The migration is done. **Do not
+  re-dispatch it** — see CLAUDE.md's own QSRSoft-token paragraph for the full history
+  (`project-qsrsoft-cognito-auth-312.md`, dispatch #82).
 - [x] ✅ SHIPPED 2026-09-02 (v5.322) — Product Outage pull (`GET /reporting/v2/product/outages`,
   `reportType=allOutages`), live-verified 33,443 rows. `memory/data-acquisition-shopping-list.md`'s
   entry is stale — do not re-scope.
@@ -1258,3 +1274,55 @@ file was missed** — it closes the specific hypothesis both passes raised (file
 handoff/session/plan shape), not every possible gap. If a future pass finds another item claiming
 "not previously written down," the standing instruction (grep `memory/` before trusting that
 claim) still applies.
+
+---
+
+## PM triage pass 3 — 2026-09-05
+
+**Scope, stated honestly: NOT a third full walk of the file.** 17 days had passed since pass 2
+(2026-08-19 → 2026-09-05) and CLAUDE.md's own "Top Priorities" section had accumulated several
+dated, re-measured RESOLVED corrections in that window that this file never picked up — this pass
+targeted those known-stale spots plus a handful of section-by-section spot checks, not every
+checkbox. Given the size of this file (~150 items, two already-thorough passes behind it), a
+full re-walk is disproportionate to what's actually likely to have drifted in 17 days; the items
+below are the ones a direct code/git check confirmed had actually drifted.
+
+**Three corrections made, each independently re-measured (not inherited from CLAUDE.md's prose —
+CLAUDE.md pointed at the topic, this pass verified it directly):**
+1. **§3 "Data pipeline / automation" — QSRSoft Cognito auth conversion.** Was still marked open
+   with an "2 files migrated, 15 stale" count from before dispatch #82 (2026-08-23) even landed.
+   Re-measured directly: `grep -rl getFreshToken scripts/*.mjs` → **25 files**; `grep -rn
+   "process\.env\.QSRSOFT_TOKEN" scripts/*.mjs` → **1 hit**, an ad-hoc probe script in no
+   workflow. Migration is done.
+2. **§14 Security/RLS — service-role-key-rotation question.** Was open with "no evidence either
+   way." CLAUDE.md's dated 2026-08-24 key-rotation entry (the whole account moved to
+   `sb_secret_…`/`sb_publishable_…` format, every legacy key disabled) settles it — an
+   account-wide rotation necessarily covers whatever key was pasted into the 2026-08-07 chat log.
+3. **§13 "changelog-version.test.js does not guard monotonicity."** Re-checked the actual test
+   file: it now has exactly this guard (`'the most-recently-dated entry holds the global-max
+   version'`), confirmed via `git log -S` to have shipped v5.332 / PR #1043 — before this pass,
+   after the file was last touched. The "cheap fix" this item asked for already shipped.
+
+**Checked and left alone, correctly:** §12's "FS EcoSure/Audits/Tablet scoring mechanism" (a
+Performance-Review PACE-weights design question) was NOT conflated with CLAUDE.md's separate,
+later EcoSure finding (a Visit Readiness food-safety **data-availability** finding, different
+system, different question) — surface similarity, not the same open item. §3's "Info-icon field
+scraper + field dictionary… done v4.386/v4.387" was NOT touched either, even though this same
+session separately built a *different* "field dictionary" (a static `src/constants.js` db-column
+→ label → description reference, per `project-backlog.md`'s distinct wording) — the two are
+genuinely different deliverables (one is the live scraped Supabase table + its consumers, already
+shipped; the other is the new static fallback dictionary), not a duplicate needing reconciliation.
+§15's Register Audit "both runs failed" line was already correctly cross-referenced to its own
+2026-09-02 correction elsewhere in the file — not a fresh find, just confirmed still consistent.
+A UI claim (§4-adjacent, "SAGE Scheduled Runs tile appears twice") was checked (`grep
+SageRunsTile` in `at-a-glance.js` → one render call site) but left unmarked — a single render
+call site doesn't rule out a double-fetch-on-click, which needs a live click trace, not a grep, to
+settle either way; per this file's own standing rule, an unconfirmed check should not be marked
+either done or newly-open on partial evidence.
+
+**Not attempted this pass, for a future one:** a genuine full re-walk of every remaining ❌/—
+item against current code, matching the rigor of passes 1-2. Given this file's own size and the
+diminishing rate of drift a mature, twice-reviewed backlog accumulates in under three weeks, that
+full walk is better spent as its own dedicated session than folded into a mixed-priority morning,
+per this repo's own "measure it, don't reason about it" discipline — better to ship three verified
+corrections than a fourth, fifth, sixth pass's worth of unverified guesses at what "seems" stale.
