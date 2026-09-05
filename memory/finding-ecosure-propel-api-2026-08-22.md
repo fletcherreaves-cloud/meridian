@@ -1408,3 +1408,71 @@ rows — `getBrandProtectionVisits` remains the only one that matters for EcoSur
 action name for a future session; not pursuing it now — it is outside this file's scope (CFV/RGR/
 EcoSure) and the owner's 2026-08-22 deprioritization of "additional visits" still stands for
 anything beyond the three that matter.
+
+---
+
+# ✅ Addendum — real EcoSure backfill landed, and CFV+RGR extended into the same bulk chain (2026-09-04)
+
+## The EcoSure bulk capture is DONE, not just built
+
+The owner ran the corrected `scripts/browser-ecosure-bulk-capture.js` end to end (after two real
+bugs found and fixed live — `rowsPerPage=20` alone wasn't sufficient, the missing `hierarchy-*`
+headers were the actual cause, both documented above) and it captured **244 EcoSure visits across
+all 27 stores, 2022-03-07 through 2026-08-31**. Imported via `import-ecosure-history.mjs` from an
+uncommitted local path: 244 rows landed in `graded_visits`, verified `visit_by` is a tokenized
+UUID on every row (zero plaintext reviewer names). **This is the first time `graded_visits` has
+held EcoSure data at all** — Visit Readiness's `hasEcoSure` gate (`src/engine/visit-readiness.js`),
+permanently false since it shipped because nothing had ever populated it, now has real data behind
+it for the whole estate.
+
+## RGR and CFV extended into the same bulk-enumeration chain
+
+Re-reading the same HAR's `getBrandProtectionVisits` sample (used to find the EcoSure chain) showed
+its RGR and RGR-Health&Safety rows **already carry every field `parseRGR()`'s HTML path extracts**
+(Quality/Service/Cleanliness/Shift Leadership/Food Safety percentages, `visitMeetsTargetFlag`) —
+no per-visit detail call needed, unlike EcoSure. Propel's separate `getCfvHistory` action (already
+used once for the one-time `dispatch-74` backfill) has the same property for CFV: its list row
+carries `overallPercentage` + one populated channel field
+(driveThru/curbside/inRestaurant/delivery) + `behindTheCounterPercentage` — everything
+`parseCFV()`'s HTML path extracts, again with no detail call.
+
+**Shipped:**
+- `parseRGRBulkVisit()` / `parseCfvBulkVisit()` (`src/parsers/graded-visits.js`) — map these
+  summary rows directly into `graded_visits` shape. RGR trusts `visitMeetsTargetFlag` for `pass`
+  (same reasoning as EcoSure's parser — the report's real pass rule needs critical-gate detail a
+  summary row doesn't carry, so this doesn't try to re-derive it). CFV has no such flag in this
+  action at all, so `pass` is derived via `CFV_BULK_PASS_THRESHOLD = 80` — the same value
+  `import-cfv-history.mjs`'s own `CFV_PASS_THRESHOLD` established and verified against Propel's
+  published card (dispatch #74), duplicated as its own constant rather than crossing a
+  script/browser-bundle module boundary. RGR-Health&Safety gets its own `report_type:
+  'RGR-HealthSafety'` (measured: distinct visit dates from regular RGR, a separate program) so it
+  can never collide with a same-store-and-date RGR row.
+- `parseApiVisitDate()` — renamed from the EcoSure-only `parseEcoSureDate` and exported, since the
+  same ISO-first/CFV-format/Date-fallback chain is now shared by all three bulk parsers.
+- `scripts/lib/graded-visits-upsert.mjs` — `fetchExistingGradedVisitsByKey()` /
+  `chunkedUpsertGradedVisits()`, extracted after the identical fetch-existing + chunked-upsert
+  pattern was independently written three times (`import-cfv-history.mjs`,
+  `import-ecosure-history.mjs`, and the new unified script below) — the "check whether a helper
+  exists" trap this repo's own standing rule warns about, caught before a fourth copy. The two
+  older scripts are untouched (already shipped, already verified against real data); only the new
+  script uses it.
+- `scripts/import-graded-visits-bulk.mjs` — one unified import reading ONE seed
+  (`{cfv:[...], rgr:[...], ecosure:[...]}`) and upserting all three report types in a single run.
+  Shares the exact `(loc, visit_date, report_type)` conflict key every graded_visits writer uses,
+  so it's safe to run alongside the older CFV/EcoSure one-time-backfill scripts without risk of
+  duplication.
+- `scripts/browser-graded-visits-bulk-capture.js` — a new consolidated console script (the
+  recommended, lower-risk option the owner chose over a direct-Supabase-write architecture):
+  walks all stores, pulling `getCfvHistory` + `getBrandProtectionVisits` (filtered into
+  RGR/RGR-HS and EcoSure) per store, fetching EcoSure per-visit detail as before, and downloads
+  ONE `graded-visits-bulk-seed.json` covering all three types in one paste + one download instead
+  of three separate runs. `scripts/browser-ecosure-bulk-capture.js` is left in place, unmodified,
+  as a still-working EcoSure-only tool (e.g. for a quick single-type re-capture).
+- 18 new tests (`dispatch-rgr-cfv-bulk-parser.test.js`, `dispatch-import-graded-visits-bulk.test.js`)
+  covering both parsers against the real captured RGR/CFV row shapes (not invented fixtures),
+  including the RGR-HealthSafety-gets-its-own-report_type trap and the CFV-channel-field-selection
+  logic (drive-thru/curbside/in-restaurant/delivery).
+
+**Not yet run against real CFV/RGR data** — the consolidated script hasn't been executed yet
+(only the EcoSure-only predecessor has, successfully). Same never-commit-real-data rule as the
+EcoSure seed applies to `memory/data/graded-visits-bulk-seed.json`.
