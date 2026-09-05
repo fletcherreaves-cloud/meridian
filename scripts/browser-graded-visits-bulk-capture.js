@@ -41,7 +41,28 @@
 //   VITE_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/import-graded-visits-bulk.mjs
 
 (async () => {
-  const V = '801';
+  // The Propel `v=` query param is a LIVE, DRIFTING build number, not a stable API version -- it
+  // can go stale multiple times in one day (see browser-complaints-bulk-capture.js's dedicated
+  // warning, discovered 2026-09-05, which applies to every Propel endpoint, not just complaints).
+  // A hardcoded value is a losing game, so discover it fresh from this page's OWN already-made
+  // /api/ calls instead -- the tab you paste this into has necessarily already loaded with the
+  // current v. Falls back to a last-known value only if the page made no /api/ calls yet.
+  const discoverLiveV = () => {
+    try {
+      for (const e of performance.getEntriesByType('resource')) {
+        if (!e.name.includes('propel.mcd.com/api/')) continue;
+        const m = /[?&]v=(\d+)/.exec(e.name);
+        if (m) return m[1];
+      }
+    } catch (_) { /* ignore -- fall through to fallback */ }
+    return null;
+  };
+  const LAST_KNOWN_V = '801'; // fallback only -- last confirmed fresh 2026-09-04
+  const liveV = discoverLiveV();
+  const V = liveV || LAST_KNOWN_V;
+  console.log(liveV
+    ? `[graded-visits-capture] using live v=${V} discovered from this page's own network activity`
+    : `[graded-visits-capture] no live v found on this page yet -- falling back to v=${V} (last known fresh 2026-09-04). If calls 409/400, reload the page, let it finish loading, then re-paste this script.`);
   const ORG_ROOT_LEVEL = 11;
   // The operator root hierarchyNodeId — from the capture that found this chain. If this script is
   // ever run under a different signed-in role/operator, override it (visible in the URL/DevTools

@@ -40,12 +40,15 @@
 //
 // ── ⚠️ The `v=` query parameter is a LIVE, DRIFTING Propel build number, not a stable API version
 // ── (discovered 2026-09-05, see the finding file's own dedicated note on this) ──────────────────
-// v=786 (as of 2026-08-26) was already stale by 2026-09-05, when the real UI was sending v=802 for
-// both `customer-care` and `navigation` calls. Every request using a stale `v` failed with a
-// uniform 409 Conflict regardless of any other parameter — a version-gate rejection, not a data or
-// auth problem. V below is only as fresh as this script's own last edit date (see below) — if
-// every call in this script 409s, that is the first thing to suspect: open DevTools → Network,
-// let any real Propel page load, find its own `v=` value on any `/api/` call, and update V here.
+// v=786 (as of 2026-08-26) was already stale by 2026-09-05 morning (real UI sending v=802) and
+// stale AGAIN by that same evening (v=802 itself 409'd) — this is not a once-and-done fix, it can
+// drift multiple times a day. A hardcoded V is a losing game, so this script no longer hardcodes
+// one: it reads the live value straight off the page's OWN already-made /api/ calls via
+// performance.getEntriesByType('resource') — the tab you paste this into has necessarily already
+// loaded its own nav/data with the current v, so that value is always fresh. Falls back to a
+// last-known value only if the page made no /api/ calls yet (e.g. pasted immediately on load,
+// before the page's own requests fired) — if you see the fallback-used warning AND a 409, reload
+// the page, let it fully finish loading (or click into Customer Care), THEN paste this script.
 //
 // ── Output ───────────────────────────────────────────────────────────────────────────────────
 // Downloads complaints-seed.json in exactly memory/data/complaints-seed.json's shape:
@@ -61,7 +64,24 @@
 //     node scripts/import-complaints-history.mjs
 
 (async () => {
-  const V = '802'; // last confirmed fresh 2026-09-05 -- SEE THE WARNING ABOVE if this 409s
+  // Discover the live Propel build number from the page's own already-made API calls (see the
+  // warning above) rather than trusting a hardcoded value that can go stale within the same day.
+  const discoverLiveV = () => {
+    try {
+      for (const e of performance.getEntriesByType('resource')) {
+        if (!e.name.includes('propel.mcd.com/api/')) continue;
+        const m = /[?&]v=(\d+)/.exec(e.name);
+        if (m) return m[1];
+      }
+    } catch (_) { /* ignore -- fall through to fallback */ }
+    return null;
+  };
+  const LAST_KNOWN_V = '802'; // fallback only -- last confirmed fresh 2026-09-05 morning
+  const liveV = discoverLiveV();
+  const V = liveV || LAST_KNOWN_V;
+  console.log(liveV
+    ? `[complaints-capture] using live v=${V} discovered from this page's own network activity`
+    : `[complaints-capture] no live v found on this page yet -- falling back to v=${V} (last known fresh 2026-09-05). If calls 409, reload the page, let it finish loading, then re-paste this script.`);
   const ORG_ROOT_LEVEL = 11;
   const ORG_ROOT_NODE = '1000890759'; // same operator root as every other Propel script here
   const STORE_LEVEL = 12;
