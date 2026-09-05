@@ -288,7 +288,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   };
   const navSearchBox = collapsed ? null : div({ ref: navSearchRef, style: { position: 'relative', padding: '8px 10px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0 } },
     inp({
-      type: 'text', placeholder: '🔍 Search…', value: navQuery,
+      type: 'text', id: 'nav-search', name: 'nav-search', autoComplete: 'off',
+      placeholder: '🔍 Search…', value: navQuery,
       onChange: e => { setNavQuery(e.target.value); setNavSearchOpen(true); },
       onFocus: () => setNavSearchOpen(true),
       onKeyDown: e => {
