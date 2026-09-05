@@ -21,22 +21,21 @@
 //
 // ── The enumeration chain (confirmed working end-to-end for one CFV + one RGR visit, 2026-09-05) ─
 //   1. POST /API/Entity/GetEntities            {"Pagedata":0}
-//        -> the signed-in user's franchisee organization(s). CONFIRMED shape 2026-09-05:
+//        -> the signed-in user's franchisee organization(s). CONFIRMED shape:
 //           {EntityTypes:[{EntityType,EntityTypeId,EntityList:[{Id,Name,Description1,...}],
-//           EntityCount}]} -- one live account showed EntityCount:1, with Description1 matching
-//           the exact ORG_ROOT_NODE hierarchy-node id already hardcoded in this repo's Propel
-//           scripts (browser-ecosure-bulk-capture.js). See step 2 -- this id is now used there.
-//   2. POST /API/Stores/Paged/                 {"page":N, ...entity scoping, see below}
-//        -> ALL stores under that organization, paginated (~10/page). A live run WITHOUT any
-//           entity scoping (just {"page":N}) found only 17 of 27 stores the owner separately
-//           confirmed are visible in the PEAK UI under the same login -- so Stores/Paged is
-//           under-scoped without an entity id, not genuinely limited for this account. UNCONFIRMED
-//           FIX: this script now also sends the GetEntities entity's Id/Description1 under a few
-//           plausible key names alongside page (extra unrecognized keys are normally harmless).
-//           Verify by re-running: does the store count reach 27? EXACT FIELD NAMES ON EACH STORE
-//           ENTRY beyond `ID`/`Name`/`LocalCode` (confirmed live) are otherwise stable; this script
-//           tries several plausible id fields (see pickId below) and logs every page's raw
-//           response so a real run can report back if a further guess is wrong.
+//           EntityCount}]}. Called for parity with the proven manual chain; its result is not
+//           needed by Stores/Paged (see step 2 -- an earlier attempt to pass an entity id into
+//           that call was a wrong guess, since corrected).
+//   2. POST /API/Stores/Paged/                 {"page":N}
+//        -> ALL stores under that organization, paginated (~10/page). CONFIRMED 2026-09-05 via a
+//           real cURL captured from the PEAK UI's own store-list page: this endpoint is
+//           0-INDEXED ({"page":0} is the FIRST page) and needs no entity/hierarchy scoping at all
+//           -- a direct check of pages 0/1/2 totaled 10+10+7=27, matching the known store count
+//           exactly. A live run that started at page=1 (this script's original, wrong assumption)
+//           always skipped the true first page, landing on 17 (10+7) instead of 27 -- an off-by-
+//           one, not a scoping or auth problem. Store entry fields confirmed live: `ID` (all-caps,
+//           the numeric hierarchy-node id used in step 3), `Name`, `LocalCode` (the plain NSN,
+//           matching this repo's existing hierarchy-node<->loc map), `ActiveStore`, `Status`.
 //   3. POST /API/Visit/GetStoreDetails/<storeId>?isChecked=true
 //        -> that ONE store's full visit history, EVERY visit type, years back. CONFIRMED fields on
 //           each visit: Id (visitId), VisitTypeId, VisitDate, TypeDescription.
@@ -152,22 +151,13 @@
     return obj?.Name ?? obj?.name ?? obj?.StoreName ?? obj?.storeName ?? obj?.DisplayName ?? '(unnamed)';
   }
 
+  // Called first to match the proven-working manual chain -- confirmed 2026-09-05 that
+  // Stores/Paged needs nothing from this response (no entity/hierarchy scoping required, see
+  // below), so its result isn't used for anything past this log.
   console.log('[peak-detail-capture] calling GetEntities (step 1 of the confirmed chain)...');
-  let entity = null;
   try {
     const entities = await postJson('/API/Entity/GetEntities', { Pagedata: 0 });
     console.log('[peak-detail-capture] GetEntities raw response (for shape confirmation only):', entities);
-    // Confirmed shape 2026-09-05: {EntityTypes:[{EntityType,EntityTypeId,EntityList:[{Id,Name,
-    // Description1,...}],EntityCount}]}. Take the first entity under the first entity type -- a
-    // live run showed EntityCount:1 (one Franchisee Organization), so "first" is also "only" for
-    // that account; if a future account has more than one, this logs it instead of guessing which.
-    const list = entities?.EntityTypes?.[0]?.EntityList || [];
-    entity = list[0] || null;
-    if (list.length > 1) {
-      console.warn(`[peak-detail-capture] GetEntities returned ${list.length} entities, using the first (Id=${entity?.Id}) -- verify this is the right one if store counts still look short.`);
-    } else if (entity) {
-      console.log(`[peak-detail-capture] using entity Id=${entity.Id} (${entity.Name})`);
-    }
   } catch (e) {
     console.error(`[peak-detail-capture] GetEntities failed -- ${e.message}. If this is a 400/403, the ` +
       '__RequestVerificationToken lookup above likely needs extending (see this file\'s header comment). Stopping.');
@@ -177,21 +167,17 @@
 
   console.log('[peak-detail-capture] fetching store list (Stores/Paged)...');
   const stores = [];
-  for (let page = 1; ; page++) {
+  // CONFIRMED 2026-09-05 via a real cURL captured from the PEAK UI's own store-list page:
+  // Stores/Paged is 0-INDEXED ({"page":0} is the first page), no entity/hierarchy scoping needed
+  // at all. Starting at page=1 (the original, wrong assumption) always skipped the true first page
+  // -- for this account that meant landing on pages 1-2 (10+7=17 stores) and never fetching page 0
+  // (the missing 10), while a direct check of pages 0/1/2 totaled the full 10+10+7=27. The earlier
+  // entity-scoping attempt (entityId/hierarchyNode params) was a red herring, now removed -- the
+  // real UI call sends nothing beyond {"page":N}.
+  for (let page = 0; ; page++) {
     let json;
     try {
-      // Stores/Paged was found to return only 17 of 27 known stores when called with just {page:N}
-      // (dispatch #230) -- the owner confirmed all 27 ARE visible in the PEAK UI under this same
-      // login, so the call itself is under-scoped, not the account. Best-guess fix: pass the
-      // entity id from GetEntities under a few plausible key casings (this API mixes casing
-      // conventions elsewhere too -- store entries use `ID`, GetStoreDetails visits use `Id`) --
-      // unrecognized extra keys are virtually always ignored by a JSON API, so sending several
-      // costs nothing if all are wrong. UNCONFIRMED until a real run shows the store count change.
-      json = await postJson('/API/Stores/Paged/', {
-        page,
-        entityId: entity?.Id, EntityId: entity?.Id, entityID: entity?.Id,
-        hierarchyNode: entity?.Description1, HierarchyNode: entity?.Description1,
-      });
+      json = await postJson('/API/Stores/Paged/', { page });
     } catch (e) {
       console.error(`[peak-detail-capture] Stores/Paged page ${page} failed -- ${e.message}. Stopping.`);
       break;

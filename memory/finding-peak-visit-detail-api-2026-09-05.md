@@ -115,22 +115,17 @@ CFV (EcoSure already had one via Propel; RGR and CFV never did).
    ASP.NET anti-forgery pattern almost always implies a paired session cookie exists even where
    this capture method doesn't surface it. Confirm the real mechanism (cookie name, MFA/SSO gate)
    before designing automation, same caution as before, just with a sharper hypothesis to test.
-4. 🔴 **CORRECTED 2026-09-05 (dispatch #230) — this item's own "27 stores / 3 pages" was never
-   actually measured this way; superseded below. Still OPEN, sharpened by direct measurement.**
-   A per-page-logged live run of `scripts/browser-peak-visit-detail-bulk-capture.js` measured
-   `Stores/Paged` directly: page 1 → 10 stores, page 2 → 7 stores, **page 3 → 0 stores, under the
-   identical `{stores:[...]}` shape that worked on pages 1-2** (genuinely empty, not an
-   unrecognized shape the extractor missed). `10 + 7 + 0 = 17`, pagination terminated cleanly —
-   this rules out "a later page silently dropped" (the failure class PRs #1138/#1139 fixed one
-   level down the chain). **But the owner then directly checked the PEAK UI itself under this same
-   login and confirmed all 27 stores are visible there** — so 17 is confirmed NOT PEAK's real
-   total for this account; `Stores/Paged` as currently called (`{page:N}`, no entity scoping) is
-   returning a genuine subset. Leading theory: `GetEntities`' response (called first in the chain,
-   per this file's own step 1) likely carries an entity/franchise id that needs to be passed into
-   `Stores/Paged` to scope it to the full org, and the capture script currently only logs that
-   response without using any field from it (a caveat this script's header comment already flagged
-   as unconfirmed before this measurement). Not yet verified — next step is inspecting `GetEntities`'
-   full response for such a field. See dispatch #230 for live status.
+4. ✅ **RESOLVED 2026-09-05 (dispatch #230) — this item's own "27 stores / 3 pages" was never
+   actually measured; the real cause is a simple off-by-one, confirmed by a direct cURL capture
+   from the PEAK UI's own store-list page.** `Stores/Paged` is **0-indexed** — `{"page":0}` is the
+   FIRST page, not `{"page":1}`. A capture script that started its loop at `page=1` always skipped
+   the true first page; for this account that landed on pages 1-2 (10+7=17 stores) and never
+   fetched page 0 (the missing 10). The owner independently confirmed the fix by calling pages
+   0/1/2 directly: **10 + 10 + 7 = 27**, matching the known store count exactly. An intermediate
+   entity-scoping theory (passing a `GetEntities` entity id into `Stores/Paged`) was tried and was
+   a dead end — the real UI call sends nothing beyond `{"page":N}`. `scripts/browser-peak-visit-
+   detail-bulk-capture.js` now starts its loop at `page=0`. See dispatch #230 for the full
+   diagnosis chain.
 5. ✅ **RESOLVED same day — owner ran the migration, import completed end-to-end.**
    `graded_visits.peak_detail` did not exist in production (`ALTER TABLE graded_visits ADD COLUMN
    IF NOT EXISTS peak_detail jsonb;`, added alongside the parser at PR #1123, had never actually

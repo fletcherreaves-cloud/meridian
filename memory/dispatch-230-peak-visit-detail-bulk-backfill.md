@@ -144,24 +144,20 @@ The script needed two live-run fix-forward passes before it worked (both shipped
   matching this dispatch's own Task 3 note that some visits will legitimately have no match).
   This is far beyond the original 2 manually-captured visits — Task 1/3 are functionally done.
 
-**Sharpened again same day, still OPEN — pagination itself is clean, but 17 is confirmed NOT the
-real total.** A per-page-logged re-run measured `Stores/Paged` page-by-page — page 1 → 10 stores,
-page 2 → 7 stores, **page 3 → 0 stores under the identical `{stores:[...]}` shape that worked on
-pages 1-2** (genuinely empty, not an unrecognized shape the extractor missed). `10 + 7 + 0 = 17`,
-pagination terminated cleanly with no dropped/misread page — so this specific failure mode (the
-class PRs #1138/#1139 fixed) is ruled out. **But the owner directly checked the PEAK UI itself
-under this same login and confirmed all 27 stores are visible there.** So `Stores/Paged` as this
-script currently calls it (`{page:N}`, no entity scoping) is returning a real subset, not the full
-org — most likely because it needs an entity/franchise id from `GetEntities` that the script
-currently only logs and never uses (see the script header's own long-standing caveat on this).
-`finding-peak-visit-detail-api-2026-09-05.md`'s old "27 stores / 3 pages" line has still been
-corrected (it was never actually measured that way) — but the underlying open question it gestured
-at (is `Stores/Paged` scoped correctly?) turns out to be real, just for a different reason than
-originally guessed. **Next step:** inspect `GetEntities`'s full response for an entity/franchise id
-and pass it into `Stores/Paged`; if fixed, expect 17 → 27. Task 1/3's real numbers stand regardless
-(190 visits captured / 189 enriched across the 17 stores this scoping did reach) — Task 2's scale
-estimate should be revisited once the entity-scoping fix is confirmed, since the real per-run call
-count will be larger across the full 27.
+**✅ RESOLVED same day — real root cause found via a direct cURL capture from the PEAK UI's own
+store-list page, not another guess.** `Stores/Paged` is **0-indexed** (`{"page":0}` is the FIRST
+page). This script started its loop at `page=1`, always skipping the true first page. For this
+account that meant landing on what the API calls pages 1 and 2 (10 + 7 = 17 stores) and never
+fetching page 0 (the missing 10) — a plain off-by-one, not an auth, scoping, or capture-shape bug.
+The owner independently confirmed this by calling pages 0/1/2 directly: **10 + 10 + 7 = 27**,
+matching the known store count exactly. The earlier entity-scoping attempt (passing `GetEntities`'
+entity id into `Stores/Paged`) was a dead end and has been removed — the real UI call sends nothing
+beyond `{"page":N}`. Fixed by starting the loop at `page=0`.
+This closes out the multi-round diagnosis chain: the "silently dropped page" theory (ruled out by
+the clean per-page log), the "PEAK UI shows more than the API" theory (true, but not because of
+scoping), and the entity-id guess (wrong) all preceded landing on the actual, simple cause. Task
+1/2/3 are now genuinely complete, pending one more live run across the corrected page range to
+confirm 27 stores and a proportionally larger visit count than the 190/189 measured across 17.
 
 **Fix attempted same day, NOT YET verified against a real run.** `GetEntities`' real shape is now
 confirmed: `{EntityTypes:[{EntityList:[{Id,Name,Description1,...}],EntityCount}]}`. The one live
