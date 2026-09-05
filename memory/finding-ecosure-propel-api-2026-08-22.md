@@ -1516,6 +1516,58 @@ history list) to find out. If such an endpoint exists, storing its output the sa
 is stored (verbatim into `modules`) would let any CFV/RGR visit be pulled up for full review too,
 not just its aggregate score.
 
+**Checked a fresh Propel HAR (2026-09-05), 57 entries — still unresolved, genuinely no data
+either way, not a negative finding.** All 12 `/api/visits` calls in this capture:
+`getThirdPartyFoodSafetyVisitReport` ×2 (the already-known EcoSure detail call, for a different
+store/visitId than the earlier capture — confirmed to return the identical field shape, nothing
+new), `getBrandProtectionVisits` ×1 and `getCfvHistory` ×1 (the already-known list endpoints, no
+new fields on the row — row keys are identical to what's already documented, including on an
+EcoSure-typed row that happened to appear in this store's `getBrandProtectionVisits` results),
+plus **five previously-undocumented actions, none of which are per-visit CFV/RGR detail**:
+- `getScoredVisitListResults` / `getScoredVisitChartResults` — an operator-level, YEAR-scoped
+  rollup across ALL stores under a hierarchy node for one `visitType` (0 and 4 were both
+  captured), e.g. `{childHierarchyNodeId, childHierarchyNodeName, visitResult: {visitQuantity,
+  scorePercentage, passPercentage, criticalFailPercentage, ...}, quality: {...}, service: {...},
+  cleanliness: {...}, shiftLeadership: {...}, foodSafety: {...}, people: {...},
+  healthAndSafety: {...}}` per store. This is a district-wide annual scorecard (looks like the
+  Propel Home dashboard's own rollup view), not a single visit — no `visitId`, no `visitDate` on
+  the rows. Possibly a useful independent cross-check source for the district-level numbers
+  someday, but it does not answer this question.
+- `getPaceSupportVisits` / `getMarketSupportVisits` / `getMarketAdditionalVisits` — small
+  per-store payloads, presumably the **non-scored** support/alignment visits this repo's own
+  `project-graded-visits-pace.md` already distinguishes from CFV/RGR/EcoSure (PACE+ Support
+  Visits, Market visits) — not examined further since they're explicitly non-scored by PACE's own
+  design, so unlikely to be what's needed here.
+
+**No individual CFV or RGR visit's own detail/report view was opened during this capture** — the
+browsing that produced it stayed at the district Home/rollup level and the CFV/RGR history lists,
+never drilled into one specific visit the way the EcoSure capture happened to (twice, for a
+different reason — those were the only genuinely-detail-level clicks in this session). So the
+open question from above is **still exactly as open as it was**, not narrowed toward yes or no.
+**The concrete next capture that would actually settle it:** from Propel's CFV or RGR history
+view (wherever a signed-in user browses to see a single store's past visits — the same page
+`browser-graded-visits-bulk-capture.js`'s `getCfvHistory`/`getBrandProtectionVisits` calls come
+from), click into ONE individual visit's own row/detail link and capture the resulting network
+request(s). Until that specific click is captured, this remains unknown rather than "checked and
+absent."
+
+**Owner's stated fallback (2026-09-05), recorded as a contingency, not a task to build now:** if
+Propel genuinely has no per-visit CFV/RGR detail endpoint, the plan is to look for that same
+per-question/comment/points detail on the PEAK site instead — a separate McDonald's system (see
+this repo's own `PEAK replaces GDCT` note in `project-graded-visits-pace.md`) — **once whatever
+PEAK pull is being built separately is finished.** No PEAK API pull exists in this repo today;
+this is a noted future direction, not in-flight work.
+
+**✅ UPDATE 2026-09-05, same day — the fallback found something before Propel did.** A live PEAK
+HAR capture confirmed a working per-visit detail API (`RoipSurvey/<visitId>`) with real per-
+question comments and scores for a real CFV visit — every question, not just cited/failed ones,
+strictly richer than EcoSure's own Propel capture. Full writeup, the enumeration chain, and what's
+still unconfirmed (RGR untested, EcoSure's presence in PEAK unconfirmed, real auth mechanism
+unclear from this capture): `memory/finding-peak-visit-detail-api-2026-09-05.md`. This may
+supersede the Propel per-visit-detail question for CFV/RGR rather than merely answer it — see
+that file's own "why this changes the plan" section. This paragraph's own Propel question stays
+open regardless (never confirmed either way there), but is now lower-priority.
+
 **2. Graded Visits panel has no date-range selector.** Confirmed by reading `src/views/graded-visits.js`:
 the panel's only filter is `activeLocs` (location) — `filtered` has no date-range predicate at
 all, so there's no way to scope the table/CSV/print views to a period. This is a real gap against
