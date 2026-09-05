@@ -45,7 +45,10 @@ create table if not exists public.customer_complaints (
   loc                       text    not null,          -- 5-digit NSN, zero-padded (graded_visits convention)
   issue_code                text,
   issue_sub_code            text,
-  incident_date             date    not null,          -- authoritative date for bucketing (owner-decided)
+  incident_date             date    not null,          -- authoritative date for bucketing (owner-decided);
+                                                          -- import-complaints-history.mjs's buildRow() falls
+                                                          -- back to received_date when the API omits
+                                                          -- incidentDate (measured 2026-09-05, real capture)
   received_date             date,
   case_status               text,
   abbreviated_customer_comments text,

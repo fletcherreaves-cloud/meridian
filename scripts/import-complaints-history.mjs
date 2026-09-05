@@ -34,6 +34,13 @@ const SEED_PATH = process.env.COMPLAINTS_SEED_PATH
 export const padLoc = loc => String(loc).padStart(5, '0');
 
 // One upsert-ready row from a parsed case (src/parsers/complaints.js's output shape).
+// incident_date falls back to received_date when the API omits incidentDate -- measured on the
+// first real capture (2026-09-05, 3033 raw entries): some cases (a mix of OPEN and CLOSED) come
+// back with no incidentDate at all, which the NOT NULL constraint on customer_complaints rejects
+// outright. received_date is the date the case was logged, which every real case has, and is the
+// closest available proxy for "which month does this belong to" when the true incident date is
+// unknown -- better than dropping the row (loses a real complaint) or relaxing the column to
+// nullable (defeats the whole point of the column: review-engine.js buckets by it).
 export function buildRow(row) {
   return {
     child_case_id: row.childCaseId,
@@ -41,7 +48,7 @@ export function buildRow(row) {
     loc: padLoc(row.store),
     issue_code: row.issueCode,
     issue_sub_code: row.issueSubCode,
-    incident_date: row.incidentDate,
+    incident_date: row.incidentDate || row.receivedDate || null,
     received_date: row.receivedDate,
     case_status: row.caseStatus,
     abbreviated_customer_comments: row.abbreviatedCustomerComments,
@@ -88,7 +95,20 @@ async function main() {
   const statusesSeen = [...new Set(parsed.map(r => r.caseStatus))];
   console.log(`[import-complaints-history] caseStatus value(s) seen: ${JSON.stringify(statusesSeen)}`);
 
-  const rows = parsed.map(buildRow);
+  const missingIncidentDate = parsed.filter(r => !r.incidentDate).length;
+  if (missingIncidentDate) {
+    console.warn(`[import-complaints-history] ${missingIncidentDate} case(s) had no incidentDate -- falling back to receivedDate for those (see buildRow's comment).`);
+  }
+
+  const allRows = parsed.map(buildRow);
+  // Backstop for the case neither date is present (not observed 2026-09-05, but incident_date is
+  // NOT NULL and a row missing both would fail the whole chunk otherwise) -- skip and report it
+  // rather than losing every row in that chunk to one bad case.
+  const rows = allRows.filter(r => r.incident_date);
+  const noDateAtAll = allRows.length - rows.length;
+  if (noDateAtAll) {
+    console.warn(`[import-complaints-history] ${noDateAtAll} case(s) had neither incidentDate nor receivedDate -- skipped (child_case_id: ${allRows.filter(r => !r.incident_date).map(r => r.child_case_id).join(', ')}).`);
+  }
   const CHUNK = 500;
   let saved = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
