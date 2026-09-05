@@ -143,6 +143,47 @@ rules).
 5. Does the HTML response's per-store drill-down (`DrillDown('<id>','10','Trend.aspx',...)`)
    expose per-store historical trend data through another endpoint worth capturing separately?
 
+## Follow-up captures, same day — Export and "Period End Reports" both dead-end the same way
+
+Three more owner-supplied HAR captures (78/98/157 entries), aimed at the two "not yet tested"
+shortcuts this file flagged above. Neither panned out — both are UI-label endpoints, not data:
+
+- **`GET /handlers/SaveExportReport.ashx?function=getdata`** (present in all three captures,
+  220KB response) — this looked promising by name and size, but its JSON body is a flat list of
+  **dialog label strings** (`SaveExcel`, `SavePDF`, `SaveCSV`, `SaveFavoritesTitle`,
+  `MaxExcelLimitReached`, etc. — ~70 keys) for the Export/Save dialog's own UI text, not report
+  data. Same shape as the already-documented `ReportViewer.ashx?function=getdata` dead end.
+- **No actual file download was ever captured** in any of the three sessions — a direct scan for
+  a `Content-Disposition: attachment` response header, or any Excel/CSV/PDF `Content-Type`, across
+  all three HARs (233 total entries) returned zero matches. Either the Export dialog was opened
+  but never clicked through to a specific format, or this HAR-export method doesn't record file
+  downloads triggered outside the page's normal fetch/XHR lifecycle (plausible — a real download
+  sometimes navigates or opens a new tab in a way DevTools' "Save all as HAR" can miss). **Cannot
+  yet distinguish these two cases.**
+- **New endpoint found, also a dead end**: `GET /handlers/HomepageComponents/
+  RAPeriodEndReportsComponent.ashx?function=getdata&showlist=true&onrapage=true` (a "Period End
+  Reports" widget, not previously known about) and its sibling `reportsandanalytics.ashx` — both
+  also return only UI label strings (`TitleLBL`, `NoReportsExist`, `HelpText`, etc.), not a report
+  list or file entries. Whatever `showlist=true` is supposed to list, this call doesn't carry it —
+  possibly a second, uncaptured call fires once the widget actually renders its list, or the list
+  lives on a page these captures never navigated to.
+- **Auth signal, sharpened by repetition**: all three of today's captures ALSO show zero `Cookie`
+  request header and zero `Set-Cookie` response header anywhere in `reporting.smg.com` traffic —
+  now true across 3 independent SMG captures (and, separately, both PEAK captures the same day).
+  With that many independent zero-cookie results from the same HAR-export method, the more likely
+  explanation has shifted: **this capture tool itself may not record the Cookie header at all**,
+  not that these sites are genuinely cookieless. Treat "no cookies visible in a HAR from this tool"
+  as inconclusive about a site's real auth mechanism going forward, for any future capture done the
+  same way — don't re-treat a repeat zero-cookie result as new evidence either way.
+
+**Net effect: the Export-button and Favorites-replay shortcuts are still unconfirmed, not ruled
+out.** The next capture that would actually settle it: open the Export dialog, pick a specific
+format (Excel or CSV), click through to completion, and confirm in DevTools whether a real
+downloadable file response appears (not just the dialog's own `getdata` label call) — and
+separately, click one of the three saved Favorites report links directly rather than building a
+fresh report, to see what `/Report.aspx?ID=<favorite-id>` (never actually requested in any of the
+four captures to date) returns.
+
 ## 🔒 Security note
 
 The captures included live session cookies (`ASP.NET_SessionId`, `BIGipServerreporting.smg.com_pool`,
