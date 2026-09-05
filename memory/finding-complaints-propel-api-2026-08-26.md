@@ -105,23 +105,42 @@ that half.
   answer.
 - **Per-STORE call** (`locationId`) — a full-estate pull is **27 calls**, same shape as the
   EcoSure CEV endpoint. Reuse the existing hierarchy-node map; no new store enumeration needed.
-- **`timeFrame=1` is confirmed = "YTD" among a real 5-option set, but the other 4 values are
-  still uncaptured.** Owner-captured (2026-08-26) screenshot of the Timeframe dropdown: **YTD,
-  Baseline YTD, Trailing 3 Months, Baseline Trailing 3 Months, History** — YTD was the option
-  highlighted/selected at capture time, corroborating `timeFrame=1` = YTD. **None of these five
-  is a single calendar month** — a real, new problem for wiring a monthly Performance Review
-  figure: there is no "this month" `timeFrame` option to request directly. The likely path is
-  requesting the widest option (`History`, once its numeric value is captured) and filtering
-  client-side by `receivedDate`/`incidentDate` into whatever period a review month needs — same
-  shape as how Meridian already treats other wide-pull-then-filter cloud streams. Capture the
-  remaining 4 values' actual `timeFrame=` numbers (open one at a time, read the resulting
-  request) before building anything.
-- **`rowsPerPage` cap — STILL UNTESTED**, despite being asked about directly (owner's reply was
-  an acknowledgment, not a measurement — do not read it as "confirmed fine"). The EcoSure
-  visit-list endpoint capped a requested `rowsPerPage=50` at 20 despite the ask, so **any client
-  must page until `results.length` reaches `totalCount`, never trust a large `rowsPerPage`
-  value** — assume the same caution here until someone actually requests e.g. `rowsPerPage=100`
-  and reads what comes back.
+- ✅ **RESOLVED 2026-09-05 — all 5 `timeFrame` values measured directly** (store 03708 Ardmore-
+  Broadway, live console probe, `v=802` — see the version-drift note below). `timeFrame=6` cleanly
+  **400 Bad Request**, confirming there is no 6th option; only 1–5 are real:
+
+  | `timeFrame` | `totalCount` | date pattern (5-row sample, ascending by `childCaseId`) | inferred label |
+  |---|---|---|---|
+  | 1 | 62 | Jan–Feb 2026 | **YTD** |
+  | 2 | 49 | 2024 – early 2025 | **Baseline YTD** (same YTD window, prior year) |
+  | 3 | 27 | mid-June 2026 onward | **Trailing 3 Months** |
+  | 4 | 14 | mid-2025, same months as `timeFrame=3` | **Baseline Trailing 3 Months** |
+  | 5 | 182 | starts Jan 2024 | **History** |
+
+  The labels are a strong inference (1:1 with the dropdown's own listed order, and every count/
+  date pattern fits its label's expected meaning — YTD > its year-ago baseline slightly, the two
+  trailing-3-months windows land on the same months a year apart, History dwarfs everything) but
+  were not confirmed by literally reading the dropdown's selected label at each value — a 10-second
+  visual check would make this certain rather than well-evidenced. **None of the five is a single
+  calendar month** — confirmed, not just theorized. For a monthly Performance Review figure, pull
+  `timeFrame=5` (History) and filter client-side by `incidentDate` into whatever period is needed —
+  same wide-pull-then-filter shape Meridian already uses for other cloud streams.
+- ✅ **RESOLVED 2026-09-05 — `rowsPerPage` does NOT cap, unlike EcoSure's endpoint.** Measured
+  directly at `timeFrame=1` (`totalCount=62`): `rowsPerPage=5`→5 results, `20`→20, `50`→50,
+  `100`→62 (topped out at the real total, not an artificial ceiling below it). A real pull can
+  request a large `rowsPerPage` and get everything in one call per store per `timeFrame` — no
+  EcoSure-style forced pagination needed, though paging defensively until `results.length` reaches
+  `totalCount` is still the safer general pattern for a store with more cases than any guessed
+  number.
+- ⚠️ **NEW finding 2026-09-05: the `v=` query parameter is a live, drifting Propel build number,
+  not a stable API version — do not hardcode it long-term.** The original 2026-08-26 capture used
+  `v=786`; by 2026-09-05 the real UI was sending `v=802` for both `customer-care` and `navigation`
+  (`getDescendants`) calls, and every request using the stale `786` value failed with a uniform
+  `409 Conflict` regardless of `timeFrame`/`rowsPerPage` — a version-gate rejection, not a data or
+  auth problem (confirmed by the identical failure across 10 varied requests, and by success the
+  moment `v` was corrected). **Any future capture or pull must re-derive `v=` from a fresh live
+  request each time it's built**, not reuse a value recorded in an old finding file — this applies
+  to every Propel endpoint, not just this one.
 - **Only `CLOSED` was observed** — whether `caseStatus` has other values (open/pending) and
   whether those should count toward the metric is unconfirmed.
 
@@ -161,10 +180,12 @@ smaller dispatch. Hold until the owner has time to think it through.
 ## What remains open before any pull is built
 
 1. ~~What does `/100K` normalize against?~~ **Answered: guest count.**
-2. Capture the other 4 `timeFrame=` values (Baseline YTD / Trailing 3 Months / Baseline Trailing
-   3 Months / History) and confirm there's genuinely no single-month option — if there isn't,
-   design the wide-pull-then-filter-by-date approach explicitly rather than defaulting into it.
-3. Does `rowsPerPage` actually cap, and at what value? (asked, not yet measured)
+2. ~~Capture the other 4 `timeFrame=` values and confirm there's genuinely no single-month
+   option.~~ **Answered 2026-09-05: all 5 values measured (1=YTD, 2=Baseline YTD, 3=Trailing 3
+   Months, 4=Baseline Trailing 3 Months, 5=History), `timeFrame=6` 400s confirming no 6th option,
+   and confirmed none is a single calendar month** — see the table above.
+3. ~~Does `rowsPerPage` actually cap, and at what value?~~ **Answered 2026-09-05: no cap observed
+   up to 100 (topped out at the real `totalCount` of 62, not an artificial ceiling).**
 4. Are there `caseStatus` values besides `CLOSED`, and should they be included?
 5. Does a `-` prefixed `issueSubCode` like "Charged - Equipment or Operations Issue" ever appear
    with real encoding quirks (the raw payload used a plain hyphen, not an en-dash, unlike this
