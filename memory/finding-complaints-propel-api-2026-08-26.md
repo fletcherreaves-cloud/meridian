@@ -117,14 +117,11 @@ that half.
   | 4 | 14 | mid-2025, same months as `timeFrame=3` | **Baseline Trailing 3 Months** |
   | 5 | 182 | starts Jan 2024 | **History** |
 
-  The labels are a strong inference (1:1 with the dropdown's own listed order, and every count/
-  date pattern fits its label's expected meaning — YTD > its year-ago baseline slightly, the two
-  trailing-3-months windows land on the same months a year apart, History dwarfs everything) but
-  were not confirmed by literally reading the dropdown's selected label at each value — a 10-second
-  visual check would make this certain rather than well-evidenced. **None of the five is a single
-  calendar month** — confirmed, not just theorized. For a monthly Performance Review figure, pull
-  `timeFrame=5` (History) and filter client-side by `incidentDate` into whatever period is needed —
-  same wide-pull-then-filter shape Meridian already uses for other cloud streams.
+  ✅ **Owner-confirmed 2026-09-05 by reading the actual dropdown: the labels match exactly as
+  inferred above.** No longer just well-evidenced — visually verified. **None of the five is a
+  single calendar month.** For a monthly Performance Review figure, pull `timeFrame=5` (History)
+  and filter client-side by `incidentDate` into whatever period is needed — same wide-pull-then-
+  filter shape Meridian already uses for other cloud streams.
 - ✅ **RESOLVED 2026-09-05 — `rowsPerPage` does NOT cap, unlike EcoSure's endpoint.** Measured
   directly at `timeFrame=1` (`totalCount=62`): `rowsPerPage=5`→5 results, `20`→20, `50`→50,
   `100`→62 (topped out at the real total, not an artificial ceiling below it). A real pull can
@@ -144,23 +141,21 @@ that half.
 - **Only `CLOSED` was observed** — whether `caseStatus` has other values (open/pending) and
   whether those should count toward the metric is unconfirmed.
 
-## 💡 Proposed resolution for "no single-month Timeframe" — a recommendation, not a decision
+## ✅ RESOLVED 2026-09-05 — design decision made: wide pull, filter by date at read time
 
-Raised to the owner 2026-08-26; his response was *"not sure yet how we resolve that"* — genuinely
-open, not something to default into. Recorded here as the PM's recommendation for whenever he
-decides, not as settled design:
+Raised to the owner 2026-08-26; his response then was *"not sure yet how we resolve that"* —
+genuinely open. **Decided 2026-09-05: pull the widest window (`History`, `timeFrame=5`) once,
+store every case with its own `incidentDate`, and bucket into whatever calendar month a review
+needs by filtering the STORED data — never by asking Propel for "just this month."** Owner's own
+words confirming the approach: *"each case is dated, we can infer monthly data from there."**
 
-**Pull the widest window once (`History`), store every case with its own `incidentDate` (the
-owner's working answer to which date is authoritative, see below), and bucket into whatever
-calendar month a review needs by filtering the STORED data — never by asking Propel for "just
-this month."** This is the same "pull wide, filter by period at read time"
-shape Meridian already uses for other cloud streams (e.g. auto-first metric sourcing across DAR/
-Glimpse/Sales Ledger), not a new pattern. Concretely, this means a new Supabase table (with
-`tenant_id`+RLS per the standing "new stream" checklist), an on-demand Playwright pull (same
-persistent-profile design as EcoSure, a Sync button, never scheduled), and `autoPopulateKPIs`
-filtering that table's rows by whichever date field is authoritative into the review's month —
-matching how `metricAvg(ds, loc, range, ...)` already filters other per-day sources by a date
-range today.
+This is the same "pull wide, filter by period at read time" shape Meridian already uses for other
+cloud streams (e.g. auto-first metric sourcing across DAR/Glimpse/Sales Ledger), not a new
+pattern. Concretely, this means a new Supabase table (with `tenant_id`+RLS per the standing "new
+stream" checklist), an on-demand Playwright pull (same persistent-profile design as EcoSure, a
+Sync button, never scheduled), and `autoPopulateKPIs` filtering that table's rows by whichever
+date field is authoritative into the review's month — matching how `metricAvg(ds, loc, range, ...)`
+already filters other per-day sources by a date range today.
 
 **One sub-question owner-answered (2026-08-26, hedged — "pretty sure it is incident date"):**
 `incidentDate` (when the complaint actually happened) is the field to bucket by, not
@@ -175,7 +170,8 @@ per the owner's own hedge; confirm if it matters for a real number someone will 
 
 **This is real scope, not a quick fix** — matches the EcoSure endpoint's own build complexity
 (on-demand pull + new table + Sync button), not something to build opportunistically alongside a
-smaller dispatch. Hold until the owner has time to think it through.
+smaller dispatch. The design question is resolved; the build itself is a real dispatch-sized task
+whenever it's picked up.
 
 ## What remains open before any pull is built
 
