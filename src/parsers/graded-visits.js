@@ -374,3 +374,77 @@ export function parseCfvBulkVisit(v, storeMeta = {}) {
     modules,
   };
 }
+
+// ── PEAK per-visit detail -- from peak.mcd.com's Visit/RoipSurvey/<visitId> ────────────────────
+// PEAK is a SEPARATE McDonald's system from Propel ("PEAK replaces GDCT",
+// memory/project-graded-visits-pace.md) that runs the actual visit-scoring survey. Its RoipSurvey
+// response carries EVERY question asked on a visit (not just the cited/failed ones, unlike
+// EcoSure's own Propel capture above), each with full question text, score, possible score,
+// critical flag, and a per-question comment field -- confirmed populated with real inspector
+// comments on a real Customer First Visit (memory/finding-peak-visit-detail-api-2026-09-05.md).
+//
+// Unlike every other parser in this file, this does NOT produce a standalone graded_visits row.
+// PEAK's own VisitId is a DIFFERENT id space than Propel's (never confirmed to coincide for the
+// same real-world visit -- see that finding file's own open questions), so treating it as a
+// primary key here would risk either silent duplicate rows or silently-wrong row matching. This
+// is designed to ENRICH an existing graded_visits row instead, matched by the SAME
+// (loc, visit_date, report_type) key every other writer in this file already uses -- a key this
+// repo has already proven reliable, unlike the unconfirmed cross-system visitId. See
+// scripts/import-peak-visit-detail.mjs for how the enrichment is actually applied (a targeted
+// UPDATE on peak_detail only, never an upsert, so it can never clobber the row's other columns --
+// the same full-row-replace trap this file's other importers already guard against).
+const PEAK_VISIT_TYPE_TO_REPORT_TYPE = { 3801: 'CFV', 3781: 'RGR' };
+
+// PEAK's VisitDate wire format observed as "8/19/2026 12:00:00 AM" -- a plain Date parse handles
+// it (and a bare "8/19/2026"). Matches this file's "unparseable date is a skip, not a guess"
+// convention used by every other date field here.
+function _peakDateISO(s) {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+// RoipSurvey nests RootCategories -> SubCategories (recursively) -> Questions[]. Flattens the
+// whole tree into one array, carrying each question's category path (e.g. "Curbside >
+// Cleanliness") since a Questions entry doesn't repeat its own ancestry.
+function _peakFlattenQuestions(categories, path = []) {
+  const out = [];
+  for (const c of categories || []) {
+    const here = c?.Name ? [...path, c.Name] : path;
+    for (const q of c?.Questions || []) {
+      out.push({
+        code: q?.ShortCode ?? null,
+        category: here.join(' > '),
+        text: q?.Text ?? null,
+        comment: q?.Comment ?? null,
+        score: q?.Score ?? null,
+        possibleScore: q?.PossibleScore ?? null,
+        isCritical: q?.IsCritical === true,
+      });
+    }
+    out.push(..._peakFlattenQuestions(c?.SubCategories, here));
+  }
+  return out;
+}
+
+export function parsePeakRoipVisit(input) {
+  const v = typeof input === 'string' ? JSON.parse(input) : (input || {});
+  if (v.Success === false) return null; // PEAK's own explicit failure flag -- never guess past it
+  const reportType = PEAK_VISIT_TYPE_TO_REPORT_TYPE[v?.VisitDetails?.VisitTypeId] ?? null;
+  const questions = _peakFlattenQuestions(v.RootCategories);
+  return {
+    reportType,                                          // null = an unmapped visit type; caller skips
+    peakVisitId: v?.VisitId ?? null,                      // PEAK's own id -- NOT the join key, see above
+    store: v?.RestaurantInfo?.LocalCode ?? null,          // PEAK gives the NSN directly, no hierarchy-node
+                                                           // translation needed (unlike Propel)
+    name: v?.RestaurantInfo?.Name ?? null,
+    dateISO: _peakDateISO(v?.VisitDetails?.VisitDate),
+    // Real named individuals -- tokenize before persisting (get_or_create_employee_token(), same
+    // as EcoSure's reviewerName above), never store plaintext.
+    auditorName: v?.VisitDetails?.AuditorsName ?? v?.VisitDetails?.VisitDoneByName ?? null,
+    visitComment: v?.VisitDetails?.Comment ?? null,
+    questionCount: questions.length,
+    commentedCount: questions.filter(q => q.comment).length,
+    questions,
+  };
+}
