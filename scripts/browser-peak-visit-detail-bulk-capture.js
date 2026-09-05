@@ -114,8 +114,22 @@
   // a fresh HAR capture.
   function firstArray(json) {
     if (Array.isArray(json)) return json;
-    for (const key of ['results', 'Results', 'items', 'Items', 'data', 'Data', 'stores', 'Stores', 'entities', 'Entities']) {
+    for (const key of [
+      'results', 'Results', 'items', 'Items', 'data', 'Data', 'stores', 'Stores', 'entities', 'Entities',
+      // GetStoreDetails-specific guesses, added after a live run showed Stores/Paged uses lowercase
+      // 'stores' (not in the original list above, tried first) -- same "confirm one shape, don't
+      // assume the next one matches" caution applies here since this endpoint's array key is still
+      // unconfirmed as of this comment.
+      'visits', 'Visits', 'visitHistory', 'VisitHistory', 'visitList', 'VisitList', 'history', 'History',
+    ]) {
       if (Array.isArray(json?.[key])) return json[key];
+    }
+    // Fall back to ANY array-valued property on the object, so an unguessed key still works instead
+    // of silently returning 0 visits -- logged by the caller either way via the raw-response dump.
+    if (json && typeof json === 'object') {
+      for (const v of Object.values(json)) {
+        if (Array.isArray(v)) return v;
+      }
     }
     return null;
   }
@@ -165,6 +179,7 @@
 
   const visitsOut = [];
   let cfvRgrVisitCount = 0;
+  let loggedFirstStoreDetails = false;
   for (const store of stores.slice(0, MAX_STORES)) {
     const storeId = pickId(store);
     const storeName = pickName(store);
@@ -181,7 +196,11 @@
       console.warn(`[peak-detail-capture] ${storeName} (${storeId}): GetStoreDetails failed -- ${e.message}`);
       continue;
     }
-    const allVisits = firstArray(details) || (Array.isArray(details) ? details : []);
+    const allVisits = firstArray(details) || [];
+    if (!loggedFirstStoreDetails) {
+      loggedFirstStoreDetails = true;
+      console.log(`[peak-detail-capture] GetStoreDetails raw response for ${storeName} (for shape confirmation only):`, details);
+    }
     const matching = allVisits.filter(v => REPORT_VISIT_TYPE_IDS.has(v?.VisitTypeId));
     console.log(`[peak-detail-capture] ${storeName} (${storeId}): ${allVisits.length} total visit(s), ${matching.length} CFV/RGR`);
 
