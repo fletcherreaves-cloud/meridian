@@ -54,6 +54,55 @@ function VisitPatternBar({ patterns }) {
 // excluded from "components" displays, rather than crashing them.
 export const moduleEntries = v => Object.entries(v.modules || {}).filter(([, m]) => m && typeof m === 'object' && typeof m.pct === 'number');
 const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
+
+// PEAK per-question detail (peak_detail, enriched via scripts/import-peak-visit-detail.mjs --
+// see memory/finding-peak-visit-detail-api-2026-09-05.md) -- every question asked on the visit,
+// not just cited/failed ones, richer than Propel's own EcoSure-only detail capture. Defaults to
+// showing only the COMMENTED questions (the actionable ones -- a real RGR visit ran 193 questions
+// with 15 commented; showing all 193 by default would bury the signal), with a toggle to see the
+// full set. `auditor` is a tokenized id (get_or_create_employee_token(), never a plaintext name)
+// -- deliberately not resolved to a display name here, matching this repo's standing caution for
+// real captured personnel identity; only the visit comment and per-question comments (business
+// content, not personnel-identifying) are shown.
+export function PeakDetailBlock({ v }) {
+  const { useState } = React;
+  const [showAll, setShowAll] = useState(false);
+  const pd = v.peak_detail;
+  if (!pd) return null;
+  const questions = pd.questions || [];
+  const commented = questions.filter(q => q.comment);
+  const shown = showAll ? questions : commented;
+  const th3 = { padding: '4px 8px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', textAlign: 'left', borderBottom: '.5px solid var(--bdr)' };
+  const td3 = { padding: '4px 8px', fontSize: 10.5, verticalAlign: 'top' };
+  return div({ style: { padding: '10px 14px', background: 'rgba(167,139,250,.04)', borderBottom: '.5px solid var(--bdr)' } },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 } },
+      span({ style: { fontSize: 9, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '.5px' } }, '🔎 PEAK Visit Detail'),
+      span({ style: { fontSize: 10, color: 'var(--text3)' } }, `${pd.questionCount} question(s) · ${pd.commentedCount} with comments`),
+      questions.length > commented.length && btn({
+        onClick: () => setShowAll(s => !s),
+        style: { marginLeft: 'auto', padding: '2px 9px', fontSize: 9, fontWeight: 600, borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', cursor: 'pointer' },
+      }, showAll ? 'Show only commented' : `Show all ${questions.length}`)),
+    pd.visitComment && div({ style: { fontSize: 10.5, color: 'var(--text2)', marginBottom: 8, padding: '6px 8px', background: 'var(--surf)', borderRadius: 5, fontStyle: 'italic' } }, '"' + pd.visitComment + '"'),
+    shown.length === 0
+      ? div({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'No commented questions on this visit.')
+      : div({ style: { overflowX: 'auto' } },
+          h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 520 } },
+            h('thead', null, h('tr', null,
+              h('th', { style: th3 }, 'Category'),
+              h('th', { style: th3 }, 'Question'),
+              h('th', { style: { ...th3, textAlign: 'right' } }, 'Score'),
+              h('th', { style: th3 }, 'Comment'))),
+            h('tbody', null, ...shown.map((q, i) => {
+              const scoreLabel = (q.score != null && q.possibleScore != null) ? `${q.score}/${q.possibleScore}` : '—';
+              return h('tr', { key: i, style: { borderBottom: '.5px solid var(--bdr)' } },
+                h('td', { style: { ...td3, color: 'var(--text3)', whiteSpace: 'nowrap' } }, q.category || '—'),
+                h('td', { style: { ...td3, color: 'var(--text)' } },
+                  q.text || '—',
+                  q.isCritical && span({ style: { marginLeft: 5, fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: '#ef444422', color: '#ef4444' } }, 'CRITICAL')),
+                h('td', { style: { ...td3, textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' } }, scoreLabel),
+                h('td', { style: { ...td3, color: 'var(--text2)', fontStyle: q.comment ? 'italic' : 'normal' } }, q.comment || '—'));
+            })))));
+}
 const fmtPct = v => v == null ? '—' : v.toFixed(2) + '%';
 const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
 // DAR timing is Σuntilserve/Σtrans/1000 seconds.
@@ -692,7 +741,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
                       : span({ style: { color: 'var(--text2)' } }, v.channel || '—');
                     return h(React.Fragment, { key: v.id || i },
                       h('tr', { onClick: () => toggleContext(v), title: 'Show operational context at time of visit', style: { cursor: 'pointer', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' } },
-                        h('td', { style: { ...tdS, textAlign: 'left' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV')),
+                        h('td', { style: { ...tdS, textAlign: 'left' } },
+                          span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV'),
+                          v.peak_detail && span({ title: `PEAK detail: ${v.peak_detail.questionCount} questions, ${v.peak_detail.commentedCount} commented`, style: { marginLeft: 4, fontSize: 9 } }, '🔎')),
                         h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } },
                           storeName(v.store),
                           span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 5 } }, '#' + locNum(v.store))),
@@ -703,7 +754,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
                         h('td', { style: { ...tdS, fontFamily: 'var(--mono)', fontWeight: 800, color: scoreColor(v.score) } }, v.score != null ? fmtPct(v.score) : '—'),
                         h('td', { style: tdS }, v.pass == null ? '—' : span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: (v.pass ? '#10b981' : '#ef4444') + '22', color: v.pass ? '#10b981' : '#ef4444' } }, v.pass ? '✓ Pass' : '✗ Fail')),
                         h('td', { style: { ...tdS, color: 'var(--text3)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' } }, '›')),
-                      isOpen && h('tr', null, h('td', { colSpan: 7, style: { padding: 0 } }, renderContext(v))));
+                      isOpen && h('tr', null, h('td', { colSpan: 7, style: { padding: 0 } },
+                        h(PeakDetailBlock, { key: 'peak', v }),
+                        renderContext(v))));
                   })))),
             ]),
       // Footer
