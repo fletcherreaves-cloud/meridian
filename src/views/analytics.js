@@ -1966,6 +1966,28 @@ const selectorValueToOrgFilter = (v) => {
   if (v.level==='store') return v.id ? 'store:'+v.id : 'all';
   return 'all';
 };
+// Rule -> issue-bucket map for District Pulse's "This Week's Focus" (Decisions Panel Inventory
+// salvage #7, decisions-panel-inventory-2026-08-10.md). Was `f.m.includes(...)` substring
+// matching on finding prose -- exactly the fragile pattern that doc warned against: "Rebuild
+// against the structured item.category field, NOT the current substring-matching on finding
+// prose." Measured a real bug from it (2026-09-06): `f.m.includes('OEPE')` also matched
+// `oepeOk` ("STRENGTH — OEPE...", a POSITIVE finding with t:'ok'), plus `oepeRecord` (a record-
+// achievement callout) and `oepeTrend` (a leading trend warning, not "currently slow") --
+// inflating the oepe bucket with non-issues. Rebuilt against `f.rule`, which is finer-grained
+// than `f.category` (category pools cashOS/tRedAfter/deposit/posOver/discounts all under
+// 'Controls', too coarse to separate this feature's 7 buckets) — `f.rule` is exactly the ID
+// `FINDING_RULES` (engine/finding-rules.js) keys off, the same taxonomy `attachFindingMeta`
+// already stamps on every finding via `engine/pipeline.js:537`, not a new one invented here.
+export const ISSUE_RULE_MAP = {
+  cashOS: 'cash',
+  tRedAfter: 'tred', compound: 'tred', // both are T-Red-driven integrity signals
+  deposit: 'deposit',
+  overtime: 'overtime',
+  labor: 'labor',
+  oepe: 'oepe', // deliberately NOT oepeOk/oepeRecord/oepeTrend — see header comment above
+  floorCrit: 'scheduling', floorWatch: 'scheduling',
+};
+
 function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
   const [orgFilter, setOrgFilter] = uSt('all');
@@ -2032,13 +2054,8 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
     const issueCounts={cash:0,labor:0,oepe:0,tred:0,deposit:0,overtime:0,scheduling:0};
     tiered.forEach(s=>{
       s.findings.forEach(f=>{
-        if(f.m.includes('CASH')&&(f.m.includes('INTEGRITY')||f.m.includes('O/S'))) issueCounts.cash++;
-        else if(f.m.includes('T-Red')&&f.t!=='ok') issueCounts.tred++;
-        else if(f.m.includes('DEPOSIT')) issueCounts.deposit++;
-        else if(f.m.includes('OVERTIME')||f.m.includes('OT')) issueCounts.overtime++;
-        else if(f.m.includes('LABOR')) issueCounts.labor++;
-        else if(f.m.includes('OEPE')) issueCounts.oepe++;
-        else if(f.m.includes('SCHEDULING')||f.m.includes('FLOOR')) issueCounts.scheduling++;
+        const bucket = ISSUE_RULE_MAP[f.rule];
+        if(bucket) issueCounts[bucket]++;
       });
     });
     const topIssue = Object.entries(issueCounts).sort((a,b)=>b[1]-a[1])[0];
