@@ -37,12 +37,16 @@ export default defineConfig({
     // suite run was taking 10x longer than expected and surfacing "ratchet" failures that turned
     // out to be stale worktree snapshots, not the current tree). Vitest's `exclude` OVERRIDES its
     // own defaults rather than extending them, so this list carries vitest's real defaults
-    // (https://vitest.dev/config/#exclude) plus the one addition.
+    // (https://vitest.dev/config/#exclude) plus this repo's own additions.
     exclude: [
       '**/node_modules/**', '**/dist/**', '**/cypress/**',
       '**/.{idea,git,cache,output,temp}/**',
       '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
       '**/.claude/worktrees/**',
+      // e2e/*.spec.js files use @playwright/test's own test()/expect(), not vitest's — they run
+      // via `npm run test:e2e` (playwright.config.js), never through vitest. Without this,
+      // vitest's default *.spec.js glob picks them up and fails trying to run them as unit tests.
+      '**/e2e/**',
     ],
   },
 })

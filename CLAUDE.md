@@ -30,6 +30,11 @@ Built and used by the same person (Fletcher Reaves, owner + developer). Currentl
 - `npm run dev` — local dev server
 - `npm run build` — production build (must pass clean)
 - `npm test` — Vitest suite (33+ tests)
+- `npm run test:e2e` — Playwright E2E smoke tests (`e2e/`, added 2026-09-06). Only 2 tests today
+  (app-shell boots, real nav renders) — `AuthGate.js` bypasses auth on `localhost`, so no test
+  credentials are needed, but that also means no authenticated/RBAC-scoped flow is covered yet.
+  Not wired into CI — see `e2e/README.md` for scope and the exact reasoning. Uses
+  `/opt/pw-browsers/chromium` directly (do not run `playwright install`).
 
 ---
 

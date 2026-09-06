@@ -36,3 +36,9 @@ supabase/.temp/
 
 # Pre-write backups from one-time cleanup scripts (real production row data — never commit)
 /backups/
+
+# Playwright E2E test output
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
