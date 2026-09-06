@@ -897,9 +897,24 @@ first below.
   are disabled"`). That is an account-wide rotation covering every legacy key, service-role
   included — whatever key was pasted into the 2026-08-07 chat log is dead. Do not re-raise this as
   open; if a *new* leak is ever suspected, that's a fresh finding, not a reopening of this one.
-- [ ] `xlsx@0.18.5` has unpatched CVEs on npm (`project-audit-2026-07-27.md` B3) — deferred by its
-  own follow-on doc (`project-security-notes.md`) until untrusted uploads exist; noted here so the
-  two files aren't rediscovered as separate gaps later.
+- [ ] ⚠️ **RE-CHECKED 2026-09-06 — the deferral still holds, but the fix path is narrower than it
+  looks.** `xlsx@0.18.5` has 2 real high-severity CVEs (`npm audit`: prototype pollution, fixed
+  ≥0.19.3; ReDoS, fixed ≥0.20.2) and `fixAvailable: false` — SheetJS stopped publishing patched
+  releases to the npm registry after 0.18.5 (0.18.5 is npm's actual latest). Their own fix is
+  distributed only via `cdn.sheetjs.com`, which **this agent environment's network policy
+  explicitly blocks** (403 policy denial, confirmed via the proxy status endpoint) — not
+  attemptable from here at all. A community npm mirror exists (`@e965/xlsx`, currently 0.20.3,
+  a straight republish of SheetJS's own releases) that WOULD resolve both CVEs and is
+  npm-registry-installable, but swapping to it means trusting a different, third-party
+  maintainer for a dependency imported in 14 files — a real supply-chain decision, not a version
+  bump, and not made unilaterally here. `xlsx@0.18.5` has unpatched CVEs on npm
+  (`project-audit-2026-07-27.md` B3) — deferred by its own follow-on doc
+  (`project-security-notes.md`) until untrusted uploads exist; noted here so the two files aren't
+  rediscovered as separate gaps later. That deferral reasoning (single-owner self-uploads today,
+  low practical exposure) still holds — but if/when a second operator starts uploading their own
+  files, this stops being self-inflicted-only risk and the `@e965/xlsx` swap (or another
+  npm-registry-installable patched fork, if a better one turns up) is worth an explicit go/no-go
+  from the owner rather than staying deferred by default.
 - [x] ✅ **CORRECTED 2026-09-03 (quick-wins morning sweep) — already fixed.** Re-verified live:
   `lazyPanel()` (`src/features/session.js`) gives every panel its own `ErrorBoundary` (dispatch
   #79) — a `compact` variant, opt-in and off by default, so the original top-level app boundary in
