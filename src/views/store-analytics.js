@@ -6,6 +6,7 @@ import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModel
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { computeOepeDollarGap } from '../engine/revenue-opportunity.js';
 import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
@@ -657,23 +658,8 @@ function computeRevenueOpportunity(store, ds, settings) {
   const result = {};
 
   // 1. OEPE Dollar Gap — what is each second of OEPE improvement worth?
-  if(p.oepe>0 && t.tOepe>0 && p.oepe>t.tOepe) {
-    const gapSec = p.oepe - t.tOepe;
-    const dtGCPerHour = p.dtGC>0 ? p.dtGC : 50; // cars/hour estimate
-    const avgCheck = p.avgCheck>0 ? p.avgCheck : (p.laborPct>0&&p.tpph>0?9.50:8.50);
-    // At current OEPE, cars/hr = 3600/OEPE. At target, = 3600/tOepe.
-    const currentRate = 3600/p.oepe;
-    const targetRate  = 3600/t.tOepe;
-    const addlCarsPerHour = Math.max(0, targetRate - currentRate);
-    const revenuePerHour  = addlCarsPerHour * avgCheck;
-    const peakHours = 4; // conservative: breakfast+lunch peak
-    const dailyOpportunity = revenuePerHour * peakHours;
-    const monthlyOpportunity = dailyOpportunity * 30;
-    const valuePerSecond = dailyOpportunity / gapSec;
-    result.oepe = {gapSec, addlCarsPerHour:+addlCarsPerHour.toFixed(2),
-      dailyOpportunity:+dailyOpportunity.toFixed(2), monthlyOpportunity:+monthlyOpportunity.toFixed(0),
-      valuePerSecond:+valuePerSecond.toFixed(2), avgCheck, dtGCPerHour};
-  }
+  const oepeGap = computeOepeDollarGap(p, t);
+  if(oepeGap) result.oepe = oepeGap;
 
   // 2. DT Parked % Optimization — where is the efficiency sweet spot?
   if(p.park>0 && ds && ds.peaksSvcRows) {

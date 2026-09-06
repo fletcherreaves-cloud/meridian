@@ -135,6 +135,16 @@ describe('slowDT', () => {
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
   });
+
+  it('defaults dollars to 0 when the caller does not supply it (unchanged pre-#4 behavior)', () => {
+    const items = slowDT([{ loc: 'a', dt: 300, target: 240 }], nm);
+    expect(items[0].dollars).toBe(0);
+  });
+
+  it('passes through a supplied dollars value (Decisions Panel salvage #4)', () => {
+    const items = slowDT([{ loc: 'a', dt: 300, target: 240, dollars: 450 }], nm);
+    expect(items[0].dollars).toBe(450);
+  });
 });
 
 describe('transferOpportunities', () => {

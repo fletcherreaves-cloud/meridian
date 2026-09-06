@@ -94,7 +94,12 @@ export function staleData(ageDays) {
   return [];
 }
 
-// Slow drive-thru — stores over their DT serve-time target. `rows` = [{loc, dt, target}].
+// Slow drive-thru — stores over their DT serve-time target. `rows` = [{loc, dt, target,
+// dollars?}]. `dollars` (Decisions Panel Inventory salvage #4) is optional and defaults to 0 —
+// engine/revenue-opportunity.js's computeOepeDollarGap() is the real per-store $ value when a
+// caller has it (see attention-now.js's useAttentionFeed); this fills the gap that detector's
+// own header comment used to name ("slowDT currently reports dollars: 0, so slow drive-thrus
+// cannot rank against FOB or sales items") without forcing every caller to supply it.
 export function slowDT(rows = [], storeName = String, { minOver = 15 } = {}) {
   const out = [];
   for (const r of (rows || [])) {
@@ -104,7 +109,7 @@ export function slowDT(rows = [], storeName = String, { minOver = 15 } = {}) {
         category: 'Speed', icon: '🚗',
         title: `${storeName(r.loc)} — drive-thru slow`,
         detail: `${Math.round(r.dt)}s OEPE vs ${Math.round(r.target)}s target (+${Math.round(r.dt - r.target)}s)`,
-        dollars: 0, loc: r.loc, nav: 'signals',
+        dollars: r.dollars || 0, loc: r.loc, nav: 'signals',
       });
     }
   }

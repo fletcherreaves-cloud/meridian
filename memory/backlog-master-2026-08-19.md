@@ -1028,8 +1028,9 @@ first below.
   metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
   timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail
   (`attribution-validity-register-login.md`).
-- [ ] ✅ **3 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap, cross-store transfer
-  matcher, duplicate-WRIN detector.** New `forecastCalibrationGap` detector in
+- [ ] ✅ **4 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap, cross-store transfer
+  matcher, duplicate-WRIN detector, OEPE-dollarization (see corrections below).** New
+  `forecastCalibrationGap` detector in
   `src/engine/attention-feed.js`, wired into `buildAttentionFeed` (runs after every other
   detector, since it needs to know what they already flagged per store) and into the live call
   site (`attention-now.js`'s `useAttentionFeed`, sourcing per-store MAPE from
@@ -1057,12 +1058,30 @@ first below.
   than risk a wrong field-mapping guess. 12 new tests total across both detectors +
   the refactor's own regression coverage (existing tests re-passed unchanged, import path
   updated).
-  **3 remain unbuilt**, each needs porting real logic from a genuinely retired `revintel`/
-  `priority-brief` panel this pass did not locate: OEPE-dollarization for slow-DT ranking
-  (`slowDT` currently reports `dollars: 0`), daypart-asymmetry detector (explanation copy already
-  written per that doc), "This Week's Focus" problem-type ranking (⚠️ that doc's own note:
-  rebuild against the structured `item.category` field, not the current substring-matching on
-  finding prose).
+  ⚠️ **Second correction, same day: `revintel` is not retired either.** It's the live "Revenue"
+  panel (`panel-registry.js` id `revintel`, `kind:'optional'`) rendering `RevenueIntelligence`
+  (`views/store-analytics.js`) — and that panel's own subtitle already reads *"OEPE dollar value
+  · Unrealized revenue · **Daypart erosion** · Competitive pressure signals..."* Both OEPE-
+  dollarization AND the daypart-asymmetry detector (items 4 and 5) were **already fully built and
+  shipped inside that panel** — `computeRevenueOpportunity`'s block 1 (`valuePerSecond`) and block
+  3 (`erosion`/`competitiveSignal`/asymmetric-decline explanation copy, verbatim to what the
+  design doc predicted) were live there the whole time. The doc's "orphan" framing was wrong for
+  these two the same way it was wrong for `computeTransfers`/`rollupByWRIN` above.
+  ✅ **4 of 6 built 2026-09-06 — OEPE-dollarization done.** Block 1 extracted verbatim to new
+  `src/engine/revenue-opportunity.js`'s `computeOepeDollarGap(p, t)` (same split pattern again);
+  `store-analytics.js` imports it back, zero behavior change to `RevenueIntelligence`. `slowDT`
+  (`attention-feed.js`) now accepts an optional `dollars` field on each row (default 0, fully
+  backward compatible) instead of hardcoding it; wired live in `attention-now.js` — the
+  oepe/target VALUES stay exactly what `metricRate` already computed (preserving dispatch #155's
+  freshness fix), only the supporting factors (`dtGC`/`avgCheck`/`laborPct`/`tpph`) come from the
+  matching store's own `.p` object. 8 new tests (`revenue-opportunity.test.js` + 2 in
+  `attention-feed.test.js`).
+  **2 remain unbuilt**, and daypart-erosion is now the closest one: its full computation
+  (`computeRevenueOpportunity` block 3 in `store-analytics.js`, ~lines 707-745) is real, live,
+  tested-by-use, and depends only on `ds.peaksSalesRows`/`normSlice`/`settings.weeksBack` per
+  store — the same shape of extraction as OEPE-dollarization, just not done in this pass.
+  "This Week's Focus" problem-type ranking is the one item that may genuinely be in a retired
+  `priority-brief` panel this pass still did not locate — unconfirmed either way, not re-checked.
   (`decisions-panel-inventory-2026-08-10.md`).
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
