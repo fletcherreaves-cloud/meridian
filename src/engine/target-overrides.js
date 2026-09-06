@@ -136,7 +136,8 @@ export const TARGET_OVERRIDE_FIELDS = [
       + 'be the exact same concept). Override here if that mapping is wrong for a scope.' },
   { field: 'tFOBTarget', reviewKey: 'foodOB', label: 'FOB % Target', unit: 'pct',
     note: 'Workbook-sourced (yearly or monthly targets — monthly already wins when both exist). The review\'s '
-      + 'Food-Over-Base $ target is this % × the month\'s sales.' },
+      + 'Food-Over-Base % metric is scored directly against this target (metric-definition fix, review-engine.js '
+      + '— no longer converted to a dollar figure via × the month\'s sales).' },
   // ── Dispatch #135 item 2 — re-verified, not just re-asserted (owner explicitly disputed #132's
   // "no workbook source" finding for these two). Re-checked parseYearlyTargets/parseMonthlyTargets
   // (src/parsers/index.js) header-by-header, the live production yearly_targets/monthly_targets
