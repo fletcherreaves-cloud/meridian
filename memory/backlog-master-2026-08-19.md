@@ -332,8 +332,21 @@ for full detail on each.
   the "manual is temporary" standing rule) or something broke it.
 - [ ] District View: Forecast Table missing Goal/OEPE/TPPH/Labor%; Scorecards→Controls missing
   data; Action Plan missing TPPH; Forecast Accuracy "Scheduled Projection" reads too high.
-- [ ] Labor Analysis week-start must follow the Wednesday setting — flagged as a **bug class**,
-  needs an app-wide audit of every week-view.
+- [x] ✅ **The named instance is RESOLVED — full app-wide audit NOT re-attempted, scope narrowed
+  honestly (2026-09-06 PM sweep).** The specific Labor Analysis bug is fixed and tested:
+  `src/__tests__/labor-analysis.test.js`'s own comment records it ("the engine hardcoded
+  `(getDay() + 6) % 7` while this org's setting is WEDNESDAY, so every week the Labor Analysis
+  panel displayed was two days off") and its regression test (`isoWeekMonday honours the
+  configured week start, not a hardcoded Monday`) passes today (41/41 in that file). Spot-checked
+  3 more week-boundary implementations for the same class of bug: `engine/labor-analysis.js`
+  imports the canonical `weekStartOf` from `utils/date.js` (correct); `engine/schedule-
+  summary.js`'s own separate `weekStartOf` hardcodes Wednesday deliberately (LifeLenz's real
+  schedule week is always Wednesday-anchored regardless of Meridian's own display setting — a
+  different, correct design, not a duplicate to consolidate); `views/one-pager.js`'s own
+  duplicated `weekStartOf` DOES read `settings.weekStartDay` (line 124), just via a re-
+  implementation of the arithmetic rather than an import — a DRY/duplication note, not a
+  functional bug. **Not claiming this closes "every week-view" app-wide** — only these 4 files
+  were checked; a genuinely exhaustive sweep of every week-oriented panel was not attempted.
 - [x] ✅ **RESOLVED 2026-09-06 (PM sweep) — already auto-first and period-scoped.** Re-measured
   directly against `src/views/eom-supervisor.js`: `loadEbosMonthlyByStore(selYear, selMonth)`
   (line 878-880) fetches the real eBOS-Purchases-derived Op Supplies total for the exact selected
