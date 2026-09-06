@@ -184,6 +184,62 @@ separately, click one of the three saved Favorites report links directly rather 
 fresh report, to see what `/Report.aspx?ID=<favorite-id>` (never actually requested in any of the
 four captures to date) returns.
 
+## ✅ RESOLVED 2026-09-06 — Export IS real, parser already handles it (with two bugs fixed); Favorites and MFA answered
+
+**Export-button question, answered directly, no more guessing needed:** the owner uploaded two
+real files downloaded via the Export button the day before (`FullScale_Report_1.xlsx` /
+`FullScale_Report_2.xlsx`). Both are genuine "Small Graph" sheet exports with real per-store data
+— **the Export shortcut is real and produces a real downloadable file**, settling the open question
+this file's "Net effect" section above left unconfirmed.
+
+Ran `parseSMGFullScale()` (src/parsers/index.js) directly against both real files (not a synthetic
+sample) via a one-off Node script. It DID already recognize the layout (legacy "Small Graph"
+auto-detect branch) and parse real per-store OSAT numbers correctly — but surfaced two real,
+previously-invisible bugs, both fixed same-day (v5.374):
+
+1. **osatB2B/accuracyB2B/dtProblem/overallProblem came back `null` for every store in both files.**
+   The auto-detected column offsets for those four metrics were guessed from
+   `Math.round((rowLength - osatCol) / 5)`, assuming the row always spans exactly 5 evenly-sized
+   groups to its last populated cell. `sheet_to_json` drops trailing-null columns per row, so
+   `rowLength` shrinks whenever an export carries fewer metrics or the sampled first-store row is
+   thin — corrupting the guess. Measured directly: the true stride is a **fixed 22 columns**
+   (22/44/66/88/110) in both real files, so the fix is `step = osatCol` (itself measured to equal
+   22 both times) instead of a length-derived guess.
+2. **Operator/regional rollup rows parse as if they were real stores.** Both files list rows like
+   `"0218 - WICHITA OK CITY TULSA FT SMITH"` that match the store-number regex but aren't real
+   restaurants. Fixed with the same `STORE_NAMES` membership guard `parseOrgStructure`/
+   `parseLifeLenzLabor` already use for the identical class of orphan/legend row.
+
+New test: `src/__tests__/smg-fullscale-smallgraph.test.js` (the legacy Small Graph branch had zero
+coverage before this — only the Data-Only layout was tested). Re-verified against the real
+uploaded files post-fix: the fuller file (`_2`) now returns all 4 previously-null metrics with sane
+values; the narrower file (`_1`, which genuinely only carries OSAT+B2B columns in its export) still
+correctly returns `null` for accuracy/DT/overall rather than misreading them from the wrong columns
+— confirming the fix distinguishes "field genuinely absent" from "field present but misaddressed."
+
+**So the parser is no longer the blocker for SMG automation — it already round-trips a real Export
+file end-to-end (after this fix).** What's still needed to fully automate the fetch itself is the
+Export button's underlying HTTP wire protocol (URL, method, whether it's single-request or a
+postback-token dance like `ReportBuilder.aspx`) — not yet captured in any HAR to date.
+
+**Favorites question, answered:** clicking a Favorites report opens **another Report Builder
+screen, pre-configured to the saved report's specs** — it does NOT render data directly. So
+**Favorites-replay does NOT skip the postback dance** as hoped; it still lands on a builder screen
+that would need the same viewstate/postback handling as building a fresh report. This closes that
+open question from the "Net effect" section above as a dead end for shortcut purposes (though it
+may still be a useful default starting point for a scripted build).
+
+**MFA question, answered:** `reporting.smg.com` is not directly MFA-gated at its own login. Auth
+**passes through from an already-MFA-logged-in `atmcd.com` session** — i.e. SSO/federation from the
+McDonald's corporate portal. This means a scripted/unattended pull can't use a standalone
+username+password against smg.com; it would need to either replicate the atmcd.com SSO handoff
+(likely non-trivial — federated auth, possibly its own MFA-gated login flow) or reuse a
+browser-session cookie captured from an already-authenticated human session (Playwright-fallback
+style, same posture as the LifeLenz/QSRSoft two-path auth pattern) rather than a fully unattended
+credential-only path. This is the same shape of constraint noted for Propel/PEAK's MFA gating in
+earlier findings — SMG is not more automatable than those on the auth front, just easier on the
+data-format front now that Export is confirmed real and the parser is fixed.
+
 ## 🔒 Security note
 
 The captures included live session cookies (`ASP.NET_SessionId`, `BIGipServerreporting.smg.com_pool`,

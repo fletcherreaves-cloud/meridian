@@ -1929,6 +1929,10 @@ function parseSMGFullScale(wb) {
       if (!row || typeof row[0] !== 'string') continue;
       const sm = row[0].match(STORE_PAT);
       if (!sm) continue; // skips "Combined" district total and header rows
+      const _loc0 = String(parseInt(sm[1], 10));
+      if (!STORE_NAMES[_loc0]) continue; // skip operator/regional-code rows that happen to have a
+      // numeric prefix (e.g. "0218 - WICHITA OK CITY TULSA FT SMITH" is a regional grouping, not
+      // a real store) — same guard parseOrgStructure/parseLifeLenzLabor already use.
       const osat5 = _num01(row[2]), osat4 = _num01(row[3]), osat3 = _num01(row[4]),
             osat2 = _num01(row[5]), osat1 = _num01(row[6]);
       const anyOsat = [osat5, osat4, osat3, osat2, osat1].some(v => v != null);
@@ -1936,7 +1940,7 @@ function parseSMGFullScale(wb) {
       // rollups can n-weight the %s (Σ pct·n / Σ n) instead of averaging averages.
       const n = (typeof row[1] === 'number' && row[1] > 0) ? Math.round(row[1]) : null;
       out.push({
-        loc: String(parseInt(sm[1], 10)), storeName: sm[2].trim(),
+        loc: _loc0, storeName: sm[2].trim(),
         reportStart, reportEnd, year, month, n,
         osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
         osat5:          osat5,
@@ -1973,8 +1977,18 @@ function parseSMGFullScale(wb) {
     for (let c = 2; c < r5.length; c++) {
       if (typeof r5[c] === 'number' && r5[c] > 0 && r5[c] <= 1) {
         osatCol = c;
-        // Guess other columns at regular intervals from first numeric col
-        const step = Math.round((r5.length - c) / 5) || 22;
+        // Other metric groups repeat at a fixed width equal to the OSAT group's own width (i.e.
+        // the offset `c` where its first fractional value was found) — measured against two real
+        // Export files (2026-09-05/06): osatCol=22 in both, and the real b2b/acc/dt/overall
+        // columns land at exactly 44/66/88/110 in both, a fixed +22 stride, regardless of how
+        // many metric groups the export actually has data for. The previous formula
+        // (`Math.round((r5.length - c) / 5)`) assumed the row always spans exactly 5 evenly-sized
+        // groups out to the row's last populated cell — but sheet_to_json drops trailing-null
+        // columns per row, so `r5.length` shrinks whenever an export has fewer metrics selected
+        // (or whenever the sampled row is a thin-volume operator/regional rollup row), producing
+        // a wrong step and silently nulling every b2b/acc/dt/overall value even when the file
+        // does carry that data at the real, fixed offset.
+        const step = c || 22;
         b2bCol     = c + step;
         accCol     = c + step * 2;
         dtCol      = c + step * 3;
@@ -1995,6 +2009,9 @@ function parseSMGFullScale(wb) {
 
     const loc = String(parseInt(storeM[1], 10));
     const storeName = storeM[2].trim();
+    if (!STORE_NAMES[loc]) { i += 5; continue; } // skip operator/regional-code rows that happen
+    // to have a numeric prefix (e.g. "0218 - WICHITA OK CITY TULSA FT SMITH" is a regional
+    // grouping, not a real store) — same guard parseOrgStructure/parseLifeLenzLabor already use.
 
     const block = bestRows.slice(i, i + 5);
     const byRating = {};
