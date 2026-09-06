@@ -301,12 +301,35 @@ for full detail on each.
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
 - [ ] Smart Targets stuck on "Loading Sales History" indefinitely.
 - [ ] Yearly Planning: YTD Actual/Targets likely wrong from a Jan–Mar upload gap.
-- [ ] Morning Brief sales-divergence outliers — possible partial-day-vs-full-day artifact.
+- [ ] ⚠️ **PARTIALLY MEASURED 2026-09-06 (PM sweep) — the obvious hypothesis is ruled out, real
+  cause still open.** Traced `GC_SALES_DIVERGE`'s inputs (`morning-brief.js`): `getLatestBriefDate`
+  picks the MAX date across `laborRows`/`ctrlRows`/`peaksSvcRows` (all manual uploads) as the
+  panel's auto-selected default date. Measured live via service-role query: `labor_rows` max
+  `report_date` is **2026-07-23**, `ctrl_rows` max `date` is **2026-07-15** — both 6+ weeks stale
+  relative to today, so the AUTO-DEFAULT path cannot land on a still-open business day; the
+  partial-day-vs-full-day theory does not hold for that path. Also, the divergence rule itself
+  requires GC to hold up while sales craters (`gcVsExp - salesVsExp >= 8`) — a pure partial/
+  incomplete day would depress BOTH sales and GC roughly proportionally, not just one, so a simple
+  "today is still open" truncation doesn't obviously produce this specific asymmetric shape either.
+  **Not ruled out:** the panel has its own date picker (`briefDate` state, user-editable), so an
+  owner manually selecting "today" (or any date with only DAR/auto-stream coverage and no manual
+  upload) still hits `assembleBriefStoreData`'s `darSales`/`darProjSales` fallback path, which
+  hasn't been checked against a live in-progress DAR day the way dispatch #153 checked OEPE/R2P/
+  TPPH for the same `qsr_daily_activity_rollup` always-24-slot trap. That's the more promising
+  remaining lead, not yet investigated. `ctrl_rows` being 6+ weeks stale is itself worth flagging
+  separately — either that manual stream has been abandoned in favor of auto sources (fine, per
+  the "manual is temporary" standing rule) or something broke it.
 - [ ] District View: Forecast Table missing Goal/OEPE/TPPH/Labor%; Scorecards→Controls missing
   data; Action Plan missing TPPH; Forecast Accuracy "Scheduled Projection" reads too high.
 - [ ] Labor Analysis week-start must follow the Wednesday setting — flagged as a **bug class**,
   needs an app-wide audit of every week-view.
-- [ ] EOM Supervisor Summary: Op Supplies must pull actuals for the selected period.
+- [x] ✅ **RESOLVED 2026-09-06 (PM sweep) — already auto-first and period-scoped.** Re-measured
+  directly against `src/views/eom-supervisor.js`: `loadEbosMonthlyByStore(selYear, selMonth)`
+  (line 878-880) fetches the real eBOS-Purchases-derived Op Supplies total for the exact selected
+  month, re-fetching whenever `selYear`/`selMonth` change; `actOpSup` (line 251-252) uses it as
+  the fallback whenever no manual override exists (`m.actOpSup != null ? +m.actOpSup : ebosOpSup`)
+  — matching the standing auto-first/manual-fallback rule exactly. A UI status line even shows
+  "✓ eBOS op supplies: N stores" when the auto data loads. Do not re-scope or re-build.
 - [x] ✅ **RESOLVED — same fix as the two items below, confirmed by dispatch #88 (v5.132/5.133,
   merged 2026-08-24), re-verified 2026-09-01 (v5.308) and again 2026-09-06 (PM sweep, tests still
   passing).** FOB Analysis "capped at May 2026" and Food Cost (Original)'s "date selector defaults
@@ -965,8 +988,13 @@ first below.
   real reading (142 distinct situations/day); step 2 (persistence table + writers, dedupe by
   situation, close the loop by re-measuring after a fix) explicitly gated on more data and not
   started (`project-insight-ledger.md`).
-- [ ] EOM count-complete notifications: push/email at 90% count-completion, plus auto-dispatching
-  the FOB pull on count-complete — both deferred (`project-eom-scoreboard-notify.md`).
+- [x] ✅ **RESOLVED 2026-09-06 (PM sweep) — both halves shipped, and beyond the original ask.**
+  Re-measured directly against `scripts/qsrsoft-onhand-pull.mjs`: the `notified_90` 90%-crossing
+  trigger fires email (dispatch #211), SMS (#211/#213), AND push (#216) per-store from the CI pull
+  itself, plus an on-demand resend (`eom-notification-resend.mjs`, #228). Auto-FOB-pull-on-90% is
+  also live (dispatch #210, already noted done elsewhere in this file). `project-eom-scoreboard-
+  notify.md`'s "deferred/future" framing was stale — corrected in that file directly. Do not
+  re-scope or re-build.
 - [ ] Printable Forms: extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
   widen + scored-form field renderers + self-serve "add form" button)
   (`project-forms-library-index.md`).

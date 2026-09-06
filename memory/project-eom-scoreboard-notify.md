@@ -22,7 +22,22 @@ fire-once trigger, diagnosis/comms status); engine `computeCountProgress` (belie
 Owner chose in-app surfacing for now (the existing 🔔 "ready for review" band + Scoreboard),
 and asked to **log the idea of actual push/email notifications for the future**.
 
-### Future notification options (when we build it)
+✅ **SHIPPED IN FULL, 2026-09-06 correction — this entire section is stale.** Re-measured directly
+against `scripts/qsrsoft-onhand-pull.mjs`: the `notified_90` trigger this doc names as "the
+natural trigger" already fires all THREE channels this doc only wished for two of —
+`notifyRow(row)` (line 188) calls `sendEmailNotification` (dispatch #211), `sendSmsViaCarrierGateway`
+(also #211/#213), AND `sendPushNotifications` (dispatch #216) unconditionally on every fired
+detection, per-store, from the CI pull itself (~30-min cadence during the count window) — exactly
+the "emailed CI trigger, least infra" approach this doc recommended, plus SMS and push on top of
+what was recommended. On top of that: an on-demand **resend** capability
+(`scripts/eom-notification-resend.mjs`, dispatch #228 — "regenerate the email with fresh data") lets
+a GM's post-notification correction trigger a fresh send, and the auto-FOB-pull-nudge described
+lower in this file (dispatch #210) fires off the same `notified_90` signal. **Do not re-scope or
+re-build any of this — it is a fully realized, multi-channel version of the "future" section below,
+not a partial start.** The section is kept as historical record of the original ask; do not treat
+its "deferred"/"future" language as current status.
+
+### Future notification options (when we build it) — HISTORICAL, see correction above
 - **Signal already exists:** `eom_count_status.notified_90` fires exactly once per store when it
   crosses 90% (server-side, in `scripts/qsrsoft-onhand-pull.mjs`). That's the natural trigger.
 - **Email (lowest lift):** the on-hand GitHub Action (or a tiny follow-on step) sends the owner an
