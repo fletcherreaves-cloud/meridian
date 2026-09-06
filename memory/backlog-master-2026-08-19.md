@@ -1086,11 +1086,27 @@ first below.
   `competitiveSignal` (most stores resolve to "stable" or "declining together," neither worth a
   feed row) — wired into `buildAttentionFeed` (new `erosionRows` param) and live in
   `attention-now.js`. 7 more new tests.
-  **1 remains unbuilt: "This Week's Focus" problem-type ranking** — the one item that may
-  genuinely be in a retired `priority-brief` panel this pass still did not locate. Unconfirmed
-  either way, not re-checked — given how wrong the "orphan" framing turned out for the other 5,
-  the next session should MEASURE whether `priority-brief` is actually retired before assuming so.
-  (`decisions-panel-inventory-2026-08-10.md`).
+  ✅ **6 of 6 built 2026-09-06 — "This Week's Focus" was the third false "orphan" this session.**
+  `priority-brief` is NOT retired — `panel-registry.js` id `priority-brief`, `DistrictPriorityBrief`
+  component (`views/analytics.js`), live and exported. The salvage item's real ask — "district-wide
+  focus: which issue type appears most?" — was already built and shipping, just carrying a real
+  correctness bug: `pulse`'s `issueCounts` accumulation used `f.m.includes('OEPE')`-style substring
+  matching on finding PROSE. That also matched `oepeOk` ("STRENGTH — OEPE...", a POSITIVE finding,
+  `t:'ok'`), `oepeRecord` (a record-achievement callout), and `oepeTrend` (a leading trend warning,
+  not "currently slow") — inflating the oepe bucket with non-issues, live in production. Rebuilt
+  against the structured `f.rule` field (finer-grained than `f.category`, which pools
+  `cashOS`/`tRedAfter`/`deposit` all under one `'Controls'` bucket, too coarse for this feature's 7
+  buckets) via a new exported `ISSUE_RULE_MAP` (`views/analytics.js`) — a straight rule→bucket
+  lookup replacing the substring-match chain. `tred` bucket's dual match (`tRedAfter` AND
+  `compound`) preserved intentionally; confirmed via grep that `labor` does NOT accidentally
+  absorb `tpph` (tpph's message says "THROUGHPUT", never "LABOR"). 5 new tests on the mapping
+  itself (`district-pulse-issue-rule-map.test.js`) — including negative assertions that `oepeOk`/
+  `oepeRecord`/`oepeTrend`/`tpph`/`laborTrend` do NOT map to a bucket, encoding the bug fix
+  directly. This is a correctness fix to an already-shipped feature, not new construction — the
+  design doc's original "salvage" framing (build 6 orphaned capabilities) was wrong for all 6 items
+  it named; every one was already live, and the only real work across all 6 was 2 small detector
+  gaps (`slowDT`'s hardcoded `dollars:0`, `duplicateWrinFlags` not yet wired) plus this one counting
+  bug. (`decisions-panel-inventory-2026-08-10.md`.)
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built (`project-vlh-config.md`).
