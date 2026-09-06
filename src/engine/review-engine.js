@@ -24,10 +24,24 @@ export const ROLE_LABELS= { GM:'General Manager', AM:'Assistant Manager', DM:'De
 // (Shift Manager Summary data). GM = whole store; AS/OM are above-store → store-total.
 export const SHIFT_ATTRIBUTABLE_ROLES = ['AM','DM','SM'];
 
+// Bonus Eligibility module (owner-approved design, perf-review-excel-audit.md Round 2,
+// 2026-07-28) — a PREVIOUS-ORG benefit ("current org has NOT implemented this benefit yet but
+// likely will next year"), not the 1-4 base competency scoring. Uses the absolute percentage-
+// POINT thresholds from the audit's Round 1 (0.25pts Labor / 0.15pts FOB) as a pass/fail GATE,
+// kept fully separate from `foodOB`/`labor`'s own base-scoring thresholds below (which are
+// relative-%-of-target, per Round 2's correction — see that metric's own comment).
+export const BONUS_ELIGIBILITY_GATES = [
+  { key:'labor',  label:'Labor % vs Target',         pointGate:-0.0025 },
+  { key:'foodOB', label:'Food Over Base % vs Target', pointGate:-0.0015 },
+];
+
 export const DEFAULT_REVIEW_CONFIG = {
   version: 1,
   // Overall split: 70% metrics, 30% behavioral
   overall: { metrics: 0.70, behavioral: 0.30 },
+  // Off by default — see BONUS_ELIGIBILITY_GATES above. Does not affect the 1-4 scoring at all
+  // (computeScores/computeScoreBreakdown never read this); only bonusEligibilityForPeriod does.
+  bonusEligibility: { enabled: false, gates: BONUS_ELIGIBILITY_GATES },
   // Category weights within Results Achieved
   categoryWeights: {
     rgr:    { label:'Running Great Restaurants',   weight: 0.325 },
@@ -1092,6 +1106,46 @@ export function computeScoreBreakdown(review, cfg) {
   out.year = rollup(Object.values(QUARTER_MONTHS).flat(), ['h1','h2'], [out.h1.behavioralScore, out.h2.behavioralScore]);
 
   return out;
+}
+
+// ── Bonus Eligibility (see BONUS_ELIGIBILITY_GATES above) ─────────────────────
+// Pure, additive — never called by computeScores/computeScoreBreakdown, so it cannot change any
+// existing 1-4 score. Reads the same mo.<key>/mo.<key>Tgt values the base scoring reads, but
+// grades them against an absolute point-gap gate instead of a relative-%-of-target band.
+export function bonusEligibilityForMonth(mo, cfg) {
+  const be = cfg?.bonusEligibility;
+  if (!be?.enabled || !mo) return null;
+  const gates = be.gates || BONUS_ELIGIBILITY_GATES;
+  return gates.map(g => {
+    const actual = mo[g.key] ?? null;
+    const target = mo[g.key + 'Tgt'] ?? null;
+    if (actual == null || target == null) {
+      return { key:g.key, label:g.label, eligible:null, gapPts:null, pointGate:g.pointGate, actual, target };
+    }
+    const gapPts = actual - target; // negative = better than target (lower is better for both gates)
+    return { key:g.key, label:g.label, eligible: gapPts <= g.pointGate, gapPts, pointGate:g.pointGate, actual, target };
+  });
+}
+
+// Period rollup (matches the q1/q2/h1/h2/year month-array convention used elsewhere in this
+// file). "Eligible" for a period requires every rated month in that period to pass every gate —
+// a bonus-eligibility benefit is normally all-or-nothing, not an averaged pass rate.
+export function bonusEligibilityForPeriod(review, cfg, monthNums) {
+  const be = cfg?.bonusEligibility;
+  if (!be?.enabled) return null;
+  const months = review?.kpis?.months || {};
+  const gates = be.gates || BONUS_ELIGIBILITY_GATES;
+  const perGate = gates.map(g => {
+    const rows = monthNums
+      .map(n => (months[n] ? bonusEligibilityForMonth(months[n], cfg)?.find(r => r.key === g.key) : null))
+      .filter(Boolean);
+    const rated = rows.filter(r => r.eligible != null);
+    const eligible = rated.length ? rated.every(r => r.eligible) : null;
+    return { key: g.key, label: g.label, eligible, monthsRated: rated.length, monthsTotal: monthNums.length };
+  });
+  const anyRated = perGate.some(g => g.monthsRated > 0);
+  const overallEligible = !anyRated ? null : perGate.every(g => g.eligible === true);
+  return { gates: perGate, overallEligible };
 }
 
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
