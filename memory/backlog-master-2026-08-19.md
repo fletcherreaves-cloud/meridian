@@ -1028,10 +1028,24 @@ first below.
   metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
   timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail
   (`attribution-validity-register-login.md`).
-- [ ] Six salvage items from the Decisions Panel Inventory retirement sweep, none built: cross-
-  store transfer matcher, duplicate-WRIN detector, OEPE-dollarization for slow-DT ranking,
-  daypart-asymmetry detector, forecast-calibration-gap flag, "This Week's Focus" problem-type
-  ranking (`decisions-panel-inventory-2026-08-10.md`).
+- [ ] ✅ **1 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap flag.** New
+  `forecastCalibrationGap` detector in `src/engine/attention-feed.js`, wired into
+  `buildAttentionFeed` (runs after every other detector, since it needs to know what they already
+  flagged per store — see its own header comment) and into the live call site
+  (`attention-now.js`'s `useAttentionFeed`, sourcing per-store MAPE from
+  `DEFAULT_MODEL_ASSIGNMENTS[loc].weekly.mape`, the same static figure `modelHealthScore` already
+  uses for its own Accuracy component). Fires only when a store's MAPE exceeds 12% AND nothing
+  else in the feed flagged that store crit/warn — "operationally green but the forecast is
+  broken," exactly as designed. 6 new tests in `attention-feed.test.js`.
+  **5 remain unbuilt**, each needs porting real logic from a retired panel this pass didn't
+  locate/verify, not a from-scratch build: cross-store transfer matcher (`computeTransfers` from
+  the old `inventory` orphan — haversine-distance overstock↔understock matching), duplicate-WRIN
+  detector (`rollupByWRIN`, same orphan), OEPE-dollarization for slow-DT ranking (`revintel`
+  orphan — `slowDT` currently reports `dollars: 0`), daypart-asymmetry detector (`revintel`
+  orphan — explanation copy already written per that doc), "This Week's Focus" problem-type
+  ranking (`priority-brief` orphan — ⚠️ that doc's own note: rebuild against the structured
+  `item.category` field, not the current substring-matching on finding prose).
+  (`decisions-panel-inventory-2026-08-10.md`).
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built (`project-vlh-config.md`).
