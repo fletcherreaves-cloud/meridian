@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -132,6 +132,40 @@ describe('slowDT', () => {
   it('flags DT over target', () => {
     const rows = [{ loc: 'a', dt: 300, target: 240 }, { loc: 'b', dt: 200, target: 240 }];
     const items = slowDT(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].loc).toBe('a');
+  });
+});
+
+describe('forecastCalibrationGap', () => {
+  it('flags a store with high MAPE and nothing else flagged', () => {
+    const items = forecastCalibrationGap([{ loc: 'a', mape: 18.4 }], [], nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].loc).toBe('a');
+    expect(items[0].severity).toBe('warn');
+    expect(items[0].detail).toContain('18.4%');
+  });
+
+  it('does not fire when the store already has a crit or warn from another detector', () => {
+    const priorItems = [{ loc: 'a', severity: 'warn', category: 'Sales' }];
+    const items = forecastCalibrationGap([{ loc: 'a', mape: 18.4 }], priorItems, nm);
+    expect(items).toHaveLength(0);
+  });
+
+  it('an info-severity prior item does not suppress it (only crit/warn count as "flagged")', () => {
+    const priorItems = [{ loc: 'a', severity: 'info', category: 'Integrity' }];
+    const items = forecastCalibrationGap([{ loc: 'a', mape: 18.4 }], priorItems, nm);
+    expect(items).toHaveLength(1);
+  });
+
+  it('does not fire below the MAPE threshold', () => {
+    const items = forecastCalibrationGap([{ loc: 'a', mape: 8.0 }], [], nm);
+    expect(items).toHaveLength(0);
+  });
+
+  it('a different store\'s flag does not suppress this store', () => {
+    const priorItems = [{ loc: 'b', severity: 'crit', category: 'Sales' }];
+    const items = forecastCalibrationGap([{ loc: 'a', mape: 18.4 }], priorItems, nm);
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
   });
@@ -279,6 +313,18 @@ describe('buildAttentionFeed', () => {
     expect(feed[0].category).toMatch(/Data|Food Cost/);
     expect(feed.some(i => i.category === 'Sales')).toBe(true);
     expect(feed.every(i => 'severity' in i)).toBe(true);
+  });
+
+  it('forecastCalibrationGap sees what the rest of the feed already flagged, not an empty list', () => {
+    const feed = buildAttentionFeed({
+      // 'c' is already flagged crit by fobOutliers below; 'e' has nothing else flagged.
+      fobByStore: { a: { fobPct: 0.03, fob$: 300, sales: 10000 }, b: { fobPct: 0.03, fob$: 300, sales: 10000 }, c: { fobPct: 0.12, fob$: 1200, sales: 10000 } },
+      mapeRows: [{ loc: 'c', mape: 20 }, { loc: 'e', mape: 20 }],
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === 'e' && i.category === 'Forecast')).toBe(true);
+    expect(feed.some(i => i.loc === 'c' && i.category === 'Forecast')).toBe(false);
   });
 
   // issue #143 — the fire-volume instrumentation must be observation-only. These two guard

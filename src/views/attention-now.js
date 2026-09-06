@@ -8,7 +8,7 @@
 // content is fully absorbed into AttentionPanel (src/views/analytics.js), which
 // this hook now feeds exclusively.
 import * as React from 'react';
-import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg, metricRate } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
@@ -153,10 +153,19 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // below is deliberately separate from fobOutliers/fobOverTarget above, not a duplicate of
     // either — see that detector's own comment in attention-feed.js).
     const opportunityByStore = districtOpportunity(ds, ds?.qsrFobRows || [], allLocs, mtdRange()).perStore;
+    // Decisions Panel Inventory salvage #6 (forecastCalibrationGap) — the store's own weekly
+    // backtest MAPE from DEFAULT_MODEL_ASSIGNMENTS, the same static per-store figure
+    // modelHealthScore (engine/forecast.js) reads for its own Accuracy component; no live
+    // override lookup here either, matching that existing precedent rather than introducing a
+    // new one.
+    const mapeRows = allLocs.map(loc => {
+      const mape = DEFAULT_MODEL_ASSIGNMENTS[unpad(loc)]?.weekly?.mape;
+      return mape != null ? { loc, mape } : null;
+    }).filter(Boolean);
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, storeName: nm, max, onFireVolume: recordFireVolume });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 

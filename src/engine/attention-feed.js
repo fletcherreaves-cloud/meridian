@@ -210,6 +210,35 @@ export function opportunityAlerts(perStore = [], storeName = String, { minTotal 
   return out;
 }
 
+// Forecast-calibration gap (Decisions Panel Inventory salvage #6, decisions-panel-inventory-
+// 2026-08-10.md) — a store with a genuinely inaccurate forecast (MAPE above threshold) but
+// otherwise showing green: no crit or warn item from any OTHER detector this run. "Operationally
+// green but the forecast is broken" is structurally invisible to buildBrief (operational metrics
+// only) and to every other detector here (none of them look at MAPE) — the only way to see it is
+// to check for a high MAPE AND the absence of anything else flagged for that store, which means
+// this one necessarily runs after the rest of the feed is assembled, unlike every detector above.
+// `mapeRows` = [{loc, mape}] (mape as already-percent, e.g. 14.2 for 14.2%). `priorItems` = the
+// flat list of every other detector's output for this feed (already computed by the caller).
+export function forecastCalibrationGap(mapeRows = [], priorItems = [], storeName = String, { minMape = 12 } = {}) {
+  const flaggedLocs = new Set((priorItems || [])
+    .filter(i => i && i.loc != null && (i.severity === 'crit' || i.severity === 'warn'))
+    .map(i => String(i.loc)));
+  const out = [];
+  for (const r of (mapeRows || [])) {
+    if (!r || r.loc == null || r.mape == null) continue;
+    const loc = String(r.loc);
+    if (r.mape > minMape && !flaggedLocs.has(loc)) {
+      out.push({
+        id: 'calgap-' + loc, severity: 'warn', category: 'Forecast', icon: '📐',
+        title: `${storeName(loc)} — forecast calibration gap`,
+        detail: `${r.mape.toFixed(1)}% MAPE with nothing else flagged — operationally green, but the forecast itself may be broken.`,
+        dollars: 0, loc, nav: 'forecast-audit',
+      });
+    }
+  }
+  return out;
+}
+
 // Integrity — a granted early-count exception (awareness that a store's EOM count was off standard
 // process). `rows` = [{ loc, acceptedDate, approvedBy }].
 export function countExceptions(rows = [], storeName = String) {
@@ -298,7 +327,7 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
@@ -316,6 +345,10 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
   // Object.values on string keys preserves insertion order, so this is the exact same flat
   // list (and order) the old literal array-spread produced — byte-identical to callers.
   const items = Object.values(bySource).flat();
+  // forecastCalibrationGap runs AFTER the rest of the feed, not folded into bySource above —
+  // it needs to know what everything else already flagged per store (see its own header
+  // comment), so it reads `items` rather than being independent like every detector before it.
+  const withCalibrationGap = items.concat(forecastCalibrationGap(mapeRows || [], items, storeName));
   // issue #143 — Insight Ledger step 0: measure real fire volume before building anything.
   // Optional, additive, off the critical path: every existing caller omits onFireVolume, so
   // it's undefined and this is a no-op — nothing about ranking/ordering/rendering changes.
@@ -324,5 +357,5 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
   // (attention-now.js's useAttentionFeed) supplies engine/insight-ledger-measure.js's
   // recordFireVolume as this callback.
   if (onFireVolume) { try { onFireVolume(bySource, max); } catch { /* scaffolding, never breaks the feed */ } }
-  return rankAttention(items, { max, label: 'buildAttentionFeed' });
+  return rankAttention(withCalibrationGap, { max, label: 'buildAttentionFeed' });
 }
