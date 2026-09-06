@@ -864,10 +864,25 @@ function modelHealthScore(loc, ds, settings) {
   // district health dashboards.
   const _masgn = DEFAULT_MODEL_ASSIGNMENTS[loc];
   if(_masgn&&_masgn.recentOnly&&!(settings.dialedIn&&settings.dialedIn[loc])){
+    // recentOnly conflates two different real situations (see backtest.js's own comment on this
+    // flag): a genuinely new/ramp-up location with too little history for DI (Ponce de Leon,
+    // opened 2026-03-13, monthly/yearly n:0), OR a long-open store with a documented early
+    // bad-data period that DI's LY-based method still can't clear despite real AE/DOW/LY
+    // calibration existing (Elgin/Mossy Head/Tishomingo — all n in the hundreds at monthly/
+    // yearly horizons per DEFAULT_MODEL_ASSIGNMENTS). Labeling the second group "New Store" was
+    // measured wrong 2026-09-06 (Tishomingo has been open >1 year with 503 days of yearly
+    // calibration on record) — a data-sparse-for-DI store is not the same claim as a new store.
+    const _hasLongRunCalibration = !!((_masgn.monthly&&_masgn.monthly.n>0)||(_masgn.yearly&&_masgn.yearly.n>0));
+    if(_hasLongRunCalibration){
+      return{score:null,grade:{label:'DI N/A',color:'#64748b',emoji:'🔵'},
+        reasons:[{cat:'Status',pts:null,max:null,msg:'Established store — DI calibration not viable for this data pattern; AE/DOW/LY models calibrated instead'}],
+        statement:'Established store. Dialed-In calibration is not viable for this store\'s data pattern (see model-assignment note), but simpler models (AE/DOW/LY) are calibrated and running — not a new-location gap.',
+        samples:0,dataDaysOld:999,newStore:true,longRunCalibrated:true};
+    }
     return{score:null,grade:{label:'New Store',color:'#64748b',emoji:'🔵'},
       reasons:[{cat:'Status',pts:null,max:null,msg:'New/ramp-up store — DI calibration not yet applicable'}],
       statement:'New or recently opened store. Health scoring not applicable until calibration window (typically 6 months of history).',
-      samples:0,dataDaysOld:999,newStore:true};
+      samples:0,dataDaysOld:999,newStore:true,longRunCalibrated:false};
   }
   const di = settings.dialedIn&&settings.dialedIn[loc];
   const today = Date.now();
@@ -1968,11 +1983,15 @@ function getDIRecommendation(r) {
 function computeModelHealth(loc, settings, ds) {
   const h = modelHealthScore(loc, ds, settings);
   if (h.newStore) {
+    // longRunCalibrated (2026-09-06): an established store where DI specifically isn't viable
+    // (Elgin/Mossy Head/Tishomingo) is a different claim than a genuinely new location — forward
+    // modelHealthScore's own corrected label/note instead of this wrapper's hardcoded 'New Store'
+    // string, which previously overrode it unconditionally for every recentOnly store alike.
     return {
-      total: null, grade: 'blue', gradeLabel: 'New Store', gradeColor: '#64748b',
+      total: null, grade: 'blue', gradeLabel: h.grade.label, gradeColor: '#64748b',
       components: { cal: null, fresh: null, mape: null, sample: null },
-      notes: { cal: 'New/ramp-up store', fresh: '', mape: '', sample: '' },
-      statement: h.statement, newStore: true,
+      notes: { cal: h.longRunCalibrated ? 'DI not viable — AE/DOW/LY calibrated' : 'New/ramp-up store', fresh: '', mape: '', sample: '' },
+      statement: h.statement, newStore: true, longRunCalibrated: !!h.longRunCalibrated,
     };
   }
   // reasons[].cat → this function's fixed 4 keys. modelHealthScore's reasons array is the single

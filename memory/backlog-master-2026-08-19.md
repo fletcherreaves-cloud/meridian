@@ -307,22 +307,27 @@ for full detail on each.
 - [ ] Labor Analysis week-start must follow the Wednesday setting — flagged as a **bug class**,
   needs an app-wide audit of every week-view.
 - [ ] EOM Supervisor Summary: Op Supplies must pull actuals for the selected period.
-- [ ] FOB Analysis panel capped at May 2026 — diagnosed (silent fallback to stale manual rows on
-  cloud-read failure), **needs live verification it's actually resolved**.
-- [ ] **New, from `notes-67-queue.md` §2 (2026-08-19):** Food Cost (Original) panel's date
-  selector defaults to May 2026 even though all data displays correctly otherwise — a stale
-  hardcoded default, not a data-availability issue by the owner's own description. **Possibly the
-  same underlying symptom as the FOB Analysis "capped at May 2026" item directly above** — check
-  whether Food Cost (Original) and FOB Analysis share a date-selector component before treating as
-  two separate bugs. If distinct panels with genuinely separate causes, this one sounds like a
-  quick grep for a hardcoded `'2026-05'`-shaped literal, not the deeper cloud-read-fallback issue
-  diagnosed for FOB Analysis.
+- [x] ✅ **RESOLVED — same fix as the two items below, confirmed by dispatch #88 (v5.132/5.133,
+  merged 2026-08-24), re-verified 2026-09-01 (v5.308) and again 2026-09-06 (PM sweep, tests still
+  passing).** FOB Analysis "capped at May 2026" and Food Cost (Original)'s "date selector defaults
+  to May 2026" (below) are the SAME panel (`FOBAnalysisPanel`, `src/views/analytics.js`) and the
+  same bug, confirmed rather than left as an open "possibly the same" question: a render-order
+  race where the auto-select-most-recent-month effect used `!selMonth` as a run-once guard, firing
+  on the FIRST render before the async `qsrFobRows` cloud fetch resolved, locking in a stale
+  manual-upload-only month. Fixed by gating the auto-select on `qsrFobRows!==null`. Regression
+  test `fob-analysis-month-race.test.js` (reproduces the race against the original ungated code
+  first) passes as of 2026-09-06.
+- [x] ✅ **RESOLVED — see item directly above (same panel, same fix, same verification history).**
 - [ ] **New, from `notes-67-queue.md` §2:** Speed of Service panel — DT History takes 15+ seconds
   to load. Flagged as a performance bug, not a design ask; per this repo's standing performance-
   budget rule, needs a real before/after measurement if scoped, not just "make it faster."
-- [ ] **New, from `notes-67-queue.md` §2:** Forecast Audit panel appears greyed out — owner asks
-  why. Reads as a gating bug (permissions? a data-readiness check firing false?) rather than a
-  design ask — investigate before scoping as a build item.
+- [x] ✅ **RESOLVED — working as designed, confirmed by dispatch #88 re-verification (v5.308,
+  2026-09-01) and re-confirmed 2026-09-06 (PM sweep, test still passing).** The panel is
+  intentionally disabled (`disabledWhen:'noStore'` in panel-registry.js) until a store is
+  selected, since it audits one store's forecast — not a gating bug. The actual confusing part
+  (no explanation for WHY it was greyed out) was fixed pre-notes-67 in v4.945/PR#120:
+  `shell.js`'s navItem shows an explanatory tooltip (`title:disabled?'Select a store first':label`)
+  on hover. Regression test `forecast-audit-disabled-hint.test.js` passes.
 - [ ] ❓ Food Cost Panel (`FOBAnalysisPanel`): `qsr_fob` returns empty under RLS for the
   anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
   diff and explicit owner go-ahead before touching production RLS.**
@@ -333,10 +338,19 @@ for full detail on each.
   Both `src/views/at-a-glance.js` and `src/views/model-health-badge.js` therefore grade a store
   identically today, whichever function they call — this was fixed by dispatch #41, this backlog
   entry just never got its status updated. Nothing left to chase here.
-- [ ] District View 14-item visual-review punch list — mostly unconfirmed as fixed (Biggest Miss
-  counting a partial day, missing labor at 10am, low-contrast Intelligence Brief, TPPH not
-  populating in two panels, Tishomingo wrongly flagged "new model store," Records not all-time,
-  Critical/Watch chips not clickable, and more — see source file for full list).
+- [x] ✅ **RESOLVED 2026-09-06 (PM autonomous sweep) — all 14 individually re-verified against
+  current code, not left as a compound "mostly unconfirmed" item.** 9 of 14 were already fixed by
+  earlier work (PM→Snack label, Biggest Miss partial-day exclusion, Scorecard 2-Wk column,
+  Intelligence Brief contrast, 3-Peaks Parked-at-Dinner, Register Audit refund rounding, District
+  Overview Critical/Watch clickable chips, and 2 more); 2 were fixed in this pass (Shift Analysis
+  TPPH tile was computed but never rendered in the peak-daypart cards — added; Tishomingo/Elgin/
+  Mossy Head were mislabeled "New Store" when they're established stores where DI specifically
+  isn't viable — `modelHealthScore`/`computeModelHealth` now distinguish the two cases, covered by
+  `model-health-recentonly-mislabel.test.js`); 1 (labor missing at 10am) is unconfirmed either way,
+  reads as a point-in-time observation not a reproducible bug; 3 (Register Audit employee
+  drill-down + surface-all-metrics, and Records top-3/near-miss) are genuine unbuilt features, not
+  bugs, left unscoped rather than guessed at. Full per-item resolution: `notes-61-queue.md`'s
+  "District View — visual review" table.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
 - [x] ✅ **CORRECTION to the pass-1-followup item below, made during PM review of PR #434 — this
   specific site is already fixed, not open.** The item as originally written quoted
