@@ -4086,15 +4086,24 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   credentials/egress in that sandbox) is [dispatch33-register-audit-pull.md](dispatch33-register-audit-pull.md)
   — superseded by dispatch #34's real capture for the endpoint questions, still useful for the
   scaffold/save-path implementation notes.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Backlog — Open Items (cut 2026-09-06)](backlog-open-2026-09-06.md)** —
+  **Start here for "what's actually left."** A condensed working list, pulled from
+  `backlog-master-2026-08-19.md` once that file passed 1600 lines of verification essays and
+  became too long to work from day to day. Every item is still genuinely open as of the cut, with
+  a one-line "why it's not done" and a pointer back to the master file's matching section for full
+  evidence. When an item here gets resolved, move it to the master file's "Already confirmed done"
+  section with its evidence and delete it from here — this file should only ever hold what's
+  actually still open.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Backlog Master — 2026-08-19](backlog-master-2026-08-19.md)** —
-  One consolidated, de-duplicated backlog assembled from a sweep of 20 memory files
-  (`project-backlog.md`, `plan-backlog-and-redesign-2026-08-15.md`, `notes-24` through `notes-66`)
-  plus the normalization plan and `vision-and-roadmap.md`. **Status update:** two full PM review
-  passes have since run **sequentially** over the whole file (not concurrently/disjoint-sectioned,
-  despite an earlier draft of this note saying so), plus a targeted coverage sweep and two
-  follow-on correction rounds (PRs #433–#440) — see the file's own "How to use this file" section
-  for the real history. §15 (Security & Loss Prevention Build) and notes-67's IA-reorg items were
-  added 2026-08-19, same round as dispatch #33.
+  **Archive / evidence trail**, superseded as the working list by the open-items cut above
+  (2026-09-06) but kept in place — several `src/` files and tests cite it by name as provenance,
+  so it stays at this path unchanged. One consolidated, de-duplicated backlog assembled from a
+  sweep of 20 memory files (`project-backlog.md`, `plan-backlog-and-redesign-2026-08-15.md`,
+  `notes-24` through `notes-66`) plus the normalization plan and `vision-and-roadmap.md`. Three
+  full PM review passes have since run over the whole file (2026-08-19 ×2, 2026-09-05), plus a
+  targeted coverage sweep and correction rounds (PRs #433–#440, #1157+) — see the file's own "How
+  to use this file" section for the real history. §15 (Security & Loss Prevention Build) and
+  notes-67's IA-reorg items were added 2026-08-19, same round as dispatch #33.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #32 — Workstream C: pipeline contract, wired](dispatch32-pipeline-contract.md)** —
   2026-08-19. **DELIVERED same day** (v5.072, squashed into PR #431) — the last of the 7
   normalization workstreams to ship real code. **Corrects both this dispatch's and #25's own

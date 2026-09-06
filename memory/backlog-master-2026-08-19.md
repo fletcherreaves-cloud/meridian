@@ -1,5 +1,14 @@
 # Backlog Master — 2026-08-19
 
+> **🗄️ This file is now the ARCHIVE, not the working list (split 2026-09-06).** It grew past
+> 1600 lines across three PM review passes' worth of verification essays and corrections-to-
+> corrections — still the authoritative record of what was checked, when, and by what evidence,
+> but too long to work from day to day. **The current open-items list is
+> `memory/backlog-open-2026-09-06.md`** — every item still genuinely open, condensed, with a
+> pointer back to the relevant section here for full context. Check that file first; come back
+> here only for the evidence trail behind a specific item. This file is kept at its current path
+> unchanged — several `src/` files and tests cite it by name as provenance.
+
 > **Purpose:** one consolidated, de-duplicated backlog across the whole project, assembled
 > 2026-08-19 from a sweep of 20 memory files (`project-backlog.md`,
 > `plan-backlog-and-redesign-2026-08-15.md`, and `notes-24` through `notes-66`) plus the
