@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -134,6 +134,58 @@ describe('slowDT', () => {
     const items = slowDT(rows, nm);
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
+  });
+});
+
+describe('transferOpportunities', () => {
+  const rows = [
+    { sendLoc: 'a', recvLoc: 'b', wrin: 'w1', value: 200, noRecipient: false },
+    { sendLoc: 'a', recvLoc: 'c', wrin: 'w2', value: 150, noRecipient: false },
+    { sendLoc: 'd', recvLoc: null, wrin: 'w3', value: 500, noRecipient: true }, // no recipient — excluded
+    { sendLoc: 'e', recvLoc: 'f', wrin: 'w4', value: 50, noRecipient: false },  // below minValue alone
+  ];
+
+  it('rolls up per SENDING store, excluding no-recipient rows', () => {
+    const out = transferOpportunities(rows, nm, { minValue: 300 });
+    expect(out).toHaveLength(1);
+    expect(out[0].loc).toBe('a');
+    expect(out[0].dollars).toBe(350); // 200 + 150
+    expect(out[0].detail).toContain('2 items');
+  });
+
+  it('does not flag a store whose total stays below minValue', () => {
+    const out = transferOpportunities(rows, nm, { minValue: 300 });
+    expect(out.some(o => o.loc === 'e')).toBe(false);
+    expect(out.some(o => o.loc === 'd')).toBe(false); // noRecipient, never counted at all
+  });
+
+  it('escalates severity for a much larger total', () => {
+    const small = transferOpportunities([{ sendLoc: 'a', recvLoc: 'b', value: 350, noRecipient: false }], nm, { minValue: 300 });
+    const big = transferOpportunities([{ sendLoc: 'a', recvLoc: 'b', value: 1200, noRecipient: false }], nm, { minValue: 300 });
+    expect(small[0].severity).toBe('info');
+    expect(big[0].severity).toBe('warn');
+  });
+});
+
+describe('duplicateWrinFlags', () => {
+  it('flags only rows carrying a non-empty rollupNote', () => {
+    const rows = [
+      { loc: 'a', wrin: '00004-001', description: 'Fries', rollupNote: 'Usage split across 2 WRINs...' },
+      { loc: 'a', wrin: '00005-001', description: 'Buns', rollupNote: '' }, // single-variant, no note
+      { loc: 'b', wrin: '00006-001', description: 'Cups', isRolledUp: false },
+    ];
+    const out = duplicateWrinFlags(rows, nm);
+    expect(out).toHaveLength(1);
+    expect(out[0].loc).toBe('a');
+    expect(out[0].title).toContain('Fries');
+    expect(out[0].detail).toBe('Usage split across 2 WRINs...');
+  });
+
+  it('feeds cleanly into integrityFlags, same shape every other integrity source uses', () => {
+    const rows = [{ loc: 'a', wrin: '00004-001', description: 'Fries', rollupNote: 'split note' }];
+    const flags = integrityFlags(duplicateWrinFlags(rows, nm), nm);
+    expect(flags[0].category).toBe('Integrity');
+    expect(flags[0].severity).toBe('info');
   });
 });
 
@@ -302,6 +354,17 @@ describe('findingsToFeedItems (buildBrief -> feed adapter)', () => {
 });
 
 describe('buildAttentionFeed', () => {
+  it('transferOpportunities wiring: real transferRows produce a feed item', () => {
+    const feed = buildAttentionFeed({
+      transferRows: [
+        { sendLoc: 'a', recvLoc: 'b', wrin: 'w1', value: 400, noRecipient: false },
+      ],
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === 'a' && i.category === 'Inventory')).toBe(true);
+  });
+
   it('fuses detectors into one ranked feed', () => {
     const feed = buildAttentionFeed({
       fobByStore: { a: { fobPct: 0.03, fob$: 300, sales: 10000 }, b: { fobPct: 0.03, fob$: 300, sales: 10000 }, c: { fobPct: 0.12, fob$: 1200, sales: 10000 } },

@@ -210,6 +210,55 @@ export function opportunityAlerts(perStore = [], storeName = String, { minTotal 
   return out;
 }
 
+// Cross-store inventory transfer opportunities (Decisions Panel Inventory salvage #2,
+// decisions-panel-inventory-2026-08-10.md) — computeTransfers() (engine/inventory-transfers.js)
+// already does the real haversine-distance same-state overstock<->understock matching; this
+// rolls its per-item rows up to ONE item per SENDING store (a store with a dozen transferable
+// items doesn't need a dozen rows in a "what to look at today" feed) and gives it the natural
+// `dollars` value computeTransfers already computes -- the exact gap slowDT's own comment
+// names ("slowDT currently reports dollars: 0, so slow drive-thrus cannot rank against FOB or
+// sales items"; this detector doesn't fix that one, but is the same class of gap, now closed
+// for transfers). `transferRows` = computeTransfers()'s own output array.
+export function transferOpportunities(transferRows = [], storeName = String, { minValue = 300 } = {}) {
+  const byLoc = new Map();
+  for (const t of (transferRows || [])) {
+    if (!t || t.noRecipient || !(t.value > 0)) continue; // only real, receivable transfers
+    const b = byLoc.get(t.sendLoc) || { total: 0, items: 0 };
+    b.total += t.value; b.items += 1;
+    byLoc.set(t.sendLoc, b);
+  }
+  const out = [];
+  for (const [loc, b] of byLoc) {
+    if (b.total < minValue) continue;
+    out.push({
+      id: 'xfer-' + loc, severity: b.total >= minValue * 3 ? 'warn' : 'info',
+      category: 'Inventory', icon: '🚚',
+      title: `${storeName(loc)} — ${money(b.total)} transferable to other stores`,
+      detail: `${b.items} item${b.items === 1 ? '' : 's'} overstocked here with a same-state store that needs it`,
+      dollars: b.total, loc, nav: 'inventory',
+    });
+  }
+  return out;
+}
+
+// Duplicate-WRIN integrity flags (Decisions Panel Inventory salvage #3) — adapts
+// rollupByWRIN()'s (engine/inventory-transfers.js) per-store rollup output into the shape
+// integrityFlags() above already expects, rather than inventing a parallel detector: "usage
+// split across N WRINs, verify manager is using the correct one" is exactly the kind of
+// pass-through integrity finding that function exists for. Caller concats this into the same
+// `integrityItems` array it already builds for buildAttentionFeed's `integrityItems` param --
+// no new buildAttentionFeed parameter needed. `rollupRows` = rollupByWRIN()'s own output array
+// (per store — call it once per store, or concat multiple stores' output before calling this).
+export function duplicateWrinFlags(rollupRows = [], storeName = String) {
+  return (rollupRows || [])
+    .filter(r => r && r.rollupNote)
+    .map(r => ({
+      id: 'wrin-' + r.loc + '-' + r.wrin, loc: r.loc, severity: 'info',
+      title: `${storeName(r.loc)} — duplicate WRIN usage (${r.description || r.wrin})`,
+      detail: r.rollupNote, dollars: 0, nav: 'inventory',
+    }));
+}
+
 // Forecast-calibration gap (Decisions Panel Inventory salvage #6, decisions-panel-inventory-
 // 2026-08-10.md) — a store with a genuinely inaccurate forecast (MAPE above threshold) but
 // otherwise showing green: no crit or warn item from any OTHER detector this run. "Operationally
@@ -327,12 +376,13 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, transferRows, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
     fobOverTarget: fobOverTarget(fobByStore || {}, targetsByLoc || {}, storeName),
     opportunityAlerts: opportunityAlerts(opportunityByStore || [], storeName),
+    transferOpportunities: transferOpportunities(transferRows || [], storeName),
     salesBehindLY: salesBehindLY(salesLY || [], storeName),
     slowDT: slowDT(dtRows || [], storeName),
     visitRisk: visitRisk(visitStores || [], storeName),
