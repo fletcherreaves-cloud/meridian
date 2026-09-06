@@ -215,7 +215,23 @@ for full detail on each.
 - [ ] Home-screen redesign (fewer/deeper widgets around the "learning loop") — ❓ 3 open design
   questions: owner's actual first move of the day; dynamic vs. user-customized vs. hybrid; widget
   count.
-- [ ] #192 P0: FOB Report populates nothing; Change Monitor → Snapshot rename.
+- [x] ✅ **RESOLVED, both halves (2026-09-06 PM sweep) — do not re-open.** **FOB Report populates
+  nothing:** `eom-dashboard.js:~1595-1614` fixes exactly this failure shape — a `fobPending` state
+  distinct from "genuinely empty," so a still-in-flight or failed `ds.qsrFobRows` startup load can
+  no longer render as a false "clean ✓ / 0 stores" the way #192 originally reported (comment there
+  names the bug explicitly: *"a food-cost panel presenting an affirmative 'no FOB data' on an
+  unresolved load, the exact #192 P0 failure shape"*). **Change Monitor → Snapshot rename:** the
+  underlying ask was reassurance, not a literal label change (owner: *"I just don't want the
+  confusion or concern that if I click it it will mess something up"*) — Change Monitor v2 is
+  ledger-derived and auto-baselines from count-completion with **no manual lock required at all**;
+  the old "Snapshot" button is explicitly labelled `📌 Snapshot (optional)` with a tooltip stating
+  *"NOT required — the Change Monitor auto-derives each store's baseline from the count ledger"*,
+  and `lockBaseline()` only ever ADDS a new snapshot record (`saveEomSnapshots`) — never
+  overwrites or deletes anything, so there is nothing it could "mess up." The redesign-plan idea of
+  literally dissolving/renaming the button (`project-inventory-control-redesign.md`) was never
+  built, but the fear it targeted has a real fix in place through a different, arguably better
+  mechanism (optional + auto-derived + additive-only). (`plan-backlog-and-redesign-2026-08-15.md`
+  item 4, `dispatch-192.md`.)
 - [ ] Correctness bugs slotted opportunistically: #299, #300, #302, #303, #285, #228, #231, #289
   — status unconfirmed.
 - [ ] **Spine 1** — one copyable panel design (District View → Location-tile pattern), pilot =
@@ -299,7 +315,27 @@ for full detail on each.
   (coalesce `setDs` sites, defer `ds` to heavy views), not implemented. *(Possibly related to
   dispatch #31's fresh finding above — worth checking for overlap before treating as separate.)*
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
-- [ ] Smart Targets stuck on "Loading Sales History" indefinitely.
+- [ ] ⚠️ **MEASURED 2026-09-06 (PM sweep) — very likely already resolved as a pipeline side effect,
+  not re-closed without a live repro.** This complaint dates to `notes-60-queue.md` (2026-08-07).
+  `views/smart-targets.js`'s Sales metric (the one named stuck) has a mem-first fast path
+  (`:226-232`): if `ds.salesLedgerRows` already covers ≥8 locs and ≥20 days within the backtest
+  window, it renders instantly and never calls the heavy fallback (`loadDailySales`, the fetch that
+  could theoretically hang — no per-page timeout in `fetchAll`, so a genuinely stalled network
+  request would spin forever with no escape, which matches the "stuck indefinitely" symptom).
+  Measured live via service-role query on `sales_ledger_daily` (400-day cutoff): the first
+  unordered 1000-row page alone already contains **27 distinct locs / 64 distinct days** — several
+  times the guard's threshold. Since `sales_ledger_daily` has been continuously auto-ingested since
+  2026-07-01 (the emailed-report pipeline), the app's real `ds.salesLedgerRows` in production will
+  be larger still, so the slow path that could hang is very rarely if ever reached today, even
+  though it clearly WAS reachable back on 2026-08-07 before this data had accumulated. Same
+  coverage check on `daily_glimpse_daily` (laborpct/oepe/avgCheck/promo metrics' mem source) also
+  clears the guard by a wide margin (27 locs / 51 days in the same sample). Not closed outright —
+  no live UI repro was run — but the underlying cause (thin cloud-stream coverage forcing the risky
+  fallback) looks solved by the passage of time + pipeline maturity, not by any targeted fix. The
+  one real remaining gap, low priority: `fetchAll` has no per-page timeout, so IF the fallback path
+  is ever hit again (a new metric, a data gap, a stream outage) it can still hang the panel with no
+  escape — worth a bounded timeout wrapper someday, not urgent given the fast path now covers the
+  common case.
 - [ ] ⚠️ **MEASURED 2026-09-06 (PM sweep) — the named hypothesis (Jan-Mar upload gap) is
   REFUTED; if YTD is actually wrong, the cause is something else, not yet found.** "Yearly
   Planning" is `src/views/yearly-projections.js`'s Annual Target vs Actual view; its YTD actual
