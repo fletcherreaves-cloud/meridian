@@ -4,7 +4,9 @@
 // what RevenueIntelligence already shipped, and gives attention-feed.js's slowDT detector a
 // real $ value instead of the hardcoded 0 its own header comment used to complain about.
 import { describe, it, expect } from 'vitest';
-import { computeOepeDollarGap } from '../engine/revenue-opportunity.js';
+import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
+
+const daysAgo = n => new Date(Date.now() - n * 86400000);
 
 describe('computeOepeDollarGap', () => {
   it('returns null when the store is not over its OEPE target', () => {
@@ -38,5 +40,55 @@ describe('computeOepeDollarGap', () => {
     const small = computeOepeDollarGap({ oepe: 160, avgCheck: 9 }, { tOepe: 150 });
     const big = computeOepeDollarGap({ oepe: 220, avgCheck: 9 }, { tOepe: 150 });
     expect(big.dailyOpportunity).toBeGreaterThan(small.dailyOpportunity);
+  });
+});
+
+describe('computeDaypartErosion', () => {
+  it('returns null with no peaksSalesRows on ds', () => {
+    expect(computeDaypartErosion('a', {}, {})).toBeNull();
+  });
+
+  // Row builder: 4 rows per daypart in each window (>=3 required), older window flat at
+  // netSales=1000, recent window varying per daypart to produce a real asymmetric signal.
+  function rowsFor(loc, recentByDaypart) {
+    const rows = [];
+    const dayparts = ['breakfast', 'lunch', 'dinner'];
+    for (const dp of dayparts) {
+      for (let i = 0; i < 4; i++) {
+        rows.push({ loc, slice: dp, date: daysAgo(50 + i * 5), netSales: 1000 }); // older window
+        rows.push({ loc, slice: dp, date: daysAgo(5 + i * 5), netSales: recentByDaypart[dp] }); // recent window
+      }
+    }
+    return rows;
+  }
+
+  it('flags a competitive signal when one daypart erodes while others hold', () => {
+    const ds = { peaksSalesRows: rowsFor('a', { breakfast: 1000, lunch: 1000, dinner: 500 }) }; // dinner -50%
+    const r = computeDaypartErosion('a', ds, {});
+    expect(r).not.toBeNull();
+    expect(r.isAsymmetric).toBe(true);
+    expect(r.worstSlice).toBe('dinner');
+    expect(r.competitiveSignal).toBe(true);
+    expect(r.explanation).toContain('Dinner is declining');
+  });
+
+  it('does NOT flag a competitive signal when all dayparts decline together', () => {
+    const ds = { peaksSalesRows: rowsFor('a', { breakfast: 900, lunch: 900, dinner: 900 }) }; // uniform -10%
+    const r = computeDaypartErosion('a', ds, {});
+    expect(r).not.toBeNull();
+    expect(r.isAsymmetric).toBe(false);
+    expect(r.competitiveSignal).toBe(false);
+    expect(r.explanation).toContain('traffic, economic, or macro-level');
+  });
+
+  it('reports stable when nothing is really moving', () => {
+    const ds = { peaksSalesRows: rowsFor('a', { breakfast: 1000, lunch: 1000, dinner: 1000 }) };
+    const r = computeDaypartErosion('a', ds, {});
+    expect(r.explanation).toContain('stable');
+  });
+
+  it('only looks at the requested store\'s own rows', () => {
+    const ds = { peaksSalesRows: rowsFor('b', { breakfast: 1000, lunch: 1000, dinner: 500 }) };
+    expect(computeDaypartErosion('a', ds, {})).toBeNull();
   });
 });

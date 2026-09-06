@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -199,6 +199,22 @@ describe('duplicateWrinFlags', () => {
   });
 });
 
+describe('daypartErosionAlerts', () => {
+  it('flags only rows whose result carries a real competitiveSignal', () => {
+    const rows = [
+      { loc: 'a', result: { competitiveSignal: true, explanation: 'Dinner is declining...' } },
+      { loc: 'b', result: { competitiveSignal: false, explanation: 'Daypart mix is stable.' } },
+      { loc: 'c', result: null },
+    ];
+    const items = daypartErosionAlerts(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].loc).toBe('a');
+    expect(items[0].category).toBe('Competitive');
+    expect(items[0].detail).toBe('Dinner is declining...');
+    expect(items[0].nav).toBe('revintel');
+  });
+});
+
 describe('forecastCalibrationGap', () => {
   it('flags a store with high MAPE and nothing else flagged', () => {
     const items = forecastCalibrationGap([{ loc: 'a', mape: 18.4 }], [], nm);
@@ -373,6 +389,15 @@ describe('buildAttentionFeed', () => {
       max: 50,
     });
     expect(feed.some(i => i.loc === 'a' && i.category === 'Inventory')).toBe(true);
+  });
+
+  it('daypartErosionAlerts wiring: real erosionRows produce a feed item', () => {
+    const feed = buildAttentionFeed({
+      erosionRows: [{ loc: 'a', result: { competitiveSignal: true, explanation: 'Dinner...' } }],
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === 'a' && i.category === 'Competitive')).toBe(true);
   });
 
   it('fuses detectors into one ranked feed', () => {

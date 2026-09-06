@@ -1028,9 +1028,9 @@ first below.
   metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
   timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail
   (`attribution-validity-register-login.md`).
-- [ ] ✅ **4 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap, cross-store transfer
-  matcher, duplicate-WRIN detector, OEPE-dollarization (see corrections below).** New
-  `forecastCalibrationGap` detector in
+- [ ] ✅ **5 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap, cross-store transfer
+  matcher, duplicate-WRIN detector, OEPE-dollarization, daypart-erosion (see corrections below).**
+  New `forecastCalibrationGap` detector in
   `src/engine/attention-feed.js`, wired into `buildAttentionFeed` (runs after every other
   detector, since it needs to know what they already flagged per store) and into the live call
   site (`attention-now.js`'s `useAttentionFeed`, sourcing per-store MAPE from
@@ -1076,12 +1076,20 @@ first below.
   freshness fix), only the supporting factors (`dtGC`/`avgCheck`/`laborPct`/`tpph`) come from the
   matching store's own `.p` object. 8 new tests (`revenue-opportunity.test.js` + 2 in
   `attention-feed.test.js`).
-  **2 remain unbuilt**, and daypart-erosion is now the closest one: its full computation
-  (`computeRevenueOpportunity` block 3 in `store-analytics.js`, ~lines 707-745) is real, live,
-  tested-by-use, and depends only on `ds.peaksSalesRows`/`normSlice`/`settings.weeksBack` per
-  store — the same shape of extraction as OEPE-dollarization, just not done in this pass.
-  "This Week's Focus" problem-type ranking is the one item that may genuinely be in a retired
-  `priority-brief` panel this pass still did not locate — unconfirmed either way, not re-checked.
+  ✅ **5 of 6 built 2026-09-06 — daypart-erosion done too, same pass.** `computeRevenueOpportunity`
+  block 3 extracted verbatim to `computeDaypartErosion(loc, ds, settings)` in the same
+  `revenue-opportunity.js`; `store-analytics.js` imports it back, zero behavior change to
+  `RevenueIntelligence` (one exact-behavior wrinkle preserved on purpose: the original explanation
+  string called `fPct(Math.abs(trend), 2)`, which always prepends `+` even on an already-abs'd
+  decline figure — kept byte-identical rather than "fixed" as an unrelated cosmetic change). New
+  `daypartErosionAlerts` detector in `attention-feed.js` fires only on the subset with a real
+  `competitiveSignal` (most stores resolve to "stable" or "declining together," neither worth a
+  feed row) — wired into `buildAttentionFeed` (new `erosionRows` param) and live in
+  `attention-now.js`. 7 more new tests.
+  **1 remains unbuilt: "This Week's Focus" problem-type ranking** — the one item that may
+  genuinely be in a retired `priority-brief` panel this pass still did not locate. Unconfirmed
+  either way, not re-checked — given how wrong the "orphan" framing turned out for the other 5,
+  the next session should MEASURE whether `priority-brief` is actually retired before assuming so.
   (`decisions-panel-inventory-2026-08-10.md`).
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation

@@ -31,3 +31,66 @@ export function computeOepeDollarGap(p, t) {
     valuePerSecond: +valuePerSecond.toFixed(2), avgCheck, dtGCPerHour,
   };
 }
+
+// ── Daypart erosion (competitive pressure signal) ───────────────────────────────
+// Extracted from views/store-analytics.js's computeRevenueOpportunity block 3 — Decisions Panel
+// Inventory salvage #5. Also already live in RevenueIntelligence (that panel's own subtitle:
+// "...Daypart erosion · Competitive pressure signals..."); this pass only extracts it so
+// attention-feed.js can reuse it, same split pattern as computeOepeDollarGap above.
+//
+// A store-wide sales decline usually moves every daypart together (macro traffic, economy). ONE
+// daypart eroding while the others hold is a different signature — a nearby competitor taking
+// share in a specific window. `ds.peaksSalesRows` = the 3 Peaks manual-upload sales rows;
+// `settings.weeksBack` (default 6) sets both the lookback window and its own 2x-longer
+// comparison base. Returns null when there isn't at least 2 dayparts with ≥3 rows in both the
+// recent and older windows to compare.
+const PEAK_SLICES = {
+  '7am-9am': 'breakfast', '7am - 9am': 'breakfast', 'breakfast': 'breakfast',
+  '11am-2pm': 'lunch', '11am - 2pm': 'lunch', 'lunch': 'lunch',
+  '5pm-7pm': 'dinner', '5pm - 7pm': 'dinner', 'dinner': 'dinner',
+};
+function normSlice(s) { return PEAK_SLICES[s.toLowerCase().trim()] || s.toLowerCase().replace(/\s/g, ''); }
+
+export function computeDaypartErosion(loc, ds, settings) {
+  if (!(ds && ds.peaksSalesRows)) return null;
+  const locStr = String(loc || '').trim();
+  const wb6 = (settings && settings.weeksBack) || 6;
+  const cut12 = new Date(Date.now() - wb6 * 2 * 7 * 86400000); // 2× lookback for comparison base
+  const cut6 = new Date(Date.now() - wb6 * 7 * 86400000); // lookback period
+  const slices = ['breakfast', 'lunch', 'dinner'];
+  const erosion = {};
+  for (const sl of slices) {
+    const all = ds.peaksSalesRows.filter(r => String(r.loc || '').trim() === locStr && normSlice(r.slice) === sl && r.date >= cut12);
+    const recent = all.filter(r => r.date >= cut6);
+    const older = all.filter(r => r.date < cut6);
+    if (recent.length >= 3 && older.length >= 3) {
+      const avgR = recent.reduce((a, r) => a + r.netSales, 0) / recent.length;
+      const avgO = older.reduce((a, r) => a + r.netSales, 0) / older.length;
+      const trend = avgO > 0 ? (avgR - avgO) / avgO : 0;
+      erosion[sl] = { trend: +trend.toFixed(4), avgRecent: +avgR.toFixed(0), avgOlder: +avgO.toFixed(0) };
+    }
+  }
+  if (Object.keys(erosion).length < 2) return null;
+  const trends = Object.values(erosion).map(e => e.trend);
+  const overallTrend = trends.reduce((a, v) => a + v, 0) / trends.length;
+  const maxVariance = Math.max(...trends) - Math.min(...trends);
+  // Asymmetric: one daypart significantly worse than others
+  const isAsymmetric = maxVariance > 0.06;
+  const worstSlice = Object.entries(erosion).sort((a, b) => a[1].trend - b[1].trend)[0];
+  const bestSlice = Object.entries(erosion).sort((a, b) => b[1].trend - a[1].trend)[0];
+  return {
+    erosion, overallTrend: +overallTrend.toFixed(4), isAsymmetric,
+    worstSlice: worstSlice[0], worstTrend: worstSlice[1].trend,
+    bestSlice: bestSlice[0], bestTrend: bestSlice[1].trend,
+    competitiveSignal: isAsymmetric && worstSlice[1].trend < -0.05,
+    explanation: isAsymmetric && worstSlice[1].trend < -0.05
+      // Matches views/store-analytics.js's original fPct(Math.abs(trend), 2) call exactly —
+      // fPct always prepends '+' for a >=0 input, so an already-abs'd value reads "+5.23%" here.
+      // A cosmetic quirk, not fixed here: this extraction preserves existing behavior byte for
+      // byte rather than silently changing display text no one asked to change.
+      ? `${worstSlice[0].charAt(0).toUpperCase() + worstSlice[0].slice(1)} is declining +${(Math.abs(worstSlice[1].trend) * 100).toFixed(2)}% while other dayparts hold — this is the signature of a nearby competitor taking market share in a specific window, not an overall traffic issue. Check what opened near this store in the last 90 days.`
+      : overallTrend < -0.03
+        ? 'All dayparts declining proportionally — likely a traffic, economic, or macro-level issue rather than a competitive threat.'
+        : 'Daypart mix is stable. No asymmetric erosion detected.',
+  };
+}
