@@ -620,28 +620,36 @@ for full detail on each.
   review wiring — link a review to `geid`, decide which manager-attributed metrics score it.
 - [ ] Missing-targets UI in ReviewEditor (banner + one-click Smart-Targets seed).
 - [x] ✅ **BUILT 2026-09-06 — Performance Reviews' `foodOB` metric now scores FOB% directly.**
-  Owner-approved spec (`perf-review-excel-audit.md`, 2026-07-27/28): was scoring in DOLLARS
+  Owner-approved spec (`perf-review-excel-audit.md`, 2026-07-27): was scoring in DOLLARS
   (`field:'fobDollar'`, `unit:'pct'`) against a workbook target that is a PERCENTAGE — a unit
   mismatch, not just a loose threshold, and the reason FOB never had an auto-filled target (a
   bespoke `tFOBTarget × mo.salesVsTgt` dollar-conversion covered the gap instead). Fixed:
   `mo.foodOB` now stores FOB% (`fob$÷prodSales` auto-first, `fobPct` manual fallback — same
-  sourcing priority as before, just a different unit), the metric config is `unit:'abs'`
-  (absolute percentage-point deviation, not relative-%-of-target) with `t:[-0.0015,0.0015,
-  0.0045]` (the owner's 0.15/0.45-point figures converted to this app's fraction-of-1 scale for
-  a percentage — confirmed against `DEFAULT_TARGETS`, e.g. `tFOBTarget:0.0385` for 3.85%, not
-  `3.85`). `foodOB: 'tFOBTarget'` added to `REVIEW_METRIC_TARGET_FIELD` (the exact "unblocks
-  target auto-fill" this line asked for), replacing the now-obsolete dollar-conversion special
-  case. 10 new tests locking in the real scoring outcomes (verified numerically against
-  `rateMetric`'s actual boundary comparisons before writing assertions — an exact-boundary
-  value is floating-point sensitive and can land one bucket off) plus updates to 4 existing
-  test files whose fixtures asserted the old dollar-scale behavior
-  (`dispatch-161-review-fob-auto-source.test.js`, `target-overrides.test.js`,
-  `review-target-autofill.test.js`, `dispatch-174-review-sales-auto-source.test.js`). Full
-  suite 477 files/4566 tests pass; build clean, budget unchanged. Labor's own "same looseness
-  issue" (same audit doc, `t:[-0.26,0.25,0.75]` labor-% points) was owner-approved in the same
-  decision but is a SEPARATE metric and was not touched here — Labor's `field` was already
-  correctly percentage-scaled (`laborPct`), so its fix is threshold-only, lower-risk, and a
-  natural next follow-up, not bundled into this one.
+  sourcing priority as before, just a different unit). `foodOB: 'tFOBTarget'` added to
+  `REVIEW_METRIC_TARGET_FIELD` (the exact "unblocks target auto-fill" this line asked for),
+  replacing the now-obsolete dollar-conversion special case.
+  ⚠️ **CORRECTION (2026-09-06, same-session self-catch, a few hours later) — the threshold half
+  of this fix was wrong and has been reverted; the metric-DEFINITION half above (score FOB%, not
+  fob$) was correct and stands.** The original fix also set `unit:'abs', t:[-0.0015,0.0015,
+  0.0045]` — the owner's 0.15/0.45-percentage-point figures from the audit doc's **Round 1**
+  (2026-07-27). Only found on a later, fuller read of the same file: **Round 2** (2026-07-28,
+  one day later) explicitly revises this exact number — *"FOB / Labor thresholds are
+  PREVIOUS-ORG BONUS-ELIGIBILITY GATES, not base scoring... Keep the math, but make it an
+  OPTIONAL / unlockable module... When off (today) it doesn't affect scoring... distinct from
+  the 1-4 competency scoring."* Round 2 never named a replacement base-scoring threshold for
+  FOB, so `unit`/`t` were reverted to the value that shipped before either round touched it
+  (`unit:'pct', t:[-0.05,0.05,0.10]` — relative-%-of-target, the shape most other metrics in
+  this file use), now correctly applied to the FOB% actual/target instead of the old dollar
+  figures. The genuinely still-unbuilt piece is the **Bonus Eligibility module itself**
+  (Labor −0.25pts/FOB −0.15pts of target, toggle-gated, off by default, distinct from base
+  scoring) — see the "Banked threshold-value corrections" line below; not attempted here, a
+  real new feature (a config toggle + its own scoring section), not a threshold tweak.
+  10 tests (rewritten to match the corrected config) plus 4 existing test files updated for the
+  sourcing half (unaffected by the threshold correction — they test `autoPopulateKPIs`'s output,
+  not `rateMetric`'s config). Full suite 477 files/4566 tests pass; build clean, budget
+  unchanged. Labor's own matching threshold question (same audit doc) is untouched — Labor's
+  `field` was already correctly percentage-scaled, so if Labor ever needs a change it's the
+  Bonus Eligibility module above, not a base-scoring threshold edit.
 - [x] ✅ **RE-VERIFIED 2026-09-06 (owner said go ahead on the ❓ items) — 5 of 6 already resolved,
   only 1 real gap remains.** Checked `review-engine.js`'s `DEFAULT_REVIEW_CONFIG` directly:
   **Shift Certified Mgrs** (`shiftCert`), **Total Headcount** (`headcount`), and **0-90 Day Crew

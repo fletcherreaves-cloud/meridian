@@ -128,16 +128,31 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'delivGC',  note:'Auto: 3PO Delivery GC/R/D (cloud) vs store target' },
     ],
     profit: [
-      // Metric-definition fix, owner-approved 2026-07-27/28 (perf-review-excel-audit.md): was
+      // Metric-DEFINITION fix, owner-approved 2026-07-27 (perf-review-excel-audit.md): was
       // scoring in DOLLARS (field:'fobDollar') against a workbook target that is a PERCENTAGE —
       // a unit mismatch, not just a loose threshold, and the reason FOB never had an auto-filled
       // target (see the tFOBTarget*salesVsTgt dollar-conversion workaround this replaced, below).
-      // Owner's decision: score FOB% (fob$ ÷ sales) vs target FOB%, in ABSOLUTE percentage-POINTS
-      // ("FOB% within 0.15 pts of the target FOB%"), not the app's usual relative-%-of-target
-      // (unit:'pct'). t[] converted from the owner's percentage-point figures (0.15/0.45) to this
-      // app's fraction-of-1 storage scale for a percentage (tFOBTarget is e.g. 0.0385 for 3.85%,
-      // not 3.85 or 0.0385*100 — confirmed against DEFAULT_TARGETS) — i.e. divided by 100.
-      { key:'foodOB',     label:'Food Over Base % vs Target', weight:0.35, better:'lower',  unit:'abs', scored:true,  t:[-0.0015,0.0015,0.0045], src:'auto', field:'fobPct', pctInput:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred), auto-filled directly — dispatch #132 item 5' },
+      // Fixed: score FOB% (fob$ ÷ sales) vs target FOB%, same units both sides.
+      //
+      // ⚠️ CORRECTION (2026-09-06, same-session self-catch): a prior pass on this exact line
+      // ALSO changed unit/t to unit:'abs', t:[-0.0015,0.0015,0.0045] — the 0.15/0.45-point
+      // figures from the SAME audit doc's Round 1 (2026-07-27). That was wrong: Round 2
+      // (2026-07-28, one day later, same file) explicitly REVISES this — "FOB / Labor
+      // thresholds are PREVIOUS-ORG BONUS-ELIGIBILITY GATES, not base scoring... Keep the
+      // math, but make it an OPTIONAL / unlockable module... When off (today) it doesn't
+      // affect scoring... distinct from the 1-4 competency scoring." Round 2 never named a
+      // replacement base-scoring threshold for FOB, so this reverts unit/t to the value that
+      // shipped before either round touched it (unit:'pct', t:[-0.05,0.05,0.10] — relative-
+      // %-of-target, the same shape most other metrics in this file use) — now correctly
+      // applied to the FOB% actual/target instead of the old dollar figures, since the
+      // metric-definition half of the fix (field:'fobPct', not 'fobDollar') was never wrong
+      // and Round 2 doesn't touch it. The actual owner-approved Bonus Eligibility module
+      // (Labor -0.25pts/FOB -0.15pts of target, toggle-gated, off by default) is still
+      // genuinely unbuilt — tracked separately (backlog-master-2026-08-19.md "Banked
+      // threshold-value corrections... FOB/Labor Bonus-Eligibility module"), not attempted
+      // here; building it means a new off-by-default config toggle plus its own scoring
+      // section, not a threshold tweak on this metric.
+      { key:'foodOB',     label:'Food Over Base % vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobPct', pctInput:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred), auto-filled directly — dispatch #132 item 5' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
       // Was src:'manual' with no field — a stale label, not the real behavior: autoPopulateKPIs
       // (below, "Op Supplies actual = Σ the month's daily op-supplies purchases") already
