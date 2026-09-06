@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -135,6 +135,16 @@ describe('slowDT', () => {
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
   });
+
+  it('defaults dollars to 0 when the caller does not supply it (unchanged pre-#4 behavior)', () => {
+    const items = slowDT([{ loc: 'a', dt: 300, target: 240 }], nm);
+    expect(items[0].dollars).toBe(0);
+  });
+
+  it('passes through a supplied dollars value (Decisions Panel salvage #4)', () => {
+    const items = slowDT([{ loc: 'a', dt: 300, target: 240, dollars: 450 }], nm);
+    expect(items[0].dollars).toBe(450);
+  });
 });
 
 describe('transferOpportunities', () => {
@@ -186,6 +196,22 @@ describe('duplicateWrinFlags', () => {
     const flags = integrityFlags(duplicateWrinFlags(rows, nm), nm);
     expect(flags[0].category).toBe('Integrity');
     expect(flags[0].severity).toBe('info');
+  });
+});
+
+describe('daypartErosionAlerts', () => {
+  it('flags only rows whose result carries a real competitiveSignal', () => {
+    const rows = [
+      { loc: 'a', result: { competitiveSignal: true, explanation: 'Dinner is declining...' } },
+      { loc: 'b', result: { competitiveSignal: false, explanation: 'Daypart mix is stable.' } },
+      { loc: 'c', result: null },
+    ];
+    const items = daypartErosionAlerts(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].loc).toBe('a');
+    expect(items[0].category).toBe('Competitive');
+    expect(items[0].detail).toBe('Dinner is declining...');
+    expect(items[0].nav).toBe('revintel');
   });
 });
 
@@ -363,6 +389,15 @@ describe('buildAttentionFeed', () => {
       max: 50,
     });
     expect(feed.some(i => i.loc === 'a' && i.category === 'Inventory')).toBe(true);
+  });
+
+  it('daypartErosionAlerts wiring: real erosionRows produce a feed item', () => {
+    const feed = buildAttentionFeed({
+      erosionRows: [{ loc: 'a', result: { competitiveSignal: true, explanation: 'Dinner...' } }],
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === 'a' && i.category === 'Competitive')).toBe(true);
   });
 
   it('fuses detectors into one ranked feed', () => {

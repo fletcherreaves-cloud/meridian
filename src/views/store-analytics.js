@@ -6,6 +6,7 @@ import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModel
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
 import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
@@ -657,23 +658,8 @@ function computeRevenueOpportunity(store, ds, settings) {
   const result = {};
 
   // 1. OEPE Dollar Gap — what is each second of OEPE improvement worth?
-  if(p.oepe>0 && t.tOepe>0 && p.oepe>t.tOepe) {
-    const gapSec = p.oepe - t.tOepe;
-    const dtGCPerHour = p.dtGC>0 ? p.dtGC : 50; // cars/hour estimate
-    const avgCheck = p.avgCheck>0 ? p.avgCheck : (p.laborPct>0&&p.tpph>0?9.50:8.50);
-    // At current OEPE, cars/hr = 3600/OEPE. At target, = 3600/tOepe.
-    const currentRate = 3600/p.oepe;
-    const targetRate  = 3600/t.tOepe;
-    const addlCarsPerHour = Math.max(0, targetRate - currentRate);
-    const revenuePerHour  = addlCarsPerHour * avgCheck;
-    const peakHours = 4; // conservative: breakfast+lunch peak
-    const dailyOpportunity = revenuePerHour * peakHours;
-    const monthlyOpportunity = dailyOpportunity * 30;
-    const valuePerSecond = dailyOpportunity / gapSec;
-    result.oepe = {gapSec, addlCarsPerHour:+addlCarsPerHour.toFixed(2),
-      dailyOpportunity:+dailyOpportunity.toFixed(2), monthlyOpportunity:+monthlyOpportunity.toFixed(0),
-      valuePerSecond:+valuePerSecond.toFixed(2), avgCheck, dtGCPerHour};
-  }
+  const oepeGap = computeOepeDollarGap(p, t);
+  if(oepeGap) result.oepe = oepeGap;
 
   // 2. DT Parked % Optimization — where is the efficiency sweet spot?
   if(p.park>0 && ds && ds.peaksSvcRows) {
@@ -705,44 +691,8 @@ function computeRevenueOpportunity(store, ds, settings) {
   }
 
   // 3. Daypart Erosion — asymmetric decline signals competitive pressure
-  if(ds && ds.peaksSalesRows) {
-    const locStr = String(loc||'').trim();
-    const wb6 = (settings&&settings.weeksBack)||6;
-    const cut12 = new Date(Date.now()-wb6*2*7*86400000); // 2× lookback for comparison base
-    const cut6  = new Date(Date.now()-wb6*7*86400000);   // lookback period
-    const slices = ['breakfast','lunch','dinner'];
-    const erosion = {};
-    for(const sl of slices) {
-      const all   = ds.peaksSalesRows.filter(r=>String(r.loc||'').trim()===locStr&&normSlice(r.slice)===sl&&r.date>=cut12);
-      const recent= all.filter(r=>r.date>=cut6);
-      const older = all.filter(r=>r.date<cut6);
-      if(recent.length>=3&&older.length>=3) {
-        const avgR = recent.reduce((a,r)=>a+r.netSales,0)/recent.length;
-        const avgO = older.reduce((a,r)=>a+r.netSales,0)/older.length;
-        const trend = avgO>0?(avgR-avgO)/avgO:0;
-        erosion[sl] = {trend:+trend.toFixed(4), avgRecent:+avgR.toFixed(0), avgOlder:+avgO.toFixed(0)};
-      }
-    }
-    if(Object.keys(erosion).length>=2) {
-      const trends = Object.values(erosion).map(e=>e.trend);
-      const overallTrend = trends.reduce((a,v)=>a+v,0)/trends.length;
-      const maxVariance = Math.max(...trends)-Math.min(...trends);
-      // Asymmetric: one daypart significantly worse than others
-      const isAsymmetric = maxVariance>0.06;
-      const worstSlice = Object.entries(erosion).sort((a,b)=>a[1].trend-b[1].trend)[0];
-      const bestSlice  = Object.entries(erosion).sort((a,b)=>b[1].trend-a[1].trend)[0];
-      result.erosion = {erosion, overallTrend:+overallTrend.toFixed(4), isAsymmetric,
-        worstSlice:worstSlice[0], worstTrend:worstSlice[1].trend,
-        bestSlice:bestSlice[0], bestTrend:bestSlice[1].trend,
-        competitiveSignal: isAsymmetric && worstSlice[1].trend<-0.05,
-        explanation: isAsymmetric && worstSlice[1].trend<-0.05
-          ? `${worstSlice[0].charAt(0).toUpperCase()+worstSlice[0].slice(1)} is declining ${fPct(Math.abs(worstSlice[1].trend),2)} while other dayparts hold — this is the signature of a nearby competitor taking market share in a specific window, not an overall traffic issue. Check what opened near this store in the last 90 days.`
-          : overallTrend<-0.03
-          ? 'All dayparts declining proportionally — likely a traffic, economic, or macro-level issue rather than a competitive threat.'
-          : 'Daypart mix is stable. No asymmetric erosion detected.'
-      };
-    }
-  }
+  const erosion = computeDaypartErosion(loc, ds, settings);
+  if(erosion) result.erosion = erosion;
 
   // 4. TPPH Gap
   if(p.tpph>0 && t.tTpph>0 && p.tpph<t.tTpph) {

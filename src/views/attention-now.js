@@ -15,6 +15,7 @@ import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
+import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { dueForReview, toAttentionItem } from '../engine/coaching-loop.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
@@ -135,11 +136,28 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // shape metricRate exists for, not just a defensive conversion.
     // Note: OEPE is a mean of daily values, not car-weighted — the source stores it as a
     // ratio with no car count (see memory/notes-57-metric-registry-plan.md §4).
+    // Decisions Panel Inventory salvage #4 — dollars was hardcoded 0 here (slowDT's own header
+    // comment named this exact gap: "cannot rank against FOB or sales items"). computeOepeDollarGap
+    // (engine/revenue-opportunity.js) needs a few supporting per-store factors (dtGC/avgCheck/
+    // laborPct/tpph) beyond oepe itself — those come from the store's own computed `.p`, but the
+    // oepe/target VALUES it's compared against stay exactly what they already were (dt/tgt from
+    // metricRate/DEFAULT_TARGETS above), not store.p.oepe — preserving dispatch #155's freshness
+    // fix rather than silently reverting to whatever staleness that dispatch moved away from.
+    const storesByLoc = new Map((stores || []).map(s => [s.loc, s]));
     const dtRows = allLocs.map(loc => {
       const dt = metricRate(ds, [loc], dateRange, 'oepe');
       const tgt = (DEFAULT_TARGETS[unpad(loc)] || {}).tOepe;
-      return (dt != null && tgt != null) ? { loc, dt, target: Number(tgt) } : null;
+      if (dt == null || tgt == null) return null;
+      const s = storesByLoc.get(loc);
+      const oepeGap = s?.p ? computeOepeDollarGap({ ...s.p, oepe: dt }, { tOepe: Number(tgt) }) : null;
+      return { loc, dt, target: Number(tgt), dollars: oepeGap ? oepeGap.dailyOpportunity : 0 };
     }).filter(Boolean);
+
+    // Decisions Panel Inventory salvage #5 — computeDaypartErosion (engine/revenue-
+    // opportunity.js) is the same asymmetric-decline computation RevenueIntelligence already
+    // ships; this hook receives no `settings` prop, so weeksBack falls to that function's own
+    // default (6), matching what a store would see with default settings there too.
+    const erosionRows = allLocs.map(loc => ({ loc, result: computeDaypartErosion(loc, ds, undefined) })).filter(r => r.result);
 
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
     const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
@@ -165,7 +183,7 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, storeName: nm, max, onFireVolume: recordFireVolume });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, erosionRows, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 
