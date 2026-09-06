@@ -305,8 +305,16 @@
 - [ ] Backup/rollback story for Supabase.
 - [ ] Telemetry/usage DB (panel usage, error logs, pipeline health, tamper detection) — schema
   cheap, build is a real project; auto-shutdown should be flag-first, not automatic.
-- [ ] Security sweep — RLS Phase 1 (closing anonymous-access tables) is done; **Phase 2
-  (`can_see_loc()`, per-loc isolation)** is the real remaining scope.
+- [ ] ⚠️ **RE-MEASURED 2026-09-06 — the `can_see_loc()` design named here is dead; a newer
+  redesign already shipped.** RLS Phase 1 (closing anonymous-access tables) is done. Phase 2 was
+  redesigned as `public.my_locs()` (not `can_see_loc()`, which now 404s live) and the helper
+  function is confirmed live in production. **Still open:** whether the 51 RESTRICTIVE per-loc
+  policies (`schema-rls-phase2-loc.sql`) are actually attached (unconfirmable from this
+  environment — no `pg_policies` access), and — a separate, more important gap — **no real
+  profile today is restricted to a subset of stores** (measured: 3 profiles, 2 null, 1 with the
+  full 27-store list), so per-loc isolation has never been exercised live even if it is wired up.
+  Full measurement + concrete next step (a `pg_policies` count + a live login test):
+  `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
 - [ ] PII/credential-handling human-process capture — the content already exists in
   `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md` (x-auth-token sequencing rules, the
   `storePeoplePunches`/`employeeRoster` PII field lists), it's just not indexed into CLAUDE.md's

@@ -8,6 +8,18 @@ metadata:
 
 # Supabase RLS Hardening Plan (owner-approved to draft, 2026-07-27)
 
+**CORRECTION, 2026-09-06 — the 2026-08-20 note below ("Phase 2... confirmed not applied") is
+stale.** Full measurement: `memory/finding-rls-phase2-my-locs-2026-09-06.md`. Short version: a
+newer, redesigned Phase 2 exists and is live in production — `public.my_locs()` (replacing the
+abandoned `can_see_loc()` design this file describes below) responds `HTTP 200` to a live RPC
+probe, while `can_see_loc()` now 404s (`PGRST202`, function not found). Whether the accompanying
+51 RESTRICTIVE per-loc policies (`supabase/schema-rls-phase2-loc.sql`) are actually attached is
+still unconfirmed — this environment cannot query `pg_policies` — and separately, **no real
+profile today is genuinely restricted to a subset of stores** (measured: 3 profiles total, 2 null/
+unrestricted, 1 with the complete 27-store list), so even a fully-applied Phase 2 has never been
+exercised against a real restricted account. See that finding file for the exact recommended
+next step (a `pg_policies` count + a live login test with a genuinely restricted profile).
+
 **MAJOR CORRECTION, 2026-08-20 — read this before anything below.** This plan's own premise
 (A1: ~30 tables wide open to anonymous access) was measured against **live production** today,
 via two purpose-built read-only diagnostics (`supabase/diagnose-schema-state.sql`,
