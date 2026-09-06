@@ -1375,6 +1375,7 @@ function PeaksTab({ds, loc, tgt, settings}) {
             {l:'OEPE',v:p.oepe>0?Math.round(p.oepe)+'s':'—',ok:oepeOk,tg:tgt.tOepe?'Target: '+tgt.tOepe+'s':''},
             {l:'R2P',v:p.r2p>0?Math.round(p.r2p)+'s':'—',ok:r2pOk,tg:'Target: ≤90s'},
             {l:'KVS Time',v:p.kvst>0?Math.round(p.kvst)+'s':'—',ok:p.kvst>0&&tgt.tKvst>0?p.kvst<=tgt.tKvst:null,tg:tgt.tKvst?'Target: '+tgt.tKvst+'s':''},
+            {l:'TPPH',v:p.tpph>0?p.tpph.toFixed(2):'—',ok:p.tpph>0&&tgt.tTpph>0?p.tpph>=tgt.tTpph:null,tg:tgt.tTpph?'Target: '+tgt.tTpph:''},
             {l:'DT Parked %',v:p.parkPct>0?fP(p.parkPct,2):'—',ok:p.parkPct>0&&tgt.tPark>0?p.parkPct<=tgt.tPark:null,tg:tgt.tPark?'Target: '+fP(tgt.tPark):''},
             {l:'Net Sales',v:p.netSales>0?f$(p.netSales):'—',ok:null,tg:'Peak window total'},
             {l:'Transactions',v:p.gc>0?Math.round(p.gc):'—',ok:null,tg:'Peak window GC'},

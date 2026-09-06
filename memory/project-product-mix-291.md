@@ -68,7 +68,18 @@ unit tests); `npm run build` — clean, eager total 509.64 KB gzip (budget 850 K
 340.36 KB), no meaningful shift from before this change (these files aren't in App.js's
 eager import graph).
 
-## One open, explicitly-flagged uncertainty — do not treat as resolved
+## ✅ RESOLVED 2026-09-06 — the multi-store `loc` field concern below, measured live
+
+Queried `qsr_product_mix` directly via service-role: **2,638,017 rows**, real 7-char-padded
+store NSNs in `loc` (`0003708`, `0005183`, `0005985`, `0033704`, ...matching `STORE_NAMES`
+entries, not a `'0000000'` placeholder), fresh through **2026-09-05** (yesterday — the pull is
+running on schedule). The "might silently drop all rows" risk this section describes never
+materialized; `loc` is exactly the field name guessed. Multi-store pull confirmed correct and
+live — do not re-verify this. The only genuinely still-open item from this file's original scope
+is the `productMixDiscount` pull (`disc_amt` reconciliation) — endpoint shape not yet captured,
+not attempted blind.
+
+## One open, explicitly-flagged uncertainty — SUPERSEDED, see resolution above
 
 `mapRow()`'s `loc: nsn7(r.storeNum ?? r.nsn ?? '')` — the capture that established the
 endpoint's response shape (#293) was a **single-store** request. The field name QSRSoft

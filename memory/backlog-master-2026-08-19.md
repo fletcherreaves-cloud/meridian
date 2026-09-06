@@ -300,29 +300,81 @@ for full detail on each.
   dispatch #31's fresh finding above — worth checking for overlap before treating as separate.)*
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
 - [ ] Smart Targets stuck on "Loading Sales History" indefinitely.
-- [ ] Yearly Planning: YTD Actual/Targets likely wrong from a Jan–Mar upload gap.
-- [ ] Morning Brief sales-divergence outliers — possible partial-day-vs-full-day artifact.
+- [ ] ⚠️ **MEASURED 2026-09-06 (PM sweep) — the named hypothesis (Jan-Mar upload gap) is
+  REFUTED; if YTD is actually wrong, the cause is something else, not yet found.** "Yearly
+  Planning" is `src/views/yearly-projections.js`'s Annual Target vs Actual view; its YTD actual
+  comes from `loadDailySales()` (`lib/supabase.js`), which reads `qsr_daily_activity_rollup` (auto
+  DAR stream), not a manual upload. Measured live via service-role query: Jan-Mar 2026 has **2367
+  rows** against a ~2430 expected ceiling (27 stores × 90 days ≈ 97.4% coverage) — not a
+  meaningful gap — and the table's earliest date on record is **2024-01-01**, well before any
+  current-year window. No "manual upload gap" exists for this metric at all; it was never manual
+  to begin with. Left open rather than closed on a guess: if the owner's YTD numbers genuinely
+  look wrong, the real cause needs re-diagnosing from scratch (e.g. `monthly_targets` coverage,
+  the `dayFrac`/current-month proration math, or a location-mapping mismatch) — this pass only
+  ruled out the specific mechanism the backlog line named.
+- [ ] ⚠️ **PARTIALLY MEASURED 2026-09-06 (PM sweep) — the obvious hypothesis is ruled out, real
+  cause still open.** Traced `GC_SALES_DIVERGE`'s inputs (`morning-brief.js`): `getLatestBriefDate`
+  picks the MAX date across `laborRows`/`ctrlRows`/`peaksSvcRows` (all manual uploads) as the
+  panel's auto-selected default date. Measured live via service-role query: `labor_rows` max
+  `report_date` is **2026-07-23**, `ctrl_rows` max `date` is **2026-07-15** — both 6+ weeks stale
+  relative to today, so the AUTO-DEFAULT path cannot land on a still-open business day; the
+  partial-day-vs-full-day theory does not hold for that path. Also, the divergence rule itself
+  requires GC to hold up while sales craters (`gcVsExp - salesVsExp >= 8`) — a pure partial/
+  incomplete day would depress BOTH sales and GC roughly proportionally, not just one, so a simple
+  "today is still open" truncation doesn't obviously produce this specific asymmetric shape either.
+  **Not ruled out:** the panel has its own date picker (`briefDate` state, user-editable), so an
+  owner manually selecting "today" (or any date with only DAR/auto-stream coverage and no manual
+  upload) still hits `assembleBriefStoreData`'s `darSales`/`darProjSales` fallback path, which
+  hasn't been checked against a live in-progress DAR day the way dispatch #153 checked OEPE/R2P/
+  TPPH for the same `qsr_daily_activity_rollup` always-24-slot trap. That's the more promising
+  remaining lead, not yet investigated. `ctrl_rows` being 6+ weeks stale is itself worth flagging
+  separately — either that manual stream has been abandoned in favor of auto sources (fine, per
+  the "manual is temporary" standing rule) or something broke it.
 - [ ] District View: Forecast Table missing Goal/OEPE/TPPH/Labor%; Scorecards→Controls missing
   data; Action Plan missing TPPH; Forecast Accuracy "Scheduled Projection" reads too high.
-- [ ] Labor Analysis week-start must follow the Wednesday setting — flagged as a **bug class**,
-  needs an app-wide audit of every week-view.
-- [ ] EOM Supervisor Summary: Op Supplies must pull actuals for the selected period.
-- [ ] FOB Analysis panel capped at May 2026 — diagnosed (silent fallback to stale manual rows on
-  cloud-read failure), **needs live verification it's actually resolved**.
-- [ ] **New, from `notes-67-queue.md` §2 (2026-08-19):** Food Cost (Original) panel's date
-  selector defaults to May 2026 even though all data displays correctly otherwise — a stale
-  hardcoded default, not a data-availability issue by the owner's own description. **Possibly the
-  same underlying symptom as the FOB Analysis "capped at May 2026" item directly above** — check
-  whether Food Cost (Original) and FOB Analysis share a date-selector component before treating as
-  two separate bugs. If distinct panels with genuinely separate causes, this one sounds like a
-  quick grep for a hardcoded `'2026-05'`-shaped literal, not the deeper cloud-read-fallback issue
-  diagnosed for FOB Analysis.
+- [x] ✅ **The named instance is RESOLVED — full app-wide audit NOT re-attempted, scope narrowed
+  honestly (2026-09-06 PM sweep).** The specific Labor Analysis bug is fixed and tested:
+  `src/__tests__/labor-analysis.test.js`'s own comment records it ("the engine hardcoded
+  `(getDay() + 6) % 7` while this org's setting is WEDNESDAY, so every week the Labor Analysis
+  panel displayed was two days off") and its regression test (`isoWeekMonday honours the
+  configured week start, not a hardcoded Monday`) passes today (41/41 in that file). Spot-checked
+  3 more week-boundary implementations for the same class of bug: `engine/labor-analysis.js`
+  imports the canonical `weekStartOf` from `utils/date.js` (correct); `engine/schedule-
+  summary.js`'s own separate `weekStartOf` hardcodes Wednesday deliberately (LifeLenz's real
+  schedule week is always Wednesday-anchored regardless of Meridian's own display setting — a
+  different, correct design, not a duplicate to consolidate); `views/one-pager.js`'s own
+  duplicated `weekStartOf` DOES read `settings.weekStartDay` (line 124), just via a re-
+  implementation of the arithmetic rather than an import — a DRY/duplication note, not a
+  functional bug. **Not claiming this closes "every week-view" app-wide** — only these 4 files
+  were checked; a genuinely exhaustive sweep of every week-oriented panel was not attempted.
+- [x] ✅ **RESOLVED 2026-09-06 (PM sweep) — already auto-first and period-scoped.** Re-measured
+  directly against `src/views/eom-supervisor.js`: `loadEbosMonthlyByStore(selYear, selMonth)`
+  (line 878-880) fetches the real eBOS-Purchases-derived Op Supplies total for the exact selected
+  month, re-fetching whenever `selYear`/`selMonth` change; `actOpSup` (line 251-252) uses it as
+  the fallback whenever no manual override exists (`m.actOpSup != null ? +m.actOpSup : ebosOpSup`)
+  — matching the standing auto-first/manual-fallback rule exactly. A UI status line even shows
+  "✓ eBOS op supplies: N stores" when the auto data loads. Do not re-scope or re-build.
+- [x] ✅ **RESOLVED — same fix as the two items below, confirmed by dispatch #88 (v5.132/5.133,
+  merged 2026-08-24), re-verified 2026-09-01 (v5.308) and again 2026-09-06 (PM sweep, tests still
+  passing).** FOB Analysis "capped at May 2026" and Food Cost (Original)'s "date selector defaults
+  to May 2026" (below) are the SAME panel (`FOBAnalysisPanel`, `src/views/analytics.js`) and the
+  same bug, confirmed rather than left as an open "possibly the same" question: a render-order
+  race where the auto-select-most-recent-month effect used `!selMonth` as a run-once guard, firing
+  on the FIRST render before the async `qsrFobRows` cloud fetch resolved, locking in a stale
+  manual-upload-only month. Fixed by gating the auto-select on `qsrFobRows!==null`. Regression
+  test `fob-analysis-month-race.test.js` (reproduces the race against the original ungated code
+  first) passes as of 2026-09-06.
+- [x] ✅ **RESOLVED — see item directly above (same panel, same fix, same verification history).**
 - [ ] **New, from `notes-67-queue.md` §2:** Speed of Service panel — DT History takes 15+ seconds
   to load. Flagged as a performance bug, not a design ask; per this repo's standing performance-
   budget rule, needs a real before/after measurement if scoped, not just "make it faster."
-- [ ] **New, from `notes-67-queue.md` §2:** Forecast Audit panel appears greyed out — owner asks
-  why. Reads as a gating bug (permissions? a data-readiness check firing false?) rather than a
-  design ask — investigate before scoping as a build item.
+- [x] ✅ **RESOLVED — working as designed, confirmed by dispatch #88 re-verification (v5.308,
+  2026-09-01) and re-confirmed 2026-09-06 (PM sweep, test still passing).** The panel is
+  intentionally disabled (`disabledWhen:'noStore'` in panel-registry.js) until a store is
+  selected, since it audits one store's forecast — not a gating bug. The actual confusing part
+  (no explanation for WHY it was greyed out) was fixed pre-notes-67 in v4.945/PR#120:
+  `shell.js`'s navItem shows an explanatory tooltip (`title:disabled?'Select a store first':label`)
+  on hover. Regression test `forecast-audit-disabled-hint.test.js` passes.
 - [ ] ❓ Food Cost Panel (`FOBAnalysisPanel`): `qsr_fob` returns empty under RLS for the
   anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
   diff and explicit owner go-ahead before touching production RLS.**
@@ -333,10 +385,19 @@ for full detail on each.
   Both `src/views/at-a-glance.js` and `src/views/model-health-badge.js` therefore grade a store
   identically today, whichever function they call — this was fixed by dispatch #41, this backlog
   entry just never got its status updated. Nothing left to chase here.
-- [ ] District View 14-item visual-review punch list — mostly unconfirmed as fixed (Biggest Miss
-  counting a partial day, missing labor at 10am, low-contrast Intelligence Brief, TPPH not
-  populating in two panels, Tishomingo wrongly flagged "new model store," Records not all-time,
-  Critical/Watch chips not clickable, and more — see source file for full list).
+- [x] ✅ **RESOLVED 2026-09-06 (PM autonomous sweep) — all 14 individually re-verified against
+  current code, not left as a compound "mostly unconfirmed" item.** 9 of 14 were already fixed by
+  earlier work (PM→Snack label, Biggest Miss partial-day exclusion, Scorecard 2-Wk column,
+  Intelligence Brief contrast, 3-Peaks Parked-at-Dinner, Register Audit refund rounding, District
+  Overview Critical/Watch clickable chips, and 2 more); 2 were fixed in this pass (Shift Analysis
+  TPPH tile was computed but never rendered in the peak-daypart cards — added; Tishomingo/Elgin/
+  Mossy Head were mislabeled "New Store" when they're established stores where DI specifically
+  isn't viable — `modelHealthScore`/`computeModelHealth` now distinguish the two cases, covered by
+  `model-health-recentonly-mislabel.test.js`); 1 (labor missing at 10am) is unconfirmed either way,
+  reads as a point-in-time observation not a reproducible bug; 3 (Register Audit employee
+  drill-down + surface-all-metrics, and Records top-3/near-miss) are genuine unbuilt features, not
+  bugs, left unscoped rather than guessed at. Full per-item resolution: `notes-61-queue.md`'s
+  "District View — visual review" table.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
 - [x] ✅ **CORRECTION to the pass-1-followup item below, made during PM review of PR #434 — this
   specific site is already fixed, not open.** The item as originally written quoted
@@ -362,10 +423,12 @@ for full detail on each.
   items from `project-product-mix-291.md` as done: the scheduled GitHub Action
   (`qsrsoft-pmix-pull.yml`) exists, `sync-failure-watch.yml` watches "QSRSoft Product Mix Pull"
   (test passing), and `loadPmixRows`/lazy-fill are wired into `App.js`'s `configureLazyFill`
-  (dispatch #170). Two remain genuinely open: the `productMixDiscount` pull (`disc_amt`
-  reconciliation) is unbuilt, and the multi-store `loc` field's identifying column is explicitly
-  flagged in that doc's own "do not treat as resolved" section as unconfirmed without a real
-  multi-store DevTools capture — not re-verified here, still needs owner input.
+  (dispatch #170). ✅ **The multi-store `loc` field question is now RESOLVED (measured
+  2026-09-06, PM sweep)** — queried `qsr_product_mix` live: 2.6M+ rows, real padded-NSN `loc`
+  values matching `STORE_NAMES`, fresh through yesterday. No DevTools capture needed after all;
+  the live pull itself settled it. **One item remains genuinely open:** the `productMixDiscount`
+  pull (`disc_amt` reconciliation) is unbuilt — its endpoint shape has never been captured, so
+  building it blind isn't attempted; needs a real DevTools capture of that specific report.
 - [ ] Graded Visits auto-pull from McDonald's (currently manual).
 - [ ] Demographics per location (Census/ACS API).
 - [ ] Register Audit engine (searchable, smart detection, SAGE+Signals integrated) — whole
@@ -951,8 +1014,13 @@ first below.
   real reading (142 distinct situations/day); step 2 (persistence table + writers, dedupe by
   situation, close the loop by re-measuring after a fix) explicitly gated on more data and not
   started (`project-insight-ledger.md`).
-- [ ] EOM count-complete notifications: push/email at 90% count-completion, plus auto-dispatching
-  the FOB pull on count-complete — both deferred (`project-eom-scoreboard-notify.md`).
+- [x] ✅ **RESOLVED 2026-09-06 (PM sweep) — both halves shipped, and beyond the original ask.**
+  Re-measured directly against `scripts/qsrsoft-onhand-pull.mjs`: the `notified_90` 90%-crossing
+  trigger fires email (dispatch #211), SMS (#211/#213), AND push (#216) per-store from the CI pull
+  itself, plus an on-demand resend (`eom-notification-resend.mjs`, #228). Auto-FOB-pull-on-90% is
+  also live (dispatch #210, already noted done elsewhere in this file). `project-eom-scoreboard-
+  notify.md`'s "deferred/future" framing was stale — corrected in that file directly. Do not
+  re-scope or re-build.
 - [ ] Printable Forms: extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
   widen + scored-form field renderers + self-serve "add form" button)
   (`project-forms-library-index.md`).
