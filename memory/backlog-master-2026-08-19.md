@@ -423,10 +423,12 @@ for full detail on each.
   items from `project-product-mix-291.md` as done: the scheduled GitHub Action
   (`qsrsoft-pmix-pull.yml`) exists, `sync-failure-watch.yml` watches "QSRSoft Product Mix Pull"
   (test passing), and `loadPmixRows`/lazy-fill are wired into `App.js`'s `configureLazyFill`
-  (dispatch #170). Two remain genuinely open: the `productMixDiscount` pull (`disc_amt`
-  reconciliation) is unbuilt, and the multi-store `loc` field's identifying column is explicitly
-  flagged in that doc's own "do not treat as resolved" section as unconfirmed without a real
-  multi-store DevTools capture — not re-verified here, still needs owner input.
+  (dispatch #170). ✅ **The multi-store `loc` field question is now RESOLVED (measured
+  2026-09-06, PM sweep)** — queried `qsr_product_mix` live: 2.6M+ rows, real padded-NSN `loc`
+  values matching `STORE_NAMES`, fresh through yesterday. No DevTools capture needed after all;
+  the live pull itself settled it. **One item remains genuinely open:** the `productMixDiscount`
+  pull (`disc_amt` reconciliation) is unbuilt — its endpoint shape has never been captured, so
+  building it blind isn't attempted; needs a real DevTools capture of that specific report.
 - [ ] Graded Visits auto-pull from McDonald's (currently manual).
 - [ ] Demographics per location (Census/ACS API).
 - [ ] Register Audit engine (searchable, smart detection, SAGE+Signals integrated) — whole
