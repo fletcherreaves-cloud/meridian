@@ -495,9 +495,26 @@ for full detail on each.
   (no explanation for WHY it was greyed out) was fixed pre-notes-67 in v4.945/PR#120:
   `shell.js`'s navItem shows an explanatory tooltip (`title:disabled?'Select a store first':label`)
   on hover. Regression test `forecast-audit-disabled-hint.test.js` passes.
-- [ ] ❓ Food Cost Panel (`FOBAnalysisPanel`): `qsr_fob` returns empty under RLS for the
-  anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
-  diff and explicit owner go-ahead before touching production RLS.**
+- [ ] ⚠️ **RE-INVESTIGATED 2026-09-06 (owner said go ahead on the ❓ items) — this environment
+  cannot run the `pg_policies` diff the line asks for (no direct Postgres or Supabase Management
+  API credential, only the REST API via service-role/anon keys), so the fix itself is still not
+  attempted. But everything measurable points AWAY from RLS being the real cause, not toward it.**
+  Live service-role read: `qsr_fob` has **24,885 real rows**, all under one consistent `tenant_id`
+  (`00000000-0000-0000-0000-000000000001`) — this is a single-tenant deployment today, so
+  tenant-scoping has nothing to disagree about. `finding-rls-phase2-already-installed-2026-08-23.md`
+  already established RLS Phase 2's loc-scope policy is a documented **no-op today by design**
+  (`accessible_locs` NULL on the live profiles → allow-everything). The anon key correctly
+  returns `[]`/`*/0` for `qsr_fob` (re-measured live) — that's RLS working exactly as intended for
+  an unauthenticated request, not a bug. No live evidence was found of an AUTHENTICATED user
+  actually being blocked (untestable from this environment — no real user JWT available). Most
+  tellingly: the actual, already-diagnosed-and-fixed FOB Analysis bug (a client-side render-order
+  race — `!selMonth` firing before `qsrFobRows` resolved, fixed v5.132/5.133, re-verified multiple
+  times this session including 2026-09-06) fully explains a "FOB panel shows stale/empty data"
+  symptom without any RLS involvement at all. **Recommendation: do not touch production RLS for
+  this** — there is no concrete sign anything is broken there, and the symptom this line was
+  probably filed against already has a real, confirmed, unrelated fix. If the owner has actually
+  seen an authenticated session return empty `qsr_fob` recently (not just an old report), that
+  would be worth a fresh, dated measurement before reopening this.
 - [x] ✅ **CORRECTED 2026-09-03 (quick-wins morning sweep) — already fixed, not two disagreeing
   implementations.** Re-verified live in `src/engine/forecast.js`: `computeModelHealth` is a thin
   adapter that calls `modelHealthScore(loc, ds, settings)` and reshapes its result (its own header
@@ -625,8 +642,24 @@ for full detail on each.
   decision but is a SEPARATE metric and was not touched here — Labor's `field` was already
   correctly percentage-scaled (`laborPct`), so its fix is threshold-only, lower-risk, and a
   natural next follow-up, not bundled into this one.
-- [ ] ❓ Per-metric wiring blocked on owner sourcing: Shift Certified Mgrs/Total Headcount, 0-90
-  Day Crew Turnover, FS EcoSure, FS Completion T-60 (Jolt/Squabble), EPB2B (Pace Portal).
+- [x] ✅ **RE-VERIFIED 2026-09-06 (owner said go ahead on the ❓ items) — 5 of 6 already resolved,
+  only 1 real gap remains.** Checked `review-engine.js`'s `DEFAULT_REVIEW_CONFIG` directly:
+  **Shift Certified Mgrs** (`shiftCert`), **Total Headcount** (`headcount`), and **0-90 Day Crew
+  Turnover** (`turnover90`) are all `src:'auto'` already, matching the very next line's own
+  2026-09-03 correction. **FS EcoSure** (`fsEcoSure`) is ALSO `src:'auto'` now — a later dispatch
+  (#231 follow-on, 2026-09-05) wired it to real `graded_visits` EcoSure data via the Propel API,
+  landing after this line was written. **EPB2B** (Pace Portal): its TARGET already auto-fills
+  (`epb2b: 'tEPB2BTarget'` in `REVIEW_METRIC_TARGET_FIELD`, dispatch #135) — its ACTUAL is
+  correctly left manual, not an oversight: the owner himself said *"OSAT B2B and EPB2B are BOTH
+  held, full stop, pending the owner's own investigation"* into what EPB2B even really measures
+  (dispatch #145) — inventing an auto-source here would risk encoding a definition the owner
+  already flagged as possibly wrong, so this is left alone pending him, not built around.
+  **FS Completion T-60** (`fsTablet`) is the one genuine remaining gap — still `src:'manual'`,
+  and unlike EcoSure it has NO existing API research or credentials anywhere in this repo: the
+  source is a food-safety checklist app (FL = Jolt, OK = Squadle — two different vendors for the
+  two markets), `perf-review-data-sourcing.md` §9 flags it as "feasibility TBD... needs a
+  dedicated session per vendor," and confirming the owner even has all-locations API access to
+  either vendor is itself an open question. Not attempted — there is nothing to build against.
 - [x] ✅ **CORRECTED 2026-09-03 (quick-wins sweep) — all three are already shipped and
   auto-sourced, not "needs field confirmation."** Re-verified live: `src/views/performance-
   reviews.js` lists Op Supplies, Total Profit, Digital App GC/R/D, and Delivery GC/R/D among the
