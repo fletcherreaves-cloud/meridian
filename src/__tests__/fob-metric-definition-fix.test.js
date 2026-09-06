@@ -1,13 +1,22 @@
 // @ts-nocheck
-// FOB metric-definition fix, owner-approved 2026-07-27/28 (memory/perf-review-excel-audit.md):
+// FOB metric-definition fix, owner-approved 2026-07-27 (memory/perf-review-excel-audit.md):
 // Performance Reviews' foodOB metric used to score in DOLLARS (field:'fobDollar') against a
 // workbook target that is a PERCENTAGE — a unit mismatch, not just a loose threshold, and the
-// reason FOB never got an auto-filled target. Fixed to score FOB% directly, in absolute
-// percentage-POINTS (unit:'abs'), against thresholds converted from the owner's percentage-point
-// figures (0.15/0.45 pts) to this app's fraction-of-1 storage scale for a percentage (divided by
-// 100). This test locks in the real scoring outcome end to end — not just that the auto-fill
-// data-sourcing changed (covered elsewhere), but that a real actual/target pair now rates the way
-// the owner's spec says it should.
+// reason FOB never got an auto-filled target. Fixed to score FOB% directly (fob$÷prodSales /
+// fobPct), same units both sides.
+//
+// ⚠️ CORRECTION (2026-09-06, same-session self-catch): this file originally also asserted
+// unit:'abs', t:[-0.0015,0.0015,0.0045] — the 0.15/0.45-point figures from the SAME audit
+// doc's Round 1 (2026-07-27), applied as the base 1-4 scoring bands. That was wrong: Round 2
+// (2026-07-28, one day later, same file) explicitly revises this — those figures are
+// PREVIOUS-ORG BONUS-ELIGIBILITY GATES, meant to live in a separate, currently-OFF "Bonus
+// Eligibility" module, "distinct from the 1-4 competency scoring." Round 2 never named a
+// replacement base-scoring threshold, so review-engine.js reverted unit/t to the value that
+// shipped before either round touched it (unit:'pct', t:[-0.05,0.05,0.10] — relative-%-of-
+// target, the shape most other metrics here use), now correctly applied to the FOB% actual/
+// target instead of the old dollar figures. This test file is rewritten to match that
+// corrected state. The Bonus Eligibility module itself is still genuinely unbuilt (tracked in
+// backlog-master-2026-08-19.md), not attempted here.
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_REVIEW_CONFIG, rateMetric } from '../engine/review-engine.js';
 
@@ -16,18 +25,17 @@ function fobMetric() {
 }
 
 describe('FOB metric-definition fix — config shape', () => {
-  it('scores in absolute percentage-points, not relative-%-of-target', () => {
-    expect(fobMetric().unit).toBe('abs');
+  it('scores relative-%-of-target, same as most other auto metrics here — NOT the previous-org bonus-eligibility absolute-point gate', () => {
+    expect(fobMetric().unit).toBe('pct');
+    expect(fobMetric().t).toEqual([-0.05, 0.05, 0.10]);
   });
   it('is no longer flagged as a dollar figure, and is flagged for %-style display instead', () => {
     const m = fobMetric();
     expect(m.dollar).not.toBe(true);
     expect(m.pctInput).toBe(true);
   });
-  it('thresholds are the owner\'s 0.15/0.45 percentage-point figures on this app\'s fraction-of-1 scale', () => {
-    // DEFAULT_TARGETS stores a percentage like 3.85% as 0.0385, not 3.85 or 38.5 — confirmed
-    // against src/constants.js. "0.15 percentage points" on that scale is 0.0015.
-    expect(fobMetric().t).toEqual([-0.0015, 0.0015, 0.0045]);
+  it('reads its actual from the percentage field, not the old dollar field', () => {
+    expect(fobMetric().field).toBe('fobPct');
   });
   it('better:lower is unchanged — over target FOB% is still unfavorable', () => {
     expect(fobMetric().better).toBe('lower');
@@ -36,39 +44,32 @@ describe('FOB metric-definition fix — config shape', () => {
 
 describe('FOB metric-definition fix — real scoring outcomes via rateMetric', () => {
   // Boundary values verified numerically against rateMetric's actual dev<=t4/t3/t2 comparison
-  // chain before writing these — an exact-boundary actual (e.g. target+0.0015) is floating-point
-  // sensitive (0.0385+0.0015-0.0385 !== exactly 0.0015) and can land one bucket off, so every
-  // case here sits comfortably inside its band rather than exactly on a threshold.
+  // chain before writing these.
   const m = fobMetric();
   const target = 0.0385; // 3.85%, a real DEFAULT_TARGETS value (loc 3708)
 
-  it('beating target by more than 0.15 points rates Exceeds (4)', () => {
-    expect(rateMetric(target - 0.0020, target, m)).toBe(4);
+  it('beating target by more than 10% relative rates Exceeds (4)', () => {
+    expect(rateMetric(target * 0.90, target, m)).toBe(4);
   });
-  it('exactly on target rates On Target (3) — "exceeds" requires meaningfully beating it, not just matching it', () => {
+  it('exactly on target rates On Target (3)', () => {
     expect(rateMetric(target, target, m)).toBe(3);
   });
-  it('0.10 points over target (inside the 0.15pt On Target band) still rates On Target (3)', () => {
-    expect(rateMetric(target + 0.0010, target, m)).toBe(3);
+  it('3% over target relative (inside the 5% On Target band) still rates On Target (3)', () => {
+    expect(rateMetric(target * 1.03, target, m)).toBe(3);
   });
-  it('0.30 points over target (past 0.15, inside the 0.45pt band) rates Below (2)', () => {
-    expect(rateMetric(target + 0.0030, target, m)).toBe(2);
+  it('7% over target relative (past 5%, inside the 10% band) rates Below (2)', () => {
+    expect(rateMetric(target * 1.07, target, m)).toBe(2);
   });
-  it('0.60 points over target (past 0.45) rates Needs Improvement (1)', () => {
-    expect(rateMetric(target + 0.0060, target, m)).toBe(1);
+  it('15% over target relative (past 10%) rates Needs Improvement (1)', () => {
+    expect(rateMetric(target * 1.15, target, m)).toBe(1);
   });
-  it('scores on the ABSOLUTE point gap, not the old relative-%-of-target formula — the exact ' +
-     'bug this fix corrects (a small target made a small pct miss look huge in relative terms)', () => {
-    // Under the OLD unit:'pct' formula, dev = (actual-target)/|target|. At a small target like
-    // 0.01 (1%), being 0.006 over (60% relative) would have read as a severe miss regardless of
-    // how the absolute gap compares to a differently-sized store's target. Under the NEW
-    // unit:'abs' formula, dev = actual-target = 0.006 for EITHER target size, past the 0.0045
-    // band -> the same rating (1) for the same absolute overage, which the old relative formula
-    // could never guarantee (a small-target store and a large-target store with an identical
-    // 0.6pt miss used to score differently; now they don't).
-    const smallTarget = 0.01;
-    expect(rateMetric(smallTarget + 0.0060, smallTarget, m)).toBe(1);
-    const largeTarget = 0.08;
-    expect(rateMetric(largeTarget + 0.0060, largeTarget, m)).toBe(1);
+  it('scores on FOB%, not the old dollar figure — the actual metric-definition bug this fix corrects', () => {
+    // The real bug: field:'fobDollar' scored a dollar amount against a percentage target, so
+    // rateMetric's relative-deviation math ((actual-target)/|target|) was comparing incommensurable
+    // units — a dollar figure could sit orders of magnitude away from a 0.0385 target regardless
+    // of whether the store was actually over or under its real FOB%. Scoring FOB% on both sides
+    // makes the relative deviation mean what it's supposed to mean.
+    expect(rateMetric(1000, target, m)).not.toBe(rateMetric(0.04, target, m));
+    expect(rateMetric(0.04, target, m)).toBe(3); // 0.04 vs 0.0385 = ~3.9% over -> On Target
   });
 });
