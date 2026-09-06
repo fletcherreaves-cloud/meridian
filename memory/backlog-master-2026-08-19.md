@@ -243,19 +243,55 @@ for full detail on each.
   current-side window covers <50% of its (loc×day) cells now renders as the pre-existing no-data
   placeholder instead of a real-looking total, and a week whose LY-side window is sparse still
   shows its real current sales but suppresses just the vsLY ratio. 5 new tests
-  (`weekly-trend-completeness-guard-300.test.js`). **#228 and #231 also confirmed already done —
-  verified against actual code, not just a dispatch file's existence** (a dispatch is a spec, not
-  proof of a build — caught myself almost overclaiming this exact way before checking). #228:
-  `scripts/eom-notification-resend.mjs` + `.github/workflows/eom-notification-resend.yml` both
-  exist and `eom-dashboard.js:1782` wires a real button to `triggerSync('resend_notify', {loc,
-  period})` — the dispatch's own spec fully built, this session's earlier task #4. #231: real
-  production capture run completed 2026-09-05 (`dispatch-231-complaints-metric.md`'s own
-  "RESOLVED" section) — 3787 rows live in `customer_complaints`, RLS confirmed by measurement
-  (anon `*/0`, service-role exact row-count match), `review-engine.js`'s Complaint Contacts/100K
-  metric spot-checked against real data; landed via PRs #1150/#1151 (another session, part of the
-  50 commits this session pulled in when rebasing onto `main` on 2026-09-06). **#302, #303, #285,
-  #289 not yet re-verified** — still genuinely unconfirmed, next to check.
-  — status unconfirmed.
+  (`weekly-trend-completeness-guard-300.test.js`).
+  ⚠️ **CORRECTION (2026-09-06, same PM sweep) — the very next paragraph I wrote here conflated
+  this repo's internal "dispatch #NNN" memory-file numbering with actual GitHub issue numbers,
+  and shipped a wrong claim in v5.381's commit body before catching it.** `dispatch-228-resend-
+  count-notification.md` and `dispatch-231-complaints-metric.md` are real, correctly-verified
+  builds — but **GitHub issues #228 and #231 are a different, unrelated pair of bugs** in the
+  SAME numbering space by coincidence. This backlog line's "#228, #231" (from
+  `plan-backlog-and-redesign-2026-08-15.md`) meant the GitHub issues all along, matching
+  #299/#300/#302/#303/#285/#289 in the same list. Re-verified against the actual GitHub issues
+  and the actual code (not another dispatch-file name) below.
+  ✅ **#302 (real) already fixed — `parsePMixData` hierarchical-export bug.** GitHub issue is
+  still open but the code is fully fixed and tested: `src/__tests__/pmix-parser.test.js`'s
+  `"parsePMixData — hierarchy (#302)"` suite covers subtotal-row-only dedup (`seen.has(item)`
+  keeps only the first/subtotal row per item number, not "price contains a range" detection),
+  dropping the grand-total row by empty `Desc`, and byFamily aggregation using the deduped
+  (true) units — plus a second suite for the fail-loudly column validation. The one open item
+  from the issue's 4-bullet fix list — reading `Adj PMIX Sales` (net) vs `$ Sold` (gross) as
+  distinct fields — doesn't arise today because `parsePMixData` doesn't read any dollar column
+  at all yet; not a live bug, a real gap if dollars are ever added to this parser. Closed the
+  GitHub issue with this evidence.
+  ✅ **#228 (real) already fixed — FOB Analysis snapshot-weighting bug.** GitHub issue: "FOB
+  Analysis weights period-to-date SNAPSHOTS as if they were daily rows." Traced
+  `computeFOBMetrics` (`analytics.js`) end to end: `monthRows` (filtered to the selected month)
+  is reduced via `latestByLoc` to exactly ONE row per loc (max date wins) *before* `rows` ever
+  reaches the sales-weighted `contrib`/`cSales`/`wPct` calculation the issue quotes — so that
+  calculation now weights one-row-per-STORE (a real district average), not a triangle-weighted
+  blend of cumulative snapshots within one store's month. The comment there cites "Dispatch
+  #102" as the fix's origin; it was never tied back to closing this GitHub issue. Closed the
+  GitHub issue with this evidence.
+  ✅ **#231 (real, was P1) already fixed — Patch Heatmap ignored the period selector.** Not just
+  fixed but thoughtfully so: rather than wiring `dateRange` through (which would have meant
+  re-parameterizing `pipeline.js`'s `buildStore`/`compute6wk` core for dozens of other
+  consumers), `patch-heatmap.js` REMOVED the `dateRange` prop entirely (it now genuinely isn't
+  accepted) and rewrote the subtitle + all 4 empty-state strings to stop claiming period-scoping
+  they never had. A `⚠️ #231` comment block near the top of `patch-heatmap.js` documents the
+  reasoning and explicitly answers the issue's own Ask #3 (is `stores` period-scoped? — no, built once per
+  data-load, never a function of the page selector). Guard test:
+  `src/__tests__/patch-heatmap-daterange.test.js`. Closed the GitHub issue with this evidence.
+  ⚠️ **#285 and #289 confirmed still genuinely open (real GitHub issues, unaddressed) — larger
+  than a quick fix, not attempted this pass.** #285: `qsrsoft-inventory-history-pull.mjs`'s
+  retention-probe script has a real methodology bug (a monotonicity assumption the data
+  refutes) — the specific `bisectEarliestMonth` function the issue cites doesn't even appear in
+  `scripts/` anymore, so this needs a fresh look at whatever the probe evolved into, not a
+  patch to code that may no longer exist. #289: three whole target blocks (Customer
+  Satisfaction, Digital Execution, People) from the yearly targets workbook are missing from
+  `DEFAULT_TARGETS` — a real data-model addition (parser + `constants.js` + possibly a
+  Supabase-backed `monthly_targets` ingestion path), gates the VOICE-grading work in #288. Both
+  are legitimate next items, not busywork — flagged for deliberate follow-up work, not a
+  same-pass fix.
 - [ ] **Spine 1** — one copyable panel design (District View → Location-tile pattern), pilot =
   Inventory Control, extend to Food Cost/FOB/Inventory.
 - [ ] **Spine 2** — unify count-cycle.js / lastCountAnchor / inv_count_sessions behind one cycle
