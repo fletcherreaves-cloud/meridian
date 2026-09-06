@@ -4,6 +4,11 @@ import { INV_ORG_COORDS, STORE_NAMES, sName, sNameC, whoRan } from '../constants
 import { INV_MASTER, classifyInvArea, parseInvUOM } from '../parsers/inventory-parse.js';
 import { loadQsrInventorySummary } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+// #? — invDist/invSameState/formatXferQty/rollupByWRIN/computeTransfers moved to
+// engine/inventory-transfers.js (Decisions Panel Inventory salvage #2/#3) so attention-feed.js
+// can reuse them without importing this 76KB view component — same split #214 already did for
+// INV_MASTER/classifyInvArea. Behavior unchanged; imported back here for this panel's own use.
+import { invDist, invSameState, formatXferQty, rollupByWRIN, computeTransfers } from '../engine/inventory-transfers.js';
 
 // Local, not imported from attention-now.js (same one-liner as unpad there) — importing a
 // React-hook-heavy view module just for this would drag its whole dependency graph into
@@ -19,46 +24,6 @@ const td=(p,...c)=>h('td',p,...c);
 const th=(p,...c)=>h('th',p,...c);
 const thead=(p,...c)=>h('thead',p,...c);
 const tbody=(p,...c)=>h('tbody',p,...c);
-
-export function invDist(locA,locB){
-  const a=INV_ORG_COORDS[locA],b=INV_ORG_COORDS[locB];
-  if(!a||!b||!a.lat||!b.lat)return Infinity;
-  const R=3959,toR=d=>d*Math.PI/180;
-  const dLat=toR(b.lat-a.lat),dLon=toR(b.lng-a.lng);
-  const x=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2;
-  return+(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))).toFixed(1);
-}
-export function invSameState(locA,locB){
-  const a=INV_ORG_COORDS[locA],b=INV_ORG_COORDS[locB];
-  return!!(a&&b&&a.state&&a.state===b.state);
-}
-
-// ── Inner Pack Framework (replace with user-provided list via upload) ─────
-// Format: {wrin: {unit:'Sleeve',count:100,display:'sleeve'}}
-// Until user provides WRIN-level list, common UOM keywords are used.
-const INV_INNER_PACKS_DEFAULTS={'Sleeve':50,'Case':1,'Bag':1,'Roll':1,'Pack':1,'Each':1};
-export function formatXferQty(rawQty,wrin,uom,caseSize){
-  if(rawQty<0.5)return null;
-  const m=wrin?INV_MASTER[wrin]:null;
-  const ipu=m&&m.ipu?m.ipu:null; // inner packs per case
-  const ipc=m&&m.ipc?m.ipc:null; // each per inner pack
-  const upc=m&&m.upc?m.upc:(caseSize||1); // each per case
-  const fullCs=Math.floor(rawQty);
-  const remFrac=rawQty-fullCs;
-  const remEach=Math.round(remFrac*upc);
-  // How many full inner packs in the remainder?
-  const fullIP=ipc&&ipc>0?Math.floor(remEach/ipc):0;
-  const label=m&&m.uom&&m.uom!=='EA'?m.uom:'EA';
-  let parts=[];
-  if(fullCs>0)parts.push(fullCs+(fullCs===1?' case':' cases'));
-  if(fullIP>0)parts.push(fullIP+' inner pack'+(fullIP!==1?'s':'')+' ('+fullIP*ipc+' '+label+')');
-  if(!parts.length){
-    // No full inner packs — show as half case
-    const halfEach=ipc?ipc:Math.round(upc/2);
-    return'½ case ('+(ipu&&ipu>0?Math.round(upc/ipu):halfEach)+' '+label+')';
-  }
-  return parts.join(' + ');
-}
 
 // INVENTORY INTELLIGENCE MODULE
 // Four-section report: Service items · Production items · Overstock · Transfers
@@ -183,94 +148,6 @@ function computeInvSections(rows, threshold, excldWrapPouch, doRollup){
   return{svc,prod,overstk,actionItems};
 }
 
-// ── WRIN Rollup: group items by first-5-digit base WRIN ────────────────
-function rollupByWRIN(rows){
-  const groups={};
-  rows.forEach(r=>{
-    const base=r.wrin.replace('-','').slice(0,5);
-    if(!groups[base])groups[base]={items:[]};
-    groups[base].items.push(r);
-  });
-  const result=[];
-  Object.values(groups).forEach(g=>{
-    if(g.items.length===1){result.push(g.items[0]);return;}
-    // Multiple variants — roll up to master (highest usageDay)
-    const master=g.items.reduce((b,r)=>r.usageDay>b.usageDay?r:b,g.items[0]);
-    // Normalize to eaches for combining different case sizes
-    const totalEach=g.items.reduce((a,r)=>a+(r.endingInv||0)*(r.caseSize||1),0);
-    const totalUsageEach=g.items.reduce((a,r)=>a+(r.usageDay||0)*(r.caseSize||1),0);
-    const combinedDays=totalUsageEach>0?+(totalEach/totalUsageEach).toFixed(2):
-      (totalEach>0?9999:0);
-    const variants=g.items.filter(r=>r.wrin!==master.wrin);
-    const inactiveWithStock=variants.filter(r=>r.usageDay===0&&(r.endingInv||0)>0);
-    result.push({...master,
-      usageDay:+(totalUsageEach/(master.caseSize||1)).toFixed(4),
-      usage1000:+(g.items.reduce((a,r)=>a+(r.usage1000||0),0)).toFixed(4),
-      daysSupply:combinedDays,
-      endingInv:+(totalEach/(master.caseSize||1)).toFixed(3),
-      isRolledUp:true,
-      rolledUpCount:variants.length,
-      rolledUpWrins:variants.map(r=>r.wrin),
-      inactiveVariants:inactiveWithStock,
-      rollupNote:variants.length?
-        'Usage split across '+g.items.length+' WRINs (base '+g.items[0].wrin.slice(0,8)+'…). Verify manager is using correct WRIN. All variants: '+g.items.map(r=>r.wrin).join(', '):'',
-    });
-  });
-  return result;
-}
-
-function computeTransfers(allRows, threshold, recvThreshold, fullCaseOnly){
-  const byLocItem={};
-  allRows.forEach(r=>{
-    if(!byLocItem[r.loc])byLocItem[r.loc]={};
-    byLocItem[r.loc][r.wrin]=r;
-  });
-  const locs=Object.keys(byLocItem);
-  const transfers=[];
-  locs.forEach(sendLoc=>{
-    Object.values(byLocItem[sendLoc]).forEach(item=>{
-      if(item.daysSupply<=threshold||item.usageDay<=0) return;
-      const excessCases=(item.daysSupply-threshold)*item.usageDay/(item.eachFmt?(item.caseSize||1):1);
-      if(excessCases<0.5) return;
-      // Find receivers needing this item (same org, < threshold days)
-      const recipients=[];
-      locs.forEach(recvLoc=>{
-        if(recvLoc===sendLoc) return;
-        if(!invSameState(sendLoc,recvLoc)) return; // same state only
-        const recvItem=byLocItem[recvLoc][item.wrin];
-        const _recvT=recvThreshold!=null?recvThreshold:threshold;
-        if(!recvItem||recvItem.daysSupply>=_recvT) return; // receiver under recvThreshold
-        const dist=invDist(sendLoc,recvLoc);
-        const deficit=Math.max(0,(threshold-recvItem.daysSupply)*recvItem.usageDay);
-        const xferQty=Math.min(excessCases,Math.max(0.5,deficit));
-        const _xQty=fullCaseOnly?Math.floor(xferQty):xferQty; // round to full case if toggle
-        if(fullCaseOnly&&_xQty<1) return; // skip sub-case transfers in full-case-only mode
-        const xferFmt=formatXferQty(_xQty,item.wrin,item.uom,item.caseSize)||_xQty.toFixed(2)+' cs';
-        recipients.push({recvLoc,recvDays:+recvItem.daysSupply.toFixed(1),
-          xferQty:+_xQty.toFixed(2),xferDisplay:xferFmt,dist,value:+(_xQty*item.cost).toFixed(2)});
-      });
-      recipients.sort((a,b)=>a.dist-b.dist);
-      if(recipients.length===0){
-        // Show with no recipient
-        transfers.push({wrin:item.wrin,description:item.description,class_:item.class_,
-          sendLoc,recvLoc:null,excessCases:+excessCases.toFixed(2),xferQty:0,
-          sendDays:+item.daysSupply.toFixed(1),recvDays:null,dist:null,
-          cost:item.cost,value:0,noRecipient:true});
-      } else {
-        recipients.forEach(r=>{
-          transfers.push({wrin:item.wrin,description:item.description,class_:item.class_,
-            sendLoc,...r,excessCases:+excessCases.toFixed(2),
-            sendDays:+item.daysSupply.toFixed(1),cost:item.cost});
-        });
-      }
-    });
-  });
-  return transfers.sort((a,b)=>{
-    if(a.noRecipient&&!b.noRecipient) return 1;
-    if(!a.noRecipient&&b.noRecipient) return -1;
-    return (a.dist||999)-(b.dist||999);
-  });
-}
 
 // ── Bulk Export: all loaded locations in one HTML ─────────────────────────
 function generateBulkInventoryReport(allInvRows, threshold, excldWrap, classKey, settings){

@@ -1028,23 +1028,41 @@ first below.
   metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
   timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail
   (`attribution-validity-register-login.md`).
-- [ ] ✅ **1 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap flag.** New
-  `forecastCalibrationGap` detector in `src/engine/attention-feed.js`, wired into
-  `buildAttentionFeed` (runs after every other detector, since it needs to know what they already
-  flagged per store — see its own header comment) and into the live call site
-  (`attention-now.js`'s `useAttentionFeed`, sourcing per-store MAPE from
+- [ ] ✅ **3 of 6 built 2026-09-06 (PM sweep) — forecast-calibration-gap, cross-store transfer
+  matcher, duplicate-WRIN detector.** New `forecastCalibrationGap` detector in
+  `src/engine/attention-feed.js`, wired into `buildAttentionFeed` (runs after every other
+  detector, since it needs to know what they already flagged per store) and into the live call
+  site (`attention-now.js`'s `useAttentionFeed`, sourcing per-store MAPE from
   `DEFAULT_MODEL_ASSIGNMENTS[loc].weekly.mape`, the same static figure `modelHealthScore` already
-  uses for its own Accuracy component). Fires only when a store's MAPE exceeds 12% AND nothing
-  else in the feed flagged that store crit/warn — "operationally green but the forecast is
-  broken," exactly as designed. 6 new tests in `attention-feed.test.js`.
-  **5 remain unbuilt**, each needs porting real logic from a retired panel this pass didn't
-  locate/verify, not a from-scratch build: cross-store transfer matcher (`computeTransfers` from
-  the old `inventory` orphan — haversine-distance overstock↔understock matching), duplicate-WRIN
-  detector (`rollupByWRIN`, same orphan), OEPE-dollarization for slow-DT ranking (`revintel`
-  orphan — `slowDT` currently reports `dollars: 0`), daypart-asymmetry detector (`revintel`
-  orphan — explanation copy already written per that doc), "This Week's Focus" problem-type
-  ranking (`priority-brief` orphan — ⚠️ that doc's own note: rebuild against the structured
-  `item.category` field, not the current substring-matching on finding prose).
+  uses). Fires only when a store's MAPE exceeds 12% AND nothing else in the feed flagged that
+  store crit/warn.
+  ⚠️ **Correction to this same entry, same day:** `computeTransfers`/`rollupByWRIN` were NOT an
+  orphan needing archaeology — both are live, tested, in active use in `views/inventory.js`'s
+  real Transfers view (`inventory-transfer-helpers.test.js` already covered 3 of their sibling
+  helpers). Extracted verbatim to `src/engine/inventory-transfers.js` (matching this doc's own
+  suggested destination, and the exact same split #214 already did for `INV_MASTER`/
+  `classifyInvArea` — see that file's header) — zero behavior change to the live Inventory panel,
+  which now imports them back. Two new detectors reuse them: `transferOpportunities` (rolls
+  `computeTransfers`' per-item rows up to one item per sending store, giving it the `dollars`
+  value `slowDT` still lacks) and `duplicateWrinFlags` (adapts `rollupByWRIN`'s rollup output into
+  `integrityFlags()`'s existing input shape — no new detector pipeline needed for this one).
+  `transferOpportunities` wired into `buildAttentionFeed`; `duplicateWrinFlags` is a pure adapter
+  the caller concats into the existing `integrityItems` array.
+  ⚠️ **NOT live-wired into `attention-now.js`** (unlike `forecastCalibrationGap`) — doing so needs
+  real per-store `qsr_inventory_summary` rows in the SAME shape `computeInvSections` builds
+  (`loc/wrin/description/class_/area/usageDay/usage1000/daysSupply/endingInv/caseSize/cost/uom`),
+  and that row-transformation currently lives inline inside `inventory.js`'s own load effect
+  (depends on `mapInvClass`, `classifyInvArea`, and a `usage1000` figure computed from average
+  transactions by loc/month) — extracting THAT cleanly is its own task, not attempted here rather
+  than risk a wrong field-mapping guess. 12 new tests total across both detectors +
+  the refactor's own regression coverage (existing tests re-passed unchanged, import path
+  updated).
+  **3 remain unbuilt**, each needs porting real logic from a genuinely retired `revintel`/
+  `priority-brief` panel this pass did not locate: OEPE-dollarization for slow-DT ranking
+  (`slowDT` currently reports `dollars: 0`), daypart-asymmetry detector (explanation copy already
+  written per that doc), "This Week's Focus" problem-type ranking (⚠️ that doc's own note:
+  rebuild against the structured `item.category` field, not the current substring-matching on
+  finding prose).
   (`decisions-panel-inventory-2026-08-10.md`).
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation

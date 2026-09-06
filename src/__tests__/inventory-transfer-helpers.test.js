@@ -1,9 +1,11 @@
 // @ts-nocheck
-// views/inventory.js's invDist/invSameState/formatXferQty had zero test coverage despite being
-// live -- they drive the Inventory Intelligence panel's cross-store transfer suggestions
-// (same-state gate, distance, and the human-readable case/inner-pack quantity label).
+// invDist/invSameState/formatXferQty had zero test coverage despite being live -- they drive
+// the Inventory Intelligence panel's cross-store transfer suggestions (same-state gate, distance,
+// and the human-readable case/inner-pack quantity label). Moved from views/inventory.js to
+// engine/inventory-transfers.js (Decisions Panel Inventory salvage #2/#3) -- import path updated,
+// behavior unchanged.
 import { describe, it, expect } from 'vitest';
-import { invDist, invSameState, formatXferQty } from '../views/inventory.js';
+import { invDist, invSameState, formatXferQty } from '../engine/inventory-transfers.js';
 
 // Real INV_ORG_COORDS seeds (constants.js): '3708' Ardmore OK, '6972' Seminole OK, '6178' Chipley FL.
 describe('invDist', () => {
