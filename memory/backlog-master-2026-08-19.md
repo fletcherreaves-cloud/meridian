@@ -232,7 +232,29 @@ for full detail on each.
   built, but the fear it targeted has a real fix in place through a different, arguably better
   mechanism (optional + auto-derived + additive-only). (`plan-backlog-and-redesign-2026-08-15.md`
   item 4, `dispatch-192.md`.)
-- [ ] Correctness bugs slotted opportunistically: #299, #300, #302, #303, #285, #228, #231, #289
+- [ ] Correctness bugs slotted opportunistically: #299, #300, #302, #303, #285, #228, #231, #289.
+  ✅ **#299 already resolved (2026-09-06 PM sweep) — do not re-implement.** `FOB_COMP`'s
+  `baseFoodPct` entry already carries `actionable:false` (`analytics.js`), and the Root-Cause
+  Matrix ranking (`rootCauseItems`) already filters `c.actionable!==false` before ranking — exactly
+  the one-line fix `pm-handoff-2026-08-15.md` described, already shipped.
+  ✅ **#300 fixed 2026-09-06 PM sweep.** Confirmed still genuinely open (unlike #299) — no
+  completeness guard existed on either window. Extracted `at-a-glance.js`'s `weeklyTrend` useMemo
+  to a pure, exported `computeWeeklyTrend(ds, allLocs, weekStartDay, today)`; a week whose
+  current-side window covers <50% of its (loc×day) cells now renders as the pre-existing no-data
+  placeholder instead of a real-looking total, and a week whose LY-side window is sparse still
+  shows its real current sales but suppresses just the vsLY ratio. 5 new tests
+  (`weekly-trend-completeness-guard-300.test.js`). **#228 and #231 also confirmed already done —
+  verified against actual code, not just a dispatch file's existence** (a dispatch is a spec, not
+  proof of a build — caught myself almost overclaiming this exact way before checking). #228:
+  `scripts/eom-notification-resend.mjs` + `.github/workflows/eom-notification-resend.yml` both
+  exist and `eom-dashboard.js:1782` wires a real button to `triggerSync('resend_notify', {loc,
+  period})` — the dispatch's own spec fully built, this session's earlier task #4. #231: real
+  production capture run completed 2026-09-05 (`dispatch-231-complaints-metric.md`'s own
+  "RESOLVED" section) — 3787 rows live in `customer_complaints`, RLS confirmed by measurement
+  (anon `*/0`, service-role exact row-count match), `review-engine.js`'s Complaint Contacts/100K
+  metric spot-checked against real data; landed via PRs #1150/#1151 (another session, part of the
+  50 commits this session pulled in when rebasing onto `main` on 2026-09-06). **#302, #303, #285,
+  #289 not yet re-verified** — still genuinely unconfirmed, next to check.
   — status unconfirmed.
 - [ ] **Spine 1** — one copyable panel design (District View → Location-tile pattern), pilot =
   Inventory Control, extend to Food Cost/FOB/Inventory.

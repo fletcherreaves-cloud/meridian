@@ -459,6 +459,42 @@ function ItemsRecountedTile({ onOpenModal }) {
         h('span', null, h('span', { style: { color: '#9aa0aa', fontWeight: 700 } }, diff.noAction || 0), ' no action')))));
 }
 
+// #300 — pure, exported for testing (backlog-master-2026-08-19.md / pm-handoff-2026-08-15.md):
+// "6-Week District Sales Trend has no completeness guard on either window — one week reads
+// +391.69% and flattens the other five". Builds the 6-week sparkline's data; a week whose
+// current-side window covers fewer than half its (loc x day) cells renders as the existing
+// no-data placeholder instead of a real-looking total built on a sparse window, and a week
+// whose LY-side window is similarly sparse still shows its (real, complete) current sales but
+// suppresses the vsLY comparison rather than dividing by a near-empty LY sum.
+function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
+  if (!ds?.loaded || !allLocs?.length) return [];
+  const wsd = weekStartDay ?? 3;
+  const getWS = d => { const w = new Date(d); while (w.getDay() !== wsd) w.setDate(w.getDate() - 1); w.setHours(0, 0, 0, 0); return w; };
+  const sumSales = range => {
+    let sales = 0, daysPresent = 0;
+    allLocs.forEach(loc => {
+      const series = metricSeries(ds, loc, range, 'sales');
+      daysPresent += Object.keys(series).length;
+      sales += Object.values(series).reduce((a, b) => a + b, 0);
+    });
+    return { sales, coverage: allLocs.length > 0 ? daysPresent / (allLocs.length * 7) : 0 };
+  };
+  const result = [];
+  for (let w = 6; w >= 1; w--) {
+    const ws = getWS(addD(today, -(w * 7))), we = addD(new Date(ws), 6); we.setHours(23, 59, 59, 999);
+    const cur = sumSales({ s: ws, e: we });
+    if (!cur.sales || cur.coverage < 0.5) { result.push({ label: '—', sales: 0, vsLY: null }); continue; }
+    const lyWs = addD(new Date(ws), -364), lyWe = addD(new Date(we), -364);
+    const ly = sumSales({ s: lyWs, e: lyWe });
+    result.push({
+      label: ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      sales: cur.sales, lySales: ly.sales,
+      vsLY: (ly.sales > 0 && ly.coverage >= 0.5) ? (cur.sales - ly.sales) / ly.sales : null,
+    });
+  }
+  return result;
+}
+
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
@@ -1677,22 +1713,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Auto-first (data-integrity sweep signature #2, MEDIUM item) — was ds.laborRows only,
   // manual-only; sits next to code elsewhere in this view that already migrated OEPE/Labor/
   // T-Reds for the same reason.
-  const weeklyTrend=React.useMemo(()=>_mark('compute:weeklyTrend',()=>{    if(!ds?.loaded||!allLocs?.length)return[];
-    const wsd=settings?.weekStartDay??3;
-    const getWS=d=>{const w=new Date(d);while(w.getDay()!==wsd)w.setDate(w.getDate()-1);w.setHours(0,0,0,0);return w;};
-    const sumSales=range=>allLocs.reduce((tot,loc)=>tot+Object.values(metricSeries(ds,loc,range,'sales')).reduce((a,b)=>a+b,0),0);
-    const result=[];
-    for(let w=6;w>=1;w--){
-      const ws=getWS(addD(today,-(w*7))),we=addD(new Date(ws),6);we.setHours(23,59,59,999);
-      const sales=sumSales({s:ws,e:we});
-      if(!sales){result.push({label:'—',sales:0,vsLY:null});continue;}
-      const lyWs=addD(new Date(ws),-364),lyWe=addD(new Date(we),-364);
-      const lySales=sumSales({s:lyWs,e:lyWe});
-      result.push({label:ws.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
-        sales,lySales,vsLY:lySales>0?(sales-lySales)/lySales:null});
-    }
-    return result;
-  }),[ds,allLocs,settings?.weekStartDay]);
+  const weeklyTrend=React.useMemo(()=>_mark('compute:weeklyTrend',()=>
+    computeWeeklyTrend(ds,allLocs,settings?.weekStartDay,today)
+  ),[ds,allLocs,settings?.weekStartDay]);
 
   // ── Leaderboard store rankings ────────────────────────────────────────
   const lbData=React.useMemo(()=>_mark('compute:lbData',()=>{
@@ -3104,4 +3127,4 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 }
 
 
-export { AtAGlance };
+export { AtAGlance, computeWeeklyTrend };
