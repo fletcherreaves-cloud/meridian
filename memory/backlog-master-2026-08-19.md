@@ -281,17 +281,43 @@ for full detail on each.
   reasoning and explicitly answers the issue's own Ask #3 (is `stores` period-scoped? — no, built once per
   data-load, never a function of the page selector). Guard test:
   `src/__tests__/patch-heatmap-daterange.test.js`. Closed the GitHub issue with this evidence.
-  ⚠️ **#285 and #289 confirmed still genuinely open (real GitHub issues, unaddressed) — larger
-  than a quick fix, not attempted this pass.** #285: `qsrsoft-inventory-history-pull.mjs`'s
-  retention-probe script has a real methodology bug (a monotonicity assumption the data
-  refutes) — the specific `bisectEarliestMonth` function the issue cites doesn't even appear in
-  `scripts/` anymore, so this needs a fresh look at whatever the probe evolved into, not a
-  patch to code that may no longer exist. #289: three whole target blocks (Customer
-  Satisfaction, Digital Execution, People) from the yearly targets workbook are missing from
-  `DEFAULT_TARGETS` — a real data-model addition (parser + `constants.js` + possibly a
-  Supabase-backed `monthly_targets` ingestion path), gates the VOICE-grading work in #288. Both
-  are legitimate next items, not busywork — flagged for deliberate follow-up work, not a
-  same-pass fix.
+  ⚠️ **CORRECTION (2026-09-06, same PM sweep) — my own note above about #285 was WRONG and had
+  already been merged (in the #228/#231 mixup-fix PR) before I caught it.** I claimed
+  `bisectEarliestMonth` "doesn't even appear in `scripts/` anymore" — false. It's in
+  `qsrsoft-inventory-history-pull.mjs`; my grep only tested for the filename via a loose OR
+  pattern and never actually tested for that function name, so the "not found" conclusion was
+  never really measured. Re-verified properly this time, by reading the actual function.
+  ✅ **#285 (real) also already fixed — through several owner review rounds (PR #273, #284, and
+  a further pass referencing #294), none tied back to closing this issue.** The exact false-
+  verdict shape #285 described (an unconfirmed bisect convergence silently reported as
+  "confirmed") is gone: `confirmEarliestMonth` now two-sidedly probes the month before AND two
+  months before any reported floor, and if either has data it widens outward (3→6→12→24→48→96
+  months) hunting a genuinely-empty bound to re-bisect against — returning `unresolved:true`
+  rather than a wrong date if no widen probe ever comes back empty. Every return path is labeled
+  distinctly (`confirmed:true` / `confirmed:false+correctedFrom` / `unresolved:true`) and
+  `probeStore`'s verdict text uses different wording for each — the exact bug a later review
+  round (referenced in-file as "PR #284 review") found and fixed in the FIRST cut of this same
+  fix: it had printed "(confirmed)" on the unconfirmed path too, reproducing #285's own
+  overconfidence complaint inside its own remedy. The `WINDOWS` ladder's most-recent windows
+  (30/90/180/365 days) already hold `end: today()` per #285's own suggested fix; the widen-
+  outward-with-early-stop scan structurally avoids the monotonicity assumption #285 refuted,
+  rather than relying on any single window comparison. Closed the GitHub issue with this
+  evidence. This script is still explicitly "Step 0 only" (its own header) — the probe's
+  VERDICT LOGIC is fixed; sizing and building the real backfill pull from that verdict is
+  separate, legitimate future work, not part of what #285 asked for.
+  ⚠️ **#289 confirmed still genuinely open — but the real blocker is different from what the
+  issue itself claims.** Three target blocks (Customer Satisfaction, Digital Execution, People)
+  are missing from `DEFAULT_TARGETS`, gating the VOICE-grading work in #288 — that much is still
+  true. But the issue's own text says *"the workbook itself is committed at `data/org-structure/`
+  as a sacred baseline file"* — checked, and that's wrong (or refers to a different file): the
+  only thing there is `Organization_Structure.xlsx` (org roster / risk profiles / RGR dates,
+  per its own README), not a targets workbook, and a repo-wide search for any "target" `.xlsx`
+  turns up nothing. **The source data (the owner's "2026 Restaurant Targets (Updated) OK & FL"
+  workbook) was never actually committed to this repo.** Building real per-store target values
+  without it would mean fabricating numbers — not attempted. This needs either the workbook
+  itself landing in the repo, or routing through the existing Monthly Targets Excel drop
+  (`monthly_targets`, already Supabase-persisted) as the issue's own scope note 3 suggested as
+  an alternative — flagged for deliberate follow-up, not a same-pass fix, and not closed.
 - [ ] **Spine 1** — one copyable panel design (District View → Location-tile pattern), pilot =
   Inventory Control, extend to Food Cost/FOB/Inventory.
 - [ ] **Spine 2** — unify count-cycle.js / lastCountAnchor / inv_count_sessions behind one cycle
