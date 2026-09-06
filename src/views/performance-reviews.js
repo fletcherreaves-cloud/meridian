@@ -15,6 +15,7 @@ import {
   // selector (QUARTER_MONTHS/H1_MONTHS/H2_MONTHS + calendarMonthRange) and segmented-scoring
   // display (computeSegmentedReview, the Phase 5a engine dispatch #154 shipped with no UI yet).
   QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
+  bonusEligibilityForPeriod,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { printHtml } from '../utils/print-html.js';
@@ -595,6 +596,19 @@ function WeightsSection({local, set}) {
         ),
         span(null), span({style:{fontSize:10,color:ov.metrics+ov.behavioral===1?'#10b981':'#ef4444'}},
           `Total: ${((ov.metrics+ov.behavioral)*100).toFixed(2)}% ${ov.metrics+ov.behavioral!==1?'(must equal 100%)':''}`)
+      )
+    ),
+    // Bonus Eligibility module (owner-approved design, off by default) — a pass/fail gate
+    // distinct from the 1-4 base scoring above, never touches it unless enabled here.
+    div({style:{marginBottom:20,padding:12,border:`1px solid ${BDR}`,borderRadius:R,background:S2}},
+      Row({style:{gap:8,marginBottom:local.bonusEligibility?.enabled?8:0}},
+        inp({type:'checkbox',checked:!!local.bonusEligibility?.enabled,
+          onChange:e=>set('bonusEligibility.enabled', e.target.checked)}),
+        div({style:{fontWeight:700,fontSize:12,color:TEXT}},'Bonus Eligibility Module'),
+        span({style:{fontSize:10,color:TEXT3}},'(previous-org benefit — off unless the current org adopts it)')
+      ),
+      local.bonusEligibility?.enabled && div({style:{fontSize:11,color:TEXT2,lineHeight:1.5}},
+        'A separate pass/fail gate on Labor% and FOB% vs target (0.25pts / 0.15pts, previous-org figures) — does not change the 1-4 competency scoring above. Shown on the review summary once enabled.'
       )
     ),
     // Category weights
@@ -2523,6 +2537,28 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update, period, ds, assig
               opacity: halfScore!=null&&Math.round(halfScore)===r ? 1 : .25}})))
       ),
     ),
+    // Bonus Eligibility module (see Customize → Weights) — a separate pass/fail gate, never
+    // folded into the 1-4 scores above. Renders nothing unless enabled.
+    cfg.bonusEligibility?.enabled && (() => {
+      const be = bonusEligibilityForPeriod(review, cfg, mths);
+      if (!be) return null;
+      const col = be.overallEligible===true ? '#10b981' : be.overallEligible===false ? 'var(--crit)' : TEXT3;
+      return div({style:{padding:'10px 14px',background:S2,borderRadius:R,border:`1px solid ${col}55`,marginBottom:16}},
+        Row({style:{gap:10,marginBottom:6}},
+          span({style:{fontSize:11,fontWeight:700,color:TEXT}},'🎁 Bonus Eligibility'),
+          span({style:{fontSize:11,fontWeight:700,color:col}},
+            be.overallEligible===true?'Eligible':be.overallEligible===false?'Not eligible':'No data yet')
+        ),
+        Row({style:{gap:16,flexWrap:'wrap'}},
+          ...be.gates.map(g => Row({key:g.key,style:{gap:6}},
+            span({style:{fontSize:10,color:TEXT3}},g.label+':'),
+            span({style:{fontSize:11,fontWeight:600,
+              color:g.eligible===true?'#10b981':g.eligible===false?'var(--crit)':TEXT3}},
+              g.eligible===true?`✓ (${g.monthsRated}/${g.monthsTotal} mo)`:g.eligible===false?`✗ (${g.monthsRated}/${g.monthsTotal} mo)`:'No data')
+          ))
+        )
+      );
+    })(),
     div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}},
       ...qKeys.map(q => {
         const s = scores[q]||{};

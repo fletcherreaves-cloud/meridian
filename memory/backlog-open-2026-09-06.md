@@ -207,11 +207,12 @@
 - [ ] DM/shift-role review wiring — link a review to `geid`, decide which manager-attributed
   metrics score it. (The underlying report pull already shipped, v4.550 — this is the only real
   open piece of that item.)
-- [ ] **Bonus Eligibility module** — toggle-gated, off-by-default, separate scoring section
-  (Labor −0.25pts of target / FOB −0.15pts of target), distinct from the base 1-4 competency
-  scoring. Owner-approved design (`perf-review-excel-audit.md` Round 2, 2026-07-28) — genuinely
-  unbuilt. Do not confuse with base-scoring thresholds, which are correctly relative-% today
-  (v5.385 correction).
+- [x] ✅ **BUILT 2026-09-06 (v5.386) — do not re-implement.** Toggle-gated, off-by-default,
+  separate pass/fail gate (Labor −0.25pts of target / FOB −0.15pts of target), fully additive —
+  `computeScores`/`computeScoreBreakdown` never read `cfg.bonusEligibility` at all, proven by a
+  same-output-on-vs-off regression test. New `bonusEligibilityForMonth`/`bonusEligibilityForPeriod`
+  in `review-engine.js`; toggle in Customize → Weights; badge on the review Summary tab. 16 tests
+  (`bonus-eligibility-module.test.js`).
 - [ ] **FS Completion T-60** (`fsTablet`) — still `src:'manual'`, no existing API research or
   credentials for either vendor (FL = Jolt, OK = Squadle). Needs a dedicated session per vendor;
   confirming the owner even has all-locations API access to either is itself an open question.
