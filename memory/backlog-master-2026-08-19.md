@@ -300,7 +300,18 @@ for full detail on each.
   dispatch #31's fresh finding above — worth checking for overlap before treating as separate.)*
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
 - [ ] Smart Targets stuck on "Loading Sales History" indefinitely.
-- [ ] Yearly Planning: YTD Actual/Targets likely wrong from a Jan–Mar upload gap.
+- [ ] ⚠️ **MEASURED 2026-09-06 (PM sweep) — the named hypothesis (Jan-Mar upload gap) is
+  REFUTED; if YTD is actually wrong, the cause is something else, not yet found.** "Yearly
+  Planning" is `src/views/yearly-projections.js`'s Annual Target vs Actual view; its YTD actual
+  comes from `loadDailySales()` (`lib/supabase.js`), which reads `qsr_daily_activity_rollup` (auto
+  DAR stream), not a manual upload. Measured live via service-role query: Jan-Mar 2026 has **2367
+  rows** against a ~2430 expected ceiling (27 stores × 90 days ≈ 97.4% coverage) — not a
+  meaningful gap — and the table's earliest date on record is **2024-01-01**, well before any
+  current-year window. No "manual upload gap" exists for this metric at all; it was never manual
+  to begin with. Left open rather than closed on a guess: if the owner's YTD numbers genuinely
+  look wrong, the real cause needs re-diagnosing from scratch (e.g. `monthly_targets` coverage,
+  the `dayFrac`/current-month proration math, or a location-mapping mismatch) — this pass only
+  ruled out the specific mechanism the backlog line named.
 - [ ] ⚠️ **PARTIALLY MEASURED 2026-09-06 (PM sweep) — the obvious hypothesis is ruled out, real
   cause still open.** Traced `GC_SALES_DIVERGE`'s inputs (`morning-brief.js`): `getLatestBriefDate`
   picks the MAX date across `laborRows`/`ctrlRows`/`peaksSvcRows` (all manual uploads) as the
