@@ -128,7 +128,16 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'delivGC',  note:'Auto: 3PO Delivery GC/R/D (cloud) vs store target' },
     ],
     profit: [
-      { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred) × the month\'s sales — dispatch #132 item 5' },
+      // Metric-definition fix, owner-approved 2026-07-27/28 (perf-review-excel-audit.md): was
+      // scoring in DOLLARS (field:'fobDollar') against a workbook target that is a PERCENTAGE —
+      // a unit mismatch, not just a loose threshold, and the reason FOB never had an auto-filled
+      // target (see the tFOBTarget*salesVsTgt dollar-conversion workaround this replaced, below).
+      // Owner's decision: score FOB% (fob$ ÷ sales) vs target FOB%, in ABSOLUTE percentage-POINTS
+      // ("FOB% within 0.15 pts of the target FOB%"), not the app's usual relative-%-of-target
+      // (unit:'pct'). t[] converted from the owner's percentage-point figures (0.15/0.45) to this
+      // app's fraction-of-1 storage scale for a percentage (tFOBTarget is e.g. 0.0385 for 3.85%,
+      // not 3.85 or 0.0385*100 — confirmed against DEFAULT_TARGETS) — i.e. divided by 100.
+      { key:'foodOB',     label:'Food Over Base % vs Target', weight:0.35, better:'lower',  unit:'abs', scored:true,  t:[-0.0015,0.0015,0.0045], src:'auto', field:'fobPct', pctInput:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred), auto-filled directly — dispatch #132 item 5' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
       // Was src:'manual' with no field — a stale label, not the real behavior: autoPopulateKPIs
       // (below, "Op Supplies actual = Σ the month's daily op-supplies purchases") already
@@ -1073,11 +1082,16 @@ export function computeScoreBreakdown(review, cfg) {
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
 // Review metric key → the target field in the official-targets namespace
 // (DEFAULT_TARGETS / yearly / monthly). Only metrics whose ACTUAL is on the SAME scale as
-// the target are listed, so we never fill e.g. a % target against a $ actual. FOB is
-// intentionally omitted until the banked FOB metric-definition fix (score on FOB% not
-// fob$) lands. Metrics with NO entry here are the "no configured target → prompt the user
-// (optionally seed from Smart Targets)" cases surfaced by missingReviewTargets().
+// the target are listed, so we never fill e.g. a % target against a $ actual. Metrics with
+// NO entry here are the "no configured target → prompt the user (optionally seed from Smart
+// Targets)" cases surfaced by missingReviewTargets().
 export const REVIEW_METRIC_TARGET_FIELD = {
+  // foodOB: was omitted here — it used to score in DOLLARS against this PERCENTAGE target,
+  // so listing it would have filled a % target against a $ actual, the exact mismatch this
+  // map's own rule exists to prevent. Now scores in FOB% (metric-definition fix, see that
+  // config's own comment), the same scale as tFOBTarget, so it belongs here like every other
+  // auto metric — this is the "unblocks target auto-fill" this fix was for.
+  foodOB: 'tFOBTarget',
   oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst',
   // secondSide: real, already-parsed yearly-workbook target (parseYearlyTargets's kvsu ->
   // t.tKvsu -> yearly_targets.kvs_usage_pct, "Healthy Use 2nd Side" / "KVS Usage" column) —
@@ -1701,12 +1715,15 @@ export function autoPopulateKPIs(review, ds) {
     // auto source actually has this month" (fobByRange's own convention — a component-only/
     // pre-settle result reads back as all-zero, not absent) so an unsettled or missing month
     // falls through to the manual ds.fobRows figure instead of silently reading $0.
+    // foodOB scores in FOB% now (owner-approved metric-definition fix, see the metric config's
+    // own comment) — fob$÷prodSales for the auto source (same ratio computeFOBMetrics uses),
+    // avg(fobPct) for the manual fallback (fr rows already carry the percentage directly).
     const autoFob = fobByRange(qsrFobRowsForLoc, range)[_unpadLoc(loc)];
     if (autoFob && autoFob.prodSales > 0) {
-      mo.foodOB = autoFob['fob$'];
+      mo.foodOB = autoFob['fob$'] / autoFob.prodSales;
     } else if (fr.length) {
-      const fd = sum(fr,'fobDollar');
-      if (fd!=null) mo.foodOB = fd;
+      const fp = avg(fr,'fobPct');
+      if (fp!=null) mo.foodOB = fp;
     }
     if (er.length) {
       // Op Supplies actual = Σ the month's daily op-supplies purchases (auto-pulled eBOS).
@@ -1779,24 +1796,23 @@ export function autoPopulateKPIs(review, ds) {
       if (lt != null) mo.laborTgt = lt;
     }
 
-    // FOB $ target (dispatch #132 item 5 — "FOB target is a monthly target"). foodOB scores
-    // in DOLLARS (fobDollar, above) but the workbook's tFOBTarget is a PERCENTAGE — that scale
-    // mismatch is exactly why foodOB was excluded from REVIEW_METRIC_TARGET_FIELD entirely (see
-    // that map's own comment); it never got an auto target at all before this. Convert using
-    // this SAME month's sales (mo.salesVsTgt, same reuse pattern as the Total Profit derivation
-    // below). officialTgts.tFOBTarget already resolves DEFAULT < yearly < monthly < override
-    // (mergedTargetsForLocMonth, above), so "prefer monthly over yearly" — the owner's explicit
-    // ask — falls out of that existing precedence for free; nothing month-specific to add here.
-    if (mo.foodOBTgt == null && officialTgts.tFOBTarget != null && mo.salesVsTgt != null) {
-      mo.foodOBTgt = officialTgts.tFOBTarget * mo.salesVsTgt;
-    }
+    // FOB target (dispatch #132 item 5 — "FOB target is a monthly target") now auto-fills
+    // through the generic REVIEW_METRIC_TARGET_FIELD loop above like every other metric —
+    // foodOB scores in FOB% now (the metric-definition fix, see that config's own comment), the
+    // same units as tFOBTarget, so the dollar-conversion (tFOBTarget × mo.salesVsTgt) this
+    // used to need is gone; officialTgts.tFOBTarget already resolves DEFAULT < yearly < monthly
+    // < override (mergedTargetsForLocMonth, above), so "prefer monthly over yearly" still falls
+    // out of that existing precedence for free.
 
     // Total Profit vs Target (dispatch #109 item #5) — derive from THIS SAME month's
     // already-resolved Labor%/Op-Supplies values (set above) plus FOB%, no separate pull.
-    // The review's own `foodOB` metric scores in DOLLARS (fobDollar, above), so it can't
-    // feed deriveTotalProfitVsTarget directly — that function needs the FOB *percentage*
-    // legs, read straight off the same `fr` FOB rows (fobPct, sibling field to fobDollar)
-    // and the same officialTgts.tFOBTarget already resolved in scope here — not a new pull.
+    // `mo.foodOB` now scores in FOB% too (the metric-definition fix, above) but is sourced
+    // auto-first (fobByRange when available, manual `fr` only as fallback) — this derivation
+    // predates that and still reads straight off `fr`'s own `fobPct` (manual-only) rather than
+    // reusing `mo.foodOB`, which is a real, pre-existing sourcing gap (not introduced by this
+    // fix, not fixed by it either — flagging rather than silently leaving the old comment's
+    // now-wrong "can't feed it directly, different units" reasoning as if it still explained
+    // this). officialTgts.tFOBTarget is the same target resolved in scope here — not a new pull.
     if (mo.totalProfit == null) {
       const fobPctActual = avg(fr, 'fobPct');
       const fobPctTarget = officialTgts.tFOBTarget ?? null;

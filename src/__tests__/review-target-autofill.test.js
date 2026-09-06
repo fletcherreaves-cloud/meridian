@@ -383,8 +383,9 @@ describe('autoPopulateKPIs Total Profit vs Target (dispatch #109 item #5)', () =
     // opSupply$ = tOpSupply 2938.761005 - 3200 = -261.238995 → total = -1411.238995
     expect(jun.totalProfit).toBeCloseTo(-1411.24, 1);
     expect(jun.totalProfitTgt).toBe(0);
-    // The $-scale foodOB metric (fobDollar) is untouched by this — confirms no cross-contamination.
-    expect(jun.foodOB).toBe(500);
+    // foodOB now scores in FOB% (metric-definition fix) — same fobPct value Total Profit's own
+    // derivation reads independently off `fr`, confirmed equal rather than cross-contaminating.
+    expect(jun.foodOB).toBeCloseTo(0.05, 6);
   });
 
   it('does not overwrite an already-entered totalProfit', () => {

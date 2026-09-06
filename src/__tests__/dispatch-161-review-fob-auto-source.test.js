@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Dispatch #161 — mo.foodOB (Performance Review FOB $ actual) now sources through
+// Dispatch #161 — mo.foodOB (Performance Review FOB % actual) now sources through
 // fobByRange() against the auto-pulled qsr_fob stream (ds.qsrFobRows), same canonical
 // aggregator the One-Pagers already use (v5.203), instead of hand-summing the manual
 // ds.fobRows array unconditionally. Manual ds.fobRows stays as an explicit fallback ONLY
@@ -11,6 +11,11 @@
 // penny for every store-month checked. The fixtures below encode a case where they
 // DIVERGE, to prove the auto source is the one that wins, not merely that both happen
 // to agree in production today.
+//
+// Values updated for the FOB metric-definition fix (owner-approved, perf-review-excel-
+// audit.md): foodOB now scores FOB% (fob$÷prodSales for auto, fobPct directly for manual),
+// not the raw dollar figure — the auto-vs-manual PRIORITY this dispatch is about is
+// unchanged, only the unit each branch now reports in.
 import { describe, it, expect } from 'vitest';
 import { autoPopulateKPIs } from '../engine/review-engine.js';
 
@@ -39,8 +44,9 @@ describe('dispatch #161 — autoPopulateKPIs foodOB sources qsr_fob (auto) over 
       ],
     };
     const r = autoPopulateKPIs(review(), ds);
-    // Auto: Σcomponents = 1000 (only compWasteAmt is non-zero) — NOT the manual 500.
-    expect(r.kpis.months[6].foodOB).toBe(1000);
+    // Auto: Σcomponents = 1000 (only compWasteAmt is non-zero) ÷ prodSalesAmt 100000 = 0.01
+    // — NOT the manual 0.05.
+    expect(r.kpis.months[6].foodOB).toBeCloseTo(0.01, 6);
   });
 
   it('falls back to manual ds.fobRows for a month the auto qsr_fob stream has nothing for', () => {
@@ -55,11 +61,12 @@ describe('dispatch #161 — autoPopulateKPIs foodOB sources qsr_fob (auto) over 
       ],
     };
     const r = autoPopulateKPIs(review(), ds);
-    // June: auto has nothing → falls back to the manual figure.
-    expect(r.kpis.months[6].foodOB).toBe(500);
+    // June: auto has nothing → falls back to the manual figure (fobPct directly, 0.05).
+    expect(r.kpis.months[6].foodOB).toBeCloseTo(0.05, 6);
     // May: auto DOES have data → auto wins (no manual row exists for May here, so this
     // also confirms the auto path alone, independent of any fallback, fills correctly).
-    expect(r.kpis.months[5].foodOB).toBe(900);
+    // 900 (compWasteAmt) ÷ 90000 (prodSalesAmt) = 0.01.
+    expect(r.kpis.months[5].foodOB).toBeCloseTo(0.01, 6);
   });
 
   it('falls back to manual ds.fobRows when ds.qsrFobRows is entirely absent (undefined)', () => {
@@ -69,7 +76,7 @@ describe('dispatch #161 — autoPopulateKPIs foodOB sources qsr_fob (auto) over 
       ],
     };
     const r = autoPopulateKPIs(review(), ds);
-    expect(r.kpis.months[6].foodOB).toBe(500);
+    expect(r.kpis.months[6].foodOB).toBeCloseTo(0.05, 6);
   });
 
   it('does not leak another store\'s qsr_fob rows into this review\'s loc', () => {
@@ -86,6 +93,6 @@ describe('dispatch #161 — autoPopulateKPIs foodOB sources qsr_fob (auto) over 
     const r = autoPopulateKPIs(review(), ds);
     // qsr_fob has nothing for loc 3708 → falls back to 3708's own manual figure, not
     // 5183's auto figure.
-    expect(r.kpis.months[6].foodOB).toBe(500);
+    expect(r.kpis.months[6].foodOB).toBeCloseTo(0.05, 6);
   });
 });

@@ -101,13 +101,14 @@ describe('applyTargetOverrides — overlays resolved override fields onto a base
 });
 
 describe('TARGET_OVERRIDE_FIELDS registry stays in sync with review-engine.js', () => {
-  it('every reviewKey maps to the SAME field in REVIEW_METRIC_TARGET_FIELD, except foodOB', () => {
-    // foodOB is the one deliberate exception: its actual is DOLLARS but tFOBTarget is a
-    // PERCENTAGE, so it's excluded from the generic same-scale map (see that map's own
-    // comment) and resolved instead by a bespoke %-times-sales conversion in
-    // autoPopulateKPIs — covered separately below ("autoPopulateKPIs FOB $ target").
+  it('every reviewKey maps to the SAME field in REVIEW_METRIC_TARGET_FIELD', () => {
+    // foodOB used to be the one deliberate exception here: its actual was DOLLARS but
+    // tFOBTarget is a PERCENTAGE, so it was excluded from the generic same-scale map and
+    // resolved instead by a bespoke %-times-sales conversion in autoPopulateKPIs. The FOB
+    // metric-definition fix (owner-approved, perf-review-excel-audit.md) made foodOB score
+    // in FOB% too, the same scale as tFOBTarget, so it now follows the same rule as every
+    // other metric here — no more exception.
     for (const f of TARGET_OVERRIDE_FIELDS) {
-      if (f.reviewKey === 'foodOB') { expect(REVIEW_METRIC_TARGET_FIELD.foodOB).toBeUndefined(); continue; }
       expect(REVIEW_METRIC_TARGET_FIELD[f.reviewKey], `${f.reviewKey} missing from REVIEW_METRIC_TARGET_FIELD`).toBe(f.field);
     }
   });
@@ -198,17 +199,23 @@ describe('rateMetric positiveOnly — Total Profit interim rule (dispatch #132 i
   });
 });
 
-describe('autoPopulateKPIs FOB $ target (dispatch #132 item 5 — FOB target prefers monthly over yearly)', () => {
+describe('autoPopulateKPIs FOB % target (dispatch #132 item 5 — FOB target prefers monthly over yearly)', () => {
+  // Values updated for the FOB metric-definition fix (owner-approved, perf-review-excel-
+  // audit.md): foodOBTgt now auto-fills directly from tFOBTarget through the generic
+  // REVIEW_METRIC_TARGET_FIELD map (foodOB scores FOB%, the same scale as the target), not
+  // the old bespoke tFOBTarget × mo.salesVsTgt dollar conversion — so it no longer depends
+  // on salesVsTgt resolving at all. The laborRows fixture (which used to exist only to make
+  // salesVsTgt resolve for that conversion) is harmless to keep and left in place.
   function blankMonths() { const m = {}; for (let i = 1; i <= 12; i++) m[i] = {}; return m; }
   const review = () => ({ loc: '3708', year: 2026, half: 'H1', role: 'GM', kpis: { months: blankMonths() } });
 
-  it('foodOBTgt was never auto-filled before this dispatch — confirms the gap is real', () => {
+  it('foodOBTgt auto-fills from tFOBTarget directly (the same-scale metric-definition fix)', () => {
     const ds = { loaded: true, laborRows: [{ loc: '3708', date: new Date('2026-06-05T00:00:00'), sales: 100000 }] };
     const r = autoPopulateKPIs(review(), ds);
-    // DEFAULT_TARGETS['3708'].tFOBTarget = 0.0385 -> 0.0385 * 100000 = 3850
-    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(3850, 5);
+    // DEFAULT_TARGETS['3708'].tFOBTarget = 0.0385, used directly — no × sales conversion.
+    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(0.0385, 6);
   });
-  it('a monthly tFOBTarget overrides the yearly one for the $ conversion', () => {
+  it('a monthly tFOBTarget overrides the yearly one', () => {
     const ds = {
       loaded: true,
       laborRows: [{ loc: '3708', date: new Date('2026-06-05T00:00:00'), sales: 100000 }],
@@ -216,7 +223,7 @@ describe('autoPopulateKPIs FOB $ target (dispatch #132 item 5 — FOB target pre
       monthlyTargets: { '3708': { tFOBTarget: 0.03 } },  // monthly — should win
     };
     const r = autoPopulateKPIs(review(), ds);
-    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(3000, 5); // 0.03 * 100000, not 0.05 * 100000
+    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(0.03, 6);
   });
   it('a store-scoped override beats both yearly and monthly', () => {
     const ds = {
@@ -227,7 +234,7 @@ describe('autoPopulateKPIs FOB $ target (dispatch #132 item 5 — FOB target pre
       targetOverrides: indexTargetOverrides([{ scope_type: 'store', scope_id: '3708', field: 'tFOBTarget', value: 0.02 }]),
     };
     const r = autoPopulateKPIs(review(), ds);
-    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(2000, 5);
+    expect(r.kpis.months[6].foodOBTgt).toBeCloseTo(0.02, 6);
   });
   it('does not overwrite an already-entered foodOBTgt', () => {
     const rv = review(); rv.kpis.months[6].foodOBTgt = 12345;

@@ -108,21 +108,26 @@ describe('dispatch #174 — autoPopulateKPIs salesVsTgt sources the auto sales c
     expect(filled.kpis.months[6].salesVsTgt).toBe(500);
   });
 
-  it('mo.foodOBTgt (FOB $ target, derived FROM salesVsTgt) resolves correctly once salesVsTgt does, for a month that was previously blank under the bug', () => {
-    // LOC '3708' DEFAULT_TARGETS carries tFOBTarget: 0.0385 (src/constants.js). Before this
-    // fix, a month with no ds.laborRows row left mo.salesVsTgt (and therefore mo.foodOBTgt,
-    // which multiplies officialTgts.tFOBTarget * mo.salesVsTgt) both null/undefined.
+  it('mo.foodOBTgt resolves for a month that was previously blank under the #174 bug — no longer even depends on salesVsTgt', () => {
+    // LOC '3708' DEFAULT_TARGETS carries tFOBTarget: 0.0385 (src/constants.js). At the time
+    // this test was written, foodOBTgt multiplied officialTgts.tFOBTarget * mo.salesVsTgt, so
+    // a month with no ds.laborRows row (this fixture) left BOTH null/undefined before dispatch
+    // #174's salesVsTgt fix. The FOB metric-definition fix (owner-approved, perf-review-excel-
+    // audit.md, landed after #174) severed that dependency entirely — foodOBTgt now auto-fills
+    // directly from tFOBTarget through the generic REVIEW_METRIC_TARGET_FIELD map, independent
+    // of salesVsTgt. Kept in this file (rather than deleted) because it still documents that
+    // #174's fix didn't regress salesVsTgt itself, which foodOBTgt no longer even needs.
     const ds = { loaded: true,
       qsrActSummaryRows: [
         { loc: LOC, date: new Date('2026-08-03T00:00:00'), sales: 10000 },
         { loc: LOC, date: new Date('2026-08-04T00:00:00'), sales: 11000 },
       ],
-      // No laborRows for August — this is exactly the month the bug used to blank.
+      // No laborRows for August — this is exactly the month the #174 bug used to blank.
     };
     const filled = autoPopulateKPIs(review(), ds);
     const mo = filled.kpis.months[8];
     expect(mo.salesVsTgt).toBe(21000);
-    expect(mo.foodOBTgt).toBeCloseTo(0.0385 * 21000, 5);
+    expect(mo.foodOBTgt).toBeCloseTo(0.0385, 6);
   });
 
   it('the legacy manual-only salesVsTgtTgt/laborTgt lr-based TARGET fallback (dispatch #142, already dead per its own comment) is unaffected by this change', () => {

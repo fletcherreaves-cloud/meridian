@@ -602,7 +602,29 @@ for full detail on each.
   (v4.550, per `session-handoff-2026-07-28.md`).** The real open item, not this one: DM/shift-role
   review wiring — link a review to `geid`, decide which manager-attributed metrics score it.
 - [ ] Missing-targets UI in ReviewEditor (banner + one-click Smart-Targets seed).
-- [ ] FOB metric-definition fix: score on FOB% not fob$ (unblocks target auto-fill).
+- [x] ✅ **BUILT 2026-09-06 — Performance Reviews' `foodOB` metric now scores FOB% directly.**
+  Owner-approved spec (`perf-review-excel-audit.md`, 2026-07-27/28): was scoring in DOLLARS
+  (`field:'fobDollar'`, `unit:'pct'`) against a workbook target that is a PERCENTAGE — a unit
+  mismatch, not just a loose threshold, and the reason FOB never had an auto-filled target (a
+  bespoke `tFOBTarget × mo.salesVsTgt` dollar-conversion covered the gap instead). Fixed:
+  `mo.foodOB` now stores FOB% (`fob$÷prodSales` auto-first, `fobPct` manual fallback — same
+  sourcing priority as before, just a different unit), the metric config is `unit:'abs'`
+  (absolute percentage-point deviation, not relative-%-of-target) with `t:[-0.0015,0.0015,
+  0.0045]` (the owner's 0.15/0.45-point figures converted to this app's fraction-of-1 scale for
+  a percentage — confirmed against `DEFAULT_TARGETS`, e.g. `tFOBTarget:0.0385` for 3.85%, not
+  `3.85`). `foodOB: 'tFOBTarget'` added to `REVIEW_METRIC_TARGET_FIELD` (the exact "unblocks
+  target auto-fill" this line asked for), replacing the now-obsolete dollar-conversion special
+  case. 10 new tests locking in the real scoring outcomes (verified numerically against
+  `rateMetric`'s actual boundary comparisons before writing assertions — an exact-boundary
+  value is floating-point sensitive and can land one bucket off) plus updates to 4 existing
+  test files whose fixtures asserted the old dollar-scale behavior
+  (`dispatch-161-review-fob-auto-source.test.js`, `target-overrides.test.js`,
+  `review-target-autofill.test.js`, `dispatch-174-review-sales-auto-source.test.js`). Full
+  suite 477 files/4566 tests pass; build clean, budget unchanged. Labor's own "same looseness
+  issue" (same audit doc, `t:[-0.26,0.25,0.75]` labor-% points) was owner-approved in the same
+  decision but is a SEPARATE metric and was not touched here — Labor's `field` was already
+  correctly percentage-scaled (`laborPct`), so its fix is threshold-only, lower-risk, and a
+  natural next follow-up, not bundled into this one.
 - [ ] ❓ Per-metric wiring blocked on owner sourcing: Shift Certified Mgrs/Total Headcount, 0-90
   Day Crew Turnover, FS EcoSure, FS Completion T-60 (Jolt/Squabble), EPB2B (Pace Portal).
 - [x] ✅ **CORRECTED 2026-09-03 (quick-wins sweep) — all three are already shipped and
