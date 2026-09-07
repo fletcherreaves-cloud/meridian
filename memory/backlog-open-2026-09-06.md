@@ -93,8 +93,24 @@
 
 ## 3. Data Pipeline / Sourcing Correctness
 
-- [ ] Finish auto-pull migration: Scheduling Intelligence, Schedule Summary, Labor Analysis (same
-  root cause as the Schedule Summary labor% bug).
+- [x] ✅ **RE-VERIFIED 2026-09-07 — stale, all three already fully migrated; do not re-raise.**
+  This item was undated and describes work finished well before this backlog snapshot's cut date.
+  - **Scheduling Intelligence** (`src/views/scheduling.js`): main table reads `ds.schedRows`
+    (auto-loaded via `loadLifeLenzSchedule()` in `App.js`), not `ds.laborRows`; its
+    `OpportunityReport` sub-view already goes through `metricDaily()` (`engine/metric-source.js`),
+    whose own comment states `laborRows`/`ctrlRows` are "only a LAST-RESORT fill." Confirmed by
+    changelog `5.029.js` (dispatch #348, 2026-08-16): "pulled directly from lifelenz_schedule."
+  - **Schedule Summary** (`engine/schedule-summary.js`, `computeScheduleSummary`): header comment
+    states "all derived from the lifelenz_schedule data Meridian already syncs daily." This panel
+    is where **the actual "labor% bug"** this item's "same root cause" referred to lived — a
+    mid-day partial-actual day dominating the dollar-weighted average (72% instead of ~24%) —
+    already fixed in changelog `4.505.js` (2026-07-24) by restricting the average to completed
+    days. Not open.
+  - **Labor Analysis** (`engine/labor-analysis.js`): `deriveBand1FromSchedule` sources from the
+    LifeLenz schedule; `mergeAutoManualWeek` only gap-fills stores/weeks the auto source misses
+    (UI badges `week.source==='auto'`/`'manual'`). Confirmed by changelog `4.485.js`
+    (2026-07-23): "weekly Fixed-Labor-Hours inputs now derive automatically from the daily
+    LifeLenz schedule... a manual MBI upload only gap-fills."
 - [x] ✅ **BUILT 2026-09-07 (v5.388) — do not re-implement.** Full pull shipped:
   `scripts/lifelenz-attendance-pull.mjs` (direct-token only, no Playwright fallback yet — see
   its own header for why, a reasonable low-risk follow-up not attempted) rolls each store's
@@ -157,8 +173,25 @@
   trap. The auto-default-date partial-day theory is ruled out (both `labor_rows`/`ctrl_rows` are
   6+ weeks stale, so auto-default can't land on a still-open day). `ctrl_rows` being that stale is
   itself worth flagging — either abandoned in favor of auto sources, or broken.
-- [ ] District View: Forecast Table missing Goal/OEPE/TPPH/Labor%; Scorecards→Controls missing
-  data; Action Plan missing TPPH; Forecast Accuracy "Scheduled Projection" reads too high.
+- [x] District View compound claim — **re-verified 2026-09-07: 3 of 4 sub-claims were stale,
+  already fixed; only the TPPH one is real.** (`src/views/store-dash.js`, wired via
+  `src/views/store-analytics.js`'s `StoreDash` tab dispatch.)
+  - ✅ Stale — Forecast Table missing Goal/OEPE/TPPH/Labor%: `ForecastTable` (`store-dash.js:608`)
+    already renders all four columns (`Goal`/`OEPE`/`TPPH`/`Labor%` headers ~909-914) with real
+    per-day + period-total values from each `ForecastRow` (~355, populated ~529-534). Not missing.
+  - ✅ Stale — Scorecards→Controls missing data: `CtrlScorecard` (`store-dash.js:1157-1276`)
+    renders all 5 grouped tables (Cash Integrity/POS Integrity/Refund & Discount/Meal
+    Activity/Overtime) with explicit `_cov` observation-count guards (~1205-1227) that suppress
+    fabricated zeros rather than showing missing data — the opposite of the claim.
+  - ✅ Stale — Forecast Accuracy "Scheduled Projection" reads too high: this was the real
+    unpaginated-1000-row-cap bug, already fixed 2026-08-08. `loadQsrProjections()`
+    (`src/lib/supabase.js:2933-2952`, see its own header comment ~2922-2932) now reads the
+    pre-summed rollup table via `fetchAll` pagination instead of a bare capped select.
+  - [ ] **Still open — Action Plan missing TPPH.** `generatePlan()` (`store-dash.js:1424-1576`,
+    consumed by `ActionPlanTab` ~1578) only builds action items for OT Hours (~1436), Cash O/S
+    (~1459), OEPE (~1481), T-Red After (~1504), Labor % (~1529) — no TPPH item exists. Genuinely
+    still broken; a real but narrowly-scoped follow-on (add a TPPH gap item to `generatePlan`,
+    matching the pattern of the existing five).
 - [ ] Speed of Service — DT History takes 15+ seconds to load (`notes-67-queue.md` §2). A
   performance bug, not a design ask — needs a real before/after measurement if scoped.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
@@ -296,7 +329,15 @@
 
 - [ ] **Tool-breadth expansion** — give SAGE the metric resolver as a generic query tool. Flagged
   as the single biggest available win; SAGE itself, asked directly, independently named the same
-  gap as its own top pick.
+  gap as its own top pick. ⚠️ **Re-inventoried 2026-09-07: SAGE already has 7 live tools, not the
+  4 CLAUDE.md documented** (`query_labor_summary`/`query_eom_recount_impact`/`query_smg` had all
+  shipped with no CLAUDE.md update — corrected there). This item's actual remaining ask is
+  narrower than "SAGE has no query tools" might read: a GENERIC resolver covering the ~50 metrics
+  `metric-source.js` knows, vs. today's per-source hand-built tools. Still genuinely unbuilt, and
+  a real architecture question (the existing tools query Supabase directly server-side;
+  `metric-source.js` is a client `ds`-based module that can't run as-is inside the Deno Edge
+  Function — porting its per-metric sourcing logic server-side is the actual scope here, not a
+  quick wire-up).
 - [ ] Feed CLAUDE.md/memory standing rules into the system prompt.
 - [ ] Pass active panel state as context (not screenshots).
 - [ ] Personality tuning (system-prompt only).
@@ -305,7 +346,17 @@
 - [ ] Document/forms access — the eBOS form library or Resource Library exposed as a queryable
   source (SAGE's own ask; currently none of it reaches SAGE).
 - [ ] Deeper history / longer lookback windows for trend and YoY work (SAGE's own ask — its tools
-  are fixed ~60-day summaries today).
+  are fixed ~60-day summaries today). ⚠️ **Partially stale, re-measured 2026-09-07 alongside the
+  tool-breadth re-inventory above.** Most tools already take an arbitrary `start_date`/`end_date`
+  with no window cap in their own schema (`query_daily_activity`, `query_labor_summary`,
+  `query_forecast_snapshots`, `query_promo_roi`) — `query_labor_summary` specifically exists as
+  the fix for this exact complaint on OT/staffing questions (its own prompt: "ALWAYS use this...
+  never the fixed 60-day LABOR & STAFFING summary above"). **What's still genuinely fixed-window:
+  the auto-injected "LABOR & STAFFING summary" context block** (`aggregateLaborSummary`,
+  `sage-chat/index.ts`) — a pre-computed block added to every conversation regardless of the
+  question, not a tool SAGE chooses to call. Whether that block itself needs a longer/adjustable
+  window, or whether `query_labor_summary`'s existence already makes it moot for date-range
+  questions, wasn't re-scoped here.
 - [ ] **SAGE knowledge-grounding sensitivity gating** — restrict personnel-sensitive findings to
   DO+ role, gate by subject not just caller role, fail-closed frontmatter. Designed but not built —
   safety-relevant: at least one memory file already names a GM by name and nothing stops that
@@ -322,6 +373,19 @@
   owner session, findings already ready.
 - [ ] Multi-user startup-load tiering (core vs. extended fetch by role) — design decision needed
   before P4 rollout, not urgent solo.
+  **Owner Q 2026-09-07: "should we load data per-panel as it's needed instead of front-loading
+  almost everything on hard refresh?"** Answered inline, logged here to revisit rather than act on
+  now. Current state (confirmed by reading `App.js`'s startup loader): it's already tiered — staggered
+  `Promise.all` batches, core data first, bulkier streams following — but tiered by *what*, not
+  *who's asking*: every role gets close to the full 27-store dataset regardless of which panel they
+  land on first. **Recommendation: tune the existing tiers by role, don't go fully lazy-per-panel.**
+  This is a power-user tool where one session hops Analytics → Store Dash → Labor Tools → Signals,
+  and those panels share a lot of the same underlying rows (`laborRows`, `schedRows`, etc.) — full
+  per-panel lazy fetching would trade one upfront wait for a stutter on every panel switch, likely
+  worse for that usage pattern. The higher-leverage version: scope the *existing* tiers by role (a
+  GM probably never needs the district-wide rollup tier at all) rather than deferring data to
+  first-click. Revisit alongside the P4 multi-tenant/multi-user rollout, when role-scoped startup
+  actually has a second concurrent user to matter for.
 - [ ] Swing alarm's cross-metric report + AI-scour-for-causes sub-asks — detection/ack shipped,
   these two enrichment asks unconfirmed as built.
 
@@ -428,10 +492,16 @@
   table/loader/pull wired to it. Report path likely exists
   (`/reports/mcd/people/laborExceptions`) but needs an owner DevTools capture to confirm the real
   endpoint.
-- [ ] No automated pull populates `qsr_inventory_summary` — `saveQsrInventorySummary` is defined
-  but never called. The Inventory Intelligence panel shows "no cloud data yet" for every store.
-  The report almost certainly exists (KB article match is exact) but discovery needs an owner
-  DevTools capture — no QSRSoft credentials available to probe it blind.
+- [x] ✅ **RESOLVED (v5.344, PR #1105, 2026-09-04) — stale, already shipped, do not re-raise.**
+  The owner captured the real endpoint live (`GET /api/inv/{nsn}/inv_summary/rawitems`) —
+  `scripts/qsrsoft-inventory-summary-pull.mjs` runs daily (12:30 UTC), watched in
+  `sync-failure-watch.yml`. Re-measured 2026-09-07: the workflow has run 3 times, all
+  `conclusion:"success"`, most recently 2026-09-06; a live service-role read of
+  `qsr_inventory_summary` confirms **10,560 real rows** — genuinely populated, not just
+  "running green with no effect." Not wired into `stream-freshness.js`'s `STREAMS` (deliberate,
+  documented scope cut in #1105 — it's fetched panel-locally by `InventoryIntelligence`, not
+  loaded into the global `ds` at startup like every other `STREAMS` entry); that remains a real,
+  small follow-on if per-stream freshness coverage is wanted here, not a reason to reopen this.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`,
   discovered alongside CoachQ) — pulling QSRSoft's own operational alerts into Signals is unbuilt.
 - [ ] Hourly-grain MOP (mobile-order/app) transactions — a real, open gap, needs a different,
@@ -462,9 +532,15 @@
   work (~0.98-1.07× reduction, essentially none). Next candidate (longer measurement windows, or
   confidence-based non-binary verdicts) has no decision or build. Called "the single genuine
   differentiator on the table" in its own shipping changelog.
-- [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
-  Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
-  whether the two stay in sync.
+- [x] ✅ **RE-MEASURED 2026-09-07 — stale, already fixed under dispatch #139, do not re-raise.**
+  `LocationSelector`'s patch tier (`buildLocationHierarchy`, `PanelControls.js`) resolves via
+  `supervisorOf()` → `whoRan()` → `orgAssignments()`, which reads the SAME module-scoped
+  `_liveAssignments` timeline (`constants.js`) Inventory Control's own patch filter
+  (`supervisorGroups()`) is built on — one shared live source, not two independent ones. Both the
+  `PanelControls.js` and `eom-dashboard.js` comments cross-reference each other on this exact
+  point (dispatch #139, "Mary missing in Crew Schedule"). `INV_ORG_COORDS[loc].sup` is read only
+  as a last-resort fallback for a loc the live timeline doesn't cover at all, never as the primary
+  source either place.
 - [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
   see the first org's uploaded files; also a 30-day window means new users miss old uploads.
 - [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`) — the same
@@ -531,24 +607,46 @@
   accounted the moment it's entered, so no detection rule against that data would ever fire).
   Owner is actively exploring bank-data access; two realistic paths once banking setup is known: a
   bank API feed (standing, daily, backfillable) or manual bank-statement upload.
-- [ ] **Register Audit live-verification** — both runs failed 2026-08-20: direct-token auth got a
-  403 (permissions, not expiry — likely the service account's QSRSoft role lacks `registerAudit`),
-  Playwright fallback captured no token either. Owner needs to confirm the service account's role.
-  (The endpoint itself is captured and `mapRow()` is implemented and verified — this is purely an
-  auth/permissions blocker.)
+- [x] ✅ **RESOLVED (stale, re-measured 2026-09-07) — do not re-raise the 403.** The 2026-08-20
+  auth/permissions blocker is gone: the daily `QSRSoft Register Audit Pull` workflow has run 37
+  times, all `success` except one transient failure on 2026-09-05, and a live service-role read
+  of `audit_rows` confirms **59,393 real rows**, most recent date 2026-09-05 (2 days behind
+  "today," normal ingestion lag). Whatever fixed the service account's role happened without a
+  dedicated dispatch entry recording it — the pull is simply live and has been for a while.
 - [ ] **Any Transaction Tier B** — a `transaction_detail` endpoint is captured and confirmed
   viable (full line-item + tender + operator/manager detail per transaction), but not yet built.
   The camera/video linkage question (plan §7) is still genuinely open. (Tier A is settled dead —
   no exception-type filter exists on the endpoint; don't re-probe it.)
-- [ ] **Phase 1 MVP** (cash-drawer variance + peer ranking, TvA inventory variance, explanation
-  surfacing built in from day one) — unblocked, not yet dispatched.
-- [ ] Phase 4's "GM access optional/configurable" gate still needs a concrete design (per-case
-  toggle? store setting? DO-granted permission?) before it's dispatch-ready. Blocked on
-  `project-rls-hardening-plan.md` Phase 2 and the Direction B identity-vault architecture landing
-  first.
-- [ ] Rule-evaluation compute — decided to be a scheduled batch job (not an Edge Function), but the
-  cadence (hourly? daily, matching the DAR/eBOS 10:00 UTC pull?) isn't decided — scope when Phase 1
-  is dispatched.
+- [x] ✅ **RESOLVED — this whole trio is badly stale, re-measured 2026-09-07, do not re-raise.**
+  All three items below describe a system that has, in fact, been fully built and is live in
+  production (dispatches #39 through at least #143), with zero mention anywhere in this backlog
+  file until now:
+  - **Phase 1 MVP** — `security-rules-run.yml` (dispatch #39) runs daily at 11:00 UTC, scoring
+    `audit_rows` against every active `security_rules` row into `security_findings`. Live
+    service-role reads confirm **9 rules** (`CASH-001..004` / `INV-001..005`, 7 active/2
+    inactive — cash-drawer variance AND TvA inventory variance, the exact two Phase 1 domains)
+    and **84,073 real findings rows**. Peer ranking and explanation surfacing are both built too,
+    in `src/engine/security-drilldown.js`: `flagRateByStore`/`crossStorePrevalence`/
+    `compositionVsEstate` (peer comparison) and `corroboratingFlags`/`classifySubjectShape`/
+    `buildSubjectTimeline` (explanation, grouped by subject not by rule — the panel's own header
+    comment explains why: "a subject flagged on three of four independent signals is a lead;
+    flagged on one is noise").
+  - **Rule-evaluation compute cadence** — decided and shipped: daily at 11:00 UTC, one hour
+    after `QSRSoft Register Audit Pull`'s own 10:00 UTC run (its input), so it never scores a
+    day's data before that day's pull lands (`security-rules-run.yml`'s own header comment).
+  - **Phase 4 GM-access gate** — also shipped, as an org-level config toggle:
+    `org_config.gm_identity_reveal_enabled` (`loadGmIdentityRevealEnabled()`,
+    `src/lib/supabase.js`), read by `securityPanelAccess()` (`src/views/security-panel.js`) to
+    decide whether a manager-role caller gets identity-revealed findings. Not the per-case/
+    DO-granted design this item speculated about — a simpler org-wide setting — but a real,
+    live, wired decision, not an open design question.
+
+  A full read-only investigation UI ships too — `src/views/security-panel.js`
+  (`kind:'nav'`, `perm:'security.view'`, live in the People section today, dispatch #43+),
+  with date-range + `LocationSelector` scoping, subject timelines, export, and print. **What
+  genuinely remains open** (confirmed still unbuilt): "Any Transaction Tier B" (below, correctly
+  described as not yet built) and **Deposit lapping** (also below, correctly described as
+  blocked on bank-data access). Those two keep their own entries; this trio does not need one.
 
 *(Archive: §15)*
 
