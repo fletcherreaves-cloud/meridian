@@ -533,18 +533,26 @@
   downloads from Storage first, falling back to `file_data` only for rows uploaded before this fix
   (so already-queued files aren't stranded). 3 new tests against a mock Supabase client, full suite
   484/4617, build clean.
-  **⚠️ Found a second, more serious bug while tracing this — genuinely broken today, independent
-  of the base64 issue.** Measured live against the real database (anon key, synthetic row):
-  `pending_reports` has **no INSERT policy for any client role** — `schema.sql`'s own comment says
-  "Service role only for insert," but `uploadReportFile()` has always inserted from the browser
-  client. A real anon-key POST returns `42501 "new row violates row-level security policy"`. So
-  today, a genuinely NEW manual upload's metadata row silently fails to insert (console.warn only)
-  — the file lands wherever it lands, but no other device ever learns it exists, which is the
-  entire point of this feature. `supabase/schema-pending-reports-insert-policy.sql` (new, this
-  commit) adds the missing policy, matching this table's own existing wide-open
-  `using(true)` read/update posture. **Owner action needed: run that SQL file in the Supabase SQL
-  editor** — until then, manual "Load" uploads keep working locally but still won't sync to other
-  devices for brand-new files (same as before this fix, not a new regression).
+  **⚠️ RETRACTED 2026-09-07 — the "second bug" claimed here was a diagnostic error; do not
+  re-cite it.** Original claim: `pending_reports` has no INSERT policy for any client role,
+  measured via an anon-key-only synthetic probe. **The probe methodology was the mistake** — it
+  tested as a logged-out visitor, not as the app's real authenticated upload path. A live
+  `pg_policies` read (owner-run) showed this table already carries a `tenant_insert` policy
+  (`schema-multitenant-phase2-rls.sql`'s generic template: `tenant_id = current_tenant_id()`)
+  plus a `tenant_id` column defaulting to the single-tenant UUID
+  (`schema-multitenant-phase1.sql`) — so a REAL, logged-in user's upload likely already passes
+  RLS via that policy; it was never actually exercised by the anon-only probe.
+  `supabase/schema-pending-reports-insert-policy.sql` (added the same day) is now a retraction
+  record with a `drop policy` statement, since the fully-open policy it originally added (a) was
+  broader than needed — anonymous, logged-out writes — and (b) oddly still didn't pass even a
+  fresh anon-key re-test after being confirmed live, which wasn't chased further (not worth
+  fighting unauthenticated `curl` against the new opaque `sb_publishable_...` key format). **If
+  cross-device sync for new manual uploads is later found to still be broken, start the next
+  diagnosis from a REAL logged-in session, not the anon key** — that gap in method is exactly
+  what produced this false alarm.
+  ✅ **What's still real and unchanged:** the Storage-vs-base64 fix itself (`uploadReportFile()`
+  now uploads to the `'reports'` bucket instead of base64-encoding into `file_data`) stands —
+  unrelated to the RLS question, and the 12.37 MB timeout it fixes was independently observed.
 - [ ] Store-events material-changes date-formatting bug — could not locate in live code on the
   last pass (every `sheet_to_json`/`XLSX.read` call already guards `raw:true`/`cellDates:false`
   project-wide, so the described mechanism should already be structurally prevented). Needs a live
