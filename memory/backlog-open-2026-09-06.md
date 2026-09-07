@@ -421,12 +421,11 @@
   to a specific 20-store cohort — tracks every store in scope, not a guessed membership list.
   `kind:'test-kitchen'` per the standing rule (every new panel starts there regardless of who
   requested it); real `section:'operations'` already set, so promotion later is a one-field flip.
-  ⚠️ **Owner action still needed:** run `supabase/schema-store-assessments.sql` in the Supabase
-  SQL editor — until then the panel's own error state names the exact file to run. 7 new tests
-  (`store-assessments.test.js`) on the two pure helpers (`mergeAssessmentRows`/
-  `assessmentProgress`); a real live-data round-trip couldn't be verified from this sandbox (its
-  browser can't complete a TLS handshake through the environment's proxy to reach Supabase) —
-  worth a real click-through once the SQL has run.
+  ✅ **Owner ran the SQL 2026-09-07 — confirmed live** (service-role read: `content-range: */0`,
+  table exists, zero rows — no assessments entered yet). 7 new tests (`store-assessments.test.js`)
+  on the two pure helpers (`mergeAssessmentRows`/`assessmentProgress`); a real live-data round-trip
+  still couldn't be verified from this sandbox (its browser can't complete a TLS handshake through
+  the environment's proxy to reach Supabase) — worth a real click-through to enter a rating.
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 
@@ -508,20 +507,44 @@
   unconfirmed QSRSoft endpoint. (Daily-grain MOP GC is already covered via
   `sales_ledger_daily.mop_gc` — don't re-attempt the `mop_transactions`-on-`daily-activity-raw`
   approach, it's a measured dead end.)
-- [ ] **eBOS/variance/onhand SSO-exchange contradiction** — `qsrsoft-ebos-pull.mjs` and
-  `qsrsoft-variance-pull.mjs` both try SSO-token-exchange first (via `getFreshToken()`);
-  `qsrsoft-onhand-pull.mjs`'s own comment says that exchange is a "confirmed 403 dead end" and
-  skips straight to Playwright. Three scripts, two contradictory beliefs about whether SSO-exchange
-  for an eBOS token works at all. Needs a live diagnostic run (`QSRSOFT_EBOS_DEBUG=1`) reading
-  whether Path B actually succeeds or silently falls through every time — not a doc re-read.
+- [x] ✅ **RESOLVED 2026-09-07 — measured against real production run logs, not a doc re-read; do
+  not re-raise.** Read the actual `pull` job logs (real credentials, real network, not something
+  this sandbox can reproduce itself) for both scripts across 3 separate dates: `qsrsoft-ebos-pull`
+  on 2026-09-05 (`[auth] SSO exchange HTTP 403 — token may not work for eBOS`, falls to Playwright,
+  succeeds) and 2026-09-02 (same script, same run pattern); `qsrsoft-variance-pull` on 2026-09-07
+  (`[auth] SSO exchange HTTP 403`, falls to Playwright, succeeds). **SSO-token-exchange 403s every
+  single time measured, for both scripts** — `qsrsoft-onhand-pull.mjs`'s "confirmed 403 dead end"
+  comment is the accurate one; `ebos-pull`/`variance-pull`'s Path A/B framing is stale-optimistic
+  code that never actually short-circuits Playwright in production. No functional bug — Playwright
+  fallback runs and succeeds every time, so daily pulls are unaffected — this was a doc-vs-reality
+  question, now settled. Not touching the scripts: the SSO attempt is a harmless ~1-2s first try
+  that costs nothing if McDonald's/QSRSoft ever re-enables that path server-side; removing it isn't
+  needed to close this item.
 - [ ] #263/#265 pull-completeness ledger system — ⚠️ **"schema never run in production" is now
   stale (measured 2026-09-07): `data_completeness_incidents` exists and holds a real row** (a
   genuine detected→backfilled incident, `qsr_service_stats`/loc 0035242, 2026-09-03/04 — service-
   role read, `content-range: 0-0/1`). The rest of the item still holds — no `TOLERANCE`/tolerance
   config or restricted-handling UI/SAGE gating exists anywhere in `src/`: only 2 of 7 pull
   streams have tolerance rules, and the `notes` column has no UI/SAGE consumer yet.
-- [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
-  Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload.
+- [x] ✅ **FIXED 2026-09-07 — app code shipped; ⚠️ needs a one-statement SQL run to fully work,
+  see below.** `uploadReportFile()` (`src/lib/supabase.js`) now actually uploads to the `'reports'`
+  Storage bucket (created for exactly this, per `schema.sql`'s own comment, but never used) instead
+  of base64-encoding into `pending_reports.file_data`; the cross-device-sync read side (`App.js`)
+  downloads from Storage first, falling back to `file_data` only for rows uploaded before this fix
+  (so already-queued files aren't stranded). 3 new tests against a mock Supabase client, full suite
+  484/4617, build clean.
+  **⚠️ Found a second, more serious bug while tracing this — genuinely broken today, independent
+  of the base64 issue.** Measured live against the real database (anon key, synthetic row):
+  `pending_reports` has **no INSERT policy for any client role** — `schema.sql`'s own comment says
+  "Service role only for insert," but `uploadReportFile()` has always inserted from the browser
+  client. A real anon-key POST returns `42501 "new row violates row-level security policy"`. So
+  today, a genuinely NEW manual upload's metadata row silently fails to insert (console.warn only)
+  — the file lands wherever it lands, but no other device ever learns it exists, which is the
+  entire point of this feature. `supabase/schema-pending-reports-insert-policy.sql` (new, this
+  commit) adds the missing policy, matching this table's own existing wide-open
+  `using(true)` read/update posture. **Owner action needed: run that SQL file in the Supabase SQL
+  editor** — until then, manual "Load" uploads keep working locally but still won't sync to other
+  devices for brand-new files (same as before this fix, not a new regression).
 - [ ] Store-events material-changes date-formatting bug — could not locate in live code on the
   last pass (every `sheet_to_json`/`XLSX.read` call already guards `raw:true`/`cellDates:false`
   project-wide, so the described mechanism should already be structurally prevented). Needs a live

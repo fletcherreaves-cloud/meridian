@@ -1403,7 +1403,9 @@ function App() {
       }catch(e){console.warn('[Meridian] VOICE Performance ingest failed:',e);}
     })();
     // ── Cross-device sync — load manual uploads from other devices ───────────
-    // Reads file_data (base64) directly from pending_reports — no Storage needed.
+    // Downloads from the 'reports' Storage bucket via storage_path (uploadReportFile,
+    // src/lib/supabase.js, writes there now). Falls back to the legacy base64 file_data
+    // column ONLY for rows uploaded before that fix shipped — new uploads never set it.
     // Skips files this device has already seen (per localStorage).
     (async()=>{
       try{
@@ -1414,7 +1416,7 @@ function App() {
         const cutoff=new Date(Date.now()-180*86400000).toISOString();
         const{data:manualFiles}=await supabase
           .from('pending_reports')
-          .select('id,filename,report_type')
+          .select('id,filename,report_type,storage_path')
           .eq('source','manual')
           .gte('uploaded_at',cutoff)
           .order('uploaded_at',{ascending:true})
@@ -1428,38 +1430,46 @@ function App() {
         const filesToSync=[];
         for(const rec of toProcess){
           try{
-            // Fetch file_data separately — avoids loading all binary in the listing query
-            const{data:row,error:fetchErr}=await supabase
-              .from('pending_reports')
-              .select('file_data')
-              .eq('id',rec.id)
-              .single();
-            if(fetchErr||!row?.file_data){
-              // Don't retry the same file forever. One 12.37 MB base64 blob (a Labor
-              // report) exceeded the statement timeout on EVERY load, producing a
-              // recurring 500 and wasted round-trip that nothing surfaced. Count
-              // attempts, give up after two, and say so by name so a file that never
-              // syncs is visible rather than quietly absent.
-              try{
-                const fk='mf_failed_report_ids';
-                const f=JSON.parse(localStorage.getItem(fk)||'{}');
-                f[rec.id]=(f[rec.id]||0)+1;
-                localStorage.setItem(fk,JSON.stringify(f));
-                if(f[rec.id]>=2) console.warn(`[Meridian] "${rec.filename}" has failed to sync ${f[rec.id]}x and will no longer be retried — it is likely too large to fetch in one request. Re-upload it on this device if you need it.`);
-              }catch{}
-              console.warn('[Meridian] No file_data for',rec.filename,fetchErr?.message||'');
-              continue;
+            let bytes=null;
+            if(rec.storage_path){
+              const{data:blob,error:dlErr}=await supabase.storage.from('reports').download(rec.storage_path);
+              if(!dlErr&&blob) bytes=new Uint8Array(await blob.arrayBuffer());
             }
-            const binary=atob(row.file_data);
-            const bytes=new Uint8Array(binary.length);
-            for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+            if(!bytes){
+              // Legacy fallback: pre-fix rows only ever had a base64 blob in file_data,
+              // never a real Storage object at storage_path (the download above 404s).
+              const{data:row,error:fetchErr}=await supabase
+                .from('pending_reports')
+                .select('file_data')
+                .eq('id',rec.id)
+                .single();
+              if(fetchErr||!row?.file_data){
+                // Don't retry the same file forever. One 12.37 MB base64 blob (a Labor
+                // report) exceeded the statement timeout on EVERY load, producing a
+                // recurring 500 and wasted round-trip that nothing surfaced. Count
+                // attempts, give up after two, and say so by name so a file that never
+                // syncs is visible rather than quietly absent.
+                try{
+                  const fk='mf_failed_report_ids';
+                  const f=JSON.parse(localStorage.getItem(fk)||'{}');
+                  f[rec.id]=(f[rec.id]||0)+1;
+                  localStorage.setItem(fk,JSON.stringify(f));
+                  if(f[rec.id]>=2) console.warn(`[Meridian] "${rec.filename}" has failed to sync ${f[rec.id]}x and will no longer be retried — re-upload it on this device if you need it.`);
+                }catch{}
+                console.warn('[Meridian] No storage object or file_data for',rec.filename,fetchErr?.message||'');
+                continue;
+              }
+              const binary=atob(row.file_data);
+              bytes=new Uint8Array(binary.length);
+              for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+            }
             const ext=(rec.filename||'').toLowerCase();
             const mime=ext.endsWith('.csv')?'text/csv':ext.endsWith('.pdf')?'application/pdf'
               :'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             const file=new File([bytes],rec.filename,{type:mime});
             file._manualSyncId=rec.id;
             filesToSync.push(file);
-          }catch(e){console.warn('[Meridian] Failed to decode',rec.filename,e);}
+          }catch(e){console.warn('[Meridian] Failed to fetch',rec.filename,e);}
         }
         if(!filesToSync.length) return;
         await handleFiles(filesToSync);
