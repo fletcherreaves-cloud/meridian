@@ -125,8 +125,18 @@
   scheduled but not worked would be a missed shift."* Was unexcused-only; now sums EXCUSED +
   UNEXCUSED absences per store — do not re-raise this as needing confirmation. 10 tests against
   the real captured CSV shape.
-- [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still read `ds.laborRows`
-  directly instead of through the resolver (tracking number; falls as the sweep proceeds).
+- [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still match a grep for
+  `ds.laborRows` (re-confirmed 2026-09-07, count unchanged). **⚠️ The raw count likely
+  over-states real violations** — 2 confirmed false positives found this session, not chased
+  further into a full per-file audit (that's real, individual-judgment work, not a quick
+  grep-and-fix pass): `forecast.js`'s `compute6wk()` only touches `ds.laborRows` as a
+  `locRows()` fallback parameter and for genuinely-bespoke derived metrics (t2w, avgCheck,
+  depositVsSalesRatio) with no resolver equivalent — its actual per-field averages already all
+  route through `metricAvg()` (see the compute6wk/avg6 correction just above); `record-day.js`
+  already reads auto-first, with its own `ds.laborRows` reference only cleaning
+  period-summary rows before handing off to the resolver (`// Auto-first (data-integrity sweep
+  signature #2)`, its own comment). **Before touching any of the 20, read that file first** —
+  don't assume the grep hit is the anti-pattern.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
   (the full `r={...}` literal, `oepe` through `oppCostDollar`, including the "manual-only" ones —
