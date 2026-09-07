@@ -508,12 +508,19 @@
   unconfirmed QSRSoft endpoint. (Daily-grain MOP GC is already covered via
   `sales_ledger_daily.mop_gc` — don't re-attempt the `mop_transactions`-on-`daily-activity-raw`
   approach, it's a measured dead end.)
-- [ ] **eBOS/variance/onhand SSO-exchange contradiction** — `qsrsoft-ebos-pull.mjs` and
-  `qsrsoft-variance-pull.mjs` both try SSO-token-exchange first (via `getFreshToken()`);
-  `qsrsoft-onhand-pull.mjs`'s own comment says that exchange is a "confirmed 403 dead end" and
-  skips straight to Playwright. Three scripts, two contradictory beliefs about whether SSO-exchange
-  for an eBOS token works at all. Needs a live diagnostic run (`QSRSOFT_EBOS_DEBUG=1`) reading
-  whether Path B actually succeeds or silently falls through every time — not a doc re-read.
+- [x] ✅ **RESOLVED 2026-09-07 — measured against real production run logs, not a doc re-read; do
+  not re-raise.** Read the actual `pull` job logs (real credentials, real network, not something
+  this sandbox can reproduce itself) for both scripts across 3 separate dates: `qsrsoft-ebos-pull`
+  on 2026-09-05 (`[auth] SSO exchange HTTP 403 — token may not work for eBOS`, falls to Playwright,
+  succeeds) and 2026-09-02 (same script, same run pattern); `qsrsoft-variance-pull` on 2026-09-07
+  (`[auth] SSO exchange HTTP 403`, falls to Playwright, succeeds). **SSO-token-exchange 403s every
+  single time measured, for both scripts** — `qsrsoft-onhand-pull.mjs`'s "confirmed 403 dead end"
+  comment is the accurate one; `ebos-pull`/`variance-pull`'s Path A/B framing is stale-optimistic
+  code that never actually short-circuits Playwright in production. No functional bug — Playwright
+  fallback runs and succeeds every time, so daily pulls are unaffected — this was a doc-vs-reality
+  question, now settled. Not touching the scripts: the SSO attempt is a harmless ~1-2s first try
+  that costs nothing if McDonald's/QSRSoft ever re-enables that path server-side; removing it isn't
+  needed to close this item.
 - [ ] #263/#265 pull-completeness ledger system — ⚠️ **"schema never run in production" is now
   stale (measured 2026-09-07): `data_completeness_incidents` exists and holds a real row** (a
   genuine detected→backfilled incident, `qsr_service_stats`/loc 0035242, 2026-09-03/04 — service-
