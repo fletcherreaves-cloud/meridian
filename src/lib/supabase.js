@@ -1050,6 +1050,38 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
   }));
 }
 
+// ── LifeLenz Attendance (2026-09-06) — replaces scheduling.js's hand-transcribed TA_DATA ──────
+// Store-level rolling-28-day rollup, one row per (loc, period_end), written only by
+// scripts/lifelenz-attendance-pull.mjs's service-role key. `date` maps to `period_end` (not a
+// separate column) so this fits stream-freshness.js's generic "every row has a `date`" contract
+// the same way every other STREAMS entry does.
+export async function loadLifeLenzAttendance({ locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_attendance_summary').select('*').order('period_end', { ascending: false }).range(from, to);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_attendance_summary');
+  return (data || []).map(r => ({
+    loc:               r.loc,
+    date:              r.period_end,
+    periodStart:       r.period_start,
+    periodEnd:         r.period_end,
+    employeeCount:     r.employee_count,
+    scheduledShifts:   r.scheduled_shifts,
+    acceptedShifts:    r.accepted_shifts,
+    pickupShifts:      r.pickup_shifts,
+    excusedAbsences:   r.excused_absences,
+    unexcusedAbsences: r.unexcused_absences,
+    unfilledShifts:    r.unfilled_shifts,
+    lateShiftStarts:   r.late_shift_starts,
+    earlyShiftStarts:  r.early_shift_starts,
+    droppedShifts:     r.dropped_shifts,
+    swappedShifts:     r.swapped_shifts,
+    pulledAt:          r.pulled_at,
+  }));
+}
+
 // ── Time Punches (dispatch #138) — real clock punches (shift + meal), un-tokenized under
 // dispatch #126 ──────────────────────────────────────────────────────────────────────────────
 // Read-only from the client: rows are written only by scripts/qsrsoft-punch-times-pull.mjs's

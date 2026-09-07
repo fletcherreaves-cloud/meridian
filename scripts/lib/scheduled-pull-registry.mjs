@@ -30,4 +30,5 @@ export const PULL_REGISTRY = {
   opsService:  { table: 'qsr_service_stats',         dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
   opsSalesMix: { table: 'qsr_sales_mix',             dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
   lifelenz:    { table: 'lifelenz_schedule',         dateCol: 'date', workflowFile: 'lifelenz-pull.yml', clampToToday: true },
+  lifelenzAttendance: { table: 'lifelenz_attendance_summary', dateCol: 'period_end', workflowFile: 'lifelenz-attendance-pull.yml' },
 };

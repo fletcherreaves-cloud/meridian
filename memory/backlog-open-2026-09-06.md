@@ -95,16 +95,20 @@
 
 - [ ] Finish auto-pull migration: Scheduling Intelligence, Schedule Summary, Labor Analysis (same
   root cause as the Schedule Summary labor% bug).
-- [ ] ✅ **Probe RUN 2026-09-06 — the report-name slug is settled: `attendance_report`.**
-  Dispatched `lifelenz-ta-probe.yml` live: `attendance_report` → `200`/`text/csv` with real data
-  (a per-store row: scheduled/accepted/pick-up shift counts, excused/unexcused absence # and %,
-  more columns truncated in the first capture). All 5 other candidates (`time_attendance_report`,
-  `time_and_attendance_report`, `employee_attendance_report`, `punch_report`, `punches_report`)
-  404'd. **Remaining, now a real build, not a probe:** capture the FULL column set (a
-  `LIFELENZ_TA_FULL_CAPTURE=1` follow-up run is in flight), then build the actual pull script +
-  Supabase table + parser + workflow + `sync-failure-watch.yml` entry, replacing
-  `scheduling.js`'s hand-transcribed, 2-month-stale `TA_DATA` — the standard "adding a new
-  automated pull" checklist in CLAUDE.md, not a probe anymore.
+- [x] ✅ **BUILT 2026-09-07 (v5.388) — do not re-implement.** Full pull shipped:
+  `scripts/lifelenz-attendance-pull.mjs` (direct-token only, no Playwright fallback yet — see
+  its own header for why, a reasonable low-risk follow-up not attempted) rolls each store's
+  per-employee `attendance_report` CSV rows up to a rolling-28-day summary in
+  `lifelenz_attendance_summary` (`supabase/schema-lifelenz-attendance.sql`, tenant + `my_locs()`
+  RLS). Daily workflow, watched in `sync-failure-watch.yml`, checked in `stream-freshness.js`
+  `STREAMS` + `scheduled-pull-registry.mjs`. `scheduling.js`'s "Missed Shifts" tile (the only one
+  of `TA_DATA`'s 6 fields the UI actually rendered — the other 5 were dead data) now sources from
+  `sum(unexcused absences)` per store, auto-first with the frozen snapshot as a per-store
+  fallback until that store's first live pull lands.
+  ⚠️ **Needs owner confirmation, not a code question:** the "unexcused absences = missed
+  shifts" mapping is a judgment call — the original hand-typed number's methodology was never
+  documented, so this isn't a verified-identical replacement, just the closest honest field
+  available. 10 tests against the real captured CSV shape.
 - [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still read `ds.laborRows`
   directly instead of through the resolver (tracking number; falls as the sweep proceeds).
 - [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
