@@ -125,18 +125,31 @@
   scheduled but not worked would be a missed shift."* Was unexcused-only; now sums EXCUSED +
   UNEXCUSED absences per store — do not re-raise this as needing confirmation. 10 tests against
   the real captured CSV shape.
-- [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still match a grep for
-  `ds.laborRows` (re-confirmed 2026-09-07, count unchanged). **⚠️ The raw count likely
-  over-states real violations** — 2 confirmed false positives found this session, not chased
-  further into a full per-file audit (that's real, individual-judgment work, not a quick
-  grep-and-fix pass): `forecast.js`'s `compute6wk()` only touches `ds.laborRows` as a
-  `locRows()` fallback parameter and for genuinely-bespoke derived metrics (t2w, avgCheck,
-  depositVsSalesRatio) with no resolver equivalent — its actual per-field averages already all
-  route through `metricAvg()` (see the compute6wk/avg6 correction just above); `record-day.js`
-  already reads auto-first, with its own `ds.laborRows` reference only cleaning
+- [ ] `labor_rows` sweep — was 20 files under `src/views`+`src/engine` matching a grep for
+  `ds.laborRows`. **⚠️ The raw count likely over-states real violations** — several confirmed
+  false positives found across this session, not chased into a full per-file audit (that's real,
+  individual-judgment work, not a quick grep-and-fix pass): `forecast.js`'s `compute6wk()` only
+  touches `ds.laborRows` as a `locRows()` fallback parameter and for genuinely-bespoke derived
+  metrics (t2w, avgCheck, depositVsSalesRatio) with no resolver equivalent — its actual per-field
+  averages already all route through `metricAvg()` (see the compute6wk/avg6 correction above);
+  `record-day.js` already reads auto-first, with its own `ds.laborRows` reference only cleaning
   period-summary rows before handing off to the resolver (`// Auto-first (data-integrity sweep
-  signature #2)`, its own comment). **Before touching any of the 20, read that file first** —
-  don't assume the grep hit is the anti-pattern.
+  signature #2)`, its own comment); `eom-supervisor.js`'s `monthLaborRows` is a documented,
+  deliberate LAST-RESORT fallback behind autoFob/qsr_labor_summary, matching the standing
+  auto-first rule, not a violation; `sage.js`'s `ds.laborRows?.length` is a presence-only OR'd
+  existence check (`sageHasData`), not a metric-value read.
+  ✅ **One real, confirmed violation FIXED 2026-09-07 (v5.398).** `store-analytics.js`'s
+  `ShiftAnalysisTab` (Store Analytics > Shift Analysis) DID average `ds.laborRows` directly for
+  sales + all 5 channel-mix percentages (DOW breakdown table, Weekday-vs-Weekend cards, 3 Peaks x
+  Labor Gap same-day lookup, Competitive Intelligence same-day/DOW-avg lookup) with zero auto
+  fallback — the whole tab went blank on a cloud-only device. Routed through metricSeries/
+  metricDaily; added `bfMixPct`/`mopMixPct`/`kioskMixPct`/`delivMixPct` chains to
+  `metric-source.js` (manual Labor → emailed Sales Ledger, `mode:'any'` per the kvsHealthy/park
+  zero-vs-missing precedent) alongside the existing `dtMixPct`. Both ratchet CEILINGs
+  (`ratchet-raw-metric-rows.test.js`, `ratchet-week-day-arithmetic.test.js`) lowered to match. 2
+  new tests render the real `ShiftAnalysisTab` against a cloud-only fixture.
+  **Still open — the remaining ~17 files, unaudited.** Before touching any, read that file first
+  — don't assume the grep hit is the anti-pattern; several already confirmed above are not.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
   (the full `r={...}` literal, `oepe` through `oppCostDollar`, including the "manual-only" ones —
@@ -221,11 +234,12 @@
     unpaginated-1000-row-cap bug, already fixed 2026-08-08. `loadQsrProjections()`
     (`src/lib/supabase.js:2933-2952`, see its own header comment ~2922-2932) now reads the
     pre-summed rollup table via `fetchAll` pagination instead of a bare capped select.
-  - [ ] **Still open — Action Plan missing TPPH.** `generatePlan()` (`store-dash.js:1424-1576`,
-    consumed by `ActionPlanTab` ~1578) only builds action items for OT Hours (~1436), Cash O/S
-    (~1459), OEPE (~1481), T-Red After (~1504), Labor % (~1529) — no TPPH item exists. Genuinely
-    still broken; a real but narrowly-scoped follow-on (add a TPPH gap item to `generatePlan`,
-    matching the pattern of the existing five).
+  - [x] ✅ **DONE — already merged (#1185, "District View Action Plan TPPH"), stale here.**
+    `generatePlan()` (`store-dash.js`, ~line 1526) now has a sixth block: `if((t.tTpph||0)>0&&
+    (p.tpph||0)>0&&(p.tpph||0)<t.tTpph*0.9)` pushes a HIGH-priority "Labor Productivity" (⚡) action
+    item, matching the OT/Cash O/S/OEPE/T-Red/Labor% pattern exactly. Covered by
+    `store-dash-action-plan-tpph.test.js` (3 tests). This backlog line was not updated when #1185
+    landed — confirmed live in code 2026-09-07, do not re-build.
 - [ ] Speed of Service — DT History takes 15+ seconds to load (`notes-67-queue.md` §2). A
   performance bug, not a design ask — needs a real before/after measurement if scoped.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
@@ -662,6 +676,20 @@
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built.
+- [ ] **Job-code/position-level forecast vs actual hours on weekly schedules** (owner, 2026-09-07,
+  explicitly flagged "for later," not urgent) — *"figure out if we can get forecast and actual
+  hours for each job code/position on the weekly schedules... on the weekly and daily > hourly
+  level to be fully effective... an ambitious project."* Purpose: locate exactly WHERE a
+  schedule needs to change (which position, which hour), not just that a store is over/under in
+  aggregate. **Confirmed genuinely new, not already covered** — every existing auto stream
+  (`qsr_labor_summary`, `qsr_daily_activity_rollup`'s `actual_punched_hours`/
+  `total_needed_hours`/`total_scheduled_hours`) is a STORE-DAY total with no job-code/position
+  breakdown; `lifelenz_schedule` is the only candidate source likely to carry per-shift
+  role/position detail (it's the raw LifeLenz schedule pull), not yet audited for whether it
+  actually includes a position field at the row level or would need a schema/parser change.
+  Real scope, not sized: (1) confirm `lifelenz_schedule`'s raw shape has position/job-code per
+  shift, (2) a forecast-hours-by-position source (LifeLenz's own guide, or derived), (3) daily/
+  hourly rollup UI, likely a Labor Tools or Scheduling sub-view.
 - [ ] Inventory Control redesign's Labor instantiation of the generic Food-Cost shell
   (owner-approved, "it must host Labor too") is on hold pending an owner-run measurement of
   `qsr_labor_summary` that resolves a contradiction in what "Crew Labor %" actually contains.

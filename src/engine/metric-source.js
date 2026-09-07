@@ -368,6 +368,18 @@ export const METRIC_SOURCES = {
   dtSalesAmt:     { mode: 'pos', srcs: [['opsSalesMixRows', 'dtSalesAmt']] },
   mixNetSalesAmt: { mode: 'pos', srcs: [['opsSalesMixRows', 'netSalesAmt']] },
 
+  // Breakfast/MOP/Kiosk/Delivery mix % of sales — same shape as dtMixPct (manual Labor upload,
+  // then the emailed Sales Ledger), but WITHOUT dtMixPct's third-level opsSalesMixRows derive:
+  // qsr_sales_mix only carries a drive-thru $ leg (net_sales_dthru_amt), no breakfast/MOP/kiosk/
+  // delivery $ columns, so salesLedgerRows is the only non-manual source for these four.
+  // mode:'any' (not 'pos', unlike dtMixPct) — per the kvsHealthy/park precedent just above, a
+  // store that genuinely never runs kiosk/MOP/delivery has a real, legitimate 0%, and 'pos'
+  // would discard that as "not found" and fall through to nothing.
+  bfMixPct:    { mode: 'any', srcs: [['salesLedgerRows', 'bfPctTotal'],    ['laborRows', 'bfPctTotal']] },
+  mopMixPct:   { mode: 'any', srcs: [['salesLedgerRows', 'mopPctTotal'],   ['laborRows', 'mopPctTotal']] },
+  kioskMixPct: { mode: 'any', srcs: [['salesLedgerRows', 'kioskPctTotal'], ['laborRows', 'kioskPctTotal']] },
+  delivMixPct: { mode: 'any', srcs: [['salesLedgerRows', 'delivPctTotal'], ['laborRows', 'delivPctTotal']] },
+
   // Actual punched hours — manual Controls, then the auto DAR rollup. Added 2026-08-08:
   // an audit of compute6wk found 14 of its 28 fields had no chain, and this was the ONLY
   // one with a real auto source sitting unused (qsr_daily_activity_rollup carries

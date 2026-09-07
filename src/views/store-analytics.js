@@ -15,7 +15,7 @@ import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoo
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
-import { metricSeries, metricAvg, metricRate, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
@@ -90,9 +90,8 @@ async function fetchHistoricalWeather(locs, startDate, endDate) {
 
 
 // SHIFT ANALYSIS TAB
-// Safe date helpers — r.date may be a Date object OR an ISO string after IDB round-trip
+// Safe date helper — r.date may be a Date object OR an ISO string after IDB round-trip
 const _toD = d => d instanceof Date ? d : new Date((d||'')+'T12:00:00Z');
-const _toDK = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d||'').slice(0,10);
 
 function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const {p, t, loc} = store;
@@ -100,44 +99,48 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const cut = new Date(Date.now()-wb*7*86400000);
   const locStr = String(loc||'').trim();
   const opsRows   = ds&&ds.opsRows   ? ds.opsRows.filter(r=>r.loc===loc&&r.date>=cut)   : [];
-  const laborRows = ds&&ds.laborRows ? ds.laborRows.filter(r=>r.loc===loc&&r.date>=cut) : [];
-  // #178 item 2: tpph/labor/ot used to read `cAvg`, an average over ALL of ctrlRows with no
-  // day-of-week filter — so whenever ctrlRows had data, these three showed the SAME number on
-  // every one of the 7 rows below. Also a raw-row read, violating the standing rule against
-  // filtering ctrlRows/laborRows/opsRows directly for a metric in a panel. Routed through
-  // metricSeries (auto-first across every stream, ctrlRows/laborRows included as fallbacks)
-  // and bucketed by weekday, same shape as labor-tools.js's DOW breakdown.
+  // #178 item 2 (extended 2026-09-07, backlog `labor_rows` sweep): tpph/labor/ot were already
+  // routed through metricSeries (auto-first across every stream) instead of a raw filter over
+  // the manual Labor Excel upload's rows; sales + the 5 channel-mix percentages below them were
+  // NOT — they still averaged that manual upload directly, so this whole DOW breakdown (and the
+  // Weekday-vs-Weekend / Channel Mix sections built on it) silently went blank on any device with
+  // only cloud data and no manual Labor Excel upload ever done. Every field below is now bucketed
+  // the same way: an auto-first metricSeries pull, grouped by weekday.
+  // dtMixPct/bfMixPct/mopMixPct/kioskMixPct/delivMixPct (metric-source.js) resolve manual Labor
+  // first, then the emailed Sales Ledger — same fallback order the raw manual-first read implied,
+  // just with a real auto backstop now.
   const range = {s:cut, e:lastClosedBusinessDay()};
-  const dowMetric = {tpph:{},labor:{},ot:{}};
+  const dowMetric = {sales:{},tpph:{},labor:{},ot:{},dtPct:{},bfPct:{},mopPct:{},kioskPct:{},delivPct:{}};
   {
-    const tp=metricSeries(ds,loc,range,'tpph'), lp=metricSeries(ds,loc,range,'laborPct'), ot=metricSeries(ds,loc,range,'otHrs');
-    for(const dk in tp) (dowMetric.tpph[new Date(dk+'T00:00:00').getDay()] ??= []).push(tp[dk]);
-    for(const dk in lp) (dowMetric.labor[new Date(dk+'T00:00:00').getDay()] ??= []).push(lp[dk]);
-    for(const dk in ot) (dowMetric.ot[new Date(dk+'T00:00:00').getDay()] ??= []).push(ot[dk]);
+    const bucket=(series,key)=>{for(const dk in series) (dowMetric[key][new Date(dk+'T00:00:00').getDay()] ??= []).push(series[dk]);};
+    bucket(metricSeries(ds,loc,range,'sales'),       'sales');
+    bucket(metricSeries(ds,loc,range,'tpph'),        'tpph');
+    bucket(metricSeries(ds,loc,range,'laborPct'),    'labor');
+    bucket(metricSeries(ds,loc,range,'otHrs'),       'ot');
+    bucket(metricSeries(ds,loc,range,'dtMixPct'),    'dtPct');
+    bucket(metricSeries(ds,loc,range,'bfMixPct'),    'bfPct');
+    bucket(metricSeries(ds,loc,range,'mopMixPct'),   'mopPct');
+    bucket(metricSeries(ds,loc,range,'kioskMixPct'), 'kioskPct');
+    bucket(metricSeries(ds,loc,range,'delivMixPct'), 'delivPct');
   }
   const dowMean=(bucket,d)=>{const v=bucket[d];return v&&v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
+  const dowN   =(bucket,d)=>(bucket[d]?bucket[d].length:0);
   const hasPeaks  = ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr);
   const peaksData = hasPeaks ? analyzePeaks(ds.peaksSvcRows,ds.peaksSalesRows,loc,wb) : null;
-  const dayDates  = laborRows.filter(r=>{const d=_toD(r.date).getDay();return d>=1&&d<=5;});
-  const wkndDates = laborRows.filter(r=>{const d=_toD(r.date).getDay();return d===0||d===6;});
-  const avgDay    = dayDates.length  ? dayDates.reduce((a,r)=>a+r.sales,0)/dayDates.length  : 0;
-  const avgWknd   = wkndDates.length ? wkndDates.reduce((a,r)=>a+r.sales,0)/wkndDates.length: 0;
+  const _wkdayVals = [1,2,3,4,5].flatMap(d=>dowMetric.sales[d]||[]);
+  const _wkndVals  = [0,6].flatMap(d=>dowMetric.sales[d]||[]);
+  const avgDay    = _wkdayVals.length ? _wkdayVals.reduce((a,b)=>a+b,0)/_wkdayVals.length : 0;
+  const avgWknd   = _wkndVals.length  ? _wkndVals.reduce((a,b)=>a+b,0)/_wkndVals.length   : 0;
+  const hasSalesData = Object.values(dowMetric.sales).some(v=>v&&v.length);
 
   const dowData = [0,1,2,3,4,5,6].map(d=>{
-    const lR=laborRows.filter(r=>_toD(r.date).getDay()===d);
     const oR=opsRows.filter(r=>_toD(r.date).getDay()===d);
     const oAvg=(f)=>oR.length?oR.reduce((a,r)=>a+(r[f]||0),0)/oR.length:0;
-    const lAvg=(f)=>lR.length?lR.reduce((a,r)=>a+(r[f]||0),0)/lR.length:0;
-    const lSum=(f)=>lR.reduce((a,r)=>a+(r[f]||0),0);
-    const totSales=lSum('sales');
-    return{dow:DOW_BASE[d],n:lR.length,sales:lR.length?lR.reduce((a,r)=>a+r.sales,0)/lR.length:0,
+    return{dow:DOW_BASE[d],n:dowN(dowMetric.sales,d),sales:dowMean(dowMetric.sales,d),
       oepe:oAvg('oepe'),kvst:oAvg('kvst'),park:oAvg('park'),r2p:oAvg('r2p'),
       tpph:dowMean(dowMetric.tpph,d),kvsu:oAvg('kvsu'),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
-      dtPct:   totSales>0&&lSum('dtSales')>0   ? lSum('dtSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.dtPctTotal||0),0)/lR.length:0),
-      bfPct:   totSales>0&&lSum('bfSales')>0   ? lSum('bfSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.bfPctTotal||0),0)/lR.length:0),
-      mopPct:  totSales>0&&lSum('mopSales')>0  ? lSum('mopSales')/totSales  : (lR.length?lR.reduce((a,r)=>a+(r.mopPctTotal||0),0)/lR.length:0),
-      kioskPct:totSales>0&&lSum('kioskSales')>0? lSum('kioskSales')/totSales: (lR.length?lR.reduce((a,r)=>a+(r.kioskPctTotal||0),0)/lR.length:0),
-      delivPct:totSales>0&&lSum('delivSales')>0? lSum('delivSales')/totSales: (lR.length?lR.reduce((a,r)=>a+(r.delivPctTotal||0),0)/lR.length:0),
+      dtPct:dowMean(dowMetric.dtPct,d),bfPct:dowMean(dowMetric.bfPct,d),mopPct:dowMean(dowMetric.mopPct,d),
+      kioskPct:dowMean(dowMetric.kioskPct,d),delivPct:dowMean(dowMetric.delivPct,d),
     };
   });
   const maxSales = Math.max(...dowData.map(d=>d.sales),1);
@@ -218,7 +221,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
       )
     )
   ),
-    laborRows.length>0&&div({style:{marginBottom:14}},
+    hasSalesData&&div({style:{marginBottom:14}},
       div({style:{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},'Weekday vs Weekend'),
       div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
         [{label:'Mon–Fri Avg',val:avgDay,col:'#60a5fa'},{label:'Sat–Sun Avg',val:avgWknd,col:'#f59e0b'},
@@ -230,7 +233,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
         ))
       )
     ),
-    laborRows.length>0&&div({style:{marginBottom:14}},
+    hasSalesData&&div({style:{marginBottom:14}},
       div({style:{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},'Average Sales by Day of Week'),
       div({style:{display:'flex',gap:5,alignItems:'flex-end',height:80,padding:'0 2px'}},
         dowData.map((d,i)=>{
@@ -292,7 +295,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     ),
 
     // Channel Mix by Day of Week heat-map
-    laborRows.length>0&&dowData.some(d=>d.dtPct>0||d.mopPct>0||d.kioskPct>0)&&(()=>{
+    hasSalesData&&dowData.some(d=>d.dtPct>0||d.mopPct>0||d.kioskPct>0)&&(()=>{
       const CH=[
         {key:'dtPct',   label:'Drive-Thru', col:'#60a5fa'},
         {key:'bfPct',   label:'Breakfast',  col:'#fbbf24'},
@@ -350,12 +353,13 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     // 3 Peaks × Labor Gap — cross-reference peak OEPE with same-day labor deployment
     hasPeaks&&(()=>{
       const sliceInfo={breakfast:{l:'Breakfast',col:'#f59e0b'},lunch:{l:'Lunch',col:'#10b981'},dinner:{l:'Dinner',col:'#818cf8'}};
-      // Build laborByDate once outside the slice loop — _toDK handles both Date objects and ISO strings
-      const laborByDate={};
-      laborRows.forEach(r=>{laborByDate[_toDK(r.date)]=r;});
+      // Auto-first per-day lookup (2026-09-07, backlog `labor_rows` sweep) — was matching against
+      // a laborByDate map built from the manual Labor Excel upload's rows only, blank on any
+      // device with no manual upload. metricDaily resolves laborPct auto-first for the exact
+      // date, same chain dowMetric.labor above uses.
       const avgLaborOn=(rows)=>{
-        const matched=rows.map(r=>laborByDate[_toDK(r.date)]).filter(Boolean);
-        return matched.length?matched.reduce((a,r)=>a+(r.laborPct||0),0)/matched.length:null;
+        const matched=rows.map(r=>metricDaily(ds,loc,r.date,'laborPct')).filter(v=>v!=null);
+        return matched.length?matched.reduce((a,v)=>a+v,0)/matched.length:null;
       };
 
       const sliceGaps = ['breakfast','lunch','dinner'].map(sl=>{
@@ -407,7 +411,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
 
     // Competitive Intelligence Impact Analysis
     (()=>{
-      if(!userEvents||!laborRows.length) return null;
+      if(!userEvents||!hasSalesData) return null;
       const COMP_KEYS=['comp','comp_new','comp_promo','comp_closure','comp_pricing','comp_media'];
       // userEvents is {[loc]:{[dk]:eventObj}} — flatten to array for this store
       const evtArr=[];
@@ -431,17 +435,18 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
           ' event type. Meridian will then compare your sales on those days vs. your DOW average to measure the impact.'
         )
       );
-      // For each competition event, find the same-day sales and compare to DOW avg
-      const allSalesByDow={};
-      laborRows.forEach(r=>{const d=_toD(r.date).getDay();if(!allSalesByDow[d])allSalesByDow[d]=[];if(r.sales>0)allSalesByDow[d].push(r.sales);});
-      const dowAvg=d=>{const v=allSalesByDow[d]||[];return v.length?v.reduce((a,b)=>a+b)/v.length:0;};
+      // For each competition event, find the same-day sales and compare to DOW avg — reuses the
+      // same auto-first dowMetric.sales/dowMean bucketing the DOW breakdown table above already
+      // built (was rebuilding an equivalent allSalesByDow from the manual Labor upload's rows
+      // only, same blank-on-cloud-only-device gap as the rest of this sweep item).
+      const dowAvg=d=>dowMean(dowMetric.sales,d);
       const impacts=compEvts.map(e=>{
         const evDate=e.evDate;
-        const row=laborRows.find(r=>_toDK(r.date)===_toDK(evDate)&&r.sales>0);
-        if(!row) return null;
+        const sales=metricDaily(ds,loc,evDate,'sales');
+        if(!(sales>0)) return null;
         const avg=dowAvg(evDate.getDay());
-        const impact=avg>0?(row.sales-avg)/avg:null;
-        return{...e,sales:row.sales,avg,impact,evDate};
+        const impact=avg>0?(sales-avg)/avg:null;
+        return{...e,sales,avg,impact,evDate};
       }).filter(Boolean);
       if(!impacts.length) return null;
       const avgImpact=impacts.reduce((a,e)=>a+(e.impact||0),0)/impacts.length;

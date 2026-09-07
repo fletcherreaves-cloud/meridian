@@ -55,7 +55,15 @@ const ROOT = 'src/views';
 // metricSeries (auto-first per metric), removing the raw-row reads entirely. See
 // src/__tests__/analytics-correlations-auto-first.test.js and
 // src/__tests__/signals-correlations-tab-auto-first.test.js for the regression coverage.
-const CEILING = 155;
+// 2026-09-07: -2 -- store-analytics.js's ShiftAnalysisTab (Store Analytics > Shift Analysis) had
+// its DOW-breakdown sales/mix-% table, its Weekday-vs-Weekend cards, its 3 Peaks x Labor Gap
+// same-day lookup, and its Competitive Intelligence Impact same-day/DOW-avg lookup ALL reading
+// the manual Labor Excel upload directly -- the whole tab silently went blank on any device with
+// only cloud data. Routed through metricSeries/metricDaily (new bfMixPct/mopMixPct/kioskMixPct/
+// delivMixPct chains added to metric-source.js alongside the existing dtMixPct, same manual ->
+// emailed Sales Ledger fallback order). See
+// src/__tests__/store-analytics-shift-tab-auto-first.test.js.
+const CEILING = 153;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
