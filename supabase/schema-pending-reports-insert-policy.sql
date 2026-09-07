@@ -1,0 +1,44 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- pending_reports — add the missing client-side INSERT policy (manual uploads)
+--
+-- backlog-open-2026-09-06.md §14 flagged that pending_reports stores manual-upload file
+-- content as a base64 blob in a `file_data` column instead of the 'reports' Storage bucket
+-- that already exists for exactly this purpose (a 12.37 MB row was observed, exceeding the
+-- read-side statement timeout on every fetch). src/lib/supabase.js's uploadReportFile() and
+-- src/app/App.js's cross-device-sync read path were fixed in the same change that added this
+-- file to actually use the 'reports' bucket.
+--
+-- While tracing that fix, a SEPARATE, more serious bug was found and measured live (not
+-- reasoned about): schema.sql's own comment on this table says "Service role only for insert
+-- (Edge Function uses service key, bypasses RLS)" — and indeed no INSERT policy exists here at
+-- all, for any role. Measured directly against the live database (anon key, a synthetic new
+-- row, 2026-09-07):
+--
+--   POST /rest/v1/pending_reports  ->  HTTP 401
+--   {"code":"42501","message":"new row violates row-level security policy for table
+--    \"pending_reports\""}
+--
+-- uploadReportFile() has always called this same insert (via upsert) directly from the
+-- browser client (anon key) — it was never meant to be service-role-only, that comment
+-- describes only the Edge Function's OWN insert path (ingest-report/index.ts, email pipeline),
+-- not the manual-upload path this table was also built to serve (see this table's own second
+-- comment: "Storage bucket for manually uploaded files (cross-device sync). Receives files
+-- uploaded via the Load button on any device."). So today, in production, a manual upload's
+-- metadata row can only ever be created via UPDATE (the existing "public update" policy,
+-- using(true)) if a row with that exact storage_path already exists from a PRIOR upload —
+-- every genuinely NEW manual upload's insert has been silently failing (uploadReportFile only
+-- console.warns and returns null; nothing else surfaces the failure), so the file uploads to
+-- the intended bucket-or-column but is invisible to every other device — the exact
+-- "cross-device sync" this feature exists for never fires for a first-time file.
+--
+-- Fix: add a matching public INSERT policy, consistent with this table's own existing
+-- "public read"/"public update" policies (both using(true) — this table predates the
+-- tenant_id/my_locs() RLS pattern and was deliberately left fully open, per its own comment
+-- that auto-ingest "runs before Supabase auth is established on localhost"). Not introducing
+-- new exposure: the row only ever carries a filename/path/type, matching what "public read"
+-- already exposes; the actual file bytes are gated by the 'reports' Storage bucket's own
+-- (also already-public) policies, unchanged by this file.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+create policy "pending_reports: public insert" on public.pending_reports
+  for insert with check (true);

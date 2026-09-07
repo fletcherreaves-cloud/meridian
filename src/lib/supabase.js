@@ -287,22 +287,28 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
 // Uploads a raw file to the 'reports' storage bucket and inserts/updates
 // a pending_reports record so other devices can discover and download it.
 // Returns the pending_reports row (with .id) on success, or null on error.
+//
+// Was previously base64-encoding the whole file into pending_reports.file_data
+// instead — the comment above described this function's intent correctly, the
+// implementation just never matched it. The 'reports' Storage bucket (with its
+// own public-insert/public-read policies, supabase/schema.sql) already existed
+// for exactly this, unused. Cost: a base64 blob is ~33% larger than the file it
+// encodes, stored in a Postgres column instead of an object store, and a single
+// 12.37 MB Labor-report blob was observed exceeding the statement timeout on
+// EVERY fetch by every other device (see the read side in App.js's cross-device
+// sync effect) -- a real, previously-worked-around correctness/perf bug, not
+// just a stale comment. file_data is set to null on upsert here so a re-upload
+// of a path that used to carry the old base64 blob clears it.
 export async function uploadReportFile(file, reportType) {
   if (!supabase) return null;
   try {
-    const ab = await file.arrayBuffer();
-    // Encode to base64 in chunks to avoid call stack overflow on large files
-    const bytes = new Uint8Array(ab);
-    const CHUNK = 8192;
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
-    }
-    const fileData = btoa(binary);
     const storagePath = `manual/${new Date().toISOString().slice(0, 10)}/${file.name}`;
+    const { error: upErr } = await supabase.storage.from('reports')
+      .upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: true });
+    if (upErr) { console.warn('[uploadReportFile] storage upload failed:', upErr.message); return null; }
     const { data, error } = await supabase.from('pending_reports')
       .upsert({ filename: file.name, storage_path: storagePath, report_type: reportType,
-                source: 'manual', processed: false, file_data: fileData },
+                source: 'manual', processed: false, file_data: null },
                { onConflict: 'storage_path' })
       .select('id').single();
     if (error) { console.warn('[uploadReportFile] failed:', error.message); return null; }

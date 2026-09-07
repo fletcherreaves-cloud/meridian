@@ -527,8 +527,25 @@
   role read, `content-range: 0-0/1`). The rest of the item still holds — no `TOLERANCE`/tolerance
   config or restricted-handling UI/SAGE gating exists anywhere in `src/`: only 2 of 7 pull
   streams have tolerance rules, and the `notes` column has no UI/SAGE consumer yet.
-- [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
-  Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload.
+- [x] ✅ **FIXED 2026-09-07 — app code shipped; ⚠️ needs a one-statement SQL run to fully work,
+  see below.** `uploadReportFile()` (`src/lib/supabase.js`) now actually uploads to the `'reports'`
+  Storage bucket (created for exactly this, per `schema.sql`'s own comment, but never used) instead
+  of base64-encoding into `pending_reports.file_data`; the cross-device-sync read side (`App.js`)
+  downloads from Storage first, falling back to `file_data` only for rows uploaded before this fix
+  (so already-queued files aren't stranded). 3 new tests against a mock Supabase client, full suite
+  484/4617, build clean.
+  **⚠️ Found a second, more serious bug while tracing this — genuinely broken today, independent
+  of the base64 issue.** Measured live against the real database (anon key, synthetic row):
+  `pending_reports` has **no INSERT policy for any client role** — `schema.sql`'s own comment says
+  "Service role only for insert," but `uploadReportFile()` has always inserted from the browser
+  client. A real anon-key POST returns `42501 "new row violates row-level security policy"`. So
+  today, a genuinely NEW manual upload's metadata row silently fails to insert (console.warn only)
+  — the file lands wherever it lands, but no other device ever learns it exists, which is the
+  entire point of this feature. `supabase/schema-pending-reports-insert-policy.sql` (new, this
+  commit) adds the missing policy, matching this table's own existing wide-open
+  `using(true)` read/update posture. **Owner action needed: run that SQL file in the Supabase SQL
+  editor** — until then, manual "Load" uploads keep working locally but still won't sync to other
+  devices for brand-new files (same as before this fix, not a new regression).
 - [ ] Store-events material-changes date-formatting bug — could not locate in live code on the
   last pass (every `sheet_to_json`/`XLSX.read` call already guards `raw:true`/`cellDates:false`
   project-wide, so the described mechanism should already be structurally prevented). Needs a live
