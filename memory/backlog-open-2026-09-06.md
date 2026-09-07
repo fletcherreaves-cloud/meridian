@@ -132,10 +132,12 @@
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
   Re-checked 2026-09-05: only one `SageRunsTile` render call site in code, which doesn't rule out a
   double-fetch-on-click. Needs a live click trace, not another grep.
-- [ ] `fetchAll` has no per-page timeout — low priority, but if the Smart Targets/Daily Glimpse
-  slow-fallback path (thought stuck as of `notes-60-queue.md`, now rare since cloud-stream coverage
-  grew) is ever hit again by a new metric/data gap/stream outage, it can hang a panel with no
-  escape. Worth a bounded timeout wrapper someday.
+- [x] ✅ **BUILT 2026-09-07 (v5.389) — do not re-implement.** `fetchAll()`
+  (`src/lib/supabase.js`) now wraps every page attempt in `_withPageTimeout()` (30s), which
+  races the real request and resolves with a synthetic no-`.code` error on timeout —
+  classified retryable by dispatch #218's own `_isRetryablePageError`, so a hung page reuses
+  that exact retry-then-give-up path (no new UI, no new failure mode). 6 new tests
+  (`dispatch-fetchall-page-timeout.test.js`).
 - [ ] Yearly Planning YTD — if the owner's numbers genuinely look wrong, needs fresh diagnosis
   (`monthly_targets` coverage, `dayFrac`/current-month proration math, or a location-mapping
   mismatch). **The Jan-Mar manual-upload-gap hypothesis is refuted** (measured: DAR-sourced,
