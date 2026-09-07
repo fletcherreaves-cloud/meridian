@@ -21,8 +21,9 @@ import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
-import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
-import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
+import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, loadQsrOnHand, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
+import { weeklyRecountWindows } from '../engine/count-cycle.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
@@ -351,20 +352,23 @@ function EOMScoreboardTile({ onOpenModal }) {
       h('div', { style: { fontSize: 18, fontWeight: 800, color: k === 'ready' && tally[k] > 0 ? '#f5bc00' : 'var(--text,#e8eaed)' } }, String(tally[k]))))));
 }
 
-// Items Recounted tile (Notes 45 #81) — district-wide close-window recount rollup on the main
-// dashboard: how many items stores went back and re-verified during the EOM close, and whether
-// those recounts collectively pulled variance TOWARD zero (helped) or away (hurt). Same close-window
-// engine as the Change Monitor (ledgerScopeDiff). Visible in the close window + the first days after.
-// Click opens the EOM Dashboard → Change Monitor.
+// Items Recounted tile (Notes 45 #81) — district-wide recount rollup on the main dashboard: how
+// many items stores went back and re-verified, and whether those recounts collectively pulled
+// variance TOWARD zero (helped) or away (hurt). Same recount-detection engine as the Change
+// Monitor (ledgerScopeDiff, eom-ledger-baseline.js).
+//
+// v2 (2026-09-07, owner-directed: "put it into effect for weekly counts as well"). Was gated to
+// the EOM close window (last 3 days of month + first week after) with ONE district-wide window.
+// Now always-on, with a SEPARATE window PER STORE, anchored to that store's own most recent
+// complete weekly count (weeklyRecountWindows(), engine/count-cycle.js — reuses cycleCompliance's
+// own lastWeekly, the same "genuinely complete" bar Count Cycle's own overdue-grading uses, now
+// COVER_FRAC=0.95). This subsumes the EOM case rather than running alongside it: a store's
+// close-window count IS also its most recent weekly count, so nothing is lost, and every store
+// now gets a live read every week instead of only near month-end. Click still opens the EOM
+// Dashboard → Change Monitor.
 function ItemsRecountedTile({ onOpenModal }) {
   const now = new Date();
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const day = now.getDate();
-  // Relevant during the close window (last 3 days) and the first week after (recounts just landed).
-  const inWindow = day >= lastDay - 2 || day <= 7;
-  // In the first week the just-closed PRIOR month is the interesting period; otherwise this month.
-  const target = (day <= 7) ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
-  const period = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   // undefined = still loading · null = genuinely no rows · {} = result
   const [diff, setDiff] = React.useState(undefined);
   // Separate from `diff`. Until v4.864 a failed read and an empty period both set
@@ -374,42 +378,47 @@ function ItemsRecountedTile({ onOpenModal }) {
   const [loadErr, setLoadErr] = React.useState(null);
   const [tryN, setTryN] = React.useState(0);
   React.useEffect(() => {
-    if (!inWindow) return;
     let live = true;
     (async () => {
       let failed = false;
       try {
-        const [rawDetail, variance] = await Promise.all([
+        const [rawDetail, variance, onHand] = await Promise.all([
           loadQsrRawItemDetail({ period }).catch(() => { failed = true; return []; }),
           loadQsrVarianceStat({ period }).catch(() => []),
+          loadQsrOnHand({ period }).catch(() => { failed = true; return []; }),
         ]);
         if (!live) return;
         // fetchAll marks a truncated read non-enumerably rather than throwing.
-        if (rawDetail && rawDetail._partial) failed = true;
+        if ((rawDetail && rawDetail._partial) || (onHand && onHand._partial)) failed = true;
         if (failed) { setLoadErr('read failed'); setDiff(undefined); return; }
         setLoadErr(null);
-        if (!rawDetail || !rawDetail.length) { setDiff(null); return; }
+        // windows: { [loc]: {closeWindowStart, closeWindowEnd} } — only stores with a qualifying
+        // weekly count THIS period get an entry; single-period by design (see
+        // weeklyRecountWindows' own comment for the tradeoff — self-resolving through the month).
+        const windows = weeklyRecountWindows(onHand, { asOf: now });
+        if (!rawDetail || !rawDetail.length || !Object.keys(windows).length) { setDiff(null); return; }
         const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
         const rawByLoc = {}, perLoc = {};
         for (const r of rawDetail) {
           const k = norm(r.loc);
+          if (!windows[k]) continue; // no qualifying weekly count yet this period for this store
           (rawByLoc[k] || (rawByLoc[k] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, caseSz: r.caseSz, uom: r.uom });
+          if (!perLoc[k]) perLoc[k] = { ...windows[k], statVar: {} };
         }
         for (const v of (variance || [])) {
           const k = norm(v.loc);
-          if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
+          if (!perLoc[k]) continue;
           if (v.dolDiff != null) perLoc[k].statVar[String(v.wrin)] = v.dolDiff;
         }
-        for (const k of Object.keys(rawByLoc)) if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
+        if (!Object.keys(rawByLoc).length) { setDiff(null); return; }
         setDiff(ledgerScopeDiff(rawByLoc, perLoc));
       } catch { if (live) { setLoadErr('read failed'); setDiff(undefined); } }
     })();
     return () => { live = false; };
     // tryN is in the deps so a retry actually re-runs. Without it the effect's deps
-    // (inWindow, period) never change during a session, so ONE transient failure at
-    // cold start pinned the tile to its empty state until a full reload.
-  }, [inWindow, period, tryN]);
-  if (!inWindow) return null;
+    // (period) never change during a session, so ONE transient failure at cold start
+    // pinned the tile to its empty state until a full reload.
+  }, [period, tryN]);
 
   const totalRecounted = diff && diff.stores ? diff.stores.reduce((s, x) => s + (x.nRecounted || 0), 0) : 0;
   const helped = diff ? (diff.totalHelped || 0) : 0;
@@ -418,7 +427,7 @@ function ItemsRecountedTile({ onOpenModal }) {
   const dir = Math.abs(net) < 25 ? 'flat' : net > 0 ? 'helped' : 'hurt';
   const DIR = { helped: ['↑ Helped', '#10b981'], hurt: ['↓ Hurt', '#ef4444'], flat: ['→ Neutral', '#9aa0aa'] };
   const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
-  const perLbl = target.toLocaleDateString([], { month: 'short', year: 'numeric' });
+  const perLbl = now.toLocaleDateString([], { month: 'short', year: 'numeric' });
 
   const card = (...kids) => h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'),
     style: { background: 'var(--surf2,#151821)', border: '.5px solid ' + (totalRecounted > 0 ? 'rgba(96,165,250,.4)' : 'var(--bdr,#2a2f3a)'), borderRadius: 12, overflow: 'hidden', cursor: 'pointer' },
@@ -427,7 +436,7 @@ function ItemsRecountedTile({ onOpenModal }) {
     h('span', { style: { fontSize: 15 } }, '🔁'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' close window · did recounts help or hurt')),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' · each store\'s own weekly count window · did recounts help or hurt')),
     totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
   // A failed read is NOT "no data" — say so, and offer a way out. The tile fires an
   // uncoordinated district-wide read at dashboard mount, competing with the cold-start
@@ -440,8 +449,8 @@ function ItemsRecountedTile({ onOpenModal }) {
       style: { marginTop: 8, background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text2,#9aa4b2)', padding: '4px 10px', cursor: 'pointer', fontSize: 11 },
     }, '↻ Retry')));
   if (diff === undefined) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
-  if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No ledger detail for ' + perLbl + ' yet — recounts appear here once stores count in the close window.'));
-  if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores. A recount = an item re-verified on a later day of the close window.'));
+  if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No store has a complete weekly count on record for ' + perLbl + ' yet — this fills in as stores count this period.'));
+  if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores with a weekly count on record. A recount = an item re-verified within a few days of that store\'s own weekly count.'));
   return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'stretch' } },
     // big number
     h('div', { style: { flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 76, borderRight: '.5px solid var(--bdr,#2a2f3a)', paddingRight: 12 } },

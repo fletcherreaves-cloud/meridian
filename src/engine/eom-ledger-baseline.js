@@ -54,11 +54,18 @@ export function closeWindowStartFor(period, days = 3) {
 //   rawItems         — qsr_raw_item_detail rows for the store
 //   closeWindowStart — first day of the EOM close window (ISO or MM/DD/YYYY). Counts on/after = the EOM
 //                      count + recounts; the first is the session, later days are recounts.
+//   closeWindowEnd   — optional last day of the window (ISO or MM/DD/YYYY), inclusive. null (default)
+//                       = unbounded, the original EOM behavior, where the fetched rawItems' own date
+//                       range is the only natural end. Added for the At A Glance weekly-recount tile
+//                       (2026-09-07): a per-store window anchored to that store's own weekly-count date
+//                       needs an explicit end, or the FOLLOWING week's regular count would misread as a
+//                       "recount" of THIS week's baseline instead of its own new baseline.
 // Per-ITEM close-window recount analysis from a raw count history. Reusable so the Progression view and
 // the Baseline-diff share ONE definition of "was a recount detected". Returns the session vs final binding,
 // the graded recount chain, and a recounted flag (counted on ≥2 days in the close window). null if no counts.
-export function itemCloseWindowRecount(history, { closeWindowStart = null, floor = LEDGER_MATERIAL_FLOOR } = {}) {
+export function itemCloseWindowRecount(history, { closeWindowStart = null, closeWindowEnd = null, floor = LEDGER_MATERIAL_FLOOR } = {}) {
   const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
+  const winEnd = closeWindowEnd ? isoDay(closeWindowEnd) : null;
   const counts = (history || []).filter(h => h && h.isCount && h.dt).map(h => ({
     day: isoDay(h.dt), when: tsOf(h.dt, h.tm), tm: h.tm || null,
     dolVar: Number(h.difference) || 0, unitVar: h.variance != null ? Number(h.variance) : null,
@@ -82,7 +89,9 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, floor
     const unitVar = unitVals.length ? unitVals.reduce((s, v) => s + v, 0) : null;
     return { ...last, dolVar, unitVar, nEntries: dayEntries.length };
   });
-  const winBindings = winStart ? allDayBindings.filter(b => b.day >= winStart) : allDayBindings;
+  const winBindings = winStart
+    ? allDayBindings.filter(b => b.day >= winStart && (!winEnd || b.day <= winEnd))
+    : allDayBindings;
   // If never counted in the close window, its EOM number = its last overall count → flat, not recounted.
   const usable = winBindings.length ? winBindings : allDayBindings.slice(-1);
   const sessionB = usable[0], finalB = usable[usable.length - 1];
@@ -108,11 +117,11 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, floor
   };
 }
 
-export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR } = {}) {
+export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, closeWindowEnd = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR } = {}) {
   const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
   const items = [];
   for (const it of (rawItems || [])) {
-    const r = itemCloseWindowRecount(it.history, { closeWindowStart: winStart, floor });
+    const r = itemCloseWindowRecount(it.history, { closeWindowStart: winStart, closeWindowEnd, floor });
     if (!r) continue;
     const official = officialVarByWrin[String(it.wrin)] ?? officialVarByWrin[it.wrin] ?? null;
     items.push({
@@ -147,7 +156,7 @@ export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MAT
   for (const [loc, rawItems] of Object.entries(rawByLoc)) {
     const p = perLoc[norm(loc)] || perLoc[loc] || {};
     const statVar = p.statVar || {};
-    const diff = ledgerBaselineDiff(rawItems, { closeWindowStart: p.closeWindowStart, officialVarByWrin: statVar, floor });
+    const diff = ledgerBaselineDiff(rawItems, { closeWindowStart: p.closeWindowStart, closeWindowEnd: p.closeWindowEnd, officialVarByWrin: statVar, floor });
     const dFobPct = (p.curFobPct != null && p.baseFobPct != null) ? p.curFobPct - p.baseFobPct : null;
     const fobVerdict = dFobPct == null ? 'unknown' : dFobPct < -0.0001 ? 'helping' : dFobPct > 0.0001 ? 'hurting' : 'flat';
     const flaggedWrins = Object.entries(statVar).filter(([, v]) => Math.abs(v) >= 50).map(([w]) => w);

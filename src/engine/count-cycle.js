@@ -45,14 +45,31 @@ export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 // A class counts as "covered" in a session when at least this share of that store's
 // item universe for the class was touched.
 //
-// MEASURED, not guessed. Across 158 class-sessions in the live 2026-08 snapshot the
-// coverage ratio is sharply bimodal:
+// RAISED 0.75 → 0.95, owner-directed 2026-09-07: "they are expected to perform a full
+// weekly count each week. Not partial. So the bar should be the higher threshold. We
+// need to get really good at detecting this." Reverses this constant's own original
+// choice below on purpose — the point of the change is that 0.75 was tuned to be
+// LENIENT about what counts as "complete," and the owner wants the opposite: a
+// genuinely strict bar that surfaces real partial counts as exceptions instead of
+// quietly passing them.
+//
+// Originally MEASURED, not guessed (kept for history): across 158 class-sessions in the
+// live 2026-08 snapshot the coverage ratio was sharply bimodal:
 //     0.0-0.1  → 69 sessions   (spot checks, 1-2 items)
 //     0.1-0.8  →  6 sessions   (a near-empty gap)
 //     0.8-1.0  → 77 sessions   (real cycle counts)
-// 0.75 sits inside that gap and above the scattered middle. An earlier 0.5 pulled in
+// 0.75 sat inside that gap and above the scattered middle. An earlier 0.5 pulled in
 // four ~50% sessions that are genuinely partial counts, not full ones.
-export const COVER_FRAC = 0.75;
+//
+// Before landing on 0.95, two other bars were live-measured against 2026-08 qsr_onhand
+// (27 stores) and reported to the owner: 0.98 (EOM's own CLASS_DONE_PCT, eom-inventory.js)
+// flips 21/27 stores (78%) from compliant to overdue THIS PERIOD — most real full counts
+// never reach exactly 98% coverage of the active-item universe, so it reads as noise, not
+// signal. 0.95 flips only 7/27 (26%) — a real, actionable list of genuinely-partial
+// counters rather than nearly the whole district. Chosen deliberately over 0.98 for that
+// reason; if real counting practice tightens up, 0.98 is worth re-measuring later, not
+// assumed to already be achievable.
+export const COVER_FRAC = 0.95;
 // Days after which a store with no qualifying weekly count is overdue. 7 + grace,
 // because the count day floats.
 export const WEEKLY_DUE_DAYS = 9;
@@ -465,6 +482,41 @@ export function cycleSummary(compliance = []) {
     if (c.overdue) s.overdue++;
   }
   return s;
+}
+
+// Per-store recount-detection window anchored to EACH STORE'S OWN most recent complete
+// weekly (Food+Condiment, COVER_FRAC-cleared) count — the At A Glance Items Recounted tile's
+// basis (2026-09-07, owner-directed: "put it into effect for weekly counts as well," not just
+// the EOM close window). Reuses cycleCompliance()'s own lastWeekly (the SAME "genuinely
+// complete" definition Count Cycle's own overdue-grading uses, now at the raised 0.95 bar)
+// rather than inventing a second one.
+//
+// windowDays bounds how many days AFTER the weekly count a later count still counts as a
+// recount of THAT session — without an end bound the FOLLOWING week's regular count would
+// misread as a "recount" of this week's baseline (see itemCloseWindowRecount's own
+// closeWindowEnd comment, eom-ledger-baseline.js). Default 3 matches the EOM close window's
+// own width.
+//
+// Deliberately single-period (current onhand only, not also the prior month) — a store with
+// no qualifying weekly count yet THIS period (e.g. the first few days of a new month) simply
+// gets no entry here rather than reaching back into last month's raw-item-detail data too,
+// which isn't fetched by this tile in the first place. Self-resolving as the month
+// progresses; not a defect, see the tile's own comment for the tradeoff.
+//
+// Returns { [loc]: { closeWindowStart, closeWindowEnd } }, ready to spread into ledgerScopeDiff's
+// perLoc — only for stores that have a qualifying weekly count at all this period.
+export function weeklyRecountWindows(onHandRows, { asOf = new Date(), windowDays = 3 } = {}) {
+  const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
+  const compliance = cycleCompliance(onHandRows || [], { asOf: asOfStr });
+  const out = {};
+  for (const c of compliance) {
+    if (!c.lastWeekly) continue;
+    const start = c.lastWeekly.date;
+    const endDt = new Date(start + 'T00:00:00');
+    endDt.setDate(endDt.getDate() + windowDays);
+    out[c.loc] = { closeWindowStart: start, closeWindowEnd: endDt.toISOString().slice(0, 10) };
+  }
+  return out;
 }
 
 // Same wording StoreCard (count-cycle-panel.js) already renders on screen — a shared source so

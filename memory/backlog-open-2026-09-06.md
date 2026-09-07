@@ -129,8 +129,9 @@
   directly instead of through the resolver (tracking number; falls as the sweep proceeds).
 - [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
   arrays); fix `avg6`'s zero-skip bug.
-- [ ] ❓ `dt-speedofservice.js`'s second "PM" daypart label — needs owner confirmation before
-  renaming.
+- [x] ✅ **DONE 2026-09-07 (owner-confirmed).** `dt-speedofservice.js`'s 2-4pm daypart label
+  renamed 'PM' → 'Snack', matching `morning-brief.js`/`store-analytics.js`'s own naming for the
+  same daypart (`id:'pm'` unchanged, internal only).
 - [ ] **Metric Registry/Resolver unification** — merge `signal-registry.js` (~110 metrics) and
   `metric-source.js` (~50), add lineage, aggregation metadata, catalog UI, CI enforcement. Named
   independently in `notes-57`/`notes-60`/`notes-61`.
@@ -243,8 +244,26 @@
   that deliberately stays calendar-month-anchored (documented inline as a scoped deferral — real-
   count bracketing needs `weekly-cadence.js` session data that tab doesn't otherwise load), which
   is not a gap in this item, a different, intentionally-simpler view.
-- [ ] ❓ Items Recounted tile hidden ~21 days/month — needs an owner decision (widen window /
-  dormant state / leave as-is).
+- [x] ✅ **DONE 2026-09-07 (owner-directed: "put it into effect for weekly counts as well").**
+  `ItemsRecountedTile` (`at-a-glance.js`) was gated to a district-wide EOM close window (last 3
+  days of month + first week after); now always-on, with a per-store window anchored to each
+  store's own most recent complete weekly count (`weeklyRecountWindows()`, new,
+  `engine/count-cycle.js`, reusing `cycleCompliance()`'s own `lastWeekly`). Subsumes the EOM case
+  rather than running alongside it — a store's close-window count IS also its most recent weekly
+  count. `eom-ledger-baseline.js`'s `itemCloseWindowRecount`/`ledgerBaselineDiff`/`ledgerScopeDiff`
+  gained an additive, backward-compatible `closeWindowEnd` param (defaults null = unbounded,
+  unchanged EOM behavior) so a per-store window doesn't bleed into the FOLLOWING week's regular
+  count. 7 new tests (2 component-level against the real `AtAGlance` call site, 4 on
+  `weeklyRecountWindows` directly, 1 pre-existing suite re-verified).
+  **Also raised `COVER_FRAC` 0.75 → 0.95** (same PR, owner-directed: *"they are expected to
+  perform a full weekly count each week. Not partial. So the bar should be the higher
+  threshold."*) — this is what "complete weekly count" means EVERYWHERE it's used (Count Cycle's
+  own overdue-grading included), not just this tile. Live-measured before landing on 0.95: 0.98
+  (EOM's own bar) flips 21/27 stores (78%) to overdue for a single real period — most genuine
+  full counts never hit exactly 98% of the active-item universe, reading as noise; 0.95 flips a
+  real, actionable 7/27 (26%). Full numbers in the PR body. 2 existing test fixtures
+  (`count-cycle.test.js`) bumped from their old borderline counts to genuinely-full counts to
+  keep demonstrating their own point (independent-flags mechanism) at the new bar.
 - [x] ✅ **RE-MEASURED 2026-09-07 (v5.390) — this line was stale; 3 of 4 spots were already done.**
   Re-checked against current code before touching anything (per the "measure it" rule): the
   Change Monitor Baseline-diff box, **ItemJourneyView** (`csOf`, `eom-dashboard.js:1338`), and
