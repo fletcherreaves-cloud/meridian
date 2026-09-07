@@ -709,6 +709,56 @@ export async function deleteRetentionMark(loc) {
   return { error: null };
 }
 
+// ── Store Assessments (Staged Experiments / Risk Tracking) ───────────────────────
+// Manual per-store rating tracker (supabase/schema-store-assessments.sql). Same
+// user-editable-not-pull-written shape as sched_retention_marks just above — a table this
+// backlog item tracked for months with zero code references anywhere, settled 2026-09-07 via
+// a live service-role read (PGRST205 — never created). One row per (loc, assessment_type).
+export async function loadStoreAssessments(assessmentType = 'scheduling-workshop') {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('store_assessments').select('*').eq('assessment_type', assessmentType);
+  if (error || !data) {
+    if (error && _isMissingTable(error)) {
+      console.error('[store_assessments] Table does not exist in Supabase. Run supabase/schema-store-assessments.sql in your Supabase SQL editor.');
+    } else if (error) {
+      console.warn('[store_assessments] load error:', error.message);
+    }
+    return [];
+  }
+  return data.map(r => ({
+    loc: r.loc, assessmentType: r.assessment_type, status: r.status, rating: r.rating,
+    assessedDate: r.assessed_date, assessedBy: r.assessed_by, dueDate: r.due_date,
+    notes: r.notes, updatedAt: r.updated_at,
+  }));
+}
+
+// Upsert one store's rating. `fields` may include any of status/rating/assessedDate/
+// assessedBy/dueDate/notes — only provided keys are written, so a partial edit (e.g. just
+// flipping status to 'rated') doesn't clobber other fields with undefined/null.
+export async function saveStoreAssessment(loc, fields, assessmentType = 'scheduling-workshop') {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const l = String(loc || '');
+  if (!l) return { error: 'loc is required' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const row = { loc: l, assessment_type: assessmentType, updated_at: new Date().toISOString(), updated_by: uid || null };
+  if ('status' in fields) row.status = fields.status;
+  if ('rating' in fields) row.rating = fields.rating;
+  if ('assessedDate' in fields) row.assessed_date = fields.assessedDate || null;
+  if ('assessedBy' in fields) row.assessed_by = fields.assessedBy;
+  if ('dueDate' in fields) row.due_date = fields.dueDate || null;
+  if ('notes' in fields) row.notes = fields.notes;
+  const { error } = await supabase.from('store_assessments').upsert(row, { onConflict: 'loc,assessment_type' });
+  if (error) {
+    if (_isMissingTable(error)) {
+      console.error('[store_assessments] Table does not exist in Supabase. Run supabase/schema-store-assessments.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[store_assessments] save error:', error.message);
+    }
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
 // ── SMG FullScale persistence ─────────────────────────────────────────────────
 // rows: array of { loc, year, month, reportStart, reportEnd, osatTop2, osat5, osatAvg,
 //                  osatB2B, accuracyB2B, dtProblem, overallProblem }

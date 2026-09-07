@@ -338,7 +338,12 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
   }, [attendanceRows]);
   const taFor = loc => {
     const live = liveTA[loc];
-    if (live) return { missedShifts: live.unexcusedAbsences, periodEnd: live.periodEnd, live: true };
+    // Owner-confirmed definition (2026-09-07): "any shift scheduled but not worked would be a
+    // missed shift" — both EXCUSED and UNEXCUSED absences are a scheduled shift nobody worked;
+    // only the excuse status differs. Was unexcusedAbsences alone, which undercounted every
+    // excused no-show. Unfilled/dropped shifts are deliberately NOT included — those never had a
+    // specific employee committed to work them, so there's no individual who "missed" one.
+    if (live) return { missedShifts: (live.unexcusedAbsences || 0) + (live.excusedAbsences || 0), periodEnd: live.periodEnd, live: true };
     return { ...(TA_DATA[loc] || {}), live: false };
   };
   // ── QSR actual-labor cross-reference, keyed loc+dateStr.

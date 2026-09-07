@@ -316,10 +316,23 @@
   means the table **was never created in Supabase at all**, not that it exists with restricted/no
   rows visible. So the "8/20 stores rated as of 2026-08-14" figure this item originally tracked
   was never persisted anywhere the app (or this database) can read — it lives only wherever the
-  owner was tracking it by hand. This also answers the item's own secondary question: a table
-  that doesn't exist can't back a panel today, so it stays a spreadsheet-grade artifact unless/
-  until the owner wants a real `store_assessments` table built (a real, scoped build, not
-  something to do blind without knowing what "rating progress" should track).
+  owner was tracking it by hand.
+  ✅ **BUILT the same day (owner: "panel built") — do not re-implement.** Real `store_assessments`
+  table now exists (`supabase/schema-store-assessments.sql`, tenant + `my_locs()` RLS, `for all
+  to authenticated` like `sched_retention_marks` — this is a manual/user-editable table, not a
+  pull-written one) plus a panel (`src/views/store-assessments.js`, "🗒️ Store Assessments") that
+  reads/writes it: per-store status (Pending/Rated), rating, assessed date/by, due date, notes,
+  inline edit, and a rated/total progress card, scoped by the shared `LocationSelector`.
+  Deliberately generic (`assessment_type`, default `'scheduling-workshop'`) rather than hardcoded
+  to a specific 20-store cohort — tracks every store in scope, not a guessed membership list.
+  `kind:'test-kitchen'` per the standing rule (every new panel starts there regardless of who
+  requested it); real `section:'operations'` already set, so promotion later is a one-field flip.
+  ⚠️ **Owner action still needed:** run `supabase/schema-store-assessments.sql` in the Supabase
+  SQL editor — until then the panel's own error state names the exact file to run. 7 new tests
+  (`store-assessments.test.js`) on the two pure helpers (`mergeAssessmentRows`/
+  `assessmentProgress`); a real live-data round-trip couldn't be verified from this sandbox (its
+  browser can't complete a TLS handshake through the environment's proxy to reach Supabase) —
+  worth a real click-through once the SQL has run.
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 
@@ -367,14 +380,13 @@
   up as originally filed.
 - [ ] Open question, never resolved: does the discarded-targets bug (#153/#167) also hit
   Projections' `sales_proj`?
-- [ ] `xlsx@0.18.5` — 2 real high-severity CVEs (prototype pollution, ReDoS), `fixAvailable:
-  false` on npm. SheetJS's own patched releases are CDN-only, and this agent environment's network
-  policy blocks `cdn.sheetjs.com` (403 policy denial, confirmed). `@e965/xlsx` (an npm-registry
-  mirror of SheetJS's real releases, currently 0.20.3) would fix both CVEs but means trusting a
-  different third-party maintainer for a dependency imported in 14 files — a real supply-chain
-  decision needing explicit owner go/no-go, not a version bump to make unilaterally. Current
-  deferral (single-owner self-uploads today, low practical exposure) still holds; revisit if/when
-  a second operator starts uploading their own files.
+- [x] ✅ **FIXED 2026-09-07 (owner go-ahead given directly) — do not re-raise.** `package.json`'s
+  `"xlsx"` dependency now points at `npm:@e965/xlsx@^0.20.3` (an npm alias — every existing
+  `import ... from 'xlsx'` call site across all 14 files is untouched, zero import-site changes)
+  instead of the unpatched `^0.18.5`. `npm audit` confirms both CVEs (prototype pollution, ReDoS)
+  are gone from the report post-install; full suite (481 files/4608 tests) and build both clean.
+  The remaining 5 high-severity `npm audit` findings (brace-expansion, browserslist, nanoid,
+  pdfjs-dist, postcss) are unrelated transitive-dep CVEs, not part of this item.
 
 *(Archive: §13, §14)*
 
