@@ -175,25 +175,38 @@
   through `metricSeries('sales')` in v4.904 broke calibration for all 27 stores (mismatched row
   universe fed to `detectCleanDataStart`/`fetchLY`) and was reverted in v4.906. Do not re-attempt
   this conversion without re-reading that comment in full first.
-  ⚠️ **Real, unaudited gap found — `engine/why.js` (the forecast-miss "Why" explanation engine,
-  consumed by `store-dash.js`/`analytics.js`/`App.js`/`coaching.js`/`calendar.js`/`lifelenz.js` —
-  genuinely live, not dead code). NOT fixed this session — needs its own careful pass, not a
-  pattern-matched quick fix, because the two gates likely have very different risk:**
-  - `runWhyEngineScan()` (~line 237, "single-store scan: run composition + diagnosis across a
-    window") gates its ENTIRE body on `if(!ds||!ds.laborRows) return null;`, but the per-day work
-    inside is `forecastDay(loc,dt,ds,settings,...)` — likely already auto-first internally (same
-    family as `compute6wk`, already verified clean this session). **If so, this gate may be
-    pure overreach** — relaxing/removing it could unlock the whole Why-engine for cloud-only
-    stores with no change to the real computation at all. This is the higher-value, lower-risk
-    half — confirm `forecastDay`'s own sourcing before touching the gate.
-  - `crossStoreCheck()` (~line 9) is a genuinely different shape: it directly filters
-    `ds.laborRows` to build a same-day-of-week peer baseline (mean/std across ALL other stores)
-    with no bound on history, plus `fetchRow(ds.laborIdx,...)` for the "actual" value — both
-    manual-only, no auto fallback. Converting this needs `metricSeries` bucketed by DOW (same
-    pattern used in this session's store-analytics.js fix) but ALSO needs a deliberate choice of
-    lookback window, since the original code implicitly uses unbounded history — don't invent a
-    window without checking what "enough peer data" (`peers.length<4`) implies about the
-    original's effective sample depth.
+  ⚠️ **Real gap in `engine/why.js`, RE-MEASURED 2026-09-07 — the "pure overreach" theory below
+  is WRONG, corrected the same day it was written.** Read `forecastDay` (`engine/forecast.js:1535`)
+  and `diagnoseMiss` (`why.js:89`) directly before touching anything here again:
+  - `forecastDay`'s `_aeAct`/`_ewmaAct` actual-sales lookup (via `locRows`/`fetchRecentActual`,
+    `forecast.js:411-429`) is genuinely **manual-`ds.laborRows`-first, auto-DAR-fallback** —
+    this is the OPPOSITE order of the standing auto-first BI-display rule, but it is a separate,
+    already-reviewed, explicitly documented decision (dispatch22 Workstream A comment) for
+    calibration consistency, not the anti-pattern this backlog item is about. `locRows` handles
+    an empty/absent `ds.laborRows` safely (`fallbackRows||[]`), so a cloud-only device still
+    falls through to the auto DAR correctly — `forecastDay` itself is NOT the blocker.
+  - **The real blocker is `ds.loaded`, confirmed still `ds.laborRows.length>0` verbatim**
+    (`engine/pipeline.js:129,790` — `ds.loaded=ds.laborRows.length>0;`). `diagnoseMiss`'s
+    "Single-store anomaly" cause (`why.js:152`, `if(ds&&ds.loaded&&missPct>8...)`) is gated on
+    this, and only becomes reachable via `ds.loaded` being true in the first place — so
+    **relaxing `runWhyEngineScan()`'s own `!ds.laborRows` gate alone would unlock nothing**;
+    the deeper `ds.loaded` check inside `diagnoseMiss` (and `runWhyEngineScan`'s own use of
+    `ds.lastActual`, likely the same family) still silently disables it on a cloud-only device.
+  - **This is the SAME already-tracked systemic item as §14's `ds.storeIds`/`ds.loaded`
+    line below** ("both manual-labor-derived... 10+ `if(!ds.loaded)` gates in `analytics.js`
+    alone are unaudited") — `why.js` is one more confirmed consumer of that root cause, not a
+    separate bug. Fix `ds.loaded`'s definition there (make it auto-first-aware — e.g. true if
+    ANY real data source has rows, not just `laborRows`) and `why.js`'s gate very likely clears
+    itself as a side effect; do not patch `why.js` in isolation first.
+  - `crossStoreCheck()` (`why.js:9`) is a genuinely separate, harder conversion regardless of the
+    `ds.loaded` fix: it directly filters `ds.laborRows` to build a same-day-of-week peer baseline
+    (mean/std across ALL other stores) with no bound on history, plus `fetchRow(ds.laborIdx,...)`
+    for the "actual" value — both manual-only, no auto fallback, and NOT downstream of `ds.loaded`
+    (it has its own independent `!ds.laborRows` gate at line 10). Converting this needs
+    `metricSeries` bucketed by DOW (same pattern used in this session's store-analytics.js fix)
+    but ALSO needs a deliberate choice of lookback window, since the original code implicitly
+    uses unbounded history — don't invent a window without checking what "enough peer data"
+    (`peers.length<4`) implies about the original's effective sample depth.
   **Still open — the remaining ~13 files, unaudited.** Before touching any, read that file first
   — don't assume the grep hit is the anti-pattern; several already confirmed above are not.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
@@ -688,7 +701,11 @@
   see the first org's uploaded files; also a 30-day window means new users miss old uploads.
 - [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`) — the same
   silent-failure-on-cloud-only-device shape #270 was supposed to fix for SAGE. 10+
-  `if(!ds.loaded)` gates in `analytics.js` alone are unaudited.
+  `if(!ds.loaded)` gates in `analytics.js` alone are unaudited. **Confirmed 2026-09-07: `engine/
+  why.js`'s forecast-miss diagnosis engine (`diagnoseMiss`'s "Single-store anomaly" cause,
+  `why.js:152`) is one more real consumer** — `ds.loaded=ds.laborRows.length>0` verbatim in
+  `engine/pipeline.js:129,790`, unchanged. See §3's `why.js` entry above for the full trace;
+  fixing `ds.loaded`'s definition here is the actual unlock, not a `why.js`-local patch.
 - [ ] **Four independently-maintained reimplementations of manual-first/auto-first merge logic**
   (`analytics.js`, `store-dash.js`, `smart-targets.js`, `promo-roi.js`) need a consolidation pass —
   distinct from the Metric Registry/Resolver unification item in §3 (that's about merging
