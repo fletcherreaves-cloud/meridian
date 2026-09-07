@@ -421,12 +421,11 @@
   to a specific 20-store cohort — tracks every store in scope, not a guessed membership list.
   `kind:'test-kitchen'` per the standing rule (every new panel starts there regardless of who
   requested it); real `section:'operations'` already set, so promotion later is a one-field flip.
-  ⚠️ **Owner action still needed:** run `supabase/schema-store-assessments.sql` in the Supabase
-  SQL editor — until then the panel's own error state names the exact file to run. 7 new tests
-  (`store-assessments.test.js`) on the two pure helpers (`mergeAssessmentRows`/
-  `assessmentProgress`); a real live-data round-trip couldn't be verified from this sandbox (its
-  browser can't complete a TLS handshake through the environment's proxy to reach Supabase) —
-  worth a real click-through once the SQL has run.
+  ✅ **Owner ran the SQL 2026-09-07 — confirmed live** (service-role read: `content-range: */0`,
+  table exists, zero rows — no assessments entered yet). 7 new tests (`store-assessments.test.js`)
+  on the two pure helpers (`mergeAssessmentRows`/`assessmentProgress`); a real live-data round-trip
+  still couldn't be verified from this sandbox (its browser can't complete a TLS handshake through
+  the environment's proxy to reach Supabase) — worth a real click-through to enter a rating.
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 
