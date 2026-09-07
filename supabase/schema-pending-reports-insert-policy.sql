@@ -1,44 +1,34 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- pending_reports — add the missing client-side INSERT policy (manual uploads)
+-- pending_reports — INSERT policy: RETRACTED 2026-09-07, see below for why
 --
--- backlog-open-2026-09-06.md §14 flagged that pending_reports stores manual-upload file
--- content as a base64 blob in a `file_data` column instead of the 'reports' Storage bucket
--- that already exists for exactly this purpose (a 12.37 MB row was observed, exceeding the
--- read-side statement timeout on every fetch). src/lib/supabase.js's uploadReportFile() and
--- src/app/App.js's cross-device-sync read path were fixed in the same change that added this
--- file to actually use the 'reports' bucket.
+-- ⚠️ This file originally added a fully-open `for insert with check (true)` policy. It was
+-- run, then RETRACTED THE SAME DAY once a live-measurement pass this table already had a
+-- separate `tenant_insert` policy (schema-multitenant-phase2-rls.sql's generic per-table
+-- template: `for insert with check (tenant_id = public.current_tenant_id())`) plus a
+-- `tenant_id` column defaulting to the single-tenant UUID
+-- (schema-multitenant-phase1.sql). That means a REAL, logged-in user's manual upload should
+-- already pass RLS via `tenant_insert` — `current_tenant_id()` resolves the caller's tenant
+-- from `profiles` via `auth.uid()`, which only works for an authenticated request.
 --
--- While tracing that fix, a SEPARATE, more serious bug was found and measured live (not
--- reasoned about): schema.sql's own comment on this table says "Service role only for insert
--- (Edge Function uses service key, bypasses RLS)" — and indeed no INSERT policy exists here at
--- all, for any role. Measured directly against the live database (anon key, a synthetic new
--- row, 2026-09-07):
+-- The original diagnosis (this file's prior body, and the changelog/backlog entries that cited
+-- it) tested ONLY with a bare anon key and no user session — i.e. as a logged-out visitor, not
+-- as the app's real authenticated upload path. That is a different, weaker test than what
+-- production actually does, and the "no INSERT policy exists at all" claim it produced was
+-- wrong: `tenant_insert` was there the whole time, just invisible to an unauthenticated probe.
 --
---   POST /rest/v1/pending_reports  ->  HTTP 401
---   {"code":"42501","message":"new row violates row-level security policy for table
---    \"pending_reports\""}
+-- The policy this file added was too broad regardless (it let a fully anonymous, logged-out
+-- request write rows — real exposure, not just noise) AND, oddly, a fresh live re-test even
+-- after confirming it existed still returned the same RLS violation for the anon-key probe —
+-- unresolved, and not worth chasing further with unauthenticated `curl` against the new opaque
+-- `sb_publishable_...` key format, which may not map to the `anon` role the same way the old
+-- JWT-based anon key did. The reliable next step is a REAL logged-in upload through the app
+-- itself, not more synthetic probing.
 --
--- uploadReportFile() has always called this same insert (via upsert) directly from the
--- browser client (anon key) — it was never meant to be service-role-only, that comment
--- describes only the Edge Function's OWN insert path (ingest-report/index.ts, email pipeline),
--- not the manual-upload path this table was also built to serve (see this table's own second
--- comment: "Storage bucket for manually uploaded files (cross-device sync). Receives files
--- uploaded via the Load button on any device."). So today, in production, a manual upload's
--- metadata row can only ever be created via UPDATE (the existing "public update" policy,
--- using(true)) if a row with that exact storage_path already exists from a PRIOR upload —
--- every genuinely NEW manual upload's insert has been silently failing (uploadReportFile only
--- console.warns and returns null; nothing else surfaces the failure), so the file uploads to
--- the intended bucket-or-column but is invisible to every other device — the exact
--- "cross-device sync" this feature exists for never fires for a first-time file.
+-- Run this to remove the policy this file added:
 --
--- Fix: add a matching public INSERT policy, consistent with this table's own existing
--- "public read"/"public update" policies (both using(true) — this table predates the
--- tenant_id/my_locs() RLS pattern and was deliberately left fully open, per its own comment
--- that auto-ingest "runs before Supabase auth is established on localhost"). Not introducing
--- new exposure: the row only ever carries a filename/path/type, matching what "public read"
--- already exposes; the actual file bytes are gated by the 'reports' Storage bucket's own
--- (also already-public) policies, unchanged by this file.
+--   drop policy "pending_reports: public insert" on public.pending_reports;
+--
+-- If a real, logged-in manual upload is later found to still fail to sync across devices, the
+-- next diagnosis has to start from an authenticated session (real magic-link login), not the
+-- anon key — this file's original methodology is exactly what to avoid repeating.
 -- ═══════════════════════════════════════════════════════════════════════════════
-
-create policy "pending_reports: public insert" on public.pending_reports
-  for insert with check (true);
