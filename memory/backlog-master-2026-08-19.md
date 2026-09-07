@@ -390,8 +390,10 @@ for full detail on each.
   ✅ **Done — shipped v4.386/v4.387**, long before this file was written. `scripts/qsrsoft-field-
   scraper.mjs` (interactive ℹ-dialog capture) and `scripts/parse-field-defs.mjs`, both upserting to
   `qsr_field_definitions` on `onConflict:'page_key,field_label'`. Stale inheritance from the source
-  note. *(If the intended remaining scope was **coverage** — which reports have been scraped — that
-  is a live-table count, not a code question; re-file it as such rather than leaving this open.)*
+  note. ⚠️ **Coverage measured 2026-09-07: the table itself is empty (`content-range: */0`, a
+  service-role read) — no report has actually been scraped in production, whatever "done" meant
+  here was the code shipping, not a completed scrape.** Full note:
+  `memory/backlog-open-2026-09-06.md` §3.
 
 ## 4. Correctness Bugs (concrete, investigable)
 
