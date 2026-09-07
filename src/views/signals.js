@@ -456,11 +456,12 @@ export function SignalBuilder({ ds, onSave, existingDefs }) {
   const [yCondition, setYCondition] = uSt('all');
   const [yReference, setYReference] = uSt('median');
 
-  const availLocs = uM(() => {
-    const locs = new Set();
-    [...(ds?.laborRows || []), ...(ds?.opsRows || [])].forEach(r => { if (r.loc) locs.add(String(parseInt(r.loc))); });
-    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
-  }, [ds]);
+  // All known stores (2026-09-07, backlog `labor_rows` sweep) -- was unioning presence across
+  // ds.laborRows/ds.opsRows only, which silently hid a store from this picker if its only data
+  // was cloud-pulled (qsrActSummaryRows/glimpseRows/ctrlRows/etc, all of which Signal Lab metrics
+  // can read via metric-source.js's auto-first resolver). Same fix, same STORE_NAMES-based
+  // pattern already used by this file's own `LOCS` (ParkOepeTab, ~line 2028).
+  const availLocs = uM(() => Object.keys(STORE_NAMES).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])), []);
 
   const xMeta = xMetric ? findMetric(xMetric) : null;
   const yMeta = yMetric ? findMetric(yMetric) : null;
@@ -1810,11 +1811,9 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
   const [sel, setSel] = uSt({}); // multi-select map: { 'xKey|yKey': true }
   const keyOf = (row) => row.xKey + '|' + row.yKey;
 
-  const availLocs = uM(() => {
-    const locs = new Set();
-    [...(ds?.glimpseRows || []), ...(ds?.salesLedgerRows || []), ...(ds?.qsrActSummaryRows || []), ...(ds?.laborRows || []), ...(ds?.ctrlRows || [])].forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
-    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
-  }, [ds]);
+  // All known stores (2026-09-07, backlog `labor_rows` sweep) -- see SignalBuilder's identical
+  // fix above for why a data-presence union under-covers Scanner's own auto-first metric reads.
+  const availLocs = uM(() => Object.keys(STORE_NAMES).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])), []);
 
   // Dispatch #170 -- same reasoning as ItemPicker above: the Scanner's item-correlation sweep
   // needs real historical breadth, so it opts into the WIDE tier directly rather than the
@@ -2621,11 +2620,12 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
   const activeDefs = uM(() => localDefs.filter(d => d.status !== 'graveyard'), [localDefs]);
   const graveyardCount = uM(() => localDefs.filter(d => d.status === 'graveyard').length, [localDefs]);
 
-  const availLocs = uM(() => {
-    const locs = new Set();
-    [...(ds?.laborRows || []), ...(ds?.schedRows || []), ...(ds?.opsRows || [])].forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
-    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
-  }, [ds]);
+  // All known stores (2026-09-07, backlog `labor_rows` sweep) -- was the SignalsPanel-wide
+  // location filter (used across every tab, LiveOps included, which reads the fully-automated
+  // qsr_daily_activity stream and never touches laborRows/schedRows/opsRows at all), so a
+  // cloud-only store didn't even appear in its own tab's filter dropdown. Same fix as
+  // SignalBuilder/ScannerTab above.
+  const availLocs = uM(() => Object.keys(STORE_NAMES).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])), []);
 
   const filteredDs = uM(() => {
     if (!filterLoc) return ds;

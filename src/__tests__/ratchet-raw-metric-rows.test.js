@@ -63,7 +63,21 @@ const ROOT = 'src/views';
 // delivMixPct chains added to metric-source.js alongside the existing dtMixPct, same manual ->
 // emailed Sales Ledger fallback order). See
 // src/__tests__/store-analytics-shift-tab-auto-first.test.js.
-const CEILING = 153;
+// 2026-09-07 (same day, continued sweep): -4 -- signals.js's SignalBuilder, ScannerTab, and
+// SignalsPanel each built their store-picker/location-filter dropdown by unioning presence
+// across ds.laborRows/opsRows/schedRows/ctrlRows only -- so a store whose only data was
+// cloud-pulled (qsrActSummaryRows/glimpseRows/etc, which Signal Lab and Scanner's own metrics
+// already read via metric-source.js's auto-first resolver) never appeared in its own picker.
+// SignalsPanel's case was the widest blast radius: its filter dropdown gates every Signals tab,
+// LiveOps included, which reads the fully-automated qsr_daily_activity stream and never touches
+// laborRows/opsRows/schedRows at all. Fixed to Object.keys(STORE_NAMES) -- same pattern this
+// file's own ParkOepeTab (`LOCS`, ~line 2028) already used. CsatDriversTab's availLocs (scoped to
+// stores with real SMG rows) is NOT the same bug -- SMG has no auto-first source, so scoping to
+// actual data presence there is correct; left as-is. filteredDs (SignalsPanel, feeds
+// computeInsights only when a location filter is active) was NOT touched -- computeInsights fans
+// out to ~30 sig_* functions with a mix of raw-row and metricSeries reads; auditing which ds
+// fields it actually needs is real, separate work, not a quick extension of this fix.
+const CEILING = 149;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
