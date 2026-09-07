@@ -676,6 +676,20 @@
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built.
+- [ ] **Job-code/position-level forecast vs actual hours on weekly schedules** (owner, 2026-09-07,
+  explicitly flagged "for later," not urgent) — *"figure out if we can get forecast and actual
+  hours for each job code/position on the weekly schedules... on the weekly and daily > hourly
+  level to be fully effective... an ambitious project."* Purpose: locate exactly WHERE a
+  schedule needs to change (which position, which hour), not just that a store is over/under in
+  aggregate. **Confirmed genuinely new, not already covered** — every existing auto stream
+  (`qsr_labor_summary`, `qsr_daily_activity_rollup`'s `actual_punched_hours`/
+  `total_needed_hours`/`total_scheduled_hours`) is a STORE-DAY total with no job-code/position
+  breakdown; `lifelenz_schedule` is the only candidate source likely to carry per-shift
+  role/position detail (it's the raw LifeLenz schedule pull), not yet audited for whether it
+  actually includes a position field at the row level or would need a schema/parser change.
+  Real scope, not sized: (1) confirm `lifelenz_schedule`'s raw shape has position/job-code per
+  shift, (2) a forecast-hours-by-position source (LifeLenz's own guide, or derived), (3) daily/
+  hourly rollup UI, likely a Labor Tools or Scheduling sub-view.
 - [ ] Inventory Control redesign's Labor instantiation of the generic Food-Cost shell
   (owner-approved, "it must host Labor too") is on hold pending an owner-run measurement of
   `qsr_labor_summary` that resolves a contradiction in what "Crew Labor %" actually contains.
