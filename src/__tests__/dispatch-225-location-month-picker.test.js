@@ -22,12 +22,18 @@ function onHandRow(loc, wrin, descr) {
   return { loc, wrin, descr, cls: 'Food', onHandAmt: 10, active: true, lastCounted: null };
 }
 
-// period-aware fake: 2026-08 (defaultPeriod() for "today" = 2026-08-30) carries BOTH stores so
-// the location-narrowing test has two states to narrow between; 2024-01 carries only the FL
-// store with a distinctive item, so the month-picker test can prove the visible report data
-// actually changed (not just that the <select> shows a new option).
+// period-aware fake: CURRENT_PERIOD (the real defaultPeriod()'s own answer for "today", not a
+// hardcoded string -- a fixed '2026-08' broke the moment the calendar crossed into September,
+// since defaultPeriod()'s day<=6 cutover then resolves to the current month instead) carries
+// BOTH stores so the location-narrowing test has two states to narrow between; 2024-01 carries
+// only the FL store with a distinctive item, so the month-picker test can prove the visible
+// report data actually changed (not just that the <select> shows a new option).
+// Set below, after defaultPeriod() is pulled from the real (dynamically-imported, post-vi.mock)
+// eom-dashboard.js module -- fakeLoadQsrOnHand/loadEomPeriods below only ever get CALLED during
+// renderPanel(), well after that import resolves, so the closure sees the real value by then.
+let CURRENT_PERIOD;
 async function fakeLoadQsrOnHand({ period } = {}) {
-  if (period === '2026-08') return [onHandRow(OK_LOC, 'F1', 'Aug OK Item'), onHandRow(FL_LOC, 'F2', 'Aug FL Item')];
+  if (period === CURRENT_PERIOD) return [onHandRow(OK_LOC, 'F1', 'Aug OK Item'), onHandRow(FL_LOC, 'F2', 'Aug FL Item')];
   if (period === '2024-01') return [onHandRow(FL_LOC, 'F3', 'Jan24 FL Item')];
   return [];
 }
@@ -48,7 +54,7 @@ vi.mock('../lib/supabase.js', () => ({
   // Deliberately includes 2024-01 — far outside the old hardcoded recentPeriods(4) window (which
   // could never show anything before 3 months back from "now") — proving the picker is now driven
   // by real availability, not an arbitrary cap (dispatch #225 Task 4).
-  loadEomPeriods: async () => ['2026-08', '2026-06', '2024-01'],
+  loadEomPeriods: async () => [CURRENT_PERIOD, '2026-06', '2024-01'],
   loadQsrFob: async () => [],
   loadEomCountStatus: async () => [],
   saveEomCountStatus: async () => ({}),
@@ -77,7 +83,8 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const { EOMDashboardPanel } = await import('../views/eom-dashboard.js');
+const { EOMDashboardPanel, defaultPeriod } = await import('../views/eom-dashboard.js');
+CURRENT_PERIOD = defaultPeriod();
 
 const STORES = [{ loc: OK_LOC }, { loc: FL_LOC }];
 
@@ -146,7 +153,7 @@ describe('dispatch #225 Task 4 — real month picker (no arbitrary cap, picking 
 
   it('picking a different month actually changes the visible report data, not just the <select> value', async () => {
     await renderPanel(root);
-    // Starting period (2026-08, defaultPeriod() for "today"=2026-08-30) shows both stores.
+    // Starting period (CURRENT_PERIOD, the real defaultPeriod()'s answer for "today") shows both stores.
     expect(container.textContent).toMatch(new RegExp(OK_NAME));
     expect(container.textContent).toMatch(new RegExp(FL_NAME));
 

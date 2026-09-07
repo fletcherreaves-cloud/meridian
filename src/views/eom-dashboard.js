@@ -213,7 +213,12 @@ function recentPeriods(n = 4) {
 // The EOM count/close runs into the first days of the NEXT month, so early in a month you are still
 // closing the PRIOR month's EOM — default the dashboard there (else Progression/EOM read the brand-new
 // month, which has no count data yet and shows blank). Mid-month, the current month is the active period.
-function defaultPeriod() {
+// Exported for src/__tests__/dispatch-225-location-month-picker.test.js -- that test's fake
+// loadQsrOnHand() needs to know which period the REAL component will actually request "today"
+// (a hardcoded '2026-08' string broke the moment the calendar crossed into September, since
+// this function's own day<=6 cutover then resolves to the current month instead) rather than
+// re-deriving this same day-cutover logic a second time, which would just drift the same way.
+export function defaultPeriod() {
   const now = new Date();
   const d = now.getDate() <= 6
     ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
