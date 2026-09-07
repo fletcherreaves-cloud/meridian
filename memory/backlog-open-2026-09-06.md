@@ -156,6 +156,12 @@
   own. If the zero-skip *concept* (treating a real 0 observation as "no data," per `obs6()`'s own
   note on this) is still suspected live somewhere, it would have to be chased in `metricAvg`
   itself or a specific metric's chain — a different, real investigation, not this line.
+  ✅ **Follow-up done 2026-09-07:** removed `avg6()` and its 3 dead imports (`labor-tools.js`,
+  `smart-targets.js`, `App.js`) — confirmed fully unused per the above, and safe to delete per
+  `metric-chains.test.js`'s own text-scan ratchet (still passes — it greps `compute6wk`'s source
+  for `field:avg6(...)`, which now simply never matches, closing the loop that ratchet exists
+  for). `obs6()` (still live, called by `compute6wk`'s own `_cov` map) kept as-is; its and 2
+  other comments' now-dangling references to the deleted function reworded.
 - [x] ✅ **DONE 2026-09-07 (owner-confirmed).** `dt-speedofservice.js`'s 2-4pm daypart label
   renamed 'PM' → 'Snack', matching `morning-brief.js`/`store-analytics.js`'s own naming for the
   same daypart (`id:'pm'` unchanged, internal only).

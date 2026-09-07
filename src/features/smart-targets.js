@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEFAULT_TARGETS, STORE_NAMES, sNameC } from '../constants.js';
-import { fetchLY, getStoreOrg, avg6 } from '../engine/forecast.js';
+import { fetchLY, getStoreOrg } from '../engine/forecast.js';
 import { computeScheduleRollup, currentScheduleWeekRange } from '../engine/schedule-summary.js';
 
 const h=React.createElement;

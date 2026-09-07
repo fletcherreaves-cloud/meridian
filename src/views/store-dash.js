@@ -1194,8 +1194,9 @@ function CtrlScorecard({store}) {
     ]},
   ];
 
-  // A metric with ZERO observations must render '—', not 0.00%. avg6 returns 0 for both
-  // "no data" and a genuine zero, so compute6wk now ships a `_cov` observation-count map.
+  // A metric with ZERO observations must render '—', not 0.00%. A raw trailing average
+  // returns 0 for both "no data" and a genuine zero, so compute6wk ships a `_cov`
+  // observation-count map (obs6(), forecast.js) to tell the two apart.
   // Without this a store with no Controls upload showed a full column of 0.00% AND the
   // pass functions graded every one of them GREEN — missing data presented as compliance,
   // which is worse than showing nothing.
