@@ -105,10 +105,10 @@
   of `TA_DATA`'s 6 fields the UI actually rendered — the other 5 were dead data) now sources from
   `sum(unexcused absences)` per store, auto-first with the frozen snapshot as a per-store
   fallback until that store's first live pull lands.
-  ⚠️ **Needs owner confirmation, not a code question:** the "unexcused absences = missed
-  shifts" mapping is a judgment call — the original hand-typed number's methodology was never
-  documented, so this isn't a verified-identical replacement, just the closest honest field
-  available. 10 tests against the real captured CSV shape.
+  ✅ **RESOLVED 2026-09-07 (v5.391).** Owner confirmed the definition directly: *"any shift
+  scheduled but not worked would be a missed shift."* Was unexcused-only; now sums EXCUSED +
+  UNEXCUSED absences per store — do not re-raise this as needing confirmation. 10 tests against
+  the real captured CSV shape.
 - [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still read `ds.laborRows`
   directly instead of through the resolver (tracking number; falls as the sweep proceeds).
 - [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
@@ -118,8 +118,16 @@
 - [ ] **Metric Registry/Resolver unification** — merge `signal-registry.js` (~110 metrics) and
   `metric-source.js` (~50), add lineage, aggregation metadata, catalog UI, CI enforcement. Named
   independently in `notes-57`/`notes-60`/`notes-61`.
-- [ ] Info-icon field scraper **coverage** (which reports have actually been scraped) — a live-table
-  count question, not a code question, if picked up.
+- [x] ✅ **MEASURED 2026-09-07 — settled.** A service-role read of `public.qsr_field_definitions`
+  (bypasses RLS, so this is a real count, not an anon-key ambiguity) returned `content-range:
+  */0` — **zero rows, across every `page_key`.** `backlog-master-2026-08-19.md`'s "done
+  v4.386/v4.387" claim describes the scraper SCRIPT + table + RLS shipping, which is true, but
+  no report has actually been scraped into it in production — the coverage question this item
+  asked ("which reports have actually been scraped") is answered: none. Whether that's because
+  the scraper was never run live, ran and wrote nowhere, or the table was later cleared is not
+  determinable from this environment; if the info-icon dictionary is wanted, the scraper
+  (`scripts/qsrsoft-field-scraper.mjs`) needs an actual interactive run against QSRSoft (owner
+  DevTools/browser session), not a code fix.
 
 *(Archive: §3)*
 
@@ -436,9 +444,12 @@
   skips straight to Playwright. Three scripts, two contradictory beliefs about whether SSO-exchange
   for an eBOS token works at all. Needs a live diagnostic run (`QSRSOFT_EBOS_DEBUG=1`) reading
   whether Path B actually succeeds or silently falls through every time — not a doc re-read.
-- [ ] #263/#265 pull-completeness ledger system — `supabase/schema-data-completeness.sql` never
-  run in production; only 2 of 7 pull streams have tolerance rules; restricted-handling UI/SAGE
-  gating for the `notes` column not built.
+- [ ] #263/#265 pull-completeness ledger system — ⚠️ **"schema never run in production" is now
+  stale (measured 2026-09-07): `data_completeness_incidents` exists and holds a real row** (a
+  genuine detected→backfilled incident, `qsr_service_stats`/loc 0035242, 2026-09-03/04 — service-
+  role read, `content-range: 0-0/1`). The rest of the item still holds — no `TOLERANCE`/tolerance
+  config or restricted-handling UI/SAGE gating exists anywhere in `src/`: only 2 of 7 pull
+  streams have tolerance rules, and the `notes` column has no UI/SAGE consumer yet.
 - [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
   Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload.
 - [ ] Store-events material-changes date-formatting bug — could not locate in live code on the
