@@ -77,7 +77,13 @@ const ROOT = 'src/views';
 // computeInsights only when a location filter is active) was NOT touched -- computeInsights fans
 // out to ~30 sig_* functions with a mix of raw-row and metricSeries reads; auditing which ds
 // fields it actually needs is real, separate work, not a quick extension of this fix.
-const CEILING = 149;
+// 2026-09-07 (continued sweep): -6 -- analytics.js's generateInsights() (District View "AI
+// Insights" button) declared laborRows/ctrlRows/opsRows (raw-filtered from ds) plus an `avg`
+// helper, then never referenced any of them again -- the AI prompt's `ctx` object is built
+// entirely from already-computed p./t./store. fields. Genuinely dead code (confirmed via a
+// search of the function's full body, not an unused-import guess), not an auto-first violation
+// needing a metricSeries conversion -- deleted outright.
+const CEILING = 143;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 

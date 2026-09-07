@@ -57,13 +57,6 @@ function AIInsightsTab({store, ds, settings}) {
     if(!apiKey){ setError('No API key — add it in Settings → AI & Integrations.'); return; }
     setLoading(true); setError(null);
 
-    // Build rich context for this store
-    const laborRows = ds&&ds.laborRows?ds.laborRows.filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-wb*7*864e5)):[];
-    const ctrlRows  = ds&&ds.ctrlRows ?ds.ctrlRows.filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-wb*7*864e5)):[];
-    const opsRows   = ds&&ds.opsRows  ?ds.opsRows.filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-wb*7*864e5)):[];
-
-    const avg = (arr,f) => arr.length ? arr.filter(r=>r[f]>0).reduce((a,r)=>a+(r[f]||0),0)/Math.max(1,arr.filter(r=>r[f]>0).length) : 0;
-
     const ctx = {
       store: STORE_NAMES[loc]||loc, loc,
       weeksBack: wb,
