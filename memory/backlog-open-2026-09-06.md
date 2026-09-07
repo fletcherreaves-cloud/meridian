@@ -217,8 +217,37 @@
   byMonth(ds.laborRows)` (~line 1582) is explicitly kept as a **documented fallback AFTER**
   auto-first resolution (dispatch #174/#142/#109's own comments spell out exactly what still
   reads `lr` and why) — not a fresh violation.
-  **Still open — the remaining ~11 files, unaudited.** Before touching any, read that file first
-  — don't assume the grep hit is the anti-pattern; most already confirmed above are not.
+  ✅ **Sweep effectively complete 2026-09-07 — the remaining files audited, one more real find
+  fixed, rest all clean.** `engine/vs-ly.js` (`autoFirstDaily`, the shared matched-day helper
+  `store-dash.js`'s `gcVsLYMap` memo and others call) checked directly, not just inferred: reads
+  `laborRows` first then fills current-day gaps + supplies same-date LY from `qsrActSummaryRows`
+  — a deliberate, documented consolidation of 4 previously-buggy reimplementations (its own header
+  comment), not a violation despite the manual-first order. `graded-visits.js`'s per-visit
+  `contextData()` already prefers glimpse (auto) first, `ctrl`/`lab` (manual) only as later
+  fallbacks (dispatch20). `smart-targets.js`'s only hit is a comment. `at-a-glance.js`'s and
+  `labor-tools.js`'s hits are either dependency-array/`.length` presence checks (legitimate,
+  same category as `sageHasData`) or — `labor-tools.js`'s `locStats`, checked in full — already
+  migrated to `metricAvg`/`metricRate` for every metric that HAS a registered auto source
+  (dispatch #324/#323/#309/#155); the one remaining raw read, `crewHrs`, is a real, narrow,
+  **already-documented** gap (`metric-source.js` has no auto chain for it at all yet — not
+  negligence, a stated scope cut) rather than a fresh find.
+  ✅ **One more real violation FIXED 2026-09-07 (same PR) — genuine dead code, not an auto-first
+  gap.** `analytics.js`'s `generateInsights()` (District View "AI Insights" button) declared
+  `laborRows`/`ctrlRows`/`opsRows` (raw-filtered from `ds`) plus an `avg` helper, then never
+  referenced any of them again anywhere in the function — the AI prompt's `ctx` object is built
+  entirely from already-computed `p.`/`t.`/`store.` fields. Confirmed via a search of the full
+  function body (not an unused-import guess) before deleting. `ratchet-raw-metric-rows.test.js`
+  `CEILING` lowered 149 → 143 to match.
+  **This closes the `labor_rows` sweep as a backlog item** — every file the original grep flagged
+  has now been read and classified. Final tally: 2 real UI violations fixed (store-analytics.js's
+  ShiftAnalysisTab, signals.js's 3 location pickers), 1 real dead-code cleanup (analytics.js), 1
+  real but deliberately-deferred systemic gap identified (`why.js`/`ds.loaded`, cross-linked to
+  its own tracked item below), 1 narrow documented gap left as-is (`labor-tools.js`'s `crewHrs`,
+  no auto source exists), and roughly a dozen files confirmed already correct with real
+  documented history. The original "20 files" grep count was, as suspected from the start,
+  overwhelmingly false positives — do not re-run this sweep from scratch; if a NEW raw-row hit
+  shows up later, treat it as its own fresh finding; don't assume the old audit still applies to
+  code that's changed since.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
   (the full `r={...}` literal, `oepe` through `oppCostDollar`, including the "manual-only" ones —
