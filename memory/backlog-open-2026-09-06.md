@@ -148,7 +148,22 @@
   zero-vs-missing precedent) alongside the existing `dtMixPct`. Both ratchet CEILINGs
   (`ratchet-raw-metric-rows.test.js`, `ratchet-week-day-arithmetic.test.js`) lowered to match. 2
   new tests render the real `ShiftAnalysisTab` against a cloud-only fixture.
-  **Still open — the remaining ~17 files, unaudited.** Before touching any, read that file first
+  ✅ **A second real violation FIXED 2026-09-07 (same PR).** `signals.js` had 3 separate
+  store-picker/location-filter dropdowns (`SignalBuilder`'s Scope select, `ScannerTab`'s scope
+  select, and — widest blast radius — `SignalsPanel`'s panel-wide location filter that gates
+  every Signals tab including LiveOps, which reads the fully-automated `qsr_daily_activity`
+  stream and never touches `laborRows`/`opsRows`/`schedRows` at all) each built by unioning
+  presence across those 3 manual/legacy sources only, so a cloud-only store never appeared in its
+  own filter. Fixed to `Object.keys(STORE_NAMES)`, matching the same file's own pre-existing
+  `ParkOepeTab` pattern (`LOCS`, ~line 2028). `CsatDriversTab`'s `availLocs` (scoped to stores
+  with real SMG rows) is correctly left alone — SMG has no auto-first source, so presence-scoping
+  there is the right behavior, not the bug.
+  **Deliberately NOT touched — `SignalsPanel`'s `filteredDs`** (feeds `computeInsights` only when
+  a location filter is active, still built from `laborRows`/`schedRows`/`opsRows`/`fobRows`/
+  `exceptionRows`/`smgFullscale` only). `computeInsights` (`engine/insights.js`) fans out to ~30
+  `sig_*` functions with a mix of raw-row and `metricSeries` reads — auditing which `ds` fields
+  each actually needs is real, separate work, not a safe quick extension of the picker fix.
+  **Still open — the remaining ~15 files, unaudited.** Before touching any, read that file first
   — don't assume the grep hit is the anti-pattern; several already confirmed above are not.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
