@@ -373,6 +373,19 @@
   owner session, findings already ready.
 - [ ] Multi-user startup-load tiering (core vs. extended fetch by role) — design decision needed
   before P4 rollout, not urgent solo.
+  **Owner Q 2026-09-07: "should we load data per-panel as it's needed instead of front-loading
+  almost everything on hard refresh?"** Answered inline, logged here to revisit rather than act on
+  now. Current state (confirmed by reading `App.js`'s startup loader): it's already tiered — staggered
+  `Promise.all` batches, core data first, bulkier streams following — but tiered by *what*, not
+  *who's asking*: every role gets close to the full 27-store dataset regardless of which panel they
+  land on first. **Recommendation: tune the existing tiers by role, don't go fully lazy-per-panel.**
+  This is a power-user tool where one session hops Analytics → Store Dash → Labor Tools → Signals,
+  and those panels share a lot of the same underlying rows (`laborRows`, `schedRows`, etc.) — full
+  per-panel lazy fetching would trade one upfront wait for a stutter on every panel switch, likely
+  worse for that usage pattern. The higher-leverage version: scope the *existing* tiers by role (a
+  GM probably never needs the district-wide rollup tier at all) rather than deferring data to
+  first-click. Revisit alongside the P4 multi-tenant/multi-user rollout, when role-scoped startup
+  actually has a second concurrent user to matter for.
 - [ ] Swing alarm's cross-metric report + AI-scour-for-causes sub-asks — detection/ack shipped,
   these two enrichment asks unconfirmed as built.
 
