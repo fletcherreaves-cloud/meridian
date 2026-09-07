@@ -194,9 +194,16 @@
   build the per-item variance chart (data already computed, just not rendered).
 - [ ] ❓ Items Recounted tile hidden ~21 days/month — needs an owner decision (widen window /
   dormant state / leave as-is).
-- [ ] Quantity-variance display (case-pack suffix) — shipped for Change Monitor's Baseline-diff
-  table only; still open for ItemJourneyView, FOB Root-Cause Recount Impact, FOB Report "Top item
-  losers" (+ its printable HTML).
+- [x] ✅ **RE-MEASURED 2026-09-07 (v5.390) — this line was stale; 3 of 4 spots were already done.**
+  Re-checked against current code before touching anything (per the "measure it" rule): the
+  Change Monitor Baseline-diff box, **ItemJourneyView** (`csOf`, `eom-dashboard.js:1338`), and
+  **FOB Report "Top item losers" + its printable HTML** (`fobCaseSuffix`, `eom-dashboard.js:2219`,
+  used in both the on-screen table and `fobRepPrintHtml`) all already carry the case-pack suffix.
+  Only the **🔬 FOB Root-Cause Analysis modal's Recount Impact drill-down** (`riddleOpen` in
+  `eom-dashboard.js`, fed by `recountImpactByStore`) was genuinely still missing it — that engine
+  function computed `unitVar`/`caseSz` internally (via `storeVarianceProgressions`) but never
+  passed them out to its `items` array. Threaded through (`fob-recount-analysis.js`) + rendered
+  (`rcCaseSuffix`, same shape as `csOf`/`fobCaseSuffix`) — do not re-implement any of the 4 spots.
 - [ ] Item Journey flow reconciliation to tie out exactly to the Variance Stat report (currently
   directional only).
 - [ ] Remaining EOM list: Inventory-Summary/Physical-Inventory endpoint capture; wire

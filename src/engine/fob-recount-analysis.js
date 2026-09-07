@@ -25,7 +25,10 @@ export function recountImpactByStore(rawByLoc, { minAbs = 0 } = {}) {
       nRecounted++;
       const eff = abs(p.base.dolVar) - abs(p.final.dolVar);   // + = recount moved toward zero, − = away
       if (eff >= 0) toward += eff; else away += -eff;
-      items.push({ wrin: p.wrin, descr: p.descr, baseVar: p.base.dolVar, finalVar: p.final.dolVar, effect: eff, verdict: p.verdict });
+      // caseSz/finalUnitVar carried through so a consumer can show the case-pack-converted
+      // quantity alongside the dollar figure (backlog-master §6) — both already computed by
+      // storeVarianceProgressions/itemVarianceProgression, never a second lookup here.
+      items.push({ wrin: p.wrin, descr: p.descr, baseVar: p.base.dolVar, finalVar: p.final.dolVar, baseUnitVar: p.base.unitVar, finalUnitVar: p.final.unitVar, caseSz: p.caseSz, effect: eff, verdict: p.verdict });
     }
     if (nRecounted) {
       items.sort((a, b) => a.effect - b.effect);   // most harmful item first

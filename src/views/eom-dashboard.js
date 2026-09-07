@@ -3735,6 +3735,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const harmful = R.impact.filter(s => s.net < 0);
       const winLbl = R.months.length ? `${R.months[0]} → ${R.months[R.months.length - 1]} (${R.months.length} mo)` : 'no FOB history in scope';
       const th = (t, r) => h('th', { key: t, style: { textAlign: r ? 'right' : 'left', padding: '4px 9px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
+      // Same case-pack suffix as ItemJourneyView (`csOf`) / FOB Report Top item losers
+      // (`fobCaseSuffix`, this same file) — never replaces the $ figure, just adds the case-
+      // converted read alongside it (backlog-master §6). Anchored to the FINAL (current) unit
+      // variance, same as fobCaseSuffix reading the current-period variance.
+      const rcCaseSuffix = (unitVar, caseSz) => (caseSz > 0 && unitVar != null) ? ` (≈ ${(Math.abs(unitVar) / caseSz).toFixed(2)} cs)` : '';
       return h(ModalShell, { title: `🔬 FOB Root-Cause Analysis — ${scopeLabel()}`, onClose: () => setRiddleOpen(false), maxWidth: 940, closeOnBackdrop: true },
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } }, `Scope: ${rows.length} store${rows.length === 1 ? '' : 's'} · FOB history ${winLbl} · ${R.nFob.toLocaleString()} daily snapshots · recount impact from the current-period ledger`),
           // Methodology — for trust
@@ -3762,7 +3767,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                     div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', margin: '4px 0 3px' } }, 'Recounts that hurt most (base → final)'),
                     s.items.slice(0, 12).map((it, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
                       span({ style: { fontWeight: 600, color: 'var(--text)' } }, it.descr), ' — ',
-                      span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, `${$(it.baseVar)} → ${$(it.finalVar)}`), ' · ',
+                      span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, `${$(it.baseVar)} → ${$(it.finalVar)}${rcCaseSuffix(it.finalUnitVar, it.caseSz)}`), ' · ',
                       span({ style: { fontWeight: 700, color: it.effect < 0 ? 'var(--crit)' : '#4ade80' } }, `${it.effect < 0 ? 'hurt ' : 'helped '}${$(Math.abs(it.effect))}`))))));
                 return els;
               })))),
