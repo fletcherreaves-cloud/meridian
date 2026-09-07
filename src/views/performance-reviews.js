@@ -16,6 +16,10 @@ import {
   // display (computeSegmentedReview, the Phase 5a engine dispatch #154 shipped with no UI yet).
   QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
   bonusEligibilityForPeriod,
+  // backlog-open-2026-09-06.md §7 "Missing-targets UI in ReviewEditor" -- missingReviewTargets()
+  // already existed (engine-tested, review-target-autofill.test.js) but had no consumer anywhere
+  // in this file until now.
+  missingReviewTargets,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { printHtml } from '../utils/print-html.js';
@@ -877,7 +881,7 @@ function CompetenciesSection({local, set, custRole, setCustRole, custCat, setCus
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW EDITOR
 // ═══════════════════════════════════════════════════════════════════════════════
-function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', orgRoles, onTransition, dataReady=true}) {
+function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', orgRoles, onTransition, dataReady=true, onGoToTargets}) {
   const [review, setReview]       = useState(() => JSON.parse(JSON.stringify(initReview)));
   const [tab, setTab]             = useState('kpi');
   const [kpiCat, setKpiCat]       = useState('rgr');
@@ -905,6 +909,13 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const mths  = PERIOD_META[period].months;
   const qKeys = PERIOD_META[period].qKeys;
   const activeCheckMonth = checkMonth || mths[mths.length-1];
+
+  // backlog-open-2026-09-06.md §7 "Missing-targets UI in ReviewEditor (banner + one-click
+  // Smart-Targets seed)" -- missingReviewTargets() (review-engine.js) already did the detection
+  // work (engine-tested, review-target-autofill.test.js), it just had no UI consumer. Shown
+  // regardless of active tab (not just Summary) so it surfaces before the owner scores a metric
+  // against a target that doesn't actually exist yet.
+  const missingTargets = useMemo(() => missingReviewTargets(review, cfg, ds), [review, cfg, ds]);
 
   const update = useCallback((path, val) => {
     setReview(prev => {
@@ -1070,6 +1081,16 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
       h(StatusActionBar, {key:half, half, review, userRole, orgRoles, onTransition:doTransition})),
     // Tab bar
     TabBar({tabs, active:tab, onSelect:setTab}),
+    // Missing-targets banner (backlog-open-2026-09-06.md §7) -- shown above the tab content so
+    // it's visible regardless of which tab is active.
+    missingTargets.length > 0 && div({style:{display:'flex',alignItems:'center',gap:10,
+      padding:'8px 16px',background:'#f5bc0018',borderBottom:`1px solid ${BDR}`,flexWrap:'wrap'}},
+      span({style:{fontSize:11,fontWeight:700,color:AMBER,whiteSpace:'nowrap'}},
+        `⚠ ${missingTargets.length} scored metric${missingTargets.length===1?'':'s'} with no target set`),
+      span({style:{fontSize:11,color:TEXT2,flex:1}},
+        missingTargets.map(m=>m.label).join(', ')),
+      onGoToTargets && GhostBtn({onClick:onGoToTargets,style:{fontSize:11,whiteSpace:'nowrap'}},
+        'Set Targets →')),
     // Content
     div({style:{flex:1,overflowY:'auto'}},
       tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, dataReady, overrides, canOverride, onAddOverride}),
@@ -2874,6 +2895,15 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
   const [reviews, setReviews] = useState(() => getReviews());
   const [editing, setEditing] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  // Which Customize sub-tab to land on -- starts from the deep-link prop (App.js's
+  // perfReviewsEntry), but also settable AGAIN after mount so the ReviewEditor's "Set Targets"
+  // banner button (missingTargets, below) can jump here without a full panel remount/re-route.
+  // initialCustomizeSection itself is a plain prop (consumed once by CustomizePanel's own
+  // useState(initialSection || 'weights')), so re-pointing IT wouldn't do anything once
+  // CustomizePanel has already mounted once -- this local state is what actually re-triggers it,
+  // since switching tab away from 'customize' unmounts CustomizePanel and switching back remounts
+  // it fresh off whatever this state currently holds.
+  const [customizeEntrySection, setCustomizeEntrySection] = useState(initialCustomizeSection || null);
 
   const refresh = () => setReviews(getReviews());
 
@@ -2943,7 +2973,8 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
             onSave:handleSaveReview,
             onBack:()=>{refresh();setEditing(null);},
             userRole, orgRoles, dataReady,
-            onTransition:handleTransition})
+            onTransition:handleTransition,
+            onGoToTargets: canCustomize ? (()=>{setCustomizeEntrySection('targets');setTab('customize');}) : null})
         : h(ReviewList,{reviews, cfg, stores,
             shiftManagerRows: ds?.shiftManagerRows || [],
             onOpen:setEditing,
@@ -2951,6 +2982,6 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
             onDelete:refresh})
     ),
     tab==='customize' && div({style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-      h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg, ds, initialSection:initialCustomizeSection})),
+      h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg, ds, initialSection:customizeEntrySection})),
   );
 }
