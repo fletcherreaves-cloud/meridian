@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
-         mergeWeeklyCountDay, formatWeeklyComplianceReport } from '../engine/count-cycle.js';
+         mergeWeeklyCountDay, formatWeeklyComplianceReport, weeklyRecountWindows } from '../engine/count-cycle.js';
 import { WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
@@ -39,7 +39,10 @@ describe('session classification', () => {
   });
 
   it('a close-window count including Paper satisfies EOM', () => {
-    const { sessions } = detectSessions(store('3708', [{ date: '2026-07-30', counts: { Food: 103, Condiment: 36, Paper: 92 } }]));
+    // Food bumped 103->118 (full) to still clear the raised 0.95 COVER_FRAC (103/118 = 87.3%,
+    // below it) -- the point of this test is the independent-flags mechanism below, not this
+    // specific historical percentage, so a genuinely full count demonstrates it unambiguously.
+    const { sessions } = detectSessions(store('3708', [{ date: '2026-07-30', counts: { Food: 118, Condiment: 36, Paper: 92 } }]));
     const s = sessions['3708'][0];
     expect(s.isEom).toBe(true);
     // #357-A — an EOM session ALSO satisfies the weekly requirement independently
@@ -65,8 +68,14 @@ describe('session classification', () => {
   // count on record" — CRITICAL — on the day it did the most complete count of the
   // month. Independent flags must both be true on the SAME session.
   it('a session covering Food+Condiment+Paper outside the close window satisfies BOTH weekly and mid-paper (Marietta 2026-08-11)', () => {
+    // Counts bumped to full (Cond 33/33->36/36, Food 112/112->118/118, Paper 85/~90->92/92)
+    // against the fixture's own 118/36/92 default universe, to clear the raised 0.95
+    // COVER_FRAC -- Marietta's real historical percentages (documented above, ~92-100%)
+    // straddle 95% depending on the exact class, so a genuinely full count on all three is
+    // what still unambiguously demonstrates this test's actual point: independent flags on
+    // the SAME session, not this specific historical percentage.
     const { sessions } = detectSessions(store('33109', [
-      { date: '2026-08-11', counts: { Condiment: 33, Food: 112, Paper: 85 } },
+      { date: '2026-08-11', counts: { Condiment: 36, Food: 118, Paper: 92 } },
     ]));
     const s = sessions['33109'][0];
     expect(s.satisfiesWeekly).toBe(true);
@@ -365,8 +374,11 @@ describe('robustness and rollup', () => {
     expect(s.overdue).toBe(1);
   });
 
-  it('thresholds are the measured values', () => {
-    expect(COVER_FRAC).toBe(0.75);
+  it('thresholds are the owner-directed values', () => {
+    // Raised 0.75 -> 0.95, owner-directed 2026-09-07 (see COVER_FRAC's own comment in
+    // count-cycle.js for the live-measured before/after: 0.98 flipped 21/27 stores to
+    // overdue for a single period, 0.95 flips a real, actionable 7/27).
+    expect(COVER_FRAC).toBe(0.95);
     expect(WEEKLY_DUE_DAYS).toBe(9);
   });
 });
@@ -785,5 +797,37 @@ describe('formatWeeklyComplianceReport', () => {
     const md = formatWeeklyComplianceReport(c, { storeName: 'New Store' });
     expect(md).toMatch(/no complete weekly count on record/);
     expect(md).not.toMatch(/undefined|NaN/);
+  });
+});
+
+// backlog-open-2026-09-06.md #246 "Items Recounted tile hidden ~21 days/month" -- owner-directed
+// 2026-09-07 to extend the At A Glance recount tile to weekly counts, per-store. This is the
+// pure window-computation weeklyRecountWindows() feeds it.
+describe('weeklyRecountWindows', () => {
+  it('gives a store with a qualifying weekly count a window starting on that date, windowDays later', () => {
+    const rows = store('3708', [{ date: '2026-08-06', counts: { Food: 118, Condiment: 36 } }]);
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-08-10', windowDays: 3 });
+    expect(windows['3708']).toEqual({ closeWindowStart: '2026-08-06', closeWindowEnd: '2026-08-09' });
+  });
+
+  it('excludes a store with no qualifying weekly count at all this period', () => {
+    // Only 88% Food coverage -- below the raised COVER_FRAC=0.95 bar.
+    const rows = store('5183', [{ date: '2026-08-06', counts: { Food: 104, Condiment: 36 } }]);
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-08-10' });
+    expect(windows['5183']).toBeUndefined();
+  });
+
+  it('uses the MOST RECENT qualifying session when a store has more than one this period', () => {
+    const rows = store('6178', [
+      { date: '2026-08-06', counts: { Food: 118, Condiment: 36 } },
+      { date: '2026-08-13', counts: { Food: 118, Condiment: 36 } },
+    ]);
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-08-14' });
+    expect(windows['6178'].closeWindowStart).toBe('2026-08-13');
+  });
+
+  it('a store with zero rows gets no entry (not a false empty window)', () => {
+    const windows = weeklyRecountWindows([], { asOf: '2026-08-10' });
+    expect(windows).toEqual({});
   });
 });

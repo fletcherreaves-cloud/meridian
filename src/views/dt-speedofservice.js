@@ -154,7 +154,9 @@ const HOUR_LABELS = {
 const DAYPARTS = [
   { id:'breakfast', label:'Breakfast', hours:['05:00','06:00','07:00','08:00','09:00','10:00'] },
   { id:'lunch',     label:'Lunch',     hours:['11:00','12:00','13:00'] },
-  { id:'pm',        label:'PM',        hours:['14:00','15:00','16:00'] },
+  // label 'Snack' (owner-directed 2026-09-07) — was 'PM', inconsistent with morning-brief.js and
+  // store-analytics.js labeling this same 2-5pm daypart 'Snack'. id stays 'pm' (internal only).
+  { id:'pm',        label:'Snack',      hours:['14:00','15:00','16:00'] },
   { id:'dinner',    label:'Dinner',    hours:['17:00','18:00','19:00','20:00'] },
   { id:'late',      label:'Late Night',hours:['21:00','22:00','23:00','00:00'] },
 ];
