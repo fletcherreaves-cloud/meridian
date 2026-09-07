@@ -1522,6 +1522,29 @@ function generatePlan(store, settings) {
     });
   }
 
+  // TPPH if below target (higher-is-better, unlike OEPE/T-Red above)
+  if((t.tTpph||0)>0&&(p.tpph||0)>0&&(p.tpph||0)<t.tTpph*0.9) {
+    const gapPct = ((t.tTpph-p.tpph)/t.tTpph*100);
+    actions.push({
+      priority:'HIGH', category:'Labor Productivity', icon:'⚡',
+      issue:`TPPH at ${p.tpph.toFixed(2)} vs ${t.tTpph.toFixed(2)} target`,
+      target:`≥ ${t.tTpph.toFixed(2)} TPPH`,
+      gap:`${gapPct.toFixed(1)}% below target`,
+      cost:'Over-scheduled relative to transaction volume — direct labor-hour waste',
+      steps:[
+        'Compare scheduled hours to actual transaction volume by daypart — identify where staffing outpaces demand',
+        'Review position assignments during slow windows — are crew stacked on non-critical stations?',
+        'Cross-check against Labor % and OT — a low TPPH with normal Labor % usually means over-scheduling, not under-selling',
+        'Adjust the schedule template for the dayparts showing the largest gap',
+        'Track TPPH daily alongside OEPE — productivity and speed should move together, not trade off'
+      ],
+      week1:'Pull daypart-level TPPH for the last 2 weeks. Identify the worst dayparts.',
+      week2:'Revised schedule template live for those dayparts. Track daily TPPH.',
+      week3:'Measure improvement. Confirm speed metrics (OEPE) did not degrade.',
+      week4:`Target: ${t.tTpph.toFixed(2)} TPPH or better. Recalibrate schedule template if needed.`
+    });
+  }
+
   // Labor % if off. #164: laborTgt is the resolved target (tCrewLabor) — same basis
   // computeOpsScore and the WATCH-LABOR finding use, not t.tLabor directly.
   const laborTgt = resolveLaborTarget(t);

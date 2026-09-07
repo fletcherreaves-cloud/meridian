@@ -157,8 +157,25 @@
   trap. The auto-default-date partial-day theory is ruled out (both `labor_rows`/`ctrl_rows` are
   6+ weeks stale, so auto-default can't land on a still-open day). `ctrl_rows` being that stale is
   itself worth flagging — either abandoned in favor of auto sources, or broken.
-- [ ] District View: Forecast Table missing Goal/OEPE/TPPH/Labor%; Scorecards→Controls missing
-  data; Action Plan missing TPPH; Forecast Accuracy "Scheduled Projection" reads too high.
+- [x] District View compound claim — **re-verified 2026-09-07: 3 of 4 sub-claims were stale,
+  already fixed; only the TPPH one is real.** (`src/views/store-dash.js`, wired via
+  `src/views/store-analytics.js`'s `StoreDash` tab dispatch.)
+  - ✅ Stale — Forecast Table missing Goal/OEPE/TPPH/Labor%: `ForecastTable` (`store-dash.js:608`)
+    already renders all four columns (`Goal`/`OEPE`/`TPPH`/`Labor%` headers ~909-914) with real
+    per-day + period-total values from each `ForecastRow` (~355, populated ~529-534). Not missing.
+  - ✅ Stale — Scorecards→Controls missing data: `CtrlScorecard` (`store-dash.js:1157-1276`)
+    renders all 5 grouped tables (Cash Integrity/POS Integrity/Refund & Discount/Meal
+    Activity/Overtime) with explicit `_cov` observation-count guards (~1205-1227) that suppress
+    fabricated zeros rather than showing missing data — the opposite of the claim.
+  - ✅ Stale — Forecast Accuracy "Scheduled Projection" reads too high: this was the real
+    unpaginated-1000-row-cap bug, already fixed 2026-08-08. `loadQsrProjections()`
+    (`src/lib/supabase.js:2933-2952`, see its own header comment ~2922-2932) now reads the
+    pre-summed rollup table via `fetchAll` pagination instead of a bare capped select.
+  - [ ] **Still open — Action Plan missing TPPH.** `generatePlan()` (`store-dash.js:1424-1576`,
+    consumed by `ActionPlanTab` ~1578) only builds action items for OT Hours (~1436), Cash O/S
+    (~1459), OEPE (~1481), T-Red After (~1504), Labor % (~1529) — no TPPH item exists. Genuinely
+    still broken; a real but narrowly-scoped follow-on (add a TPPH gap item to `generatePlan`,
+    matching the pattern of the existing five).
 - [ ] Speed of Service — DT History takes 15+ seconds to load (`notes-67-queue.md` §2). A
   performance bug, not a design ask — needs a real before/after measurement if scoped.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
