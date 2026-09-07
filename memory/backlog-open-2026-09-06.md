@@ -296,7 +296,15 @@
 
 - [ ] **Tool-breadth expansion** — give SAGE the metric resolver as a generic query tool. Flagged
   as the single biggest available win; SAGE itself, asked directly, independently named the same
-  gap as its own top pick.
+  gap as its own top pick. ⚠️ **Re-inventoried 2026-09-07: SAGE already has 7 live tools, not the
+  4 CLAUDE.md documented** (`query_labor_summary`/`query_eom_recount_impact`/`query_smg` had all
+  shipped with no CLAUDE.md update — corrected there). This item's actual remaining ask is
+  narrower than "SAGE has no query tools" might read: a GENERIC resolver covering the ~50 metrics
+  `metric-source.js` knows, vs. today's per-source hand-built tools. Still genuinely unbuilt, and
+  a real architecture question (the existing tools query Supabase directly server-side;
+  `metric-source.js` is a client `ds`-based module that can't run as-is inside the Deno Edge
+  Function — porting its per-metric sourcing logic server-side is the actual scope here, not a
+  quick wire-up).
 - [ ] Feed CLAUDE.md/memory standing rules into the system prompt.
 - [ ] Pass active panel state as context (not screenshots).
 - [ ] Personality tuning (system-prompt only).
@@ -305,7 +313,17 @@
 - [ ] Document/forms access — the eBOS form library or Resource Library exposed as a queryable
   source (SAGE's own ask; currently none of it reaches SAGE).
 - [ ] Deeper history / longer lookback windows for trend and YoY work (SAGE's own ask — its tools
-  are fixed ~60-day summaries today).
+  are fixed ~60-day summaries today). ⚠️ **Partially stale, re-measured 2026-09-07 alongside the
+  tool-breadth re-inventory above.** Most tools already take an arbitrary `start_date`/`end_date`
+  with no window cap in their own schema (`query_daily_activity`, `query_labor_summary`,
+  `query_forecast_snapshots`, `query_promo_roi`) — `query_labor_summary` specifically exists as
+  the fix for this exact complaint on OT/staffing questions (its own prompt: "ALWAYS use this...
+  never the fixed 60-day LABOR & STAFFING summary above"). **What's still genuinely fixed-window:
+  the auto-injected "LABOR & STAFFING summary" context block** (`aggregateLaborSummary`,
+  `sage-chat/index.ts`) — a pre-computed block added to every conversation regardless of the
+  question, not a tool SAGE chooses to call. Whether that block itself needs a longer/adjustable
+  window, or whether `query_labor_summary`'s existence already makes it moot for date-range
+  questions, wasn't re-scoped here.
 - [ ] **SAGE knowledge-grounding sensitivity gating** — restrict personnel-sensitive findings to
   DO+ role, gate by subject not just caller role, fail-closed frontmatter. Designed but not built —
   safety-relevant: at least one memory file already names a GM by name and nothing stops that
