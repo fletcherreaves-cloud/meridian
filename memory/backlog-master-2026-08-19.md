@@ -768,15 +768,12 @@ for full detail on each.
 
 ## 12. Staged Experiments / Risk Tracking
 
-- [ ] 🟡 `store_assessments` table — 8/20 scheduling-workshop stores rated as of 2026-08-14,
-  remaining 12 due 2026-09-03; top-5-of-20 binary reconciliation also due then.
-  ❓ **Cannot be verified from code (pass 1): `store_assessments` has ZERO references anywhere in
-  `src/`, `supabase/`, or `scripts/`.** So this is a Supabase-side + owner-tracking item with no
-  application surface — the rating count can only be settled by a live table read, and the anon key
-  returns zero rows under RLS. **Two things pass 2 should not conclude from that zero:** it is not
-  evidence the table is missing, and it is not evidence the ratings are undone. Someone with
-  service-role read has to count it. Separately worth deciding: whether a table with no code
-  reference should have a panel at all, or stays a spreadsheet-grade artifact.
+- [x] ✅ **RESOLVED 2026-09-07 — a service-role read settled this; do not re-open.** A
+  `SUPABASE_SERVICE_ROLE_KEY` Bearer read against `public.store_assessments` (bypasses RLS
+  entirely, unlike the anon-key zero this item originally flagged) returned `PGRST205` — the
+  table does not exist in the schema at all. So the "8/20 stores rated" figure was never
+  persisted to Supabase; it exists only in the owner's own tracking. Full note:
+  `memory/backlog-open-2026-09-06.md` §12.
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 

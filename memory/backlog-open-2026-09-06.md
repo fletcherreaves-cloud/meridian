@@ -307,10 +307,19 @@
 
 ## 12. Staged Experiments / Risk Tracking
 
-- [ ] 🟡 `store_assessments` table rating progress — has zero references anywhere in `src/`,
-  `supabase/`, or `scripts/`, so this can only be settled by a live service-role table read, not
-  grep. Separately worth deciding: whether a table with no code reference should have a panel at
-  all, or stays a spreadsheet-grade artifact.
+- [x] ✅ **MEASURED 2026-09-07 — settled, do not re-open as "needs a live read."** A service-role
+  `Authorization: Bearer` read (not the anon key — this session's `SUPABASE_SERVICE_ROLE_KEY` was
+  live, see CLAUDE.md's own note that env access is per-session and can't be assumed from a prior
+  session's measurement) against `public.store_assessments` returned **`PGRST205` — "Could not
+  find the table 'public.store_assessments' in the schema cache."** That is a genuinely different
+  finding than the anon key's old "zero rows": service-role bypasses RLS entirely, so PGRST205
+  means the table **was never created in Supabase at all**, not that it exists with restricted/no
+  rows visible. So the "8/20 stores rated as of 2026-08-14" figure this item originally tracked
+  was never persisted anywhere the app (or this database) can read — it lives only wherever the
+  owner was tracking it by hand. This also answers the item's own secondary question: a table
+  that doesn't exist can't back a panel today, so it stays a spreadsheet-grade artifact unless/
+  until the owner wants a real `store_assessments` table built (a real, scoped build, not
+  something to do blind without knowing what "rating progress" should track).
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 
