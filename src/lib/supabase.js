@@ -212,10 +212,37 @@ export function _isRetryablePageError(error) {
 
 const _RETRY_DELAYS_MS = [500, 1500]; // up to 2 retries of the SAME page, increasing backoff
 
+// fetchAll had no per-page timeout — a request that HANGS (no response, no error at all,
+// e.g. a stalled connection) previously blocked pagination forever with no escape, since
+// everything above only reacts to an error object actually arriving. This races each page
+// attempt against a clock and, on timeout, produces a synthetic no-`.code` error —
+// _isRetryablePageError already treats "no .code at all" as retryable (the raw-network-
+// failure case), so a timed-out page falls into the SAME retry-then-give-up path above
+// rather than needing new handling. `.catch` covers a builderFn that throws/rejects
+// outright (e.g. a fetch abort) instead of resolving with `{data:null,error}` — fetchAll's
+// existing code has never handled that shape, so this only adds safety, no behavior change
+// for the resolve-with-error case every other branch here already assumes.
+const PAGE_TIMEOUT_MS = 30000;
+
+export function _withPageTimeout(promise, ms) {
+  return new Promise(resolve => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ data: null, error: { message: `page fetch timed out after ${ms}ms` } });
+    }, ms);
+    promise.then(
+      result => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); },
+      err => { if (settled) return; settled = true; clearTimeout(timer); resolve({ data: null, error: err || { message: 'page fetch failed' } }); }
+    );
+  });
+}
+
 async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0;
   while (true) {
-    let { data, error } = await builderFn(from, from + pageSize - 1);
+    let { data, error } = await _withPageTimeout(builderFn(from, from + pageSize - 1), PAGE_TIMEOUT_MS);
     // Dispatch #218 — a single failed page used to be immediately fatal (see the fallback
     // branch below, unchanged). Most page failures observed live (statement timeouts under
     // concurrent startup load, egress/throttle blips) are transient — a fresh re-fetch of the
@@ -225,7 +252,7 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
     if (error && _isRetryablePageError(error)) {
       for (const delay of _RETRY_DELAYS_MS) {
         await _sleep(delay);
-        const retried = await builderFn(from, from + pageSize - 1);
+        const retried = await _withPageTimeout(builderFn(from, from + pageSize - 1), PAGE_TIMEOUT_MS);
         if (!retried.error) { data = retried.data; error = null; break; }
         error = retried.error;
         if (!_isRetryablePageError(error)) break; // stop early if it turned out permanent

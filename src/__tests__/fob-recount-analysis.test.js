@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 
 // A genuine recount is a SEPARATE session (different day) — same-day area entries are one count.
-const cnt = (v, tm, dt = '2026-07-14') => ({ isCount: true, dt, tm, difference: v, manager: 'A' });
+const cnt = (v, tm, dt = '2026-07-14', variance = null) => ({ isCount: true, dt, tm, difference: v, variance, manager: 'A' });
 
 describe('recountImpactByStore', () => {
   it('ranks net-harmful stores first (recounts moved variance AWAY from zero)', () => {
@@ -17,6 +17,29 @@ describe('recountImpactByStore', () => {
     expect(out[1].loc).toBe('34222');
     expect(out[1].net).toBe(80);
     expect(out[0].items[0].descr).toBe('BEEF');   // decomposable to the item
+  });
+
+  it('threads unitVar + caseSz through so a consumer can show a case-pack-converted quantity (backlog-master §6)', () => {
+    const rawByLoc = {
+      '3708': [{
+        wrin: '1', descr: 'BEEF', caseSz: 10,
+        history: [cnt(-100, '8:00 AM', '2026-07-14', -8), cnt(-300, '8:00 AM', '2026-07-15', -25)],
+      }],
+    };
+    const out = recountImpactByStore(rawByLoc);
+    const item = out[0].items[0];
+    expect(item.caseSz).toBe(10);
+    expect(item.baseUnitVar).toBe(-8);
+    expect(item.finalUnitVar).toBe(-25);
+  });
+
+  it('leaves caseSz/unitVar undefined (not a crash) when the raw item never carried a case size', () => {
+    const rawByLoc = {
+      '3708': [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM', '2026-07-14'), cnt(-300, '8:00 AM', '2026-07-15')] }],
+    };
+    const out = recountImpactByStore(rawByLoc);
+    expect(out[0].items[0].caseSz).toBeUndefined();
+    expect(out[0].items[0].baseUnitVar).toBeNull();
   });
 });
 
