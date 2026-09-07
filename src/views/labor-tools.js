@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups } from '../constants.js';
-import { avg6, forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
+import { forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
@@ -1980,7 +1980,8 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   // ── Per-location stats ──
   const locStats = uM(()=>{
     if(!range||!ds) return [];
-    // v>0 avg: treats 0 as "field not parsed" — matches avg6() behavior for rate metrics
+    // v>0 avg: treats 0 as "field not parsed" for rate metrics (same shape forecast.js's
+    // now-removed avg6() used — see obs6()'s own comment there for the fuller history)
     const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
     return activeLocs.map(loc=>{

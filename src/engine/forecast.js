@@ -430,20 +430,18 @@ function fetchRecentActual(ds, loc, date, field='sales'){
   return (rr.length ? (rr[0][field]||0) : 0) || fetchRow(_qsrActIdx(ds), loc, date, field);
 }
 
-function avg6(rows,loc,field,wb){
-  const cut=new Date(Date.now()-wb*7*86400000);
-  let sum=0,cnt=0;
-  for(const r of rows){if(r.loc!==loc||r.date<cut)continue;const v=r[field];if(typeof v==='number'&&v!==0){sum+=v;cnt++;}}
-  return cnt?sum/cnt:0;
-}
-
-// How many observations avg6 actually found. avg6 returns 0 for "no data", which is
-// indistinguishable from a real zero — and the scorecards only dash on null, so a store
-// with no Controls upload rendered a wall of 0.00% that the pass functions then graded
-// as PASSING GREEN. Missing data was being presented as compliance.
+// How many observations a store actually has for a field over the trailing window. A raw
+// trailing average returns 0 for "no data", which is indistinguishable from a real zero — and
+// the scorecards only dash on null, so a store with no Controls upload rendered a wall of
+// 0.00% that the pass functions then graded as PASSING GREEN. Missing data was being presented
+// as compliance. Deliberately its own function rather than folded into the average call: most
+// consumers do arithmetic on the average, so this adds the missing information instead of
+// altering it.
 //
-// avg6's contract is deliberately unchanged (26 call sites, and most consumers do
-// arithmetic on the result). This adds the missing information instead of altering it.
+// (This used to sit alongside a standalone avg6() with the same skip-a-real-zero shape — that
+// function was removed 2026-09-07 as dead code: `compute6wk()` had already migrated every field
+// it computes to metricAvg()/metric-source.js, and nothing else called avg6() at all. obs6()
+// itself is still live, called directly by compute6wk()'s own `_cov` coverage map below.)
 function obs6(rows,loc,field,wb){
   const cut=new Date(Date.now()-wb*7*86400000);
   let cnt=0;
@@ -2031,6 +2029,6 @@ export {
   forecastDay, forecastRange, forecastRangeAsync,
   effectivePlusUp, forecastModels, modelAccuracy,
   getDIRecommendation, computeModelHealth,
-  bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon,
+  bLocIdx, locRows, gcCrossCheck, KnowledgeBasePanel, InfoIcon,
   fetchRecentActual,
 };
