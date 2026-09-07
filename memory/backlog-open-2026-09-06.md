@@ -93,8 +93,24 @@
 
 ## 3. Data Pipeline / Sourcing Correctness
 
-- [ ] Finish auto-pull migration: Scheduling Intelligence, Schedule Summary, Labor Analysis (same
-  root cause as the Schedule Summary labor% bug).
+- [x] ✅ **RE-VERIFIED 2026-09-07 — stale, all three already fully migrated; do not re-raise.**
+  This item was undated and describes work finished well before this backlog snapshot's cut date.
+  - **Scheduling Intelligence** (`src/views/scheduling.js`): main table reads `ds.schedRows`
+    (auto-loaded via `loadLifeLenzSchedule()` in `App.js`), not `ds.laborRows`; its
+    `OpportunityReport` sub-view already goes through `metricDaily()` (`engine/metric-source.js`),
+    whose own comment states `laborRows`/`ctrlRows` are "only a LAST-RESORT fill." Confirmed by
+    changelog `5.029.js` (dispatch #348, 2026-08-16): "pulled directly from lifelenz_schedule."
+  - **Schedule Summary** (`engine/schedule-summary.js`, `computeScheduleSummary`): header comment
+    states "all derived from the lifelenz_schedule data Meridian already syncs daily." This panel
+    is where **the actual "labor% bug"** this item's "same root cause" referred to lived — a
+    mid-day partial-actual day dominating the dollar-weighted average (72% instead of ~24%) —
+    already fixed in changelog `4.505.js` (2026-07-24) by restricting the average to completed
+    days. Not open.
+  - **Labor Analysis** (`engine/labor-analysis.js`): `deriveBand1FromSchedule` sources from the
+    LifeLenz schedule; `mergeAutoManualWeek` only gap-fills stores/weeks the auto source misses
+    (UI badges `week.source==='auto'`/`'manual'`). Confirmed by changelog `4.485.js`
+    (2026-07-23): "weekly Fixed-Labor-Hours inputs now derive automatically from the daily
+    LifeLenz schedule... a manual MBI upload only gap-fills."
 - [x] ✅ **BUILT 2026-09-07 (v5.388) — do not re-implement.** Full pull shipped:
   `scripts/lifelenz-attendance-pull.mjs` (direct-token only, no Playwright fallback yet — see
   its own header for why, a reasonable low-risk follow-up not attempted) rolls each store's
