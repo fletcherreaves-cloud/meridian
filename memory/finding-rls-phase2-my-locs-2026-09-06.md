@@ -98,3 +98,20 @@ judgment call, not a code question — flagged rather than guessed at.
 Do not re-run this session's own measurements without a reason — the two RPC probes and the
 profile counts above are dated and credentialed; a future session should re-measure fresh rather
 than trust this file's numbers indefinitely, per CLAUDE.md's own standing rule.
+
+## Update 2026-09-07 — Step 1 of the recommended next step, done
+
+Owner ran `select count(*) from pg_policies where schemaname='public' and permissive='RESTRICTIVE';`
+in the Supabase SQL editor: **68**, not the 51 `schema-rls-phase2-loc.sql`'s own header comment
+names. **This is not a discrepancy to chase — it's expected and confirms the policies are real.**
+51 was that one migration file's own count, written when it shipped; roughly 10 more schema files
+have landed since (e.g. `schema-dispatch-141-retention-marks.sql`'s `sched_retention_marks_loc`,
+plus qsr-menu-items/qsr-menu-item-recipe/org-events-scope and others), each attaching its own
+`my_locs()`-scoped RESTRICTIVE policy on top of the original 51. A repo-wide grep for the
+`my_locs()) is null` pattern this session found ~10 files beyond `schema-rls-phase2-loc.sql`
+itself, consistent with a total north of 51.
+
+**So Step 1 (the migration actually ran) is now confirmed, not just inferred from the `my_locs()`
+RPC's existence.** Step 2 — set a real/throwaway profile's `accessible_locs` to a genuine subset
+and confirm every panel scopes to just those stores when logged in as that user — is the one that
+proves isolation actually works end-to-end, and is still open as of this update.

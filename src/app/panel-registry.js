@@ -359,6 +359,12 @@ export const PANELS = [
   { id:'smart-targets', label:'Smart Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   { id:'smart-targets-v2', label:'Smart Targets V2', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations', route:true },
+  // Manual per-store rating tracker (Staged Experiments / Risk Tracking backlog, 2026-09-07) --
+  // replaces a `store_assessments` table that had tracked an "8/20 stores rated" progress
+  // figure for months but never actually existed in Supabase (settled via a live service-role
+  // read: PGRST205). kind:'test-kitchen' per the standing rule -- every new panel starts here
+  // regardless of who requested it, so promotion later is a one-field kind flip, nothing else.
+  { id:'store-assessments', label:'Store Assessments', icon:'🗒️', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:14 },
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   // Targets Editor (dispatch #132 item 3) -- company/state/patch/store override cascade for

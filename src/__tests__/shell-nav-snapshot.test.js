@@ -135,7 +135,12 @@ function renderNavTexts(permFn) {
 // 'analytics.store' entry, declared after 'task-queue' -- so it lands last in the Analytics
 // section, right after Task Queue, same "declaration order = render order" rule as every other
 // recapture note above.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-09-07 for the new Store Assessments panel (Staged Experiments / Risk
+// Tracking backlog, memory/backlog-open-2026-09-06.md §12): a brand-new kind:'test-kitchen',
+// section:'operations', route:true, perm:'analytics.store' entry, tkOrder:14 -- lands LAST in
+// ⚗ TEST KITCHEN, right after Opportunity $ (tkOrder:13), sorted by tkOrder not declaration
+// order (testKitchenPanels()'s own sort, see panel-registry.js).
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -276,7 +281,10 @@ const HIDDEN_WHEN_DENIED = {
   // 'Trend Explorer'/'📈' (2026-09-05) added -- brand-new kind:'nav', perm:'analytics.store'
   // entry; 📈 has no other owner in the sidebar (event-impact, the icon's former other user, is
   // kind:'internal' now, see the analytics.brief note above), so it disappears entirely too.
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '💲', '📈', '📡', '📮', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // 2026-09-07: 'Store Assessments' (perm analytics.store, unique 🗒️ icon) joins this list --
+  // Test Kitchen panels are gated by the SAME perm() check as any other panel (betaMode is a
+  // separate, additive gate, not a substitute for perm), so denying analytics.store hides it too.
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '💲', '📈', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
@@ -386,8 +394,11 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // (2026-08-29) added 'pricing-engine' (Pricing Engine, 💲) as a new kind:'test-kitchen'
     // panel -- 11 + 1 = 12, a deliberate growth, not drift. 2026-09-01 (owner: "make it a URL
     // page for starters") promoted 'pricing-engine' OUT of Test Kitchen (kind:'nav',
-    // route:true) -- 12 - 1 = 11, a deliberate shrink, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (pricing-engine promoted out 2026-09-01), the CENSUS must not drift silently').toBe(11);
+    // route:true) -- 12 - 1 = 11, a deliberate shrink, not drift. 2026-09-07 added
+    // 'store-assessments' (Store Assessments) as a new kind:'test-kitchen' panel, per the
+    // standing rule that every new panel starts in Test Kitchen regardless of who requested
+    // it -- 11 + 1 = 12, a deliberate growth, not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (store-assessments added 2026-09-07), the CENSUS must not drift silently').toBe(12);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -423,7 +434,7 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all eleven current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+  it('covers all twelve current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
     // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
     // 12 -> 11: dispatch #203 promoted 'top-bottom' OUT of Test Kitchen (kind:'test-kitchen' ->
@@ -432,7 +443,9 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
     // kind:'test-kitchen' panel.
     // 12 -> 11: 2026-09-01 promoted 'pricing-engine' OUT of Test Kitchen (kind:'nav',
     // route:true) -- owner: "make it a URL page for starters."
-    expect(testKitchenPanels.length).toBe(11);
+    // 11 -> 12: 2026-09-07 added 'store-assessments' (Store Assessments) as a new
+    // kind:'test-kitchen' panel (Staged Experiments / Risk Tracking backlog).
+    expect(testKitchenPanels.length).toBe(12);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {
