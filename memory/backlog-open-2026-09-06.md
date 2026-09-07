@@ -428,10 +428,16 @@
   table/loader/pull wired to it. Report path likely exists
   (`/reports/mcd/people/laborExceptions`) but needs an owner DevTools capture to confirm the real
   endpoint.
-- [ ] No automated pull populates `qsr_inventory_summary` — `saveQsrInventorySummary` is defined
-  but never called. The Inventory Intelligence panel shows "no cloud data yet" for every store.
-  The report almost certainly exists (KB article match is exact) but discovery needs an owner
-  DevTools capture — no QSRSoft credentials available to probe it blind.
+- [x] ✅ **RESOLVED (v5.344, PR #1105, 2026-09-04) — stale, already shipped, do not re-raise.**
+  The owner captured the real endpoint live (`GET /api/inv/{nsn}/inv_summary/rawitems`) —
+  `scripts/qsrsoft-inventory-summary-pull.mjs` runs daily (12:30 UTC), watched in
+  `sync-failure-watch.yml`. Re-measured 2026-09-07: the workflow has run 3 times, all
+  `conclusion:"success"`, most recently 2026-09-06; a live service-role read of
+  `qsr_inventory_summary` confirms **10,560 real rows** — genuinely populated, not just
+  "running green with no effect." Not wired into `stream-freshness.js`'s `STREAMS` (deliberate,
+  documented scope cut in #1105 — it's fetched panel-locally by `InventoryIntelligence`, not
+  loaded into the global `ds` at startup like every other `STREAMS` entry); that remains a real,
+  small follow-on if per-stream freshness coverage is wanted here, not a reason to reopen this.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`,
   discovered alongside CoachQ) — pulling QSRSoft's own operational alerts into Signals is unbuilt.
 - [ ] Hourly-grain MOP (mobile-order/app) transactions — a real, open gap, needs a different,
@@ -462,9 +468,15 @@
   work (~0.98-1.07× reduction, essentially none). Next candidate (longer measurement windows, or
   confidence-based non-binary verdicts) has no decision or build. Called "the single genuine
   differentiator on the table" in its own shipping changelog.
-- [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
-  Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
-  whether the two stay in sync.
+- [x] ✅ **RE-MEASURED 2026-09-07 — stale, already fixed under dispatch #139, do not re-raise.**
+  `LocationSelector`'s patch tier (`buildLocationHierarchy`, `PanelControls.js`) resolves via
+  `supervisorOf()` → `whoRan()` → `orgAssignments()`, which reads the SAME module-scoped
+  `_liveAssignments` timeline (`constants.js`) Inventory Control's own patch filter
+  (`supervisorGroups()`) is built on — one shared live source, not two independent ones. Both the
+  `PanelControls.js` and `eom-dashboard.js` comments cross-reference each other on this exact
+  point (dispatch #139, "Mary missing in Crew Schedule"). `INV_ORG_COORDS[loc].sup` is read only
+  as a last-resort fallback for a loc the live timeline doesn't cover at all, never as the primary
+  source either place.
 - [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
   see the first org's uploaded files; also a 30-day window means new users miss old uploads.
 - [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`) — the same
@@ -531,24 +543,46 @@
   accounted the moment it's entered, so no detection rule against that data would ever fire).
   Owner is actively exploring bank-data access; two realistic paths once banking setup is known: a
   bank API feed (standing, daily, backfillable) or manual bank-statement upload.
-- [ ] **Register Audit live-verification** — both runs failed 2026-08-20: direct-token auth got a
-  403 (permissions, not expiry — likely the service account's QSRSoft role lacks `registerAudit`),
-  Playwright fallback captured no token either. Owner needs to confirm the service account's role.
-  (The endpoint itself is captured and `mapRow()` is implemented and verified — this is purely an
-  auth/permissions blocker.)
+- [x] ✅ **RESOLVED (stale, re-measured 2026-09-07) — do not re-raise the 403.** The 2026-08-20
+  auth/permissions blocker is gone: the daily `QSRSoft Register Audit Pull` workflow has run 37
+  times, all `success` except one transient failure on 2026-09-05, and a live service-role read
+  of `audit_rows` confirms **59,393 real rows**, most recent date 2026-09-05 (2 days behind
+  "today," normal ingestion lag). Whatever fixed the service account's role happened without a
+  dedicated dispatch entry recording it — the pull is simply live and has been for a while.
 - [ ] **Any Transaction Tier B** — a `transaction_detail` endpoint is captured and confirmed
   viable (full line-item + tender + operator/manager detail per transaction), but not yet built.
   The camera/video linkage question (plan §7) is still genuinely open. (Tier A is settled dead —
   no exception-type filter exists on the endpoint; don't re-probe it.)
-- [ ] **Phase 1 MVP** (cash-drawer variance + peer ranking, TvA inventory variance, explanation
-  surfacing built in from day one) — unblocked, not yet dispatched.
-- [ ] Phase 4's "GM access optional/configurable" gate still needs a concrete design (per-case
-  toggle? store setting? DO-granted permission?) before it's dispatch-ready. Blocked on
-  `project-rls-hardening-plan.md` Phase 2 and the Direction B identity-vault architecture landing
-  first.
-- [ ] Rule-evaluation compute — decided to be a scheduled batch job (not an Edge Function), but the
-  cadence (hourly? daily, matching the DAR/eBOS 10:00 UTC pull?) isn't decided — scope when Phase 1
-  is dispatched.
+- [x] ✅ **RESOLVED — this whole trio is badly stale, re-measured 2026-09-07, do not re-raise.**
+  All three items below describe a system that has, in fact, been fully built and is live in
+  production (dispatches #39 through at least #143), with zero mention anywhere in this backlog
+  file until now:
+  - **Phase 1 MVP** — `security-rules-run.yml` (dispatch #39) runs daily at 11:00 UTC, scoring
+    `audit_rows` against every active `security_rules` row into `security_findings`. Live
+    service-role reads confirm **9 rules** (`CASH-001..004` / `INV-001..005`, 7 active/2
+    inactive — cash-drawer variance AND TvA inventory variance, the exact two Phase 1 domains)
+    and **84,073 real findings rows**. Peer ranking and explanation surfacing are both built too,
+    in `src/engine/security-drilldown.js`: `flagRateByStore`/`crossStorePrevalence`/
+    `compositionVsEstate` (peer comparison) and `corroboratingFlags`/`classifySubjectShape`/
+    `buildSubjectTimeline` (explanation, grouped by subject not by rule — the panel's own header
+    comment explains why: "a subject flagged on three of four independent signals is a lead;
+    flagged on one is noise").
+  - **Rule-evaluation compute cadence** — decided and shipped: daily at 11:00 UTC, one hour
+    after `QSRSoft Register Audit Pull`'s own 10:00 UTC run (its input), so it never scores a
+    day's data before that day's pull lands (`security-rules-run.yml`'s own header comment).
+  - **Phase 4 GM-access gate** — also shipped, as an org-level config toggle:
+    `org_config.gm_identity_reveal_enabled` (`loadGmIdentityRevealEnabled()`,
+    `src/lib/supabase.js`), read by `securityPanelAccess()` (`src/views/security-panel.js`) to
+    decide whether a manager-role caller gets identity-revealed findings. Not the per-case/
+    DO-granted design this item speculated about — a simpler org-wide setting — but a real,
+    live, wired decision, not an open design question.
+
+  A full read-only investigation UI ships too — `src/views/security-panel.js`
+  (`kind:'nav'`, `perm:'security.view'`, live in the People section today, dispatch #43+),
+  with date-range + `LocationSelector` scoping, subject timelines, export, and print. **What
+  genuinely remains open** (confirmed still unbuilt): "Any Transaction Tier B" (below, correctly
+  described as not yet built) and **Deposit lapping** (also below, correctly described as
+  blocked on bank-data access). Those two keep their own entries; this trio does not need one.
 
 *(Archive: §15)*
 

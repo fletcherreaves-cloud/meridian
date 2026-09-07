@@ -1425,6 +1425,11 @@ previously documented — is the raw per-event log to build against, and settled
   day one.** Full reasoning: `plan-security-loss-prevention.md` §5. **Still blocked on two
   prerequisites unchanged by these answers**: `project-rls-hardening-plan.md` landing, and the
   Direction B identity-vault architecture (below) landing first — ready to scope once both do.
+  ✅ **The "optional" design question is SHIPPED, re-measured 2026-09-07** — a simpler answer
+  than the per-case/DO-granted options this line speculated about: a single org-wide toggle,
+  `org_config.gm_identity_reveal_enabled` (`loadGmIdentityRevealEnabled()`, `supabase.js`),
+  read by `security-panel.js`'s own `securityPanelAccess()` to gate manager-role identity
+  reveal. Full correction: `memory/backlog-open-2026-09-06.md` §15.
 - [x] **Fourth axis of the same gate — identity architecture (PII/pseudonymization). DECIDED
   2026-08-20: Direction B (token/identity-vault architecture).** Owner delegated on "compliant,
   ethical, most functional"; full reasoning in `memory/plan-security-pii-architecture-2026-08-19.md`
@@ -1449,18 +1454,21 @@ previously documented — is the raw per-event log to build against, and settled
   **SQL run against live Supabase 2026-08-20, confirmed independently** (`security_rules`
   returns `200 []` from the anon key — RLS filtering, not a missing table; verified against a
   genuinely nonexistent table returning `404` for contrast). **Phase 0b fully done.**
-- [ ] **Phase 1 MVP — unblocked for real, not yet dispatched.** cash-drawer variance + peer ranking, TvA
-  inventory variance (this slice already runs on data this org has — extends existing FOB math),
-  explanation surfacing built in from day one rather than retrofitted. Not yet dispatched.
+- [x] ✅ **Phase 1 MVP — SHIPPED, re-measured 2026-09-07, this line is badly stale.** Dispatch
+  #39 built the scheduled compute job (`security-rules-run.yml`, daily 11:00 UTC) that scores
+  `audit_rows` against `security_rules` into `security_findings`; dispatch #43+ built the full
+  read-only investigation panel (`src/views/security-panel.js`). Live service-role reads: 9
+  rules (`CASH-001..004`/`INV-001..005`, cash-drawer variance + TvA inventory variance, the exact
+  two domains this line named), 84,073 real findings rows. Peer ranking
+  (`crossStorePrevalence`/`compositionVsEstate`/`flagRateByStore`) and explanation surfacing
+  (`corroboratingFlags`, subject-grouped not rule-grouped) both shipped in
+  `src/engine/security-drilldown.js`, exactly as this line specified "built in from day one."
+  Full correction: `memory/backlog-open-2026-09-06.md` §15.
 - [x] **Rule-evaluation compute DECIDED 2026-08-20: scheduled batch job, not an Edge Function.**
   Owner chose "scheduled batch job, like the pull scripts" over the Edge Function/`sage-chat`
-  on-demand pattern. Means Phase 1 risk scores get **pre-computed on a schedule** (a new GitHub
-  Actions workflow in the `*-pull.mjs`/`*.yml` family, evaluating `security_rules` against fresh
-  `audit_rows` and writing results to a new table) rather than evaluated live when a panel loads —
-  this is a new *compute* pattern for this repo (every existing scheduled workflow only ever
-  pulls external data, none evaluate rules/scores), not a straight copy of an existing script.
-  Cadence (hourly? daily, matching the DAR/eBOS 10:00 UTC pull?) not yet decided — scope when
-  Phase 1 is dispatched.
+  on-demand pattern. ✅ **Cadence also decided and shipped: daily at 11:00 UTC** —
+  `security-rules-run.yml`, one hour after `QSRSoft Register Audit Pull`'s own 10:00 UTC run (its
+  input), so a day's findings are never scored against stale data.
 
 ---
 
