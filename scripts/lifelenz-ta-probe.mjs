@@ -65,12 +65,13 @@ async function probeSlug(token, scheduleId, slug, dateStr) {
     headers: { ...apiHeaders(token, scheduleId), 'X-Page-Module': 'reports-pdf', 'Accept': 'text/csv, application/json, */*' },
   });
   const ct = resp.headers.get('content-type') || '';
-  let snippet = '';
+  let snippet = '', full = '';
   try {
     const text = await resp.text();
+    full = text;
     snippet = text.slice(0, 150).replace(/\n/g, ' ');
   } catch { /* ignore */ }
-  return { slug, status: resp.status, contentType: ct, snippet };
+  return { slug, status: resp.status, contentType: ct, snippet, full };
 }
 
 async function main() {
@@ -102,6 +103,13 @@ async function main() {
   const hits = results.filter(r => r.status === 200);
   if (hits.length) {
     console.log(`\n[probe] ${hits.length} candidate(s) returned 200 — this is the report-name slug for #350.`);
+    // One-shot follow-up capture (LIFELENZ_TA_FULL_CAPTURE=1) — print the winning slug's
+    // ENTIRE CSV, not just the 150-char snippet above, so the real column set can be read
+    // straight from the job log instead of guessed at from a truncated header.
+    if (process.env.LIFELENZ_TA_FULL_CAPTURE === '1') {
+      console.log(`\n[probe] ── full capture: ${hits[0].slug} ──────────────────────`);
+      console.log(hits[0].full);
+    }
   } else {
     console.log('\n[probe] every candidate 404\'d (or errored) — none of the guessed slugs exist. ' +
                 'Falls back to an owner DevTools capture (#350 option 1).');

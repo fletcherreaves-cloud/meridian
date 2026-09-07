@@ -3939,6 +3939,16 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   `supabase/schema-identity-vault.sql` (sent via SendUserFile) and then
   `node scripts/backfill-identity-vault.mjs` against live Supabase — until then the vault has no
   real token↔name data for the reveal RPC to return.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS Phase 2 redesign found live, 2026-09-06](finding-rls-phase2-my-locs-2026-09-06.md)** —
+  **NEWEST.** Corrects the very next entry below — its "Phase 2 (`can_see_loc()`) genuinely has
+  not shipped" is stale. A newer, differently-named redesign (`public.my_locs()`, replacing the
+  abandoned `can_see_loc()`) is confirmed live in production via a direct RPC probe
+  (`my_locs()` → `HTTP 200`; `can_see_loc()` → `HTTP 404 PGRST202`, function not found). Still
+  open: whether the 51 RESTRICTIVE per-loc policies are actually attached (this environment can't
+  query `pg_policies`), and — separately — **no real profile today is genuinely restricted to a
+  subset of stores** (3 profiles measured: 2 null, 1 with the complete 27-store list), so per-loc
+  isolation has never been exercised live even if it's wired up. Concrete next step for the owner
+  in the finding file itself.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS anonymous-access question fully CLOSED — three live measurements, 2026-08-20](project-rls-hardening-plan.md)** —
   **NEWEST.** The "92-107 tables wide open to anonymous access" figure repeated across this
   backlog and `plan-security-pii-architecture-2026-08-19.md` was real (a correct grep of

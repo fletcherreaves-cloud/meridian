@@ -95,9 +95,16 @@
 
 - [ ] Finish auto-pull migration: Scheduling Intelligence, Schedule Summary, Labor Analysis (same
   root cause as the Schedule Summary labor% bug).
-- [ ] **LifeLenz Time & Attendance** — the CI probe (`scripts/lifelenz-ta-probe.mjs`) is built and
-  on `main`. ❓ It still has to be **run** (`workflow_dispatch`) and its job log read to learn the
-  report-name slug — not a code question, a "go run it" question.
+- [ ] ✅ **Probe RUN 2026-09-06 — the report-name slug is settled: `attendance_report`.**
+  Dispatched `lifelenz-ta-probe.yml` live: `attendance_report` → `200`/`text/csv` with real data
+  (a per-store row: scheduled/accepted/pick-up shift counts, excused/unexcused absence # and %,
+  more columns truncated in the first capture). All 5 other candidates (`time_attendance_report`,
+  `time_and_attendance_report`, `employee_attendance_report`, `punch_report`, `punches_report`)
+  404'd. **Remaining, now a real build, not a probe:** capture the FULL column set (a
+  `LIFELENZ_TA_FULL_CAPTURE=1` follow-up run is in flight), then build the actual pull script +
+  Supabase table + parser + workflow + `sync-failure-watch.yml` entry, replacing
+  `scheduling.js`'s hand-transcribed, 2-month-stale `TA_DATA` — the standard "adding a new
+  automated pull" checklist in CLAUDE.md, not a probe anymore.
 - [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still read `ds.laborRows`
   directly instead of through the resolver (tracking number; falls as the sweep proceeds).
 - [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
@@ -234,9 +241,11 @@
 - [ ] Top-of-Discussion report — pre-populate relevant names for scope.
 - [ ] ❓ Labor% current-day DAR fallback — deliberately deferred pending owner's explanation of
   FL-vs-OK labor-usage differences.
-- [ ] FL FOB yearly total anomaly (~14.88% read vs ~4% expected, owner review 2026-07-28) —
-  unblocked now that Supabase egress is confirmed working; just needs to actually be run: does FL
-  normalize over a full month/YTD range now that `fobByRange` has the `prodSalesAmt<=0` guard?
+- [x] ✅ **RESOLVED 2026-09-06 — do not re-open.** Re-measured live: FL district FOB% YTD 2026 is
+  **4.03%** (dollar-weighted, using the real `fobByRange()` function against real `qsr_fob` rows),
+  every FL store in a sane 3-5% range. The ~14.88% anomaly is gone under the current
+  `prodSalesAmt<=0` guard + per-month snapshot-differencing. Full measurement:
+  `memory/finding-fl-fob-ytd-normalized-2026-09-06.md`.
 
 *(Archive: §8)*
 
@@ -305,8 +314,16 @@
 - [ ] Backup/rollback story for Supabase.
 - [ ] Telemetry/usage DB (panel usage, error logs, pipeline health, tamper detection) — schema
   cheap, build is a real project; auto-shutdown should be flag-first, not automatic.
-- [ ] Security sweep — RLS Phase 1 (closing anonymous-access tables) is done; **Phase 2
-  (`can_see_loc()`, per-loc isolation)** is the real remaining scope.
+- [ ] ⚠️ **RE-MEASURED 2026-09-06 — the `can_see_loc()` design named here is dead; a newer
+  redesign already shipped.** RLS Phase 1 (closing anonymous-access tables) is done. Phase 2 was
+  redesigned as `public.my_locs()` (not `can_see_loc()`, which now 404s live) and the helper
+  function is confirmed live in production. **Still open:** whether the 51 RESTRICTIVE per-loc
+  policies (`schema-rls-phase2-loc.sql`) are actually attached (unconfirmable from this
+  environment — no `pg_policies` access), and — a separate, more important gap — **no real
+  profile today is restricted to a subset of stores** (measured: 3 profiles, 2 null, 1 with the
+  full 27-store list), so per-loc isolation has never been exercised live even if it is wired up.
+  Full measurement + concrete next step (a `pg_policies` count + a live login test):
+  `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
 - [ ] PII/credential-handling human-process capture — the content already exists in
   `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md` (x-auth-token sequencing rules, the
   `storePeoplePunches`/`employeeRoster` PII field lists), it's just not indexed into CLAUDE.md's

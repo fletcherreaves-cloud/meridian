@@ -12,6 +12,11 @@ on:
         description: 'Schedule-name substring to probe (default: first active store schedule)'
         required: false
         default: ''
+      full_capture:
+        description: 'Print the winning slug\'s entire CSV body (not just a 150-char snippet)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -28,5 +33,6 @@ jobs:
       - name: Probe Time & Attendance report slug
         run: node scripts/lifelenz-ta-probe.mjs
         env:
-          LIFELENZ_TOKEN:    ${{ secrets.LIFELENZ_TOKEN }}
-          LIFELENZ_TA_STORE: ${{ github.event.inputs.store || '' }}
+          LIFELENZ_TOKEN:            ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_TA_STORE:         ${{ github.event.inputs.store || '' }}
+          LIFELENZ_TA_FULL_CAPTURE:  ${{ github.event.inputs.full_capture == 'true' && '1' || '' }}
