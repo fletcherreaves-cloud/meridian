@@ -163,7 +163,38 @@
   `exceptionRows`/`smgFullscale` only). `computeInsights` (`engine/insights.js`) fans out to ~30
   `sig_*` functions with a mix of raw-row and `metricSeries` reads — auditing which `ds` fields
   each actually needs is real, separate work, not a safe quick extension of the picker fix.
-  **Still open — the remaining ~15 files, unaudited.** Before touching any, read that file first
+  ✅ **Several more files audited 2026-09-07, confirmed clean — not violations, don't re-flag:**
+  `scheduling.js` (its 2 hits pass `ds.laborRows`/`ds.ctrlRows` into `OpportunityReport` as
+  last-resort fallback props alongside real cloud sources — glimpseRows/qsrActSummaryRows — same
+  already-verified-clean pattern as the compute6wk/record-day corrections above); `store-dash.js`
+  (its 1 real code hit is a `useMemo` dependency-array entry, `[stores,ds.laborRows,
+  ds.qsrActSummaryRows,DR.s,DR.e]` — only triggers recompute, the memo body itself calls
+  `matchedVsLY`/`lyQuality` from `engine/vs-ly.js`, already auto-first; its other hits are
+  comments documenting past fixes); `engine/backtest.js`'s `calibrateStore` — its raw
+  `ds.laborRows` read is **deliberate and already reverted once**: its own comment says routing
+  through `metricSeries('sales')` in v4.904 broke calibration for all 27 stores (mismatched row
+  universe fed to `detectCleanDataStart`/`fetchLY`) and was reverted in v4.906. Do not re-attempt
+  this conversion without re-reading that comment in full first.
+  ⚠️ **Real, unaudited gap found — `engine/why.js` (the forecast-miss "Why" explanation engine,
+  consumed by `store-dash.js`/`analytics.js`/`App.js`/`coaching.js`/`calendar.js`/`lifelenz.js` —
+  genuinely live, not dead code). NOT fixed this session — needs its own careful pass, not a
+  pattern-matched quick fix, because the two gates likely have very different risk:**
+  - `runWhyEngineScan()` (~line 237, "single-store scan: run composition + diagnosis across a
+    window") gates its ENTIRE body on `if(!ds||!ds.laborRows) return null;`, but the per-day work
+    inside is `forecastDay(loc,dt,ds,settings,...)` — likely already auto-first internally (same
+    family as `compute6wk`, already verified clean this session). **If so, this gate may be
+    pure overreach** — relaxing/removing it could unlock the whole Why-engine for cloud-only
+    stores with no change to the real computation at all. This is the higher-value, lower-risk
+    half — confirm `forecastDay`'s own sourcing before touching the gate.
+  - `crossStoreCheck()` (~line 9) is a genuinely different shape: it directly filters
+    `ds.laborRows` to build a same-day-of-week peer baseline (mean/std across ALL other stores)
+    with no bound on history, plus `fetchRow(ds.laborIdx,...)` for the "actual" value — both
+    manual-only, no auto fallback. Converting this needs `metricSeries` bucketed by DOW (same
+    pattern used in this session's store-analytics.js fix) but ALSO needs a deliberate choice of
+    lookback window, since the original code implicitly uses unbounded history — don't invent a
+    window without checking what "enough peer data" (`peers.length<4`) implies about the
+    original's effective sample depth.
+  **Still open — the remaining ~13 files, unaudited.** Before touching any, read that file first
   — don't assume the grep hit is the anti-pattern; several already confirmed above are not.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
