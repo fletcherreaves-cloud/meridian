@@ -127,8 +127,25 @@
   the real captured CSV shape.
 - [ ] `labor_rows` sweep — 20 files under `src/views`+`src/engine` still read `ds.laborRows`
   directly instead of through the resolver (tracking number; falls as the sweep proceeds).
-- [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
-  arrays); fix `avg6`'s zero-skip bug.
+- [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
+  `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
+  (the full `r={...}` literal, `oepe` through `oppCostDollar`, including the "manual-only" ones —
+  their own comment explains they go through the resolver too, since `metricAvg` for a
+  MANUAL_ONLY_METRICS key just resolves to the same manual read, not a separate raw-array scan)
+  already reads through `M(key) = metricAvg(ds,[loc],_range,key) ?? 0` — the auto-first resolver
+  (`engine/metric-source.js`), not raw `ds.opsRows`/`ctrlRows`/`laborRows`. The remaining raw
+  array reads below that literal (`kvsu`, `t2w`, `avgCheck`, `depositVsSalesRatio`, etc.) are
+  genuinely bespoke DERIVED metrics (window comparisons, ratios, a null-vs-zero presence fix with
+  its own dated writeup) that don't fit `metricAvg`'s single-field-average shape in the first
+  place — not raw reads standing in for ones the resolver could serve.
+  **`avg6()` itself is dead code** — still defined and exported (`forecast.js:433`), imported in 3
+  files, but never actually *called* anywhere in `src/` (confirmed: `avg6(` as a call, not a
+  comment/import, matches zero real call sites). `compute6wk` reimplements the same trailing-avg
+  shape inline for performance (its own header comment explains why) rather than calling the
+  function. So "fix avg6's zero-skip bug" would patch code nothing runs — not worth doing on its
+  own. If the zero-skip *concept* (treating a real 0 observation as "no data," per `obs6()`'s own
+  note on this) is still suspected live somewhere, it would have to be chased in `metricAvg`
+  itself or a specific metric's chain — a different, real investigation, not this line.
 - [x] ✅ **DONE 2026-09-07 (owner-confirmed).** `dt-speedofservice.js`'s 2-4pm daypart label
   renamed 'PM' → 'Snack', matching `morning-brief.js`/`store-analytics.js`'s own naming for the
   same daypart (`id:'pm'` unchanged, internal only).
