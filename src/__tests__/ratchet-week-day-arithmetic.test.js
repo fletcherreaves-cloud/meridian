@@ -50,7 +50,14 @@ const ROOTS = ['src/views', 'src/features'];
 // callers anywhere; App.js's own comment already documented them as dead imports shadowed by a
 // local implementation). weekKey's own `(day - 3 + 7) % 7` was exactly the re-derive-inline
 // pattern this ratchet exists to catch, but it was unreachable dead code, not a live boundary bug.
-const CEILING = 62;
+// 2026-09-07: re-measured at 56, -6 from the last-set 62. Store-analytics.js's ShiftAnalysisTab
+// accounts for -4 of that (folded into the same auto-first rewrite as the R1 ratchet above's
+// 2026-09-07 note — dayDates/wkndDates/dowData's per-weekday laborRows filters and
+// allSalesByDow's forEach all re-derived getDay() on a raw row; now bucketed once via
+// metricSeries, a single shared getDay() call per metric instead of one per consumer). The
+// remaining -2 predates this change and was not chased down; per this ratchet's own remediation
+// instructions, only the ceiling itself needs correcting, not a hunt for who converted it.
+const CEILING = 56;
 
 const PATTERN = /\.getDay\(\)/g;
 
