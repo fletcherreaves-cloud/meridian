@@ -13,7 +13,7 @@ on:
         required: false
         default: ''
       full_capture:
-        description: 'Print the winning slug\'s entire CSV body (not just a 150-char snippet)'
+        description: 'Print the winning slug''s entire CSV body (not just a 150-char snippet)'
         required: false
         type: boolean
         default: false
