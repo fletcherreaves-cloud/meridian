@@ -207,8 +207,18 @@
     but ALSO needs a deliberate choice of lookback window, since the original code implicitly
     uses unbounded history — don't invent a window without checking what "enough peer data"
     (`peers.length<4`) implies about the original's effective sample depth.
-  **Still open — the remaining ~13 files, unaudited.** Before touching any, read that file first
-  — don't assume the grep hit is the anti-pattern; several already confirmed above are not.
+  ✅ **Two more engine files audited 2026-09-07, confirmed clean:** `engine/promo-roi.js`'s
+  `buildDailyRecords()` already sources sales/GC glimpse→salesLedger→laborRows→qsrActSummaryRows
+  and discount opsCashRows(auto)→ctrlRows(manual) — its raw `ds.laborRows`/`ds.ctrlRows` reads
+  are deliberate fallback legs in an already-hardened, heavily-documented matched-day engine
+  (dispatch-113, dispatch-111, the promo-roi-denominator-bias finding — read that history in
+  full before touching this file's split logic, it has burned two prior "obvious" fixes already
+  measured biased in opposite directions). `engine/review-engine.js`'s `laborM =
+  byMonth(ds.laborRows)` (~line 1582) is explicitly kept as a **documented fallback AFTER**
+  auto-first resolution (dispatch #174/#142/#109's own comments spell out exactly what still
+  reads `lr` and why) — not a fresh violation.
+  **Still open — the remaining ~11 files, unaudited.** Before touching any, read that file first
+  — don't assume the grep hit is the anti-pattern; most already confirmed above are not.
 - [x] ✅ **RE-VERIFIED 2026-09-07 — stale, already fully done; do not re-raise.** Read
   `compute6wk()` directly (`engine/forecast.js:992-1117`): every one of its 28 per-field averages
   (the full `r={...}` literal, `oepe` through `oppCostDollar`, including the "manual-only" ones —
