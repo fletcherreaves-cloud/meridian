@@ -1,0 +1,47 @@
+name: LifeLenz Attendance Pull
+
+# Rolling 28-day per-store attendance rollup from LifeLenz's attendance_report CSV (slug found
+# live 2026-09-06, scripts/lifelenz-ta-probe.mjs). Replaces src/views/scheduling.js's
+# hand-transcribed, frozen-since-June TA_DATA. No Playwright needed -- LIFELENZ_TOKEN alone
+# works for this endpoint (proven by both probe runs), so this workflow skips the browser
+# install step every other LifeLenz workflow needs.
+
+on:
+  schedule:
+    # 10:00 UTC = 5:00 AM CDT — same slot as the other daily QSRSoft/LifeLenz pulls
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: 'Rolling window size in days (default: 28)'
+        required: false
+        default: '28'
+      debug:
+        description: 'Verbose per-store logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run LifeLenz attendance pull
+        run: node scripts/lifelenz-attendance-pull.mjs
+        env:
+          LIFELENZ_TOKEN:                   ${{ secrets.LIFELENZ_TOKEN }}
+          VITE_SUPABASE_URL:                ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:         ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LIFELENZ_ATTENDANCE_WINDOW_DAYS:   ${{ github.event.inputs.window_days || '28' }}
+          LIFELENZ_DEBUG:                    ${{ github.event.inputs.debug || '0' }}

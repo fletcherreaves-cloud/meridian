@@ -57,6 +57,11 @@ export const STREAMS = [
   // array entirely rather than fixed. _latestDateOf clamps every stream to <=asOf, which
   // is the fix for that: filter it in, don't drop it.
   { key: 'lifelenz',     label: 'LifeLenz labor/schedule',      dsField: 'schedRows',         cadenceDays: 1 },
+  // lifelenz_attendance_summary rows are keyed by period_end, which advances by one day per
+  // daily pull run -- checkable the same way as every other daily stream above, via its
+  // `date` field. See scripts/lifelenz-attendance-pull.mjs / supabase/schema-lifelenz-
+  // attendance.sql (2026-09-06).
+  { key: 'lifelenzAttendance', label: 'LifeLenz Attendance',    dsField: 'lifelenzAttendanceRows', cadenceDays: 1 },
 ];
 
 const _toMs = d => {

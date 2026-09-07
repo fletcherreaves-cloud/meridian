@@ -320,8 +320,27 @@ function weekLabel(wed) {
   return fmt(wed)+'–'+fmt(tue);
 }
 
-function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrActRows, settings,
+function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrActRows, attendanceRows, settings,
   selWeek: extSelWeek, setSelWeek: extSetSelWeek, weeks: extWeeks }) {
+  // ── Live T&A rollup (2026-09-06) — auto-first, falls back to the frozen TA_DATA snapshot ───
+  // per store until scripts/lifelenz-attendance-pull.mjs has accumulated a row for it (same
+  // "manual/stale data fills a gap, never overrides fresher auto data" shape every other
+  // auto-first stream in this app uses, applied here to "no live row yet" instead of "manual
+  // upload"). Only the MOST RECENT period_end per loc is used, matching the rolling-window
+  // table's own grain (one row per store per pull day, each representing the trailing window).
+  const liveTA = useMemo(() => {
+    const byLoc = {};
+    for (const r of (attendanceRows || [])) {
+      const prev = byLoc[r.loc];
+      if (!prev || (r.periodEnd || '') > (prev.periodEnd || '')) byLoc[r.loc] = r;
+    }
+    return byLoc;
+  }, [attendanceRows]);
+  const taFor = loc => {
+    const live = liveTA[loc];
+    if (live) return { missedShifts: live.unexcusedAbsences, periodEnd: live.periodEnd, live: true };
+    return { ...(TA_DATA[loc] || {}), live: false };
+  };
   // ── QSR actual-labor cross-reference, keyed loc+dateStr.
   // Sourced auto/emailed-first, freshest-wins (per the data-refresh design):
   //   • QSR Labor %  ← Daily Glimpse (emailed → Supabase, cloud-fresh)
@@ -444,7 +463,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
       const rate = AVG_RATES[loc] || DIST_AVG_RATE;
       const tgt  = resolveLaborTarget(t) ?? t.tLabor ?? 0.22;
       const buf  = tgt + LABOR_BUFFER;
-      const ta   = TA_DATA[loc] || {};
+      const ta   = taFor(loc);
 
       const days = [...rows].sort((a,b) => a.date - b.date).map(r => {
         // #348 — was (r.needVLH||0)+(r.fixGuideHrs||0) / (r.schVLH||0)+(r.schFixHrs||0):
@@ -486,7 +505,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
 
       return { loc, name: STORE_NAMES[loc]||loc, days, tot, ta, rate, tgt, buf, avgLaborPct, actLaborPct, excessCost, controlCost };
     }).sort((a,b) => b.tot.excessVsTgt - a.tot.excessVsTgt);
-  }, [scopeRows]);
+  }, [scopeRows, liveTA]);
 
   const distTot = useMemo(() => {
     return analysis.reduce((a,s) => ({
@@ -497,7 +516,10 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
     }), { sales:0, needHrs:0, schedHrs:0, crewHrs:0, controlled:0, excessCost:0, controlCost:0 });
   }, [analysis]);
 
-  const totalMissed = Object.values(TA_DATA).reduce((s,d) => s + d.missedShifts, 0);
+  // Sums each STORE'S OWN resolved figure (live where a pull has landed, static fallback
+  // otherwise) via `analysis`, not a blanket Object.values(TA_DATA) — that would silently
+  // ignore live data entirely once any store has it.
+  const totalMissed = analysis.reduce((s, d) => s + (d.ta.missedShifts || 0), 0);
   const noData = scopeRows.length === 0;
   const weekInfo = weeks.find(w => w.k === activeWeek);
   const overTgt = analysis.filter(s => s.tot.excessVsTgt > 1);
@@ -539,10 +561,27 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
         ),
         div({ style: { flex:1 } }),
         (laborRows && laborRows.length > 0) && div({ style: { fontSize:10, color:BLUE } }, `✓ QSR ops data loaded — cross-reference enabled`),
-        div({
-          style: { fontSize:10, color: TA_STALE_DAYS > 35 ? AMBER : TEXT3, fontWeight: TA_STALE_DAYS > 35 ? 700 : 400 },
-          title: TA_STALE_DAYS > 35 ? `Static snapshot, ${TA_STALE_DAYS}d old — no live LifeLenz T&A pull exists yet, this data does not update. See Notes 56.` : undefined,
-        }, `${TA_STALE_DAYS > 35 ? '⚠ ' : ''}T&A: ${TA_PERIOD} (monthly)${TA_STALE_DAYS > 35 ? ' · static, not current' : ''}`)
+        // Live LifeLenz T&A pull landed 2026-09-06 (scripts/lifelenz-attendance-pull.mjs) —
+        // taFor() falls back to the frozen TA_DATA snapshot per store until a live row exists
+        // for it, so this banner reflects the REAL mix rather than an all-or-nothing static flag.
+        (() => {
+          const liveN = analysis.filter(s => s.ta.live).length;
+          const totalN = analysis.length;
+          if (totalN === 0) return null;
+          if (liveN === totalN) {
+            const newest = analysis.reduce((a, s) => (s.ta.periodEnd || '') > a ? s.ta.periodEnd : a, '');
+            return div({ style:{ fontSize:10, color:TEXT3 } }, `✓ T&A: live, through ${newest} (rolling 28d)`);
+          }
+          if (liveN > 0) {
+            return div({ style:{ fontSize:10, color:AMBER, fontWeight:700 },
+              title:`${liveN}/${totalN} stores have a live LifeLenz T&A pull; the rest still show the frozen ${TA_PERIOD} snapshot until their first pull lands.` },
+              `⚠ T&A: ${liveN}/${totalN} stores live, rest static (${TA_PERIOD})`);
+          }
+          return div({
+            style: { fontSize:10, color: TA_STALE_DAYS > 35 ? AMBER : TEXT3, fontWeight: TA_STALE_DAYS > 35 ? 700 : 400 },
+            title: TA_STALE_DAYS > 35 ? `Static snapshot, ${TA_STALE_DAYS}d old — no live LifeLenz T&A pull exists yet, this data does not update. See Notes 56.` : undefined,
+          }, `${TA_STALE_DAYS > 35 ? '⚠ ' : ''}T&A: ${TA_PERIOD} (monthly)${TA_STALE_DAYS > 35 ? ' · static, not current' : ''}`);
+        })()
       )
     ),
 
@@ -593,7 +632,13 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
         h(MetricCard, { label:'Sched vs Target $',  value: (distTot.excessCost > 0 ? '+' : '−') + fmt$(Math.abs(distTot.excessCost)),  sub: fmtN(analysis.reduce((s,a)=>s+Math.max(0,a.tot.excessVsTgt),0),1)+' hrs over-scheduled', color: distTot.excessCost > 0 ? RED : GREEN }),
         h(MetricCard, { label:'Labor "Controlled" Back', value: fmt$(distTot.controlCost), sub: fmtN(distTot.controlled,1)+' hrs sched but not worked', color: AMBER }),
         h(MetricCard, { label:'Stores Over Target', value: overTgt.length, sub: 'scheduled above actual target', color: overTgt.length > 0 ? RED : GREEN }),
-        h(MetricCard, { label:'Missed Shifts', value: totalMissed.toLocaleString(), sub: TA_PERIOD+(TA_STALE_DAYS>35?' · static snapshot':' (monthly)'), color: RED }),
+        h(MetricCard, { label:'Missed Shifts', value: totalMissed.toLocaleString(), sub: (() => {
+          const liveN = analysis.filter(s => s.ta.live).length, totalN = analysis.length;
+          if (totalN === 0) return TA_PERIOD + (TA_STALE_DAYS > 35 ? ' · static snapshot' : ' (monthly)');
+          if (liveN === totalN) return 'rolling 28d (live)';
+          if (liveN > 0) return `${liveN}/${totalN} stores live, rest ${TA_PERIOD}`;
+          return TA_PERIOD + (TA_STALE_DAYS > 35 ? ' · static snapshot' : ' (monthly)');
+        })(), color: RED }),
       )
     ),
 
@@ -1234,7 +1279,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
             h('button', { onClick: () => setActiveTab('opportunity'), style: btnStyle(activeTab==='opportunity') }, '📊 Opportunity')
           ),
           activeTab === 'opportunity'
-            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], settings,
+            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], attendanceRows: (ds&&ds.lifelenzAttendanceRows)||[], settings,
                 selWeek:activeWeekKey, setSelWeek, weeks:availableWeeks })
             : div({ style: { textAlign:'center', padding:'60px 20px', color:TEXT3 } },
                 div({ style: { fontSize:32, marginBottom:12 } }, '📋'),
@@ -1263,7 +1308,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
           ),
 
           // ── Content ─────────────────────────────────────────────────────────
-          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], settings,
+          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], attendanceRows: (ds&&ds.lifelenzAttendanceRows)||[], settings,
             selWeek: activeWeekKey, setSelWeek, weeks: availableWeeks }),
           (locs.length > 1 && activeTab === 'district') && h(DistrictSummary, { schedRows: weekRows }),
 

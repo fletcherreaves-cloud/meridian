@@ -46,6 +46,7 @@ on:
       - Event Impact — Weather Lift Measurement
       - Forecast Week Precompute
       - Hourly Projection Accuracy
+      - LifeLenz Attendance Pull
       - LifeLenz Daily Sync
       - LifeLenz People Skills Sync
       - Local News RSS Pull
