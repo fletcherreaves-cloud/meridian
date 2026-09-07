@@ -190,8 +190,18 @@
   `qsr_onhand` + a mid-month concept that doesn't exist yet + paper-count inclusion. (A separate,
   already-fixed Condiment `active_in_recipe` flag bug in `count-cycle.js` does NOT touch this item
   — different table, different root cause.)
-- [ ] Variance chart loopback should anchor on `qsr_onhand.last_counted`, not the calendar month;
-  build the per-item variance chart (data already computed, just not rendered).
+- [x] ✅ **RE-MEASURED 2026-09-07 — stale, already shipped, do not re-build.** Both halves of this
+  line are already live in `eom-dashboard.js`'s Weekly Count Cadence panel (click a store to
+  expand): (1) `lastCountAnchor()` + `fobDailyTrace(fobRows, { loc, period, since: anchor })`
+  anchors the loopback on the last actual physical count, not the calendar-month boundary
+  (labeled "Notes 58 #2" in the code's own comment, clamped to the period start since `qsr_fob`
+  is month-to-date cumulative and can't diff across a month reset); (2) the per-item chart IS
+  rendered — `VarianceTraceChart` (the day-by-day FOB trace) plus a "Biggest between-count
+  variance windows" per-item list (`itemVarianceWindows`, `weekly-cadence.js`) both render in the
+  drill-down. `store-cockpit.js`'s separate Food Cost Cockpit tab has its OWN `fobDailyTrace` call
+  that deliberately stays calendar-month-anchored (documented inline as a scoped deferral — real-
+  count bracketing needs `weekly-cadence.js` session data that tab doesn't otherwise load), which
+  is not a gap in this item, a different, intentionally-simpler view.
 - [ ] ❓ Items Recounted tile hidden ~21 days/month — needs an owner decision (widen window /
   dormant state / leave as-is).
 - [x] ✅ **RE-MEASURED 2026-09-07 (v5.390) — this line was stale; 3 of 4 spots were already done.**
@@ -223,7 +233,19 @@
 - [ ] Personnel moves (loc↔loc, patch reassignment) tracking, editable override.
 - [ ] Location-attribution rule tightening (day-weighted split + ≥70%-of-days flag) — AI
   recommendation given, not built.
-- [ ] Missing-targets UI in ReviewEditor (banner + one-click Smart-Targets seed).
+- [x] ✅ **BUILT 2026-09-07 (v5.392) — do not re-implement.** `missingReviewTargets()`
+  (`review-engine.js`) already existed, engine-tested, but had zero UI consumer. `ReviewEditor`
+  now shows a persistent banner (visible on every tab, not just Summary) naming every scored
+  metric with no resolvable target, plus a "Set Targets →" button that jumps straight to
+  Customize > Targets (reusing the existing `perfReviewsEntry`-style deep-link mechanism,
+  now made re-triggerable from inside the panel via `customizeEntrySection` state, not just
+  App.js's one-shot mount prop). "One-click Smart-Targets seed" was scoped down to "jump to the
+  real Targets editor" rather than auto-filling a guessed value — most of these metrics (OEPE,
+  KVS, FOB%, etc.) have no sales-forecast-style model to seed a sensible default from, and
+  writing a fabricated number into a scored review is worse than an honest "no target set" flag.
+  3 new tests (`missing-review-targets-banner.test.js`), renders the real
+  `PerformanceReviewsPanel → ReviewEditor` chain per this repo's own "verification must touch
+  the call site" rule.
 - [ ] DM/shift-role review wiring — link a review to `geid`, decide which manager-attributed
   metrics score it. (The underlying report pull already shipped, v4.550 — this is the only real
   open piece of that item.)
@@ -349,16 +371,18 @@
 - [ ] Backup/rollback story for Supabase.
 - [ ] Telemetry/usage DB (panel usage, error logs, pipeline health, tamper detection) — schema
   cheap, build is a real project; auto-shutdown should be flag-first, not automatic.
-- [ ] ⚠️ **RE-MEASURED 2026-09-06 — the `can_see_loc()` design named here is dead; a newer
-  redesign already shipped.** RLS Phase 1 (closing anonymous-access tables) is done. Phase 2 was
-  redesigned as `public.my_locs()` (not `can_see_loc()`, which now 404s live) and the helper
-  function is confirmed live in production. **Still open:** whether the 51 RESTRICTIVE per-loc
-  policies (`schema-rls-phase2-loc.sql`) are actually attached (unconfirmable from this
-  environment — no `pg_policies` access), and — a separate, more important gap — **no real
-  profile today is restricted to a subset of stores** (measured: 3 profiles, 2 null, 1 with the
-  full 27-store list), so per-loc isolation has never been exercised live even if it is wired up.
-  Full measurement + concrete next step (a `pg_policies` count + a live login test):
-  `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
+- [ ] ⚠️ **RE-MEASURED 2026-09-06, UPDATED 2026-09-07 — the `can_see_loc()` design named here is
+  dead; a newer redesign already shipped.** RLS Phase 1 (closing anonymous-access tables) is done.
+  Phase 2 was redesigned as `public.my_locs()` (not `can_see_loc()`, which now 404s live) and the
+  helper function is confirmed live in production. **Step 1 now settled (2026-09-07):** the owner
+  ran `select count(*) from pg_policies where permissive='RESTRICTIVE'` — **68**, confirming the
+  RESTRICTIVE per-loc policies genuinely attached (more than `schema-rls-phase2-loc.sql`'s own
+  "expect 51," which is expected — ~10 more schema files have shipped their own per-store
+  RESTRICTIVE policy since that file was written). **Still open — the more important gap:** **no
+  real profile today is restricted to a subset of stores** (measured: 3 profiles, 2 null, 1 with
+  the full 27-store list), so per-loc isolation has never been exercised live even though the
+  policies are attached. Full measurement + the concrete remaining step (a live login test with a
+  genuinely-restricted profile): `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
 - [ ] PII/credential-handling human-process capture — the content already exists in
   `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md` (x-auth-token sequencing rules, the
   `storePeoplePunches`/`employeeRoster` PII field lists), it's just not indexed into CLAUDE.md's
