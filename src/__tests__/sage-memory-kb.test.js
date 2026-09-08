@@ -81,4 +81,21 @@ describe('sage-chat memory-kb gating (dispatch #80)', () => {
     expect(managerResult.results.some(r => r.filename === OPEN_ROW.filename)).toBe(true);
     expect(managerResult.count).toBe(1);
   });
+
+  // project-sage-knowledge-grounding.md's "Sensitivity gating" section requires a mandatory
+  // handling notice on every restricted disclosure, "generated with the finding, not bolted on
+  // at render" -- dispatch #80 shipped the gating but explicitly left the notice itself out of
+  // scope. Added 2026-09-08.
+  it('prepends the mandatory handling notice to a restricted excerpt, never to an open one', () => {
+    const rows = [OPEN_ROW, RESTRICTED_ROW];
+    const adminResult = buildMemorySearchResult(rows, 'admin', 'padding', 5);
+    const openHit = adminResult.results.find(r => r.filename === OPEN_ROW.filename);
+    const restrictedHit = adminResult.results.find(r => r.filename === RESTRICTED_ROW.filename);
+    expect(openHit.excerpt).not.toMatch(/statistical signal/i);
+    expect(restrictedHit.excerpt).toMatch(/Restricted · statistical signal, not a finding of fact/);
+    expect(restrictedHit.excerpt).toMatch(/involve HR before any action concerning an employee/i);
+    // The notice must travel WITH the excerpt text, not live only in a separate field --
+    // otherwise a caller quoting just the excerpt drops it.
+    expect(restrictedHit.excerpt.indexOf('statistical signal')).toBeLessThan(restrictedHit.excerpt.indexOf('Named GM'));
+  });
 });

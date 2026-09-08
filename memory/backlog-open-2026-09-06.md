@@ -528,10 +528,19 @@
   question, not a tool SAGE chooses to call. Whether that block itself needs a longer/adjustable
   window, or whether `query_labor_summary`'s existence already makes it moot for date-range
   questions, wasn't re-scoped here.
-- [ ] **SAGE knowledge-grounding sensitivity gating** — restrict personnel-sensitive findings to
-  DO+ role, gate by subject not just caller role, fail-closed frontmatter. Designed but not built —
-  safety-relevant: at least one memory file already names a GM by name and nothing stops that
-  reaching SAGE's context today.
+- ⚠️ **STALE 2026-09-08 — this whole item was already substantially built (dispatch #80,
+  2026-08-23), the "designed but not built" framing was wrong.** `supabase/functions/sage-chat/`'s
+  `search_project_memory` tool + `memory-kb.js` already implement admin-only role gating,
+  fail-closed frontmatter classification (`open`/`restricted`/`excluded`, unclassified = invisible
+  to everyone), and a hard SQL-level filter (not a prompt instruction) — verified live in code,
+  not from the design doc. The genuinely-missing piece (the design's own "mandatory
+  handling-notice templates," explicitly listed as out of scope in dispatch #80's own text) was
+  built today: the owner-approved notice wording now prepends to every restricted excerpt at the
+  tool-output layer. **Still genuinely open:** subject-based gating (`subject_locs`/
+  `subject_people`) — narrower than originally framed, since role-gating alone already prevents
+  the owner's named failure mode (a GM/supervisor seeing a restricted finding about their own
+  store); the remaining gap is only an admin-tier person implicated in a finding about
+  themselves. Full detail: `memory/dispatch-80.md`'s "Mandatory handling notice" section.
 
 *(Archive: §9, §14)*
 
