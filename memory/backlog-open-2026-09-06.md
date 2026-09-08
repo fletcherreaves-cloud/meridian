@@ -311,13 +311,20 @@
   (`monthly_targets` coverage, `dayFrac`/current-month proration math, or a location-mapping
   mismatch). **The Jan-Mar manual-upload-gap hypothesis is refuted** (measured: DAR-sourced,
   2367/~2430 rows, 97.4% coverage) — don't re-chase that specific mechanism.
-- [ ] `GC_SALES_DIVERGE` (Morning Brief) — real remaining lead: an owner-selected "today" or
-  DAR-only date (via the panel's own date picker) hits `assembleBriefStoreData`'s
-  `darSales`/`darProjSales` fallback, which hasn't been checked against a live in-progress DAR day
-  the same way dispatch #153 checked OEPE/R2P/TPPH for `qsr_daily_activity_rollup`'s always-24-slot
-  trap. The auto-default-date partial-day theory is ruled out (both `labor_rows`/`ctrl_rows` are
-  6+ weeks stale, so auto-default can't land on a still-open day). `ctrl_rows` being that stale is
-  itself worth flagging — either abandoned in favor of auto sources, or broken.
+- ✅ **FIXED 2026-09-08 (v5.401).** Re-investigated the lead directly: `darByLoc`'s own
+  accumulator (`morning-brief.js`) already gates `sales`/`projSales` to the SAME hour-slot rows
+  (`if(product_sales>0){sales+=...;projSales+=...}`), so `salesVsExp` is a proportional ratio of
+  elapsed-hours-only sums, not vulnerable to the #153-style always-24-slot dilution — and
+  `gcVsExp` only ever reads `labor?.gc` (no DAR/auto GC field exists), so it stays `null` and the
+  alarm can't fire at all on a cloud-only device. The REAL bug was one level up:
+  `getLatestBriefDate()` only checked `laborRows`/`ctrlRows`/`peaksSvcRows` (all manual-upload)
+  and fell back to literal `new Date()` — today, in-progress — whenever a device had none of
+  those, which is exactly the cloud-only case this backlog cut's own "6+ weeks stale ctrl_rows"
+  observation describes. That silently selected an in-progress business day for EVERY rule in
+  the evaluate() set (T-Reds, OEPE, staffing gap, not just GC_SALES_DIVERGE), risking false
+  RED/AMBER flags on partial-day data. Fixed: also reads `ds.qsrActSummaryRows` (auto DAR
+  rollup) and clamps the result to `lastClosedBusinessDay()` (`src/utils/date.js`). 4
+  new/updated tests in `morning-brief-geo.test.js`.
 - [x] District View compound claim — **re-verified 2026-09-07: 3 of 4 sub-claims were stale,
   already fixed; only the TPPH one is real.** (`src/views/store-dash.js`, wired via
   `src/views/store-analytics.js`'s `StoreDash` tab dispatch.)
@@ -550,8 +557,18 @@
   GM probably never needs the district-wide rollup tier at all) rather than deferring data to
   first-click. Revisit alongside the P4 multi-tenant/multi-user rollout, when role-scoped startup
   actually has a second concurrent user to matter for.
-- [ ] Swing alarm's cross-metric report + AI-scour-for-causes sub-asks — detection/ack shipped,
-  these two enrichment asks unconfirmed as built.
+- ✅ **MEASURED 2026-09-08 — confirmed NOT built, via direct code read (Explore agent).**
+  Detection (`detectSwing()`/`buildSwingFeed()`, `src/engine/swing-detect.js`+`swing-feed.js`)
+  and ack (`acknowledge()`/`ackKey()`/`partitionAcked()`/`buildAckHistory()`, same file,
+  persisted to `user_settings.swing_acks`) are both real and more built than the note implied.
+  Cross-metric report and AI-scour-for-causes are genuinely absent: the swing UI's only
+  "explain this" mechanism is `src/engine/swing-context.js`'s `newsContextFor()`, which scores
+  pre-populated local-news headlines (`news_mentions` table) — it never reads labor%, OEPE,
+  weather telemetry, or other-store data from Meridian's own metric stores, and never calls an
+  AI. `why.js`'s `lookupMissEvent` (the actual Anthropic-API causal-lookup feature, Haiku 4.5)
+  is a separate, unconnected system wired to forecast-miss flows (`store-dash.js`/`calendar.js`)
+  — `SwingAlarm.js`/`swing-context.js` never import or call it. Both enrichment asks are real,
+  scoped, unbuilt work — not yet sized or picked up.
 
 *(Archive: §10)*
 
@@ -805,10 +822,17 @@
 - [ ] Correlate the Planning/Execution over-scheduling gap against `turnover_monthly` (already
   pulled) — named as "the strongest available test" to convert the overscheduling-is-chaos-not-cost
   finding from qualitative to measured.
-- [ ] Two open probes from the register-leak/cash-hunt investigation: whether
-  `qsr_daily_activity` carries register-level controls back to 2025-01 (would make the deposit-
-  lapping theory testable pre-dating `cash_sheet_daily`'s 2026-07-01 floor), and probing
-  `inventory_history` retention depth via `workflow_dispatch`.
+- ✅ **BOTH RESOLVED 2026-09-08 — the register-leak theory is not testable pre-2025-09 through
+  either route; a fresh in-repo credential or endpoint would be needed.** (1) `qsr_daily_activity`
+  does NOT carry register-level controls at any date — a schema fact, not a coverage gap: its
+  full field mapping (`scripts/qsrsoft-dar-pull.mjs`) has zero refund/promo/void/T-Red/POS-over
+  fields, and every one of those loss-prevention metrics in `signal-registry.js` sources from
+  `ctrlRows`(manual)/`glimpseRows`/`cashRows` (both floored 2026-07-01) instead. (2) The
+  `inventory_history` step-0 probe (issue #257) was dispatched and read in full — both probed
+  stores hit an identical retention floor at 2025-09-08 (exactly 365 days before the run date),
+  which the probe's own header identifies as the signature of a real server-side 1-year rolling
+  window, not a per-store adoption date. So it's a forward-only stream too. Full measurements:
+  `memory/finding-padding-and-cash-hunt-2026-08-13.md` §8.
 - [ ] **§8 addendum:** whether the discarded-targets bug (#153/#167) also hits Projections'
   `sales_proj` — never resolved, no follow-up filed.
 

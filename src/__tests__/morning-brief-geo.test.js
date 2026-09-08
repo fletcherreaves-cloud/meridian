@@ -16,6 +16,7 @@
 //      Fixed: uses getStoreOrg(loc)==='emerald'.
 import { describe, it, expect } from 'vitest';
 import { storeDistance, regionalRadius, getLatestBriefDate } from '../features/morning-brief.js';
+import { lastClosedBusinessDay } from '../utils/date.js';
 
 // Real seed stores (constants.js STORE_COORDS): '3708' Ardmore-Broadway OK, '6178' Chipley FL.
 describe('storeDistance', () => {
@@ -69,9 +70,35 @@ describe('getLatestBriefDate', () => {
     expect(d.toISOString().slice(0, 10)).toBe('2026-08-12');
   });
 
-  it('falls back to "now" when no rows have a date', () => {
-    const before = Date.now();
+  it('falls back to the last CLOSED business day (not literal "now") when no rows have a date', () => {
+    // 2026-09-08 fix: this used to fall back to `new Date()` -- literal right-now, an
+    // in-progress business day -- which is exactly the cloud-only-device case (no manual
+    // upload today). It must clamp to lastClosedBusinessDay() instead, same as every other
+    // trailing-window computation in the codebase.
     const d = getLatestBriefDate({ laborRows: [], ctrlRows: [], peaksSvcRows: [] });
-    expect(d.getTime()).toBeGreaterThanOrEqual(before);
+    const expected = lastClosedBusinessDay();
+    expect(d.toISOString().slice(0, 10)).toBe(expected.toISOString().slice(0, 10));
+    expect(d.getTime()).toBeLessThan(Date.now());
+  });
+
+  it('picks up ds.qsrActSummaryRows (auto DAR rollup) so a cloud-only device finds its real latest date', () => {
+    // Previously only laborRows/ctrlRows/peaksSvcRows (all manual-upload-derived) were
+    // considered -- a device with only the auto DAR stream had an empty allDates and fell
+    // through to "now" every time.
+    const closed = lastClosedBusinessDay();
+    const twoBack = new Date(closed); twoBack.setDate(twoBack.getDate() - 2);
+    const ds = {
+      laborRows: [], ctrlRows: [], peaksSvcRows: [],
+      qsrActSummaryRows: [{ date: twoBack }, { date: closed }],
+    };
+    const d = getLatestBriefDate(ds);
+    expect(d.toISOString().slice(0, 10)).toBe(closed.toISOString().slice(0, 10));
+  });
+
+  it('clamps to the last closed business day even when a manual row lands on an in-progress day', () => {
+    const today = new Date();
+    const ds = { laborRows: [{ date: today }], ctrlRows: [], peaksSvcRows: [] };
+    const d = getLatestBriefDate(ds);
+    expect(d.getTime()).toBeLessThanOrEqual(lastClosedBusinessDay().getTime());
   });
 });

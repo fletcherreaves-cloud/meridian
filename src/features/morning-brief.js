@@ -426,14 +426,28 @@ function computeMorningBrief(ds, targetDate, darByLoc){
 }
 
 // ── Helper: get latest date that has any brief data ──────────────────────────
+// #GC_SALES_DIVERGE backlog item, 2026-09-08 — this previously fell back to `new Date()`
+// (literal right-now) whenever none of laborRows/ctrlRows/peaksSvcRows had a date, which is
+// exactly the cloud-only-device case: no manual upload that day means an empty allDates, so
+// the brief silently rendered for the still-filling business day instead of the last closed
+// one. Two fixes: (1) also look at ds.qsrActSummaryRows (the auto DAR rollup, already loaded
+// for darByLoc's own live query) so a cloud-only device finds its real latest date instead of
+// falling through to "now"; (2) clamp the result to lastClosedBusinessDay() so an in-progress
+// date can never be selected even if a manual row happens to exist for today (e.g. a same-day
+// Controls entry) — same 4am-ABC-cutover logic CLAUDE.md's business-day rule requires for any
+// trailing window, reused rather than re-derived (src/utils/date.js, re-exported here via
+// engine/swing-feed.js).
 function getLatestBriefDate(ds){
   const allDates = [
     ...(ds.laborRows||[]).map(r=>r.date),
     ...(ds.ctrlRows||[]).map(r=>r.date),
     ...(ds.peaksSvcRows||[]).map(r=>r.date),
+    ...(ds.qsrActSummaryRows||[]).map(r=>r.date),
   ].filter(Boolean);
-  if(!allDates.length) return new Date();
-  return new Date(Math.max(...allDates.map(d=>d instanceof Date?d:new Date(d))));
+  const closed = lastClosedBusinessDay();
+  if(!allDates.length) return closed;
+  const latest = new Date(Math.max(...allDates.map(d=>d instanceof Date?d:new Date(d))));
+  return latest > closed ? closed : latest;
 }
 
 // ── Severity helpers ─────────────────────────────────────────────────────────
