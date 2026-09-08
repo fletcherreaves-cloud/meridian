@@ -49,7 +49,7 @@ import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
-  mapWasteEvents, mapTransferLines, mapRawItemHistory, mapRawItemInfo,
+  mapWasteEvents, mapTransferLines, mapRawItemHistory, mapRawItemInfo, mergeRawItemHistory,
 } from '../src/engine/eom-parsers.js';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 
@@ -389,6 +389,21 @@ async function runPeriod(period, token) {
         .filter(v => v.rawItemId != null && Math.abs(v.dolDiff || 0) >= 50)
         .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0))
         .slice(0, 50);
+      // Pre-fetch this store's EXISTING stored history for the WRINs we're about to re-fetch, so
+      // the upsert below can MERGE rather than blindly replace (mergeRawItemHistory,
+      // eom-parsers.js) — an item that drops out of the top-50 for a few days and re-enters
+      // otherwise has its stored history frozen mid-gap by a straight overwrite. One batched
+      // query per store, not one per item.
+      const existingByWrin = new Map();
+      if (actionable.length) {
+        const { data: existingRows, error: existingErr } = await withRetry(
+          () => supabase.from('qsr_raw_item_detail').select('wrin,history')
+            .eq('loc', loc).eq('period', period).in('wrin', actionable.map(v => v.wrin)),
+          { label: 'qsr_raw_item_detail existing-history fetch' },
+        );
+        if (existingErr) console.warn('[qsr_raw_item_detail] existing-history fetch error:', existingErr.message);
+        else for (const r of (existingRows || [])) existingByWrin.set(r.wrin, r.history || []);
+      }
       const detailRows = [];
       const infoRows = [];
       for (const v of actionable) {
@@ -413,7 +428,8 @@ async function runPeriod(period, token) {
             for (const h of invs.slice(0, 5)) console.log('[RAW-FIELDS] inv event:', JSON.stringify(h));
           }
           const m = mapRawItemHistory(detail);
-          detailRows.push({ loc, period, wrin: v.wrin, descr: m.descr || v.descr, item_class: m.itemClass || v.classCode, history: m.history });
+          const mergedHistory = mergeRawItemHistory(existingByWrin.get(v.wrin) || [], m.history);
+          detailRows.push({ loc, period, wrin: v.wrin, descr: m.descr || v.descr, item_class: m.itemClass || v.classCode, history: mergedHistory });
         } else {
           const e = detailRes.reason;
           if (String(e.message).startsWith('AUTH_FAILED')) throw e;

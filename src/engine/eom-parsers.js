@@ -240,6 +240,31 @@ export function mapRawItemHistory(detail = {}) {
   };
 }
 
+// The pull script fetches raw_detail with a FIXED range (period-start through today) every
+// run, and only for that day's top-50 actionable (|$|>=50) WRINs — an item that drops out of
+// the top 50 for a few days stops being re-fetched, and a blind full-array-replace upsert
+// would leave its stored history frozen at whatever it was on its last actionable day, with no
+// trace that anything happened while it was excluded. Owner (2026-09-08, on this exact class of
+// gap): "the data in raw item detail persists on my end in QSRSoft... no reason we can't keep
+// this data in check as new pulls come in. Only overwrite what's changed — in the event of an
+// edit to an inventory count."
+//
+// mergeRawItemHistory() is that: union `existing` (what's currently in qsr_raw_item_detail) with
+// `incoming` (this pull's freshly-mapped mapRawItemHistory().history), keyed per-event so a
+// narrower or incomplete later fetch can never silently DROP an event the store already has on
+// record, while an incoming event sharing a key (the SAME submission, re-fetched) still WINS —
+// picking up a QSRSoft-side edit to a historical count. Keyed on sourceId+source+dt+tm rather
+// than sourceId alone: QSRSoft's own API reuses one sourceId across a count event and its
+// paired auto pos_sales adjustment (confirmed on a live capture, 2026-09-08), so source_id alone
+// would collide two genuinely different events into one.
+const rawEventKey = (h) => `${h.sourceId ?? ''}|${h.source}|${h.dt}|${h.tm ?? ''}`;
+export function mergeRawItemHistory(existing = [], incoming = []) {
+  const byKey = new Map();
+  for (const h of (existing || [])) byKey.set(rawEventKey(h), h);
+  for (const h of (incoming || [])) byKey.set(rawEventKey(h), h); // incoming wins on a shared key
+  return Array.from(byKey.values());
+}
+
 // ── Raw-item info (raw_info/{itemId}) — dispatch #184 ──────────────────────────
 // A CURRENT-STATE snapshot per raw item: recipe/serving-factor (BOM — which menu
 // items this raw item feeds, and at what serving factor), combo composition, and
