@@ -197,6 +197,21 @@ export function summarizeTransfers(lines = [], { largeAmt = 100 } = {}) {
 // ── Raw-item forensic history (raw_detail/{itemId}) ───────────────────────────
 // The per-transaction "life of the product". source=inventory rows are COUNTS
 // carrying variance/difference/eID → the "when did the variance occur" answer.
+//
+// ⚠️ SIGN FLIP (measured live 2026-09-08, closes the "must tie out EXACT" TODO in
+// memory/project-eom-item-journey.md #3): this API's own `variance`/`difference` fields
+// come back sign-INVERTED relative to every other QSRSoft report of the same number —
+// confirmed three independent ways on Madill (loc 0013113, wrin 00005-086, period
+// 2026-09): (1) the physical on-hand math (a count that dropped on-hand 3352.2→2304.0,
+// a real 1048.2-unit SHORTAGE, carried `variance: +1048.2` here), (2) `qsr_variance_stat`
+// (a separate QSRSoft report) uses negative-for-shortage for the same wrin/period
+// (variance -793.7, act_usage 6420.7 > exp_usage 5627), (3) QSRSoft's own "Variance
+// Stat/Yields" UI screen, screenshotted directly by the owner, shows -1,048.20 for that
+// same count event. Reproduced on a second item (01000-027) too — systemic, not a
+// one-row fluke. Negate both fields here, at the single choke point every consumer
+// (eom-item-journey.js, eom-variance-raw.js's mergeVariance, storeSwingLedger,
+// reconstructMissingProducts) reads through, so "short"/"over" and the $ signs agree
+// with QSRSoft's own reports instead of contradicting them.
 export function mapRawItemHistory(detail = {}) {
   const history = (detail.history || []).map((h) => ({
     dt: h.store_busn_dt || h.store_busn_dt_raw,
@@ -205,8 +220,8 @@ export function mapRawItemHistory(detail = {}) {
     source: h.source, // invoice | pos_open | pos_sales | waste | comp_waste | transfer | inventory
     qtyChange: Number(h.qty_change) || 0,
     isCount: h.source === 'inventory',
-    variance: h.variance != null ? Number(h.variance) : null,
-    difference: h.difference != null ? Number(h.difference) : null, // $ impact of a count
+    variance: h.variance != null ? -Number(h.variance) : null,
+    difference: h.difference != null ? -Number(h.difference) : null, // $ impact of a count
     manager: h.eID || null,
     countSource: h.count_source || null,
     invoice: h.invoice_identifier || null,

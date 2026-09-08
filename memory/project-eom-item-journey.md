@@ -129,7 +129,26 @@ dashboard looked empty even though FOB + diagnosis are cloud-fresh all month.
 **A. Item Journey enhancements (EOM Dashboard → 🔬 Diagnose → 📊 Item journeys):**
 1. **Show the actual item quantity variance** on the timeline/verdict (not just $). **Bonus:** convert to **cases** where appropriate (use `case_sz`/UOM from `qsr_inventory_summary` or the raw-item UOM).
 2. **Add column headers** to the timeline (Date · Type · Qty/Detail · $).
-3. **Match the over/under variance qty to the current Variance Stat report — must tie out EXACT.** The journey's netCountDollars / count difference should reconcile to `qsr_variance_stat.dol_diff` (and unit variance to `variance`) for the same WRIN+period. Verify and, if off, fix the attribution (likely a sign or aggregation mismatch). This is a trust-critical reconciliation.
+3. ✅ **RESOLVED 2026-09-08 — it did NOT tie out, and the cause was exactly the suspected sign
+   mismatch.** The owner compared Meridian's Item Journeys panel against QSRSoft's own "Variance
+   Stat/Yields" screen side by side for Madill (loc 0013113, wrin 00005-086, period 2026-09) and
+   found every sign flipped. Measured and confirmed three independent ways: (1) the physical
+   on-hand math — a count that PHYSICALLY dropped on-hand 3352.2→2304.0 (a real 1048.2-unit
+   shortage) carried the QSRSoft `raw_detail/{itemId}` API's own `variance: +1048.2` (positive);
+   (2) `qsr_variance_stat` (a separate QSRSoft report, same wrin/period) uses negative-for-shortage
+   (variance -793.7, act_usage 6420.7 > exp_usage 5627); (3) QSRSoft's own UI screen, screenshotted
+   directly, shows -1,048.20 for that same count event. Reproduced on a second item (01000-027)
+   too — systemic, not a one-row fluke. **Root cause:** QSRSoft's `raw_detail/{itemId}` API
+   returns `variance`/`difference` sign-INVERTED relative to every other QSRSoft report of the
+   same number, and `mapRawItemHistory()` (`eom-parsers.js`) was passing it straight through with
+   no correction. **Fixed:** negated both fields at that single choke point, so every downstream
+   consumer (`eom-item-journey.js`'s verdict/signals, `eom-variance-raw.js`'s `mergeVariance`,
+   `storeSwingLedger`, and `reconstructMissingProducts`'s shortage filter, which had been silently
+   picking up OVERAGES instead of shortages) is corrected at once. 2 regression tests added
+   (`eom-parsers.test.js`) using the real captured numbers. Historical `qsr_raw_item_detail` rows
+   already stored with the old (wrong) sign self-heal on the next daily `qsrsoft-variance-pull.mjs`
+   run (10:30 UTC) for the current period — that table only carries the top-50 actionable WRINs
+   for the CURRENT EOM period, re-pulled and overwritten daily; it does not need a manual backfill.
 4. **Make the flow chips (Received / Used / Waste / Transfer) clickable** → drill to the actual underlying events for review (the ledger rows already exist in `history`; render a filtered event list per lane on click).
 
 **B. Dashboard data gap (screenshot 2026-07, Year-Round mode):** Count Progress, By Class, and Last Count all show 0% / "—" for every store; Count Window = "not yet". Root cause to CONFIRM next session: `qsr_onhand` has no rows for 2026-07 yet — On-Hand only pulled inside the last-3-day window, and the new year-round daily snapshot (`runMode()` in qsrsoft-onhand-pull.mjs, v4.542) **may not have run yet** (just shipped; also the July window opens the 29th). Verify the daily snapshot actually fires and populates `qsr_onhand` so Year-Round mode shows last-count freshness before the window. If the snapshot works but the table's still empty, check the pull's auth/period. FOB $/% populate fine (qsr_fob is flowing), so the dashboard itself is healthy — this is purely an On-Hand data-availability question.

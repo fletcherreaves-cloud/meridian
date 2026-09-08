@@ -3908,6 +3908,26 @@ export async function loadQsrOnHand({ period } = {}) {
   }));
 }
 
+// ── Count-session history (append-only — supabase/schema-inv-count-sessions.sql) ──────────────────
+// Unlike qsr_onhand (rolling-latest, overwritten on every recount), this is written once per
+// (store, count date, class) and never overwritten by a later date — the durable source
+// engine/count-cycle.js's sessionsFromLog()/cycleComplianceFromLog()/weeklyRecountWindowsFromLog()
+// read, so a real recount survives being recounted again instead of vanishing from the data
+// the moment qsr_onhand's snapshot moves on (2026-09-08 fix, Madill loc 13113).
+export async function loadInvCountSessions({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('inv_count_sessions').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), countDate: _fromISO(r.count_date), cls: r.cls, period: r.period,
+    itemsCounted: r.items_counted, classTotal: r.class_total, covered: r.covered,
+    sessionKind: r.session_kind, updatedAt: r.updated_at,
+  }));
+}
+
 // ── Variance Stat / Yields ────────────────────────────────────────────────────
 export async function loadQsrVarianceStat({ period } = {}) {
   if (!supabase) return [];

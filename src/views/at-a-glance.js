@@ -21,9 +21,8 @@ import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
-import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, loadQsrOnHand, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
-import { weeklyRecountWindows } from '../engine/count-cycle.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
@@ -366,6 +365,18 @@ function EOMScoreboardTile({ onOpenModal }) {
 // close-window count IS also its most recent weekly count, so nothing is lost, and every store
 // now gets a live read every week instead of only near month-end. Click still opens the EOM
 // Dashboard → Change Monitor.
+//
+// v3 (2026-09-08, owner: "the different count data should be easy to get from the raw item
+// detail... thought we already were"). Dropped the store-level window entirely — no more
+// qsr_onhand snapshot, no inv_count_sessions log, no per-store "qualifying weekly session"
+// concept for this tile at all. qsr_raw_item_detail's own per-item count history already has
+// every count's real date, never overwritten (it's a genuine event log, unlike qsr_onhand's
+// rolling-latest snapshot), so ledgerBaselineDiff's new `autoWindowDays` derives each item's
+// recount window INTRINSICALLY from its own count-day clustering: a tight cluster of
+// close-together counts (a bad count + a quick redo, any number of days apart) is one cycle,
+// a gap wider than autoWindowDays (ordinary weekly cadence) is not — so a routine week-over-
+// week count is never misread as a recount, without needing any store-level session source at
+// all. See eom-ledger-baseline.js's itemCloseWindowRecount for the exact logic.
 function ItemsRecountedTile({ onOpenModal }) {
   const now = new Date();
   const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -382,28 +393,22 @@ function ItemsRecountedTile({ onOpenModal }) {
     (async () => {
       let failed = false;
       try {
-        const [rawDetail, variance, onHand] = await Promise.all([
+        const [rawDetail, variance] = await Promise.all([
           loadQsrRawItemDetail({ period }).catch(() => { failed = true; return []; }),
           loadQsrVarianceStat({ period }).catch(() => []),
-          loadQsrOnHand({ period }).catch(() => { failed = true; return []; }),
         ]);
         if (!live) return;
         // fetchAll marks a truncated read non-enumerably rather than throwing.
-        if ((rawDetail && rawDetail._partial) || (onHand && onHand._partial)) failed = true;
+        if (rawDetail && rawDetail._partial) failed = true;
         if (failed) { setLoadErr('read failed'); setDiff(undefined); return; }
         setLoadErr(null);
-        // windows: { [loc]: {closeWindowStart, closeWindowEnd} } — only stores with a qualifying
-        // weekly count THIS period get an entry; single-period by design (see
-        // weeklyRecountWindows' own comment for the tradeoff — self-resolving through the month).
-        const windows = weeklyRecountWindows(onHand, { asOf: now });
-        if (!rawDetail || !rawDetail.length || !Object.keys(windows).length) { setDiff(null); return; }
+        if (!rawDetail || !rawDetail.length) { setDiff(null); return; }
         const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
         const rawByLoc = {}, perLoc = {};
         for (const r of rawDetail) {
           const k = norm(r.loc);
-          if (!windows[k]) continue; // no qualifying weekly count yet this period for this store
           (rawByLoc[k] || (rawByLoc[k] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, caseSz: r.caseSz, uom: r.uom });
-          if (!perLoc[k]) perLoc[k] = { ...windows[k], statVar: {} };
+          if (!perLoc[k]) perLoc[k] = { statVar: {} };
         }
         for (const v of (variance || [])) {
           const k = norm(v.loc);
@@ -411,7 +416,7 @@ function ItemsRecountedTile({ onOpenModal }) {
           if (v.dolDiff != null) perLoc[k].statVar[String(v.wrin)] = v.dolDiff;
         }
         if (!Object.keys(rawByLoc).length) { setDiff(null); return; }
-        setDiff(ledgerScopeDiff(rawByLoc, perLoc));
+        setDiff(ledgerScopeDiff(rawByLoc, perLoc, { autoWindowDays: 3 }));
       } catch { if (live) { setLoadErr('read failed'); setDiff(undefined); } }
     })();
     return () => { live = false; };
@@ -436,7 +441,7 @@ function ItemsRecountedTile({ onOpenModal }) {
     h('span', { style: { fontSize: 15 } }, '🔁'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' · each store\'s own weekly count window · did recounts help or hurt')),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' · items counted again within a few days · did recounts help or hurt')),
     totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
   // A failed read is NOT "no data" — say so, and offer a way out. The tile fires an
   // uncoordinated district-wide read at dashboard mount, competing with the cold-start
@@ -449,8 +454,8 @@ function ItemsRecountedTile({ onOpenModal }) {
       style: { marginTop: 8, background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text2,#9aa4b2)', padding: '4px 10px', cursor: 'pointer', fontSize: 11 },
     }, '↻ Retry')));
   if (diff === undefined) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
-  if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No store has a complete weekly count on record for ' + perLbl + ' yet — this fills in as stores count this period.'));
-  if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores with a weekly count on record. A recount = an item re-verified within a few days of that store\'s own weekly count.'));
+  if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No item-level count data on record for ' + perLbl + ' yet — this fills in as QSRSoft\'s variance pull runs this period.'));
+  if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores with item-level count data. A recount = an item counted again within a few days of an earlier count.'));
   return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'stretch' } },
     // big number
     h('div', { style: { flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 76, borderRight: '.5px solid var(--bdr,#2a2f3a)', paddingRight: 12 } },
