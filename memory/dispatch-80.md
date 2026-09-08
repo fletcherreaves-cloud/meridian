@@ -218,8 +218,36 @@ impact).
 ### Explicitly not done this pass (out of scope per the dispatch's own text)
 
 - `project-sage-knowledge-grounding.md`'s broader "write path" (promotion flow), subject-based
-  gating (`subject_locs`/`subject_people`), and mandatory handling-notice templates -- that design
-  doc has more scope than this dispatch asked for; dispatch #80 only requires the minimum-viable
-  `open`/`restricted`/`excluded` classification.
+  gating (`subject_locs`/`subject_people`), and ~~mandatory handling-notice templates~~ -- that
+  design doc has more scope than this dispatch asked for; dispatch #80 only requires the
+  minimum-viable `open`/`restricted`/`excluded` classification.
 - The live ingest run itself (see above).
 - Widening the curated set beyond the 32-file first pass.
+
+### ✅ Mandatory handling notice — BUILT 2026-09-08 (do not re-list as open)
+
+The backlog's "SAGE knowledge-grounding sensitivity gating" item had gone stale — the gating
+itself (this dispatch, above) was long since live, but its own note that the handling-notice
+template was out of scope kept getting re-read as "sensitivity gating isn't built." Closed the
+actual remaining gap: `memory-kb.js`'s `RESTRICTED_NOTICE` constant carries the design doc's
+exact owner-approved short-form wording, prepended to a result's `excerpt` field whenever
+`row.sensitivity === 'restricted'` — inside `buildMemorySearchResult`, the same tool-output layer
+that already shapes every result, per the design's constraint #1 ("generated with the finding,
+not bolted on at render"). A row only reaches that branch after `rowVisible()` has already
+cleared it for the caller's role, so the notice's presence itself never leaks to someone who
+couldn't see the finding. Scoped to the SAGE tool only — the design's "not SAGE-only" constraint
+still holds in principle, but no panel or export currently reads `sage_memory_kb` restricted rows,
+so there is nothing else to wire it into yet. 1 new test in `sage-memory-kb.test.js` (6 total, up
+from 5), asserting the notice text is present on the restricted excerpt, absent from the open
+one, and precedes the finding text within the same string. Full suite 487/4630, build clean
+(server/Deno-side only, no client bundle impact).
+
+**Subject-based gating (`subject_locs`/`subject_people`) is still genuinely open**, but narrower
+than the design doc's original framing suggests: role-gating alone already prevents the owner's
+named failure mode (a GM/supervisor being shown a restricted finding about their own store) since
+those roles never see `restricted` content regardless of subject. The remaining case is an
+`admin`-tier person implicated in a restricted finding about themselves — real, but a materially
+smaller blast radius than "any GM could get called out."
+
+**⚠️ Requires a `sage-chat` redeploy to take effect in production**, same as any edge-function
+change: `supabase functions deploy sage-chat --no-verify-jwt`.

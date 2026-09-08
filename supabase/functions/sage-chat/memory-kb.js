@@ -26,6 +26,22 @@ export function rowVisible(sensitivity, role) {
   return false;
 }
 
+// Mandatory handling notice for any restricted result (memory/project-sage-knowledge-grounding.md
+// "Sensitivity gating" section, owner-resolved wording 2026-08-13). Dispatch #80 shipped the
+// gating itself but explicitly left this out of scope ("mandatory handling-notice templates" in
+// its own "not done this pass" list) -- added here, 2026-09-08, per that design's exact three
+// implementation constraints: (1) generated WITH the finding, not bolted on at render, so it
+// travels with the text wherever the content goes -- prepended at this tool-output layer, the
+// same layer buildMemorySearchResult already shapes every result at; (2) not SAGE-only in
+// principle, but the only current consumer of sage_memory_kb restricted rows IS this tool (no
+// panel or export reads this table yet), so there is nothing else to wire it into today; (3) no
+// "suspected wrongdoing" language -- this is the design's own short form, verbatim, not a
+// paraphrase.
+const RESTRICTED_NOTICE = 'Restricted · statistical signal, not a finding of fact. This ' +
+  'identifies a pattern in data. It does not establish cause, intent, or wrongdoing by any ' +
+  'individual. Handle per the organization’s confidentiality and human-resources ' +
+  'procedures, and involve HR before any action concerning an employee.';
+
 // Query-term extraction shared between the SQL ILIKE-OR clause builder in index.ts and this
 // module's own relevance scoring, so the two can't drift apart. Mirrors search_qsr_kb's term
 // handling.
@@ -81,11 +97,17 @@ export function buildMemorySearchResult(rawRows, role, query, limit) {
     }
     const start = idx > 120 ? idx - 120 : 0;
     const excerpt = body.slice(start, start + 700).replace(/\s+/g, ' ').trim();
+    const shapedExcerpt = (start > 0 ? '…' : '') + excerpt + (body.length > start + 700 ? '…' : '');
     return {
       filename: row.filename,
       title: row.title,
       sensitivity: row.sensitivity,
-      excerpt: (start > 0 ? '…' : '') + excerpt + (body.length > start + 700 ? '…' : ''),
+      // The notice travels WITH the excerpt text itself (not a separate field a caller could
+      // drop) -- required by the design doc's constraint #1. Only 'restricted' rows carry it;
+      // 'open' rows are unaffected. A row can only reach here as 'restricted' if rowVisible()
+      // already cleared it for this caller's role, so this never leaks the notice's own
+      // existence to someone who couldn't see the finding in the first place.
+      excerpt: row.sensitivity === 'restricted' ? `${RESTRICTED_NOTICE}\n\n${shapedExcerpt}` : shapedExcerpt,
     };
   });
 
