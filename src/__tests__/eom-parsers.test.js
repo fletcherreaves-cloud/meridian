@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
   mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
-  mapRawItemHistory, mapRawItemInfo, mapMenuItems, mapMenuItemActivity, mapMenuItemActivityCost,
+  mapRawItemHistory, mergeRawItemHistory, mapRawItemInfo, mapMenuItems, mapMenuItemActivity, mapMenuItemActivityCost,
   mapMenuItemRecipe,
 } from '../engine/eom-parsers.js';
 
@@ -149,6 +149,58 @@ describe('mapRawItemHistory', () => {
     expect(shortageEvent.difference).toBeCloseTo(-447.85);
     expect(overageEvent.variance).toBeCloseTo(489.8);
     expect(overageEvent.difference).toBeCloseTo(209.27, 1);
+  });
+});
+
+// 2026-09-08, owner: "the data in raw item detail persists on my end in QSRSoft. No reason we
+// can't keep this data in check as new pulls come in. Only overwrite what's changed — in the
+// event of an edit to an inventory count." The pull only re-fetches an item's raw_detail while
+// it's in that day's top-50 actionable ($>=50) set; an item that drops out for a few days and
+// re-enters used to have its whole stored history REPLACED by whatever a single day's fetch
+// returned. mergeRawItemHistory() unions instead: nothing already on file is ever silently
+// dropped, but a re-fetched event (same identity) still wins, so a QSRSoft-side edit is picked up.
+describe('mergeRawItemHistory — union existing + incoming, incoming wins on a shared event', () => {
+  const ev = (sourceId, source, dt, tm, extra = {}) => ({ sourceId, source, dt, tm, ...extra });
+
+  it('keeps an existing event the new (narrower) fetch does not include', () => {
+    const existing = [ev(1, 'inventory', '2026-09-01', '10:00', { difference: -300 })];
+    const incoming = [ev(2, 'inventory', '2026-09-08', '11:00', { difference: -80 })];
+    const merged = mergeRawItemHistory(existing, incoming);
+    expect(merged).toHaveLength(2);
+    expect(merged.some(h => h.sourceId === 1)).toBe(true);
+    expect(merged.some(h => h.sourceId === 2)).toBe(true);
+  });
+
+  it('an incoming event with the SAME identity overwrites the stored one (picks up an edit)', () => {
+    const existing = [ev(1, 'inventory', '2026-09-01', '10:00', { difference: -300 })];
+    const incoming = [ev(1, 'inventory', '2026-09-01', '10:00', { difference: -260 })]; // corrected
+    const merged = mergeRawItemHistory(existing, incoming);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].difference).toBe(-260);
+  });
+
+  it('does not collide a count event with its same-sourceId paired pos_sales row (real API behavior)', () => {
+    // Confirmed live 2026-09-08: QSRSoft reuses one sourceId across an inventory count and its
+    // auto-generated pos_sales adjustment. sourceId alone would wrongly merge these into one.
+    const incoming = [
+      ev(1799417021, 'inventory', '09/08/2026', '15:20:06', { difference: -5.77 }),
+      ev(1799417021, 'pos_sales', '09/08/2026', '15:20:06', { qtyChange: -13 }),
+    ];
+    const merged = mergeRawItemHistory([], incoming);
+    expect(merged).toHaveLength(2);
+  });
+
+  it('first pull (no existing row) passes incoming straight through', () => {
+    const incoming = [ev(1, 'inventory', '2026-09-01', '10:00', { difference: -300 })];
+    expect(mergeRawItemHistory([], incoming)).toEqual(incoming);
+    expect(mergeRawItemHistory(undefined, incoming)).toEqual(incoming);
+  });
+
+  it('handles a null sourceId (e.g. pos_open) without collapsing distinct days together', () => {
+    const existing = [ev(null, 'pos_open', '2026-09-01', '04:09', { qtyChange: 100 })];
+    const incoming = [ev(null, 'pos_open', '2026-09-08', '04:10', { qtyChange: 200 })];
+    const merged = mergeRawItemHistory(existing, incoming);
+    expect(merged).toHaveLength(2);
   });
 });
 
