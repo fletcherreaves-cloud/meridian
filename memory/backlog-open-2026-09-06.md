@@ -837,9 +837,19 @@
   distinct situations/day); step 2 is explicitly gated on more data, not started.
 - [ ] Printable Forms — extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
   widen + scored-form field renderers + self-serve "add form" button).
-- [ ] Attribution-confidence state (`clean`/`contested`/`unknown`) on employee-attributed exception
-  metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
-  timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail.
+- ⚠️ **RE-SCOPED 2026-09-08 — the blocking input this item was waiting on already landed (dispatch
+  #124, unrelated at the time), the daily-grain version of the test is now runnable, and a first
+  real sample has been pulled.** `qsr_punch_times` (QSRSoft per-employee shift punches, live,
+  151,512 rows back to 2026-05-27) makes the "does this employee's register activity match a real
+  punch" contradiction test runnable at daily grain today — joined against `audit_rows` for a
+  30-day sample: 75.6% of exception-bearing audit rows have a matching punch, **24.4% do not**,
+  with some employee/store pairs recurring across consecutive days. Explicitly NOT diagnosed,
+  scored, or built into anything — this is the raw "pull a sample and look at it together" the
+  owner asked for before any `clean`/`contested`/`unknown` state design gets built, per
+  `memory/attribution-validity-register-login.md`'s own standing sequencing. The finer
+  within-shift-window test (transaction time vs. punch window, not just same-day presence) still
+  needs #275's transaction-detail probe. **Next step is the owner's — review the sample, decide
+  whether/how to build the state design**, not more engineering work first.
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built.

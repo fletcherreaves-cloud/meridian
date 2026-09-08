@@ -56,15 +56,45 @@ That is not a judgement call about who was standing there. It is two records dis
 register says X transacted at 14:32 and the time system says X was not on the clock, the login
 was wrong.
 
-### What that test needs, and what we actually have — verified 2026-08-14
+### What that test needs, and what we actually have — verified 2026-08-14, UPDATED 2026-09-08
 
 | input | status |
 |---|---|
-| Per-employee **punch timestamps** | ❌ **Not available today.** `scripts/lifelenz-pull.mjs` fetches `ShiftsForSchedulePeriod` and pre-aggregates it via `rollupShiftsByRole` — *raw shifts are never stored*, and those are **scheduled** shifts, not actual punches. The `punchInLate` figures in `src/views/scheduling.js` are a hardcoded static per-store block, not per-employee data. |
-| Transaction **timestamp + register/terminal id** | ❌ Not available today — this is exactly what #275's probe asks the "Any Transaction" report for. |
-| Per-employee **daily** exception aggregates | ✅ Available via Register Audit (`audit_rows`, PK `loc,date,emp`) — but daily grain, no times. |
+| Per-employee **punch timestamps** | ✅ **NOW AVAILABLE (dispatch #124, `scripts/qsrsoft-punch-times-pull.mjs` → `qsr_punch_times`).** This is exactly "Path 2 §3 — the cheapest unlock" this file called for, and it landed via QSRSoft — the source this file's own §"Source decision" reasoned toward, before either of us knew a script for it already existed. Real geid, real shift start/end timestamps, live-measured 2026-09-08: 151,512 rows, back to 2026-05-27, today's shifts already present. Identity resolution (`geid` ↔ `audit_rows.emp_id`) already cross-checked by that dispatch against live data across all 4 digit-length bands — the "decisive reason" concern about a silent cross-system mismatch does not apply, since this pulls from the SAME QSRSoft identifier space Register Audit already uses. (The original `lifelenz-pull.mjs` line below is now stale as the reason this input is missing — it's still true of LifeLenz specifically, just no longer the blocker, since QSRSoft won the source decision anyway.) ~~`scripts/lifelenz-pull.mjs` fetches `ShiftsForSchedulePeriod`... raw shifts are never stored, and those are scheduled shifts, not actual punches.~~ |
+| Transaction **timestamp + register/terminal id** | ❌ Still not available — this is exactly what #275's probe asks the "Any Transaction" report for. Needed for the FINER within-shift-window test (a transaction outside the punched window, or two terminals in overlapping minutes); not needed for the daily presence test below. |
+| Per-employee **daily** exception aggregates | ✅ Available via Register Audit (`audit_rows`, PK `loc,date,emp`) — daily grain, no times, but does carry a real `emp_id` (numeric, same space as `geid`) alongside the display name. |
 
-So the test is **not runnable today, and plausibly reachable** by more than one route.
+**So the DAILY-grain version of the test is runnable today** — "did this employee have any punch at all at this store on this date" — even though the finer intra-shift-window version still needs #275.
+
+### First real sample, run 2026-09-08 — read before building anything on this
+
+Per this file's own step 4 ("pull a sample and look at it together... don't finalise thresholds
+from first principles"), this is that sample — a measurement, not a scored feature, not shipped
+anywhere in the app. Joined `audit_rows` (rows with a real, non-placeholder `emp_id`) against
+`qsr_punch_times` (`punch_type='shift'`) by `(loc, emp_id≡geid, date)`, 30-day window
+(2026-08-09 → 2026-09-07, today excluded since both sides are necessarily incomplete for an
+in-progress day):
+
+```
+audit_rows with a real emp_id:  7,722
+  matched (>=1 punch that store/day):  5,835  (75.6%)
+  UNMATCHED (audit activity, zero punches found):  1,887  (24.4%)
+```
+
+**24.4% is higher than "occasional register-discipline miss" would suggest, and some employee/
+store pairs recur across consecutive days** (e.g. one employee at one store unmatched on three
+straight sampled days) — worth a closer look at whether that's a real recurring pattern or a
+mapping gap for that specific person (salaried/exempt staff who don't punch the same way,
+a geid that changed, a store using a different punch system). **Not diagnosed here — this is
+the raw sample, not a conclusion**, exactly the caution this file's own standing constraint
+requires (no exception metric reaches a name without the handling notice and without this being
+treated as a pattern in data, not a finding about a person). Business-day boundary bucketing
+uses plain calendar-date-of-`start_date_time` (UTC), not `businessDate()`'s 4am cutover — the
+pull script's own header flags this as unconfirmed, so a punch just after midnight could bucket
+to the wrong day in edge cases; this is a first-look sample, not a precision measurement.
+
+**Next step is the owner's, per this file's own sequencing** — look at this sample together
+before deciding whether/how to build the `contested`/`unknown` state design below.
 
 ### Source decision — QSRSoft preferred (owner, 2026-08-14)
 
@@ -159,8 +189,9 @@ miss-rate immediately and their attribution quality permanently.
 2. **Register Audit auto-pull** (`memory/data-acquisition-shopping-list.md` §A) can ship without
    any of this, because at daily grain it reports facts. The rankings and risk flags are what
    need attribution-confidence, so those gate on this work rather than the pull doing so.
-3. **LifeLenz punch extension** is the cheapest unlock and is worth scoping before the
-   transaction-detail probe, since it does not depend on how that probe lands.
+3. ✅ **DONE 2026-09-08 — not via LifeLenz, via QSRSoft (dispatch #124), which the source
+   decision above already favored.** `qsr_punch_times` is live with real per-employee shift
+   punches; see the updated table and first sample above.
 4. The owner explicitly wants to review this **against real data** before it is built:
    *"It'll probably make more sense when we're actually looking at the data."* Do not finalise
    thresholds or the contested-state rules from first principles — pull a sample and look at it
