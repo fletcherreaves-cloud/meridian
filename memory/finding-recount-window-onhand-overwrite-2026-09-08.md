@@ -1,5 +1,5 @@
 ---
-description: Real production bug — Madill (loc 13113) recounted a bad weekly count the next day and the At A Glance Items Recounted tile never showed it. Root cause, live measurements, and the fix (inv_count_sessions wired in, window anchor extended backward).
+description: Real production bug — Madill (loc 13113) recounted a bad weekly count the next day and the At A Glance Items Recounted tile never showed it. Root cause, live measurements, the first fix (inv_count_sessions wired in), and the SIMPLER final fix the owner pushed for (derive the window purely from qsr_raw_item_detail — see "Simplified" section at the bottom).
 ---
 
 # Items Recounted tile missed a same-item next-day recount (Madill, loc 13113, 2026-09-08)
@@ -77,9 +77,58 @@ counted close together, e.g. Paper one day + Food/Condiment the next).
   using the real captured Madill numbers.
 - Full suite 4639/4639, build clean, 538.08 KB / 850 KB budget.
 
-## What's still not fully closed
+## What's still not fully closed (as of the FIRST fix, superseded below)
 
 `inv_count_sessions` only accumulates from whenever the pull first ran (its own schema
 comment: "cannot recover sessions qsr_onhand has already overwritten") — history builds
 forward, same honest limitation as the table's own design doc states. Not a defect in this fix;
 self-resolving as the log accumulates. The onhand-based path stays as the fallback for any gap.
+
+---
+
+## Simplified (same day, owner follow-up): "should be easy to get from the raw item detail"
+
+Owner, immediately after the first fix above shipped: *"The different count data should be
+easy to get from the raw item detail. We need to make this happen. Thought we already were."*
+
+Right call. `qsr_raw_item_detail.history` is a genuine per-transaction EVENT LOG — never
+overwritten, unlike `qsr_onhand`'s rolling-latest snapshot — and `ledgerScopeDiff`/
+`itemCloseWindowRecount` (`eom-ledger-baseline.js`) already read it for the actual $ diffing.
+The ONLY thing the qsr_onhand/inv_count_sessions machinery above was for was supplying the
+window BOUNDS (`closeWindowStart`/`closeWindowEnd`) — and that's derivable straight from the
+item's own count-day history, with no store-level "session" or "coverage" concept needed at
+all.
+
+**Final design:** `itemCloseWindowRecount` gained an `autoWindowDays` option. When no explicit
+`closeWindowStart` is supplied, it derives one INTRINSICALLY per item: walk backward from the
+item's most recent count-day through any immediately-preceding day within `autoWindowDays` —
+a tight cluster of close-together counts (bad count + quick redo, any number of days apart) is
+one cycle; a gap wider than `autoWindowDays` (ordinary weekly cadence, ~7 days) is not, so a
+routine week-over-week count is never misread as a recount of the one before it. Same
+protection the original `windowDays` design carried, now computed with ZERO external inputs
+beyond the item's own history.
+
+`ItemsRecountedTile` (`at-a-glance.js`) now calls `ledgerScopeDiff(rawByLoc, perLoc,
+{ autoWindowDays: 3 })` directly off `qsr_raw_item_detail` + `qsr_variance_stat` — no
+`loadQsrOnHand`, no `loadInvCountSessions`, no `weeklyRecountWindows`/
+`weeklyRecountWindowsFromLog`, no per-store gating at all. Every store with raw item-detail
+rows participates; a store/item that doesn't cluster simply contributes zero recount activity,
+rather than being excluded up front by a separate "does this store have a qualifying weekly
+session" check.
+
+**What stays from the first fix:** `count-cycle.js`'s `sessionsFromLog`/
+`cycleComplianceFromLog`/`weeklyRecountWindowsFromLog` and the `inv_count_sessions` table
+itself are NOT reverted — they're real, tested, working infrastructure that answers a
+genuinely different question (whole-CLASS coverage completeness, e.g. "did this store count
+95%+ of Food AND Condiment this week" — a question `qsr_raw_item_detail` structurally cannot
+answer, since it's dollar-filtered to the top-50 actionable WRINs and would never see
+low-dollar Condiment items at all, per this file's own original header comment). They remain
+available for the Count Cycle compliance panel or any future consumer that needs the full
+item-universe coverage question; only the recount TILE's dependency on them was the
+overcomplication, and that's what got removed.
+
+**Verification:** 6 new/changed regression tests (`eom-ledger-baseline.test.js`,
+`at-a-glance-weekly-recount-tile.test.js`) using the real captured Madill numbers, including a
+genuine 3-count cluster and the explicit-window-still-wins case. Full suite 4643/4643, build
+clean, 538.03 KB / 850 KB budget (slightly smaller — two fewer loader dependencies in the
+tile's bundle).

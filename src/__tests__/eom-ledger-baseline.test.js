@@ -138,6 +138,52 @@ describe('ledgerBaselineDiff', () => {
   });
 });
 
+// 2026-09-08, owner: "the different count data should be easy to get from the raw item detail...
+// thought we already were." autoWindowDays derives a recount window INTRINSICALLY from an item's
+// own count-day history -- no store-level closeWindowStart/End, no qsr_onhand, no session table
+// at all. Real numbers: Madill (loc 13113) counted a Partial weekly on 09-07 and fully redid it
+// on 09-08 -- a 1-day gap, well inside a 3-day autoWindowDays.
+describe('autoWindowDays — intrinsic per-item recount window (2026-09-08)', () => {
+  it('clusters a tight pair of counts into one cycle with NO explicit window at all', () => {
+    const rawItems = [item('a', [cnt('2026-09-07', '14:54', 447.85), cnt('2026-09-08', '15:39', -209.27)])];
+    const d = ledgerBaselineDiff(rawItems, { autoWindowDays: 3 });
+    expect(d.items[0].recounted).toBe(true);
+    expect(d.items[0].baseVar).toBe(447.85);
+    expect(d.items[0].curVar).toBe(-209.27);
+  });
+
+  it('does NOT cluster two counts farther apart than autoWindowDays (ordinary weekly cadence)', () => {
+    const rawItems = [item('a', [cnt('2026-09-01', '10:00', -300), cnt('2026-09-20', '10:00', -80)])];
+    const d = ledgerBaselineDiff(rawItems, { autoWindowDays: 3 });
+    expect(d.items[0].recounted).toBe(false);
+    // Only the most recent (09-20) binding is in scope -- baseVar === curVar, no phantom move.
+    expect(d.items[0].baseVar).toBe(-80);
+    expect(d.items[0].curVar).toBe(-80);
+    expect(d.items[0].verdict).toBe('flat');
+  });
+
+  it('a genuinely THREE-count cluster (bad, redo, redo again) all within autoWindowDays of each other still resolves to one cycle', () => {
+    const rawItems = [item('a', [
+      cnt('2026-09-06', '10:00', -600), cnt('2026-09-07', '10:00', -300), cnt('2026-09-08', '10:00', -80),
+    ])];
+    const d = ledgerBaselineDiff(rawItems, { autoWindowDays: 3 });
+    expect(d.items[0].recounted).toBe(true);
+    expect(d.items[0].nRecounts).toBe(2);   // 09-06->09-07 and 09-07->09-08
+    expect(d.items[0].baseVar).toBe(-600);
+    expect(d.items[0].curVar).toBe(-80);
+    expect(d.items[0].verdict).toBe('helping');
+  });
+
+  it('an explicit closeWindowStart still wins over autoWindowDays when both are supplied', () => {
+    const rawItems = [item('a', [cnt('2026-09-01', '10:00', -300), cnt('2026-09-08', '10:00', -80)])];
+    // autoWindowDays alone would NOT cluster a 7-day gap; an explicit window overrides it.
+    const auto = ledgerBaselineDiff(rawItems, { autoWindowDays: 3 });
+    expect(auto.items[0].recounted).toBe(false);
+    const explicit = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-09-01', autoWindowDays: 3 });
+    expect(explicit.items[0].recounted).toBe(true);
+  });
+});
+
 describe('recountVerdictText (dispatch #227 — Recount-Impact report)', () => {
   it('helping + undercount at session (baseVar<0) → "corrected a $X undercount", explains it LOWERS food cost', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])];

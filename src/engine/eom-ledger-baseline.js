@@ -39,6 +39,7 @@ const tsOf = (dt, tm) => {
   const t = String(tm || '').match(/^(\d{1,2}):(\d{2})/);
   return new Date(y, mo - 1, da, t ? +t[1] : 0, t ? +t[2] : 0).getTime();
 };
+const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 // The close window = the last `days` calendar days of a YYYY-MM period (default 3). During a live close the
 // caller can pass the real count-window start; for a historical simulation this brackets the EOM count+recounts.
 export function closeWindowStartFor(period, days = 3) {
@@ -63,8 +64,17 @@ export function closeWindowStartFor(period, days = 3) {
 // Per-ITEM close-window recount analysis from a raw count history. Reusable so the Progression view and
 // the Baseline-diff share ONE definition of "was a recount detected". Returns the session vs final binding,
 // the graded recount chain, and a recounted flag (counted on ≥2 days in the close window). null if no counts.
-export function itemCloseWindowRecount(history, { closeWindowStart = null, closeWindowEnd = null, floor = LEDGER_MATERIAL_FLOOR } = {}) {
-  const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
+// autoWindowDays (2026-09-08, owner: "the different count data should be easy to get from the
+// raw item detail") — when no explicit store-level window is supplied, derive one INTRINSICALLY
+// from THIS ITEM'S OWN count-day history instead of reaching for any store-level session/coverage
+// table (qsr_onhand or its inv_count_sessions log) at all: cluster the day-bindings backward from
+// the most recent one through any gap <= autoWindowDays. A tight cluster of close-together counts
+// (a bad count + a quick redo, however few days apart) is one cycle; a gap wider than
+// autoWindowDays (ordinary weekly cadence) is not, so a routine week-over-week count is never
+// misread as a recount of the one before it. The raw count history already has everything this
+// needs — no separate window source required.
+export function itemCloseWindowRecount(history, { closeWindowStart = null, closeWindowEnd = null, floor = LEDGER_MATERIAL_FLOOR, autoWindowDays = null } = {}) {
+  let winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
   const winEnd = closeWindowEnd ? isoDay(closeWindowEnd) : null;
   const counts = (history || []).filter(h => h && h.isCount && h.dt).map(h => ({
     day: isoDay(h.dt), when: tsOf(h.dt, h.tm), tm: h.tm || null,
@@ -89,6 +99,11 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, close
     const unitVar = unitVals.length ? unitVals.reduce((s, v) => s + v, 0) : null;
     return { ...last, dolVar, unitVar, nEntries: dayEntries.length };
   });
+  if (winStart == null && autoWindowDays != null && allDayBindings.length) {
+    let idx = allDayBindings.length - 1;
+    while (idx > 0 && daysBetween(allDayBindings[idx - 1].day, allDayBindings[idx].day) <= autoWindowDays) idx--;
+    winStart = allDayBindings[idx].day;
+  }
   const winBindings = winStart
     ? allDayBindings.filter(b => b.day >= winStart && (!winEnd || b.day <= winEnd))
     : allDayBindings;
@@ -117,11 +132,11 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, close
   };
 }
 
-export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, closeWindowEnd = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR } = {}) {
+export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, closeWindowEnd = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR, autoWindowDays = null } = {}) {
   const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
   const items = [];
   for (const it of (rawItems || [])) {
-    const r = itemCloseWindowRecount(it.history, { closeWindowStart: winStart, closeWindowEnd, floor });
+    const r = itemCloseWindowRecount(it.history, { closeWindowStart: winStart, closeWindowEnd, floor, autoWindowDays });
     if (!r) continue;
     const official = officialVarByWrin[String(it.wrin)] ?? officialVarByWrin[it.wrin] ?? null;
     items.push({
@@ -150,13 +165,13 @@ export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, closeWin
 // same shape the Change-Monitor view already renders, plus a per-store engagement verdict.
 //   rawByLoc — { normLoc → rawItems[] } (already loaded for the Progression view)
 //   perLoc   — { normLoc → { name, countCompleteDate, statVar:{wrin→$}, baseFobPct, curFobPct, basePct, curPct } }
-export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MATERIAL_FLOOR } = {}) {
+export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MATERIAL_FLOOR, autoWindowDays = null } = {}) {
   const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
   const stores = [];
   for (const [loc, rawItems] of Object.entries(rawByLoc)) {
     const p = perLoc[norm(loc)] || perLoc[loc] || {};
     const statVar = p.statVar || {};
-    const diff = ledgerBaselineDiff(rawItems, { closeWindowStart: p.closeWindowStart, closeWindowEnd: p.closeWindowEnd, officialVarByWrin: statVar, floor });
+    const diff = ledgerBaselineDiff(rawItems, { closeWindowStart: p.closeWindowStart, closeWindowEnd: p.closeWindowEnd, officialVarByWrin: statVar, floor, autoWindowDays });
     const dFobPct = (p.curFobPct != null && p.baseFobPct != null) ? p.curFobPct - p.baseFobPct : null;
     const fobVerdict = dFobPct == null ? 'unknown' : dFobPct < -0.0001 ? 'helping' : dFobPct > 0.0001 ? 'hurting' : 'flat';
     const flaggedWrins = Object.entries(statVar).filter(([, v]) => Math.abs(v) >= 50).map(([w]) => w);
