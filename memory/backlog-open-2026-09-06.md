@@ -28,8 +28,20 @@
 
 ## 0. Normalization plan
 
-- [ ] **F — role-based voice.** First slice shipped (Visit Readiness verdict line). Count Cycle and
-  DI Compare — the dispatch's own two evidence strings — still need the same treatment.
+- [ ] **F — role-based voice.** First slice shipped (Visit Readiness verdict line).
+  ✅ **Count Cycle DONE 2026-09-08 (v5.409).** `buildCycleVerdict()` (`count-cycle.js`) answers
+  "so what do I do" in one imperative line ("Count Food and Condiment today — N days since the
+  last complete count," "Finish the Condiment count from [date]") — shown alongside (not
+  replacing) the existing diagnostic exceptions text, in both the in-app `StoreCard` and the
+  shareable weekly report. This was the dispatch's own cited evidence of the gap: "Count Cycle
+  said 'No complete weekly count on record' to a store that had counted." 8 new tests.
+  **DI Compare — the dispatch's other evidence string ("Not Dialed-In is better — recalibrate")
+  — still needs the same treatment.** Deliberately not attempted in the same pass: DI Compare
+  (`DialedInComparisonReport`, `analytics.js`) is `kind:'test-kitchen'` (not yet promoted to a
+  real user-facing surface) and is inherently a forecast-model-QA tool aimed at whoever's
+  validating Dialed-In calibration, not an operator mid-shift — worth confirming its actual
+  audience before writing "restaurant words" for it, rather than assuming the same treatment
+  applies unchanged.
 - [ ] **G — shift dimension (`src/views/labor-allocation.js`).** Panel is live (Scheduling hub,
   District/By Store/Overnight sub-views). Two confirmed gaps: (1) live-browser verification still
   needed — no code-level way to check the District/By Store/Overnight views render correctly; (2)

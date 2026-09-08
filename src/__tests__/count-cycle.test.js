@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
          mergeWeeklyCountDay, formatWeeklyComplianceReport, weeklyRecountWindows,
-         sessionsFromLog, cycleComplianceFromLog, weeklyRecountWindowsFromLog } from '../engine/count-cycle.js';
+         sessionsFromLog, cycleComplianceFromLog, weeklyRecountWindowsFromLog,
+         buildCycleVerdict } from '../engine/count-cycle.js';
 import { WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
@@ -798,6 +799,60 @@ describe('formatWeeklyComplianceReport', () => {
     const md = formatWeeklyComplianceReport(c, { storeName: 'New Store' });
     expect(md).toMatch(/no complete weekly count on record/);
     expect(md).not.toMatch(/undefined|NaN/);
+  });
+});
+
+// Dispatch28 Workstream F ("voice by role", CLAUDE.md's standing rule) — the dispatch's own
+// cited evidence of the gap was this exact panel: "Count Cycle said 'No complete weekly count
+// on record' to a store that had counted." buildCycleVerdict() answers "so what do I do" in
+// one imperative line, shown alongside (not replacing) the existing diagnostic exceptions.
+describe('buildCycleVerdict — "so what do I do" headline (dispatch28 Workstream F)', () => {
+  it('a clean store gets a plain "no action needed" verdict', () => {
+    const rows = store('V1', [{ date: '2026-08-06', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    expect(c.verdict).toBe('On cycle — no action needed this week.');
+  });
+
+  it('a store with NO count on record ever gets a direct instruction, not a status label', () => {
+    // cycleCompliance() never emits a row for a store with zero counted rows (detectSessions()
+    // only registers a loc once it has a counted date) -- exercise the null-daysSinceWeekly
+    // branch directly, the shape a real never-counted store's compliance object would carry.
+    const verdict = buildCycleVerdict({ exceptions: [{ rule: 'weekly-overdue', severity: 'crit' }], daysSinceWeekly: null, lastPartial: null });
+    expect(verdict).toBe('Count Food and Condiment this week — no complete count on record yet this period.');
+  });
+
+  it('an overdue store gets an imperative instruction naming the exact class pair and day count', () => {
+    const rows = store('V2', [{ date: '2026-07-26', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    expect(c.verdict).toBe('Count Food and Condiment today — 12 days since the last complete count.');
+  });
+
+  it('a partial-count store is told exactly which class to finish, not just "incomplete"', () => {
+    // Built directly against buildCycleVerdict rather than through cycleCompliance()/store():
+    // the store() fixture's snapshot-overwrite semantics (mirroring real qsr_onhand, see
+    // count-cycle.js's own header) make "fully counted Food+Condiment, THEN a Food-only
+    // recount overlapping the same items" structurally uninstantiable there -- the recount
+    // would overwrite its own prior Food dates, which is exactly the class of bug this
+    // session's Madill investigation (v5.405-407) was about, not something to route around
+    // with a contrived fixture here.
+    const exceptions = [{ rule: 'weekly-incomplete', severity: 'warn' }];
+    const lastPartial = { date: '2026-08-05', covered: ['Food'] }; // Food covered, Condiment not
+    expect(buildCycleVerdict({ exceptions, daysSinceWeekly: 6, lastPartial }))
+      .toBe('Finish the Condiment count from 2026-08-05 — every weekly count needs Food and Condiment.');
+  });
+
+  it('mid-month-paper appends as a secondary action rather than replacing the weekly verdict', () => {
+    const rows = store('V4', [{ date: '2026-08-15', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-20' })[0]; // day 20 -- paper window is open
+    expect(c.paperMissing).toBe(true);
+    expect(c.verdict).toBe('On cycle — no action needed this week. Also do a Paper count — none yet this month.');
+  });
+
+  it('the share-link report includes the verdict as its own bolded line', () => {
+    const rows = store('V5', [{ date: '2026-07-26', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    const md = formatWeeklyComplianceReport(c, { storeName: 'Tishomingo' });
+    expect(md).toContain('**Count Food and Condiment today — 12 days since the last complete count.**');
   });
 });
 
