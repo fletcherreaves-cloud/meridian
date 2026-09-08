@@ -563,6 +563,31 @@ actual code — this note nearly caused a duplicate reimplementation.
 - When adding LifeLenz API features: do NOT re-investigate GraphQL `GetPdfReportsBusinessOfficeLocations` (returns location IDs, not schedule IDs). See `memory/lifelenz-session.md` for dead ends.
 - **QSRSoft DAR API auth:** `api.reports.myqsrsoft.com` requires browser session cookies — server-side Node.js fetch with token alone returns 401. Must use Playwright in-browser fetch (`page.evaluate()`) with explicit `X-Auth-Token` header (no `credentials: 'include'`). Use one `page.evaluate()` per date, not one evaluate with an internal loop (the latter hangs with no output). See `memory/project-qsrsoft-daily-activity.md`.
 - **`qsr_daily_activity` table:** PK is `(loc, dt, hour_slot)`. `loc` = NSN zero-padded to 7 chars. `hour_slot` = `endQtrHourTime` (e.g., "06:00" = 5am–6am block). LY fields use `ly_` prefix in DB (mapped from `ly.*` dot-notation in API response).
+- **PII / credential-handling standing rules (indexed here 2026-09-08 from `memory/pm-handoff-2026-08-15.md`
+  §8 and `memory/qsrsoft-report-catalog.md`'s two PII notes — previously scattered across memory files
+  and never consolidated into a checkable rule).**
+  - **Strip `X-Auth-Token` from every DevTools capture.** Never write one to a file or commit it. If a
+    token capture is ever needed again, sequence it behind a rotation, never alongside one — asking for
+    a fresh capture without rotating first re-exposes a token that's already been captured once.
+  - **Never pull or persist `ssn`, anywhere.** `geid` + `payrollID` identify a person adequately for
+    every analysis Meridian performs — there is no legitimate use for `ssn` in this app.
+    `/reports/mcd/people/storePeoplePunches`'s **default column list includes `ssn`** — never select
+    it. `/reports/mcd/people/employeeRoster`'s PII surface is much wider: `ssn`, `dateOfBirth`,
+    `birthday`, `minorAdult`, `address`, `streetAddress`, `aptNumber`, `city`, `state`, `zipCode`,
+    `homePhoneNumber`, `cellPhoneNumber`, `emailAddress`, `nationalOrigin`, `gender`,
+    `federalMaritalStatus`, `hourlyPayRate`, `terminationReason`, and four `emergencyContact*` fields.
+    **Never pull `employeeRoster` at all without an explicit field allow-list.** None of the above may
+    reach Supabase or a log line. (`rosterStatistics`'s `under16`/`under17`/`under18` counts are
+    aggregate, not per-person, and are safe.)
+  - **Roster workbooks (local files carrying SSNs/DOBs/addresses) are to be deleted** — this is a
+    local-filesystem action on the owner's own machine, not something in this repo: confirmed via
+    `git log --all --diff-filter=A` that no such workbook has ever been committed here, so there is
+    nothing to find or fix in the codebase. **Whether the deletion itself has happened is still an open
+    question only the owner can answer** — do not mark this done from repo-side evidence, and do not
+    re-investigate the repo for it again (already checked clean).
+  - `SUPABASE_SERVICE_ROLE_KEY` is exported into the owner's shell only — never written to a file,
+    never committed, never put in a `VITE_`-prefixed variable (those ship to the client bundle).
+  - Never disable TLS verification or unset `HTTPS_PROXY`.
 
 ---
 

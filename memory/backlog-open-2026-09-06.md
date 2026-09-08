@@ -635,11 +635,18 @@
   the full 27-store list), so per-loc isolation has never been exercised live even though the
   policies are attached. Full measurement + the concrete remaining step (a live login test with a
   genuinely-restricted profile): `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
-- [ ] PII/credential-handling human-process capture — the content already exists in
-  `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md` (x-auth-token sequencing rules, the
-  `storePeoplePunches`/`employeeRoster` PII field lists), it's just not indexed into CLAUDE.md's
-  own standing rules yet. ❓ Whether the roster-workbook deletion this repo has a standing
-  instruction for actually happened is still a real open question.
+- ✅ **DONE 2026-09-08 — indexed into CLAUDE.md's own Dev Rules, do not re-index.** Pulled the
+  x-auth-token sequencing rule, the `storePeoplePunches`/`employeeRoster` PII field lists, the
+  service-role-key handling rule, and the TLS/proxy rule out of `pm-handoff-2026-08-15.md` §8 and
+  `qsrsoft-report-catalog.md`'s two PII notes into one consolidated, checkable block in
+  CLAUDE.md's Dev Rules section (deliberately did NOT index that file's stale
+  "PM never pushes to main" line — it contradicts CLAUDE.md's current, more recent standing merge
+  rule, so carrying it forward would create a real contradiction rather than a small omission).
+  ❓ **The roster-workbook deletion itself remains a genuine owner-only open question** — confirmed
+  via `git log --all --diff-filter=A` that no such workbook was ever committed to this repo (so
+  there's nothing to find or fix here), but whether the owner has deleted the actual local files on
+  their own machine can't be checked from this environment. On the owner-input list, not
+  re-investigable from the repo side.
 - [ ] App Store readiness roadmap (deliverable = roadmap doc only).
 - [ ] ❓ Capacity-review questions (usage/dev-pace vs. growth; onboarding readiness for new users).
 - [ ] ❓ Needs clarification from owner: "Aug 19-21 JR" note; Google Reviews "fun for now"
@@ -753,8 +760,24 @@
   point (dispatch #139, "Mary missing in Crew Schedule"). `INV_ORG_COORDS[loc].sup` is read only
   as a last-resort fallback for a loc the live timeline doesn't cover at all, never as the primary
   source either place.
-- [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
-  see the first org's uploaded files; also a 30-day window means new users miss old uploads.
+- ⚠️ **RE-SCOPED 2026-09-08 — the security half is very likely already mitigated by a different,
+  more robust mechanism; do not "fix" `.org` without re-checking this first.** Live service-role
+  read of `pending_reports` (514 rows) confirms `.org` is genuinely null on every row, matching
+  the claim — but `tenant_id` is populated on every row (`'00000000-...0001'`, the single-tenant
+  default), and `pending_reports` IS in `schema-multitenant-phase2-rls.sql`'s tenant-scoped-RLS
+  table list (`tenant_id = current_tenant_id()`, replacing the table's original wide-open
+  `using(true)` policy). A live anon-key read returns `content-range: */0` — zero rows visible
+  unauthenticated — consistent with that RLS flip being live (though not fully conclusive on its
+  own, since the anon key format also changed independently, per this file's own dispatch #89
+  history). **If Phase 2 has run, tenant-level isolation is already real and `.org` is dead code,
+  not a live cross-tenant leak** — wiring it up would be solving an already-solved problem and
+  risks confusing which field is the actual isolation boundary. Confirm Phase 2's live status
+  before touching this (a live login test with a genuinely second-tenant profile, same
+  verification `memory/finding-rls-phase2-my-locs-2026-09-06.md` already calls for, would settle
+  it). **The 30-day-window half is real and separate** — confirmed in code (`App.js`'s
+  email/auto-ingest auto-sync cutoff is 30 days; the manual-upload cross-device-sync cutoff is
+  180 days, a different, wider window) — a new device/user genuinely won't backfill an
+  email-sourced report older than 30 days. Minor, not urgent; unclear if intentional.
 - [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`) — the same
   silent-failure-on-cloud-only-device shape #270 was supposed to fix for SAGE. 10+
   `if(!ds.loaded)` gates in `analytics.js` alone are unaudited. **Confirmed 2026-09-07: `engine/
