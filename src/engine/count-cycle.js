@@ -29,9 +29,22 @@
 // not an event log. Each new count of an item overwrites the previous date. So this can
 // answer "when was the last complete weekly count, and was it complete" but CANNOT
 // answer "were all four weekly counts complete last month" — the earlier ones have been
-// overwritten. Building real history needs the daily snapshot to record per-class counted
-// dates (eom_count_progress_log has the right shape but currently measures percentages
-// against an EOM-only window, so a mid-month count reads 0%).
+// overwritten.
+//
+// ✅ FIXED (2026-09-08) via `inv_count_sessions` (supabase/schema-inv-count-sessions.sql,
+// written daily by scripts/qsrsoft-onhand-pull.mjs's deriveSessionRows) — an APPEND-ONLY
+// log, one row per (store, count date, class), keyed so a later recount can never overwrite
+// an earlier date's row. That table existed and was already being populated, but nothing
+// in this engine ever read it — `detectSessions`/`cycleCompliance`/`weeklyRecountWindows`
+// still reconstructed sessions from the live, lossy qsr_onhand snapshot alone, so the exact
+// limitation this comment describes was still live in production. Found via a real case:
+// Madill (loc 13113) counted weekly on 2026-09-07 (Food 59/114, Condiment 8/37 — a genuine
+// Partial, ~7% FOB) and fully recounted the next day (2026-09-08, Food 114/114, Condiment
+// 37/37 — clears Weekly). qsr_onhand's snapshot showed ONLY 2026-09-08 for those items —
+// the 09-07 date had already been overwritten in place — so the recount tile had nothing
+// to diff against. `inv_count_sessions` had BOTH dates preserved as distinct rows the whole
+// time. `sessionsFromLog`/`cycleComplianceFromLog`/`weeklyRecountWindowsFromLog` below read
+// from it instead, so a store's REAL count-session history survives being recounted.
 
 // WEEKDAY_NAMES reused from weekly-cadence.js (the older, now-superseded cadence engine — see
 // this file's own header comment for why it was replaced) rather than a second copy of the same
@@ -390,8 +403,58 @@ export function sessionLabel(q) {
  * Returns one row per store with the specific exceptions to act on.
  */
 export function cycleCompliance(rows = [], { asOf = null } = {}) {
-  const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
   const { sessions, classTotals } = detectSessions(rows);
+  return complianceFromSessions(sessions, classTotals, { asOf });
+}
+
+// Convert inv_count_sessions log rows (append-only, one row per store/count-date/class —
+// see this file's header) into the SAME { sessions, classTotals } shape detectSessions()
+// produces, so cycleComplianceFromLog/weeklyRecountWindowsFromLog can reuse every downstream
+// consumer unchanged. Deliberately recomputes sessionQualities() fresh from each row's
+// covered/items_counted rather than trusting the log's own stored session_kind string — the
+// pull script's own comment on deriveSessionRows says to treat session_kind as advisory.
+// `logRows`: [{ loc, countDate, cls, itemsCounted, classTotal, covered }] (app/camelCase shape,
+// as loadInvCountSessions() returns — see src/lib/supabase.js).
+export function sessionsFromLog(logRows = []) {
+  const classTotals = {};
+  const byLocDate = {};
+  for (const r of (logRows || [])) {
+    if (!r || !r.loc || !r.countDate || !r.cls) continue;
+    const loc = unpad(r.loc);
+    const date = dOnly(r.countDate);
+    if (!date) continue;
+    (classTotals[loc] || (classTotals[loc] = {}));
+    // The log stores class_total per row (same value across a store's rows for that class);
+    // take the max seen defensively rather than assuming perfect consistency across dates.
+    classTotals[loc][r.cls] = Math.max(classTotals[loc][r.cls] || 0, Number(r.classTotal) || 0);
+    ((byLocDate[loc] || (byLocDate[loc] = {}))[date] || (byLocDate[loc][date] = {}))[r.cls] =
+      { itemsCounted: Number(r.itemsCounted) || 0, covered: !!r.covered };
+  }
+  const sessions = {};
+  for (const loc of Object.keys(byLocDate)) {
+    sessions[loc] = Object.keys(byLocDate[loc]).sort().map(date => {
+      const clsRows = byLocDate[loc][date];
+      const counts = {};
+      for (const cls of Object.keys(clsRows)) counts[cls] = clsRows[cls].itemsCounted;
+      const n = Object.values(counts).reduce((a, b) => a + b, 0);
+      const covered = Object.keys(clsRows).filter(cls => clsRows[cls].covered);
+      const q = sessionQualities(date, covered, n);
+      const touchedWeeklyClasses = (counts.Food || 0) > 0 || (counts.Condiment || 0) > 0;
+      return { loc, date, counts, n, covered, touchedWeeklyClasses, ...q, kind: sessionLabel(q) };
+    });
+  }
+  return { sessions, classTotals };
+}
+
+/** cycleCompliance(), sourced from the durable inv_count_sessions log instead of the live,
+ *  lossy qsr_onhand snapshot — see this file's header for why that matters. */
+export function cycleComplianceFromLog(logRows = [], { asOf = null } = {}) {
+  const { sessions, classTotals } = sessionsFromLog(logRows);
+  return complianceFromSessions(sessions, classTotals, { asOf });
+}
+
+function complianceFromSessions(sessions, classTotals, { asOf = null } = {}) {
+  const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
 
   return Object.keys(sessions).sort().map(loc => {
@@ -497,6 +560,18 @@ export function cycleSummary(compliance = []) {
 // closeWindowEnd comment, eom-ledger-baseline.js). Default 3 matches the EOM close window's
 // own width.
 //
+// ✅ 2026-09-08 fix (Madill, loc 13113): the window START used to be lastWeekly.date itself,
+// which only ever looks FORWARD. That misses the exact case the owner reported: a Partial
+// count on 09-07 (Food 59/114, Condiment 8/37 — ~7% FOB, "horrible") fully redone the very
+// next day (09-08, clears Weekly) — the window anchored to 09-08 (the COMPLETED session)
+// never included 09-07 (the session that actually got recounted), so it never registered.
+// Fixed by walking BACKWARD from lastWeekly through any immediately-preceding session(s)
+// within `windowDays` of each other — a tight cluster of close-together counts is one real
+// count cycle, whatever its individual sessions' own coverage. This does NOT reopen the
+// problem windowDays exists to prevent: two genuinely-weekly counts ~7 days apart have a gap
+// far outside `windowDays`, so the earlier one is never absorbed and the following week's
+// routine count still gets its own fresh window, not a "recount" of last week's.
+//
 // Deliberately single-period (current onhand only, not also the prior month) — a store with
 // no qualifying weekly count yet THIS period (e.g. the first few days of a new month) simply
 // gets no entry here rather than reaching back into last month's raw-item-detail data too,
@@ -507,12 +582,31 @@ export function cycleSummary(compliance = []) {
 // perLoc — only for stores that have a qualifying weekly count at all this period.
 export function weeklyRecountWindows(onHandRows, { asOf = new Date(), windowDays = 3 } = {}) {
   const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
-  const compliance = cycleCompliance(onHandRows || [], { asOf: asOfStr });
+  return windowsFromCompliance(cycleCompliance(onHandRows || [], { asOf: asOfStr }), windowDays);
+}
+
+// weeklyRecountWindows(), sourced from the durable inv_count_sessions log instead of the
+// live, lossy qsr_onhand snapshot — see this file's header. Prefer this for any NEW caller;
+// weeklyRecountWindows() (onhand-based) stays for existing callers and as a fallback for a
+// store/period the log hasn't accumulated history for yet.
+export function weeklyRecountWindowsFromLog(logRows, { asOf = new Date(), windowDays = 3 } = {}) {
+  const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
+  return windowsFromCompliance(cycleComplianceFromLog(logRows || [], { asOf: asOfStr }), windowDays);
+}
+
+function windowsFromCompliance(compliance, windowDays) {
   const out = {};
   for (const c of compliance) {
     if (!c.lastWeekly) continue;
-    const start = c.lastWeekly.date;
-    const endDt = new Date(start + 'T00:00:00');
+    const all = c.sessions || [];
+    const idx = all.findIndex(s => s.date === c.lastWeekly.date);
+    let startIdx = idx;
+    for (let i = idx; i > 0; i--) {
+      if (daysBetween(all[i - 1].date, all[i].date) <= windowDays) startIdx = i - 1;
+      else break;
+    }
+    const start = idx >= 0 ? all[startIdx].date : c.lastWeekly.date;
+    const endDt = new Date(c.lastWeekly.date + 'T00:00:00');
     endDt.setDate(endDt.getDate() + windowDays);
     out[c.loc] = { closeWindowStart: start, closeWindowEnd: endDt.toISOString().slice(0, 10) };
   }

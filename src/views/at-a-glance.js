@@ -21,9 +21,9 @@ import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
-import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, loadQsrOnHand, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, loadQsrOnHand, loadInvCountSessions, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
-import { weeklyRecountWindows } from '../engine/count-cycle.js';
+import { weeklyRecountWindows, weeklyRecountWindowsFromLog } from '../engine/count-cycle.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
@@ -366,6 +366,13 @@ function EOMScoreboardTile({ onOpenModal }) {
 // close-window count IS also its most recent weekly count, so nothing is lost, and every store
 // now gets a live read every week instead of only near month-end. Click still opens the EOM
 // Dashboard → Change Monitor.
+//
+// v3 (2026-09-08, Madill loc 13113): the window now comes from weeklyRecountWindowsFromLog()
+// (inv_count_sessions, append-only) with weeklyRecountWindows() (qsr_onhand snapshot) as a
+// per-store fallback, not the snapshot alone. A bad weekly count that gets fully redone a day
+// or two later was invisible before this: qsr_onhand overwrites last_counted in place, so the
+// FIRST (bad) session's date is gone by the time the SECOND (redo) session's pull runs, and
+// there is nothing left to diff the recount against. count-cycle.js's header has the full case.
 function ItemsRecountedTile({ onOpenModal }) {
   const now = new Date();
   const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -382,10 +389,11 @@ function ItemsRecountedTile({ onOpenModal }) {
     (async () => {
       let failed = false;
       try {
-        const [rawDetail, variance, onHand] = await Promise.all([
+        const [rawDetail, variance, onHand, sessionLog] = await Promise.all([
           loadQsrRawItemDetail({ period }).catch(() => { failed = true; return []; }),
           loadQsrVarianceStat({ period }).catch(() => []),
           loadQsrOnHand({ period }).catch(() => { failed = true; return []; }),
+          loadInvCountSessions({ period }).catch(() => []),
         ]);
         if (!live) return;
         // fetchAll marks a truncated read non-enumerably rather than throwing.
@@ -395,7 +403,13 @@ function ItemsRecountedTile({ onOpenModal }) {
         // windows: { [loc]: {closeWindowStart, closeWindowEnd} } — only stores with a qualifying
         // weekly count THIS period get an entry; single-period by design (see
         // weeklyRecountWindows' own comment for the tradeoff — self-resolving through the month).
-        const windows = weeklyRecountWindows(onHand, { asOf: now });
+        // Prefer the log-based window (inv_count_sessions, append-only — survives a same-item
+        // recount that the live qsr_onhand snapshot would otherwise overwrite in place, see
+        // count-cycle.js's header) and fall back to the onhand-reconstructed window for any
+        // store the log doesn't have entries for yet (2026-09-08 fix, Madill loc 13113).
+        const onhandWindows = weeklyRecountWindows(onHand, { asOf: now });
+        const logWindows = weeklyRecountWindowsFromLog(sessionLog, { asOf: now });
+        const windows = { ...onhandWindows, ...logWindows };
         if (!rawDetail || !rawDetail.length || !Object.keys(windows).length) { setDiff(null); return; }
         const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
         const rawByLoc = {}, perLoc = {};

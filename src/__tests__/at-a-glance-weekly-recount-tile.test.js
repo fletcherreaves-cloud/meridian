@@ -52,6 +52,11 @@ vi.mock('../lib/supabase.js', async (importOriginal) => {
     loadQsrOnHand: () => Promise.resolve(onHandFixture()),
     loadQsrRawItemDetail: () => Promise.resolve(rawDetailFixture()),
     loadQsrVarianceStat: () => Promise.resolve([]),
+    // Log-based path (2026-09-08, count-cycle.js's weeklyRecountWindowsFromLog) is exercised by
+    // its own dedicated engine tests; empty here so this test's windows come from the onhand
+    // fixture alone, unchanged, and — same as the other loaders above — so it resolves instead
+    // of falling through to the real (unmocked) Supabase client and hanging in this environment.
+    loadInvCountSessions: () => Promise.resolve([]),
   };
 });
 

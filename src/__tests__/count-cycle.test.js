@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
-         mergeWeeklyCountDay, formatWeeklyComplianceReport, weeklyRecountWindows } from '../engine/count-cycle.js';
+         mergeWeeklyCountDay, formatWeeklyComplianceReport, weeklyRecountWindows,
+         sessionsFromLog, cycleComplianceFromLog, weeklyRecountWindowsFromLog } from '../engine/count-cycle.js';
 import { WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
@@ -829,5 +830,73 @@ describe('weeklyRecountWindows', () => {
   it('a store with zero rows gets no entry (not a false empty window)', () => {
     const windows = weeklyRecountWindows([], { asOf: '2026-08-10' });
     expect(windows).toEqual({});
+  });
+
+  // 2026-09-08 fix: the window used to only ever look FORWARD from the qualifying session's
+  // own date. windowsFromCompliance() now walks backward through any immediately-preceding
+  // session within windowDays, so a tight cluster of close-together counts is treated as one
+  // cycle. Uses a DIFFERENT class for the two sessions (Paper, then Food+Condiment) so both
+  // dates genuinely survive in this raw-onhand fixture — a same-item recount (the real Madill
+  // case: a Partial Food+Condiment count fully redone the next day) overwrites qsr_onhand's
+  // last_counted in place regardless of this fix, which is exactly why
+  // weeklyRecountWindowsFromLog (below) exists; that's the scenario it covers.
+  it('extends the window start backward through a tightly-clustered PRECEDING session', () => {
+    const rows = store('13113', [
+      { date: '2026-09-07', counts: { Paper: 40 } },
+      { date: '2026-09-08', counts: { Food: 118, Condiment: 36 } }, // full Weekly, 1 day later
+    ]);
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-09-08', windowDays: 3 });
+    expect(windows['13113'].closeWindowStart).toBe('2026-09-07');
+    expect(windows['13113'].closeWindowEnd).toBe('2026-09-11');
+  });
+
+  it('does NOT absorb a preceding session more than windowDays away (the following-week protection)', () => {
+    const rows = store('6178', [
+      { date: '2026-08-06', counts: { Food: 118, Condiment: 36 } },
+      { date: '2026-08-13', counts: { Food: 118, Condiment: 36 } }, // 7 days later, a routine weekly
+    ]);
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-08-14', windowDays: 3 });
+    expect(windows['6178'].closeWindowStart).toBe('2026-08-13');
+  });
+});
+
+// 2026-09-08 fix: qsr_onhand upserts on (loc, period, wrin), so a same-item recount overwrites
+// the EARLIER session's last_counted date in place before it can ever be seen as distinct —
+// exactly what happened to Madill (loc 13113): a Partial weekly count on 2026-09-07 (Food
+// 59/114, Condiment 8/37, ~7% FOB) was fully redone the next day, and by the time qsr_onhand
+// was re-pulled every row for those items showed ONLY 2026-09-08 -- 09-07 was gone. The
+// append-only inv_count_sessions log (supabase/schema-inv-count-sessions.sql) preserves both
+// dates as distinct rows; these tests use that real, measured shape.
+describe('sessionsFromLog / cycleComplianceFromLog / weeklyRecountWindowsFromLog — real Madill case', () => {
+  const madillLogRows = [
+    { loc: '13113', countDate: '2026-09-07', cls: 'Food', itemsCounted: 59, classTotal: 114, covered: false },
+    { loc: '13113', countDate: '2026-09-07', cls: 'Condiment', itemsCounted: 8, classTotal: 38, covered: false },
+    { loc: '13113', countDate: '2026-09-08', cls: 'Food', itemsCounted: 114, classTotal: 114, covered: true },
+    { loc: '13113', countDate: '2026-09-08', cls: 'Condiment', itemsCounted: 37, classTotal: 38, covered: true },
+    { loc: '13113', countDate: '2026-08-29', cls: 'Paper', itemsCounted: 72, classTotal: 85, covered: false },
+  ];
+
+  it('sessionsFromLog preserves BOTH the Partial 09-07 and the Weekly 09-08 as distinct sessions', () => {
+    const { sessions } = sessionsFromLog(madillLogRows);
+    const dates = sessions['13113'].map(s => s.date);
+    expect(dates).toEqual(['2026-08-29', '2026-09-07', '2026-09-08']);
+    const p = sessions['13113'].find(s => s.date === '2026-09-07');
+    const w = sessions['13113'].find(s => s.date === '2026-09-08');
+    expect(p.satisfiesWeekly).toBe(false);
+    expect(p.isPartial).toBe(true);
+    expect(w.satisfiesWeekly).toBe(true);
+  });
+
+  it('cycleComplianceFromLog reports the 09-08 Weekly as the compliant lastWeekly, not overdue', () => {
+    const compliance = cycleComplianceFromLog(madillLogRows, { asOf: '2026-09-08' });
+    const c = compliance.find(x => x.loc === '13113');
+    expect(c.lastWeekly.date).toBe('2026-09-08');
+    expect(c.overdue).toBe(false);
+  });
+
+  it('weeklyRecountWindowsFromLog produces a window that SPANS the recount — the exact case a live qsr_onhand snapshot could no longer show', () => {
+    const windows = weeklyRecountWindowsFromLog(madillLogRows, { asOf: '2026-09-08', windowDays: 3 });
+    expect(windows['13113'].closeWindowStart).toBe('2026-09-07');
+    expect(windows['13113'].closeWindowEnd).toBe('2026-09-11');
   });
 });
