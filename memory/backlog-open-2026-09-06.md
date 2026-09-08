@@ -635,11 +635,18 @@
   the full 27-store list), so per-loc isolation has never been exercised live even though the
   policies are attached. Full measurement + the concrete remaining step (a live login test with a
   genuinely-restricted profile): `memory/finding-rls-phase2-my-locs-2026-09-06.md`.
-- [ ] PII/credential-handling human-process capture — the content already exists in
-  `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md` (x-auth-token sequencing rules, the
-  `storePeoplePunches`/`employeeRoster` PII field lists), it's just not indexed into CLAUDE.md's
-  own standing rules yet. ❓ Whether the roster-workbook deletion this repo has a standing
-  instruction for actually happened is still a real open question.
+- ✅ **DONE 2026-09-08 — indexed into CLAUDE.md's own Dev Rules, do not re-index.** Pulled the
+  x-auth-token sequencing rule, the `storePeoplePunches`/`employeeRoster` PII field lists, the
+  service-role-key handling rule, and the TLS/proxy rule out of `pm-handoff-2026-08-15.md` §8 and
+  `qsrsoft-report-catalog.md`'s two PII notes into one consolidated, checkable block in
+  CLAUDE.md's Dev Rules section (deliberately did NOT index that file's stale
+  "PM never pushes to main" line — it contradicts CLAUDE.md's current, more recent standing merge
+  rule, so carrying it forward would create a real contradiction rather than a small omission).
+  ❓ **The roster-workbook deletion itself remains a genuine owner-only open question** — confirmed
+  via `git log --all --diff-filter=A` that no such workbook was ever committed to this repo (so
+  there's nothing to find or fix here), but whether the owner has deleted the actual local files on
+  their own machine can't be checked from this environment. On the owner-input list, not
+  re-investigable from the repo side.
 - [ ] App Store readiness roadmap (deliverable = roadmap doc only).
 - [ ] ❓ Capacity-review questions (usage/dev-pace vs. growth; onboarding readiness for new users).
 - [ ] ❓ Needs clarification from owner: "Aug 19-21 JR" note; Google Reviews "fun for now"
