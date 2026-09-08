@@ -78,6 +78,44 @@ describe('toTenureRows() — qsr_employee_tenure write-path row shape', () => {
     const [row] = toTenureRows(recs);
     expect(() => new Date(row.updated_at).toISOString()).not.toThrow();
   });
+
+  // Measured live 2026-09-08: the QSRSoft Employee Roster Pull failed with Postgres's
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time" -- an employee holding two
+  // job codes (Primary + a secondary one) comes back from the API as two rows sharing the same
+  // (loc, geid), which is the table's actual conflict key, and Postgres refuses ANY upsert batch
+  // containing two rows with an identical conflict key, aborting the WHOLE 27-store chunk, not
+  // just the duplicated employee -- confirmed against a real employee-tenure gap this exact bug
+  // produced (store 43701 had zero qsr_employee_tenure rows at all).
+  it('dedupes by (loc, geid) -- the table\'s real conflict key -- preferring the Primary job code', () => {
+    const recs = parseEmployeeRosterApi({ result: [
+      { storeNum: 3708, geid: '8', fullEmployeeName: 'I DualCode', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '641', jobTitleCodeDescription: 'GENERAL MANAGER', jobCodeType: 'Primary' },
+      { storeNum: 3708, geid: '8', fullEmployeeName: 'I DualCode', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650', jobTitleCodeDescription: 'CREW PERSON', jobCodeType: 'Secondary' },
+    ] });
+    const rows = toTenureRows(recs);
+    // Exactly ONE row for this (loc, geid) -- the batch this feeds must never contain two rows
+    // sharing a conflict key, or the real upsert throws exactly the error this test exists for.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].job_code_type).toBe('Primary');
+    expect(rows[0].job_title_code_description).toBe('GENERAL MANAGER');
+  });
+
+  it('keeps the first-seen row when NEITHER duplicate is marked Primary, rather than dropping the person', () => {
+    const recs = parseEmployeeRosterApi({ result: [
+      { storeNum: 3708, geid: '9', fullEmployeeName: 'J NoPrimaryFlag', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '647', jobTitleCodeDescription: 'CERT. SWING MGR.', jobCodeType: 'Secondary' },
+      { storeNum: 3708, geid: '9', fullEmployeeName: 'J NoPrimaryFlag', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650', jobTitleCodeDescription: 'CREW PERSON', jobCodeType: 'Secondary' },
+    ] });
+    const rows = toTenureRows(recs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].job_title_code_description).toBe('CERT. SWING MGR.');
+  });
+
+  it('does not affect a normal roster with no duplicate (loc, geid) pairs', () => {
+    const recs = parseEmployeeRosterApi({ result: [
+      { storeNum: 3708, geid: '10', fullEmployeeName: 'K Solo', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650', jobCodeType: 'Primary' },
+      { storeNum: 3708, geid: '11', fullEmployeeName: 'L AlsoSolo', storeStartDate: '2026-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650', jobCodeType: 'Primary' },
+    ] });
+    expect(toTenureRows(recs)).toHaveLength(2);
+  });
 });
 
 describe('assertNoDeniedSelectCols() — the SELECT_COLS denial guard', () => {
