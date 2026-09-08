@@ -453,6 +453,33 @@ export function cycleComplianceFromLog(logRows = [], { asOf = null } = {}) {
   return complianceFromSessions(sessions, classTotals, { asOf });
 }
 
+// Dispatch28 Workstream F ("voice by role" — CLAUDE.md's standing rule, owner principle
+// 2026-08-17: "an analyst needs a number, an operator needs a decision"). The dispatch's own
+// cited evidence of the gap was THIS panel: "Count Cycle said 'No complete weekly count on
+// record' to a store that had counted" — the surface answered "what's wrong" (diagnostic)
+// but never "so what do I do" (decision). buildCycleVerdict() is Count Cycle's version of
+// visit-readiness.js's buildVerdict() — a one-line imperative headline, shown ALONGSIDE
+// (never replacing) the existing exceptions[].detail diagnostic text, per the standing
+// rule's explicit both/and: "say the number AND the decision."
+export function buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }) {
+  const overdueEx = exceptions.find(e => e.rule === 'weekly-overdue');
+  const incompleteEx = exceptions.find(e => e.rule === 'weekly-incomplete');
+  const paperEx = exceptions.find(e => e.rule === 'mid-month-paper');
+  let verdict;
+  if (overdueEx) {
+    verdict = daysSinceWeekly == null
+      ? 'Count Food and Condiment this week — no complete count on record yet this period.'
+      : `Count Food and Condiment today — ${daysSinceWeekly} days since the last complete count.`;
+  } else if (incompleteEx && lastPartial) {
+    const missing = WEEKLY_CLASSES.filter(cl => !lastPartial.covered.includes(cl));
+    verdict = `Finish the ${missing.join(' and ')} count from ${lastPartial.date} — every weekly count needs Food and Condiment.`;
+  } else {
+    verdict = 'On cycle — no action needed this week.';
+  }
+  if (paperEx) verdict += ' Also do a Paper count — none yet this month.';
+  return verdict;
+}
+
 function complianceFromSessions(sessions, classTotals, { asOf = null } = {}) {
   const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
@@ -511,7 +538,7 @@ function complianceFromSessions(sessions, classTotals, { asOf = null } = {}) {
       perClass: perClassCounted(all, classTotals[loc] || {}),
       lastWeekly, lastAny, lastPartial, daysSinceWeekly,
       paperThisMonth, paperMissing, overdue,
-      exceptions,
+      exceptions, verdict: buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }),
       status: exceptions.some(e => e.severity === 'crit') ? 'crit'
             : exceptions.length ? 'warn' : 'ok',
     };
@@ -630,6 +657,10 @@ export function formatWeeklyComplianceReport(c, { storeName = '' } = {}) {
   const title = storeName || c.loc;
   L.push(`# Count Cycle — ${title}`, '');
   L.push(`**Status: ${WEEKLY_SEV_WORD[c.status] || c.status}**${c.lastWeekly ? ` · last full count ${c.lastWeekly.date} (${c.daysSinceWeekly} day${c.daysSinceWeekly === 1 ? '' : 's'} ago)` : ' · no complete weekly count on record'}`, '');
+  // Dispatch28 Workstream F — a share link is read on a phone by whoever it's sent to, often
+  // without the app open at all, so the "so what do I do" line belongs in the report itself,
+  // not just the in-app card.
+  if (c.verdict) L.push(`**${c.verdict}**`, '');
 
   if (c.exceptions.length) {
     L.push('## Exceptions', '');

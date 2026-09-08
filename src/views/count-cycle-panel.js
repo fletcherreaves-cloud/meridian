@@ -74,10 +74,14 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
       div({ style: { flex: 1, minWidth: 0 } },
         div({ style: { fontSize: 12.5, fontWeight: 700, color: 'var(--text,#e8eaed)' } },
           `${sName(c.loc) || c.loc}`, span({ style: { color: 'var(--text3,#6b7280)', fontWeight: 400, marginLeft: 6, fontFamily: 'var(--mono)', fontSize: 10 } }, `#${c.loc}`)),
+        // Dispatch28 Workstream F ("voice by role") — the verdict answers "so what do I do"
+        // first (buildCycleVerdict, count-cycle.js); the diagnostic detail underneath stays
+        // visible as the supporting metric/evidence, per the standing rule's both/and — never
+        // one replacing the other.
+        div({ style: { fontSize: 11.5, fontWeight: 600, color: meta.col, marginTop: 2 } }, c.verdict),
         c.exceptions.length
-          ? div({ style: { fontSize: 11, color: meta.col, marginTop: 2 } }, c.exceptions[0].detail)
-          : div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', marginTop: 2 } },
-              c.lastWeekly ? `Last full count ${c.lastWeekly.date} · ${c.daysSinceWeekly}d ago` : 'No count on record')),
+          ? div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', marginTop: 1 } }, c.exceptions[0].detail)
+          : (c.lastWeekly ? div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', marginTop: 1 } }, `Last full count ${c.lastWeekly.date} · ${c.daysSinceWeekly}d ago`) : null)),
       c.paperMissing ? span({ style: { fontSize: 9, fontWeight: 700, color: '#a78bfa', border: '.5px solid #a78bfa66', borderRadius: 4, padding: '2px 6px' } }, 'PAPER DUE') : null,
       span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: meta.col } }, meta.word),
       span({ style: { fontSize: 10, color: 'var(--text3,#6b7280)' } }, expanded ? '▾' : '▸')),
