@@ -264,12 +264,44 @@ predictable timing, variance clustering on high-value items), incompetence scatt
 
 - ~~**Holdenville FOB series not yet run**~~ — done, see §7b. Result: signature present,
   survives the peer test.
-- **`inventory_history` retention depth unprobed.** Probe via `workflow_dispatch` (the Action
-  already holds `QSRSOFT_EBOS_TOKEN`); do not wait on a laptop. See #257 step 0.
-- **Does `qsr_daily_activity` carry register-level controls back to 2025-01?** If refunds /
-  promos / voids / over-rings are reachable there, the register-leak half of the cash theory is
-  testable for the 2025 window even though `cash_sheet_daily` is not. Unverified — check before
-  assuming either way.
+- ✅ **RESOLVED 2026-09-08 — real server-side 1-year rolling retention window, NOT per-store
+  adoption date. This is a FORWARD-ONLY stream; priority drops, do not attempt a deep backfill.**
+  The step-0 probe (`scripts/qsrsoft-inventory-history-pull.mjs`, `INVHIST_PROBE=1`,
+  `.github/workflows/qsrsoft-inventory-history-pull.yml`) already existed fully built per issue
+  #257's spec; correction to an earlier version of this note — it was NOT unrun (GitHub reported
+  it as run #5), the actual gap was that no prior verdict had ever been logged to `memory/`.
+  Dispatched a fresh run 2026-09-08 10:51 UTC (run id 34217619627, `debug=1`,
+  https://github.com/fletcherreaves-cloud/meridian/actions/runs/34217619627) and read its full
+  log. **Verdict, both probed stores (35064, a long-tenured store from the issue's own 13-day
+  sample; 10422, a second independent store):** data present back to exactly **2025-09-08**
+  (last 365 days: 2061/2714 `inv_items` respectively; full 2025 calendar year: 0 for both; the
+  probe's own bisect+confirm boundary check landed on the identical date for both, confirmed —
+  not just a first-pass guess). 2025-09-08 is exactly 365 days before the run date
+  (2026-09-08). Two INDEPENDENT stores converging on the identical day-of-year cutoff is the
+  signature the probe script's own header calls out as distinguishing a real server-side
+  retention limit from a per-store count-adoption date (which would differ store to store) — so
+  this reads as a genuine rolling 1-year server-side window, not a per-store artifact. Per the
+  probe's own decision rule (`allCutoffOrCap` branch): **this is a FORWARD-ONLY stream** for the
+  register-leak investigation's purposes — it cannot reach back to 2025-01 or earlier, so it does
+  NOT make the pre-2025-09 register-leak window testable. The full real pull (table schema,
+  upsert, workflow schedule, `sync-failure-watch.yml` entry, manual-upload fallback per
+  CLAUDE.md's standing 5-part rule) is still unbuilt and is now correctly sizeable as "keep the
+  rolling year going forward," not "backfill deep history" — a materially different, smaller
+  scope than the issue's own "Why this one matters" framing assumed going in.
+- ✅ **RESOLVED 2026-09-08 — `qsr_daily_activity` does NOT carry register-level controls, at any
+  date.** Not a coverage gap — a schema fact, settled by reading source, no live query needed:
+  `scripts/qsrsoft-dar-pull.mjs`'s full field mapping (sales/transactions/DT-timing/FC-timing/
+  MFY/beverage/labor/order-accuracy/projections/means/LY — every column in `qsr_daily_activity`,
+  cross-checked against `memory/project-qsrsoft-daily-activity.md`'s `CREATE TABLE`) has zero
+  refund/promo/void/T-Red/POS-override/cash-O-S fields — the DAR API response this pull reads
+  never included them. Confirmed via `src/engine/signal-registry.js`: every one of those
+  loss-prevention metrics (`promoPct`, `cashOSPct`, `posOverCnt`, `manualRefAmt`, `cashRefCnt`,
+  `tRedBPct`/`tRedAPct`, etc.) sources from `ctrlRows` (manual DAR/Controls upload, no auto
+  floor) or `glimpseRows`/`cashRows` (`daily_glimpse_daily`/`cash_sheet_daily`, floor
+  2026-07-01) — never from `qsr_daily_activity`. So the register-leak half of the cash theory is
+  **not** testable for the 2025 window through this table; the only route back that far is
+  backfilling the emailed streams (next item) or an eBOS/reporting-API endpoint that actually
+  carries controls fields, which hasn't been identified.
 - **Back-filling the three emailed streams before 2026-07** — currently the only route to
   historical cash and controls. Unknown whether the source emails still exist.
 

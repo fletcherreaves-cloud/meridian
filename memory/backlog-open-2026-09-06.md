@@ -311,13 +311,20 @@
   (`monthly_targets` coverage, `dayFrac`/current-month proration math, or a location-mapping
   mismatch). **The Jan-Mar manual-upload-gap hypothesis is refuted** (measured: DAR-sourced,
   2367/~2430 rows, 97.4% coverage) — don't re-chase that specific mechanism.
-- [ ] `GC_SALES_DIVERGE` (Morning Brief) — real remaining lead: an owner-selected "today" or
-  DAR-only date (via the panel's own date picker) hits `assembleBriefStoreData`'s
-  `darSales`/`darProjSales` fallback, which hasn't been checked against a live in-progress DAR day
-  the same way dispatch #153 checked OEPE/R2P/TPPH for `qsr_daily_activity_rollup`'s always-24-slot
-  trap. The auto-default-date partial-day theory is ruled out (both `labor_rows`/`ctrl_rows` are
-  6+ weeks stale, so auto-default can't land on a still-open day). `ctrl_rows` being that stale is
-  itself worth flagging — either abandoned in favor of auto sources, or broken.
+- ✅ **FIXED 2026-09-08 (v5.401).** Re-investigated the lead directly: `darByLoc`'s own
+  accumulator (`morning-brief.js`) already gates `sales`/`projSales` to the SAME hour-slot rows
+  (`if(product_sales>0){sales+=...;projSales+=...}`), so `salesVsExp` is a proportional ratio of
+  elapsed-hours-only sums, not vulnerable to the #153-style always-24-slot dilution — and
+  `gcVsExp` only ever reads `labor?.gc` (no DAR/auto GC field exists), so it stays `null` and the
+  alarm can't fire at all on a cloud-only device. The REAL bug was one level up:
+  `getLatestBriefDate()` only checked `laborRows`/`ctrlRows`/`peaksSvcRows` (all manual-upload)
+  and fell back to literal `new Date()` — today, in-progress — whenever a device had none of
+  those, which is exactly the cloud-only case this backlog cut's own "6+ weeks stale ctrl_rows"
+  observation describes. That silently selected an in-progress business day for EVERY rule in
+  the evaluate() set (T-Reds, OEPE, staffing gap, not just GC_SALES_DIVERGE), risking false
+  RED/AMBER flags on partial-day data. Fixed: also reads `ds.qsrActSummaryRows` (auto DAR
+  rollup) and clamps the result to `lastClosedBusinessDay()` (`src/utils/date.js`). 4
+  new/updated tests in `morning-brief-geo.test.js`.
 - [x] District View compound claim — **re-verified 2026-09-07: 3 of 4 sub-claims were stale,
   already fixed; only the TPPH one is real.** (`src/views/store-dash.js`, wired via
   `src/views/store-analytics.js`'s `StoreDash` tab dispatch.)
@@ -550,8 +557,18 @@
   GM probably never needs the district-wide rollup tier at all) rather than deferring data to
   first-click. Revisit alongside the P4 multi-tenant/multi-user rollout, when role-scoped startup
   actually has a second concurrent user to matter for.
-- [ ] Swing alarm's cross-metric report + AI-scour-for-causes sub-asks — detection/ack shipped,
-  these two enrichment asks unconfirmed as built.
+- ✅ **MEASURED 2026-09-08 — confirmed NOT built, via direct code read (Explore agent).**
+  Detection (`detectSwing()`/`buildSwingFeed()`, `src/engine/swing-detect.js`+`swing-feed.js`)
+  and ack (`acknowledge()`/`ackKey()`/`partitionAcked()`/`buildAckHistory()`, same file,
+  persisted to `user_settings.swing_acks`) are both real and more built than the note implied.
+  Cross-metric report and AI-scour-for-causes are genuinely absent: the swing UI's only
+  "explain this" mechanism is `src/engine/swing-context.js`'s `newsContextFor()`, which scores
+  pre-populated local-news headlines (`news_mentions` table) — it never reads labor%, OEPE,
+  weather telemetry, or other-store data from Meridian's own metric stores, and never calls an
+  AI. `why.js`'s `lookupMissEvent` (the actual Anthropic-API causal-lookup feature, Haiku 4.5)
+  is a separate, unconnected system wired to forecast-miss flows (`store-dash.js`/`calendar.js`)
+  — `SwingAlarm.js`/`swing-context.js` never import or call it. Both enrichment asks are real,
+  scoped, unbuilt work — not yet sized or picked up.
 
 *(Archive: §10)*
 
@@ -778,20 +795,28 @@
 - [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
   store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
   itself isn't built.
-- [ ] **Job-code/position-level forecast vs actual hours on weekly schedules** (owner, 2026-09-07,
-  explicitly flagged "for later," not urgent) — *"figure out if we can get forecast and actual
-  hours for each job code/position on the weekly schedules... on the weekly and daily > hourly
-  level to be fully effective... an ambitious project."* Purpose: locate exactly WHERE a
-  schedule needs to change (which position, which hour), not just that a store is over/under in
-  aggregate. **Confirmed genuinely new, not already covered** — every existing auto stream
-  (`qsr_labor_summary`, `qsr_daily_activity_rollup`'s `actual_punched_hours`/
-  `total_needed_hours`/`total_scheduled_hours`) is a STORE-DAY total with no job-code/position
-  breakdown; `lifelenz_schedule` is the only candidate source likely to carry per-shift
-  role/position detail (it's the raw LifeLenz schedule pull), not yet audited for whether it
-  actually includes a position field at the row level or would need a schema/parser change.
-  Real scope, not sized: (1) confirm `lifelenz_schedule`'s raw shape has position/job-code per
-  shift, (2) a forecast-hours-by-position source (LifeLenz's own guide, or derived), (3) daily/
-  hourly rollup UI, likely a Labor Tools or Scheduling sub-view.
+- ⚠️ **RE-SCOPED 2026-09-08 — a large chunk of this is already built; not greenfield.** Checked
+  step (1) directly: `lifelenz_schedule`'s per-shift position/job-code detail is NOT the source
+  — but a separate, already-live pipeline covers most of what was asked for.
+  `scripts/lifelenz-pull.mjs`'s `pullJobHours()` (a second GraphQL endpoint,
+  `ShiftsForSchedulePeriod`, distinct from the CSV `lifelenz_schedule` pull) already rolls up
+  every SCHEDULED shift by `businessRoleId`/station into `lifelenz_job_hours`
+  (loc/week_start/role_name/category/code/hours/cost/reg_hours/ot_hours/n_shifts), loaded into
+  `ds.jobHours` at startup (`App.js`) and **already rendered** in `schedule-summary.js`'s
+  `StationBreakdown` component (Weekly Schedule Summary panel, per-store per-week, expandable) —
+  Station / Category / Shifts / Reg / OT / Hours / Cost / $-per-hr, one row per job code. So the
+  per-position **scheduled** hours ask is done, at the weekly grain, and has been live since
+  before this backlog cut (not a new find — just never connected to the owner's Sept 7 request
+  in this doc).
+  **What's still genuinely missing, now correctly scoped down from "ambitious project" to 3
+  specific gaps:** (1) no ACTUAL/worked hours by position — `lifelenz_job_hours` sources from
+  scheduled shifts (`shiftType: ['offer','offer_to_all','roster','time_off','open']`), not
+  punches, so there's no per-role actual-vs-scheduled comparison yet, only scheduled; (2) no
+  forecast/NEEDED hours by position (a labor-guide-derived target per role) to compare the
+  schedule against — `lifelenz_job_hours` is the "what's scheduled" side only, not "what's
+  needed"; (3) weekly grain only — no daily or hourly breakdown by position, which is what the
+  owner's own phrasing called out as needed "to be fully effective." Any follow-up should build
+  on `lifelenz_job_hours`/`StationBreakdown`, not start over.
 - [ ] Inventory Control redesign's Labor instantiation of the generic Food-Cost shell
   (owner-approved, "it must host Labor too") is on hold pending an owner-run measurement of
   `qsr_labor_summary` that resolves a contradiction in what "Crew Labor %" actually contains.
@@ -805,10 +830,17 @@
 - [ ] Correlate the Planning/Execution over-scheduling gap against `turnover_monthly` (already
   pulled) — named as "the strongest available test" to convert the overscheduling-is-chaos-not-cost
   finding from qualitative to measured.
-- [ ] Two open probes from the register-leak/cash-hunt investigation: whether
-  `qsr_daily_activity` carries register-level controls back to 2025-01 (would make the deposit-
-  lapping theory testable pre-dating `cash_sheet_daily`'s 2026-07-01 floor), and probing
-  `inventory_history` retention depth via `workflow_dispatch`.
+- ✅ **BOTH RESOLVED 2026-09-08 — the register-leak theory is not testable pre-2025-09 through
+  either route; a fresh in-repo credential or endpoint would be needed.** (1) `qsr_daily_activity`
+  does NOT carry register-level controls at any date — a schema fact, not a coverage gap: its
+  full field mapping (`scripts/qsrsoft-dar-pull.mjs`) has zero refund/promo/void/T-Red/POS-over
+  fields, and every one of those loss-prevention metrics in `signal-registry.js` sources from
+  `ctrlRows`(manual)/`glimpseRows`/`cashRows` (both floored 2026-07-01) instead. (2) The
+  `inventory_history` step-0 probe (issue #257) was dispatched and read in full — both probed
+  stores hit an identical retention floor at 2025-09-08 (exactly 365 days before the run date),
+  which the probe's own header identifies as the signature of a real server-side 1-year rolling
+  window, not a per-store adoption date. So it's a forward-only stream too. Full measurements:
+  `memory/finding-padding-and-cash-hunt-2026-08-13.md` §8.
 - [ ] **§8 addendum:** whether the discarded-targets bug (#153/#167) also hits Projections'
   `sales_proj` — never resolved, no follow-up filed.
 
