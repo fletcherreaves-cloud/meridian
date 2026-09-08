@@ -119,9 +119,36 @@ describe('mapRawItemHistory', () => {
     expect(m.wrin).toBe('00005-086');
     expect(m.history).toHaveLength(2);
     expect(m.counts).toHaveLength(1);
-    expect(m.counts[0].difference).toBeCloseTo(-1947.88);
+    // Negated from the API's raw -1947.88 -- see the sign-flip regression test below for why.
+    expect(m.counts[0].difference).toBeCloseTo(1947.88);
     expect(m.counts[0].manager).toBe('Cinthya a - e9755633');
     expect(m.counts[0].isCount).toBe(true);
+  });
+
+  // Measured live 2026-09-08 (Madill, loc 0013113, wrin 00005-086, period 2026-09), triggered
+  // by the owner comparing Meridian's Item Journeys panel against QSRSoft's own "Variance
+  // Stat/Yields" screen side by side and finding every sign flipped. Real values captured
+  // straight off qsr_raw_item_detail: a count that PHYSICALLY dropped on-hand 3352.2 -> 2304.0
+  // (a real 1048.2-unit shortage) carried the API's own `variance: 1048.2` / `difference:
+  // 447.85` (positive) -- while QSRSoft's own Variance Stat/Yields UI, and the separate
+  // qsr_variance_stat report for the same wrin/period, both use negative-for-shortage. So
+  // mapRawItemHistory must negate both fields to agree with every other QSRSoft number.
+  it('negates variance/difference — the raw_detail API returns them sign-inverted vs every other QSRSoft report', () => {
+    const detail = {
+      full_wrin: '00005-086', long_desc: '100% PURE BEEF', uom_desc: 'Each', item_class: 'F',
+      history: [
+        // Physically a SHORTAGE (on-hand fell 3352.2 -> 2304.0) -- API reports it positive.
+        { store_busn_dt: '09/07/2026', store_busn_tm: '14:54:06', source: 'inventory', qty_change: 2304, variance: 1048.2, difference: 447.85158260825614, eID: 'Christopher A - ee581328', count_source: 'MobileApp' },
+        // Physically an OVERAGE (on-hand rose 2275.0 -> 2764.8) -- API reports it negative.
+        { store_busn_dt: '09/07/2026', store_busn_tm: '15:39:05', source: 'inventory', qty_change: 2764.8, variance: -489.8, difference: -209.2708807933425, eID: 'Christopher A - ee581328', count_source: 'MobileApp' },
+      ],
+    };
+    const m = mapRawItemHistory(detail);
+    const [shortageEvent, overageEvent] = m.counts;
+    expect(shortageEvent.variance).toBeCloseTo(-1048.2);
+    expect(shortageEvent.difference).toBeCloseTo(-447.85);
+    expect(overageEvent.variance).toBeCloseTo(489.8);
+    expect(overageEvent.difference).toBeCloseTo(209.27, 1);
   });
 });
 
