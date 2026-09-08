@@ -416,6 +416,21 @@
   real, actionable 7/27 (26%). Full numbers in the PR body. 2 existing test fixtures
   (`count-cycle.test.js`) bumped from their old borderline counts to genuinely-full counts to
   keep demonstrating their own point (independent-flags mechanism) at the new bar.
+  ⚠️ **SUPERSEDED 2026-09-08 (v5.405→v5.407) — the `weeklyRecountWindows()`/`qsr_onhand` design
+  above missed a real case and was replaced.** Madill (loc 13113) counted a Partial weekly on
+  09-07 (~7% FOB) and fully redid it on 09-08; the tile never showed it, because `qsr_onhand`
+  upserts on `(loc,period,wrin)` — a live snapshot, not a log — so the 09-07 date was overwritten
+  in place by the 09-08 recount before the tile could ever see two distinct sessions. v5.405
+  first fixed this by reading a new append-only log (`inv_count_sessions`); v5.406 simplified it
+  further per owner follow-up ("the different count data should be easy to get from the raw item
+  detail... thought we already were") — the tile now derives its recount window INTRINSICALLY
+  from `qsr_raw_item_detail`'s own per-item count-day clustering (`autoWindowDays`,
+  `eom-ledger-baseline.js`), no `qsr_onhand`/`inv_count_sessions`/store-level session concept at
+  all. v5.407 then hardened `qsr_raw_item_detail` itself: its per-pull upsert was a blind
+  full-array REPLACE (an item dropping out of the daily top-50 actionable selection had its
+  stored history frozen with no trace of what happened while excluded) — now merges via
+  `mergeRawItemHistory()`. Full writeups: `memory/finding-recount-window-onhand-overwrite-2026-09-08.md`,
+  `memory/finding-raw-item-detail-merge-2026-09-08.md`.
 - [x] ✅ **RE-MEASURED 2026-09-07 (v5.390) — this line was stale; 3 of 4 spots were already done.**
   Re-checked against current code before touching anything (per the "measure it" rule): the
   Change Monitor Baseline-diff box, **ItemJourneyView** (`csOf`, `eom-dashboard.js:1338`), and
@@ -426,8 +441,16 @@
   function computed `unitVar`/`caseSz` internally (via `storeVarianceProgressions`) but never
   passed them out to its `items` array. Threaded through (`fob-recount-analysis.js`) + rendered
   (`rcCaseSuffix`, same shape as `csOf`/`fobCaseSuffix`) — do not re-implement any of the 4 spots.
-- [ ] Item Journey flow reconciliation to tie out exactly to the Variance Stat report (currently
-  directional only).
+- [x] ✅ **DONE 2026-09-08 (v5.404) — it did NOT tie out, and now does.** The reconciliation this
+  item asked for was run for real: the owner compared Meridian's Item Journeys panel against
+  QSRSoft's own "Variance Stat/Yields" screen for Madill (loc 13113) and found every sign
+  flipped. Root cause: QSRSoft's `raw_detail/{itemId}` API returns `variance`/`difference`
+  sign-INVERTED relative to `qsr_variance_stat` and its own UI for the same number — confirmed
+  three independent ways (physical on-hand math, `qsr_variance_stat`, the QSRSoft UI itself) and
+  reproduced on a second item. `mapRawItemHistory()` (`eom-parsers.js`) now negates both fields
+  at the source, so Item Journeys/Swing Ledger/`reconstructMissingProducts` all tie out to
+  `qsr_variance_stat`'s convention now, not just directionally. Full writeup:
+  `memory/project-eom-item-journey.md` #3 (closed) and the PR body for #1205.
 - [ ] Remaining EOM list: Inventory-Summary/Physical-Inventory endpoint capture; wire
   `monthly_targets` into fob-components + variance threshold; on-demand raw-item-timing drill;
   store yield BAND; CoachQ curated prompts; notification-settings UI.
