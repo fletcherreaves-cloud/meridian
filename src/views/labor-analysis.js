@@ -192,8 +192,33 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
   };
   const cfgInput = (loc, field, w = 54) => h('input', { value: cfgVal(loc, field) ?? '', onChange: e => setCfg(loc, field, e.target.value === '' ? null : (field === 'maintDaysOff' ? e.target.value : parseFloat(e.target.value))), style: { width: w, fontSize: 10, padding: '2px 4px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 4, color: 'var(--text)', textAlign: 'right', fontFamily: 'var(--mono)' } });
 
+  // Hours-of-operation editor (backlog: "still read-only, only maint/prep/lobby are
+  // editable"). Only the .hours figure each day cell already displayed is editable here —
+  // .open/.close (consumed independently by labor-standard.js's overnight-standard math,
+  // NOT shown in this table) are preserved as deciphered, untouched by this edit. A save
+  // writes the WHOLE hours_json blob (saveStoreLaborConfig, supabase.js), so editing one
+  // day must carry every other day's existing value forward, not just the changed one, or
+  // the other 6 days would be silently wiped on save.
+  const cfgHoursVal = (loc, day) => {
+    const e = edit[loc];
+    if (e && e.hours && day in e.hours) return e.hours[day] ? e.hours[day].hours : null;
+    const c = (config[loc] || {}).hours || {};
+    return (c[day] && c[day].hours != null) ? c[day].hours : null;
+  };
+  const setCfgHours = (loc, day, v) => setEdit(p => {
+    const base = (p[loc] && p[loc].hours) || (config[loc] && config[loc].hours) || {};
+    const nextDay = v === null ? { ...(base[day] || {}), hours: null } : { ...(base[day] || {}), hours: v };
+    return { ...p, [loc]: { ...(p[loc] || {}), hours: { ...base, [day]: nextDay } } };
+  });
+  const cfgHoursInput = (loc, day) => h('input', {
+    value: cfgHoursVal(loc, day) ?? '',
+    onChange: e => setCfgHours(loc, day, e.target.value === '' ? null : parseFloat(e.target.value)),
+    title: DAYS.find(([d]) => d === day)?.[1],
+    style: { width: 26, fontSize: 9, padding: '1px 2px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 3, color: 'var(--text)', textAlign: 'right', fontFamily: 'var(--mono)' },
+  });
+
   const cfgStores = ALL_LOCS.filter(l => activeLocs === null || activeLocs.has(locNum(l))).sort((a, b) => (isFL(a) - isFL(b)) || STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
-  const cfgRow = loc => { const c = config[locNum(loc)] || {}; const hrs = c.hours || {};
+  const cfgRow = loc => {
     return h('tr', { key: loc },
       h('td', { style: { ...td, textAlign: 'left', fontFamily: 'inherit', fontWeight: 600 } }, storeNm(loc), ' ', span({ style: { color: 'var(--text3)', fontSize: 8.5 } }, '#' + locNum(loc))),
       h('td', { style: { ...td, textAlign: 'center' } }, h('input', { type: 'checkbox', checked: !!cfgVal(locNum(loc), 'is24hr'), onChange: e => setCfg(locNum(loc), 'is24hr', e.target.checked) })),
@@ -202,9 +227,10 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
       h('td', { style: { ...td, fontFamily: 'inherit' } }, cfgInput(locNum(loc), 'maintDaysOff', 70)),
       h('td', { style: td }, cfgInput(locNum(loc), 'prepHours')),
       h('td', { style: td }, cfgInput(locNum(loc), 'lobbyHours')),
-      // Hours of operation (read-only, deciphered) — compact per-day hours.
-      h('td', { style: { ...td, fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: 9 } },
-        DAYS.map(([d]) => (hrs[d] && hrs[d].hours != null) ? hrs[d].hours : '·').join(' / ')));
+      // Hours of operation — deciphered from the sheet, now editable per day (Mon→Sun).
+      h('td', { style: { ...td, textAlign: 'right' } },
+        div({ style: { display: 'flex', gap: 2, justifyContent: 'flex-end' } },
+          ...DAYS.map(([d]) => cfgHoursInput(locNum(loc), d)))));
   };
 
   // Export/print naming (standing rule): every filename + print title must say WHAT it is,
@@ -355,7 +381,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
                       subtotalRow(scope === 'all' ? 'Grand Total' : 'Subtotal', scope === 'all' ? model.subtotals.grand : scopedSub)))))
           : // Config tab
             div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
-              div({ style: { fontSize: 9, color: 'var(--text3)', padding: '8px 10px 0' } }, 'Gathered fixed-hours inputs (editable). Hours-of-operation are deciphered from the sheet (per-day hours shown Mon→Sun); edit support coming next.'),
+              div({ style: { fontSize: 9, color: 'var(--text3)', padding: '8px 10px 0' } }, 'Gathered fixed-hours inputs (editable). Hours-of-operation are deciphered from the sheet — the per-day figure (Mon→Sun) is editable too; hover a box for its day.'),
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                 h('thead', null, h('tr', null,
                   h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),

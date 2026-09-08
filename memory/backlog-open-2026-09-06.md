@@ -903,8 +903,13 @@
   `qsr_labor_summary` that resolves a contradiction in what "Crew Labor %" actually contains.
 - [ ] Org-assignment Tier 2 — route perf-review/analysis rollups through `whoRan(loc,date)` for
   true historical attribution instead of today's flat current-map.
-- [ ] Labor Analysis Config tab's hours-of-operation editor is still read-only (only the
-  maint/prep/lobby fixed-hours inputs are editable).
+- [x] ✅ **DONE 2026-09-08 (v5.408).** The per-day hours-of-operation figure (Mon→Sun,
+  deciphered from the sheet) is now a small editable box per day in `labor-analysis.js`'s Config
+  tab, matching the existing maint/prep/lobby inputs' edit/save pattern. Editing one day
+  preserves every other day's value on save (the whole `hours_json` blob is written each time) —
+  `open`/`close` (used independently by `labor-standard.js`'s overnight-standard math, not shown
+  in this table) stay untouched. 3 new regression tests against the real `LaborAnalysisPanel`
+  call site.
 - [ ] Lazy-fill: dedupe duplicate startup requests (`auth`/`org_config`/`user_settings`); the
   gap-scoped `(stream,loc,dateRange)` demand queue was never built beyond a simpler whole-table
   version.
