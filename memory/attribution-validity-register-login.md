@@ -96,6 +96,63 @@ to the wrong day in edge cases; this is a first-look sample, not a precision mea
 **Next step is the owner's, per this file's own sequencing** — look at this sample together
 before deciding whether/how to build the `contested`/`unknown` state design below.
 
+### Follow-up, same day (2026-09-08) — the owner and I looked at it together, per the above
+
+**The 24.4% headline was substantially inflated by a real data bug, not a real signal.**
+`audit_rows.emp_id` is not one consistent identifier scheme — most rows carry a QSRSoft `geid`
+(numeric), but a real subset carry an eBOS-style `eID` (`eo384553`, `ea647119`, …), a different
+system's identifier `memory/finding-padding-and-cash-hunt-2026-08-13.md` had already flagged
+elsewhere as not the same space as `geid`. `qsr_punch_times.geid` is numeric-only, so any
+eID-tagged `audit_rows` row was *always* going to read as "unmatched" regardless of real
+attendance. **1,329 of the 1,887 "unmatched" rows (70%) are this shape.** Restricting to the
+genuinely comparable numeric-`emp_id` subset (both legs of the join, denominator included):
+
+```
+numeric-emp_id audit_rows:  ~5,929 (7,722 total minus the eID-tagged rows)
+  UNMATCHED, numeric subset:  558  (~7.2%, not 24.4%)
+```
+
+Per-store rate on that corrected subset ranges **1% to 30%**, not uniform. Two stores stand out
+even after the correction: **loc 43701 (30%)** and **loc 10034 (23%)** are the two highest both
+before and after removing the ID-format noise.
+
+**Cross-checked against real job titles (`qsr_employee_tenure`) for the two flagged stores —
+the owner's own hypothesis, confirmed for 10034:**
+
+- **Store 10034**, unmatched days by person: Harlee Yates (**GENERAL MANAGER**, 17/17 — every
+  audit day she appears), Kimberly Rustin (Cert. Swing Mgr., 4), Melissa Hagerman (Dept Mgr III
+  w/ Crew Punches, 3), John Ratliff (Cert. Swing Mgr., 1), Veston Hicks (Cert. Swing Mgr., 1);
+  three crew-level people (Jessica Davidson, Quincy Paul, Jonathan Whiddon) each show only 1-3
+  days. **Read: these are two different categories, not one.** Harlee's 100%-every-day pattern
+  is a role/data-model mismatch, not a security signal — a salaried GM structurally doesn't
+  punch the hourly clock system the way crew and swing managers do, so she reads as "unmatched"
+  on principle, not on evidence of anything. The other managers (Kimberly/John/Veston/Melissa),
+  by contrast, are hourly-tier roles that *should* punch normally and only show up occasionally
+  (1-4 days each, not constant) — that shape fits the owner's three hypotheses (below) well, and
+  is the kind of thing the coaching-tally design (§ below) is actually for.
+- **Store 43701** (Shannon H 29/29, Nia B 26/26 — the two heaviest cases in the whole 30-day
+  sample) — **could not be role-checked.** `qsr_employee_tenure` has **zero rows for this store
+  at all**. Root cause found: the daily `QSRSoft Employee Roster Pull` was failing its
+  `qsr_employee_tenure` write for the *entire 27-store batch* whenever any one employee held two
+  job codes (Primary + Secondary come back as two API rows sharing the same `(loc, geid)`, and
+  Postgres's `ON CONFLICT DO UPDATE` refuses a batch containing two rows with an identical
+  conflict key) — confirmed live via the failed 2026-09-08 15:05 UTC run's own error
+  (`ON CONFLICT DO UPDATE command cannot affect row a second time`). **Fixed the same day**
+  (`scripts/qsrsoft-employee-roster-pull.mjs`'s `toTenureRows()` now dedupes by `(loc, geid)`,
+  preferring the row marked `jobCodeType:'Primary'`) — once the next scheduled run lands, 43701
+  should get real tenure rows and this can be re-checked the same way as 10034. **Until then,
+  whether Shannon H / Nia B are the same GM-shaped explanation as Harlee, or a genuinely
+  sustained signal at a non-management role, is unknown — do not assume either way.**
+
+**Owner's read, verbatim (2026-09-08), on what a sustained (non-GM-explained) pattern would
+mean:** *"It would imply that all of the individuals... were logged in to registers by someone
+other than themselves (most likely) or they were working off the clock (least likely) or where
+[sic] working that day and never logged out of the register prior to leaving their shift (can be
+verified)."* Noted for the record; **the "can be verified" leg needs register session
+login/logout data this repo does not have yet** (`qsr_punch_times` is clock punches, not POS
+session state) — that's the same still-open transaction-detail/terminal-id gap (#275) the table
+above already names for the finer test, not a new gap.
+
 ### Source decision — QSRSoft preferred (owner, 2026-08-14)
 
 Owner: *"we can either do that or maybe we can pull it from QSRSoft. It's available both

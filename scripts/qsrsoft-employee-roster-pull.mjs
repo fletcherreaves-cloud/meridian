@@ -176,7 +176,7 @@ async function upsert(rows) {
 // rosterCounts()/roster_role_counts use) — the SAME padStart(7,'0') convention every
 // other QSRSoft pull script already uses, not a second one.
 export function toTenureRows(records) {
-  return (records || [])
+  const rows = (records || [])
     .filter(r => r && r.geid != null && String(r.geid).trim() !== '')
     .map(r => ({
       loc: String(r.loc).padStart(7, '0'),
@@ -196,6 +196,30 @@ export function toTenureRows(records) {
       hourly_pay_rate: r.hourlyPayRate ?? null,
       updated_at: new Date().toISOString(),
     }));
+  // Dedupe by (loc, geid) -- the table's actual conflict key (onConflict: 'tenant_id,loc,geid'
+  // below) -- BEFORE the upsert, not after a failure. An employee holding more than one job
+  // code (the API's own jobCodeType field distinguishes 'Primary' from a secondary code) comes
+  // back as multiple rows sharing the same (loc, geid), and Postgres's ON CONFLICT DO UPDATE
+  // throws "cannot affect row a second time" the instant two rows in one upsert batch share a
+  // conflict key -- which aborts the ENTIRE chunk atomically, not just the duplicated employee.
+  // Measured live 2026-09-08: this took down every store in the same run (roster_role_counts
+  // still saved fine first -- that table's key is loc,period_month, never duplicated -- so only
+  // qsr_employee_tenure silently stopped updating). Prefer the row whose job_code_type is
+  // 'Primary' (case-insensitive, matching the "Primary"/"Secondary" values the API actually
+  // returns per this file's own header comment) since that's the role the rest of this table's
+  // consumers (job_title_code/description) are meant to describe; fall back to keeping
+  // whichever row was seen first if no row is marked Primary, rather than dropping the record
+  // entirely -- a person with a less-common job-code shape should still get a tenure row.
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = `${row.loc}|${row.geid}`;
+    const existing = byKey.get(key);
+    if (!existing) { byKey.set(key, row); continue; }
+    const isPrimary = String(row.job_code_type || '').toLowerCase() === 'primary';
+    const existingIsPrimary = String(existing.job_code_type || '').toLowerCase() === 'primary';
+    if (isPrimary && !existingIsPrimary) byKey.set(key, row);
+  }
+  return Array.from(byKey.values());
 }
 
 async function upsertTenure(rows) {
