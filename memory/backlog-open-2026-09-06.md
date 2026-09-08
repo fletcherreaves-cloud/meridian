@@ -670,8 +670,24 @@
 - [ ] Save/Restore Session — verify it backs up what's needed, relocate in nav.
 - [ ] ❓ LifeLenz AOS — needs an explicit owner decision (rescope vs. close); should NOT be picked
   up as originally filed.
-- [ ] Open question, never resolved: does the discarded-targets bug (#153/#167) also hit
-  Projections' `sales_proj`?
+- ✅ **RESOLVED 2026-09-08 — NO, traced end to end, both consumers confirmed correct.** Checked
+  the two real places `sales_proj`/`tProdSales` gets consumed: (1) `CurrentMonthPaceSection`
+  (`analytics.js`, the engine behind both the Planning→Monthly pace view AND the standalone Pace
+  to Target panel) reads `(effMt[loc]||{}).tProdSales` where `effMt` is `ds.monthlyTargets` (or a
+  fresh `loadMonthlyTargets()` call for a different month) — both correctly map the DB's
+  `sales_proj` column, confirmed via `src/lib/supabase.js`'s `loadMonthlyTargets`/
+  `loadAllMonthlyTargets`. (2) Smart Targets' own `officialFor(loc)` (`smart-targets.js:253-258`):
+  the `sales` metric has no `officialVal` override (unlike every other metric in that list), so it
+  falls through to the same `ds.monthlyTargets[loc].tProdSales` read. **Sales genuinely does not
+  have the bug.** What DOES exist, and is what the code comment citing "#153's defect"/"#164"
+  actually describes: `laborpct`/`oepe`/`fob`/`tpph`/`r2p`/`avgCheck`/`promo` (every OTHER Smart
+  Targets metric) read `DEFAULT_TARGETS` directly via their own `officialVal`, bypassing the
+  `settings.targets`/monthly-overrides merge chain — but that's a real, ALREADY-TRACKED, separate
+  issue: GitHub **#164** ("Labor basis rollout: migrate all 69 t.tLabor readers to the resolver"),
+  still open, with its own detailed triage-first plan explicitly naming `smart-targets.js:115`'s
+  `officialVal` as one of the 69 readers to triage. Not a new find — just the backlog's "#153/#167"
+  citation pointing at the wrong bug for the wrong metric. No new item filed; #164 already covers
+  the real remaining gap, sales excluded.
 - [x] ✅ **FIXED 2026-09-07 (owner go-ahead given directly) — do not re-raise.** `package.json`'s
   `"xlsx"` dependency now points at `npm:@e965/xlsx@^0.20.3` (an npm alias — every existing
   `import ... from 'xlsx'` call site across all 14 files is untouched, zero import-site changes)
@@ -881,8 +897,11 @@
   which the probe's own header identifies as the signature of a real server-side 1-year rolling
   window, not a per-store adoption date. So it's a forward-only stream too. Full measurements:
   `memory/finding-padding-and-cash-hunt-2026-08-13.md` §8.
-- [ ] **§8 addendum:** whether the discarded-targets bug (#153/#167) also hits Projections'
-  `sales_proj` — never resolved, no follow-up filed.
+- ✅ **§8 addendum RESOLVED 2026-09-08 — same answer as the §13 duplicate of this question above:
+  NO.** Both real consumers of `sales_proj`/`tProdSales` (`CurrentMonthPaceSection` and Smart
+  Targets' `officialFor()`) correctly resolve it from `ds.monthlyTargets`, traced end to end. The
+  actual DEFAULT_TARGETS-bypass pattern the code comment referenced is tracked separately by
+  GitHub issue #164 (open), and doesn't touch `sales`. See the §13 entry for the full trace.
 
 *(Archive: §14)*
 
