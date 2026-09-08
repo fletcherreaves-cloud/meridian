@@ -250,6 +250,42 @@ instruction, no correction factor is proposed, and no claim is made about which 
 staffing decisions — that stays a product question. `query_labor_summary`'s existing default to the
 Controls basis for staffing-gap questions (dispatch #90/#647) is unaffected and unchanged by this.
 
+## Turnover correlation test — measured 2026-09-08 (backlog item, "the strongest available test")
+
+The last open question ("does chaos correlate with turnover? `turnover_monthly` is already
+pulled") was run directly against live Supabase data, not reasoned about. Methodology:
+replicated `engine/labor-gap-split.js`'s exact formula (Wed-start pay week, `needHrs`/`actHrs`/
+`darSchedHrs` from `qsr_daily_activity_rollup`, same fields the live Planning/Execution panel
+reads) over a **trailing 12 complete pay-weeks** (not the finding's original single-week
+snapshot) to get a stable per-store average planning gap, then correlated against
+`turnover_monthly` (397 real rows, service-role read) — both the latest month's figure and a
+3-month trailing average, for both `ttm_turnover` and `turnover_090_pct` (early-tenure
+turnover, the metric most plausible under this finding's own mechanism — new hires bearing the
+brunt of an unpredictable schedule). `turnover_090_pct`'s LATEST month reads exactly 0.000 for
+nearly every store — a partial-current-month artifact (2026-09 had barely started), not usable;
+the 3-month average is the real signal there.
+
+**Result: no meaningful correlation, checked multiple ways.** Pearson r on the full 27-store
+sample ranged 0.11–0.36 (weak-positive at best) across every combination of signed/absolute
+planning gap × latest/3-month-avg turnover metric. But **Spearman rank correlation — far less
+sensitive to a single outlier — was uniformly near zero (ρ = -0.01 to 0.06)** on the same pairs,
+and excluding just the single most extreme store (6972, whose planning gap was ~2× the next
+highest) **collapsed every Pearson r to essentially zero too (0.003, -0.005, 0.008)**. That
+combination — a modest Pearson correlation that a rank-based measure and a one-store exclusion
+both erase — is the signature of a relationship driven by one data point, not a real
+population-level effect.
+
+**Conclusion: this specific test does not support the turnover hypothesis, on this 12-week
+window.** This does NOT refute the underlying "over-scheduling is chaos, not cost" finding
+itself (that rests on the owner's direct operational knowledge and the dollar-mechanics shown
+above, not on this test) — it specifically closes the "does it show up in turnover" sub-question
+with a real negative result, at 27 stores / 12 weeks. A longer window, a different turnover cut
+(e.g. terminations attributed to scheduling-related exit reasons, if ever captured), or controlling
+for other confounds (store volume, management tenure) could still surface something this simple
+bivariate test can't — but as filed, "the strongest available test" has now been run and the
+answer is null. Script: not committed (one-off scratch analysis); methodology fully specified
+above for reproduction.
+
 ## Related
 
 - #210 — the split that produced this

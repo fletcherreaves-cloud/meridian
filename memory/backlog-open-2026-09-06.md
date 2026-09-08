@@ -827,9 +827,17 @@
 - [ ] Lazy-fill: dedupe duplicate startup requests (`auth`/`org_config`/`user_settings`); the
   gap-scoped `(stream,loc,dateRange)` demand queue was never built beyond a simpler whole-table
   version.
-- [ ] Correlate the Planning/Execution over-scheduling gap against `turnover_monthly` (already
-  pulled) — named as "the strongest available test" to convert the overscheduling-is-chaos-not-cost
-  finding from qualitative to measured.
+- ✅ **MEASURED 2026-09-08 — run, and the result is a clean null, not a confirmation.** Replicated
+  `engine/labor-gap-split.js`'s exact formula over a trailing 12 complete pay-weeks (27 stores,
+  live `qsr_daily_activity_rollup` + `turnover_monthly` service-role reads) and correlated
+  against turnover multiple ways (Pearson + Spearman, signed + magnitude, latest + 3-month-avg).
+  Pearson showed a weak 0.11–0.36 on the full sample, but Spearman (outlier-robust) was uniformly
+  ~0 (-0.01 to 0.06), and excluding the single most extreme store collapsed every Pearson r to
+  ~0 too — the signature of one data point driving an otherwise-null result. **This does not
+  refute the underlying over-scheduling finding** (that rests on the owner's own operational
+  read + the dollar mechanics, not on this test) — it specifically closes "does it show up in
+  turnover" with a real negative answer on this window. Full methodology + numbers:
+  `memory/finding-overscheduling-is-chaos-not-cost.md`.
 - ✅ **BOTH RESOLVED 2026-09-08 — the register-leak theory is not testable pre-2025-09 through
   either route; a fresh in-repo credential or endpoint would be needed.** (1) `qsr_daily_activity`
   does NOT carry register-level controls at any date — a schema fact, not a coverage gap: its
