@@ -1,29 +1,35 @@
--- security_findings_latest — APP-SIDE WIRING IS DONE (v5.411); this migration is the one
--- remaining step, to be applied BY HAND (see memory/finding-security-findings-load-time-2026-09-09.md
--- for the full measurement + design).
+-- security_findings_latest — ✅ APPLIED AND VERIFIED LIVE (2026-09-09 evening). Re-running this
+-- file is safe (`create or replace view`) but not necessary.
 --
 -- security_findings grows ~4,600 rows/day (one fresh row per subject+rule on EVERY daily batch
 -- run, flagged or not — 92,740 rows measured 2026-09-09, only 20 days after the batch went
 -- live). The Security panel's own loader (loadSecurityFindings()) fetched the WHOLE table every
 -- open with no date/loc bound, which forced ~93 sequential 1000-row-capped pages and produced a
 -- real "taking several minutes to load" report the same day. Measured: those 92,740 rows
--- collapse to just 3,669 distinct (subject, rule) combinations — a 25x reduction PostgREST can't
--- express client-side (no DISTINCT ON), which is what this view exists to provide.
+-- collapse to **19,723 distinct (loc, subject, rule) combinations** — a ~4.7x reduction
+-- PostgREST can't express client-side (no DISTINCT ON), which is what this view exists to
+-- provide. (An earlier same-day measurement claimed 3,669/25x — that dedup key omitted `loc`,
+-- wrongly collapsing the SAME item's findings across all 27 stores into one; `wrin` is a shared
+-- product code, not store-specific, so `loc` has to be part of the key. Caught after the owner
+-- applied this migration and the view's own live row count didn't match the earlier claim —
+-- re-measured, not assumed, and corrected the same evening.)
 --
 -- security_invoker = true (Postgres 15+) makes this view re-run security_findings' own RLS
 -- policy ("security_findings: gated read", schema-security-findings.sql) AS THE QUERYING ROLE —
 -- no policy duplication needed, and no weakening of the admin/supervisor-always,
 -- manager-only-with-gm_identity_reveal_enabled gating that table already enforces.
 --
--- APPLY THIS BY HAND (same as every other schema-*.sql file in this repo — no automated
--- migration runner exists in this session or in CI). loadSecurityFindings() (src/lib/supabase.js)
--- already PROBES for this view on first use each session and falls back to the full base table
--- automatically when it isn't found (checked via PostgREST's own PGRST205 "unknown relation"
--- code — NOT the raw Postgres 42P01, and NOT a `head: true` request, both of which were tried
--- and measured live to give a false "present" reading on this Supabase project). So today,
--- before this migration is applied, the app runs exactly as it did in v5.410 (full-table load,
--- trimmed payload). The moment this view exists, the next Security panel session picks up the
--- ~4-page fast path automatically — no further app deploy needed.
+-- loadSecurityFindings() (src/lib/supabase.js) probes for this view on first use each session
+-- and falls back to the full base table automatically when it isn't found (checked via
+-- PostgREST's own PGRST205 "unknown relation" code — NOT the raw Postgres 42P01, and NOT a
+-- `head: true` request, both of which were tried and measured live to give a false "present"
+-- reading on this Supabase project). Now that this view exists, every session reads ~20 pages
+-- instead of ~93 — but ⚠️ a full timed sequential fetch through this view measured 59,975ms
+-- against 66,085ms through the base table directly — only ~1.1x faster wall-clock, NOT the ~4.7x
+-- the row-count reduction alone implies. This view has no supporting index, so Postgres has to
+-- Sort the whole 92,740-row base table before computing DISTINCT ON on EVERY paginated request
+-- (not materialized, nothing cached between requests) — that Sort is now the real bottleneck.
+-- See schema-security-findings-latest-index.sql for the fix (not yet applied or measured).
 --
 -- The companion half that makes this safe: security-panel.js's SubjectDetail no longer assumes
 -- the bulk `findings` array carries full multi-window history. loadSecurityFindingsForSubject()

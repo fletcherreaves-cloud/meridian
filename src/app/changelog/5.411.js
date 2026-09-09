@@ -1,12 +1,18 @@
 // @ts-nocheck
 export default {version:'5.411', date:'2026-09-09', changes:[
-  'Security panel load-time fix, part 2 -- the real fix. 92,740 security_findings rows measured ' +
-  'v5.410 collapse to just 3,669 distinct (subject, rule) combos, a 25x reduction PostgREST can\'t ' +
+  'Security panel load-time fix, part 2. 92,740 security_findings rows measured v5.410 collapse ' +
+  'to 19,723 distinct (loc, subject, rule) combos, a ~4.7x row-count reduction PostgREST can\'t ' +
   'express client-side. supabase/schema-security-findings-latest-view.sql adds a DISTINCT ON ' +
   'view (security_invoker=true -- re-runs the base table\'s own RLS as the caller, no policy ' +
-  'duplication) that collapses that down to ~4 pages instead of ~93. Owner applies it by hand ' +
-  '(no automated migration runner exists) -- loadSecurityFindings() already probes for it every ' +
-  'session and falls back to the full base table until it does.',
+  'duplication) that collapses ~93 pages down to ~20. Owner applied it the same evening. (A first ' +
+  'same-day measurement said 3,669/25x -- that dedup key omitted loc, wrongly merging one item\'s ' +
+  'findings across all 27 stores; corrected once measured against the live view.)',
+  '⚠️ Row count is not the same as speed, measured the SAME evening after the owner applied the ' +
+  'view: a full timed fetch through it took 59,975ms vs 66,085ms through the base table directly ' +
+  '-- only ~1.1x faster, not the ~4.7x the row-count reduction implied. No index supports the ' +
+  'view\'s DISTINCT ON, so Postgres re-Sorts the whole base table on every paginated request. ' +
+  'supabase/schema-security-findings-latest-index.sql is the actual remaining fix -- written, ' +
+  'not yet applied or measured. See memory/finding-security-findings-load-time-2026-09-09.md.',
   'That probe needed a real fix mid-build, caught only by testing the actual @supabase/supabase-js ' +
   'client against live production before shipping: a `{head:true}` select against a relation ' +
   'that does not exist came back status 204/success:true on this project -- a false positive ' +
