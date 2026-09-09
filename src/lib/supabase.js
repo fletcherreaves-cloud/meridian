@@ -4955,11 +4955,29 @@ export async function savePmixRows(rows) {
 // findings" on the wire -- so the panel gates its OWN nav entry to the same tier (isSecurityRole()
 // below, matching loadGmIdentityRevealEnabled()) rather than trusting an empty read to mean "no
 // access." Paginated via fetchAll -- dispatch #40's own INV-001 rule alone produced 5,165+ rows on
-// its first live run, well past the 1000-row cap.
+// its first live run, well past the 1000-row cap. Measured 2026-09-09 (owner report: Security
+// "taking several minutes" to load, v5.409): the table had grown to 92,740 rows (the daily rolling
+// window writes a fresh row per subject+rule EVERY batch run, whether flagged or not -- one subject
+// alone carried 21 consecutive daily rows for a single rule), forcing ~93 sequential paginated
+// requests (PostgREST here hard-caps a page at 1000 rows regardless of the Range header asked for
+// -- confirmed live, not assumed) at a measured ~1.4s/page -- that sequential round-trip cost is
+// what actually produced "several minutes," not a hang. `baseline_context.values` -- a ~26-42
+// element float array on EVERY row, used NOWHERE in security-panel.js or security-drilldown.js
+// (grepped; only .mean/.stdev/.n are ever read) -- is dead weight on every one of those 93 pages,
+// so it's dropped from the wire here via PostgREST's JSON-path select instead of `select('*')`
+// (measured ~27% smaller payload per page on the live table). The bigger win -- the row count
+// itself collapses 25x to 3,669 distinct (subject, rule) combos -- needs a server-side `DISTINCT
+// ON` view (supabase/schema-security-findings-latest-view.sql) AND a lazy per-subject history
+// fetch to keep chronic/trend classification (classifySubjectTrend et al. need >1 window per rule)
+// working once switched over; that is real surgery, scoped but not done here -- see that file's
+// header and memory/finding-security-findings-load-time-2026-09-09.md for the follow-up.
 export async function loadSecurityFindings({ ruleIds = null } = {}) {
   if (!supabase) return [];
+  const cols = 'id,emp_token,wrin,loc,rule_id,window_start,window_end,value,threshold_used,pass,'
+    + 'lifecycle_category,exoneration_share,explanation,computed_at,'
+    + 'bc_mean:baseline_context->mean,bc_stdev:baseline_context->stdev,bc_n:baseline_context->n';
   const data = await fetchAll((from, to) => {
-    let q = supabase.from('security_findings').select('*').order('computed_at', { ascending: false }).range(from, to);
+    let q = supabase.from('security_findings').select(cols).order('computed_at', { ascending: false }).range(from, to);
     if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
     return q;
   }, 1000, 'security findings');
@@ -4967,7 +4985,8 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     id: r.id, empToken: r.emp_token, wrin: r.wrin, loc: r.loc ? String(parseInt(r.loc, 10)) : null,
     ruleId: r.rule_id, windowStart: r.window_start, windowEnd: r.window_end,
     value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
-    baselineContext: r.baseline_context || {}, explanation: r.explanation || [],
+    baselineContext: { mean: r.bc_mean, stdev: r.bc_stdev, n: r.bc_n },
+    explanation: r.explanation || [],
     computedAt: r.computed_at, lifecycleCategory: r.lifecycle_category || null,
     exonerationShare: r.exoneration_share ?? null,
   }));
