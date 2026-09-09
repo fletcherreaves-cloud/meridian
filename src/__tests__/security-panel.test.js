@@ -22,6 +22,11 @@ const loadAuditRowsWindowMock = vi.fn();
 // dispatch #58 -- defaults to an empty match so every EXISTING cash-drilldown test (which never
 // asserts on events) keeps passing unchanged; dedicated tests below override this per-case.
 const loadQsrSecurityEventsForSubjectMock = vi.fn().mockResolvedValue([]);
+// v5.411 -- the lazy per-subject full-history fetch (fires on row-expand). Defaults to an empty
+// match so every EXISTING expand-a-row test (none of which assert on multi-window trend) keeps
+// passing unchanged with the group's own bulk-loaded historyByRule; dedicated tests below override
+// this per-case to verify the fetched history actually supersedes it.
+const loadSecurityFindingsForSubjectMock = vi.fn().mockResolvedValue([]);
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -32,10 +37,11 @@ vi.mock('../lib/supabase.js', () => ({
   loadQsrVarianceHistoryAll: (...args) => loadQsrVarianceHistoryAllMock(...args),
   loadAuditRowsWindow: (...args) => loadAuditRowsWindowMock(...args),
   loadQsrSecurityEventsForSubject: (...args) => loadQsrSecurityEventsForSubjectMock(...args),
+  loadSecurityFindingsForSubject: (...args) => loadSecurityFindingsForSubjectMock(...args),
 }));
 
 import {
-  securityPanelAccess, verdictState, groupFindingsBySubject, scopeMatches, SecurityPanel,
+  securityPanelAccess, verdictState, groupFindingsBySubject, buildHistoryByRule, scopeMatches, SecurityPanel,
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
   scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay,
 } from '../views/security-panel.js';
@@ -164,6 +170,38 @@ describe('groupFindingsBySubject() — multi-window history (dispatch #46 §C it
     const g = groupFindingsBySubject(MULTI_WINDOW_FINDINGS)[0];
     expect(g.historyByRule['CASH-001']).toHaveLength(2);
     expect(g.historyByRule['CASH-001'].map(w => w.value)).toEqual([6, 7]);
+  });
+});
+
+// v5.411 -- buildHistoryByRule() was factored OUT of groupFindingsBySubject so the lazy
+// per-subject fetch (loadSecurityFindingsForSubject, called on row-expand once the bulk load may
+// be reading security_findings_latest) builds the exact same shape. Tested directly here so the
+// two call sites can never quietly drift apart -- groupFindingsBySubject's own multi-window test
+// above already proves it produces this shape when fed the FULL findings array; these prove the
+// extracted function does the same when fed just one subject's own rows, the shape the lazy path
+// actually uses.
+describe('buildHistoryByRule() — the shared per-subject window-history builder', () => {
+  it('sorts one rule\'s windows oldest-to-newest by windowEnd, tie-broken by computedAt', () => {
+    const rows = [
+      { ruleId: 'CASH-001', pass: true, value: 12, windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z' },
+      { ruleId: 'CASH-001', pass: true, value: 6, windowEnd: '2026-06-28', computedAt: '2026-06-29T10:00:00Z' },
+      { ruleId: 'CASH-001', pass: true, value: 9, windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z' },
+    ];
+    const out = buildHistoryByRule(rows);
+    expect(out['CASH-001'].map(w => w.value)).toEqual([6, 9, 12]);
+  });
+  it('keeps each rule\'s windows in a separate bucket', () => {
+    const rows = [
+      { ruleId: 'CASH-001', pass: true, value: 6, windowEnd: '2026-06-28', computedAt: '2026-06-29T10:00:00Z' },
+      { ruleId: 'CASH-004', pass: false, value: 2, windowEnd: '2026-06-28', computedAt: '2026-06-29T10:05:00Z' },
+    ];
+    const out = buildHistoryByRule(rows);
+    expect(Object.keys(out).sort()).toEqual(['CASH-001', 'CASH-004']);
+    expect(out['CASH-001']).toHaveLength(1);
+    expect(out['CASH-004']).toHaveLength(1);
+  });
+  it('an empty input produces an empty history, not a crash', () => {
+    expect(buildHistoryByRule([])).toEqual({});
   });
 });
 
@@ -1029,6 +1067,68 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
     loadSecurityFindingsMock.mockReset().mockResolvedValue(staleCorrobFindings);
     await expandAliceRow();
     expect(container.textContent).not.toMatch(/Corroborated by/);
+  });
+
+  // v5.411 -- loadSecurityFindings() may now read from security_findings_latest (one window per
+  // rule per subject, see that function's own header), so the bulk-loaded `findings` a real
+  // subject with real chronic history arrives here can look exactly like Bob's single-window
+  // fixture even though the underlying table holds far more. The lazy per-subject fetch
+  // (loadSecurityFindingsForSubject, fired on row-expand) exists to recover that real history --
+  // these tests prove it actually rewires historyByRule, not just that the mock got called
+  // (standing "verification must touch the call site" rule: a test asserting only the call
+  // happened would still pass if the fetched rows were silently dropped on the floor).
+  describe('lazy per-subject full history, fetched on row-expand', () => {
+    it('a subject that looks like a single-window "first flag" from the bulk load upgrades to Chronic once its real multi-window history resolves', async () => {
+      loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
+      // Bob's REAL history, as only the base table (not the latest view) would carry it -- three
+      // rising CASH-001 windows, identical shape to Alice's own chronic fixture above.
+      const bobFullHistory = [
+        { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 6, thresholdUsed: 5, windowStart: '2026-06-01', windowEnd: '2026-06-28', computedAt: '2026-06-29T10:00:00Z', baselineContext: {}, explanation: [] },
+        { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 9, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+        { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+      ];
+      loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue(bobFullHistory);
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await flush(container);
+      // SubjectDetail (where the trend line lives) only mounts once a row is expanded -- nothing
+      // to assert on the collapsed state here, and the fetch itself is expand-triggered anyway
+      // (matching SubjectDrilldown's own click-to-load shape elsewhere in this panel).
+      const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+      await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush(container);
+      expect(loadSecurityFindingsForSubjectMock).toHaveBeenCalledWith({ loc: '0000001', empToken: 'tok-bob', wrin: null });
+      // After the fetch resolves: the REAL history is in, and the trend line -- read straight off
+      // group.historyByRule, which only the merge in the render loop can have supplied -- upgrades.
+      expect(container.textContent).toMatch(/Chronic — flagged before, still flagged/);
+      expect(container.textContent).not.toMatch(/Not enough history yet to call this new or chronic/);
+    });
+
+    it('does not re-fetch a subject whose full history is already cached', async () => {
+      loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
+      loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await flush(container);
+      const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+      const row = storeLabel.parentElement;
+      await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // expand
+      await flush(container);
+      await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // collapse
+      await flush(container);
+      await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // re-expand
+      await flush(container);
+      expect(loadSecurityFindingsForSubjectMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('a subject whose lazy fetch resolves empty keeps rendering the bulk-loaded (single-window) history -- never blanks out', async () => {
+      loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
+      loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await flush(container);
+      const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+      await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush(container);
+      expect(container.textContent).toMatch(/Subject history: flagged 1 of 1 evaluation since 2026-08-01/);
+    });
   });
 });
 

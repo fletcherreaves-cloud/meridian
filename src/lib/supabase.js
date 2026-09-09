@@ -4965,23 +4965,31 @@ export async function savePmixRows(rows) {
 // element float array on EVERY row, used NOWHERE in security-panel.js or security-drilldown.js
 // (grepped; only .mean/.stdev/.n are ever read) -- is dead weight on every one of those 93 pages,
 // so it's dropped from the wire here via PostgREST's JSON-path select instead of `select('*')`
-// (measured ~27% smaller payload per page on the live table). The bigger win -- the row count
-// itself collapses 25x to 3,669 distinct (subject, rule) combos -- needs a server-side `DISTINCT
-// ON` view (supabase/schema-security-findings-latest-view.sql) AND a lazy per-subject history
-// fetch to keep chronic/trend classification (classifySubjectTrend et al. need >1 window per rule)
-// working once switched over; that is real surgery, scoped but not done here -- see that file's
-// header and memory/finding-security-findings-load-time-2026-09-09.md for the follow-up.
-export async function loadSecurityFindings({ ruleIds = null } = {}) {
-  if (!supabase) return [];
-  const cols = 'id,emp_token,wrin,loc,rule_id,window_start,window_end,value,threshold_used,pass,'
-    + 'lifecycle_category,exoneration_share,explanation,computed_at,'
-    + 'bc_mean:baseline_context->mean,bc_stdev:baseline_context->stdev,bc_n:baseline_context->n';
-  const data = await fetchAll((from, to) => {
-    let q = supabase.from('security_findings').select(cols).order('computed_at', { ascending: false }).range(from, to);
-    if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
-    return q;
-  }, 1000, 'security findings');
-  return data.map(r => ({
+// (measured ~27% smaller payload per page on the live table, v5.410).
+//
+// Part 2 (this dispatch) -- the row-count fix. 92,740 raw rows measured 2026-09-09 collapse to
+// just 3,669 distinct (subject, rule) combinations -- a 25x reduction PostgREST can't express
+// client-side (no DISTINCT ON), so it lives in a DB view: supabase/schema-security-findings-
+// latest-view.sql's `security_findings_latest` (security_invoker=true -- re-runs this table's own
+// RLS as the caller, no policy duplication). This loader now PROBES for that view first and reads
+// from it when present, falling back to the full base table automatically (Postgres 42P01 --
+// "relation does not exist") when it hasn't been created yet -- this ships safely ahead of the
+// owner applying that migration by hand (no automated migration runner exists in this repo; see
+// that file's own header). The view only ever holds each subject+rule's LATEST window, which is
+// exactly what groupFindingsBySubject() already reduces `verdicts` to even when fed full history
+// (`windows[windows.length - 1]`) -- so the closed/list view renders identically either way. What
+// the view-backed path can no longer supply on its own is MULTIPLE windows per rule for one
+// subject, which classifySubjectTrend()/classifySubjectShape()/buildSubjectTimeline() need (>=2
+// windows) to say anything but "insufficient-history". That's why loadSecurityFindingsForSubject()
+// exists below -- security-panel.js calls it lazily, only for the ONE subject a reader expands, and
+// merges its full per-subject history over the group's view-sourced single window. Same
+// progressive-disclosure shape this file already uses for SubjectDrilldown's "Investigate further"
+// -- fast list first, real depth fetched on demand, never blocked on the whole table.
+const SECURITY_FINDINGS_COLS = 'id,emp_token,wrin,loc,rule_id,window_start,window_end,value,threshold_used,pass,'
+  + 'lifecycle_category,exoneration_share,explanation,computed_at,'
+  + 'bc_mean:baseline_context->mean,bc_stdev:baseline_context->stdev,bc_n:baseline_context->n';
+function _mapSecurityFindingRow(r) {
+  return {
     id: r.id, empToken: r.emp_token, wrin: r.wrin, loc: r.loc ? String(parseInt(r.loc, 10)) : null,
     ruleId: r.rule_id, windowStart: r.window_start, windowEnd: r.window_end,
     value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
@@ -4989,7 +4997,50 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     explanation: r.explanation || [],
     computedAt: r.computed_at, lifecycleCategory: r.lifecycle_category || null,
     exonerationShare: r.exoneration_share ?? null,
-  }));
+  };
+}
+let _securityFindingsLatestViewMissing = null; // null = not probed yet; cached true/false for the session after
+export async function loadSecurityFindings({ ruleIds = null } = {}) {
+  if (!supabase) return [];
+  if (_securityFindingsLatestViewMissing === null) {
+    // A real, data-returning probe -- NOT `{ head: true }`. Measured live 2026-09-09: a head-only
+    // select against a relation that flat-out does not exist (checked against both a fabricated
+    // table name and this view before it was created) still comes back `status 204, success:
+    // true, error: null` on this Supabase project -- a false positive that would have made this
+    // probe always report the view "present" and send every real page request into a genuine
+    // failure. And the real error code, once a data-returning select DOES surface one, is
+    // PostgREST's own schema-cache-miss code `PGRST205` ("Could not find the table ... in the
+    // schema cache") -- not the raw Postgres `42P01` originally assumed here; also confirmed live.
+    const probe = await supabase.from('security_findings_latest').select('id').limit(1);
+    _securityFindingsLatestViewMissing = !!(probe.error && probe.error.code === 'PGRST205');
+    if (probe.error && !_securityFindingsLatestViewMissing) {
+      console.warn('[loadSecurityFindings] latest-view probe failed, using base table:', probe.error.message);
+    }
+  }
+  const table = _securityFindingsLatestViewMissing ? 'security_findings' : 'security_findings_latest';
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from(table).select(SECURITY_FINDINGS_COLS).order('computed_at', { ascending: false }).range(from, to);
+    if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
+    return q;
+  }, 1000, `security findings (${table})`);
+  return data.map(_mapSecurityFindingRow);
+}
+
+// Lazy per-subject full history (ALL windows, ALL rules, from the base table -- never the latest
+// view) -- feeds SubjectDetail's chronic/trend classification for the ONE subject a reader expands,
+// since the bulk loader above may now be reading from security_findings_latest (one window per
+// rule only). Small by construction: a real subject's full window history across every rule it has
+// ever been evaluated on has run to at most ~100 rows in production (measured) -- one page, no
+// pagination loop needed. Mirrors loadQsrSecurityEventsForSubject's existing lazy-per-subject shape
+// in this same file.
+export async function loadSecurityFindingsForSubject({ loc, empToken = null, wrin = null } = {}) {
+  if (!supabase || !loc || (!empToken && !wrin)) return [];
+  let q = supabase.from('security_findings').select(SECURITY_FINDINGS_COLS)
+    .eq('loc', String(loc).padStart(7, '0')).order('window_end', { ascending: true }).limit(500);
+  q = empToken ? q.eq('emp_token', empToken) : q.eq('wrin', wrin);
+  const { data, error } = await q;
+  if (error) { console.warn('[loadSecurityFindingsForSubject]', error.message); return []; }
+  return (data || []).map(_mapSecurityFindingRow);
 }
 
 // security_rules metadata (method/description/active/baseline_type/severity/window_days) --

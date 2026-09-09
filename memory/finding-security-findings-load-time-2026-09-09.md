@@ -1,9 +1,17 @@
-# Security panel load time — root cause + shipped fix + real follow-up (2026-09-09)
+# Security panel load time — root cause, both fixes shipped (2026-09-09)
 
 ## Report
 Owner (v5.409): "I can't get security data to load. It is taking quite a while. It's been
 several minutes at this point." Resolved on its own a few minutes later — this was a real,
-measured slow load, not a hang, and it will keep getting worse until the follow-up below ships.
+measured slow load, not a hang.
+
+## ✅ STATUS 2026-09-09 evening (v5.411) — both halves shipped, one owner action left
+Part 1 (v5.410, payload trim) and Part 2 (v5.411, the real row-count fix — client side) are both
+merged to `main`. **The one remaining step is the owner applying
+`supabase/schema-security-findings-latest-view.sql` by hand** (no automated migration runner
+exists) — the app already probes for that view every session and falls back safely to the full
+base table until it exists, so nothing is blocked on this, but the ~93-page load stays until it's
+applied. See "Part 2" below for exactly what shipped and how the fallback works.
 
 ## Root cause (measured live against production Supabase, not assumed)
 `loadSecurityFindings()` (`src/lib/supabase.js`) has no date/loc bound — every Security panel
@@ -36,51 +44,50 @@ existing test fixture already shapes `baselineContext` as `{mean, stdev, n}` or 
 test needed updating). This alone will NOT fully fix "several minutes" — row count, not
 payload size, is the dominant cost — but it's a safe, immediate, measured partial win.
 
-## The real fix — scoped, NOT shipped yet, needs a DB migration + a careful UI change
+## Part 2 (v5.411) — the real row-count fix, shipped
 Cutting 93 pages down to ~4 needs a server-side `DISTINCT ON (loc, subject_key, rule_id)` —
-PostgREST has no client-side way to express that. This requires:
+PostgREST has no client-side way to express that. Four pieces, all done:
 
-1. **A DB view** (write-only from this session — no direct Postgres/DDL access available here,
-   only the REST API; the owner has to run this by hand, same as every other `schema-*.sql`
-   file in this repo):
-   ```sql
-   create or replace view public.security_findings_latest
-     with (security_invoker = true) as
-   select distinct on (tenant_id, loc, subject_key, rule_id)
-     id, tenant_id, emp_token, wrin, loc, rule_id, window_start, window_end,
-     value, threshold_used, pass, lifecycle_category, exoneration_share,
-     baseline_context, explanation, computed_at, subject_key
-   from public.security_findings
-   order by tenant_id, loc, subject_key, rule_id, window_end desc, computed_at desc;
+1. **The DB view** — `supabase/schema-security-findings-latest-view.sql`. `security_invoker =
+   true` (PG15+) makes it re-run `security_findings`' own RLS policy as the querying role — no
+   policy duplication needed. Measured: collapses 92,740 rows to 3,669. **Not yet applied** — the
+   owner runs this by hand (no automated migration runner exists), same as every other
+   `schema-*.sql` file in this repo.
 
-   grant select on public.security_findings_latest to authenticated;
-   ```
-   `security_invoker = true` (PG15+) makes the view re-run `security_findings`' own RLS policy
-   as the querying role — no policy duplication needed. Measured this collapses 92,740 rows to
-   3,669.
+2. **`loadSecurityFindings()` probes for the view, once per session, and falls back safely.**
+   ⚠️ The probe itself needed a real fix mid-build, caught only by testing the ACTUAL
+   `@supabase/supabase-js` client against live production before shipping (not assumed from the
+   raw-REST curl testing Part 1 used): a `{ head: true }` select against a relation that flat-out
+   does not exist came back `status 204, success: true, error: null` on this Supabase project —
+   confirmed against both a fabricated table name and this view before it existed. A HEAD-only
+   probe would have made the loader believe the view was always present and send every real page
+   request into a guaranteed failure the moment this shipped, with the panel showing zero
+   findings until the migration was applied — the opposite of graceful. Fixed by probing with a
+   real, data-returning `select('id').limit(1)` instead, and checking for PostgREST's own
+   schema-cache-miss code `PGRST205` ("Could not find the table ... in the schema cache") — not
+   the raw Postgres `42P01` originally assumed, also wrong, also caught by the same live test.
+   Both corrections are recorded in `loadSecurityFindings()`'s own comment.
 
-2. **`loadSecurityFindings()` needs to target this view for its default/list load** — but
-   NOT a blind swap. `groupFindingsBySubject()`'s `historyByRule[ruleId]` today holds EVERY
-   window for a rule, and `classifySubjectTrend()` / `classifySubjectShape()` /
-   `buildSubjectTimeline()` (the chronic-vs-new / instance-vs-pattern-vs-trend classifiers —
-   real, valuable detection, see `memory/` field-test notes from the same day: a genuine 21-day
-   chronic signal was found live using exactly this history) all require ≥2 windows per rule to
-   say anything. Pointing the list load at "latest only" would silently make every subject read
-   as `insufficient-history` — a real regression in a feature that was just proven to catch a
-   genuine finding, traded for a faster load. **Do not make that trade blind.**
+3. **Chronic/trend classification is preserved, not traded away.** The view only ever holds one
+   window per (subject, rule) — exactly what `groupFindingsBySubject()`'s `verdicts` already
+   reduces to even today, so the closed/list view renders identically either way. What the view
+   can't supply is the ≥2-window history `classifySubjectTrend()` / `classifySubjectShape()` /
+   `buildSubjectTimeline()` need. Fixed with a new lazy per-subject loader,
+   `loadSecurityFindingsForSubject({loc, empToken, wrin})` (mirrors the existing
+   `loadQsrSecurityEventsForSubject` pattern in the same file, always reads the base table, never
+   the view), fired once per subject on row-expand and cached via a ref (an empty result still
+   counts as "attempted," or a subject with no recoverable extra history would re-fetch on every
+   re-expand forever). `buildHistoryByRule()` was factored out of `groupFindingsBySubject()` so
+   both the bulk path and this lazy path build the identical shape — one history-shaping rule,
+   not two that can drift. Covered by dedicated tests in `security-panel.test.js` (a subject that
+   looks like a single-window "first flag" from the bulk load renders Chronic once its real
+   history resolves; the fetch never re-fires once cached; an empty lazy-fetch result never blanks
+   out the bulk-loaded single window).
 
-3. **The correct pairing**: latest-per-subject view feeds the closed/list view (fast, ~4
-   pages); a NEW lazy per-subject loader (matching the existing
-   `loadQsrSecurityEventsForSubject` pattern already in this file) fetches that ONE subject's
-   full row history from the base table only when its card is expanded, and `SubjectDetail`
-   is rewired to use that fetched history instead of assuming it's already in the bulk-loaded
-   `findings` array. This needs real UI testing (expand/collapse, trend labels, corroboration)
-   that wasn't possible in this session — scope it as its own PR, not a rider on a load-time fix.
-
-4. Until step 1 is applied, `loadSecurityFindings()` should degrade gracefully rather than
-   error if pointed at a view that doesn't exist yet (check for Postgres `42P01` and fall back
-   to the base table) — noted here for whoever picks this up, not yet implemented since the
-   view isn't live.
+4. **Full suite (4664 tests) + build both clean** after the fix; the exact new `supabase-js`
+   query shapes (the JSON-path `select`, the probe, the per-subject query) were also verified
+   live against production directly through `@supabase/supabase-js` (not just raw REST) before
+   any of this was called done.
 
 ## Growth trajectory — this is not a one-time fix
 At ~4,600 rows/day, the table will be ~185K rows in 3 more weeks and ~370K in 6 — "several
