@@ -4967,7 +4967,7 @@ export async function savePmixRows(rows) {
 // so it's dropped from the wire here via PostgREST's JSON-path select instead of `select('*')`
 // (measured ~27% smaller payload per page on the live table, v5.410).
 //
-// Part 2 (this dispatch) -- the row-count fix. 92,740 raw rows measured 2026-09-09 collapse to
+// Part 2 (v5.411) -- the row-count fix. 92,740 raw rows measured 2026-09-09 collapse to
 // just 3,669 distinct (subject, rule) combinations -- a 25x reduction PostgREST can't express
 // client-side (no DISTINCT ON), so it lives in a DB view: supabase/schema-security-findings-
 // latest-view.sql's `security_findings_latest` (security_invoker=true -- re-runs this table's own

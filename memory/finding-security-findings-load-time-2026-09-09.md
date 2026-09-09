@@ -91,5 +91,6 @@ PostgREST has no client-side way to express that. Four pieces, all done:
 
 ## Growth trajectory — this is not a one-time fix
 At ~4,600 rows/day, the table will be ~185K rows in 3 more weeks and ~370K in 6 — "several
-minutes" becomes "many minutes" or an outright timeout unless the view + lazy-history change
-above ships. The payload trim buys some time; it does not remove the underlying growth curve.
+minutes" becomes "many minutes" or an outright timeout unless the view above is applied. The
+client-side fixes above cap the pain at ~4 pages once it is; they don't remove the underlying
+growth curve, so the migration is the part that actually matters long-term.
