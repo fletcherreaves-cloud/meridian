@@ -20,7 +20,7 @@ import { supabase } from '../lib/supabase.js';
 import {
   loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled,
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
-  loadQsrSecurityEventsForSubject,
+  loadQsrSecurityEventsForSubject, loadSecurityFindingsForSubject,
 } from '../lib/supabase.js';
 import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
 import { RevealName } from './store-analytics.js';
@@ -112,34 +112,46 @@ const LIFECYCLE_LABEL = { deactivated: 'Deactivated item', obsolete: 'Obsolete i
 // is always today's answer, never a stale duplicate chip for the same rule. Every window for every
 // rule is preserved separately in `historyByRule` (ruleId -> windows sorted oldest-to-newest) so a
 // trend view can tell chronic from new; see classifySubjectTrend() below.
-export function groupFindingsBySubject(findings) {
-  const groups = new Map();
-  for (const f of findings) {
-    const subjectType = f.empToken ? 'emp' : 'wrin';
-    const subjectId = f.empToken || f.wrin;
-    if (!subjectId || !f.loc) continue; // a malformed row (neither subject set) can't be grouped -- skip, don't crash
-    const key = f.loc + '::' + subjectType + ':' + subjectId;
-    if (!groups.has(key)) {
-      groups.set(key, { key, loc: f.loc, subjectType, empToken: f.empToken || null, wrin: f.wrin || null, byRule: new Map() });
-    }
+// One subject's per-rule window history from a flat array of its own finding rows -- oldest to
+// newest, keyed by ruleId. Factored out (this dispatch) so groupFindingsBySubject's bulk pass and
+// the lazy per-subject fetch (loadSecurityFindingsForSubject, called on row-expand) build the
+// IDENTICAL shape SubjectDetail/SubjectHistory already consume -- one history-shaping rule, not two
+// that can drift.
+export function buildHistoryByRule(findingsForOneSubject) {
+  const byRule = new Map();
+  for (const f of findingsForOneSubject) {
     const entry = {
       ruleId: f.ruleId, pass: f.pass, value: f.value, thresholdUsed: f.thresholdUsed,
       baselineContext: f.baselineContext || {}, explanation: f.explanation || [],
       windowStart: f.windowStart, windowEnd: f.windowEnd, computedAt: f.computedAt,
       lifecycleCategory: f.lifecycleCategory || null, exonerationShare: f.exonerationShare ?? null,
     };
-    const byRule = groups.get(key).byRule;
     if (!byRule.has(f.ruleId)) byRule.set(f.ruleId, []);
     byRule.get(f.ruleId).push(entry);
   }
-  const out = [...groups.values()].map(g => {
-    const historyByRule = {};
-    const verdicts = [];
-    for (const [ruleId, windows] of g.byRule) {
-      windows.sort((a, b) => (a.windowEnd || '').localeCompare(b.windowEnd || '') || (a.computedAt || '').localeCompare(b.computedAt || ''));
-      historyByRule[ruleId] = windows;
-      verdicts.push(windows[windows.length - 1]); // latest window is what renders as THE verdict
+  const historyByRule = {};
+  for (const [ruleId, windows] of byRule) {
+    windows.sort((a, b) => (a.windowEnd || '').localeCompare(b.windowEnd || '') || (a.computedAt || '').localeCompare(b.computedAt || ''));
+    historyByRule[ruleId] = windows;
+  }
+  return historyByRule;
+}
+
+export function groupFindingsBySubject(findings) {
+  const bySubject = new Map();
+  for (const f of findings) {
+    const subjectType = f.empToken ? 'emp' : 'wrin';
+    const subjectId = f.empToken || f.wrin;
+    if (!subjectId || !f.loc) continue; // a malformed row (neither subject set) can't be grouped -- skip, don't crash
+    const key = f.loc + '::' + subjectType + ':' + subjectId;
+    if (!bySubject.has(key)) {
+      bySubject.set(key, { key, loc: f.loc, subjectType, empToken: f.empToken || null, wrin: f.wrin || null, rows: [] });
     }
+    bySubject.get(key).rows.push(f);
+  }
+  const out = [...bySubject.values()].map(g => {
+    const historyByRule = buildHistoryByRule(g.rows);
+    const verdicts = Object.values(historyByRule).map(windows => windows[windows.length - 1]); // latest window is what renders as THE verdict
     // dispatch #45 §B: a lifecycle-classified verdict is EXCLUDED from the security tally
     // (flaggedCount/clearCount/worstValue/sort) -- it routes to a distinct hygiene lane, never
     // counted toward "how many independent signals agree" (the whole point of subject-major
@@ -953,6 +965,15 @@ export function SecurityPanel({ userRole, onClose }) {
   // null = unbounded (the pre-#100 behavior, unchanged) -- {s,e} is DateRangeControl's own shape.
   const [dateRange, setDateRange] = React.useState(null);
   const [expanded, setExpanded] = React.useState(null);
+  // This dispatch -- the bulk `findings` load may now be reading security_findings_latest (one
+  // window per rule, see loadSecurityFindings' own header), which is all the closed/list view ever
+  // needed (verdicts already dedupe to "latest window per rule" regardless). Chronic/trend
+  // classification for the ONE subject a reader expands needs real multi-window history though --
+  // fetched lazily (see the effect right after `groups` below, which this state feeds) and cached
+  // by group key so it's never re-fetched once loaded. The group's own (possibly single-window)
+  // historyByRule renders unchanged while this is in flight, exactly like SubjectDrilldown's
+  // existing "Investigate further" progressive-disclosure shape.
+  const [subjectHistory, setSubjectHistory] = React.useState({});
   // dispatch #120 -- findings table sort. 'signals' + 'desc' is the default and, per
   // sortFindingsForDisplay's own comment, renders identically to the pre-table card order.
   const [sortKey, setSortKey] = React.useState('signals');
@@ -1063,6 +1084,26 @@ export function SecurityPanel({ userRole, onClose }) {
   // dispatch #120 -- see sortFindingsForDisplay's own header comment for the 'signals'/'desc'
   // no-op case that keeps the default view identical to the pre-table order.
   const sortedGroups = React.useMemo(() => sortFindingsForDisplay(groups, sortKey, sortDir), [groups, sortKey, sortDir]);
+
+  // Lazy per-subject full history -- see subjectHistory's own declaration above for why. Fires at
+  // most ONCE per subject per panel session, tracked via a ref (not subjectHistory state itself --
+  // a genuinely empty result must still count as "attempted," or every re-expand of a subject with
+  // no recoverable history would re-fetch forever). The ref is marked BEFORE the await starts, so
+  // a rapid expand/collapse/re-expand while the first fetch is still in flight can't double-fire.
+  const subjectHistoryAttempted = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!expanded || subjectHistoryAttempted.current.has(expanded)) return;
+    const g = groups.find(x => x.key === expanded);
+    if (!g) return;
+    subjectHistoryAttempted.current.add(expanded);
+    let cancelled = false;
+    (async () => {
+      const rows = await loadSecurityFindingsForSubject({ loc: g.loc, empToken: g.empToken, wrin: g.wrin });
+      if (cancelled || !rows.length) return;
+      setSubjectHistory(prev => ({ ...prev, [expanded]: buildHistoryByRule(rows) }));
+    })();
+    return () => { cancelled = true; };
+  }, [expanded, groups]);
 
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
@@ -1250,8 +1291,13 @@ export function SecurityPanel({ userRole, onClose }) {
           h('tbody', null, sortedGroups.map(g => {
             const ik = domain === 'inventory' ? inventoryItemKey(g, domainRuleIds) : null;
             const item = ik ? itemInfo[ik.key] : null;
+            // Once the lazy per-subject fetch (above) resolves for this subject, its REAL
+            // multi-window history supersedes the bulk load's single-latest-window one -- verdicts
+            // stay from `g` (already correct either way; see loadSecurityFindings' header for why),
+            // only historyByRule is richer.
+            const group = subjectHistory[g.key] ? { ...g, historyByRule: subjectHistory[g.key] } : g;
             return h(SubjectRow, {
-              key: g.key, group: g, rulesById, revealed, onReveal, ruleFilter,
+              key: g.key, group, rulesById, revealed, onReveal, ruleFilter,
               expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
               domain, findings, domainRuleIds, item,
             });
