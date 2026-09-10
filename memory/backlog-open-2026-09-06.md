@@ -306,13 +306,35 @@
 
 ## 4. Correctness Bugs
 
-- [ ] `[Violation] click handler 1382ms` on nearly every click — root cause not diagnosed.
+- [ ] `[Violation] click handler 1382ms` on nearly every click — **attempted with a real live
+  click trace 2026-09-10, does NOT reproduce; redirects the next attempt, doesn't close the item.**
+  Ran the dev server + a headless Playwright/Chromium driver (`/opt/pw-browsers/chromium`, same
+  pattern `e2e/smoke.spec.js` uses) with a `PerformanceObserver({entryTypes:['longtask']})`
+  installed plus a console listener filtering for `[Violation]`, then clicked through 11 real
+  top-bar controls (SAGE toggle, location pills, date range, settings, dark mode) AND 11 real
+  left-nav panel switches (Home, District View, Needs Attention, Daily Brief, Date-Range Report,
+  Org Summary, Leaderboards, Planning, Events, 3PO Delivery, Graded Visits) — every click
+  registered, every panel mounted, zero longtask entries and zero console violations across all
+  22 clicks. Most likely explanation: this sandbox's Supabase credentials return zero rows for
+  every tenant table (`e2e/README.md`'s own documented limitation), so every panel here mounts in
+  its genuine "0 stores, no data" shape — a click-handler cost this specific is very plausibly
+  data-volume-dependent (a large real DAR/labor/FOB row set driving a render the empty state never
+  exercises), which a headless container with no real tenant data structurally cannot reproduce.
+  **Next step, if this is still worth chasing: capture the same trace from a REAL loaded session**
+  (the owner's own browser, DevTools Performance panel or the same PerformanceObserver snippet
+  pasted into the console, against real production data) — that is the only environment that can
+  actually contain the click volume this bug needs to show up.
 - [ ] React render ≈100% of main-thread blocking (older trace) — fix direction known (coalesce
   `setDs` sites, defer `ds` to heavy views), not implemented. Possibly overlaps the render-storm
-  item in §14 below — check before treating as separate.
+  item in §14 below — check before treating as separate. Same data-volume caveat as the item above
+  likely applies to reproducing this one too.
 - [ ] "SAGE Scheduled Runs" tile appears twice as the single worst-cost click — unexplained.
   Re-checked 2026-09-05: only one `SageRunsTile` render call site in code, which doesn't rule out a
-  double-fetch-on-click. Needs a live click trace, not another grep.
+  double-fetch-on-click. **Also attempted 2026-09-10 alongside the click-handler item above** (the
+  same driver clicked the SAGE toggle) — zero longtasks recorded, but that run never opened the
+  actual At-A-Glance tile grid this specific item is about (SAGE was only toggled from the top
+  bar), so this one specifically is NOT resolved by that measurement — still needs a live click
+  trace against the real tile, ideally with real data loaded.
 - [x] ✅ **BUILT 2026-09-07 (v5.389) — do not re-implement.** `fetchAll()`
   (`src/lib/supabase.js`) now wraps every page attempt in `_withPageTimeout()` (30s), which
   races the real request and resolves with a synthetic no-`.code` error on timeout —
