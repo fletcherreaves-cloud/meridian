@@ -1388,6 +1388,47 @@ function _daysInclusive(a, b) {
   return Math.round((db - da) / 86400000) + 1;
 }
 
+// Location-attribution tightening -- backlog item / notes-33-queue.md's own "AI recommendations
+// on the 3 judgment calls" A: "keep majority-of-month as the headline single score... BUT now
+// that transfer dates exist, also compute a day-weighted split across stores... so the
+// attribution is auditable and transparent... Flag any review where no single store holds
+// ≥~70% of the person's days for manual attention/override." resolvePeriodAttribution() above
+// already IS the majority-of-month headline picker; this is the additive half -- the full
+// per-store day breakdown, plus the flag, neither of which existed. Pure function, same
+// [periodStart,periodEnd]/segments shape resolvePeriodAttribution takes, so a caller with
+// `effective` (computeSegmentedReview's own resolved segment list) already has everything
+// needed to call both.
+//
+// Grouped by STORE (loc), not by segment -- two segments at the SAME store (e.g. a role change
+// with no relocation) count as one store holding those combined days, matching the
+// recommendation's own wording ("no single store holds..."), not "no single segment."
+export const LOCATION_ATTRIBUTION_MAJORITY_THRESHOLD = 0.70;
+export function periodAttributionSplit(periodStart, periodEnd, segments) {
+  const ps = String(periodStart), pe = String(periodEnd);
+  const totalDays = _daysInclusive(ps, pe);
+  const byLoc = {};
+  for (const seg of (segments || [])) {
+    const os = seg.start > ps ? seg.start : ps;
+    const oe = seg.end < pe ? seg.end : pe;
+    if (os > oe) continue; // no overlap with this period at all
+    const days = _daysInclusive(os, oe);
+    const key = String(seg.loc);
+    if (!byLoc[key]) byLoc[key] = { loc: seg.loc, roles: new Set(), days: 0 };
+    byLoc[key].days += days;
+    if (seg.role) byLoc[key].roles.add(seg.role);
+  }
+  const splits = Object.values(byLoc)
+    .map(s => ({ loc: s.loc, roles: [...s.roles], days: s.days, pct: totalDays > 0 ? s.days / totalDays : null }))
+    .sort((a, b) => b.days - a.days || String(a.loc).localeCompare(String(b.loc)));
+  const topPct = splits.length ? splits[0].pct : null;
+  return {
+    totalDays, splits,
+    // null (no data at all) is NOT "needs attention" -- there's nothing to flag; a review with
+    // zero overlapping segments is a separate, already-visible empty state elsewhere.
+    needsAttention: topPct != null && topPct < LOCATION_ATTRIBUTION_MAJORITY_THRESHOLD,
+  };
+}
+
 // Scores ONE segment — a specific role + store + month/quarter subset — against ITS OWN role's
 // competency framework and ITS OWN store's targets, reusing the IDENTICAL
 // scoreMetricCategory/_metricsScoreAcross/_behavQuarterScore machinery computeScores() itself
@@ -1524,6 +1565,13 @@ export function computeSegmentedReview(review, cfg, ds, assignmentRows, opts = {
   return {
     segments,
     hasTransitions: timeline.length > 1 && segments.length > 1,
+    // Location-attribution tightening (notes-33-queue.md's "AI recommendations" A) -- the
+    // day-weighted split across stores for THIS period, plus whether the majority winner
+    // (the one resolvePeriodAttribution/`segments` above already uses as the sole store every
+    // OTHER score in the app assumes) actually holds a clear majority of days. `effective`, not
+    // `segments`: periodAttributionSplit needs raw start/end/loc, not the post-grouped/scored
+    // per-month objects.
+    attributionSplit: periodAttributionSplit(periodStart, periodEnd, effective),
     rollup: provisionalSegmentRollup(segments),
   };
 }

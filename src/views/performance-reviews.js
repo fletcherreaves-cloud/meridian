@@ -2441,6 +2441,29 @@ function SegmentedReviewSection({review, cfg, ds, assignmentRows, period, update
       '⚠ ROLE / STORE CHANGE DETECTED THIS PERIOD'),
     div({style:{fontSize:11,color:TEXT3,marginBottom:12}},
       `This person's role and/or store assignment changed during ${PERIOD_META[period]?.label||period} ${review.year}. Each segment below is scored against its OWN role's competency framework and OWN store's targets — not blended.`),
+    // Location-attribution tightening (notes-33-queue.md's "AI recommendations" A) — the
+    // day-weighted split, always shown here for auditability (segments above already give the
+    // exact date ranges; this is the same information as a store-level roll-up). The stronger
+    // "needs attention" callout only fires when no single store holds a clear (≥70%) majority of
+    // this period's days — every score OUTSIDE this section (SummaryTab, ReviewList, the review's
+    // overall) is still computed against review.loc alone for the whole period, so a genuinely
+    // close split is exactly the case that single number can mislead on.
+    result.attributionSplit && div({style:{padding:'10px 12px',borderRadius:R,marginBottom:12,
+      background: result.attributionSplit.needsAttention ? 'rgba(239,68,68,.10)' : 'var(--surf)',
+      border: `1px solid ${result.attributionSplit.needsAttention ? '#ef444466' : BDR}`}},
+      result.attributionSplit.needsAttention && div({style:{fontSize:10.5,fontWeight:700,color:'#ef4444',marginBottom:6}},
+        '⚠ No single store holds a clear majority of this period\'s days — the headline score elsewhere in this review uses review.loc alone for the whole period. Consider a manual override.'),
+      div({style:{fontSize:9,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:6}},
+        'Day-Weighted Split'),
+      div({style:{display:'flex',flexDirection:'column',gap:4}},
+        ...result.attributionSplit.splits.map((s,i) => div({key:i,
+          style:{display:'flex',justifyContent:'space-between',fontSize:11,color:TEXT2}},
+          span(null, `Store ${s.loc||'—'}`),
+          span({style:{fontFamily:'var(--mono)',fontWeight:i===0?700:400,color:i===0?TEXT:TEXT3}},
+            `${s.days}d (${(s.pct*100).toFixed(0)}%)`)
+        ))
+      )
+    ),
     div({style:{display:'flex',flexDirection:'column',gap:8,marginBottom:12}},
       ...result.segments.map((seg,i) =>
         div({key:i,style:{padding:'10px 12px',background:'var(--surf)',borderRadius:R,border:`1px solid ${BDR}`}},

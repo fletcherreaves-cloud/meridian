@@ -527,8 +527,19 @@
 ## 7. Performance Reviews
 
 - [ ] Personnel moves (loc↔loc, patch reassignment) tracking, editable override.
-- [ ] Location-attribution rule tightening (day-weighted split + ≥70%-of-days flag) — AI
-  recommendation given, not built.
+- [x] ✅ **BUILT 2026-09-10 (v5.425).** notes-33-queue.md's own "AI recommendations" A, verbatim:
+  keep majority-of-month as the headline single score (unchanged — `resolvePeriodAttribution`
+  still drives every score outside this section) but ALSO compute and surface a day-weighted
+  split across stores, and flag when no single store holds a clear (≥70%) majority. New
+  `periodAttributionSplit()`/`LOCATION_ATTRIBUTION_MAJORITY_THRESHOLD` (`review-engine.js`),
+  wired into `computeSegmentedReview`'s return as `attributionSplit`; `SegmentedReviewSection`
+  (`performance-reviews.js`, dispatch #157's already-live segment-detail view) now shows the
+  per-store day breakdown always, with a red "⚠ No single store holds a clear majority..."
+  callout only when `needsAttention` is true. Reuses `SegmentedReviewSection`'s existing
+  `hasTransitions`-gated render path — no new render branch, no code path when a review has no
+  transfer. 11 new tests (8 pure-function unit tests + 3 rendering the real
+  `PerformanceReviewsPanel` → `SegmentedReviewSection` chain, reusing dispatch #157's own
+  proven mid-year-transfer fixture), 10/11 confirmed failing against the pre-fix code.
 - [x] ✅ **BUILT 2026-09-07 (v5.392) — do not re-implement.** `missingReviewTargets()`
   (`review-engine.js`) already existed, engine-tested, but had zero UI consumer. `ReviewEditor`
   now shows a persistent banner (visible on every tab, not just Summary) naming every scored
