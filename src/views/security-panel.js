@@ -824,6 +824,54 @@ function subjectLabelFor(group, revealed, itemInfoFor) {
   return itemName ? `${itemName} (${group.wrin}, store ${group.loc})` : `Item ${group.wrin} (store ${group.loc})`;
 }
 
+// Decision-first summary bar -- the live screen's own version of buildSecurityPrintHtml's
+// heroCard treatment above ("N Subjects Flagged," "2+ Signal Convergence," etc.), which until now
+// only ever rendered in the PDF export, never here. Same four numbers, same `groups` (the
+// filtered/scoped set the table itself renders -- NOT `sortedGroups`, since a reader who's
+// re-sorted the table by Subject or Window shouldn't also silently change which subject this bar
+// calls out; `groups` stays convergence-ordered from groupFindingsBySubject's own sort
+// regardless), plus one decision line per CLAUDE.md's "voice by role" standing rule -- the number
+// stays visible, the sentence says what to do with it, neither replaces the other.
+//
+// The decision line names a CONVERGING subject when one exists (2+ independent signals on the
+// same subject) and stays there -- it does NOT also try to call out a single-rule CHRONIC subject
+// (flagged many days running on just one rule), even though that can be an equally real lead. That
+// needs a subject's own multi-window history, which this scope-wide summary can't afford to fetch
+// for every visible subject (loadSecurityFindingsForSubject is deliberately lazy, one subject at a
+// time, on row-expand) -- naming a false "top pick" from data this bar doesn't actually have would
+// be worse than staying quiet on it. A composite score across both axes is tracked separately, not
+// attempted here.
+function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
+  const flaggedTotal = groups.reduce((a, g) => a + g.flaggedCount, 0);
+  const multiSignal = groups.filter(g => g.flaggedCount >= 2).length;
+  const tile = (label, val, tone) => div({
+    style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px' } },
+    div({ style: { fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 } }, label),
+    div({ style: { fontSize: 20, fontWeight: 800, color: tone || 'var(--text)' } }, val),
+  );
+  let decision;
+  if (!groups.length) {
+    decision = 'No subjects flagged — clear across this scope.';
+  } else if (!multiSignal) {
+    decision = `${groups.length} subject${groups.length === 1 ? '' : 's'} flagged, one signal each — worth a look, nothing converging yet.`;
+  } else {
+    const top = groups[0]; // groups is already convergence-sorted (flaggedCount desc, worstValue desc)
+    decision = `${subjectLabelFor(top, revealed, itemInfoFor)} is converging on ${top.flaggedCount} independent signals — the strongest lead in this scope right now.`;
+  }
+  return div({ style: { padding: '10px 14px', borderBottom: '1px solid var(--bdr)' } },
+    div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 10 } },
+      tile('Subjects Flagged', groups.length),
+      tile('Total Signals', flaggedTotal, flaggedTotal > 0 ? 'var(--crit,#ef4444)' : undefined),
+      tile('2+ Signal Convergence', multiSignal, multiSignal > 0 ? 'var(--crit,#ef4444)' : undefined),
+      tile('Latest Batch', newestBatch ? new Date(newestBatch).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'),
+    ),
+    div({ style: { display: 'flex', gap: 8, alignItems: 'flex-start', background: 'rgba(245,188,0,.12)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 } },
+      span(null, '💡'),
+      span({ style: { color: 'var(--text)' } }, decision),
+    ),
+  );
+}
+
 // One row per subject (matches the on-screen grouping) -- the Rules column flattens every verdict
 // chip into "RULE: Verdict" pairs, semicolon-joined, so the CSV still carries which rule(s) said
 // what without exploding into one row per verdict.
@@ -1268,6 +1316,11 @@ export function SecurityPanel({ userRole, onClose }) {
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
       permState === 'allowed' && dataState === 'error' && emptyState('Could not load findings — try again.', true),
       permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
+      // Live-screen hero bar -- see SecuritySummaryBar's own header for why this exists and why
+      // it's fed `groups`, not `sortedGroups`. Only rendered once there's something to summarize;
+      // the empty-state message just above already covers the zero-groups case.
+      permState === 'allowed' && dataState === 'loaded' && groups.length > 0
+        && h(SecuritySummaryBar, { groups, newestBatch, revealed, itemInfoFor }),
       // dispatch #120 -- real <table>/<th> markup, sortable by Signals/Subject/Rule/Window (see
       // sortFindingsForDisplay's own header comment for why this was chosen over a click-through
       // to an "actual event" view). Wrapped in its own overflowX:'auto' scroller per panel-

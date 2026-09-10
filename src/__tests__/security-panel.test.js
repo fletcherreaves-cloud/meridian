@@ -467,6 +467,67 @@ describe('SecurityPanel — permission states are visually distinct, and a block
   });
 });
 
+// v5.413 (Loss Forensics Roadmap Rec #1, owner-reviewed 2026-09-09) -- buildSecurityPrintHtml's
+// own heroCard treatment ("N Subjects Flagged," "2+ Signal Convergence," etc.) already answered
+// "how bad is it right now" at a glance, but only ever rendered in the PDF export. Ported to the
+// live screen as SecuritySummaryBar, through the real panel per the standing "verification must
+// touch the call site" rule -- these prove the numbers AND the decision line are actually wired
+// in, not just correct as an isolated helper (there is no isolated helper here to unit-test;
+// SecuritySummaryBar is intentionally not exported, same as SubjectRow/SubjectDetail/Legend).
+describe('SecurityPanel — live decision-first summary bar (ports buildSecurityPrintHtml\'s heroCard treatment to the screen)', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'd', baselineType: 'personal', logicType: 'ratio', active: true },
+    { ruleId: 'CASH-002', domain: 'cash', method: 'POS over-ring rate', description: 'd', baselineType: 'peer', logicType: 'ratio', active: true },
+    { ruleId: 'CASH-004', domain: 'cash', method: 'Promo/discount rate', description: 'd', baselineType: 'peer', logicType: 'ratio', active: true },
+  ];
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('shows the four hero numbers and names the converging subject as the strongest lead', async () => {
+    // Alice: CASH-001 + CASH-002 both pass:true -- 2 signals, converging. Bob: CASH-001 only --
+    // 1 signal. Carol: pass:null on CASH-001 -- 0 signals, filtered out by the default minSignals:1.
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Subjects Flagged/);
+    expect(container.textContent).toMatch(/Total Signals/);
+    expect(container.textContent).toMatch(/2\+ Signal Convergence/);
+    expect(container.textContent).toMatch(/Latest Batch/);
+    expect(container.textContent).toMatch(/is converging on 2 independent signals — the strongest lead in this scope right now/);
+  });
+
+  it('names nothing converging when every flagged subject has exactly one signal', async () => {
+    const singleSignalFindings = [
+      { empToken: 'tok-dave', wrin: null, loc: '0000002', ruleId: 'CASH-001', pass: true, value: 8, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+      { empToken: 'tok-erin', wrin: null, loc: '0000002', ruleId: 'CASH-002', pass: true, value: 20, thresholdUsed: 15, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    ];
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(singleSignalFindings);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/2 subjects flagged, one signal each — worth a look, nothing converging yet/);
+    expect(container.textContent).not.toMatch(/strongest lead/);
+  });
+
+  it('renders no summary bar when nothing is flagged -- the existing "no findings" message covers it alone', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/no findings match/i);
+    expect(container.textContent).not.toMatch(/Subjects Flagged/);
+  });
+});
+
 // dispatch #46 -- rendering wiring for legend/units/decision-sentence, through the REAL panel
 // component (standing rule from #366: a test that only imports a helper can't tell "built" from
 // "built but never wired in").
