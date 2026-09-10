@@ -379,8 +379,21 @@
     item, matching the OT/Cash O/S/OEPE/T-Red/Labor% pattern exactly. Covered by
     `store-dash-action-plan-tpph.test.js` (3 tests). This backlog line was not updated when #1185
     landed — confirmed live in code 2026-09-07, do not re-build.
-- [ ] Speed of Service — DT History takes 15+ seconds to load (`notes-67-queue.md` §2). A
-  performance bug, not a design ask — needs a real before/after measurement if scoped.
+- [x] ✅ **RESOLVED — stale, already shipped and merged (v5.311, PR #1009, 2026-09-01); do not
+  re-raise.** This line asked for exactly what v5.311 already did: dispatch #88's original fix (PR
+  #633) shipped without a reachable live Supabase session and never verified wall-clock; v5.311
+  re-measured against real production `qsr_daily_activity` with a live `SUPABASE_SERVICE_ROLE_KEY`
+  and found the real remaining defect — `_pagedParallel`'s `count:'exact'` head-count query could
+  itself hit a Postgres `57014` statement timeout on cold cache (measured ~8.1s), which fell back to
+  the strict-sequential `fetchAll` and reproduced the original "15+ second" complaint end to end
+  (measured ~17.5s total). Fixed by switching the head-count to `count:'estimated'` (immune to the
+  same timeout, measured 330-520ms) plus a safety-extension loop that keeps fetching past the
+  estimate until a short/empty page proves the true end (measured live: closed a real 42,105-vs-
+  45,136-row undercount, returned all rows). Live wall-clock, same 90-day query, cache-warm: old
+  sequential 9,575ms → PR #633's fan-out 2,177ms (but with the timeout tail risk) → this fix's
+  2,666ms with no tail risk. Re-confirmed 2026-09-10: `src/__tests__/dt-history-pagination.test.js`
+  (11 tests) passes on current `main`, and the changelog entry is present at
+  `src/app/changelog/5.311.js` on `origin/main`.
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
 - [ ] Production RLS — no concrete sign anything is broken (re-investigated 2026-09-06; everything
   measurable points away from RLS as a cause, and the actual "FOB shows stale/empty" symptom this

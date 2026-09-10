@@ -759,8 +759,9 @@ create table if not exists public.monthly_targets (
   sales_proj        float,                   -- Sales Projection ($)
   comp_sales_pct    float,                   -- Comp Sales %
   -- Labor
-  crew_labor_pct    float,                   -- Crew Labor %
+  crew_labor_pct    float,                   -- Crew Labor % (authoritative, see GH #164)
   bonus_crew_pct    float,                   -- Bonus Crew Labor %
+  labor_pct         float,                   -- Combined Labor % (legacy; see GH #164)
   tpph_target       float,                   -- TPPH Target
   -- Food Over Base components
   base_food_pct     float,                   -- Base Food %
@@ -775,6 +776,7 @@ create table if not exists public.monthly_targets (
   total_food_cost_pct float,                 -- Total Food Cost %
   paper_cost_pct    float,                   -- P&L Paper Cost %
   op_supply_target  float,                   -- Op Supply Target ($)
+  fob_bonus_base_pct float,                  -- Bonus Food Over Base Target
   -- Audit
   updated_at        timestamptz default now(),
   updated_by        uuid references public.profiles(id),
