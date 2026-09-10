@@ -46,6 +46,23 @@ import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 
+// #164 triage finding 2: a district/operator/patch labor-% TARGET must be sales-weighted the
+// same way its corresponding ACTUAL is (both call sites below weight their actual laborPct by
+// sales) — an unweighted per-store mean produces a different number than the true blended rate
+// ($700k@20% + $300k@25% is a real 21.5%, not the unweighted 22.5% a straight mean gives), so
+// comparing a sales-weighted actual against an unweighted-mean target is apples-to-oranges.
+// One shared, exported, pure function so both call sites (OperatorSummaryPanel's per-group
+// distTgt, LaborAnalyticsPanel's district-wide distTgt) can't drift into two different answers.
+export function weightedLaborTarget(items, weightField) {
+  let tS = 0, tV = 0;
+  for (const it of (items || [])) {
+    const v = resolveLaborTarget(it.tgt);
+    const w = it[weightField];
+    if (v != null && v > 0 && w > 0) { tS += w; tV += v * w; }
+  }
+  return tS > 0 ? tV / tS : 0;
+}
+
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
 const span=(p,...c)=>h('span',p,...c);
@@ -1855,8 +1872,12 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         sortedOps.length===0?div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'11px'}},'No data for selected period.'):
         sortedOps.map((op)=>{
           const isExp=!!expanded[op.op];
+          // tTpph/tOepe deliberately stay simple (unweighted) means: op.tpph/op.oepe are
+          // themselves simAvg (unweighted, above), so a sales-weighted target here would
+          // introduce a NEW mismatch rather than fix one — weightedLaborTarget (module scope)
+          // is only correct for tLabor because op.laborPct it's compared against is wAvg.
           const distTgt=op.stores.length?{
-            tLabor:op.stores.reduce((a,s)=>a+(resolveLaborTarget(s.tgt)||0),0)/op.stores.length,
+            tLabor:weightedLaborTarget(op.stores,'sales'),
             tTpph: op.stores.reduce((a,s)=>a+(s.tgt.tTpph||0),0)/op.stores.length,
             tOepe: op.stores.reduce((a,s)=>a+(s.tgt.tOepe||0),0)/op.stores.length,
           }:{};
@@ -2104,13 +2125,17 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     return {byLoc, summary};
   },[ds,activeLocs]);
 
-  // ── District avg targets ──
+  // ── District avg targets ── Derived from locStats (already has totalSales + tgt per loc)
+  // rather than activeLocs/settings directly, since weightedLaborTarget's weight has to come
+  // from the same per-store sales figure dist.laborPct (wA, above) used. tTpph deliberately
+  // stays a simple (unweighted) mean: dist.tpph above is itself sA (unweighted), so a weighted
+  // target here would introduce a NEW mismatch, not fix one — see weightedLaborTarget's own
+  // header comment (module scope) for the full #164 finding-2 reasoning.
   const distTgt = uM(()=>{
-    if(!activeLocs.length) return{tLabor:0,tTpph:0};
-    const tL=activeLocs.map(l=>{const t=(settings.targets&&settings.targets[l])||DEFAULT_TARGETS[l]||{};return resolveLaborTarget(t)||0;}).filter(v=>v>0);
-    const tT=activeLocs.map(l=>{const t=(settings.targets&&settings.targets[l])||DEFAULT_TARGETS[l]||{};return t.tTpph||0;}).filter(v=>v>0);
-    return{tLabor:tL.length?tL.reduce((a,b)=>a+b,0)/tL.length:0, tTpph:tT.length?tT.reduce((a,b)=>a+b,0)/tT.length:0};
-  },[activeLocs,settings]);
+    if(!locStats.length) return{tLabor:0,tTpph:0};
+    const tT=locStats.map(s=>s.tgt.tTpph||0).filter(v=>v>0);
+    return{tLabor:weightedLaborTarget(locStats,'totalSales'), tTpph:tT.length?tT.reduce((a,b)=>a+b,0)/tT.length:0};
+  },[locStats]);
 
   // ── DOW breakdown ──
   const DOW_N=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];

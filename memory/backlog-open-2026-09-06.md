@@ -753,11 +753,14 @@
   actually describes: `laborpct`/`oepe`/`fob`/`tpph`/`r2p`/`avgCheck`/`promo` (every OTHER Smart
   Targets metric) read `DEFAULT_TARGETS` directly via their own `officialVal`, bypassing the
   `settings.targets`/monthly-overrides merge chain — but that's a real, ALREADY-TRACKED, separate
-  issue: GitHub **#164** ("Labor basis rollout: migrate all 69 t.tLabor readers to the resolver"),
-  still open, with its own detailed triage-first plan explicitly naming `smart-targets.js:115`'s
-  `officialVal` as one of the 69 readers to triage. Not a new find — just the backlog's "#153/#167"
-  citation pointing at the wrong bug for the wrong metric. No new item filed; #164 already covers
-  the real remaining gap, sales excluded.
+  issue. Originally tracked under GitHub #164 ("Labor basis rollout: migrate all 69 t.tLabor
+  readers to the resolver"), whose own detailed triage-first plan named `smart-targets.js:115`'s
+  `officialVal` as one of the 69 readers to triage. **#164 itself closed 2026-09-10** (core
+  migration + its finding-1 persistence gap both shipped, v5.414/v5.415) — the `officialVal`
+  sourcing bug specifically was spun off as its own issue, **#177 (open)**, per #164's own triage
+  note to keep it a separate commit. Not a new find — just the backlog's "#153/#167" citation
+  pointing at the wrong bug for the wrong metric. No new item filed; #177 already covers the real
+  remaining gap, sales excluded.
 - [x] ✅ **FIXED 2026-09-07 (owner go-ahead given directly) — do not re-raise.** `package.json`'s
   `"xlsx"` dependency now points at `npm:@e965/xlsx@^0.20.3` (an npm alias — every existing
   `import ... from 'xlsx'` call site across all 14 files is untouched, zero import-site changes)
@@ -985,8 +988,10 @@
 - ✅ **§8 addendum RESOLVED 2026-09-08 — same answer as the §13 duplicate of this question above:
   NO.** Both real consumers of `sales_proj`/`tProdSales` (`CurrentMonthPaceSection` and Smart
   Targets' `officialFor()`) correctly resolve it from `ds.monthlyTargets`, traced end to end. The
-  actual DEFAULT_TARGETS-bypass pattern the code comment referenced is tracked separately by
-  GitHub issue #164 (open), and doesn't touch `sales`. See the §13 entry for the full trace.
+  actual DEFAULT_TARGETS-bypass pattern the code comment referenced is tracked separately —
+  GitHub issue #164 closed 2026-09-10 (its core migration + finding-1 persistence gap both
+  shipped, v5.414/v5.415), the specific DEFAULT_TARGETS-bypass sub-issue it spun off lives on as
+  #177 (open) — and doesn't touch `sales`. See the §13 entry for the full trace.
 
 *(Archive: §14)*
 
