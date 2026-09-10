@@ -75,6 +75,26 @@ describe('buildStore findings (dispatch #94 Phase 3 -- tol-based findings)', () 
     expect(store.findings.find(f => f.rule === 'tolCompW')).toBeFalsy();
   });
 
+  // GH #1221 (found while fixing #167): tolStatusesForStore used to always re-derive its
+  // official target from ds alone, with no way to reach a settings.targets override --
+  // buildBrief has no `settings` param of its own. Fixed by having pipeline.js pass its own
+  // already-merged `t` (buildStore's own settings.targets-aware target) straight through via
+  // tolStatusesForStore's new `officialTarget` param, so the coaching finding cites the SAME
+  // approved target the score and every other finding already do.
+  it('a settings.targets override changes which finding fires -- green against DEFAULT_TARGETS becomes red against the approved override', () => {
+    // Exactly on the DEFAULT_TARGETS value -> green, no finding, per the test above.
+    const overriddenSettings = { ...settings, targets: { [loc]: { tCompWaste: target - TOL * 3 } } };
+    const store = buildStore(loc, dsWithCompWaste(target), overriddenSettings);
+    const hit = store.findings.find(f => f.rule === 'tolCompW');
+    expect(hit).toBeTruthy();
+    expect(hit.t).toBe('crit');
+    // The finding must quote the OVERRIDE target, not the DEFAULT_TARGETS one -- checked as
+    // "X% target" specifically, since cur (== target here) also legitimately formats to the
+    // same string as the actual-value half of the message.
+    expect(hit.m).toContain(TOL_PCT(target - TOL * 3) + ' target');
+    expect(hit.m).not.toContain(TOL_PCT(target) + ' target');
+  });
+
   it('metrics with an existing dedicated finding (oepe/labor/park/tpph/r2p) never get a duplicate tol-prefixed rule', () => {
     // Phase 3 deliberately skips these five -- pipeline.js's TOL_FINDING_ACTION comment names
     // them as already covered by their own richer rules. A regression that re-added them would
