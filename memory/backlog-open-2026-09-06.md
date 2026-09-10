@@ -572,8 +572,24 @@
   together + TEST," no %-of-target design settled yet).
 - [ ] "2026 PACE" review template — blocked pending the full current-year Sales/Profit/People PACE
   weights from the owner (only RGR-category weights known so far).
-- [ ] Performance Reviews Phase 2 punch list: Dev Plan tab, wage-review-section wiring, YoY trend
-  view, hourly-manager reviews, tag/search by score.
+- [ ] Performance Reviews Phase 2 punch list — **re-measured 2026-09-10, three of five items
+  already stale:**
+  - ✅ **Dev Plan tab** — already fully built (`views/performance-reviews.js`'s `devplan` tab,
+    a dedicated `DevPlanTab` component with its own comments/narrative fields).
+  - ✅ **Wage-review-section wiring** — already fully built (`review.wage.{current,recommended,
+    approved,effectiveDate,notes}`, an editable form in `ReviewEditor`, and the wage table
+    prints in the PDF/report output).
+  - ✅ **Tag/search by score — BUILT 2026-09-10 (v5.424).** `ReviewList` gained a name-search
+    box and a score-band filter (`SCORE_BANDS`, reusing `overallLabel()`'s own 3.5/2.5/1.5
+    cutoffs and wording rather than inventing a second labeling scheme). Also fixed a real
+    pre-existing UX bug found in the same pass: the empty-list message said "No reviews yet"
+    even when reviews existed and only the active filters matched none of them. 6 new tests
+    (`dispatch-review-list-search-score-filter.test.js`) render the real
+    `PerformanceReviewsPanel` → `ReviewList` chain; 5/6 confirmed failing against the pre-fix
+    code (the 6th is a no-filter baseline sanity check, expected to pass either way).
+  - **Still genuinely open:** YoY trend view, hourly-manager reviews (distinct from the
+    existing salaried `SM`/"Shift Manager" role — likely a different review structure for
+    hourly staff, not yet scoped). Neither picked up here — no design decision made on either.
 
 *(Archive: §7)*
 

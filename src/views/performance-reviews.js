@@ -2692,10 +2692,25 @@ function HalfStatusSummary({review}) {
 //   - "Status" column shows BOTH halves' real state side by side (HalfStatusSummary, below) —
 //     per the dispatch's own explicit requirement ("must reflect BOTH halves' real state, not one
 //     fabricated top-level value").
+// Score-band boundaries for search/tag filtering -- deliberately the SAME 3.5/2.5/1.5 cutoffs
+// ScorePill already colors by AND overallLabel() already names (SummaryTab), reusing
+// overallLabel's own wording rather than inventing a second set of band names for the same
+// cutoffs (the exact "two independently-tuned scales silently drift apart" trap this file
+// already has enough of -- see the labor_rows/manual-first sweep in the backlog).
+const SCORE_BANDS = [
+  { id: 'exceeds',  label: overallLabel(4),   test: s => s != null && s >= 3.5 },
+  { id: 'meets',    label: overallLabel(3),   test: s => s != null && s >= 2.5 && s < 3.5 },
+  { id: 'below',    label: overallLabel(2),   test: s => s != null && s >= 1.5 && s < 2.5 },
+  { id: 'needsImprovement', label: overallLabel(1), test: s => s != null && s < 1.5 },
+  { id: 'unscored', label: 'Not Yet Scored',  test: s => s == null },
+];
+
 function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDelete}) {
   const [filterRole, setFilterRole]     = useState('all');
   const [filterYear, setFilterYear]     = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterScoreBand, setFilterScoreBand] = useState('all');
+  const [search, setSearch]             = useState('');
   const [showNew, setShowNew]           = useState(false);
 
   const loadDemos = () => {
@@ -2705,16 +2720,20 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
       .catch(e => alert('Could not load demo reviews: ' + e.message));
   };
 
+  const getScore = (r) => computeScores(r, cfg).year?.overall ?? null;
+
   const list = Object.values(reviews);
   const years = [...new Set(list.map(r=>r.year))].sort((a,b)=>b-a);
+  const searchNorm = search.trim().toLowerCase();
+  const activeBand = SCORE_BANDS.find(b => b.id === filterScoreBand);
 
   const filtered = list.filter(r =>
     (filterRole==='all'||r.role===filterRole) &&
     (filterYear==='all'||r.year===parseInt(filterYear)) &&
-    (filterStatus==='all'||reviewSummaryStatus(r)===filterStatus)
+    (filterStatus==='all'||reviewSummaryStatus(r)===filterStatus) &&
+    (!activeBand || activeBand.test(getScore(r))) &&
+    (!searchNorm || (r.name||'').toLowerCase().includes(searchNorm))
   ).sort((a,b)=>b.updatedAt?.localeCompare(a.updatedAt)||0);
-
-  const getScore = (r) => computeScores(r, cfg).year?.overall ?? null;
 
   return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
     // Toolbar
@@ -2742,6 +2761,20 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
         opt({value:'all'},'All Statuses'),
         ...Object.entries(REVIEW_STATUSES).map(([k,v])=>opt({value:k,key:k},v.label))
       ),
+      // Score-band filter (Performance Reviews Phase 2 punch list: "tag/search by score") —
+      // bands match ScorePill's own 3.5/2.5/1.5 color cutoffs, so a filtered-in row's pill
+      // color always matches the band label chosen here.
+      sel({value:filterScoreBand,onChange:e=>setFilterScoreBand(e.target.value),
+        style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+          borderRadius:R,color:TEXT,fontSize:12}},
+        opt({value:'all'},'All Scores'),
+        ...SCORE_BANDS.map(b=>opt({value:b.id,key:b.id},b.label))
+      ),
+      // Name search
+      inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
+        placeholder:'Search by name…',
+        style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+          borderRadius:R,color:TEXT,fontSize:12,width:150}}),
       div({style:{flex:1}}),
       GhostBtn({onClick:loadDemos,style:{fontSize:11,opacity:.75}},'📚 Demo Reviews'),
       PrimaryBtn({onClick:()=>setShowNew(true)},'+ New Review')
@@ -2754,8 +2787,17 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
       filtered.length===0
         ? div({style:{padding:40,textAlign:'center',color:TEXT3}},
             div({style:{fontSize:24,marginBottom:8}},'📋'),
-            div({style:{fontWeight:600,color:TEXT2,marginBottom:4}},'No reviews yet'),
-            div({style:{fontSize:12}},'Create your first performance review using the button above.'))
+            list.length===0
+              ? h(React.Fragment,null,
+                  div({style:{fontWeight:600,color:TEXT2,marginBottom:4}},'No reviews yet'),
+                  div({style:{fontSize:12}},'Create your first performance review using the button above.'))
+              // list.length>0 but filtered.length===0 -- reviews exist, the active filters
+              // just match none of them (the pre-existing copy here claimed "no reviews yet"
+              // in this case too, which is wrong the moment a search/score/role/year/status
+              // filter is active).
+              : h(React.Fragment,null,
+                  div({style:{fontWeight:600,color:TEXT2,marginBottom:4}},'No reviews match these filters'),
+                  div({style:{fontSize:12}},'Try clearing the search or a filter above.')))
         : div(null,
             // Table header
             div({style:{display:'grid',gridTemplateColumns:'200px 120px 120px 70px 90px 200px 80px',
