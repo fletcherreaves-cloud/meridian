@@ -342,6 +342,7 @@ export async function saveMonthlyTargets(targets, year, month) {
     sales_proj:         t.tProdSales        ?? null,
     crew_labor_pct:     t.tCrewLabor        ?? null,
     bonus_crew_pct:     t.tBonusLabor       ?? null,
+    labor_pct:          t.tLabor            ?? null,
     tpph_target:        t.tTpph             ?? null,
     base_food_pct:      t.tFOBBase          ?? null,
     disc_coup_pct:      t.tDiscCoupPct      ?? null,
@@ -355,6 +356,7 @@ export async function saveMonthlyTargets(targets, year, month) {
     total_food_cost_pct:t.tFOBTotal         ?? null,
     paper_cost_pct:     t.tPaperCost        ?? null,
     op_supply_target:   t.tOpSupply         ?? null,
+    fob_bonus_base_pct: t.tFOBBonusBase     ?? null,
     updated_at: new Date().toISOString(),
   }));
   const { error } = await supabase
@@ -395,6 +397,7 @@ export async function loadMonthlyTargets(year, month) {
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
+      tLabor:       r.labor_pct,
       tTpph:        r.tpph_target,
       tFOBBase:     r.base_food_pct,
       tDiscCoupPct: r.disc_coup_pct,
@@ -408,6 +411,7 @@ export async function loadMonthlyTargets(year, month) {
       tFOBTotal:    r.total_food_cost_pct,
       tPaperCost:   r.paper_cost_pct,
       tOpSupply:    r.op_supply_target,
+      tFOBBonusBase: r.fob_bonus_base_pct,
       _year: r.year,
       _month: r.month,
     });
@@ -433,6 +437,7 @@ export async function loadAllMonthlyTargets() {
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
+      tLabor:       r.labor_pct,
       tTpph:        r.tpph_target,
       tFOBBase:     r.base_food_pct,
       tDiscCoupPct: r.disc_coup_pct,
@@ -446,6 +451,7 @@ export async function loadAllMonthlyTargets() {
       tFOBTotal:    r.total_food_cost_pct,
       tPaperCost:   r.paper_cost_pct,
       tOpSupply:    r.op_supply_target,
+      tFOBBonusBase: r.fob_bonus_base_pct,
       _year: r.year,
       _month: r.month,
     });
