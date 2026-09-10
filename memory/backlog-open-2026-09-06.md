@@ -542,9 +542,21 @@
   3 new tests (`missing-review-targets-banner.test.js`), renders the real
   `PerformanceReviewsPanel → ReviewEditor` chain per this repo's own "verification must touch
   the call site" rule.
-- [ ] DM/shift-role review wiring — link a review to `geid`, decide which manager-attributed
-  metrics score it. (The underlying report pull already shipped, v4.550 — this is the only real
-  open piece of that item.)
+- [x] ✅ **RE-MEASURED 2026-09-10 (v5.423) — stale, already fully built; do not re-raise.** Read
+  `engine/review-engine.js`'s `autoPopulateKPIs` directly: `review.geid` links a review to a
+  manager, `SHIFT_ATTRIBUTABLE_ROLES` (`['AM','DM','SM']`, GM/AS/OM always store-total) gates
+  which roles can attribute at all, and the manager's own `ds.shiftManagerRows` figures for
+  OEPE/R2P/KVS/Labor% (the rate/time metrics that compare fairly to a store target) override
+  the store-total value after it fills — sales/digital/delivery deliberately stay store-total
+  (`notes-33-queue` A#3's own rationale: "a shift lead isn't graded on the store's monthly
+  sales target"). The "decide which manager-attributed metrics score it" half this line called
+  open is exactly that decision, already made and shipped. **The real gap was verification, not
+  code** — no test exercised this end-to-end (dispatch #152's own geid tests only cover
+  `blankReview`'s default-null state). 7 new tests
+  (`dispatch-shift-attribution-review-scoring.test.js`) covering every `SHIFT_ATTRIBUTABLE_ROLES`
+  entry, the GM/no-geid/wrong-geid non-attribution cases, the sales-stays-store-total split, and
+  the padding-agnostic loc match — confirmed to catch a real regression (temporarily forced
+  `canAttribute=false`, 4/7 failed as expected, reverted).
 - [x] ✅ **BUILT 2026-09-06 (v5.386) — do not re-implement.** Toggle-gated, off-by-default,
   separate pass/fail gate (Labor −0.25pts of target / FOB −0.15pts of target), fully additive —
   `computeScores`/`computeScoreBreakdown` never read `cfg.bonusEligibility` at all, proven by a
