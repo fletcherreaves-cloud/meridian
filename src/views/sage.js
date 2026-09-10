@@ -96,15 +96,18 @@ function _lastNDaysRange(days) {
 // cloud data (no manual upload, ever) concluded SAGE had "no data at all" and hid the
 // data-driven empty-state copy + quick prompts entirely.
 //
-// NOT using ds.loaded here even though it looks like the obvious fix: ds.loaded is ALSO
-// laborRows-derived (src/engine/pipeline.js buildDS/mergeDS: `ds.loaded =
-// ds.laborRows.length > 0`) — swapping to it would trade one manual-only check for an
-// identically-broken one under a different name, not actually fix anything. That is a real,
-// separate, and much wider bug — every `if (!ds.loaded)` gate across the app (analytics.js
-// alone has 10+) is potentially blocked on a device with cloud data and no manual upload —
-// out of this issue's stated phase-1 scope (SAGE's own summaries). Flagged here and in
-// memory/project-sage-manual-sourcing-270.md rather than silently left for someone to
-// rediscover the hard way.
+// Historically NOT using ds.loaded here even though it looks like the obvious fix: ds.loaded
+// used to be ALSO laborRows-derived (`ds.loaded = ds.laborRows.length > 0` verbatim), so
+// swapping to it would have traded one manual-only check for an identically-broken one under
+// a different name. That wider bug — every `if (!ds.loaded)` gate across the app (analytics.js
+// alone had 10+) potentially blocked on a device with cloud data and no manual upload — was
+// out of this issue's stated phase-1 scope (SAGE's own summaries) and got its own fix later
+// (engine/pipeline.js's dsHasData/annotateAutoFirstFlags, wired into App.js's setDs). ds.loaded
+// is now itself auto-first-aware and would work here too, but sageHasData is left as its own
+// explicit field list rather than swapped to it: it deliberately also checks ctrlRows (manual-
+// only, not one of stream-freshness.js's STREAMS, so dsHasData doesn't check it) as a real
+// SAGE-specific "has anything at all" signal, which is a genuine behavior difference, not
+// leftover duplication to clean up blindly.
 export function sageHasData(ds) {
   return !!(ds && (
     ds.qsrActSummaryRows?.length || ds.glimpseRows?.length || ds.cashRows?.length ||

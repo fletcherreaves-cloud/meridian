@@ -210,6 +210,11 @@
     separate bug. Fix `ds.loaded`'s definition there (make it auto-first-aware — e.g. true if
     ANY real data source has rows, not just `laborRows`) and `why.js`'s gate very likely clears
     itself as a side effect; do not patch `why.js` in isolation first.
+    ✅ **RESOLVED (v5.421, 2026-09-10) — see §14's `ds.storeIds`/`ds.loaded` line for the fix.**
+    `ds.loaded` is now auto-first-aware; `diagnoseMiss`'s "Single-store anomaly" gate clears on a
+    cloud-only device as predicted, with no `why.js`-local change needed. Not independently
+    re-verified against a live cloud-only session (no such session available in this sandbox —
+    see the standing "measure it" rule) — the derivation itself is unit-tested exhaustively.
   - `crossStoreCheck()` (`why.js:9`) is a genuinely separate, harder conversion regardless of the
     `ds.loaded` fix: it directly filters `ds.laborRows` to build a same-day-of-week peer baseline
     (mean/std across ALL other stores) with no bound on history, plus `fetchRow(ds.laborIdx,...)`
@@ -876,13 +881,25 @@
   email/auto-ingest auto-sync cutoff is 30 days; the manual-upload cross-device-sync cutoff is
   180 days, a different, wider window) — a new device/user genuinely won't backfill an
   email-sourced report older than 30 days. Minor, not urgent; unclear if intentional.
-- [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`) — the same
-  silent-failure-on-cloud-only-device shape #270 was supposed to fix for SAGE. 10+
-  `if(!ds.loaded)` gates in `analytics.js` alone are unaudited. **Confirmed 2026-09-07: `engine/
-  why.js`'s forecast-miss diagnosis engine (`diagnoseMiss`'s "Single-store anomaly" cause,
-  `why.js:152`) is one more real consumer** — `ds.loaded=ds.laborRows.length>0` verbatim in
-  `engine/pipeline.js:129,790`, unchanged. See §3's `why.js` entry above for the full trace;
-  fixing `ds.loaded`'s definition here is the actual unlock, not a `why.js`-local patch.
+- [x] ✅ **FIXED (v5.421, 2026-09-10).** `ds.storeIds`/`ds.loaded` were both manual-labor-derived
+  (set from `laborRows`) — the same silent-failure-on-cloud-only-device shape #270 was supposed
+  to fix for SAGE, never generalized. `engine/pipeline.js` now has `dsHasData`/`dsAutoStoreIds`/
+  `annotateAutoFirstFlags`, deriving true/populated from laborRows OR any `stream-freshness.js`
+  `STREAMS`-tracked cloud/emailed source (qsrFobRows's zero-pad quirk normalized so it doesn't
+  create a spurious duplicate store). The harder half: `buildDS`/`mergeDS` only run at manual-
+  upload time, but ~32 of `App.js`'s own `setDs()` calls merge a cloud/auto stream straight into
+  `ds` without ever touching either — so fixing only those two functions could not have unlocked
+  anything. `App.js`'s `setDs` itself is now wrapped to re-derive both fields after every call
+  (function or plain-value updater), which covers all ~32 inline call sites plus
+  `configureLazyFill`'s lazy-fill hook and `session.js`'s `mfRestoreSession` (both already
+  receive this same `setDs` reference). `why.js`'s "Single-store anomaly" diagnosis and the 10+
+  `analytics.js` `if(!ds.loaded)` gates named above are unlocked as a side effect of this one
+  fix, not touched individually — do not re-audit them file-by-file, the root cause is closed.
+  18 new tests (`dispatch-ds-loaded-auto-first.test.js`), all confirmed failing against the
+  pre-fix `pipeline.js`. `sage.js`'s own `sageHasData` comment (which named this exact bug and
+  explained why it deliberately avoided `ds.loaded`) updated to reflect the fix — `sageHasData`
+  itself left as-is, not swapped to `dsHasData`, since it also checks `ctrlRows` (manual-only,
+  not in `STREAMS`) as a deliberate SAGE-specific signal, a real behavior difference.
 - [ ] **Four independently-maintained reimplementations of manual-first/auto-first merge logic**
   (`analytics.js`, `store-dash.js`, `smart-targets.js`, `promo-roi.js`) need a consolidation pass —
   distinct from the Metric Registry/Resolver unification item in §3 (that's about merging

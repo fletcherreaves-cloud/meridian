@@ -331,7 +331,7 @@ import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt
 const MorningBriefPanel = lazyPanel(() => import('../features/morning-brief.js').then(m => ({ default: m.MorningBriefPanel })));
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
-import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
+import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores, annotateAutoFirstFlags } from '../engine/pipeline.js';
 import { supplementLaborWithSched } from '../engine/labor-supplement.js';
 import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
@@ -684,7 +684,24 @@ function App() {
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('App tree', 'render+commit', performance.now() - _rt0); });
 
-  const [ds, setDs]               = useState(null);
+  const [ds, _setDsRaw]           = useState(null);
+  // ds.loaded/ds.storeIds fix (backlog: "ds.storeIds and ds.loaded are both manual-labor-
+  // derived") -- buildDS/mergeDS (pipeline.js) only run at manual-upload time, but ~32 of
+  // this file's OWN setDs() calls merge an auto/cloud stream straight in (`setDs(prev=>({
+  // ...prev, qsrActSummaryRows}))`, etc.), bypassing both entirely -- so recomputing
+  // loaded/storeIds inside buildDS/mergeDS alone can never see those. Every setDs() call
+  // needs the SAME re-derivation, and there are ~32+ call sites (plus configureLazyFill's
+  // own setDs and session.js's mfRestoreSession) to cover. Wrapping the setter itself here
+  // -- instead of touching every call site -- means all of them (this file's inline calls,
+  // the configureLazyFill({setDs,...}) hook below, and mfRestoreSession(f,setDs,...) further
+  // down, since all three end up calling THIS wrapped setDs) get the fix with zero other
+  // changes, and any future setDs() call site gets it automatically too.
+  const setDs = React.useCallback(updater => {
+    _setDsRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return next ? annotateAutoFirstFlags(next) : next;
+    });
+  }, []);
   // #191: wire metric-source.js's lazy-fill hook to the REAL setDs (not the tiered startup
   // loader's queueing shadow, further down — that shadow's queue only flushes at points tied to
   // the tiered loader's own lifetime, and a lazy-fill can resolve long after that effect has

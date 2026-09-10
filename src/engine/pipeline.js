@@ -13,6 +13,52 @@ import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parsePro
 import { saveMonthlyTargets, saveYearlyTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from './labor-basis.js';
 import { tolStatusesForStore } from './tolerance-status.js';
+import { STREAMS } from './stream-freshness.js';
+
+// qsrFobRows is the one STREAMS source whose own r.loc is stored zero-padded (loadQsrFob's
+// own comment in supabase.js) -- every other source already strips padding at load time
+// (loadQsrActSummary etc.). Mirrors metric-source.js's _PADDED_LOC_SOURCES/_srcLocKey; kept
+// as its own tiny copy here rather than importing a private (`_`-prefixed, unexported)
+// helper across files.
+const _dsLocKey = (dsField, rawLoc) => dsField === 'qsrFobRows'
+  ? (String(rawLoc).replace(/^0+/, '') || '0')
+  : String(rawLoc);
+
+// ds.loaded / ds.storeIds used to be laborRows-only (manual-upload-derived) -- true/populated
+// only once a manual Labor Analysis workbook had been uploaded THIS device, false/empty on a
+// cloud-only device even with every auto/emailed stream (DAR, FOB, LifeLenz, Glimpse, Sales
+// Ledger, ...) fully populated. That silently disabled 10+ `if(!ds.loaded)` gates in
+// analytics.js, why.js's "Single-store anomaly" forecast-miss diagnosis, Location Intel,
+// SAGE's own hasData check (see its own comment on this exact bug), and more -- the same
+// silent-failure-on-cloud-only-device shape #270 fixed for SAGE, never generalized (backlog
+// item, "ds.storeIds and ds.loaded are both manual-labor-derived"). This is the shared,
+// auto-first-aware derivation: real data/a real store means ANY of manual laborRows or any
+// STREAMS-tracked cloud/emailed source has rows for it, not laborRows specifically.
+export function dsHasData(ds) {
+  if (!ds) return false;
+  if ((ds.laborRows || []).length > 0) return true;
+  return STREAMS.some(s => (ds[s.dsField] || []).length > 0);
+}
+export function dsAutoStoreIds(ds) {
+  const locs = new Set((ds?.laborRows || []).map(r => r.loc));
+  for (const s of STREAMS) {
+    for (const r of (ds?.[s.dsField] || [])) {
+      if (r && r.loc != null) locs.add(_dsLocKey(s.dsField, r.loc));
+    }
+  }
+  return [...locs].sort();
+}
+// Single call both buildDS/mergeDS (upload time) and App.js's setDs wrapper (every merge,
+// including the ~32 cloud/auto-stream setDs() calls that never touch buildDS/mergeDS at all
+// -- see App.js's own setDs wrapper comment) use, so there is exactly one place this logic
+// lives rather than a 3rd/4th reimplementation (CLAUDE.md's "four independently-maintained
+// reimplementations" rule this codebase already has too many of).
+export function annotateAutoFirstFlags(ds) {
+  if (!ds) return ds;
+  ds.loaded = dsHasData(ds);
+  ds.storeIds = dsAutoStoreIds(ds);
+  return ds;
+}
 
 // Detect a 4-digit year from a yearly-targets workbook filename (e.g.
 // "2026_Restaurant_Targets__Updated__OK__FL.xlsx"). Falls back to the current calendar
@@ -126,7 +172,6 @@ function buildDS(workbooks){
       }
     }catch(e){console.warn('Parse error:',type,e);}
   }
-  ds.loaded=ds.laborRows.length>0;
   // #197 Slice 1 (v4.983): autoTagHolidays used to run here on every single data load —
   // every upload, every session restore — and materialize a userEvents row per (loc,date)
   // for every HOLIDAY_MAP entry in range. That is the exact mechanism the design doc traced
@@ -159,7 +204,7 @@ function buildDS(workbooks){
   ds.laborByLoc=bLocIdx(ds.laborRows);ds.opsByLoc=bLocIdx(ds.opsRows);
   ds.ctrlByLoc=bLocIdx(ds.ctrlRows);ds.darByLoc=bLocIdx(ds.darRows);
   ds.wxByDate=bWxIdx(ds.weatherRows); // date-only lookup — station ID irrelevant for regional OK
-  ds.storeIds=[...new Set(ds.laborRows.map(r=>r.loc))].sort();
+  annotateAutoFirstFlags(ds); // sets ds.loaded/ds.storeIds -- auto-first-aware, see definition above
   for(const r of ds.laborRows){if(r.sales>0){if(!ds.lastActual[r.loc]||r.date>ds.lastActual[r.loc])ds.lastActual[r.loc]=r.date;}}
   // #191: deliberately does NOT trigger metric-source.js's auditRows lazy-fill here — measured,
   // not assumed: ds.empRisk is written in 5 places across this file/session.js/App.js and read
@@ -791,8 +836,7 @@ function mergeDS(existing, wb, type, filename) {
   ds.laborByLoc=bLocIdx(ds.laborRows);ds.opsByLoc=bLocIdx(ds.opsRows);
   ds.ctrlByLoc=bLocIdx(ds.ctrlRows);ds.darByLoc=bLocIdx(ds.darRows);
   ds.wxByDate=bWxIdx(ds.weatherRows);
-  ds.storeIds=[...new Set(ds.laborRows.map(r=>r.loc))].sort();
-  ds.loaded=ds.laborRows.length>0;
+  annotateAutoFirstFlags(ds); // sets ds.loaded/ds.storeIds -- auto-first-aware, see definition above
   // #197 Slice 1 (v4.983): see the matching comment ~590 lines above (buildDS's own
   // ds.loaded block) — this was mergeDS's copy of the same automatic-on-every-load holiday
   // materialization, removed for the same reason.
