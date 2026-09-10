@@ -24,12 +24,13 @@
 -- PostgREST's own PGRST205 "unknown relation" code — NOT the raw Postgres 42P01, and NOT a
 -- `head: true` request, both of which were tried and measured live to give a false "present"
 -- reading on this Supabase project). Now that this view exists, every session reads ~20 pages
--- instead of ~93 — but ⚠️ a full timed sequential fetch through this view measured 59,975ms
--- against 66,085ms through the base table directly — only ~1.1x faster wall-clock, NOT the ~4.7x
--- the row-count reduction alone implies. This view has no supporting index, so Postgres has to
--- Sort the whole 92,740-row base table before computing DISTINCT ON on EVERY paginated request
--- (not materialized, nothing cached between requests) — that Sort is now the real bottleneck.
--- See schema-security-findings-latest-index.sql for the fix (not yet applied or measured).
+-- instead of ~93 — ⚠️ but that alone was only ~1.1x faster wall-clock (59,975ms vs 66,085ms
+-- through the base table), because this view has no supporting index: Postgres had to Sort the
+-- whole 92,740-row base table before computing DISTINCT ON on EVERY paginated request (not
+-- materialized, nothing cached between requests). ✅ schema-security-findings-latest-index.sql
+-- fixes that — applied and verified 2026-09-09: the SAME 20-page fetch dropped to 9,708ms, ~6.8x
+-- faster than the original base-table load. Both this view and that index are required together;
+-- neither alone gets close to fixing the original "several minutes" report.
 --
 -- The companion half that makes this safe: security-panel.js's SubjectDetail no longer assumes
 -- the bulk `findings` array carries full multi-window history. loadSecurityFindingsForSubject()

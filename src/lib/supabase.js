@@ -4976,11 +4976,14 @@ export async function savePmixRows(rows) {
 // across all 27 stores into one; wrin is a shared product code, not store-specific, so `loc` has
 // to be part of the key. Caught and corrected the same day, after the owner applied the migration
 // and the live view's own row count didn't match the earlier claim -- re-measured, not assumed.)
-// ⚠️ The row-count win does NOT (yet) translate to a proportional speed win: a full timed fetch
-// through the view measured 59,975ms vs 66,085ms through the base table directly -- only ~1.1x
-// faster wall-clock. The view has no supporting index, so Postgres Sorts the whole base table to
-// compute DISTINCT ON on every paginated request. See supabase/schema-security-findings-latest-
-// index.sql for the fix (written, not yet applied or measured). This loader PROBES for that view first and reads
+// The row-count win alone did NOT translate to a proportional speed win: a full timed fetch
+// through the view (before its supporting index existed) measured 59,975ms vs 66,085ms through
+// the base table directly -- only ~1.1x faster wall-clock, because an unindexed DISTINCT ON
+// forces Postgres to Sort the whole base table on every paginated request. Fixed by
+// supabase/schema-security-findings-latest-index.sql, applied and verified 2026-09-09: the same
+// fetch dropped to 9,708ms -- ~6.8x faster than the original base-table load.
+//
+// This loader PROBES for that view first and reads
 // from it when present, falling back to the full base table automatically (Postgres 42P01 --
 // "relation does not exist") when it hasn't been created yet -- this ships safely ahead of the
 // owner applying that migration by hand (no automated migration runner exists in this repo; see

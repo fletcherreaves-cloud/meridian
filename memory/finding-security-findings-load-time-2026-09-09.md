@@ -1,38 +1,39 @@
-# Security panel load time — root cause, view applied, index still needed (2026-09-09)
+# Security panel load time — root cause, view + index applied, verified fast (2026-09-09)
 
 ## Report
 Owner (v5.409): "I can't get security data to load. It is taking quite a while. It's been
 several minutes at this point." Resolved on its own a few minutes later — this was a real,
 measured slow load, not a hang.
 
-## ⚠️ STATUS 2026-09-09 evening — NOT fully done. View applied but barely faster; index is the
-## actual remaining fix.
-Part 1 (v5.410, payload trim) and Part 2 (v5.411, the view + lazy per-subject history) are both
-merged to `main`. The owner applied `supabase/schema-security-findings-latest-view.sql` the same
-evening. Verified live afterward, twice, and the second check changed the conclusion:
+## ✅ STATUS 2026-09-09, late evening — DONE. View + index both applied, real speedup measured.
+Part 1 (v5.410, payload trim) and Part 2 (v5.411, the view + lazy per-subject history) are merged
+to `main`. The owner applied `supabase/schema-security-findings-latest-view.sql`, then — after
+the view alone measured barely faster (below) — `supabase/schema-security-findings-latest-
+index.sql`. Re-timed the identical `fetchAll` shape `loadSecurityFindings()` actually uses, after
+the index:
 
-1. **Row count is correct.** The view returns 19,723 rows, one per (loc, subject, rule) — a
-   1,000-row spot-check found zero duplicate keys.
-2. **Wall-clock time barely moved.** A full timed sequential fetch (the exact `fetchAll` shape
-   `loadSecurityFindings()` uses) through the view took **59,975ms**; the same fetch through the
-   base table directly took **66,085ms**. That's **~1.1x**, not the ~4.7x the row-count reduction
-   implied. Per-page cost on the view averaged ~3.0s vs ~0.71s on the base table — the view is
-   doing MORE work per page. Root cause: no index supports the view's `DISTINCT ON (tenant_id,
-   loc, subject_key, rule_id) ORDER BY ... window_end desc, computed_at desc`, so Postgres has to
-   Sort the full 92,740-row base table before it can compute DISTINCT ON, on every single
-   paginated request (the view isn't materialized — nothing is cached between requests).
-   **`supabase/schema-security-findings-latest-index.sql` is the fix, written but not yet applied
-   or measured** — same owner-applies-by-hand pattern as the view itself.
+| | rows | pages | total | avg/page |
+|---|---|---|---|---|
+| base table (v5.410, no view) | 92,740 | 93 | 66,085ms | ~0.71s |
+| view, no index | 19,723 | 20 | 59,975ms | ~3.0s |
+| **view, WITH index** | 19,723 | 20 | **9,708ms** | **~0.49s** |
 
-⚠️ **A same-day measurement in this file was also wrong, corrected in the same pass as the above.**
-Every "3,669 distinct combinations" / "25x reduction" / "~4 pages" figure originally in this file
-came from a dedup key that omitted `loc`: `wrin` (an inventory item's code) is a shared product
-identifier, not store-specific, so deduping on `(subject_key, rule_id)` alone wrongly collapsed
-the SAME item's findings across all 27 stores into one row. Corrected to 19,723/~4.7x/~20 pages
-throughout — and then THAT number turned out to only describe row count, not speed, per the
-timing measurement above. Two real corrections in one evening, both caught only by re-measuring
-against the live system instead of trusting an earlier calculation — the standing rule this file
-already narrates elsewhere, now demonstrated twice on itself.
+**The index took the view from 1.1x faster than nothing to 6.8x faster than nothing** (6.2x
+faster than the view alone). First page still costs ~2.7s (query planning / cold cache); every
+page after that ran 270–500ms. This is a genuinely fixed problem now, not an optimistic one —
+both halves measured against live production before being called done.
+
+⚠️ **Two same-day measurements in this file were wrong, both corrected only by re-measuring
+against the live system instead of trusting a calculation:**
+1. The original "3,669 distinct combinations / 25x reduction" figure came from a dedup key that
+   omitted `loc` — `wrin` (an item's code) is a shared product identifier, not store-specific, so
+   it wrongly collapsed one item's findings across all 27 stores into one row. Corrected to
+   19,723 rows / ~4.7x once the live view existed to check the claim against.
+2. That corrected row-count figure was then assumed to predict speed — it didn't. The view alone
+   was only ~1.1x faster wall-clock, because an unindexed `DISTINCT ON` forces Postgres to Sort
+   the whole base table on every paginated request. Only the index (above) delivered the real win.
+Both are left visible here, not scrubbed out, because the pattern — a plausible number standing
+in for a measurement — is the thing worth remembering, not just the final correct figures.
 
 ## Root cause (measured live against production Supabase, not assumed)
 `loadSecurityFindings()` (`src/lib/supabase.js`) has no date/loc bound — every Security panel
@@ -110,16 +111,16 @@ rule_id)` — PostgREST has no client-side way to express that. Four pieces:
    live against production directly through `@supabase/supabase-js` (not just raw REST) before
    any of this was called done — and again, post-apply, against the real live view.
 
-5. **⚠️ Open — the supporting index.** `supabase/schema-security-findings-latest-index.sql`.
-   Without it the view is correct but barely faster (see the STATUS section above: ~1.1x, not
-   ~4.7x). This is the piece that actually needs to ship for the owner's original "several
-   minutes" report to stop recurring as the base table keeps growing.
+5. **✅ The supporting index.** `supabase/schema-security-findings-latest-index.sql`, applied by
+   the owner after the view alone measured only ~1.1x. Re-timed after: **9,708ms for the full
+   20-page fetch, ~6.8x faster than the original 66,085ms base-table load.** See the STATUS table
+   at the top of this file for the full before/after/after-index numbers.
 
 ## Growth trajectory — this is not a one-time fix
-At ~4,600 rows/day, the base table will be ~185K rows in 3 more weeks and ~370K in 6. The view
-itself grows much more slowly — only when a genuinely NEW (loc, subject, rule) combination first
-appears, not on every daily re-evaluation of an existing one — so its row COUNT should stay
-roughly flat. Its per-page TIME won't, though, until the index above is applied: an unindexed
-DISTINCT ON re-sorts the ever-growing base table on every request, so the ~3.0s/page measured
-today will keep getting worse right along with the base table, even though the view's own row
-count doesn't. Worth re-measuring both numbers in a few weeks rather than assuming either holds.
+At ~4,600 rows/day, the base table will be ~185K rows in 3 more weeks and ~370K in 6. The view's
+own row count grows much more slowly — only when a genuinely NEW (loc, subject, rule) combination
+first appears, not on every daily re-evaluation of an existing one — so it should stay roughly
+flat. Its per-page TIME should also stay flat now that the index is in place (an index scan cost
+tracks the RESULT size, not the base table's), but that assumption is itself worth re-measuring
+in a few weeks rather than trusted on faith — same standing rule this file demonstrated twice on
+itself tonight.
