@@ -66,6 +66,15 @@ const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
 const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
 const storeNm = l => STORE_NAMES[locNum(l)] || locNum(l);
+// GH #177: every metric's officialVal used to read DEFAULT_TARGETS directly, bypassing the
+// monthly-approved target, the Targets-panel overrides, and the v2 monthly overrides -- so the
+// column literally labeled "Official" showed the hardcoded constant instead of the actually-
+// approved number (measured 2026-08-11: 20 of 27 stores' August approved crew_labor_pct
+// differed from constants.js, up to 2.00pp). App.js's mergedTargets memo already builds the
+// real merged-chain object per loc and passes it down as settings.targets -- this reads that
+// SAME object (matching labor-tools.js's own `(settings.targets&&settings.targets[loc])||
+// DEFAULT_TARGETS[loc]` pattern) rather than re-deriving the merge here.
+export const mergedTarget = (loc, settings) => (settings && settings.targets && settings.targets[locNum(loc)]) || DEFAULT_TARGETS[locNum(loc)] || {};
 const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
 // Metric registry — the extension point. Each entry says where the daily value
@@ -102,7 +111,7 @@ function fobMonthly(rows) {
   return out;
 }
 
-const METRICS = [
+export const METRICS = [
   { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales', officialCol: 'sales_proj', monthly: true,
     // Fast path: sales_ledger_daily is already in memory (one product-sales row per
     // store/day) → instant. Fallback: the complete-but-heavy DAR hourly aggregate.
@@ -116,12 +125,9 @@ const METRICS = [
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales }))),
     daily: r => r.v, weight: r => r.w,
-    // #164: field basis fixed to resolveLaborTarget (tCrewLabor, matching officialCol above).
-    // Still reads DEFAULT_TARGETS directly rather than the merged settings.targets/monthly
-    // overrides — that's a separate sourcing bug (bypasses the merge chain entirely, same
-    // shape as #153's defect), deliberately NOT fixed here per the #164 triage's own note to
-    // keep it a separate commit.
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; const lt = resolveLaborTarget(t); return _isNum(lt) ? lt : null; },
+    // #164: field basis is resolveLaborTarget (tCrewLabor, matching officialCol above).
+    // #177: sourced from the merged chain (mergedTarget), not DEFAULT_TARGETS directly.
+    officialVal: (loc, settings) => { const lt = resolveLaborTarget(mergedTarget(loc, settings)); return _isNum(lt) ? lt : null; },
     fmt: pct1 },
   // DT speed (OEPE w/o parked, seconds) — car-WEIGHTED, lower is better. From Daily
   // Glimpse; weight = DT guest count (fallback total GC). Official = per-store OEPE.
@@ -129,7 +135,7 @@ const METRICS = [
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.oepe, w: (r.dtGC > 0 ? r.dtGC : r.gc) })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.oepe, w: (r.dtGC > 0 ? r.dtGC : r.gc) }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tOepe) ? t.tOepe : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tOepe) ? t.tOepe : null; },
     fmt: secs },
   // FOB % (food-cost waste/variance as % of product sales), lower is better. From
   // qsr_fob, monthly (cumulative MTD → one point/store/month), dollar-weighted by
@@ -138,7 +144,7 @@ const METRICS = [
     mem: () => [],
     fetch: () => loadQsrFob().then(fobMonthly),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tFOBTarget) ? t.tFOBTarget : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tFOBTarget) ? t.tFOBTarget : null; },
     fmt: pct2 },
   // TPPH (transactions per actual-punched labor hour) — labor-productivity companion to Labor
   // %, higher is better. From the DAR rollup (ds.qsrActSummaryRows), weighted by actHrs (the
@@ -147,7 +153,7 @@ const METRICS = [
     mem: ds => (ds && ds.qsrActSummaryRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.tpph, w: r.actHrs })),
     fetch: days => loadQsrActSummary(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.tpph, w: r.actHrs }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tTpph) ? t.tTpph : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tTpph) ? t.tTpph : null; },
     fmt: num1 },
   // R2P (Receipt to Print, sec) — front-counter speed, lower is better. From the DAR rollup,
   // weighted by the timed front-counter transaction count (_fcCnt).
@@ -155,7 +161,7 @@ const METRICS = [
     mem: ds => (ds && ds.qsrActSummaryRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.r2p, w: r._fcCnt })),
     fetch: days => loadQsrActSummary(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.r2p, w: r._fcCnt }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tR2p) ? t.tR2p : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tR2p) ? t.tR2p : null; },
     fmt: secs },
   // Average check ($) — higher is better. Derived as sales/GC rather than read from Daily
   // Glimpse's own avg_check column: measured live 2026-09-03, that column is 0 on every row
@@ -169,7 +175,7 @@ const METRICS = [
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.gc > 0 ? r.allNetSales / r.gc : null, w: r.gc })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.gc > 0 ? r.allNetSales / r.gc : null, w: r.gc }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tAvgCheck) ? t.tAvgCheck : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tAvgCheck) ? t.tAvgCheck : null; },
     fmt: dollar2 },
   // Promo % of sales — a loss-prevention/discount-discipline metric (Controls loss-prevention
   // group, signal-registry.js), lower is better. From Daily Glimpse, dollar-weighted by sales.
@@ -177,7 +183,7 @@ const METRICS = [
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.promoPct, w: r.allNetSales })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.promoPct, w: r.allNetSales }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tPromoPct) ? t.tPromoPct : null; },
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tPromoPct) ? t.tPromoPct : null; },
     fmt: pct2 },
 ];
 
@@ -253,7 +259,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const officialFor = loc => {
     const applied = appliedOff[locNum(loc)];
     if (applied != null) return applied;                       // just applied this session
-    if (metric.officialVal) return metric.officialVal(loc);
+    if (metric.officialVal) return metric.officialVal(loc, settings);
     return ((ds && ds.monthlyTargets && ds.monthlyTargets[locNum(loc)]) || (ds && ds.monthlyTargets && ds.monthlyTargets[loc]) || {})[metric.official];
   };
 
