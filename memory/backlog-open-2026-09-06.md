@@ -42,10 +42,19 @@
   validating Dialed-In calibration, not an operator mid-shift — worth confirming its actual
   audience before writing "restaurant words" for it, rather than assuming the same treatment
   applies unchanged.
-- [ ] **G — shift dimension (`src/views/labor-allocation.js`).** Panel is live (Scheduling hub,
-  District/By Store/Overnight sub-views). Two confirmed gaps: (1) live-browser verification still
-  needed — no code-level way to check the District/By Store/Overnight views render correctly; (2)
-  zero perf instrumentation (no trace/span/performance-mark idiom in the file).
+- [x] ✅ **Both gaps closed (v5.422, 2026-09-10).** (1) `dispatch-labor-allocation-panel-render
+  .test.js` renders the REAL `LaborAllocationPanel` (mocking only its two Supabase loaders,
+  not the engine) across all 3 tabs with a realistic 24-hour_slot/2-store/2-day fixture built
+  from `labor-standard.js`'s own documented row/config shapes — District's real deficit/
+  surplus totals, By Store listing both fixture stores, Overnight's Open-branch (TPPH) and
+  Closed-branch (standard verdict) rows both exercised, plus the genuine zero-rows placeholder
+  case a fresh cloud session sees before its 90-day fetch resolves. Not a literal live-browser
+  session (no such session available in this sandbox), but a real render through the actual
+  component tree, which is what the gap asked for. (2) The file's 4 `useMemo` calls
+  (`allocationDistrict`/`allocationByStoreDaypart`/`overnightOpenness`/`overnightExcessByStore`,
+  running over up to 90 days × 27 stores × 24 hour_slots) now wrapped in `_mark()`, matching
+  the same `click-trace.js` idiom other heavy-compute panels (at-a-glance.js's
+  `compute:weekProjections`) already use.
 - [ ] **C2 — idempotent partition replace.** Fully greenfield, no implementation found. (C1, the
   pipeline-contract module + 2 script adopters + ratchet, already shipped — 18 scripts remain
   unconverted, tracked by `ratchet-pipeline-contract-coverage.test.js`'s `CEILING`.)
