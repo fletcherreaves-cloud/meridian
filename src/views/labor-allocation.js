@@ -17,6 +17,7 @@ import {
 } from '../engine/labor-standard.js';
 import { STORE_NAMES } from '../constants.js';
 import { ModalShell } from '../components/ModalShell.js';
+import { mark as _mark } from '../utils/click-trace.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -147,10 +148,14 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
       .catch(() => setLoading(false));
   }, []);
 
-  const district = useMemo(() => allocationDistrict(rows), [rows]);
-  const byStore = useMemo(() => allocationByStoreDaypart(rows), [rows]);
-  const openness = useMemo(() => overnightOpenness(rows), [rows]);
-  const excessByStore = useMemo(() => overnightExcessByStore(storeLaborConfig, openness), [storeLaborConfig, openness]);
+  // Perf instrumentation (backlog item G, gap 2) -- rows is up to 90 days x 27 stores x 24
+  // hour_slots (~58k rows), and these 4 recompute on every `rows`/`storeLaborConfig` change.
+  // Matches the _mark idiom other heavy-compute panels use (at-a-glance.js's
+  // compute:weekProjections etc.) so a ?clicktrace=1 session can see where the cost sits.
+  const district = useMemo(() => _mark('compute:laborAllocationDistrict', () => allocationDistrict(rows)), [rows]);
+  const byStore = useMemo(() => _mark('compute:laborAllocationByStore', () => allocationByStoreDaypart(rows)), [rows]);
+  const openness = useMemo(() => _mark('compute:laborAllocationOvernightOpenness', () => overnightOpenness(rows)), [rows]);
+  const excessByStore = useMemo(() => _mark('compute:laborAllocationOvernightExcess', () => overnightExcessByStore(storeLaborConfig, openness)), [storeLaborConfig, openness]);
 
   const tabBtn = (id, label) => h('button', { key: id, onClick: () => setTab(id),
     style: { padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
