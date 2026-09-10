@@ -2570,8 +2570,9 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
   };
   const _mktOf = l => (INV_ORG_COORDS[String(l)] || {}).state;
 
-  // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override DEFAULT_TARGETS
-  const mergedT = loc => tolMergedTarget(ds, loc);
+  // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override
+  // DEFAULT_TARGETS, Targets-panel/v2 overrides (settings.targets) win over all of it (#1221).
+  const mergedT = loc => tolMergedTarget(ds, loc, settings);
   const officialT = uM(()=>{
     if(selLoc==='all'){
       const locs=Object.keys(DEFAULT_TARGETS);

@@ -178,9 +178,14 @@ export function tolValuesForLoc(ds, metricId, loc, sinceMs) {
 }
 
 // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override
-// DEFAULT_TARGETS. Verbatim from UnifiedTargetsPanel's former inline mergedT.
-export function tolMergedTarget(ds, loc) {
-  return {...(DEFAULT_TARGETS[loc]||{}), ...((ds&&ds.targets&&ds.targets[loc])||{}), ...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})};
+// DEFAULT_TARGETS, Targets-panel/v2 overrides (settings.targets, App.js's already-fully-merged
+// mergedTargets) win over all of it. `settings` is optional and last for backward compatibility
+// (both real callers were widened to pass it; tolerance-status-merged-target.test.js's existing
+// 2-arg calls keep working exactly as before). #1221: this used to stop at ds.monthlyTargets,
+// silently missing the top two layers of the real merge chain -- the same #153/#167 defect-1
+// shape, just a partial (not total) omission.
+export function tolMergedTarget(ds, loc, settings) {
+  return {...(DEFAULT_TARGETS[loc]||{}), ...((ds&&ds.targets&&ds.targets[loc])||{}), ...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{}), ...((settings&&settings.targets&&settings.targets[loc])||{})};
 }
 
 // ── The tol-based threshold comparison (dispatch #94 Phase 1) ─────────────────────────────
@@ -208,9 +213,13 @@ export function tolCurrentValue(ds, metricId, loc, l4wMs) {
 // Per-store, per-rollup-metric tol status: {metricId, label, cat, unit, cur, off, tol, status}.
 // Only includes TOL_ROLLUP_METRICS (has both offKey and tol) and only entries where both a
 // current value and an official target actually resolved (status non-null).
-export function tolStatusesForStore(ds, loc, { l4wMs } = {}) {
+// `officialTarget` lets a caller that already holds the correctly-merged target object (e.g.
+// buildBrief's own `t` param, which buildStore already resolved through settings.targets) pass
+// it straight through instead of this function re-deriving one from ds/settings — buildBrief
+// has no `settings` param of its own to thread in otherwise.
+export function tolStatusesForStore(ds, loc, { l4wMs, settings, officialTarget } = {}) {
   const sinceMs = l4wMs != null ? l4wMs : Date.now() - 28 * 86400000;
-  const off = tolMergedTarget(ds, loc);
+  const off = officialTarget || tolMergedTarget(ds, loc, settings);
   const out = [];
   for (const m of TOL_ROLLUP_METRICS) {
     const offVal = off[m.offKey];

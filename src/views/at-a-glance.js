@@ -214,11 +214,14 @@ function SageRunsTile() {
 // store×rollup-metric combination that is currently yellow/red against its last-4-weeks
 // trailing value, broken out by metric (which checks miss most often, district-wide) and by
 // store (which stores need attention), following the SageRunsTile card pattern above it.
-function ToleranceRollupTile({ ds, stores }) {
+function ToleranceRollupTile({ ds, stores, settings }) {
   const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
   const rollup = React.useMemo(() => {
     if (!ds || !allLocs.length) return null;
-    const byLoc = tolStatusesDistrict(ds, allLocs);
+    // #1221: pass settings through so a Targets-panel/v2 override reaches the SAME merged
+    // target UnifiedTargetsPanel and buildBrief's coaching findings already resolve -- this
+    // tile is the one real consumer of tolMergedTarget's chain that had no settings prop at all.
+    const byLoc = tolStatusesDistrict(ds, allLocs, { settings });
     const byMetric = {}; // metricId -> {label, cat, red, yellow}
     const byStore = {};  // loc -> {red, yellow}
     let totalChecked = 0, totalRed = 0, totalYellow = 0;
@@ -241,7 +244,7 @@ function ToleranceRollupTile({ ds, stores }) {
       .filter(s => s.n > 0)
       .sort((a, b) => (b.red - a.red) || (b.n - a.n));
     return { totalChecked, totalRed, totalYellow, metricRows, storeRows, nStores: allLocs.length };
-  }, [ds, allLocs]);
+  }, [ds, allLocs, settings]);
 
   const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
   const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
@@ -2190,7 +2193,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         h(OpportunityTile,{key:'opportunity',ds,stores,onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
-        secs.find(s=>s.id==='tolerance'&&s.on)&&h(ToleranceRollupTile,{key:'tolerance',ds,stores}),
+        secs.find(s=>s.id==='tolerance'&&s.on)&&h(ToleranceRollupTile,{key:'tolerance',ds,stores,settings}),
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────

@@ -121,4 +121,28 @@ describe('ToleranceRollupTile (dispatch #94 Phase 2 -- district out-of-tolerance
     expect(container.textContent).toContain('Tolerance Status');
     expect(container.textContent).toMatch(/within tolerance on all/);
   });
+
+  // GH #1221 (found while fixing #167): ToleranceRollupTile's whole chain -- tolStatusesDistrict
+  // -> tolStatusesForStore -> tolMergedTarget -- used to have NO settings prop reaching it at
+  // all, so a Targets-panel/v2 override to a store's official target was silently ignored here,
+  // the one real consumer of that chain a GM/DO actually sees on the daily At-A-Glance dashboard.
+  it('a settings.targets override moves a store from all-clear to red, proving it reaches this tile', async () => {
+    const loc = Object.keys(DEFAULT_TARGETS).find(l => DEFAULT_TARGETS[l].tCompWaste > 0);
+    const target = DEFAULT_TARGETS[loc].tCompWaste;
+    const d = new Date(Date.now() - 10 * 86400000);
+    const ds = {
+      loaded: true,
+      qsrActSummaryRows: [{ loc, date: d, sales: 1000, gc: 100 }],
+      fobRows: [{ loc, date: d, compWaste: target }], // exactly on the DEFAULT_TARGETS value
+    };
+    // A Targets-panel/v2 override sets the REAL official target far below the actual -- the
+    // pre-fix code would still compare against DEFAULT_TARGETS and show all-clear.
+    const settings = { ...baseAAGProps.settings, targets: { [loc]: { tCompWaste: target - 0.01 } } };
+    await act(async () => {
+      root.render(React.createElement(AtAGlance, { ...baseAAGProps, settings, ds, stores: [{ loc }] }));
+    });
+    expect(container.textContent).toContain('Tolerance Status');
+    expect(container.textContent).not.toMatch(/within tolerance on all/);
+    expect(container.textContent).toMatch(/1[\s\S]{0,3}red/);
+  });
 });

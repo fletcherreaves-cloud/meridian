@@ -330,7 +330,12 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   const _tolBody = (e, action) => (e.status === 'red' ? 'CRITICAL' : 'WATCH') + ' — ' + e.label.toUpperCase() + ': ' +
     _fmtTol(e.cur, e.unit) + ' vs ' + _fmtTol(e.off, e.unit) + ' target (' + (e.cur > e.off ? '+' : '-') +
     _fmtTol(Math.abs(e.cur - e.off), e.unit) + ', tolerance ' + _fmtTol(e.tol, e.unit) + '). ' + action;
-  const _tol = ds ? Object.fromEntries(tolStatusesForStore(ds, loc).map(e => [e.metricId, e])) : {};
+  // #1221: pass buildStore's own already-merged `t` (settings.targets < ds.targets <
+  // DEFAULT_TARGETS, fixed earlier this morning) as officialTarget instead of letting
+  // tolStatusesForStore re-derive one from ds alone -- buildBrief has no `settings` param of
+  // its own to pass through, and t is already the correct merged object (same tOepe/tKvst/etc.
+  // field shape tolMergedTarget produces).
+  const _tol = ds ? Object.fromEntries(tolStatusesForStore(ds, loc, { officialTarget: t }).map(e => [e.metricId, e])) : {};
   if (_tol.kvst && _tol.kvst.status === 'red') f.push({rule:'tolKvst', t:'crit', m:_tolBody(_tol.kvst, TOL_FINDING_ACTION.kvst)});
   else if (_tol.kvst && _tol.kvst.status === 'yellow') f.push({rule:'tolKvst', t:'watch', m:_tolBody(_tol.kvst, TOL_FINDING_ACTION.kvst)});
   if (_tol.crewlbr && _tol.crewlbr.status === 'red') f.push({rule:'tolCrewlbr', t:'crit', m:_tolBody(_tol.crewlbr, TOL_FINDING_ACTION.crewlbr)});
