@@ -542,9 +542,21 @@
   3 new tests (`missing-review-targets-banner.test.js`), renders the real
   `PerformanceReviewsPanel → ReviewEditor` chain per this repo's own "verification must touch
   the call site" rule.
-- [ ] DM/shift-role review wiring — link a review to `geid`, decide which manager-attributed
-  metrics score it. (The underlying report pull already shipped, v4.550 — this is the only real
-  open piece of that item.)
+- [x] ✅ **RE-MEASURED 2026-09-10 (v5.423) — stale, already fully built; do not re-raise.** Read
+  `engine/review-engine.js`'s `autoPopulateKPIs` directly: `review.geid` links a review to a
+  manager, `SHIFT_ATTRIBUTABLE_ROLES` (`['AM','DM','SM']`, GM/AS/OM always store-total) gates
+  which roles can attribute at all, and the manager's own `ds.shiftManagerRows` figures for
+  OEPE/R2P/KVS/Labor% (the rate/time metrics that compare fairly to a store target) override
+  the store-total value after it fills — sales/digital/delivery deliberately stay store-total
+  (`notes-33-queue` A#3's own rationale: "a shift lead isn't graded on the store's monthly
+  sales target"). The "decide which manager-attributed metrics score it" half this line called
+  open is exactly that decision, already made and shipped. **The real gap was verification, not
+  code** — no test exercised this end-to-end (dispatch #152's own geid tests only cover
+  `blankReview`'s default-null state). 7 new tests
+  (`dispatch-shift-attribution-review-scoring.test.js`) covering every `SHIFT_ATTRIBUTABLE_ROLES`
+  entry, the GM/no-geid/wrong-geid non-attribution cases, the sales-stays-store-total split, and
+  the padding-agnostic loc match — confirmed to catch a real regression (temporarily forced
+  `canAttribute=false`, 4/7 failed as expected, reverted).
 - [x] ✅ **BUILT 2026-09-06 (v5.386) — do not re-implement.** Toggle-gated, off-by-default,
   separate pass/fail gate (Labor −0.25pts of target / FOB −0.15pts of target), fully additive —
   `computeScores`/`computeScoreBreakdown` never read `cfg.bonusEligibility` at all, proven by a
@@ -560,8 +572,24 @@
   together + TEST," no %-of-target design settled yet).
 - [ ] "2026 PACE" review template — blocked pending the full current-year Sales/Profit/People PACE
   weights from the owner (only RGR-category weights known so far).
-- [ ] Performance Reviews Phase 2 punch list: Dev Plan tab, wage-review-section wiring, YoY trend
-  view, hourly-manager reviews, tag/search by score.
+- [ ] Performance Reviews Phase 2 punch list — **re-measured 2026-09-10, three of five items
+  already stale:**
+  - ✅ **Dev Plan tab** — already fully built (`views/performance-reviews.js`'s `devplan` tab,
+    a dedicated `DevPlanTab` component with its own comments/narrative fields).
+  - ✅ **Wage-review-section wiring** — already fully built (`review.wage.{current,recommended,
+    approved,effectiveDate,notes}`, an editable form in `ReviewEditor`, and the wage table
+    prints in the PDF/report output).
+  - ✅ **Tag/search by score — BUILT 2026-09-10 (v5.424).** `ReviewList` gained a name-search
+    box and a score-band filter (`SCORE_BANDS`, reusing `overallLabel()`'s own 3.5/2.5/1.5
+    cutoffs and wording rather than inventing a second labeling scheme). Also fixed a real
+    pre-existing UX bug found in the same pass: the empty-list message said "No reviews yet"
+    even when reviews existed and only the active filters matched none of them. 6 new tests
+    (`dispatch-review-list-search-score-filter.test.js`) render the real
+    `PerformanceReviewsPanel` → `ReviewList` chain; 5/6 confirmed failing against the pre-fix
+    code (the 6th is a no-filter baseline sanity check, expected to pass either way).
+  - **Still genuinely open:** YoY trend view, hourly-manager reviews (distinct from the
+    existing salaried `SM`/"Shift Manager" role — likely a different review structure for
+    hourly staff, not yet scoped). Neither picked up here — no design decision made on either.
 
 *(Archive: §7)*
 
