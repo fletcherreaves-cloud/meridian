@@ -2824,12 +2824,15 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
   // qsr_fob has real, non-zero prod_sales_amt through the current date).
   React.useEffect(()=>{if(qsrFobRows!==null&&months.length&&!selMonth)setSelMonth(months[0]);},[months,qsrFobRows]);
 
-  // Merge all targets — yearly file (ds.targets) overrides DEFAULT_TARGETS, monthly (ds.monthlyTargets) overrides yearly
+  // Merge all targets — yearly file (ds.targets) overrides DEFAULT_TARGETS, monthly
+  // (ds.monthlyTargets) overrides yearly, Targets-panel/v2 overrides (settings.targets, App.js's
+  // mergedTargets) win over all of it. #1221: this used to stop at ds.monthlyTargets, missing
+  // the top two layers of the real merge chain.
   const allTargets=React.useMemo(()=>{
     const t={};
-    allLocs.forEach(loc=>{t[loc]={...(DEFAULT_TARGETS[loc]||{}),...((ds&&ds.targets&&ds.targets[loc])||{}),...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})};});
+    allLocs.forEach(loc=>{t[loc]={...(DEFAULT_TARGETS[loc]||{}),...((ds&&ds.targets&&ds.targets[loc])||{}),...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{}),...((settings&&settings.targets&&settings.targets[loc])||{})};});
     return t;
-  },[allLocs,ds]);
+  },[allLocs,ds,settings]);
 
   const metrics=React.useMemo(()=>{
     // For OK/FL market filters, pre-filter fobRows to active locs then pass 'all'
@@ -6654,7 +6657,10 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
       weeks.reverse();
     }
     for(const loc of allLocs){
-      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      // #1221: was ds.targets[loc]||DEFAULT_TARGETS[loc] -- the #153/#167 defect-1 pattern
+      // (ds.targets is {} on every cloud-load path). forecastDay's only read off this is
+      // t.tGrowth, so a Targets-panel/v2 growth-rate override was silently ignored.
+      const t=(settings?.targets&&settings.targets[loc])||(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       results[loc]=[];
       for(const weekStart of weeks){
         const days=[];
@@ -7059,7 +7065,10 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
     const results={};
 
     for(const loc of allLocs){
-      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      // #1221: was ds.targets[loc]||DEFAULT_TARGETS[loc] -- the #153/#167 defect-1 pattern
+      // (ds.targets is {} on every cloud-load path). forecastDay's only read off this is
+      // t.tGrowth, so a Targets-panel/v2 growth-rate override was silently ignored.
+      const t=(settings.targets&&settings.targets[loc])||(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       const di=settings.dialedIn&&settings.dialedIn[loc];
 
       // v4.220: compare forceModel='di' vs forceModel='dow' for any store with

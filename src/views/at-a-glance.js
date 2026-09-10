@@ -1864,7 +1864,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // (mark()'s 1ms floor would silently drop that as a timing — a cache hit is a few object
     // lookups, not real work — so it needs its own untimed counter).
     const storeProjs=_allLocs.map(loc=>{
-      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      // #1221: was ds.targets[loc]||DEFAULT_TARGETS[loc] -- the #153/#167 defect-1 pattern
+      // (ds.targets is {} on every cloud-load path). forecastDay's only read off this is
+      // t.tGrowth, so a Targets-panel/v2 growth-rate override was silently ignored.
+      const t=(settings.targets&&settings.targets[loc])||(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       // Cache hit only when EVERY day this week is present for this store — a partial
       // cache (mid-backfill, a store added after the last precompute run) falls all the
       // way back to live for the whole store rather than mixing cached and live forecast

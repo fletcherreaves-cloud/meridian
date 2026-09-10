@@ -90,7 +90,10 @@ function roundTarget(v,tgtKey){
 
 function computeSmartTargets(loc, ds, settings, now){
   if(!ds||!ds.loaded) return null;
-  const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+  // #1221: was ds.targets[loc]||DEFAULT_TARGETS[loc] -- the #153/#167 defect-1 pattern
+  // (ds.targets is {} on every cloud-load path). A Targets-panel/v2 override was silently
+  // ignored by this store's target read.
+  const t=(settings&&settings.targets&&settings.targets[loc])||(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
   const today=new Date();
   const mk=(weeks)=>new Date(today-weeks*7*864e5);
   const cut6w=mk(6),cut12w=mk(12),cut26w=mk(26),cut52w=mk(52),cutLY=mk(104);
