@@ -25,6 +25,19 @@ const tbl=(p,...c)=>h('table',p,...c);
 const inp=(p,...c)=>h('input',p,...c);
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+// GH #167: forecastDay's target param (tgt, used only for t.tGrowth) was resolved from
+// ds.targets[loc]||DEFAULT_TARGETS[loc] at three call sites -- the exact #153 defect-1 pattern.
+// ds.targets is {} on every cloud-load path (only an in-session OpsTargets.xlsx upload fills
+// it), so any Targets-panel or v2 monthly override to a store's growth rate was silently
+// ignored, falling through to the static DEFAULT_TARGETS value -- same class of bug as #153,
+// just for tGrowth instead of the score. settings.targets[loc] is App.js's mergedTargets object
+// (already the full DEFAULT_TARGETS < yearly < monthly-approved < user-override < v2 chain),
+// matching the pattern PreForecastBrief already used. One shared, exported, pure function so
+// all three call sites can't drift into different answers again.
+export function projectionTarget(loc, ds, settings) {
+  return (settings && settings.targets && settings.targets[loc]) || (ds && ds.targets && ds.targets[loc]) || DEFAULT_TARGETS[loc] || {};
+}
+
 const PROJ_LOG_KEY   = 'mf_projection_log';
 
 // Module-level weekData cache — survives modal close/reopen so projections
@@ -601,7 +614,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     const newData={};
     for(const loc of ALL_LOCS){
       setLoadingLoc(STORE_NAMES[loc]||loc);
-      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      const t=projectionTarget(loc,ds,settings);
       const rows=[];
       for(const d of weekDays){
         // weekDays is actually projDays — spans the full month/custom range
@@ -661,7 +674,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   const _fcstCache = React.useMemo(()=>{
     const cache=new Map();
     for(const loc of ALL_LOCS){
-      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      const t=projectionTarget(loc,ds,settings);
       for(const d of weekDays){
         const k=loc+'|'+dKey(d);
         if(cache.has(k))continue;
@@ -674,7 +687,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
 
   const _cachedForecast = (loc,d) => {
     const k=loc+'|'+dKey(d);
-    return _fcstCache.get(k) || forecastDay(loc,d,ds,{...settings,_userEvents:userEvents||{}},null,(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{},_activeHorizon);
+    return _fcstCache.get(k) || forecastDay(loc,d,ds,{...settings,_userEvents:userEvents||{}},null,projectionTarget(loc,ds,settings),_activeHorizon);
   };
 
   // Forecast amount for (loc,d), respecting locked/approved overrides — replaces
