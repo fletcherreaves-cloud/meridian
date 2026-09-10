@@ -124,15 +124,20 @@ function parseProjectionsFile(wb, filename) {
 // chains; the two are redundant (same organizational target, two workbooks), and
 // #164's resolver already routes readers to the approved value. The raw parsed labor
 // % is still preserved unmutated in ds.projRows for any future consumer.
-// tJuneProj/tOperatorProj/tQSRSoftProj/tJuneTpph are left as-is — untouched siblings,
-// not yet checked (see issue #176).
+// tJuneProj/tOperatorProj/tJuneTpph are left as-is — live readers exist (morning-brief.js),
+// not yet audited/resolved (GH #194). tQSRSoftProj's runtime write was removed here (2026-09-10,
+// GH #194) after confirming it has ZERO readers anywhere in src/ (`grep -rn "\.tQSRSoftProj\b"
+// src/ --include=*.js | grep -v __tests__` matches nothing but this file's own history) — the
+// issue's own note that it was "the cheapest to confirm and probably the first to retire."
+// r.qsr itself is untouched (still parsed, still in ds.projRows for any future consumer) — only
+// the pointless runtime mutation of the shared DEFAULT_TARGETS constant is gone. The static
+// tQSRSoftProj seed values in constants.js are untouched too (not a mutation hazard, just data).
 function applyProjectionsToTargets(rows, label){
   let applied = 0;
   rows.forEach(r=>{
     if(!DEFAULT_TARGETS[r.loc]) return;
     const upd = {};
     if(r.proj>0)  { upd.tJuneProj=r.proj; upd.tOperatorProj=r.proj; }
-    if(r.qsr>0)   upd.tQSRSoftProj=r.qsr;
     if(r.tpph>0)  upd.tJuneTpph=r.tpph;
     Object.assign(DEFAULT_TARGETS[r.loc], upd);
     applied++;
