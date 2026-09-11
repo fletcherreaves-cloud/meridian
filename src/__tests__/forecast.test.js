@@ -260,6 +260,57 @@ describe('forecastDay — forceModel', () => {
     expect(after).toBe(before);
   });
 
+  // Holiday awareness (2026-09-11) — 'simple' used to have zero holiday adjustment (pure
+  // trailing-rate x same-DOW-shape), forecasting July 4th like an ordinary Saturday. Measured
+  // against real MBI-vs-LifeLenz data: holiday days averaged 12.59% MAPE for 'simple' vs 9.87%
+  // for LifeLenz -- roughly 3x the ordinary-day gap. Fixed by applying getHolidayAdj the same
+  // way the engineered pipeline already does. Uses a FIXED calendar date + a perfectly flat
+  // deterministic series (not the relative-to-real-today buildDs() fixture above) so the
+  // "would this still pass if reverted" bar is met precisely: a flat series makes the pre-
+  // adjustment trailing forecast for any two same-DOW dates numerically identical, isolating
+  // the holiday multiplier as the only possible source of a difference.
+  describe('simple model — holiday awareness', () => {
+    const HOLIDAY_LOC = '9999';
+    function flatDs(loc) {
+      const laborRows = [];
+      const DOW_MULT = [0.8, 1.0, 1.0, 1.05, 1.1, 1.3, 1.2]; // Sun-Sat, matches buildDs above
+      // 150 days of history ending 2026-07-03 (the day before July 4 2026, a Saturday) --
+      // covers both target Saturdays (June 27 and July 4) with a deep, flat trailing window.
+      for (let i = 150; i >= 1; i--) {
+        const d = new Date('2026-07-03T12:00:00');
+        d.setDate(d.getDate() - i + 1);
+        const dow = d.getDay();
+        laborRows.push({ loc, date: d, sales: 10000 * DOW_MULT[dow], gc: 1000 * DOW_MULT[dow], laborPct: 0.28 });
+      }
+      return {
+        laborRows, laborIdx: buildLaborIdx(laborRows), laborByLoc: { [loc]: laborRows },
+        opsRows: [], ctrlRows: [], weatherRows: [], darRows: [], pmixData: {}, records: {},
+        targets: {}, lastActual: { [loc]: new Date('2026-07-03T12:00:00') }, loaded: true, storeIds: [loc],
+      };
+    }
+    const hDs = flatDs(HOLIDAY_LOC);
+
+    it('July 4th (a "moderate" holiday, 0.80x per the generic table) forecasts lower than an ordinary same-DOW baseline', () => {
+      const july4 = new Date('2026-07-04T12:00:00'); // Saturday, Independence Day
+      const june27 = new Date('2026-06-27T12:00:00'); // the prior Saturday, ordinary day
+      const holidayFcst = forecastDay(HOLIDAY_LOC, july4, hDs, BASE_SETTINGS, null, null, 'weekly', 'simple');
+      const baselineFcst = forecastDay(HOLIDAY_LOC, june27, hDs, BASE_SETTINGS, null, null, 'weekly', 'simple');
+      expect(holidayFcst.modelUsed).toBe('simple');
+      expect(baselineFcst.modelUsed).toBe('simple');
+      // Flat series -> both Saturdays' pre-adjustment trailing forecast is numerically identical,
+      // so the ratio isolates the holiday multiplier itself.
+      expect(holidayFcst.forecast / baselineFcst.forecast).toBeCloseTo(0.80, 2);
+    });
+
+    it('an ordinary (non-holiday) Saturday is completely unaffected by the fix', () => {
+      const june27 = new Date('2026-06-27T12:00:00');
+      const june20 = new Date('2026-06-20T12:00:00'); // another ordinary Saturday
+      const a = forecastDay(HOLIDAY_LOC, june27, hDs, BASE_SETTINGS, null, null, 'weekly', 'simple');
+      const b = forecastDay(HOLIDAY_LOC, june20, hDs, BASE_SETTINGS, null, null, 'weekly', 'simple');
+      expect(a.forecast).toBe(b.forecast);
+    });
+  });
+
   // #178 item 4: t2/t4/t6 on the ae/ewma/simple branches used to be the raw dollar forecast
   // (Math.round(_aeFcst), ~$10,000+ for this fixture) reused verbatim instead of a YOY trend
   // RATIO — the same field every other model path (and ForecastRow's "T2W/T6W — YOY Sales%"
