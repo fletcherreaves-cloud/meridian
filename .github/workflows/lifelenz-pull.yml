@@ -26,6 +26,10 @@ on:
         description: 'Verbose logging (1 = on)'
         required: false
         default: '0'
+      force_fallback:
+        description: 'Diagnostic only: skip LIFELENZ_TOKEN and force the direct-REST + Playwright fallback chain even if the token is valid (1 = on). Never needed for a normal run.'
+        required: false
+        default: '0'
 
 jobs:
   sync:
@@ -59,6 +63,7 @@ jobs:
           LIFELENZ_DAYS_FWD:         ${{ github.event.inputs.days_fwd || '14' }}
           LIFELENZ_START_DATE:       ${{ github.event.inputs.start_date || '' }}
           LIFELENZ_DEBUG:            ${{ github.event.inputs.debug || '0' }}
+          LIFELENZ_FORCE_FALLBACK:   ${{ github.event.inputs.force_fallback || '0' }}
 
       - name: Upload debug screenshots
         if: always()
