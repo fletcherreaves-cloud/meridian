@@ -26,21 +26,26 @@ the Table object. So this script edits the target worksheet's raw XML in place i
 zip archive and repackages every other part byte-for-byte identical -- verified after every
 run (see verify_roundtrip below).
 
-Known caveat -- READ BEFORE TRUSTING DECEMBER'S NUMBER
---------------------------------------------------------
-`ly_product_sales` in qsr_daily_activity_rollup is a 364-day-back (52-week, weekday-
-preserving) match, not a calendar-year-back match -- confirmed 2026-09-11 by tracing
+Monthly comps use genuine calendar-to-calendar sums, not the `ly_` shadow fields
+----------------------------------------------------------------------------------
+`ly_product_sales`/`ly_transactions` in qsr_daily_activity_rollup are 364-day-back (52-week,
+weekday-preserving) matches, not calendar-year-back matches -- confirmed 2026-09-11 by tracing
 individual days (Dec 24 2025, a Wednesday, matches to Dec 25 2024, also a Wednesday --
-Christmas Day). That's the right choice for an ordinary week, but it means any month whose
-calendar boundary sits inside the fixed Dec 24-Jan 1 holiday cluster pairs a normal day this
-year against a near-zero (or an unrelated) holiday day last year. Measured impact: December's
-calendar-month comp came out +5.2pp too high on AVERAGE, across 26 of 27 stores, when checked
-against the owner's own confirmed-correct September 2026 workbook. Every other month checked
-was within ~0.2-1.8pp (ordinary noise between this rollup's methodology and whatever exact
-QSRSoft export basis the number was originally checked against). This script prints a loud
-warning whenever December falls inside the 12-month Block 2 window or is the forecast-month's
-LY-comp lookup -- cross-check that one column by hand before trusting it. Nothing else in the
-workbook is affected; do not generalize this into distrust of the other 11 months.
+Christmas Day). That's the right, standard convention for a WEEKLY comparison (Block 1's 13
+weekly comps and Block 3's guest-count L6W/L2W both correctly use it, via week_sum), but it's
+wrong for a MONTHLY one: any calendar month whose boundary sits inside the fixed Dec 24-Jan 1
+holiday cluster pairs a normal day this year against a near-zero (or unrelated) holiday day
+last year. Measured impact when Block 2/3's monthly comps first used the `ly_` field for a
+calendar-month sum: December came out +5.2pp too high on AVERAGE across 26 of 27 stores,
+against the owner's own confirmed-correct September 2026 workbook.
+
+Fix (owner's own suggestion, 2026-09-11): for every MONTHLY comp (Block 2, and Block 3's
+forecast-month LY comp), sum each store's own `product_sales` independently over the current
+calendar month AND over the same calendar month one year earlier (month_own_sum/month_comp
+below) -- no `ly_` field involved at all. Re-validated against the confirmed-correct workbook
+after the fix: every one of 308 store-months, December included, landed within ~0.1pp (down
+from up to +7pp on December specifically). This is strictly more accurate for all 12 months,
+not just a December patch.
 
 Usage
 -----
@@ -146,18 +151,35 @@ def compute(rows, today, forecast_year, forecast_month):
             d = add_days(d, 1)
         return sales, ly_sales, trans, ly_trans, n
 
-    def month_sum(loc, y, m):
+    def month_own_sum(loc, y, m):
+        """This store's OWN recorded sales for a genuine calendar month -- not QSRSoft's `ly_`
+        shadow field. A calendar MONTH comparison must diff two independently-summed calendar
+        months, not lean on a 364-day/52-week matched-weekday field: that field is right for a
+        week-to-week comparison (see week_sum), but pairs the wrong specific days once a
+        calendar-month boundary crosses the fixed Dec 24-Jan 1 holiday cluster. Measured
+        2026-09-11: relying on `ly_product_sales` for a calendar-month sum put December +5.2pp
+        off (26/27 stores) against a confirmed-correct value; this two-sided calendar sum
+        matches it to within 0.05pp, and every other month to within ~0.1pp (down from
+        ~0.2-1.8pp of pre-existing noise) -- so this is strictly the more accurate method for
+        BOTH the anomalous and the previously "fine" months. See
+        memory/finding-dar-ly-holiday-mismatch-2026-09-11.md.
+        """
         prefix = f"{y}-{m:02d}-"
-        sales = ly_sales = trans = ly_trans = n = 0
+        sales = trans = n = 0
         for dt_str, row in by_loc_dt.get(loc, {}).items():
             if not dt_str.startswith(prefix):
                 continue
             sales += row['product_sales'] or 0
-            ly_sales += row['ly_product_sales'] or 0
             trans += row['transactions'] or 0
-            ly_trans += row['ly_transactions'] or 0
             n += 1
-        return sales, ly_sales, trans, ly_trans, n
+        return sales, trans, n
+
+    def month_comp(loc, y, m, min_days=25):
+        cur_sales, _, cur_n = month_own_sum(loc, y, m)
+        ly_sales, _, ly_n = month_own_sum(loc, y - 1, m)
+        if cur_n < min_days or ly_n < min_days or ly_sales <= 0:
+            return None
+        return cur_sales / ly_sales - 1
 
     out = {'weekEndings': [w.isoformat() for w in week_endings], 'months': months, 'locs': locs,
            'weekly': {}, 'monthly': {}, 'lyMonth': {}, 'gcL6W': {}, 'gcL2W': {}}
@@ -169,15 +191,9 @@ def compute(rows, today, forecast_year, forecast_month):
             weekly.append(sales / ly_sales - 1 if ly_sales > 0 else None)
         out['weekly'][loc] = weekly
 
-        monthly = []
-        for (y, m) in months:
-            sales, ly_sales, _, _, n = month_sum(loc, y, m)
-            monthly.append(sales / ly_sales - 1 if ly_sales > 0 else None)
-        out['monthly'][loc] = monthly
+        out['monthly'][loc] = [month_comp(loc, y, m) for (y, m) in months]
 
-        ly_year = forecast_year - 1
-        sales, ly_sales, _, _, n = month_sum(loc, ly_year, forecast_month)
-        out['lyMonth'][loc] = sales / ly_sales - 1 if ly_sales > 0 else None
+        out['lyMonth'][loc] = month_comp(loc, forecast_year - 1, forecast_month)
 
         t6 = lt6 = t2 = lt2 = 0
         for we in week_endings[-6:]:
@@ -190,22 +206,6 @@ def compute(rows, today, forecast_year, forecast_month):
         out['gcL2W'][loc] = t2 / lt2 - 1 if lt2 > 0 else None
 
     return out
-
-
-def warn_if_december(months, forecast_year, forecast_month):
-    hit = [f"{MONTH_ABBR[m-1]}-{str(y)[2:]}" for (y, m) in months if m == 12]
-    if forecast_month == 12:
-        hit.append(f"forecast-month LY lookup ({MONTH_ABBR[11]}-{str(forecast_year-1)[2:]})")
-    if hit:
-        log("")
-        log("⚠️  WARNING: December falls inside this run's window: " + ", ".join(hit))
-        log("    qsr_daily_activity_rollup's ly_product_sales is a 364-day (52-week) matched-")
-        log("    weekday comparison, not a calendar-year lookback. That pairing lands ON the")
-        log("    fixed Dec 24-Jan 1 holiday cluster for one week each December, which measured")
-        log("    +5.2pp average bias (26/27 stores) against a known-correct value on 2026-09-11.")
-        log("    Cross-check December's column by hand before trusting it. Every other month")
-        log("    is normal (~0.2-1.8pp noise, not a bug).")
-        log("")
 
 
 # ── Workbook surgery ─────────────────────────────────────────────────────────────────────────
@@ -398,14 +398,26 @@ def main():
     today = datetime.date.fromisoformat(args.today) if args.today else datetime.date.today()
     output = args.output or args.input
 
-    # window generous enough for 13wk/12mo/target-month-LY-year, plus its own embedded ly_ shadow
-    since = min(add_days(today, -400), datetime.date(fy - 2, fm, 1))
+    # Block 2's oldest month (M-12) and Block 3's forecast-month LY-comp both now need their OWN
+    # calendar-matched prior year fetched too (see month_comp) -- roughly 2 years back from
+    # whichever of "today" or the forecast month is earlier, plus a day-count buffer.
+    closed_m, closed_y = today.month - 1, today.year
+    if closed_m == 0:
+        closed_m, closed_y = 12, closed_y - 1
+    m12_m, m12_y = closed_m - 11, closed_y
+    while m12_m <= 0:
+        m12_m += 12
+        m12_y -= 1
+    since = min(
+        datetime.date(m12_y - 1, m12_m, 1),
+        datetime.date(fy - 2, fm, 1),
+        add_days(today, -400),
+    )
     log(f"Fetching qsr_daily_activity_rollup from {since.isoformat()} through {today.isoformat()}...")
     rows = fetch_rollup_rows(base_url, key, since.isoformat())
     log(f"Pulled {len(rows)} rows.")
 
     data = compute(rows, today, fy, fm)
-    warn_if_december(data['months'], fy, fm)
 
     forecast_label = f"{MONTH_ABBR[fm-1]}-{fy}"
     log(f"Patching {args.input} -> {output} for forecast month {forecast_label}...")

@@ -1,4 +1,17 @@
-# DAR rollup's `ly_product_sales` is 364-day matched-weekday, not calendar-year-back — distorts December calendar-month sums (2026-09-11)
+# DAR rollup's `ly_product_sales` is 364-day matched-weekday, not calendar-year-back — distorted December calendar-month sums, FIXED same day (2026-09-11)
+
+✅ **RESOLVED same day.** Owner's own suggestion: "as long as we are pulling genuine calendar
+dates, December should not be an issue... same # of open days each year." Right call —
+`scripts/refresh-projections-workbook.py`'s monthly comps (Block 2 + Block 3's forecast-month
+LY comp) now sum each store's own `product_sales` independently over the current calendar month
+AND the same calendar month one year earlier (`month_own_sum`/`month_comp`), with **no `ly_`
+field involved at all** for monthly figures. Re-validated end-to-end after the fix: December's
+worst-case diff against the confirmed-correct workbook dropped from **+7pp / +5.23pp average
+bias** to **1.08pp max, no longer a systematic outlier** — same noise band as every other
+month (0–2.1pp across all 283 re-checked store-months). Weekly comps (Block 1, Block 3's
+guest-count L6W/L2W) correctly keep using the 364-day `ly_` field — see "Why weekly stays
+364-day-based" below. The mechanism/measurement sections below are kept as the record of what
+was found and why the fix works; do not re-diagnose this.
 
 Found while building `scripts/refresh-projections-workbook.py` (the owner's personal monthly
 projections workbook refresh). Not a bug in Meridian — `ly_product_sales` in
@@ -39,19 +52,44 @@ Every other month is within ordinary noise (~0.2–1.8pp, expected from a differ
 methodology than whatever the workbook was originally checked against). December alone is a
 5+pp outlier, consistently positive, across nearly every store.
 
-## What this means going forward
+## The fix
 
-- **`scripts/refresh-projections-workbook.py` prints a loud warning** whenever December falls
-  inside its 12-month window or is the forecast-month's LY lookup, and says to hand-check that
-  one column. It does not attempt to auto-correct it — no clean general fix was derived (would
-  need to special-case the holiday week's day-pairing, not just re-window the sum).
-- **Nothing else in the live app was found broken by this** — `vs-ly.js`'s own matched-day
-  helpers (`autoFirstDaily`/`matchedVsLY`) don't sum by calendar month at all; they compare
-  day-by-day over whatever range is requested, so a caller only inherits this distortion if it
-  independently sums a calendar month's worth of `ly_product_sales` outside those helpers.
-  Grepped for other calendar-month `ly_product_sales` summations at time of writing — none
-  found — but if a December anomaly ever shows up in a monthly rollup panel, this is the first
-  thing to check.
-- **Do not "fix" the 364-day convention itself.** It's deliberate and correct for 11 months of
-  the year; the fix (if one is ever wanted) belongs in whatever specific calendar-month
-  aggregation hits the holiday week, not in the underlying `ly_` field.
+For any MONTHLY comparison, sum both sides independently from genuine calendar dates — this
+store's own `product_sales` for the current calendar month, and this store's own
+`product_sales` for the same calendar month one year earlier — then divide. Never touch the
+`ly_` shadow field for a monthly sum. This works because a calendar month always has the
+correct number of real days on both sides regardless of which weekday it starts on or whether
+either year is a leap year; there is no matching/pairing step left to go wrong.
+
+Re-validated 2026-09-11 against all 283 overlapping store-months in the confirmed-correct
+workbook: max abs diff 2.145pp (one non-December outlier, ordinary noise), December's own max
+abs diff 1.081pp — fully inside the same noise band as the other 11 months.
+
+## Why weekly stays 364-day-based (not the same fix)
+
+Block 1 (13 weekly comps) and Block 3's guest-count L6W/L2W deliberately keep using the `ly_`
+field's 364-day matched-weekday convention — this is NOT the same bug, and switching it to
+calendar-date matching would make weekly comps *worse*, not better: a real calendar-year offset
+(365 or 366 days back) lands on a **different weekday** most of the time (e.g. comparing a
+Tuesday against a Thursday), which matters far more for a single week's volume than the rare
+holiday-week mispair does. 364 = 52×7 exactly, so it preserves weekday **by construction,
+regardless of leap years** — verified directly against the real 2024 leap day: `2025-02-26`
+(Wed) minus 364 days lands on `2024-02-28` (Wed), still correctly weekday-aligned. Python's own
+`date`/`timedelta` arithmetic (used throughout the script) is leap-year-correct natively; there
+is no custom day-counting logic anywhere in this script that could drift.
+
+The one remaining residual risk for weekly is the same KIND of issue as the December one, just
+far smaller: the single week that happens to contain Feb 29 in a leap year could see a one-day
+matched-pair shift, the same way the week containing Dec 25 does. Not fixed, because Feb 29 has
+no volume-cliff behavior like a holiday closure — noted here so it isn't mistaken for a new bug
+if it's ever noticed.
+
+## Nothing else in the live app was found broken by this
+
+`vs-ly.js`'s own matched-day helpers (`autoFirstDaily`/`matchedVsLY`) don't sum by calendar
+month at all; they compare day-by-day over whatever range is requested, so a caller only
+inherits this distortion if it independently sums a calendar month's worth of
+`ly_product_sales` outside those helpers. Grepped for other calendar-month `ly_product_sales`
+summations at time of writing — none found — but if a December anomaly ever shows up in a
+monthly rollup panel, this is the first thing to check, and the fix is the same
+`month_own_sum`/`month_comp` pattern above, not a change to the `ly_` field's own convention.
