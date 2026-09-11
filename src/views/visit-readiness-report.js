@@ -303,6 +303,7 @@ export function readinessReportHTML(res, opts = {}) {
   </style></head><body>
   <h1>Visit Readiness (PACE) — ${esc(scopeLabel)}</h1>
   <div class="sub">Graded-visit readiness &amp; calibration audit · ${stores.length} store${stores.length === 1 ? '' : 's'} in scope · printed ${esc(today)}</div>
+  ${res.suspension ? `<div class="gapline" style="border-left-color:#c9a000;background:#fff8e1"><b>⏸ ${esc(res.suspension.label)}</b> — ${esc(res.suspension.reason)} The readiness figures below are the model's calibration state, not a live prediction for an upcoming visit — none is scheduled through ${esc(res.suspension.end)}.</div>` : ''}
 
   ${!d ? '<p class="note">No operational data resolved for this scope — nothing to report.</p>' : `
   <div class="sect">

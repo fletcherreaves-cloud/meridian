@@ -167,6 +167,39 @@ const FOODSAFETY = [
 
 export const RECENT_DAYS = 45;
 
+// ── Visit-type suspensions (owner-notified 2026-09-11) ─────────────────────────
+// McDonald's canceled all CFV and RGR graded visits for the remainder of 2026,
+// effective 09/15/26 — coinciding with the McDonald's > NEXT reset under new McDonald's
+// USA President Skye Anderson (effective 08/04/26, succeeding Joe Erlinger). EcoSure
+// Food Safety visits are NOT part of this cancellation and continue as normal.
+//
+// The readiness composite below (SPEED/ACCURACY/QUALITY/LEADERSHIP) predicts CFV/RGRV
+// standards specifically — EcoSure's own criteria are already excluded from it (see
+// READINESS_GAPS' 'Food Safety criticals' + 'DFSC completion %' entries above). So while
+// a suspension here is active, the WHOLE composite is what the panel suppresses, not a
+// slice of it — there is no separate CFV-only/RGR-only score to hide instead. The
+// Waste & variance flag (fsFlag) is computed independently of the composite and of any
+// visit type, and stays live either way.
+//
+// List-shaped and date-only (no time-of-day precision needed for a program-level
+// window) so a future suspension or resumption is one new entry here, never a rewrite
+// of the boundary logic itself.
+export const VISIT_SUSPENSIONS = [
+  { types: ['CFV', 'RGR'], start: '2026-09-15', end: '2026-12-31',
+    label: 'CFV & RGR graded visits suspended',
+    reason: 'McDonald\'s canceled all CFV and RGR graded visits for the remainder of 2026 (owner-notified 2026-09-11). EcoSure Food Safety visits are unaffected.' },
+];
+function _todayISO(nowMs = Date.now()) {
+  const d = new Date(nowMs);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// Returns the active suspension (or null) as of `nowMs` — exported so the panel and the
+// coaching report can both check it without re-deriving the date-window comparison.
+export function activeVisitSuspension(nowMs = Date.now()) {
+  const today = _todayISO(nowMs);
+  return VISIT_SUSPENSIONS.find(s => today >= s.start && today <= s.end) || null;
+}
+
 // ── Explainability helpers ────────────────────────────────────────────────────
 // Human-readable value for a "why" sentence (the view formats its own cells).
 function _fmtVal(v, unit) {
@@ -885,6 +918,7 @@ export function computeVisitReadiness(ds, opts = {}) {
     stores, district, weights, calibration, fsBacktest,
     areas: READINESS_AREAS,
     gaps: READINESS_GAPS,
+    suspension: activeVisitSuspension(),
     hasEcoSure, visitTypes, sourcesUsed,
     method: {
       recentDays: RECENT_DAYS,

@@ -5,11 +5,12 @@
 // coaches the right stores before the (mostly unannounced) visit. Transparent: every
 // score shows its driving metrics (actual vs the store's own target).
 import * as React from 'react';
-import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince, activeVisitSuspension } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
+import { withAlpha } from '../utils/fmt.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -43,6 +44,7 @@ function downloadCsv(text, filename) {
 function storeReportHTML(s) {
   const esc = t => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const b = BAND[s.band], fs = FS[s.fsFlag];
+  const susp = activeVisitSuspension();
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   // Score breakdown doubles as the calibration trail: nominal weight, the effective
   // weight after renormalizing over the areas that had data, and the points contributed.
@@ -90,9 +92,10 @@ function storeReportHTML(s) {
   </style></head><body>
     <h1>${esc(sName(s.loc))} <span style="color:#999;font-weight:400;font-size:13px">#${esc(s.loc)}</span></h1>
     <div class="sub">Visit Readiness coaching report · ${date}</div>
-    <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('W&V', 'Waste & variance:')}</span>
+    ${susp ? `<div class="gap" style="border-color:#c9a000;background:#fff8e1"><b>⏸ ${esc(susp.label)}</b> — ${esc(susp.reason)} No CFV/RGR score or coaching action is shown below through ${esc(susp.end)}. EcoSure and the metrics below keep updating in case the program resumes.</div>`
+      : `<div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('W&V', 'Waste & variance:')}</span>
       ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${(s.coverage * 100).toFixed(2)}% data coverage</span>` : ''}</div>
-    ${s.verdict ? `<div class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</div>` : ''}
+    ${s.verdict ? `<div class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</div>` : ''}`}
     <div class="why"><b>Why:</b> ${esc(s.why || '')}</div>
     <h2>Recommended focus</h2>
     ${focus ? `<ol>${focus}</ol>` : '<p>No material gaps — hold the standard and stay visit-ready.</p>'}
@@ -111,6 +114,22 @@ function storeReportHTML(s) {
 }
 function printStoreReport(s) {
   printHtml(storeReportHTML(s));
+}
+
+// Dispatch (2026-09-11) — McDonald's canceled all CFV and RGR graded visits for the
+// remainder of 2026 (owner-notified). The composite below predicts CFV/RGRV readiness
+// specifically (engine/visit-readiness.js's own VISIT_SUSPENSIONS comment explains why
+// there's no separate CFV-only/RGR-only score to hide instead), so while a suspension is
+// active the whole per-store score/band is replaced with a neutral "Suspended" state —
+// this banner is the one place that explains why, so every row doesn't have to repeat it.
+function SuspensionBanner({ susp }) {
+  if (!susp) return null;
+  return h('div', { style: { fontSize: 11.5, color: '#111', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: '#fff3cd', border: '.5px solid #e0c060', borderRadius: 8, display: 'flex', gap: 8, alignItems: 'flex-start' } },
+    h('span', { style: { fontSize: 15 } }, '⏸'),
+    h('div', null,
+      h('b', null, susp.label), ` — ${susp.reason} `,
+      `Per-store readiness below shows "Suspended" (no CFV/RGR visit expected through ${susp.end}) instead of the usual readiness band. `,
+      'EcoSure Food Safety visits and the Waste & variance flag are unaffected, and the underlying ops metrics keep updating so the program can resume seamlessly.'));
 }
 
 // Dispatch #77 -- exported so Top/Bottom Performers (top-bottom-performers.js) can reuse the
@@ -153,13 +172,21 @@ function StoreListHeader() {
     h('div', { style: { width: CHEVRON_W } }));
 }
 
-function StoreRow({ s, expanded, onToggle }) {
+function StoreRow({ s, suspended, expanded, onToggle }) {
   const b = BAND[s.band]; const fs = FS[s.fsFlag];
   const dsl = daysSince(s.lastVisit?.ms);
+  // While CFV/RGR is suspended (see SuspensionBanner), the headline score/band/verdict —
+  // all of which read as "here's how you'll do on your next graded visit" — are replaced
+  // with a neutral marker so nobody coaches toward a visit that isn't happening. The
+  // underlying data (subs, topDrivers, calibration audit below) is untouched and still
+  // expands normally — diagnostic depth stays, only the visit-specific headline changes.
+  const suspColor = '#8a6d00';
   return h('div', { style: { borderTop: '.5px solid var(--bdr)' } },
     h('div', { onClick: onToggle, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', cursor: 'pointer', flexWrap: 'wrap' } },
       h('div', { style: { width: STORE_SCORE_W, textAlign: 'center' } },
-        h('div', { style: { fontSize: 19, fontWeight: 900, fontFamily: 'var(--mono)', color: b.c, lineHeight: 1 } }, Math.round(s.readiness)),
+        suspended
+          ? h('div', { style: { fontSize: 11, fontWeight: 900, color: suspColor, lineHeight: 1.2 } }, '⏸')
+          : h('div', { style: { fontSize: 19, fontWeight: 900, fontFamily: 'var(--mono)', color: b.c, lineHeight: 1 } }, Math.round(s.readiness)),
         h('div', { style: { fontSize: 7, color: 'var(--text3)', textTransform: 'uppercase' } }, 'ready')),
       h('div', { style: { flex: 1, minWidth: 150 } },
         h('div', { style: { fontSize: 12, fontWeight: 700 } }, sName(s.loc)),
@@ -168,9 +195,11 @@ function StoreRow({ s, expanded, onToggle }) {
         // restaurant words" (CLAUDE.md). The supporting number/comparison (`s.why`, below) stays
         // reachable in the expanded detail -- this doesn't replace it, per the standing rule's
         // explicit both/and.
-        s.verdict && h('div', { style: { fontSize: 11, fontWeight: 600, color: b.c, marginTop: 2 } }, s.verdict),
+        !suspended && s.verdict && h('div', { style: { fontSize: 11, fontWeight: 600, color: b.c, marginTop: 2 } }, s.verdict),
         h('div', { style: { display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' } },
-          h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
+          suspended
+            ? h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: suspColor, background: withAlpha(suspColor, '22') } }, 'Suspended — no visit scheduled')
+            : h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
           h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
           s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, (s.coverage * 100).toFixed(2) + '% data'),
           s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`),
@@ -633,6 +662,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
       h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🛡️'),
       'No operational data loaded yet. Readiness reads your speed (OEPE/KVS/park), accuracy (SMG/refunds/T-Reds), waste, and labor metrics — sync or upload data and it fills in.')
     : h('div', null,
+      h(SuspensionBanner, { susp: res.suspension }),
       h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
         'Readiness (0–100) is a weighted blend — ', h('b', null, 'Speed 35%'), ' · ', h('b', null, 'Accuracy 30%'), ' · ',
         h('b', null, 'Quality 20%'), ' · ', h('b', null, 'Leadership 15%'), ' — each metric scored against that store\'s own target. ',
@@ -640,9 +670,9 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
         h('b', null, 'This is an early-warning estimate, not a predicted score.')),
 
       h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 } },
-        stat('District readiness', Math.round(d.readiness), scoreColor(d.readiness)),
-        stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
-        stat('Watch', d.watch, '#f59e0b'),
+        res.suspension ? stat('CFV/RGR readiness', 'Suspended', '#8a6d00') : stat('District readiness', Math.round(d.readiness), scoreColor(d.readiness)),
+        !res.suspension && stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
+        !res.suspension && stat('Watch', d.watch, '#f59e0b'),
         stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
         d.criticalFails > 0 && stat('EcoSure criticals', d.criticalFails, '#ef4444'),
         stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
@@ -653,7 +683,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
 
       h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
         h(StoreListHeader),
-        res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
+        res.stores.map(s => h(StoreRow, { key: s.loc, s, suspended: !!res.suspension, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
 
       h(VisitPatterns, { ds, locs }),
 
