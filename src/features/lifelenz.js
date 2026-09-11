@@ -1027,7 +1027,17 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
                         textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'.5px solid var(--bdr)',
                         textAlign:i===0?'left':'right'}},l)))),
                   h('tbody',null,
-                    ...g.days.map((d,i)=>h('tr',{key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
+                    ...g.days.map((d,i)=>{
+                      // Per-date winner badge -- whichever side's |variance| against the SAME
+                      // actual is smaller for this date. Only awarded when both sides have a
+                      // real, plausible number to compare (a lfzImplausible day never wins/
+                      // loses, same as its '—' treatment elsewhere in this row).
+                      const lfzAbs = (!d.lfzImplausible && d.lfzVarPct!=null) ? Math.abs(d.lfzVarPct) : null;
+                      const mbiAbs = d.mbiVarPct!=null ? Math.abs(d.mbiVarPct) : null;
+                      const lfzWins = lfzAbs!=null && mbiAbs!=null && lfzAbs<mbiAbs;
+                      const mbiWins = lfzAbs!=null && mbiAbs!=null && mbiAbs<lfzAbs;
+                      const trophy = span({style:{marginLeft:3}},'🏆');
+                      return h('tr',{key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
                       h('td',{style:{padding:'4px 6px',color:'var(--text)',fontWeight:600}},
                         d.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
@@ -1037,18 +1047,22 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
                         fontSize:d.lfzImplausible?'7.5px':undefined,
                         color:d.lfzImplausible?'#f59e0b':d.lfzVarPct==null?'var(--text3)':Math.abs(d.lfzVarPct)<5?'#10b981':Math.abs(d.lfzVarPct)<10?'#f59e0b':'#ef4444'},
-                        title:d.lfzImplausible?'Actual is under 15% of forecast -- treated as an incomplete LifeLenz pull, not a real closed day (dispatch #117)':undefined},
+                        title:d.lfzImplausible?'Actual is under 15% of forecast -- treated as an incomplete LifeLenz pull, not a real closed day (dispatch #117)':(lfzWins?'Closer to actual than MBI this date':undefined)},
                         // dispatch #117: a plausibility-guarded partial actual gets its own
                         // label, distinct from '—' (which still means "no LFZ record at all").
-                        d.lfzImplausible?'⚠ Incomplete':(d.lfzVarPct!=null?fmtPct(d.lfzVarPct):'—')),
+                        d.lfzImplausible?'⚠ Incomplete':(d.lfzVarPct!=null?fmtPct(d.lfzVarPct):'—'),
+                        lfzWins&&trophy),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
                         d.mbi?fmtPlain$(d.mbi.forecast):'—'),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
                         d.mbi?fmtPlain$(d.mbi.actual):'—'),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
-                        color:d.mbiVarPct==null?'var(--text3)':Math.abs(d.mbiVarPct)<5?'#10b981':Math.abs(d.mbiVarPct)<10?'#f59e0b':'#ef4444'}},
-                        d.mbiVarPct!=null?fmtPct(d.mbiVarPct):'—'),
-                    ))
+                        color:d.mbiVarPct==null?'var(--text3)':Math.abs(d.mbiVarPct)<5?'#10b981':Math.abs(d.mbiVarPct)<10?'#f59e0b':'#ef4444'},
+                        title:mbiWins?'Closer to actual than LifeLenz this date':undefined},
+                        d.mbiVarPct!=null?fmtPct(d.mbiVarPct):'—',
+                        mbiWins&&trophy)
+                      );
+                    })
                   )
                 )
               ))
