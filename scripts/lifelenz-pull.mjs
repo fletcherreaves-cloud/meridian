@@ -21,7 +21,7 @@
 //                          (lifelenz_shift_assignments — Crew Schedule Lookup, dispatch #123)
 
 import { chromium } from 'playwright';
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
@@ -52,7 +52,15 @@ const DEBUG        = process.env.LIFELENZ_DEBUG === '1';
 const FORCE_FALLBACK = process.env.LIFELENZ_FORCE_FALLBACK === '1';
 
 // ── Supabase client (service role — skips RLS) ────────────────────────────
-const supabase = createClient(
+// safeCreateClient (not a bare createClient module-scope const) -- CI FAILURE, root-caused
+// 2026-09-11: this module is now safely importable by tests (buildLeadTimeCaptures), but a
+// bare createClient() still runs at import time regardless of whether main() ever executes,
+// and throws immediately when the env vars are unset (e.g. in CI, which does not set Supabase
+// secrets for the unit-test job). See scripts/lib/safe-supabase-client.mjs's own header for
+// the exact incident this same fix addressed in lifelenz-attendance-pull.mjs. Every existing
+// call site already degrades correctly on a null client (this file's own main() never ran
+// before this fix could matter — the client was always non-null in the real Action).
+const supabase = safeCreateClient(
   process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
@@ -715,6 +723,43 @@ async function upsertRows(rows) {
   return rows.length;
 }
 
+// ── Lead-time forecast capture (2026-09-11) — see supabase/schema-lifelenz-forecast-captures.sql
+// for the full why. lifelenz_schedule upserts on (loc,date), so a past date's fcst_sales is
+// always whatever LifeLenz last reported for it -- there's no way to ask "what did LifeLenz say
+// 6 days before this date" from that table. This writes an IMMUTABLE row per (loc, target_date,
+// captured_date=today) for every date still in the future as of this run, piggybacking on the
+// SAME storeRows already fetched for the normal upsert -- no extra API calls. Best-effort: never
+// allowed to fail the run that already committed the real schedule data.
+// Pure -- no I/O -- so it's directly unit-testable without mocking Supabase.
+// `todayStr` is the capture date (injectable for tests; defaults to real today).
+function buildLeadTimeCaptures(rows, todayStr = toISO(new Date())) {
+  const today = new Date(todayStr + 'T00:00:00');
+  return rows
+    .filter(r => r.date > todayStr && r.fcst_sales != null)
+    .map(r => {
+      const targetD = new Date(r.date + 'T00:00:00');
+      const leadDays = Math.round((targetD - today) / 86400000);
+      return {
+        loc: String(parseInt(r.loc, 10)),
+        target_date: r.date,
+        captured_date: todayStr,
+        lead_days: leadDays,
+        fcst_sales: r.fcst_sales,
+        adj_fcst_sales: r.adj_fcst_sales,
+      };
+    });
+}
+
+async function captureForecastLeadTime(rows) {
+  const captures = buildLeadTimeCaptures(rows);
+  if (!captures.length) return 0;
+  const { error } = await supabase
+    .from('lifelenz_forecast_captures')
+    .upsert(captures, { onConflict: 'loc,target_date,captured_date' });
+  if (error) { console.warn('[lead-time-capture] upsert error (non-fatal):', error.message); return 0; }
+  return captures.length;
+}
+
 // ── Per-job (business-role / station) hours+cost — ShiftsForSchedulePeriod ──
 // Separate GraphQL endpoint from the CSV report. Fully best-effort: any failure
 // logs and returns [] so it can NEVER break the (already-committed) CSV pull.
@@ -1155,7 +1200,8 @@ async function main() {
     totalRows  += storeRows.length;
     totalSaved += saved;
     if (saved > 0) coveredSchedules.add(scheduleId);
-    console.log(`  ${name} (#${scheduleId}): ${saved} rows saved`);
+    const captured = await captureForecastLeadTime(storeRows);
+    console.log(`  ${name} (#${scheduleId}): ${saved} rows saved${captured ? `, ${captured} lead-time snapshot(s) captured` : ''}`);
   }
 
   console.log(`[lifelenz-pull] ✓ done — ${totalSaved}/${totalRows} rows saved to Supabase`);
@@ -1193,7 +1239,13 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('[lifelenz-pull] fatal error:', err);
-  process.exit(1);
-});
+// Guarded (2026-09-11, matching lifelenz-attendance-pull.mjs's own pattern) so a test can
+// import buildLeadTimeCaptures without also firing off a live LifeLenz pull.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    console.error('[lifelenz-pull] fatal error:', err);
+    process.exit(1);
+  });
+}
+
+export { buildLeadTimeCaptures };

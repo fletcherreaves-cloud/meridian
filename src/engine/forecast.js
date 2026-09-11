@@ -200,12 +200,22 @@ function forecastSimple(locLaborRows, loc, date, asOf){
   if(sSeries.length<14) return null;                        // not enough trailing history to be "simple-proven"
   const wr = weightedRecencyProjection(sSeries, {asOf, targetDays:1});
   if(!wr || !_stIsNum(wr.dailyRate) || wr.dailyRate<=0) return null;
-  const sales = wr.dailyRate * _dowShape(sSeries, asOf, date.getDay(), 90);
+  // Holiday awareness (2026-09-11): 'simple' has no LY/seasonal component to anchor against,
+  // unlike the engineered pipeline below (which corrects LY when today's/LY's holiday status
+  // differ) -- it's pure trailing-rate x same-DOW-shape, so a fixed holiday (July 4, New Year's
+  // Day, ...) was forecast as an ordinary day of that weekday. Measured against real MBI-vs-
+  // LifeLenz backtest data (memory/finding-simple-model-holiday-blindness-2026-09-11.md):
+  // holiday days averaged 12.59% MAPE for 'simple' vs 9.87% for LifeLenz's own forecast --
+  // roughly 3x the ~0.8pp gap 'simple' shows on ordinary days. getHolidayAdj's own date lookups
+  // only ever reference yrsBack>=1 prior years, so this stays leak-free regardless of what
+  // locLaborRows otherwise contains.
+  const holidayMult = isHoliday(date) ? getHolidayAdj(date, loc, locLaborRows) : 1;
+  const sales = wr.dailyRate * _dowShape(sSeries, asOf, date.getDay(), 90) * holidayMult;
   let gc = 0;
   const gSeries = _series('gc');
   if(gSeries.length>=14){
     const g = weightedRecencyProjection(gSeries, {asOf, targetDays:1});
-    if(g && _stIsNum(g.dailyRate) && g.dailyRate>0) gc = g.dailyRate * _dowShape(gSeries, asOf, date.getDay(), 90);
+    if(g && _stIsNum(g.dailyRate) && g.dailyRate>0) gc = g.dailyRate * _dowShape(gSeries, asOf, date.getDay(), 90) * holidayMult;
   }
   return { sales, gc };
 }
