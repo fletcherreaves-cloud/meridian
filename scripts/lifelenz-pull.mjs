@@ -21,7 +21,7 @@
 //                          (lifelenz_shift_assignments — Crew Schedule Lookup, dispatch #123)
 
 import { chromium } from 'playwright';
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
@@ -52,7 +52,15 @@ const DEBUG        = process.env.LIFELENZ_DEBUG === '1';
 const FORCE_FALLBACK = process.env.LIFELENZ_FORCE_FALLBACK === '1';
 
 // ── Supabase client (service role — skips RLS) ────────────────────────────
-const supabase = createClient(
+// safeCreateClient (not a bare createClient module-scope const) -- CI FAILURE, root-caused
+// 2026-09-11: this module is now safely importable by tests (buildLeadTimeCaptures), but a
+// bare createClient() still runs at import time regardless of whether main() ever executes,
+// and throws immediately when the env vars are unset (e.g. in CI, which does not set Supabase
+// secrets for the unit-test job). See scripts/lib/safe-supabase-client.mjs's own header for
+// the exact incident this same fix addressed in lifelenz-attendance-pull.mjs. Every existing
+// call site already degrades correctly on a null client (this file's own main() never ran
+// before this fix could matter — the client was always non-null in the real Action).
+const supabase = safeCreateClient(
   process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
