@@ -153,10 +153,14 @@ describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
   });
 
   // Dispatch #109 items #1/#2/#6 — these 6 fields were added to REVIEW_METRIC_TARGET_FIELD
-  // for the yearly-workbook targets (dispatch #107). They have NO DEFAULT_TARGETS entry —
-  // they resolve only from ds.targets (yearly) or ds.monthlyTargets, never the hard-coded
-  // per-store fallback — so they're verified against a ds carrying them, not an empty one.
-  it('resolves the dispatch #109 target mappings from ds.targets (yearly workbook), not DEFAULT_TARGETS', () => {
+  // for the yearly-workbook targets (dispatch #107). Originally verified as yearly-only (no
+  // DEFAULT_TARGETS entry at all); the 2026 Restaurant Targets workbook's Customer
+  // Satisfaction/Digital Execution/People blocks have since landed in DEFAULT_TARGETS
+  // (backlog #289, 2026-09-11), so all 6 now ALSO have a hard-coded per-store fallback. What
+  // still matters — and is what this test actually protects — is PRECEDENCE: a real
+  // yearly-workbook value must keep winning over that fallback, not silently start losing to
+  // it now that both exist.
+  it('resolves the dispatch #109 target mappings from ds.targets (yearly workbook), which still wins over the DEFAULT_TARGETS fallback', () => {
     const yearly = {
       tMcdWait: 240, tDigAppGCRD: 180, tMcdGCRD: 30,
       tShiftLeaders: 8, tHeadcount: 60, tToCrew090: 0.25,
@@ -169,10 +173,15 @@ describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
       expect(REVIEW_METRIC_TARGET_FIELD[key], `no mapping for ${key}`).toBe(tf);
       expect(t[tf], `missing ${tf}`).toBe(yearly[tf]);
     }
-    // Absent ds.targets, these fields resolve to undefined (no DEFAULT_TARGETS fallback) —
-    // confirms they are genuinely yearly-only, not silently backed by a hard-coded default.
+    // Absent ds.targets, these now resolve from DEFAULT_TARGETS's own real workbook-derived
+    // value (180, store 3708's actual McDelivery Restaurant Wait Time target) instead of
+    // undefined — confirming the fallback is live, not that it's still absent.
     const noYearly = mergedTargetsForLoc({}, '3708');
-    expect(noYearly.tMcdWait).toBeUndefined();
+    expect(noYearly.tMcdWait).toBe(180);
+    // And the yearly value (240, deliberately different from the 180 fixture above) still
+    // wins when both exist — precedence, not just presence.
+    expect(t.tMcdWait).toBe(240);
+    expect(t.tMcdWait).not.toBe(noYearly.tMcdWait);
   });
 });
 
@@ -246,10 +255,18 @@ describe('missingReviewTargets — flags scored metrics with no resolvable targe
   it('lists metrics that have neither a namespace target nor a per-month target', () => {
     const miss = missingReviewTargets(review(), DEFAULT_REVIEW_CONFIG, {});
     const keys = miss.map(m => m.key);
-    // These have no target field in DEFAULT_TARGETS → should be flagged for the user.
-    expect(keys).toContain('osat');
-    expect(keys).toContain('delivWait');
-    expect(keys).toContain('headcount');
+    // These map to an override-only field (TARGET_OVERRIDE_FIELDS) with no workbook column at
+    // all (REVIEW_METRIC_TARGET_FIELD's own comments) — genuinely unresolvable from
+    // DEFAULT_TARGETS by design, not a data gap → should stay flagged for the user.
+    expect(keys).toContain('epb2b');
+    expect(keys).toContain('complaints');
+    // 2026-09-11: the 2026 Restaurant Targets workbook's Customer Satisfaction/Digital
+    // Execution/People blocks landed in DEFAULT_TARGETS (backlog #289) — osat/delivWait/
+    // headcount now resolve from it (tOsat/tMcdWait/tHeadcount) and must NOT be flagged.
+    // This used to assert the OPPOSITE (they were the flagged examples) before that fix.
+    expect(keys).not.toContain('osat');
+    expect(keys).not.toContain('delivWait');
+    expect(keys).not.toContain('headcount');
     // These resolve from official targets → should NOT be flagged.
     expect(keys).not.toContain('oepe');
     expect(keys).not.toContain('labor');
