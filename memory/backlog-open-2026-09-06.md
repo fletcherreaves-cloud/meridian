@@ -85,17 +85,18 @@
 - [ ] ❓ Home-screen redesign (fewer/deeper widgets around the "learning loop") — 3 open design
   questions: owner's actual first move of the day; dynamic vs. user-customized vs. hybrid; widget
   count.
-- [ ] #289 — three target blocks (Customer Satisfaction, Digital Execution, People) missing from
-  `DEFAULT_TARGETS`, gating VOICE-grading work (#288). Real blocker: the owner's "2026 Restaurant
-  Targets" workbook was never committed to the repo — building values without it means fabricating
-  numbers. Needs either the workbook landing in-repo, or routing through the existing Monthly
-  Targets Excel drop (`monthly_targets`) as an alternative.
+- [x] #289 — **RESOLVED 2026-09-11.** Owner uploaded `2026_Restaurant_Targets__Updated__OK__FL.xlsx`
+  and said to commit it this time (`data/restaurant-targets/`, README documents provenance). Parsed
+  with the real `parseYearlyTargets()` and merged 16 fields (Customer Satisfaction/Digital
+  Execution/People) into all 27 `DEFAULT_TARGETS` entries, purely additive. `missingReviewTargets()`
+  no longer flags `osat`/`delivWait`/`headcount` etc. Do not re-raise.
 - [ ] **Spine 1** — one copyable panel design (District View → Location-tile pattern), pilot =
   Inventory Control, extend to Food Cost/FOB/Inventory.
 - [ ] **Spine 2** — unify `count-cycle.js`/`lastCountAnchor`/`inv_count_sessions` behind one cycle
   selector.
 - [ ] ❓ Menu restructure (owner's proposed IA) — parked, needs a planning session with the owner.
-- [ ] SAGE persistent top-bar placement — parked UI-placement decision.
+- [x] SAGE persistent top-bar placement — **RESOLVED, not a gap.** Owner confirmed 2026-09-11 via
+  screenshot: already live as a top-bar button. Stale item, do not re-raise.
 - [ ] Deferred: startup data-load gradient cue, loaded-data-strip repositioning, dev-mode
   diagnostic screen.
 - [ ] Naming: Pace tab (collides with McDonald's internal "PACE" term), Help rename, Troubleshooting

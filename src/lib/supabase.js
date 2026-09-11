@@ -1152,7 +1152,7 @@ export async function loadLifeLenzAttendance({ locs } = {}) {
     return q;
   }, 1000, 'lifelenz_attendance_summary');
   return (data || []).map(r => ({
-    loc:               r.loc,
+    loc:               String(parseInt(r.loc, 10)),
     date:              r.period_end,
     periodStart:       r.period_start,
     periodEnd:         r.period_end,
