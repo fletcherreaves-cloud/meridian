@@ -45,6 +45,11 @@ const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
 const START_DATE   = process.env.LIFELENZ_START_DATE || null; // override gap detection — pulls from this date forward
 const DEBUG        = process.env.LIFELENZ_DEBUG === '1';
+// Diagnostic-only escape hatch (2026-09-11): forces the direct-REST + Playwright fallback path
+// even when a valid LIFELENZ_TOKEN is present, so the "self-heals when the token rotates" path
+// can be exercised and its (currently broken) failure mode inspected on demand, without waiting
+// for the stored token to actually expire again. Never set in the scheduled daily-sync run.
+const FORCE_FALLBACK = process.env.LIFELENZ_FORCE_FALLBACK === '1';
 
 // ── Supabase client (service role — skips RLS) ────────────────────────────
 const supabase = createClient(
@@ -245,6 +250,19 @@ async function getAuthToken() {
     }
   });
 
+  // Diagnostics added 2026-09-11 (dispatch: the Playwright fallback landing on a completely
+  // empty <html><head></head><body></body></html> even after the full selector-wait timeout --
+  // not "SPA still hydrating" but nothing being served at all). None of this changes behavior;
+  // it only surfaces WHY, in plain job-log text (screenshots aren't reachable from every
+  // environment that reads these logs, e.g. an org egress policy blocking the artifact host).
+  const failedRequests = [];
+  page.on('requestfailed', req => {
+    failedRequests.push({ url: req.url(), method: req.method(), failure: req.failure()?.errorText });
+  });
+  const consoleMsgs = [];
+  page.on('console', msg => { consoleMsgs.push(`[${msg.type()}] ${msg.text()}`); });
+  page.on('pageerror', err => { consoleMsgs.push(`[pageerror] ${err.message}`); });
+
   try {
     // Go directly to IDM (backend identity server — not Cloudflare protected like admin.lifelenz.com)
     const CLIENT_ID   = '63acf6b91f6c301188a20e18';
@@ -257,10 +275,23 @@ async function getAuthToken() {
       state:         'meridian-sync',
     });
     console.log('[auth] navigating to IDM authorize:', IDM_AUTH_URL);
-    await page.goto(IDM_AUTH_URL, { waitUntil: 'networkidle', timeout: 45000 });
+    const navResp = await page.goto(IDM_AUTH_URL, { waitUntil: 'networkidle', timeout: 45000 });
+    if (navResp) {
+      const h = navResp.headers();
+      console.log('[auth] nav response status:', navResp.status(), navResp.statusText());
+      console.log('[auth] nav response headers:', JSON.stringify({
+        server: h['server'], 'cf-ray': h['cf-ray'], 'cf-mitigated': h['cf-mitigated'],
+        'content-type': h['content-type'], 'content-length': h['content-length'],
+        via: h['via'], 'x-frame-options': h['x-frame-options'],
+      }));
+    } else {
+      console.log('[auth] nav response: null (navigation may have been a same-document/client-side transition)');
+    }
     console.log('[auth] page title:', await page.title(), '| url:', page.url());
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '(empty)');
     console.log('[auth] body preview:', bodyText);
+    if (failedRequests.length) console.log('[auth] failed sub-requests during nav:', JSON.stringify(failedRequests.slice(0, 20)));
+    if (consoleMsgs.length) console.log('[auth] console/page errors during nav:', JSON.stringify(consoleMsgs.slice(0, 20)));
     await page.screenshot({ path: `${screenshotDir}/01-login-page.png`, fullPage: true });
 
     // Fill login form — broad selector list covering LifeLenz / Humanforce variants
@@ -289,6 +320,9 @@ async function getAuthToken() {
       const pageHTML = await page.content().catch(() => '(could not get HTML)');
       console.error('[auth] username selector not found. Visible inputs:', JSON.stringify(inputs, null, 2));
       console.error('[auth] page HTML (first 2000 chars):', pageHTML.slice(0, 2000));
+      console.error('[auth] page title at timeout:', await page.title().catch(() => '(error)'), '| url:', page.url());
+      console.error('[auth] failed sub-requests (cumulative):', JSON.stringify(failedRequests.slice(0, 20)));
+      console.error('[auth] console/page errors (cumulative):', JSON.stringify(consoleMsgs.slice(0, 20)));
       await page.screenshot({ path: `${screenshotDir}/login-selector-fail.png`, fullPage: true });
       throw e;
     }
@@ -1018,7 +1052,8 @@ async function main() {
   console.log(`[lifelenz-pull] date range: ${toISO(start)} → ${toISO(end)}`);
 
   // 1. Auth — use pre-captured token if available, otherwise try REST then Playwright
-  let token = process.env.LIFELENZ_TOKEN || null;
+  let token = FORCE_FALLBACK ? null : (process.env.LIFELENZ_TOKEN || null);
+  if (FORCE_FALLBACK) console.log('[auth] LIFELENZ_FORCE_FALLBACK=1 — skipping LIFELENZ_TOKEN, going straight to fallback chain');
   if (token) {
     console.log('[auth] using LIFELENZ_TOKEN from env (skipping browser login)');
     // Sanity-check the token against the SAME endpoint we actually use for
