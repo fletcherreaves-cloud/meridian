@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Signal Registry — metric definitions + extraction engine + custom signal computation
 import { priceDailySeries } from './price-events.js';
+import { metricSeriesWithSource, METRIC_SOURCES } from './metric-source.js';
 
 // ── Metric Categories ─────────────────────────────────────────────────────────
 // source: ds array key; field: row field name; granularity: which modes work;
@@ -409,11 +410,103 @@ function _priceDailySeriesCached(pmixRows) {
   return series;
 }
 
+// ── Auto-first bridge (dispatch #229, 2026-09-12) ─────────────────────────────
+// Live-caught bug: a manual-only registry metric (e.g. `oepe`, source:'opsRows') reads a
+// single static ds[source] array, always — so it goes empty in Trend Explorer's date-scoped
+// view the moment that store's manual upload lapses, while the SAME metric's Scanner
+// correlation (which sweeps this function's full-history return, unfiltered) still reads as
+// healthy for the identical store in the identical session — the same quantity, "broken" and
+// "fine" at once. metric-source.js's METRIC_SOURCES already has auto-first (cloud/emailed
+// first, manual last) chains for many of these exact quantities, used everywhere else in the
+// app; this routes the CONFIRMED field-identical overlaps through it instead of reinventing a
+// second resolver here.
+//
+// Each entry below was verified against its METRIC_SOURCES definition field-for-field (not by
+// name match alone — see that file's own extensive per-chain comments for what each one
+// measures and why its listed sources are interchangeable), per dispatch #229 Task 1. Keys NOT
+// listed here — `manualRefAmt`, `discCnt`, `promoCnt`, and the FOB sub-item %'s
+// `baseFoodPct`/`condiment`/`empMeal`/`unexplained`/`discCoupon`/`pLFoodPct`/`pLPaperPct` —
+// have NO matching METRIC_SOURCES chain today, confirmed by direct inspection rather than
+// assumed, and keep reading their static source exactly as before; building a new chain for
+// any of those is a follow-on, not something this dispatch does silently.
+const AUTO_FIRST_KEY_MAP = {
+  oepe: 'oepe', kvst: 'kvst', r2p: 'r2p', parkPct: 'park', dtMixPct: 'dtMixPct',
+  sales: 'sales', gc: 'gc',
+  // avgCheck deliberately excluded: its METRIC_SOURCES chain special-cases derive-BEFORE-srcs
+  // (dispatch #182 — sales÷gc is tried ahead of any manual value, unlike every other chain in
+  // this map, which only derives as a last resort). Confirmed live behavior difference, not
+  // theoretical: a fixture with a constant manual avgCheck but a varying gc (csat-signals.test.js)
+  // went from a real zero-variance driver to a computed non-constant one under this swap. That
+  // may well be the MORE correct number, but it's a bigger, different change than "add an
+  // auto-first fallback" — worth its own dispatch, not a silent side effect of this one.
+  laborPct: 'laborPct', tpph: 'tpph', avgRate: 'avgRate', otHrs: 'otHrs',
+  discPct: 'discPct', discAmt: 'discAmt', promoPct: 'promoPct', promoAmt: 'promoAmt',
+  cashOSPct: 'cashOSPct', cashOSAmt: 'cashOSAmt', drawerOpens: 'drawerOpens',
+  posOverCnt: 'posOverCnt', posOverAmt: 'posOverAmt',
+  cashRefCnt: 'cashRefCnt', cashRefAmt: 'cashRefAmt',
+  cashlessRefCnt: 'cashlessRefCnt', cashlessRefAmt: 'cashlessRefAmt',
+  tRedAPct: 'tRedAPct', tRedACnt: 'tRedACnt', tRedBPct: 'tRedBPct', tRedBCnt: 'tRedBCnt',
+  fobPct: 'fobPct', compWaste: 'compWaste', rawWaste: 'rawWaste', statVar: 'statVar',
+};
+// src/__tests__/dispatch-229-auto-first-metrics.test.js asserts every value above actually
+// resolves to a real METRIC_SOURCES key — this map silently no-opping (metricSeriesWithSource
+// returns {} for an unknown key) would otherwise fail exactly like the bug this dispatch fixes,
+// just for a different reason.
+
+// Effectively unbounded — extractMetricValues has ALWAYS returned this metric's FULL loaded
+// history (Scanner sweeps it; Trend Explorer's own date-window filter runs on the array this
+// function returns, not inside it), so routing through the bounded metricSeriesWithSource API
+// must preserve that "full history" contract rather than narrowing it to some arbitrary window.
+const _FULL_RANGE = { s: new Date(2000, 0, 1), e: new Date(2100, 0, 1) };
+
+// The store universe for a district-wide (scopeLoc == null) pull. ds.storeIds (populated from
+// laborRows at load, same convention App.js's own rawStores() build relies on district-wide) is
+// the app's usual "every active store" list — but a store with ONLY auto-pulled data for this
+// specific chain (never in laborRows at all) would be silently excluded by storeIds alone, so
+// this unions it with every loc that actually appears in the chain's own real source arrays.
+function _autoFirstLocUniverse(ds, msKey) {
+  const locs = new Set(ds?.storeIds || []);
+  const spec = METRIC_SOURCES[msKey];
+  if (spec?.srcs) for (const [src] of spec.srcs) {
+    for (const r of ds?.[src] || []) if (r?.loc) locs.add(_normLoc(r.loc));
+  }
+  return [...locs];
+}
+
+// Same {loc,date,value}[] shape and the same "0 is missing unless allowZero" / sum-vs-mean
+// monthly rollup rules the static ds[source] branch below uses — a caller (Trend Explorer's
+// bucketing, Scanner's pairwise correlation) cannot tell which path produced a given series.
+function _extractViaMetricSource(msKey, ds, granularity, scopeLoc, meta) {
+  const locs = scopeLoc ? [_normLoc(scopeLoc)] : _autoFirstLocUniverse(ds, msKey);
+  const daily = [];
+  for (const loc of locs) {
+    const series = metricSeriesWithSource(ds, loc, _FULL_RANGE, msKey);
+    for (const dk in series) {
+      const v = series[dk].value;
+      if (v == null || isNaN(v) || (v === 0 && !meta.allowZero)) continue;
+      daily.push({ loc, date: dk, value: v });
+    }
+  }
+  if (granularity === 'daily') return daily;
+  const byKey = {};
+  for (const r of daily) {
+    const k = r.loc + '_' + _mKey(r.date);
+    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sum: 0, n: 0 };
+    byKey[k].sum += r.value; byKey[k].n++;
+  }
+  return Object.values(byKey).map(b => ({ loc: b.loc, date: b.date, value: meta.aggregate === 'sum' ? b.sum : b.sum / b.n }));
+}
+
 export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
   const meta = findMetric(metricKey);
   if (!meta) return [];
   const field = meta.field;
   const altField = meta.altField;
+
+  // Dispatch #229 (2026-09-12) — auto-first bridge for the confirmed direct-swap keys. Bypasses
+  // the static ds[meta.source] read below entirely; see AUTO_FIRST_KEY_MAP's own header for why.
+  const msKey = AUTO_FIRST_KEY_MAP[metricKey];
+  if (msKey) return _extractViaMetricSource(msKey, ds, granularity, scopeLoc, meta);
 
   // Calendar metrics have no source table — synthesize a 0/1 flag per (loc, date).
   if (meta.source === '__calendar') {
