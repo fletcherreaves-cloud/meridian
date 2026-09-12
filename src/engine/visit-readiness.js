@@ -87,8 +87,16 @@ export const READINESS_GAPS = [
     status: 'excluded — no data source',
     detail: 'Exits/extinguishers, PPE, fire-suppression service dates and CO2 alarms are physical checks with no operational data trail in Meridian.' },
   { area: 'Food Safety criticals',  pace: 'EcoSure FS1–FS7 (cook temps, pest, access) — any miss = fail',
-    status: 'not predicted — proxy flag only',
-    detail: 'Cook-temp and pest criticals are not inferable from sales/labor data. Meridian reports a SEPARATE Waste & variance RISK FLAG built from waste/holding discipline proxies (stat variance %, raw waste %) — it has no overlap with what an EcoSure Food Safety visit actually assesses (temperatures, pests, handwashing, shelf life, checklist competence) and is deliberately kept out of the readiness composite.' },
+    status: 'real result used when current — proxy fills the gap between visits',
+    // Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12):
+    // cook-temp and pest criticals are still not inferable from sales/labor data, and never
+    // will be — but they don't need to be INFERRED for a store with a current real EcoSure
+    // visit on file (within its own overdue-threshold cadence, ~12mo): the flag uses that
+    // visit's actual score/pass/criticalFailCount directly. Only when no current EcoSure
+    // result exists does the waste/holding proxy (stat variance %, raw waste %) fill the gap —
+    // still kept out of the readiness composite, still not a food-safety measurement on its
+    // own terms, but no longer the ONLY signal once real data exists.
+    detail: 'Cook-temp and pest criticals are not inferable from sales/labor data — but Meridian now uses the real EcoSure visit result directly whenever one is current for a store. Only between visits (or where none is current) does the Waste & variance RISK FLAG — waste/holding discipline proxies (stat variance %, raw waste %), which have no overlap with what an EcoSure Food Safety visit actually assesses (temperatures, pests, handwashing, shelf life, checklist competence) — fill the gap. Deliberately kept out of the readiness composite either way.' },
   { area: 'DFSC completion %',      pace: 'EcoSure FS31 (Daily Food Safety Checklist ≥90% over 60 days)',
     status: 'gap — not yet ingested',
     detail: 'Named in the standards as the single best food-safety leading indicator, but no DFSC completion feed exists in Meridian today.' },
@@ -105,7 +113,7 @@ export const READINESS_GAPS = [
   // it still tracks a real thing (waste/holding discipline) on its own terms.
   { area: 'EcoSure calibration',    pace: '3rd-Party Food Safety visit outcome',
     status: 'measured — near-zero correlation (r=0.07, n=240)',
-    detail: 'The Model Check card below runs a leak-free "as of visit date" backtest: the waste/variance proxy reconstructed from ONLY data on record before each real EcoSure visit, compared against that visit\'s real score. Measured 2026-09-05 across 240 visits (2022-2026): Spearman r=0.07, direction hit rate 53%, and the proxy caught only 2 of 4 real critical fails — confirms the proxy should never be read as a food-safety prediction, only as its own waste/holding discipline signal.' },
+    detail: 'The Model Check card below runs a leak-free "as of visit date" backtest: the waste/variance proxy reconstructed from ONLY data on record before each real EcoSure visit, compared against that visit\'s real score. Measured 2026-09-05 across 240 visits (2022-2026): Spearman r=0.07, direction hit rate 53%, and the proxy caught only 2 of 4 real critical fails — confirms the proxy should never be read as a food-safety prediction, only as its own waste/holding discipline signal. This is exactly why the flag above now prefers the real EcoSure result whenever one is current for a store (2026-09-12) — the proxy is demoted to filling the gap between visits, not removed, since it still tracks a real thing (waste/holding discipline) on its own terms.' },
 ];
 
 // Metric specs. tgt: a DEFAULT_TARGETS key (per-store) OR a literal number (standard).
@@ -221,9 +229,30 @@ function buildWhy(store) {
   const phrases = bad.map(d => `${d.label} at ${_fmtVal(d.actual, d.unit)} vs ${_fmtVal(d.target, d.unit)} target`);
   const gapList = phrases.length === 1 ? phrases[0]
     : phrases.slice(0, -1).join(', ') + ' and ' + phrases[phrases.length - 1];
-  const fs = store.fsFlag === 'elevated' ? ' Waste & variance proxies (waste/holding) are also elevated.'
+  return `${bandWord} — the biggest gaps are ${gapList}.${_fsNote(store)}`;
+}
+
+// ── Real EcoSure vs waste-proxy note (follow-on to dispatch #231 / #69, 2026-09-12) ────────
+// A store's food-safety note used to always describe the waste/variance PROXY — a heuristic
+// dispatch #69 deliberately kept as a secondary, never-trusted note because the leak-free
+// backtest (fsBacktest below) measures it near-uncorrelated with real outcomes (r=0.07,
+// n=240). Now that computeVisitReadiness prefers a real, CURRENT EcoSure result over the
+// proxy whenever one exists (see fsFlag/fsSource there), this note must say which kind of
+// signal produced the flag — a real cited critical is measured ground truth, not a guess,
+// and reads very differently to a GM than "a proxy thinks something might be off." Shared by
+// buildWhy (diagnostic) and buildVerdict (the decision line) so the two can never drift on
+// what the flag means.
+function _fsNote(store) {
+  if (store.fsSource === 'ecosure') {
+    if (store.fsFlag === 'elevated') {
+      const n = store.fsEcoSure?.criticalFailCount;
+      return ` Its most recent EcoSure Food Safety visit (${store.fsAsOf}) had${n ? ` ${n} critical fail${n > 1 ? 's' : ''}` : ' a cited critical item'} — this is a real result, not a proxy.`;
+    }
+    if (store.fsFlag === 'watch') return ` Its most recent EcoSure visit (${store.fsAsOf}) did not meet target.`;
+    return '';
+  }
+  return store.fsFlag === 'elevated' ? ' Waste & variance proxies (waste/holding) are also elevated.'
     : store.fsFlag === 'watch' ? ' Waste & variance proxies are worth a look.' : '';
-  return `${bandWord} — the biggest gaps are ${gapList}.${fs}`;
 }
 
 // Dispatch28 Workstream F ("voice by role" / "say the number AND the decision" — CLAUDE.md's
@@ -260,7 +289,9 @@ function buildVerdict(store) {
   } else {
     verdict = 'On track for a graded visit — no action needed this week.';
   }
-  if (store.fsFlag === 'elevated') {
+  if (store.fsSource === 'ecosure') {
+    if (store.fsFlag === 'elevated') verdict += ` Also address the real EcoSure critical from ${store.fsAsOf}.`;
+  } else if (store.fsFlag === 'elevated') {
     verdict += ` Also check waste & variance — elevated${store.fsScore != null ? ` (score ${Math.round(store.fsScore)})` : ''}.`;
   }
   return verdict;
@@ -797,6 +828,12 @@ export function computeVisitReadiness(ds, opts = {}) {
   const cache = {};
   const gv = ds?.gradedVisits || ds?.graded_visits || [];
   const lastVisitByLoc = {};
+  // Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12) —
+  // the MOST RECENT visit of ANY type (lastVisitByLoc, for the general "last actual visit"
+  // display) is not necessarily an EcoSure one, so it can't drive the food-safety flag below.
+  // This tracks each store's most recent EcoSure visit SPECIFICALLY, in the same pass, so
+  // fsFlag can prefer the real result over the waste/variance proxy when one is on file.
+  const lastEcoSureByLoc = {};
   for (const v of gv) {
     const loc = _normLoc(v.store || v.loc); if (!loc || v.score == null) continue;
     const ms = _ms(v.dateISO || v.date || 0);
@@ -812,6 +849,13 @@ export function computeVisitReadiness(ds, opts = {}) {
       // EcoSure visit type, which never has this field at all.
       criticalFailCount: v.modules?.criticalFailCount ?? null,
     };
+    if (_cadenceKey(v.reportType) === 'EcoSure' && (!lastEcoSureByLoc[loc] || ms > lastEcoSureByLoc[loc].ms)) {
+      lastEcoSureByLoc[loc] = {
+        ms, score: v.score, pass: v.pass, dateISO: v.dateISO || v.date,
+        criticalFailCount: v.modules?.criticalFailCount ?? null,
+        citedItems: v.modules?.citedItems || [],
+      };
+    }
   }
 
   const stores = [];
@@ -849,9 +893,33 @@ export function computeVisitReadiness(ds, opts = {}) {
       };
     });
 
-    // Food-safety risk flag (separate). Elevated waste/holding proxies → risk.
-    const fs = subScore(ds, FOODSAFETY, loc, cache);
-    const fsFlag = fs.score == null ? 'unknown' : fs.score >= 75 ? 'low' : fs.score >= 55 ? 'watch' : 'elevated';
+    // ── Food-safety signal (separate from the composite) ─────────────────────────
+    // Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12):
+    // that finding's leak-free backtest (fsBacktest below) measured the waste/variance proxy
+    // near-uncorrelated with real EcoSure outcomes (r=0.07, n=240) and caught only 2 of 4 real
+    // critical fails — and found a live counterexample (Ardmore-Broadway: proxy said elevated,
+    // the real audit passed 86/100 clean). Its explicit instruction: "replace the proxy
+    // entirely rather than relabelling it," not just calibrate it further. So whenever a store
+    // has a CURRENT EcoSure visit on file (within its own overdue-threshold cadence — a
+    // pass/fail from a year-plus ago shouldn't be treated as still true today), the REAL result
+    // drives the flag; the proxy is only an early-warning fallback for the gap BETWEEN visits,
+    // exactly as before. A real cited critical always wins even if the proxy alone reads fine —
+    // the one thing the finding explicitly warns must never be hidden.
+    const fsProxy = subScore(ds, FOODSAFETY, loc, cache);
+    const eco = lastEcoSureByLoc[loc] || null;
+    const ecoDays = eco ? daysSince(eco.ms) : null;
+    const ecoFresh = !!eco && ecoDays != null && ecoDays <= (overdueThresholdDays('EcoSure') ?? Infinity);
+    let fsFlag, fsScore, fsSource, fsAsOf = null;
+    if (ecoFresh) {
+      fsSource = 'ecosure'; fsScore = eco.score; fsAsOf = eco.dateISO;
+      fsFlag = eco.criticalFailCount > 0 ? 'elevated'
+        : eco.pass === false ? 'watch' : eco.pass === true ? 'low'
+        : (eco.score >= 75 ? 'low' : eco.score >= 55 ? 'watch' : 'elevated'); // pass/fail absent: fall back to the same 75/55 cut the proxy uses
+    } else {
+      fsSource = fsProxy.score == null ? 'unknown' : 'proxy';
+      fsScore = fsProxy.score;
+      fsFlag = fsProxy.score == null ? 'unknown' : fsProxy.score >= 75 ? 'low' : fsProxy.score >= 55 ? 'watch' : 'elevated';
+    }
 
     // Top risk drivers across all sub-scores (lowest metric scores).
     const allDrivers = [...speed.drivers, ...accuracy.drivers, ...quality.drivers, ...leadership.drivers]
@@ -860,7 +928,15 @@ export function computeVisitReadiness(ds, opts = {}) {
     const store = {
       loc, readiness, coverage, subs, audit,
       band: readiness >= 85 ? 'ready' : readiness >= 70 ? 'watch' : 'at-risk',
-      fsFlag, fsScore: fs.score, fsDrivers: fs.drivers, fsMissing: fs.missing,
+      fsFlag, fsScore, fsSource, fsAsOf,
+      // fsDrivers/fsMissing stay the PROXY's own metrics regardless of fsSource — diagnostic
+      // depth stays reachable even when a real EcoSure result is what's actually driving the
+      // flag above (the standing "voice by role" rule: depth is preserved, not hidden).
+      fsDrivers: fsProxy.drivers, fsMissing: fsProxy.missing,
+      // The EcoSure record itself (present even when stale, so a caller can say "on file but
+      // not current" rather than just "no data") — null only when this store has no EcoSure
+      // visit of any age on record.
+      fsEcoSure: eco ? { ...eco, fresh: ecoFresh, daysSince: ecoDays } : null,
       topDrivers: allDrivers,
       // Every metric that could not be scored, across all four areas — printed as an
       // explicit gap rather than silently narrowing the sub-score's denominator.

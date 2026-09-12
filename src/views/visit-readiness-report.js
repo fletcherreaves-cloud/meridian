@@ -45,6 +45,10 @@ const P_OK = '#0a7d38', P_WARN = '#b26a00', P_BAD = '#c0261b', P_MUTE = '#888';
 const scoreCol = s => s == null ? P_MUTE : s >= 85 ? P_OK : s >= 70 ? P_WARN : P_BAD;
 const BAND_L = { ready: 'Ready', watch: 'Watch', 'at-risk': 'At risk' };
 const FS_L = { low: 'Low', watch: 'Watch', elevated: 'Elevated', unknown: 'No data' };
+// Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12) —
+// the flag can now come from a real, current EcoSure visit instead of the waste/variance
+// proxy; both the CSV and the printed report need to say which one produced it.
+const FS_SOURCE_L = { ecosure: 'EcoSure (real)', proxy: 'Waste/variance proxy', unknown: 'No data' };
 
 // A canonical, self-describing export/print name: what it is · what scope · what date.
 // (cleanup-backlog Class 3 — never a bare generic filename.)
@@ -60,7 +64,7 @@ const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
 export function readinessAuditCSV(res, opts = {}) {
   const scopeLabel = opts.scopeLabel || 'All stores';
   const cols = [
-    'Store', 'NSN', 'Store readiness', 'Band', 'Data coverage', 'Food-safety flag',
+    'Store', 'NSN', 'Store readiness', 'Band', 'Data coverage', 'Food-safety flag', 'Food-safety source',
     'Area', 'Area nominal weight', 'Area effective weight', 'Area score', 'Area contribution (pts)',
     'Metric', 'Actual', 'Target', 'Target basis', 'Target reference', 'Direction',
     'Tolerance', 'Score 0 at', 'Metric score (0-1)',
@@ -79,7 +83,7 @@ export function readinessAuditCSV(res, opts = {}) {
     cols.map(csvCell).join(','),
   ];
   for (const s of res.stores || []) {
-    const head = [sName(s.loc), s.loc, s.readiness, BAND_L[s.band] || s.band, pct2(s.coverage), FS_L[s.fsFlag] || s.fsFlag];
+    const head = [sName(s.loc), s.loc, s.readiness, BAND_L[s.band] || s.band, pct2(s.coverage), FS_L[s.fsFlag] || s.fsFlag, FS_SOURCE_L[s.fsSource] || s.fsSource || ''];
     for (const a of s.audit || []) {
       const areaCols = [a.label, pct2(a.weight), pct2(a.effWeight), sc0(a.score), pts(a.contribution)];
       if (a.excluded) {
@@ -100,6 +104,17 @@ export function readinessAuditCSV(res, opts = {}) {
         lines.push([...head, ...areaCols, mi.label, 'NOT MEASURED', '', '', '', '', '', '', '', '', '', '', '', '', '',
           '', '', mi.pace || '', mi.reason].map(csvCell).join(','));
       }
+    }
+    // Real EcoSure result, when one exists on record (fresh or not) — separate from the proxy
+    // rows below, which always ride along regardless of which one actually produced fsFlag.
+    if (s.fsEcoSure) {
+      const eco = s.fsEcoSure;
+      lines.push([...head, 'EcoSure visit' + (eco.fresh ? '' : ' (stale — not used)'), '', '', sc0(eco.score), '',
+        'Score / critical fails', eco.score, '', '', '', '',
+        '', '', '',
+        'EcoSure', 'Third-party food safety visit', 'graded_visits', 'manual', 'gradedVisits.modules',
+        '', '', eco.dateISO || '', 'EcoSure FS1-FS36',
+        `${eco.criticalFailCount || 0} critical fail(s) · ${eco.fresh ? 'current' : eco.daysSince + ' days old'}`].map(csvCell).join(','));
     }
     // Food-safety proxies ride along, explicitly marked as outside the composite.
     for (const d of s.fsDrivers || []) {
@@ -197,8 +212,18 @@ function storeAuditHtml(s) {
     ? `<div class="gapbox"><b>Not measured for this store (${s.notMeasured.length})</b> — dropped from the area means above, never estimated:
         <ul>${s.notMeasured.map(mi => `<li>${esc(mi.label)} — ${esc(mi.reason)}</li>`).join('')}</ul></div>`
     : '';
+  // Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12) —
+  // when a real, current EcoSure result is what actually produced fsFlag, lead with that (its
+  // own date, cited items) rather than the proxy table; the proxy still prints underneath,
+  // labeled as background, since fsDrivers always carries the proxy's own metrics regardless
+  // of which one won (see computeVisitReadiness).
+  const ecoBlock = s.fsSource === 'ecosure' ? (() => {
+    const eco = s.fsEcoSure, cited = eco.citedItems || [];
+    return `<p class="note"><b>Real EcoSure Food Safety visit</b>, ${esc(eco.dateISO || '—')}: score ${sc0(eco.score)}${eco.criticalFailCount ? `, <span class="bad">${eco.criticalFailCount} CRITICAL FAIL${eco.criticalFailCount > 1 ? 'S' : ''}</span>` : ', no critical fails'}. This is the real result driving the flag above, not the proxy.</p>` +
+      (cited.length ? `<p class="tiny">Cited: ${esc(cited.map(ci => `${(ci.code || '').trim()}${ci.section ? ' ' + ci.section : ''}${ci.critical ? ' (critical)' : ''}`).join(', '))}</p>` : '');
+  })() : '';
   const fsRows = (s.fsDrivers || []).length
-    ? `<table><tr><th>Food-safety proxy</th><th class="n">Actual</th><th class="n">Target</th><th class="tiny">Target basis</th><th class="n">Score</th><th class="tiny">Source</th></tr>
+    ? `<table><tr><th>${s.fsSource === 'ecosure' ? 'Waste-variance proxy (background only)' : 'Food-safety proxy'}</th><th class="n">Actual</th><th class="n">Target</th><th class="tiny">Target basis</th><th class="n">Score</th><th class="tiny">Source</th></tr>
         ${s.fsDrivers.map(d => { const m = srcMeta(d.source); return `<tr><td>${esc(d.label)}</td><td class="n">${esc(fmtMetric(d.actual, d.unit))}</td>
           <td class="n">${esc(fmtMetric(d.target, d.unit))}</td><td class="tiny mono">${esc(d.basis?.ref || '')}</td>
           <td class="n">${d.score == null ? '—' : d.score.toFixed(3)}</td>
@@ -211,7 +236,7 @@ function storeAuditHtml(s) {
     <h2 class="storeh">${esc(sName(s.loc))} <span class="nsn">#${esc(s.loc)}</span>
       <span class="pill" style="background:${bandCol}">${esc(BAND_L[s.band] || s.band)} · ${s.readiness.toFixed(1)}</span>
       <span class="pill2">Data coverage ${pct2(s.coverage)}</span>
-      <span class="pill2">Food safety: ${esc(FS_L[s.fsFlag] || s.fsFlag)}${s.fsScore != null ? ' (' + sc0(s.fsScore) + ')' : ''}</span></h2>
+      <span class="pill2">Food safety: ${esc(FS_L[s.fsFlag] || s.fsFlag)}${s.fsScore != null ? ' (' + sc0(s.fsScore) + ')' : ''} · ${esc(FS_SOURCE_L[s.fsSource] || s.fsSource || '')}</span></h2>
     ${s.verdict ? `<p class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</p>` : ''}
     <p class="why"><b>Why:</b> ${esc(s.why || '')}</p>
     <h3>How this score was built</h3>
@@ -223,6 +248,7 @@ function storeAuditHtml(s) {
       ${metricRows || '<tr><td colspan="9" class="tiny">No metric resolved for this store.</td></tr>'}</table>
     ${notMeasured}
     <h3>Food-safety risk flag <span class="tiny">— separate from readiness, never folded into the composite</span></h3>
+    ${ecoBlock}
     ${fsRows}
     <p class="note">${lv}</p>
   </div>`;
@@ -244,7 +270,7 @@ export function readinessReportHTML(res, opts = {}) {
       <td>${esc(BAND_L[s.band] || s.band)}</td>
       ${cell('speed')}${cell('accuracy')}${cell('quality')}${cell('leadership')}
       <td class="n">${pct2(s.coverage)}</td>
-      <td>${esc(FS_L[s.fsFlag] || s.fsFlag)}</td>
+      <td>${esc(FS_L[s.fsFlag] || s.fsFlag)}${s.fsSource === 'ecosure' ? ' <span class="tiny">(EcoSure)</span>' : ''}</td>
       <td class="tiny">${s.lastVisit ? esc((s.lastVisit.type || 'visit') + ' ' + s.lastVisit.score.toFixed(2) + '%' + (s.lastVisit.pass === false ? ' ✗' : '') + (s.lastVisit.criticalFailCount ? ` — ${s.lastVisit.criticalFailCount} CRITICAL` : '')) : '—'}</td>
     </tr>`;
   }).join('');

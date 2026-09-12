@@ -19,6 +19,15 @@ const BAND = { 'ready': { c: '#10b981', l: 'Ready' }, 'watch': { c: '#f59e0b', l
 // waste %, which has zero overlap with what an EcoSure Food Safety visit actually assesses
 // (memory/finding-food-safety-2026-what-is-actually-measured.md). "W&V" for Waste & variance.
 const FS = { low: { c: '#10b981', l: 'W&V low' }, watch: { c: '#f59e0b', l: 'W&V watch' }, elevated: { c: '#ef4444', l: 'W&V elevated' }, unknown: { c: '#6b7280', l: 'W&V n/a' } };
+// Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12):
+// when computeVisitReadiness has a CURRENT real EcoSure result for a store (fsSource:
+// 'ecosure'), the badge must say so plainly -- "W&V" is a deliberately hedged label for a
+// heuristic proxy (dispatch #69's own point), and reusing it for a real, dated audit result
+// would UNDER-state a genuine finding exactly the way the proxy used to OVER-state a fake one.
+// Same color ramp as FS above (readers already know red=elevated/amber=watch/green=low) so
+// only the wording, not the visual language, needs to change.
+const FS_ECO = { low: { c: '#10b981', l: 'EcoSure: Pass' }, watch: { c: '#f59e0b', l: 'EcoSure: Watch' }, elevated: { c: '#ef4444', l: 'EcoSure: CRITICAL' }, unknown: { c: '#6b7280', l: 'EcoSure: n/a' } };
+const fsBadge = s => (s.fsSource === 'ecosure' ? FS_ECO : FS)[s.fsFlag];
 
 // One formatter for screen, print and CSV (imported from the report module) so a value
 // never reads differently depending on where you looked at it.
@@ -43,7 +52,7 @@ function downloadCsv(text, filename) {
 // specific corrections ranked by impact. Matches the app's workbook aesthetic.
 function storeReportHTML(s) {
   const esc = t => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  const b = BAND[s.band], fs = FS[s.fsFlag];
+  const b = BAND[s.band], fs = fsBadge(s);
   const susp = activeVisitSuspension();
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   // Score breakdown doubles as the calibration trail: nominal weight, the effective
@@ -173,7 +182,7 @@ function StoreListHeader() {
 }
 
 function StoreRow({ s, suspended, expanded, onToggle }) {
-  const b = BAND[s.band]; const fs = FS[s.fsFlag];
+  const b = BAND[s.band]; const fs = fsBadge(s);
   const dsl = daysSince(s.lastVisit?.ms);
   // While CFV/RGR is suspended (see SuspensionBanner), the headline score/band/verdict —
   // all of which read as "here's how you'll do on your next graded visit" — are replaced
@@ -289,10 +298,33 @@ function StoreAudit({ s }) {
       !!(s.notMeasured || []).length && h('div', { style: { marginTop: 8, padding: '7px 9px', border: '.5px solid rgba(245,188,0,.3)', background: 'rgba(245,188,0,.06)', borderRadius: 6 } },
         h('div', { style: { fontSize: 9.5, fontWeight: 800, color: '#f5bc00', marginBottom: 3 } }, 'Not measured (' + s.notMeasured.length + ') — dropped from the area means, never estimated'),
         s.notMeasured.map(mi => h('div', { key: mi.key + mi.label, style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } }, '• ', mi.label, ' — ', mi.reason))),
-      h('div', { style: { marginTop: 8, fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
-        h('b', null, 'Waste & variance flag: '), FS[s.fsFlag].l.replace('W&V', ''), s.fsScore != null ? ' (' + s.fsScore.toFixed(1) + ')' : '',
-        ' — built from ', (s.fsDrivers || []).map(d => d.label + ' ' + fmt(d.actual, d.unit) + ' vs ' + fmt(d.target, d.unit)).join(', ') || 'no data',
-        '. Deliberately kept OUT of the readiness composite, and has no overlap with a Food Safety assessment: cook-temp and pest criticals are not inferable from operating data.')));
+      h(FsExplainer, { s })));
+}
+
+// Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12):
+// what this footer explains depends on which signal actually produced fsFlag above. A real,
+// current EcoSure result gets its own headline (with cited items when the visit failed one) —
+// the waste/variance proxy is still shown underneath for transparency (fsDrivers/fsMissing are
+// always the proxy's own metrics regardless of fsSource, per computeVisitReadiness), but
+// clearly labeled as background, not as what decided the flag. When no current EcoSure exists,
+// this collapses back to exactly the original proxy-only explanation.
+function FsExplainer({ s }) {
+  const proxyLine = h('span', null,
+    (s.fsDrivers || []).map(d => d.label + ' ' + fmt(d.actual, d.unit) + ' vs ' + fmt(d.target, d.unit)).join(', ') || 'no data');
+  if (s.fsSource === 'ecosure') {
+    const cited = s.fsEcoSure?.citedItems || [];
+    return h('div', { style: { marginTop: 8, fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
+      h('div', null, h('b', null, 'Food safety: '), FS_ECO[s.fsFlag].l, s.fsScore != null ? ' (' + s.fsScore.toFixed(1) + ')' : '',
+        ' — real EcoSure Food Safety visit, ', s.fsAsOf || '—', '. Not the waste/variance proxy below.'),
+      !!cited.length && h('div', { style: { marginTop: 3 } },
+        h('b', null, 'Cited: '), cited.map(ci => `${(ci.code || '').trim()}${ci.section ? ' ' + ci.section : ''}${ci.critical ? ' (critical)' : ''}`).join(', ')),
+      h('div', { style: { marginTop: 3 } },
+        h('b', null, 'Waste & variance proxy '), '(background only — a current EcoSure result always takes priority): ', proxyLine));
+  }
+  return h('div', { style: { marginTop: 8, fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
+    h('b', null, 'Waste & variance flag: '), FS[s.fsFlag].l.replace('W&V', ''), s.fsScore != null ? ' (' + s.fsScore.toFixed(1) + ')' : '',
+    ' — built from ', proxyLine,
+    '. Deliberately kept OUT of the readiness composite, and has no overlap with a Food Safety assessment: cook-temp and pest criticals are not inferable from operating data.');
 }
 
 // Model-check card: does predicted readiness track the ACTUAL graded-visit scores?
