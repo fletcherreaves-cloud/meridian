@@ -172,6 +172,21 @@ async function fetchViaPlaywright(period) {
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !token) { token = t; if (DEBUG) console.log('[auth] token captured from', req.url().replace(/\?.*/, '')); }
   });
+  // Diagnostic for the "Failed to fetch" incident (2026-09-11 onward, #1231): a bare
+  // page.evaluate() fetch() rejection only ever surfaces a generic TypeError to script --
+  // by design, browsers never expose the real reason (CORS denial, DNS failure, a blocked
+  // request) to page JS, to avoid leaking network topology to a potentially hostile page.
+  // Playwright's own request/response lifecycle events see the REAL net:: error Chromium
+  // logged internally, which page.evaluate() cannot. Always-on (not DEBUG-gated) since it's
+  // cheap and this is exactly the failure this run keeps hitting.
+  page.on('requestfailed', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    console.log('[net] requestfailed:', req.url().replace(/\?.*/, ''), '--', req.failure()?.errorText || '(no errorText)');
+  });
+  page.on('response', res => {
+    if (!res.url().includes('api.reports.myqsrsoft.com')) return;
+    if (DEBUG) console.log('[net] response:', res.status(), res.url().replace(/\?.*/, ''));
+  });
 
   try {
     console.log('[auth] navigating to v3.myqsrsoft.com…');
@@ -213,19 +228,35 @@ async function fetchViaPlaywright(period) {
     if (!token) { console.error('[auth] ✗ could not capture a reporting token'); await snap('mcdelivery-error.png'); return null; }
     console.log(`[auth] ✓ token captured (${token.length} chars) — fetching mcdelivery…`);
 
-    const result = await page.evaluate(async ({ url, tok }) => {
-      try {
-        const r = await fetch(url, {
-          headers: { 'X-Auth-Token': tok, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' },
-          signal: AbortSignal.timeout(45000),
-        });
-        if (!r.ok) return { error: `HTTP ${r.status}` };
-        return { body: await r.json() };
-      } catch (e) { return { error: e.message }; }
-    }, { url: buildUrl(period), tok: token });
+    // Retry a bare "Failed to fetch" up to 2 extra times (2026-09-13, #1231) -- measured live:
+    // a manual re-run of this exact workflow, same day, succeeded outright with no code change,
+    // and the same generic-TypeError symptom was also seen (and also recovered on retry) on two
+    // OTHER independent QSRSoft pull scripts the same day. A bare fetch() TypeError carries no
+    // HTTP status and no diagnosable reason to page JS by design (CORS denial, DNS hiccup, and a
+    // transient network blip are indistinguishable to script) -- but it has been observed
+    // transient here, which a short retry is the correct, minimal response to. A real HTTP
+    // error (never a TypeError) still returns immediately, unretried.
+    let result, lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      result = await page.evaluate(async ({ url, tok }) => {
+        try {
+          const r = await fetch(url, {
+            headers: { 'X-Auth-Token': tok, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' },
+            signal: AbortSignal.timeout(45000),
+          });
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          return { body: await r.json() };
+        } catch (e) { return { error: e.message }; }
+      }, { url: buildUrl(period), tok: token });
+      if (!result.error) break;
+      lastErr = result.error;
+      if (result.error !== 'Failed to fetch' || attempt === 2) break;
+      console.log(`[mcdelivery] fetch attempt ${attempt + 1} failed ("Failed to fetch") -- retrying in 3s…`);
+      await wait(3000);
+    }
 
     await snap('mcdelivery-final.png');
-    if (result.error) { console.error('[mcdelivery] in-browser fetch error:', result.error); return null; }
+    if (result.error) { console.error('[mcdelivery] in-browser fetch error:', lastErr); return null; }
     return extractRows(result.body);
   } catch (e) {
     console.error('[auth] Playwright error:', e.message);
