@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts, csatOpportunityAlerts } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts, csatOpportunityAlerts, gcBehindLY, trafficDivergenceAlerts } from '../engine/attention-feed.js';
 import { rankCommentOpportunities } from '../engine/csat-opportunities.js';
 
 const nm = (l) => 'Store' + l;
@@ -190,6 +190,102 @@ describe('mergeWorstSalesLY', () => {
     const items = salesBehindLY(merged, nm);
     expect(items).toHaveLength(1);
     expect(items[0].severity).toBe('warn');
+  });
+});
+
+describe('gcBehindLY — GH #316, guest counts vs LY', () => {
+  it('flags stores behind LY on guest counts beyond the min gap', () => {
+    const rows = [{ loc: 'a', cur: 900, ly: 1000 }, { loc: 'b', cur: 1010, ly: 1000 }];
+    const items = gcBehindLY(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].loc).toBe('a');
+    expect(items[0].category).toBe('Traffic');
+  });
+
+  it('has no honest $ figure for a guest-count gap alone -- dollars stays 0, not a guess', () => {
+    const items = gcBehindLY([{ loc: 'a', cur: 500, ly: 1000 }], nm);
+    expect(items[0].dollars).toBe(0);
+  });
+
+  it('escalates to warn only past a 5% relative drop, mirroring salesBehindLY', () => {
+    const mild = gcBehindLY([{ loc: 'a', cur: 970, ly: 1000 }], nm, { minGap: 20 });
+    const steep = gcBehindLY([{ loc: 'a', cur: 800, ly: 1000 }], nm, { minGap: 20 });
+    expect(mild[0].severity).toBe('info');
+    expect(steep[0].severity).toBe('warn');
+  });
+
+  it('never flags a store improving or flat on GC', () => {
+    expect(gcBehindLY([{ loc: 'a', cur: 1000, ly: 1000 }, { loc: 'b', cur: 1200, ly: 1000 }], nm)).toEqual([]);
+  });
+
+  it('degrades gracefully on null/malformed input', () => {
+    expect(() => gcBehindLY(null, nm)).not.toThrow();
+    expect(gcBehindLY([null, { loc: 'a', ly: 0, cur: 500 }], nm)).toEqual([]);
+  });
+});
+
+describe('trafficDivergenceAlerts — GH #316, the McValue signature', () => {
+  it('flags sales-holds-while-GC-falls with an honest $ figure (lost guests x current avg check)', () => {
+    // LY: 1000 guests, $10,000 sales ($10 avg check). Now: 900 guests, $10,100 sales
+    // ($11.22 avg check) -- sales UP 1%, guest count DOWN 10%. Classic McValue signature.
+    const rows = [{ loc: 'a', curSales: 10100, lySales: 10000, curGc: 900, lyGc: 1000 }];
+    const items = trafficDivergenceAlerts(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].category).toBe('Traffic');
+    expect(items[0].title).toMatch(/traffic falling/);
+    const avgCheck = 10100 / 900;
+    expect(items[0].dollars).toBeCloseTo(100 * avgCheck, 2); // 100 lost guests
+  });
+
+  it('a genuinely steep GC drop (>= critGcDropPct) escalates to crit', () => {
+    const rows = [{ loc: 'a', curSales: 10000, lySales: 10000, curGc: 900, lyGc: 1000 }]; // -10% GC
+    const items = trafficDivergenceAlerts(rows, nm, { gcDropPct: 0.03, critGcDropPct: 0.06 });
+    expect(items[0].severity).toBe('crit');
+  });
+
+  it('flags the reverse (GC up, sales down) with dollars:0 -- a real guess is never presented as a figure', () => {
+    const rows = [{ loc: 'a', curSales: 9000, lySales: 10000, curGc: 1100, lyGc: 1000 }];
+    const items = trafficDivergenceAlerts(rows, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toMatch(/traffic up, sales down/);
+    expect(items[0].dollars).toBe(0);
+  });
+
+  it('does not fire when sales and GC move together (both down, or both up)', () => {
+    const bothDown = [{ loc: 'a', curSales: 9000, lySales: 10000, curGc: 900, lyGc: 1000 }];
+    const bothUp = [{ loc: 'b', curSales: 11000, lySales: 10000, curGc: 1100, lyGc: 1000 }];
+    expect(trafficDivergenceAlerts(bothDown, nm)).toEqual([]);
+    expect(trafficDivergenceAlerts(bothUp, nm)).toEqual([]);
+  });
+
+  it('does not fire on a small GC dip that sits under gcDropPct (avoids a 1-2% noise blip)', () => {
+    const rows = [{ loc: 'a', curSales: 10050, lySales: 10000, curGc: 990, lyGc: 1000 }]; // -1% GC
+    expect(trafficDivergenceAlerts(rows, nm)).toEqual([]);
+  });
+
+  it('degrades gracefully on null/malformed/missing-LY input', () => {
+    expect(() => trafficDivergenceAlerts(null, nm)).not.toThrow();
+    expect(trafficDivergenceAlerts([null, { loc: 'a', lySales: 0, curSales: 900, lyGc: 0, curGc: 90 }], nm)).toEqual([]);
+  });
+});
+
+describe('buildAttentionFeed — gcBehindLY + trafficDivergenceAlerts wiring', () => {
+  it('a real gcLY result produces a Traffic feed item', () => {
+    const feed = buildAttentionFeed({ gcLY: [{ loc: 'a', cur: 800, ly: 1000 }], storeName: nm, max: 50 });
+    expect(feed.some(i => i.loc === 'a' && i.category === 'Traffic')).toBe(true);
+  });
+
+  it('a real trafficRows result produces a Traffic feed item alongside gcBehindLY', () => {
+    const feed = buildAttentionFeed({
+      trafficRows: [{ loc: 'b', curSales: 10100, lySales: 10000, curGc: 900, lyGc: 1000 }],
+      storeName: nm, max: 50,
+    });
+    expect(feed.some(i => i.loc === 'b' && i.title.match(/traffic falling/))).toBe(true);
+  });
+
+  it('omitted gcLY/trafficRows changes nothing (existing callers keep working identically)', () => {
+    const feed = buildAttentionFeed({ salesLY: [{ loc: 'd', cur: 8000, ly: 10000 }], storeName: nm, max: 50 });
+    expect(feed.some(i => i.category === 'Traffic')).toBe(false);
   });
 });
 
