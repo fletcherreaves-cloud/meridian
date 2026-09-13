@@ -424,12 +424,14 @@ function _priceDailySeriesCached(pmixRows) {
 // Each entry below was verified against its METRIC_SOURCES definition field-for-field (not by
 // name match alone — see that file's own extensive per-chain comments for what each one
 // measures and why its listed sources are interchangeable), per dispatch #229 Task 1. Keys NOT
-// listed here — `manualRefAmt`, `discCnt`, `promoCnt`, and the FOB sub-item %'s
-// `baseFoodPct`/`discCoupon`/`pLFoodPct`/`pLPaperPct` — have NO matching METRIC_SOURCES chain
-// today, confirmed by direct inspection rather than assumed, and keep reading their static
-// source exactly as before; building a new chain for any of those is a follow-on, not something
-// this dispatch does silently. (`condiment`/`empMeal`/`unexplained` WERE in that "no chain"
-// list originally — closed 2026-09-13, see metric-source.js's own comment on those 3 entries.)
+// listed here — the FOB sub-item %'s `baseFoodPct`/`discCoupon`/`pLFoodPct`/`pLPaperPct` — have
+// NO matching METRIC_SOURCES chain today (no $ leg loaded anywhere, confirmed by direct
+// inspection), and keep reading their static source exactly as before; building a chain for any
+// of those needs new upstream field research, not something this dispatch does silently.
+// (`condiment`/`empMeal`/`unexplained` and `manualRefAmt`/`discCnt`/`promoCnt` WERE in that "no
+// chain" list originally — all six closed 2026-09-13. `discCnt`/`promoCnt` in particular had a
+// stale "no auto/emailed stream emits it" comment in metric-source.js that was simply wrong —
+// discount_qty/promo_qty were in the raw opsCashRows data the whole time, just never aliased.)
 const AUTO_FIRST_KEY_MAP = {
   oepe: 'oepe', kvst: 'kvst', r2p: 'r2p', parkPct: 'park', dtMixPct: 'dtMixPct',
   sales: 'sales', gc: 'gc',
@@ -449,6 +451,7 @@ const AUTO_FIRST_KEY_MAP = {
   tRedAPct: 'tRedAPct', tRedACnt: 'tRedACnt', tRedBPct: 'tRedBPct', tRedBCnt: 'tRedBCnt',
   fobPct: 'fobPct', compWaste: 'compWaste', rawWaste: 'rawWaste', statVar: 'statVar',
   condiment: 'condiment', empMeal: 'empMeal', unexplained: 'unexplained',
+  manualRefAmt: 'manualRefAmt', discCnt: 'discCnt', promoCnt: 'promoCnt',
 };
 // src/__tests__/dispatch-229-auto-first-metrics.test.js asserts every value above actually
 // resolves to a real METRIC_SOURCES key — this map silently no-opping (metricSeriesWithSource

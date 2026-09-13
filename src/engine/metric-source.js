@@ -293,6 +293,10 @@ export const METRIC_SOURCES = {
   // Discount $ — manual Controls (already a real field, parseCtrlData), then the auto-pulled
   // Operations Report cash-sheet (aliased above from discount_amt).
   discAmt:   { mode: 'any', srcs: [['opsCashRows', 'discAmt'], ['ctrlRows', 'discAmt']] },
+  // Discount COUNT — closed 2026-09-13: discount_qty was already on the opsCashRows row (same
+  // raw column discAmt's own $ figure sits beside), just never aliased to camelCase. 'any' since
+  // a real 0-discount day is legitimate, same as every other count chain here.
+  discCnt:   { mode: 'any', srcs: [['opsCashRows', 'discCnt'], ['ctrlRows', 'discCnt']] },
   // T-Red Before/After $ — opsCashRows only; ctrlRows carries the counts (tRedACnt/tRedBCnt) and
   // the pct but not a dollar amount for this specific upload, so no manual fallback exists yet.
   tRedAAmt:  { mode: 'any', srcs: [['opsCashRows', 'tRedAAmt']] },
@@ -348,10 +352,13 @@ export const METRIC_SOURCES = {
   // leads, then emailed Glimpse (kept as a fallback for any (loc, date) the ops-pull hasn't
   // reached yet), then manual Controls last. Closes the last remaining item from #165's audit
   // (promoAmt/promoPct measured 97-98% field match, same fix shape as #175's cashOS/posOver).
-  // (promoCnt deliberately NOT added: no auto/emailed stream emits it, so a chain would be
-  // single-source theatre.)
   promoAmt:       { mode: 'any', srcs: [['opsCashRows', 'promoAmt'], ['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
   promoPct:       { mode: 'any', srcs: [['opsCashRows', 'promoPct'], ['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
+  // Promo COUNT — this comment used to say "deliberately NOT added: no auto/emailed stream
+  // emits it, so a chain would be single-source theatre." That was WRONG, not stale-but-once-
+  // true: promo_qty was in qsr_cash_sheet.metrics the whole time, sitting right beside
+  // promo_amt above -- just never aliased to camelCase. Closed 2026-09-13, same fix as discCnt.
+  promoCnt:       { mode: 'any', srcs: [['opsCashRows', 'promoCnt'], ['ctrlRows', 'promoCnt']] },
 
   // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
   // #37; the counts beside them did not, so the same tile could show a fresh % next to a
