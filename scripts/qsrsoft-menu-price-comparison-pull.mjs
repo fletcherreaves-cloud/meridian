@@ -100,17 +100,34 @@ const HDRS = t => ({ 'X-Auth-Token': t, 'Accept': 'application/json', 'Origin': 
 
 async function fetchRows(reqUrl, token, evalPage) {
   if (evalPage) {
-    const res = await evalPage.evaluate(async ({ url, token }) => {
-      try {
-        const r = await fetch(url, { headers: { 'X-Auth-Token': token, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/product/menuPriceComparison' }, signal: AbortSignal.timeout(25000) });
-        if (!r.ok) return { error: `HTTP ${r.status}` };
-        const body = await r.json();
-        // This endpoint wraps rows in { resp: [...] }, unlike the reporting/v2 family's { result: [...] }.
-        return { rows: Array.isArray(body) ? body : (body?.resp || body?.result || []) };
-      } catch (e) { return { error: e.message }; }
-    }, { url: reqUrl, token });
-    if (res.error) throw new Error(res.error);
-    return res.rows || [];
+    // Retry a bare "Failed to fetch" up to 2 extra times (2026-09-13, #1249) -- measured live:
+    // the SAME browser session that threw this on attempt 1 had ALREADY made several successful
+    // requests to this exact URL moments earlier (the report page's own passive polling), and a
+    // manual re-run of the whole workflow minutes later succeeded outright. A generic fetch()
+    // TypeError carries no HTTP status and no diagnosable reason to page JS by design (CORS
+    // denial, DNS hiccup, and a transient network blip are indistinguishable to script), so
+    // this can't be narrowed further from here -- but it has been observed to be transient in
+    // this exact scenario, which a short retry is the correct, minimal response to. Genuine HTTP
+    // errors (401/403/500) are NOT retried here -- they return a real status and get handled
+    // by the AUTH_FAILED re-mint path in runAll(), same as before.
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const res = await evalPage.evaluate(async ({ url, token }) => {
+        try {
+          const r = await fetch(url, { headers: { 'X-Auth-Token': token, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/product/menuPriceComparison' }, signal: AbortSignal.timeout(25000) });
+          if (!r.ok) return { error: `HTTP ${r.status}` };
+          const body = await r.json();
+          // This endpoint wraps rows in { resp: [...] }, unlike the reporting/v2 family's { result: [...] }.
+          return { rows: Array.isArray(body) ? body : (body?.resp || body?.result || []) };
+        } catch (e) { return { error: e.message }; }
+      }, { url: reqUrl, token });
+      if (!res.error) return res.rows || [];
+      lastErr = res.error;
+      if (res.error !== 'Failed to fetch' || attempt === 2) break;
+      console.log(`[menu-price] fetch attempt ${attempt + 1} failed ("Failed to fetch") -- retrying in 3s…`);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    throw new Error(lastErr);
   }
   const resp = await fetch(reqUrl, { headers: HDRS(token) });
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
