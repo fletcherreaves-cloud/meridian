@@ -15,6 +15,7 @@ import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
+import { rankCommentOpportunities } from '../engine/csat-opportunities.js';
 import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { dueForReview, toAttentionItem } from '../engine/coaching-loop.js';
@@ -180,10 +181,16 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
       const mape = DEFAULT_MODEL_ASSIGNMENTS[unpad(loc)]?.weekly?.mape;
       return mape != null ? { loc, mape } : null;
     }).filter(Boolean);
+    // GH #317 — rankCommentOpportunities() (csat-opportunities.js) already ranks stores by
+    // real guest-comment detractor volume and already feeds the SMG VOICE panel's own
+    // Opportunities tab, but nothing fed it into this cross-domain feed — csatOpportunityAlerts
+    // below is a pure function over this already-computed result, matching every other
+    // detector's "already-computed inputs" convention.
+    const csatOpportunities = rankCommentOpportunities(ds?.smgRows || [], { storeName: nm });
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, erosionRows, storeName: nm, max, onFireVolume: recordFireVolume });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, erosionRows, csatOpportunities, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 

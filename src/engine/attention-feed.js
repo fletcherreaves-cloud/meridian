@@ -146,6 +146,36 @@ export function visitRisk(stores = [], storeName = String) {
   return out;
 }
 
+// CSAT comment opportunities (GH #317) — rankCommentOpportunities() (engine/csat-opportunities.js)
+// already ranks stores by real detractor volume with honesty guardrails baked in (absolute
+// detractor count first so a 1-of-1 store can't outrank a 30-of-120 one, a Wilson-lower-bound
+// confidence-adjusted rate, thin-sample flagging below MIN_N) — it was fully built and already
+// feeds the SMG VOICE panel's own Opportunities tab, but nothing fed its output into this
+// cross-domain feed, so a store's worst guest-comment trend never surfaced alongside FOB/sales/
+// speed issues in one place. `csat` = rankCommentOpportunities()'s own return shape
+// ({stores:[...], district:{...}}), not raw ds.smgRows — this stays a pure function over an
+// already-computed result, matching every other detector in this file. Thresholds here are a
+// judgment call, not a measured cut (unlike e.g. the swing alarm's -10%): minDetractors default
+// chosen conservatively so a 1-2-comment blip doesn't page the owner; crit reserved for a
+// non-thin sample with a genuinely high confidence-adjusted negative rate.
+export function csatOpportunityAlerts(csat, storeName = String, { minDetractors = 3, critRate = 0.3 } = {}) {
+  const stores = (csat && Array.isArray(csat.stores)) ? csat.stores : [];
+  const out = [];
+  for (const s of stores) {
+    if (!s || !s.loc || !(s.opportunity >= minDetractors)) continue;
+    const top = (s.topThemes || [])[0];
+    const rateTxt = `${Math.round((s.negRateAdj || 0) * 100)}% negative${s.thin ? ' (thin sample)' : ''}`;
+    out.push({
+      id: 'csat-' + s.loc, severity: (!s.thin && s.negRateAdj >= critRate) ? 'crit' : 'warn',
+      category: 'Guest Voice', icon: '💬',
+      title: `${storeName(s.loc)} — ${s.opportunity} unhappy guest comment${s.opportunity === 1 ? '' : 's'}`,
+      detail: top ? `Top issue: ${top.label} (${top.count}) · ${rateTxt}` : rateTxt,
+      dollars: 0, loc: s.loc, nav: 'smg-voice',
+    });
+  }
+  return out;
+}
+
 // Signal decay — saved correlations (watching/confirmed) whose stored history shows
 // the relationship weakening: latest |within_r| well below its historical peak.
 export function signalDecay(saved = [], { dropFrac = 0.35 } = {}) {
@@ -403,7 +433,7 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, transferRows, erosionRows, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, transferRows, erosionRows, csatOpportunities, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
@@ -414,6 +444,7 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
     salesBehindLY: salesBehindLY(salesLY || [], storeName),
     slowDT: slowDT(dtRows || [], storeName),
     visitRisk: visitRisk(visitStores || [], storeName),
+    csatOpportunityAlerts: csatOpportunityAlerts(csatOpportunities || null, storeName),
     signalDecay: signalDecay(savedCorrelations || []),
     countExceptions: countExceptions(countExceptionRows || [], storeName),
     integrityFlags: integrityFlags(integrityItems || [], storeName),
