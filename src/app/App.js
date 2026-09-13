@@ -297,7 +297,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1848,6 +1848,20 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
         }
       }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);} };
+      // Inventory Summary/Usage freshness probe ONLY — a single {date} row, not the full
+      // table (InventoryIntelligence fetches its own panel-local copy on demand, per-tab;
+      // see src/views/inventory.js). This exists purely so stream-freshness.js's STREAMS
+      // check can see the QSRSoft Inventory Summary pull the same way it already sees every
+      // other auto stream, closing a real, small, previously-documented gap (memory/backlog-
+      // open-2026-09-06.md's "not wired into stream-freshness.js's STREAMS" note, 2026-09-13).
+      const _stInventorySummaryFreshness = async () => {
+      try{
+        const qsrInventorySummaryRows=await loadQsrInventorySummaryFreshness();
+        if(qsrInventorySummaryRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,qsrInventorySummaryRows};});
+          console.log(`[Meridian] ✓ Inventory Summary freshness probe — latest ${qsrInventorySummaryRows[0].date}`);
+        }
+      }catch(e){console.warn('[Meridian] Inventory Summary freshness probe failed:',e);} };
       // Precomputed weekly forecast (dispatch22, Workstream A) — written daily by
       // scripts/forecast-week-precompute.mjs. at-a-glance.js's weekProjections reads this
       // and only falls back to live forecastDay() calls for a store when the cache is
@@ -2131,6 +2145,7 @@ function App() {
         _timedStage('T2 customSignals', _stCustomSignals, _t2Start),
         _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
         _timedStage('T2 ebosOpSupplies', _stEbosOpSupplies, _t2Start),
+        _timedStage('T2 inventorySummaryFreshness', _stInventorySummaryFreshness, _t2Start),
         _timedStage('T2 forecastWeekCache', _stForecastWeekCache, _t2Start),
         _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
         _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),
