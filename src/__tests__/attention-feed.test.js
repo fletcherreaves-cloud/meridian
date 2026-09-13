@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts, forecastCalibrationGap, transferOpportunities, duplicateWrinFlags, daypartErosionAlerts, csatOpportunityAlerts } from '../engine/attention-feed.js';
+import { rankCommentOpportunities } from '../engine/csat-opportunities.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -29,6 +30,78 @@ describe('opportunityAlerts — Opportunity $ cross-domain detector', () => {
     const big = opportunityAlerts([{ loc: '1', labor$: 6000, food$: 0, gc$: 0, total$: 6000 }], nm, { minTotal: 1500 });
     expect(small[0].severity).toBe('info');
     expect(big[0].severity).toBe('warn');
+  });
+});
+
+describe('csatOpportunityAlerts — GH #317, guest-comment detractors feed into Needs Attention', () => {
+  const csatResult = {
+    stores: [
+      // Real opportunity: 5 detractors, non-thin, high confidence-adjusted rate -> crit.
+      { loc: '1', opportunity: 5, negRateAdj: 0.45, thin: false, topThemes: [{ key: 'speed', label: 'Speed / Wait', count: 3 }] },
+      // Above minDetractors but below critRate -> warn.
+      { loc: '2', opportunity: 4, negRateAdj: 0.2, thin: false, topThemes: [] },
+      // Below minDetractors (default 3) -> not flagged at all, even with a scary rate.
+      { loc: '3', opportunity: 2, negRateAdj: 0.9, thin: false, topThemes: [] },
+      // High rate but thin sample -> never crit, even above critRate.
+      { loc: '4', opportunity: 3, negRateAdj: 0.8, thin: true, topThemes: [] },
+    ],
+    district: { total: 100, neg: 14, negRate: 0.14, themes: [] },
+  };
+
+  it('flags stores at/above minDetractors, naming the top theme when one exists', () => {
+    const out = csatOpportunityAlerts(csatResult, nm);
+    expect(out.map(o => o.loc).sort()).toEqual(['1', '2', '4']);
+    const one = out.find(o => o.loc === '1');
+    expect(one.detail).toContain('Speed / Wait');
+    expect(one.category).toBe('Guest Voice');
+    expect(one.nav).toBe('smg-voice');
+    expect(one.dollars).toBe(0);
+  });
+
+  it('never flags a store below minDetractors, even with a very high negative rate (honesty guardrail)', () => {
+    const out = csatOpportunityAlerts(csatResult, nm);
+    expect(out.some(o => o.loc === '3')).toBe(false);
+  });
+
+  it('crit requires BOTH a non-thin sample AND a rate at/above critRate', () => {
+    const out = csatOpportunityAlerts(csatResult, nm);
+    expect(out.find(o => o.loc === '1').severity).toBe('crit'); // non-thin, 45% >= 30%
+    expect(out.find(o => o.loc === '2').severity).toBe('warn'); // non-thin, 20% < 30%
+    expect(out.find(o => o.loc === '4').severity).toBe('warn'); // 80% >= 30% but thin -- never crit
+  });
+
+  it('degrades to an empty list rather than throwing on a missing/malformed csat result', () => {
+    expect(csatOpportunityAlerts(null, nm)).toEqual([]);
+    expect(csatOpportunityAlerts({}, nm)).toEqual([]);
+    expect(csatOpportunityAlerts({ stores: null }, nm)).toEqual([]);
+  });
+
+  it('wires through the REAL rankCommentOpportunities() output, not just a hand-built fixture', () => {
+    // 5 negative comments for store '1' (all "speed" themed), well above MIN_N and minDetractors.
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      loc: '1', satisfactionLabel: 'Dissatisfied', text: 'the wait was way too long, waited forever',
+    })).concat(Array.from({ length: 5 }, () => ({ loc: '1', satisfactionLabel: 'Satisfied', text: 'great!' })));
+    const real = rankCommentOpportunities(rows, { storeName: nm });
+    const out = csatOpportunityAlerts(real, nm);
+    expect(out).toHaveLength(1);
+    expect(out[0].loc).toBe('1');
+    expect(out[0].detail).toContain('Speed / Wait');
+  });
+});
+
+describe('buildAttentionFeed — csatOpportunityAlerts wiring', () => {
+  it('a real csatOpportunities result produces a feed item', () => {
+    const feed = buildAttentionFeed({
+      csatOpportunities: { stores: [{ loc: 'a', opportunity: 5, negRateAdj: 0.5, thin: false, topThemes: [] }] },
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === 'a' && i.category === 'Guest Voice')).toBe(true);
+  });
+
+  it('an omitted csatOpportunities changes nothing (existing callers keep working identically)', () => {
+    expect(() => buildAttentionFeed({ storeName: nm })).not.toThrow();
+    expect(buildAttentionFeed({ storeName: nm })).toEqual([]);
   });
 });
 
