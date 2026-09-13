@@ -2001,9 +2001,6 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   // ── Per-location stats ──
   const locStats = uM(()=>{
     if(!range||!ds) return [];
-    // v>0 avg: treats 0 as "field not parsed" for rate metrics (same shape forecast.js's
-    // now-removed avg6() used — see obs6()'s own comment there for the fuller history)
-    const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
     return activeLocs.map(loc=>{
       const tgt=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};
@@ -2019,10 +2016,6 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       const rangeDays = Math.max(1, Math.floor((range.e.getTime()-range.s.getTime())/86400000)+1);
       // Day count for display = calendar days in range
       const days       = rangeDays;
-      // Period-summary detection: significantly fewer ctrl rows than calendar days.
-      // Operations Report produces 1 aggregate row per store for the entire period.
-      // Robust detection that works even when lRows is empty (no daily Labor Analysis loaded).
-      const cIsSummary = cRows.length>0 && cRows.length < Math.max(3,Math.floor(rangeDays/4)) && rangeDays>3;
       // ── Rate/percentage metrics ─────────────────────────────────────────────
       // laborPct/tpph route through metric-source.js's auto-first per-day resolver
       // (2026-08-05) — both already had a registered ctrlRows→glimpseRows→laborRows/DAR
@@ -2043,12 +2036,13 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       const otHrs     = metricAvg(ds,loc,range,'otHrs');
       const actHrs    = metricAvg(ds,loc,range,'actHrs');
       // salaryMgrHrs is a registered metric (metric-source.js:232, mode:'pos',
-      // schedRows→ctrlRows) — migrated to match. crewHrs has NO metric-source.js entry
-      // anywhere (no auto source registered, opsLaborRows included) — left on the manual
-      // ctrlRows/laborRows read; adding a new registry entry is out of #324's scope, which
-      // only migrates metrics that already HAVE a registered source.
+      // schedRows→ctrlRows) — migrated to match. crewHrs was the one metric left on the raw
+      // manual read with no registry entry ("no auto source registered, opsLaborRows
+      // included" — true when #324 wrote that comment). Closed 2026-09-13: opsLaborRows
+      // already carries crewLaborHours (metric-source.js's own comment on the new chain),
+      // so crewHrs now migrates the same way otHrs/actVsNeed/avgRate already did above.
       const salMgrHrs = metricAvg(ds,loc,range,'salaryMgrHrs');
-      const crewHrs   = _avg(lRows,'crewHrs') || (cIsSummary?null:_avg(cRows,'crewHrs'));
+      const crewHrs   = metricAvg(ds,loc,range,'crewHrs');
       // OT cost: was hrs×0.5×rate estimated (otCostEst) because the real dollar figure was
       // unreliable — #324 measured it directly before deciding whether that's still true:
       // 1647/1647 (100%) of qsr_labor_summary rows over the trailing 60 days carry a real,
@@ -2079,10 +2073,10 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // metric above already resolves via metric-source.js's auto-first chains. Same
       // "auto chain exists, inclusion gate never checks it" bug class as #64 (Visit
       // Readiness). Include a store if EITHER the legacy manual rows exist OR any migrated
-      // metric actually resolved for it — crewHrs is the one metric with no auto chain
-      // (#324's own note above), so it alone resolving is not sufficient to include a
-      // store that has nothing else, but it's never the ONLY thing checked here either.
-      const hasAnyMetric = [laborPct,tpph,avgRate,actVsNeed,otHrs,actHrs,salMgrHrs,otCost]
+      // metric actually resolved for it — crewHrs joined the rest of this list 2026-09-13
+      // once it got its own auto chain (metric-source.js); every metric checked here now has
+      // one.
+      const hasAnyMetric = [laborPct,tpph,avgRate,actVsNeed,otHrs,actHrs,salMgrHrs,otCost,crewHrs]
         .some(v=>v!=null) || totalSales>0;
       if(!lRows.length&&!cRows.length&&!hasAnyMetric) return null;
       return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,

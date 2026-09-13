@@ -256,6 +256,26 @@ export const METRIC_SOURCES = {
   // it just had no chain yet (#270 phase 1, closing it alongside otHrs for SAGE's labor
   // summary rather than leaving one of the two OT columns manual-only).
   otDollar:  { mode: 'any', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
+  // Crew Hours — was the one metric in labor-tools.js explicitly flagged as having "NO
+  // metric-source.js entry anywhere (no auto source registered, opsLaborRows included)"
+  // (dispatch #324's own comment there, at the time correct: no chain existed). Closed
+  // 2026-09-13 -- opsLaborRows already carries the real crew_labor_hours figure: scripts/
+  // qsrsoft-ops-pull.mjs's COLS_LABOR_SUM pulls it from QSRSoft's labor-summary endpoint
+  // into the qsr_labor_summary metrics JSONB (snake_cased there, NOT the camelCase
+  // 'crewLaborHours' the pull script's own column-name constant uses -- measured live
+  // 2026-09-13 before trusting the constant's spelling, per "measure it, don't reason about
+  // it": the JSONB key is genuinely `crew_labor_hours`). loadOpsLaborSummary now aliases it
+  // to camelCase `crewHrs`, matching how every sibling chain off this same loader
+  // (otHrs/otDollar/laborDollar) already reads a camelCase field, never a raw DB column name.
+  // Same compType:'calendar' endpoint as otHrs/otDollar just above, independently validated
+  // against raw punch times (0.000 mean abs diff, see the laborPct comment above /
+  // memory/finding-comptype-calendar-labor-summary-2026-08-27.md) -- not a new, unvetted source.
+  // NOTE: laborRows is deliberately absent from this chain -- its parser (src/parsers/index.js)
+  // never actually emits a field named crewHrs (confirmed against EMITS.laborRows, generated
+  // from real loader output by scripts/gen-loader-emits.mjs); the pre-fix manual read
+  // (labor-tools.js's old `_avg(lRows,'crewHrs')`) was silently always null for that leg, not a
+  // real source this chain is dropping.
+  crewHrs:   { mode: 'pos', srcs: [['opsLaborRows', 'crewHrs'], ['ctrlRows', 'crewHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
   //
   // ── Numerator/denominator legs for the net-sales-weighted % metrics below (dispatch #77's
