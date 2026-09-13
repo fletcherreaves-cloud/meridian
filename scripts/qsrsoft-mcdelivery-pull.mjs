@@ -172,6 +172,21 @@ async function fetchViaPlaywright(period) {
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !token) { token = t; if (DEBUG) console.log('[auth] token captured from', req.url().replace(/\?.*/, '')); }
   });
+  // Diagnostic for the "Failed to fetch" incident (2026-09-11 onward, #1231): a bare
+  // page.evaluate() fetch() rejection only ever surfaces a generic TypeError to script --
+  // by design, browsers never expose the real reason (CORS denial, DNS failure, a blocked
+  // request) to page JS, to avoid leaking network topology to a potentially hostile page.
+  // Playwright's own request/response lifecycle events see the REAL net:: error Chromium
+  // logged internally, which page.evaluate() cannot. Always-on (not DEBUG-gated) since it's
+  // cheap and this is exactly the failure this run keeps hitting.
+  page.on('requestfailed', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    console.log('[net] requestfailed:', req.url().replace(/\?.*/, ''), '--', req.failure()?.errorText || '(no errorText)');
+  });
+  page.on('response', res => {
+    if (!res.url().includes('api.reports.myqsrsoft.com')) return;
+    if (DEBUG) console.log('[net] response:', res.status(), res.url().replace(/\?.*/, ''));
+  });
 
   try {
     console.log('[auth] navigating to v3.myqsrsoft.com…');
