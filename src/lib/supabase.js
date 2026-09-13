@@ -3064,7 +3064,12 @@ export const loadOpsCashSheet = async (d = 45) => {
 // calendar-day-vs-business-day-boundary hypothesis in metric-source.js's laborPct comment.
 export const loadOpsLaborSummary = async (d = 45) => {
   const rows = await _loadOpsTable('qsr_labor_summary', d);
-  return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0, laborDollar: Number(r.crew_labor_dollars) || 0 }));
+  // crewHrs (2026-09-13): the raw crew_labor_hours field was already on the row via the ...r
+  // spread above (same value ctrlRows/laborRows' own 'crewHrs' already carries manually), just
+  // never given a camelCase alias — every OTHER metric-source.js chain off this loader
+  // (otHrs/otDollar/laborDollar) reads a camelCase field, not a raw snake_case DB column, so
+  // this matches that convention rather than introducing a one-off exception.
+  return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0, laborDollar: Number(r.crew_labor_dollars) || 0, crewHrs: r.crew_labor_hours != null ? Number(r.crew_labor_hours) : null }));
 };
 // Service stats → derive the composed metrics the AAG/One-Pager read (the raw fields are already flat
 // on the row via _loadOpsTable). This is the cloud-fresh source that fills KVS (the DAR carries MFY
