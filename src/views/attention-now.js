@@ -127,6 +127,30 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // a duplicate row for the same store at two severities).
     const salesLY = mergeWorstSalesLY(salesLYWindow, salesLYRolling);
 
+    // GH #316 — guest counts get the same auto-first/matched-day/worst-of-two-windows
+    // treatment as sales above (mirrors salesLYWindow/salesLYRolling exactly, kind:'gc').
+    const gcLYWindow = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange, 'gc'); return { loc, cur: m.cur, ly: m.ly }; })
+      .filter(r => r.ly > 0);
+    const gcLYRolling = allLocs.map(loc => {
+      const m = matchedVsLY(ds, [loc], rollingRange, 'gc');
+      return { loc, cur: m.cur, ly: m.ly, days: m.days };
+    }).filter(r => r.ly > 0 && r.days >= 14);
+    const gcLY = mergeWorstSalesLY(gcLYWindow, gcLYRolling);
+
+    // GH #316 — traffic/sales divergence (the McValue signature) needs BOTH legs over the
+    // SAME window so the two percentages are comparable; mergeWorstSalesLY above can pick a
+    // different window per side for the single-metric detectors, which would misalign this
+    // check. Built from the same rolling 28-day matched-day sums already computed for
+    // salesLYRolling/gcLYRolling, joined by loc — a store missing a reliable window on either
+    // side (filtered out above) simply has no divergence row, same null-safe pattern as dtRows.
+    const salesRollByLoc = new Map(salesLYRolling.map(r => [r.loc, r]));
+    const gcRollByLoc = new Map(gcLYRolling.map(r => [r.loc, r]));
+    const trafficRows = allLocs.map(loc => {
+      const s = salesRollByLoc.get(loc), g = gcRollByLoc.get(loc);
+      if (!s || !g) return null;
+      return { loc, curSales: s.cur, lySales: s.ly, curGc: g.cur, lyGc: g.ly };
+    }).filter(Boolean);
+
     // Drive-thru speed vs each store's own OEPE target. The slowDT detector has been
     // implemented and tested since the engine was written but was never fed inputs, so
     // it silently contributed nothing. Sourced through metricRate (auto-first per day,
@@ -190,7 +214,7 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, erosionRows, csatOpportunities, storeName: nm, max, onFireVolume: recordFireVolume });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, erosionRows, csatOpportunities, gcLY, trafficRows, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 

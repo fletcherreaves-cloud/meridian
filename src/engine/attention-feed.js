@@ -176,6 +176,74 @@ export function csatOpportunityAlerts(csat, storeName = String, { minDetractors 
   return out;
 }
 
+// Guest-count vs LY (GH #316) — sales is covered by salesBehindLY above; guest counts, the
+// metric the whole McValue traffic story is about, had zero detector despite the inputs
+// already being pulled (qsr_daily_activity's proj_total_transactions, reachable via vs-ly.js's
+// matchedVsLY(ds, [loc], range, 'gc')). Mirrors salesBehindLY's shape exactly. `dollars` stays
+// 0 — a guest-count gap alone has no honest $ value without an assumed average check, and
+// finding-rules.js's convention is 0 over a guess; trafficDivergenceAlerts below is where a
+// defensible $ figure exists (it has both legs, sales AND guests, to compute one).
+// `rows` = [{loc, cur, ly}] in GUEST COUNTS, matched-day / auto-first — never raw ds rows.
+export function gcBehindLY(rows = [], storeName = String, { minGap = 20 } = {}) {
+  const out = [];
+  for (const r of (rows || [])) {
+    if (r && r.ly > 0 && r.cur != null) {
+      const gap = r.cur - r.ly;
+      if (gap < -minGap) out.push({
+        id: 'gc-' + r.loc, severity: gap < -r.ly * 0.05 ? 'warn' : 'info',
+        category: 'Traffic', icon: '🚶',
+        title: `${storeName(r.loc)} — guest counts down`,
+        detail: `${Math.round(Math.abs(gap)).toLocaleString()} fewer guests vs LY (${((gap / r.ly) * 100).toFixed(2)}%)`,
+        dollars: 0, loc: r.loc, nav: 'analytics',
+      });
+    }
+  }
+  return out;
+}
+
+// Traffic/sales divergence — the McValue 2.0 signature (GH #316): sales holding or rising
+// while guest counts fall (fewer, bigger transactions masking a real traffic problem a
+// sales-only detector cannot see — issue #316's own point: "a store holding sales on fewer,
+// larger transactions looks fine on a sales detector and is not fine"), or the reverse (more
+// guests, falling sales — an average-check/mix problem). `rows` = [{loc, curSales, lySales,
+// curGc, lyGc}], both legs matched-day sums over the SAME window (attention-now.js builds this
+// from two matchedVsLY calls — 'sales' then 'gc' — against one shared rolling range, so the two
+// percentages are directly comparable; mergeWorstSalesLY's per-metric worst-of-two-windows
+// picks could otherwise land each side on a different window). Only the sales-holds/GC-falls
+// direction gets an honest $ figure: lost guests x the store's OWN current average check
+// (curSales/curGc — both already matched-day quantities in `rows`, no external assumption).
+// The reverse direction is flagged for visibility with dollars:0, since dollarizing an
+// average-check/mix shift is a real guess — finding-rules.js's convention is 0 over a guess.
+export function trafficDivergenceAlerts(rows = [], storeName = String, { gcDropPct = 0.03, salesHoldPct = 0.01, critGcDropPct = 0.06 } = {}) {
+  const out = [];
+  for (const r of (rows || [])) {
+    if (!r || !(r.lySales > 0) || !(r.lyGc > 0) || r.curGc == null || r.curSales == null) continue;
+    const salesPct = (r.curSales - r.lySales) / r.lySales;
+    const gcPct = (r.curGc - r.lyGc) / r.lyGc;
+    if (salesPct >= -salesHoldPct && gcPct <= -gcDropPct) {
+      const lostGuests = r.lyGc - r.curGc;
+      const avgCheck = r.curGc > 0 ? r.curSales / r.curGc : 0;
+      const dollars = lostGuests * avgCheck;
+      out.push({
+        id: 'trafficdiv-' + r.loc, severity: gcPct <= -critGcDropPct ? 'crit' : 'warn',
+        category: 'Traffic', icon: '🔀',
+        title: `${storeName(r.loc)} — sales holding, traffic falling`,
+        detail: `GC ${(gcPct * 100).toFixed(1)}% vs LY while sales ${salesPct >= 0 ? '+' : ''}${(salesPct * 100).toFixed(1)}% — ~${Math.round(lostGuests).toLocaleString()} fewer guests, ~${money(dollars)} at current avg check`,
+        dollars, loc: r.loc, nav: 'analytics',
+      });
+    } else if (gcPct >= gcDropPct && salesPct <= -salesHoldPct) {
+      out.push({
+        id: 'trafficdiv-' + r.loc, severity: 'info',
+        category: 'Traffic', icon: '🔀',
+        title: `${storeName(r.loc)} — traffic up, sales down`,
+        detail: `GC +${(gcPct * 100).toFixed(1)}% vs LY while sales ${(salesPct * 100).toFixed(1)}% — average-check / mix pressure`,
+        dollars: 0, loc: r.loc, nav: 'analytics',
+      });
+    }
+  }
+  return out;
+}
+
 // Signal decay — saved correlations (watching/confirmed) whose stored history shows
 // the relationship weakening: latest |within_r| well below its historical peak.
 export function signalDecay(saved = [], { dropFrac = 0.35 } = {}) {
@@ -433,7 +501,7 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, transferRows, erosionRows, csatOpportunities, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, mapeRows, transferRows, erosionRows, csatOpportunities, gcLY, trafficRows, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
@@ -442,6 +510,8 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
     transferOpportunities: transferOpportunities(transferRows || [], storeName),
     daypartErosionAlerts: daypartErosionAlerts(erosionRows || [], storeName),
     salesBehindLY: salesBehindLY(salesLY || [], storeName),
+    gcBehindLY: gcBehindLY(gcLY || [], storeName),
+    trafficDivergenceAlerts: trafficDivergenceAlerts(trafficRows || [], storeName),
     slowDT: slowDT(dtRows || [], storeName),
     visitRisk: visitRisk(visitStores || [], storeName),
     csatOpportunityAlerts: csatOpportunityAlerts(csatOpportunities || null, storeName),
