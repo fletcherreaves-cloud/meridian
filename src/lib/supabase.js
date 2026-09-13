@@ -4186,6 +4186,24 @@ export async function loadQsrInventorySummary({ period } = {}) {
   }));
 }
 
+// Lightweight freshness probe for stream-freshness.js's STREAMS check — deliberately NOT
+// the full loadQsrInventorySummary() above. That loader has no day-window param (rows are
+// period/month-keyed, not daily-dated, so there's no "last 60 days" to ask for the way every
+// other STREAMS source supports) and a full unwindowed select() is ~10.5k rows growing every
+// month — real cost for a check that only needs "when did this last sync." Measured live
+// 2026-09-13 (service-role read): every row from the same daily pull run shares one
+// updated_at timestamp (a whole-batch upsert, not per-row noise), and the newest one moves
+// day to day with the pull — a real, working freshness signal, not a value frozen at first
+// insert. One row, one column; the cost this avoids is the same class CLAUDE.md's "Speed
+// check" rule and this file's own dropped-Peaks-load precedent (App.js) already guard against.
+export async function loadQsrInventorySummaryFreshness() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('qsr_inventory_summary')
+    .select('updated_at').order('updated_at', { ascending: false }).limit(1);
+  if (error || !data?.length || !data[0].updated_at) return [];
+  return [{ date: data[0].updated_at }];
+}
+
 // ── Per-store EOM status (dashboard + notification + comms verification) ───────
 export async function saveEomCountStatus(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

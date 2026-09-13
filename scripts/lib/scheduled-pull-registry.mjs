@@ -31,4 +31,12 @@ export const PULL_REGISTRY = {
   opsSalesMix: { table: 'qsr_sales_mix',             dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
   lifelenz:    { table: 'lifelenz_schedule',         dateCol: 'date', workflowFile: 'lifelenz-pull.yml', clampToToday: true },
   lifelenzAttendance: { table: 'lifelenz_attendance_summary', dateCol: 'period_end', workflowFile: 'lifelenz-attendance-pull.yml' },
+  // dateCol is updated_at (a timestamptz), not a DATE column -- qsr_inventory_summary's rows
+  // are period(month)-keyed, not daily-dated (see stream-freshness.js's own comment on this
+  // key), so the app-side freshness probe and this watchdog entry both read the same "when
+  // did this table last get written" signal instead of a business date that doesn't exist
+  // per-row. Measured live 2026-09-13: the whole daily batch shares one updated_at value and
+  // it moves forward with each day's pull, so `order by updated_at desc limit 1` works
+  // identically to every dateCol entry above.
+  inventorySummary: { table: 'qsr_inventory_summary', dateCol: 'updated_at', workflowFile: 'qsrsoft-inventory-summary-pull.yml' },
 };

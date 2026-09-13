@@ -110,3 +110,34 @@ describe('#171 verification bar — case 2: real sales_ledger_daily gap, Aug 12-
     expect(worstStream(ds, day(16))).toBeNull();
   });
 });
+
+describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a documented gap)', () => {
+  it('is present in STREAMS, checked the same as every other auto stream', () => {
+    const s = STREAMS.find(x => x.key === 'inventorySummary');
+    expect(s).toBeTruthy();
+    expect(s.dsField).toBe('qsrInventorySummaryRows');
+    expect(s.cadenceDays).toBe(1);
+  });
+
+  it('names Inventory Summary specifically when its lightweight freshness probe is stale while siblings are current', () => {
+    const ds = freshDs(day(16));
+    ds.qsrInventorySummaryRows = rowsAt(day(10)); // the pull went silent 6 days
+    const w = worstStream(ds, day(16));
+    expect(w).toBeTruthy();
+    expect(w.key).toBe('inventorySummary');
+    expect(w.label).toBe('Inventory Summary/Usage');
+    expect(w.staleDays).toBe(6);
+  });
+
+  it('a probe field never populated in ds (App.js load failed/still pending) is skipped, not reported as an incident -- same "not loaded" contract as every other stream', () => {
+    const res = streamFreshness({}, day(16));
+    expect(res.find(r => r.key === 'inventorySummary')).toBeUndefined();
+  });
+
+  it('an empty-but-loaded probe (loadQsrInventorySummaryFreshness resolved to []) reads as critically stale, not silently skipped -- same as any other stream with an array present but no usable date', () => {
+    const res = streamFreshness({ qsrInventorySummaryRows: [] }, day(16));
+    const s = res.find(r => r.key === 'inventorySummary');
+    expect(s.staleDays).toBe(Infinity);
+    expect(s.severity).toBe('crit');
+  });
+});

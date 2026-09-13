@@ -62,6 +62,14 @@ export const STREAMS = [
   // `date` field. See scripts/lifelenz-attendance-pull.mjs / supabase/schema-lifelenz-
   // attendance.sql (2026-09-06).
   { key: 'lifelenzAttendance', label: 'LifeLenz Attendance',    dsField: 'lifelenzAttendanceRows', cadenceDays: 1 },
+  // Closed 2026-09-13 -- previously a documented gap (memory/backlog-open-2026-09-06.md):
+  // QSRSoft Inventory Summary Pull runs daily and is already watched in
+  // sync-failure-watch.yml, but the table was fetched panel-locally by InventoryIntelligence
+  // only, never loaded into ds at startup like every other STREAMS entry. ds.qsrInventorySummaryRows
+  // is now populated by a dedicated lightweight freshness probe (App.js's
+  // _stInventorySummaryFreshness / supabase.js's loadQsrInventorySummaryFreshness) -- a single
+  // {date} row, not the full ~10.5k-row table, since this check only needs the newest sync time.
+  { key: 'inventorySummary', label: 'Inventory Summary/Usage',  dsField: 'qsrInventorySummaryRows', cadenceDays: 1 },
 ];
 
 const _toMs = d => {
