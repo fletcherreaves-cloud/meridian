@@ -19,11 +19,12 @@
 // scripts/measure-coaching-noise-threshold.mjs already measures (or will, once run), so a
 // real threshold slots into NOISE_THRESHOLDS with zero shape mismatch to what was measured.
 //
-// NOISE_THRESHOLDS starts EMPTY. #208's own explicit fallback: "If this measurement isn't
-// ready, ship the loop recording cycles WITHOUT verdicts rather than with wrong ones." No live
-// Supabase session in this sandbox to run measure-coaching-noise-threshold.mjs, so v1 ships
-// with computeVerdict() always returning null — a cycle log with no verdict, not a confident
-// wrong one — until a future session runs that script and fills in real, cited numbers here.
+// NOISE_THRESHOLDS started EMPTY at v1 ship — #208's own explicit fallback: "If this
+// measurement isn't ready, ship the loop recording cycles WITHOUT verdicts rather than with
+// wrong ones." Filled in 2026-09-13 with real, cited p90 thresholds from
+// scripts/measure-coaching-noise-threshold.mjs against live Supabase data (see the comment on
+// NOISE_THRESHOLDS itself below) — computeVerdict() now returns real improved/worse/no-change
+// verdicts for all 5 v1 metrics instead of always null.
 import { metricAvg } from './metric-source.js';
 import { lastClosedBusinessDay, addD, dKey } from '../utils/date.js';
 
@@ -51,11 +52,32 @@ export const COACHING_METRICS = {
   comp_waste_pct: { label: 'Comp Waste %', source: 'fob', fields: ['compWasteAmt'] },
 };
 
-// Real thresholds go here once measured (scripts/measure-coaching-noise-threshold.mjs),
-// each cited to the run that produced it — matching COVER_FRAC (#209, count-cycle.js) and the
-// swing alarm's -10%/676-store-weeks precedent (memory/feedback-measure-dont-reason.md).
-// Shape: { [metricKey]: thresholdInSameUnitAsGap } (pp for all 5 current metrics).
-export const NOISE_THRESHOLDS = {};
+// Measured 2026-09-13 via scripts/measure-coaching-noise-threshold.mjs (default window=30,
+// min-days=120) against live Supabase labor_rows/qsr_fob (service-role read, confirmed real —
+// content-range: 0-0/42156 on labor_rows before running the script). 30-day rolling-movement
+// distributions, 12268-23454 movements per metric across 26-27 stores. Bar picked at p90 —
+// "real change" means further from baseline than 90% of ordinary month-to-month drift, i.e.
+// roughly the same stringency as the OVERDUE_MULTIPLIER=2x cut visit-readiness.js already uses
+// to call an EcoSure/CFV visit "current" vs. stale (both draw the line closer to the tail than
+// the body of the distribution, not at the median). Values below are the printed pp figures
+// divided by 100 — NOISE_THRESHOLDS is on the same fraction (0-1) scale as
+// snapshotMetricValue()'s return, not the pp scale the script prints in.
+//   labor_pct:       p90 2.117pp  (n=12268, 26 stores)
+//   fob_total_pct:   p90 0.733pp  (n=23454, 27 stores)
+//   condiment_pct:   p90 0.243pp  (n=23454, 27 stores)
+//   raw_waste_pct:   p90 0.184pp  (n=23454, 27 stores)
+//   comp_waste_pct:  p90 0.064pp  (n=23454, 27 stores)
+// Matches COVER_FRAC (#209, count-cycle.js) and the swing alarm's -10%/676-store-weeks
+// precedent (memory/feedback-measure-dont-reason.md) for citing a measured bar inline rather
+// than picking one from feel. Re-measure and revise if a later run shows the distribution has
+// shifted (e.g. after a menu/price change materially alters ordinary FOB drift).
+export const NOISE_THRESHOLDS = {
+  labor_pct: 0.02117,
+  fob_total_pct: 0.00733,
+  condiment_pct: 0.00243,
+  raw_waste_pct: 0.00184,
+  comp_waste_pct: 0.00064,
+};
 
 const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
 
