@@ -431,6 +431,17 @@ export const METRIC_SOURCES = {
                derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   statVar:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'statVar']],
                derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
+  // The 3 remaining FOB sub-item %'s named as a follow-on by dispatch #229's own
+  // AUTO_FIRST_KEY_MAP comment ("have NO matching METRIC_SOURCES chain today") — closed
+  // 2026-09-13. Same pattern as their 3 siblings just above: the manual Excel's own
+  // precomputed % stays the first source, the qsr_fob $ leg (already live since dispatch
+  // #64, condimentsAmt/empMgrMealsAmt/unexplainedAmt above) is the auto/emailed fallback.
+  condiment:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'condiment']],
+                 derive: { inputs: ['condimentsAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
+  empMeal:     { mode: 'any', direction: 'lower', srcs: [['fobRows', 'empMeal']],
+                 derive: { inputs: ['empMgrMealsAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
+  unexplained: { mode: 'any', direction: 'lower', srcs: [['fobRows', 'unexplained']],
+                 derive: { inputs: ['unexplainedAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
 
   // ── Overall FOB % (dispatch #104) ───────────────────────────────────────────
   // "Food Over Base" — sum of the SIX controllable components ÷ sales, the same definition

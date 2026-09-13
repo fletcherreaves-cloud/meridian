@@ -28,6 +28,10 @@ const DIRECT_SWAP_KEYS = [
   'posOverCnt', 'posOverAmt', 'cashRefCnt', 'cashRefAmt', 'cashlessRefCnt', 'cashlessRefAmt',
   'tRedAPct', 'tRedACnt', 'tRedBPct', 'tRedBCnt',
   'fobPct', 'compWaste', 'rawWaste', 'statVar',
+  // Closed 2026-09-13 -- these 3 were originally on the dispatch's own "no chain today" list
+  // (see the AUTO_FIRST_KEY_MAP comment in signal-registry.js); metric-source.js now has the
+  // same srcs-then-derive-as-fallback chain for them as their compWaste/rawWaste/statVar siblings.
+  'condiment', 'empMeal', 'unexplained',
 ];
 
 describe('dispatch #229 — every direct-swap target exists as a real METRIC_SOURCES chain', () => {
@@ -100,5 +104,19 @@ describe('extractMetricValues — auto-first fallback (the motivating live bug, 
     const ds = { fobRows: [{ loc: GOOD, date: recent(1), baseFoodPct: 33.5 }] };
     const out = extractMetricValues('baseFoodPct', ds, 'daily', GOOD);
     expect(out).toEqual([{ loc: GOOD, date: expect.any(Date), value: 33.5 }]);
+  });
+
+  it('"Condiment %" (closed 2026-09-13) falls back to the qsr_fob $ leg once the manual FOB Excel upload goes stale', () => {
+    const ds = {
+      // Manual upload stopped 45 days ago.
+      fobRows: [{ loc: GOOD, date: recent(45), condiment: 3.2 }],
+      // Auto-pulled qsr_fob, fresh -- previously invisible to this metric key entirely.
+      qsrFobRows: [{ loc: GOOD, date: recent(2), condimentsAmt: 55, prodSalesAmt: 2000 }],
+    };
+    const out = extractMetricValues('condiment', ds, 'daily', GOOD);
+    const fresh = out.find(r => (Date.now() - new Date(r.date).getTime()) / 864e5 <= 4);
+    expect(fresh?.value).toBeCloseTo(55 / 2000, 5); // 2.75%, derived -- not the stale manual 3.2
+    const stale = out.find(r => (Date.now() - new Date(r.date).getTime()) / 864e5 > 40);
+    expect(stale?.value).toBe(3.2); // still auto-FIRST, not auto-only -- manual point survives
   });
 });
