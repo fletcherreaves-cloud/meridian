@@ -224,6 +224,21 @@ async function viaPlaywright(dates) {
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !token) token = t;
   });
+  // Diagnostic (2026-09-13, #1249) -- same as mcdelivery's: page.evaluate()'s fetch()
+  // rejection only ever exposes a generic TypeError to page JS, by design. Playwright's own
+  // lifecycle events see the real net:: error/response Chromium logged internally. Measured
+  // 2026-09-13: even with a bounded retry (fetchRows below), all 3 attempts failed identically
+  // on this endpoint specifically, right after the SAME page had already made several
+  // successful requests to this same URL moments earlier -- these events are what would
+  // surface the actual reason if/when this recurs.
+  page.on('requestfailed', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    console.log('[net] requestfailed:', req.url().replace(/\?.*/, ''), '--', req.failure()?.errorText || '(no errorText)');
+  });
+  page.on('response', res => {
+    if (!res.url().includes('api.reports.myqsrsoft.com')) return;
+    if (DEBUG) console.log('[net] response:', res.status(), res.url().replace(/\?.*/, ''));
+  });
   const snap = (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
   try {
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
