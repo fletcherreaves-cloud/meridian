@@ -32,6 +32,12 @@ const DIRECT_SWAP_KEYS = [
   // (see the AUTO_FIRST_KEY_MAP comment in signal-registry.js); metric-source.js now has the
   // same srcs-then-derive-as-fallback chain for them as their compWaste/rawWaste/statVar siblings.
   'condiment', 'empMeal', 'unexplained',
+  // Closed 2026-09-13 -- manualRefAmt already had a real chain (ctrlRows->auditRows), just
+  // never wired into this map. discCnt/promoCnt needed a NEW chain: discount_qty/promo_qty
+  // were already on the opsCashRows row (same raw data discAmt/promoAmt already read), just
+  // never aliased to camelCase -- metric-source.js's own comment on promoCnt used to claim
+  // "no auto/emailed stream emits it," which was simply wrong, not stale-but-once-true.
+  'manualRefAmt', 'discCnt', 'promoCnt',
 ];
 
 describe('dispatch #229 — every direct-swap target exists as a real METRIC_SOURCES chain', () => {
@@ -118,5 +124,34 @@ describe('extractMetricValues — auto-first fallback (the motivating live bug, 
     expect(fresh?.value).toBeCloseTo(55 / 2000, 5); // 2.75%, derived -- not the stale manual 3.2
     const stale = out.find(r => (Date.now() - new Date(r.date).getTime()) / 864e5 > 40);
     expect(stale?.value).toBe(3.2); // still auto-FIRST, not auto-only -- manual point survives
+  });
+
+  it('"Discount (count)" (closed 2026-09-13) now surfaces the auto opsCashRows figure, not just manual Controls', () => {
+    const ds = {
+      // Manual Controls upload stopped 20 days ago.
+      ctrlRows: [{ loc: GOOD, date: recent(20), discCnt: 40 }],
+      // Auto-pulled Operations Report cash-sheet, fresh -- discCnt had no chain at all
+      // before this dispatch, so this data was invisible to signal-registry.js entirely.
+      opsCashRows: [{ loc: GOOD, date: recent(1), discCnt: 85 }],
+    };
+    const out = extractMetricValues('discCnt', ds, 'daily', GOOD);
+    const fresh = out.find(r => (Date.now() - new Date(r.date).getTime()) / 864e5 <= 4);
+    expect(fresh?.value).toBe(85);
+    const stale = out.find(r => (Date.now() - new Date(r.date).getTime()) / 864e5 > 15);
+    expect(stale?.value).toBe(40); // still auto-FIRST, not auto-only
+  });
+
+  it('"Promo (count)" (closed 2026-09-13) resolves via opsCashRows -- the pre-fix comment claiming no auto source exists was wrong', () => {
+    const ds = { opsCashRows: [{ loc: GOOD, date: recent(1), promoCnt: 63 }] };
+    const out = extractMetricValues('promoCnt', ds, 'daily', GOOD);
+    expect(out.find(r => r.loc === GOOD)?.value).toBe(63);
+  });
+
+  it('"Manual Refund ($)" (closed 2026-09-13) already had a real chain -- it just needed the AUTO_FIRST_KEY_MAP entry', () => {
+    const ds = {
+      auditRows: [{ loc: GOOD, date: recent(1), manualRefAmt: 12.5 }],
+    };
+    const out = extractMetricValues('manualRefAmt', ds, 'daily', GOOD);
+    expect(out.find(r => r.loc === GOOD)?.value).toBe(12.5);
   });
 });

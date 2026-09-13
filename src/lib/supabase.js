@@ -3051,6 +3051,13 @@ export const loadOpsCashSheet = async (d = 45) => {
     // pattern as discPct/cashOSPct/tRedAPct/tRedBPct above.
     promoAmt: r.promo_amt != null ? Number(r.promo_amt) : null,
     promoPct: (r.net_sales_amt > 0 && r.promo_amt != null) ? r.promo_amt / r.net_sales_amt : null,
+    // Discount + Promo COUNTS (2026-09-13) — discount_qty/promo_qty were already on the row
+    // via the ...r spread (same raw columns discAmt/promoAmt above already alias), just never
+    // given a camelCase name of their own, same gap posOverAmt/posOverCnt closed for their pair
+    // (dispatch #175) — 'any' since a real 0-count day is legitimate, matching every count
+    // field above.
+    discCnt:  r.discount_qty != null ? Number(r.discount_qty) : null,
+    promoCnt: r.promo_qty != null ? Number(r.promo_qty) : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
