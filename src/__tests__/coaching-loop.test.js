@@ -1,9 +1,10 @@
 // @ts-nocheck
-// #208 — coaching feedback loop v1. Guards the five rules from
+// #208 — coaching feedback loop. Guards the five rules from
 // memory/project-coaching-feedback-loop.md: auto-captured baseline (never typed), a measured
-// verdict that stays null without a real threshold (the explicit v1 fallback — "ship cycle
-// recording without verdicts rather than with wrong ones"), and the dollar-weighted FOB
-// convention (never a mean of daily ratios).
+// verdict (real p90-derived thresholds as of 2026-09-13 — see
+// memory/finding-coaching-noise-thresholds-2026-09-13.md — previously null in v1 per the
+// explicit fallback "ship cycle recording without verdicts rather than with wrong ones"), and
+// the dollar-weighted FOB convention (never a mean of daily ratios).
 import { describe, it, expect } from 'vitest';
 import {
   COACHING_METRICS, NOISE_THRESHOLDS, SNAPSHOT_WINDOW_DAYS, REVIEW_WINDOW_DAYS,
@@ -100,41 +101,60 @@ describe('dueForReview', () => {
   });
 });
 
-describe('computeVerdict — the v1 fallback: null without a measured threshold', () => {
-  it('returns null when NOISE_THRESHOLDS has no entry for this metric (the actual v1 state)', () => {
-    expect(NOISE_THRESHOLDS.labor_pct).toBeUndefined(); // confirms v1 ships empty, per #208's own fallback
-    expect(computeVerdict(0.24, 0.20, 'labor_pct')).toBeNull();
-  });
-
-  it('classifies improved/worse/no-change once a threshold IS registered (future-state check)', () => {
-    const saved = NOISE_THRESHOLDS.labor_pct;
-    NOISE_THRESHOLDS.labor_pct = 0.01; // 1pp, hypothetical for this test only
-    try {
-      expect(computeVerdict(0.24, 0.22, 'labor_pct')).toBe('improved'); // -2pp, past threshold
-      expect(computeVerdict(0.24, 0.26, 'labor_pct')).toBe('worse');    // +2pp, past threshold
-      expect(computeVerdict(0.24, 0.245, 'labor_pct')).toBe('no change'); // +0.5pp, within noise
-    } finally {
-      if (saved === undefined) delete NOISE_THRESHOLDS.labor_pct; else NOISE_THRESHOLDS.labor_pct = saved;
+describe('computeVerdict — real, measured p90 thresholds (2026-09-13, see NOISE_THRESHOLDS comment)', () => {
+  it('all 5 v1 metrics now carry a real, positive threshold — no longer the empty v1 fallback', () => {
+    for (const key of Object.keys(COACHING_METRICS)) {
+      expect(NOISE_THRESHOLDS[key]).toBeGreaterThan(0);
     }
   });
 
+  it('labor_pct: classifies improved/worse/no-change against its real p90 (2.117pp = 0.02117)', () => {
+    expect(computeVerdict(0.24, 0.20, 'labor_pct')).toBe('improved');   // -4pp, past p90
+    expect(computeVerdict(0.24, 0.28, 'labor_pct')).toBe('worse');      // +4pp, past p90
+    expect(computeVerdict(0.24, 0.245, 'labor_pct')).toBe('no change'); // +0.5pp, within ordinary drift
+    // just past the p90 boundary (0.02117) in each direction
+    expect(computeVerdict(0.24, 0.2185, 'labor_pct')).toBe('improved'); // -2.15pp
+    expect(computeVerdict(0.24, 0.2615, 'labor_pct')).toBe('worse');    // +2.15pp
+  });
+
+  it('comp_waste_pct: the tightest threshold (p90 0.064pp = 0.00064) still distinguishes real movement from noise', () => {
+    expect(computeVerdict(0.01, 0.005, 'comp_waste_pct')).toBe('improved'); // -0.5pp, way past 0.064pp
+    expect(computeVerdict(0.01, 0.0102, 'comp_waste_pct')).toBe('no change'); // +0.02pp, within noise
+  });
+
+  it('fob_total_pct / condiment_pct / raw_waste_pct all carry their own distinct measured p90 (not a shared default)', () => {
+    expect(NOISE_THRESHOLDS.fob_total_pct).toBeCloseTo(0.00733, 5);
+    expect(NOISE_THRESHOLDS.condiment_pct).toBeCloseTo(0.00243, 5);
+    expect(NOISE_THRESHOLDS.raw_waste_pct).toBeCloseTo(0.00184, 5);
+  });
+
   it('returns null when baseline or result is missing, never guesses', () => {
-    NOISE_THRESHOLDS.labor_pct = 0.01;
-    try {
-      expect(computeVerdict(null, 0.22, 'labor_pct')).toBeNull();
-      expect(computeVerdict(0.24, null, 'labor_pct')).toBeNull();
-    } finally { delete NOISE_THRESHOLDS.labor_pct; }
+    expect(computeVerdict(null, 0.22, 'labor_pct')).toBeNull();
+    expect(computeVerdict(0.24, null, 'labor_pct')).toBeNull();
+  });
+
+  it('returns null for a metric with no registered threshold (defensive — not currently reachable via COACHING_METRICS)', () => {
+    expect(computeVerdict(0.24, 0.20, 'not_a_real_metric')).toBeNull();
   });
 });
 
 describe('recordCoachingResult', () => {
-  it('captures result via the same auto-capture path and leaves verdict null in v1', () => {
+  it('captures result via the same auto-capture path and now computes a real verdict', () => {
     const qsrFobRows = [{ loc: '10422', date: '2026-08-10', prodSalesAmt: 1000, condimentsAmt: 15 }];
     const cycle = { loc: '10422', metric: 'condiment_pct', baseline: 0.02, coachedAt: '2026-07-11', reviewAt: '2026-08-10', result: null, verdict: null };
     const updated = recordCoachingResult({ qsrFobRows }, cycle, ASOF);
     expect(updated.result).toBeCloseTo(0.015, 5);
-    expect(updated.verdict).toBeNull();
+    // delta = 0.015 - 0.02 = -0.5pp, past condiment_pct's measured p90 (0.243pp) -> improved
+    expect(updated.verdict).toBe('improved');
     expect(cycle.result).toBeNull(); // input not mutated
+  });
+
+  it('leaves verdict null when the movement is within ordinary noise', () => {
+    const qsrFobRows = [{ loc: '10422', date: '2026-08-10', prodSalesAmt: 1000, condimentsAmt: 20.5 }];
+    const cycle = { loc: '10422', metric: 'condiment_pct', baseline: 0.02, coachedAt: '2026-07-11', reviewAt: '2026-08-10', result: null, verdict: null };
+    const updated = recordCoachingResult({ qsrFobRows }, cycle, ASOF);
+    // delta = 0.0205 - 0.02 = +0.05pp, well within condiment_pct's 0.243pp p90 -> no change, not null
+    expect(updated.verdict).toBe('no change');
   });
 });
 
