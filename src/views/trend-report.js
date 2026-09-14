@@ -10,9 +10,11 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { escapeHtml } from '../utils/fmt.js';
+import { loadQsrActSummary } from '../lib/supabase.js';
 import {
   TREND_REPORT_METRICS, findTrendMetric, fmtTrendValue, trendReportPeriods,
   computeTrendReport, rankFilterRows, RANK_MODES, scopeSummaryPeriods, computeScopeSummary,
+  scopeSummaryFetchDaysBack,
 } from '../engine/trend-report.js';
 
 const h = React.createElement;
@@ -186,11 +188,25 @@ function printSummary(scopeTables) {
 }
 
 export function TrendReportPanel({ ds, onClose }) {
-  const { useState, useMemo } = React;
+  const { useState, useMemo, useEffect } = React;
   const [viewMode, setViewMode] = useState('detail'); // 'detail' | 'summary'
   const [metricKey, setMetricKey] = useState('laborPct');
   const [scopeValue, setScopeValue] = useState({ level: 'all', id: null });
   const [rankMode, setRankMode] = useState('all');
+  // Real per-day {loc,date,sales,gc} rows for Email Summary's Sales/GC comps -- fetched fresh
+  // on first entering that mode, NOT read from `ds` (whose default load is only 60 days back,
+  // nowhere near the ~1 year of history a real calendar-YoY comp needs). null = not fetched yet.
+  const [actRows, setActRows] = useState(null);
+  const [actLoading, setActLoading] = useState(false);
+
+  useEffect(() => {
+    if (viewMode !== 'summary' || actRows != null || actLoading) return;
+    setActLoading(true);
+    loadQsrActSummary(scopeSummaryFetchDaysBack())
+      .then(rows => setActRows(rows || []))
+      .catch(() => setActRows([]))
+      .finally(() => setActLoading(false));
+  }, [viewMode, actRows, actLoading]);
 
   const metric = findTrendMetric(metricKey) || TREND_REPORT_METRICS[0];
 
@@ -211,10 +227,10 @@ export function TrendReportPanel({ ds, onClose }) {
   const flLocs = useMemo(() => allLocs.filter(l => (INV_ORG_COORDS[l] || {}).state === 'FL'), [allLocs]);
   const summaryPeriods = useMemo(() => scopeSummaryPeriods(), []);
   const scopeTables = useMemo(() => ([
-    { title: 'Combined (OK/FL)', rows: computeScopeSummary(ds, allLocs, summaryPeriods) },
-    { title: 'Oklahoma', rows: computeScopeSummary(ds, okLocs, summaryPeriods) },
-    { title: 'Florida', rows: computeScopeSummary(ds, flLocs, summaryPeriods) },
-  ]), [ds, allLocs, okLocs, flLocs, summaryPeriods]);
+    { title: 'Combined (OK/FL)', rows: computeScopeSummary(ds, actRows || [], allLocs, summaryPeriods) },
+    { title: 'Oklahoma', rows: computeScopeSummary(ds, actRows || [], okLocs, summaryPeriods) },
+    { title: 'Florida', rows: computeScopeSummary(ds, actRows || [], flLocs, summaryPeriods) },
+  ]), [ds, actRows, allLocs, okLocs, flLocs, summaryPeriods]);
 
   return h(RoutePanelShell, {
     icon: '📈',
@@ -240,12 +256,16 @@ export function TrendReportPanel({ ds, onClose }) {
     ),
   },
     viewMode === 'summary'
-      ? div({ style: { display: 'flex', flexDirection: 'column', gap: 16, padding: 16 } },
-        ...scopeTables.map(t => h(ScopeSummaryTable, { key: t.title, ...t })),
-        div({ style: { fontSize: 10, color: 'var(--text3)', padding: '4px 4px 0' } },
-          'Sales and GC are matched-day vs-LY comps (engine/vs-ly.js — auto-first, same calendar days on both sides). ' +
-          'Labor % and FOB % are a true Σnumerator ÷ Σdenominator across each period, not an average of daily percentages.'),
-      )
+      ? (actLoading || actRows == null)
+        ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } },
+          'Loading ~' + Math.round(scopeSummaryFetchDaysBack() / 30) + ' months of sales history for accurate year-over-year comps…')
+        : div({ style: { display: 'flex', flexDirection: 'column', gap: 16, padding: 16 } },
+          ...scopeTables.map(t => h(ScopeSummaryTable, { key: t.title, ...t })),
+          div({ style: { fontSize: 10, color: 'var(--text3)', padding: '4px 4px 0' } },
+            'Sales and GC are a genuine calendar-year-over-year comp — this period\'s real total vs. the exact same date range ' +
+            'one year earlier, both summed independently (never a matched-weekday/364-day-shifted shadow field). ' +
+            'Labor % and FOB % are a true Σnumerator ÷ Σdenominator across each period, not an average of daily percentages.')
+        )
       : div({ style: { display: 'flex', flexDirection: 'column', gap: 16, padding: 16 } },
         ...sections.map((period, i) => h(PeriodSection, {
           key: period.key, period, metric, rankMode,

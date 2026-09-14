@@ -15,6 +15,7 @@ import {
   TREND_REPORT_METRICS, findTrendMetric, fmtTrendValue, trendReportPeriods,
   computeTrendReport, rankFilterRows, RANK_MODES,
   trailingCompleteMonths, currentMtdPeriod, scopeSummaryPeriods, computeScopeSummary,
+  shiftYearBack, periodRealComp, scopeSummaryFetchDaysBack,
 } from '../engine/trend-report.js';
 
 describe('trendReportPeriods — Current MTD / Last complete month / Two months back', () => {
@@ -160,26 +161,91 @@ describe('trailingCompleteMonths / currentMtdPeriod / scopeSummaryPeriods — th
   });
 });
 
-describe('computeScopeSummary — Sales/GC are matched-day vs-LY comps, not raw totals', () => {
-  it('salesPct/gcPct match a hand-computed (cur-ly)/ly over the period', () => {
-    const period = { key: 'p', label: 'P', s: '2026-08-01', e: '2026-08-05' };
-    const ds = { qsrActSummaryRows: [] };
-    for (let d = 1; d <= 5; d++) {
-      const dt = `2026-08-0${d}`;
-      // +10% sales comp, -5% GC comp, every day.
-      ds.qsrActSummaryRows.push({ loc: '3708', date: dt, sales: 3300, lySales: 3000, gc: 190, lyGc: 200 });
-    }
-    const [row] = computeScopeSummary(ds, ['3708'], [period]);
-    expect(row.salesPct).toBeCloseTo(0.10, 5);
-    expect(row.gcPct).toBeCloseTo(-0.05, 5);
+describe('shiftYearBack', () => {
+  it('shifts the year back by exactly one, preserving month/day, no Date-object arithmetic', () => {
+    expect(shiftYearBack('2026-09-13')).toBe('2025-09-13');
+    expect(shiftYearBack('2026-01-01')).toBe('2025-01-01');
+    expect(shiftYearBack('2026-08-31')).toBe('2025-08-31');
+  });
+});
+
+describe('periodRealComp — genuine calendar-year-over-year, two independent sums', () => {
+  it('(cur-ly)/ly from real rows on both sides, matching a hand computation', () => {
+    const rows = [
+      { loc: '3708', date: '2026-08-01', sales: 1100 },
+      { loc: '3708', date: '2026-08-02', sales: 1100 },
+      { loc: '3708', date: '2025-08-01', sales: 1000 },
+      { loc: '3708', date: '2025-08-02', sales: 1000 },
+    ];
+    const comp = periodRealComp(rows, ['3708'], { s: '2026-08-01', e: '2026-08-02' }, 'sales');
+    expect(comp.cur).toBe(2200);
+    expect(comp.ly).toBe(2000);
+    expect(comp.pct).toBeCloseTo(0.10, 5);
   });
 
-  it('laborPct/fobPct are honestly null when no ratio data resolves for the period (never fabricated)', () => {
+  it('null when the LY leg has no data at all — never a fabricated 0% or a divide-by-zero', () => {
+    const rows = [{ loc: '3708', date: '2026-08-01', sales: 1000 }];
+    expect(periodRealComp(rows, ['3708'], { s: '2026-08-01', e: '2026-08-01' }, 'sales')).toBeNull();
+  });
+
+  it('scope-filters by loc and range-filters by date, ignoring rows outside either', () => {
+    const rows = [
+      { loc: '3708', date: '2026-08-01', sales: 1000 },
+      { loc: '3708', date: '2025-08-01', sales: 500 },
+      { loc: '9999', date: '2026-08-01', sales: 99999 }, // different store
+      { loc: '3708', date: '2026-07-31', sales: 99999 }, // outside range
+    ];
+    const comp = periodRealComp(rows, ['3708'], { s: '2026-08-01', e: '2026-08-01' }, 'sales');
+    expect(comp.cur).toBe(1000);
+    expect(comp.ly).toBe(500);
+  });
+});
+
+describe('scopeSummaryFetchDaysBack', () => {
+  it('reaches back to cover the OLDEST trailing month\'s LY leg, plus a small buffer', () => {
+    const asOf = new Date(2026, 8, 13); // Sep 13, 2026
+    const days = scopeSummaryFetchDaysBack(asOf);
+    // Oldest trailing month = Jun 2026 (starts 2026-06-01); its LY leg starts 2025-06-01.
+    const minDays = Math.ceil((asOf - new Date('2025-06-01T00:00:00')) / 86400000);
+    expect(days).toBeGreaterThanOrEqual(minDays);
+    expect(days).toBeLessThan(minDays + 15); // buffer is small (+7), not padded arbitrarily
+  });
+});
+
+describe('computeScopeSummary — Sales/GC are a genuine calendar-YoY comp (owner-caught bug, 2026-09-14)', () => {
+  // The FIRST version of this feature used engine/vs-ly.js's matchedVsLY, which sums each day
+  // against its OWN 364-day-back/matched-weekday shadow value (qsr_daily_activity_rollup's
+  // ly_product_sales/ly_transactions) -- correct for a week-shaped window, wrong for a calendar
+  // MONTH (the set of "last year" days it lands on is weekday-shifted, not the real prior-year
+  // month). These tests fixture a DECOY lySales/lyGc on the current-side rows the fix must NOT
+  // read, proving computeScopeSummary now sums real per-day rows on both sides instead.
+  it('ignores lySales/lyGc entirely, using real prior-year rows via periodRealComp', () => {
+    const period = { key: 'p', label: 'P', s: '2026-08-01', e: '2026-08-02' };
+    const actRows = [
+      { loc: '3708', date: '2026-08-01', sales: 1100, gc: 95, lySales: 999999, lyGc: 999999 },
+      { loc: '3708', date: '2026-08-02', sales: 1100, gc: 95, lySales: 999999, lyGc: 999999 },
+      { loc: '3708', date: '2025-08-01', sales: 1000, gc: 100 },
+      { loc: '3708', date: '2025-08-02', sales: 1000, gc: 100 },
+    ];
+    const [row] = computeScopeSummary({}, actRows, ['3708'], [period]);
+    expect(row.salesPct).toBeCloseTo(0.10, 5); // (2200-2000)/2000 -- NOT derived from 999999
+    expect(row.gcPct).toBeCloseTo(-0.05, 5); // (190-200)/200
+  });
+
+  it('honestly null when actRows has no data on the LY side for this period/scope', () => {
+    const period = { key: 'p', label: 'P', s: '2026-08-01', e: '2026-08-02' };
+    const actRows = [{ loc: '3708', date: '2026-08-01', sales: 1000, gc: 90 }]; // no 2025 rows
+    const [row] = computeScopeSummary({}, actRows, ['3708'], [period]);
+    expect(row.salesPct).toBeNull();
+    expect(row.gcPct).toBeNull();
+  });
+
+  it('laborPct/fobPct still resolve from `ds` (unchanged path), independent of actRows', () => {
     const period = { key: 'p', label: 'P', s: '2026-08-01', e: '2026-08-05' };
-    const ds = { qsrActSummaryRows: [{ loc: '3708', date: '2026-08-01', sales: 3000, lySales: 3000, gc: 100, lyGc: 100 }] };
-    const [row] = computeScopeSummary(ds, ['3708'], [period]);
-    expect(row.laborPct).toBeNull();
-    expect(row.fobPct).toBeNull();
+    const ds = { glimpseRows: [{ loc: '3708', date: '2026-08-01', laborPct: 0.21 }] };
+    const [row] = computeScopeSummary(ds, [], ['3708'], [period]);
+    expect(row.laborPct).toBeCloseTo(0.21, 5);
+    expect(row.fobPct).toBeNull(); // honestly absent -- no fobPct data fixtured
   });
 });
 
@@ -198,9 +264,13 @@ describe('TREND_REPORT_METRICS — reuses metric-source.js\'s own direction, no 
 });
 
 describe('fmtTrendValue', () => {
-  it('formats each unit distinctly', () => {
-    expect(fmtTrendValue(0.2137, 'pct')).toBe('21.4%');
-    expect(fmtTrendValue(12345, '$')).toBe('$12,345');
+  it('formats percents to 2 decimals (owner request, 2026-09-14)', () => {
+    expect(fmtTrendValue(0.21374, 'pct')).toBe('21.37%');
+    expect(fmtTrendValue(0.043, 'pct')).toBe('4.30%');
+  });
+  it('formats each other unit distinctly', () => {
+    expect(fmtTrendValue(12345, '$')).toBe('$12,345'); // period total -- whole dollars
+    expect(fmtTrendValue(4.2, '$$')).toBe('$4.20'); // per-transaction figure (Avg Check) -- cents matter
     expect(fmtTrendValue(92.4, 'sec')).toBe('92s');
     expect(fmtTrendValue(null, 'pct')).toBe('—');
   });
@@ -208,6 +278,14 @@ describe('fmtTrendValue', () => {
 
 // ── Real panel render ────────────────────────────────────────────────────────────────────────
 vi.mock('../utils/print-html.js', () => ({ printHtml: vi.fn() }));
+// Email Summary mode fetches its own broader sales history on entry (loadQsrActSummary) rather
+// than trusting ds's default 60-day window -- mocked here the same way other Supabase-backed
+// panel tests in this suite do, so the fetch resolves instead of hanging on a real network call.
+const mockActRows = [
+  { loc: '3708', date: '2026-08-01', sales: 3300, gc: 190 },
+  { loc: '3708', date: '2025-08-01', sales: 3000, gc: 200 },
+];
+vi.mock('../lib/supabase.js', () => ({ loadQsrActSummary: vi.fn().mockResolvedValue(mockActRows) }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { TrendReportPanel } = await import('../views/trend-report.js');
 
@@ -281,11 +359,27 @@ describe('TrendReportPanel — real render (owner request, 2026-09-14)', () => {
     });
     const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Email Summary'));
     expect(toggle).toBeTruthy();
-    await act(async () => { toggle.click(); await Promise.resolve(); });
+    await act(async () => {
+      toggle.click();
+      await Promise.resolve(); // kicks off the loadQsrActSummary fetch
+      await Promise.resolve(); // lets the mocked promise resolve and the state update flush
+    });
     expect(container.textContent).toContain('Combined (OK/FL)');
     expect(container.textContent).toContain('Oklahoma');
     expect(container.textContent).toContain('Florida');
     // The metric dropdown/rank pills only make sense in Store Detail mode -- confirm they hide.
     expect(container.querySelector('select')).toBeNull();
+  });
+
+  it('Email Summary percents render to 2 decimals (owner request, 2026-09-14)', async () => {
+    const ds = buildDs();
+    await act(async () => {
+      root.render(React.createElement(TrendReportPanel, { ds, onClose: () => {} }));
+      await Promise.resolve();
+    });
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Email Summary'));
+    await act(async () => { toggle.click(); await Promise.resolve(); await Promise.resolve(); });
+    // mockActRows -> combined Sales comp = (3300-3000)/3000 = 10.00%.
+    expect(container.textContent).toContain('10.00%');
   });
 });
