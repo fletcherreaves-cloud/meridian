@@ -3,7 +3,7 @@ import {
   median, mad, quantile, trendSlope, robustBaseline,
   likeSizedPeers, peerAnchor, blend, confidence, computeSmartTarget,
   windowRate, weightedRecencyProjection, periodTotal, backtestProjectors, toISODate,
-  weightedLevel, weightedRecencyLevel,
+  weightedLevel, weightedRecencyLevel, allocateShares,
 } from '../engine/smart-targets.js';
 
 // Build a daily series ending at `endIso`, `days` long, from a value fn(i, date).
@@ -282,5 +282,72 @@ describe('smart-targets — projector scoreboard (which wins per store)', () => 
     expect(toISODate('2026-08-15')).toBe('2026-08-15');
     expect(toISODate(new Date('2026-08-15T12:00:00Z'))).toBe('2026-08-15');
     expect(toISODate('not-a-date')).toBeNull();
+  });
+});
+
+// Owner request (2026-09-14): Smart Targets' FOB % row needed its 6 components
+// (comp waste / raw waste / condiments / emp-mgr meals / stat variance /
+// unexplained) broken out AND guaranteed to sum back to the Smart FOB % number
+// shown for that store -- not just approximately, since a mismatch there would
+// be a visible, checkable inconsistency on a panel that literally prints both
+// the total and the pieces.
+describe('allocateShares — component breakdown that sums to the total by construction', () => {
+  // entries: [{d, w, comps:{a,b,c}}], mirroring what the view builds per metric
+  // point (d=date, w=weight/sales, comps=per-component ratio for that day).
+  const entries = (rows) => rows.map(([d, w, comps]) => ({ d: new Date(d), w, comps }));
+
+  it('shares sum to 1 and total*shares sums to exactly the total (weightedLevel)', () => {
+    const e = entries([
+      ['2026-09-01', 1000, { a: 0.01, b: 0.02, c: 0.005 }],
+      ['2026-09-02', 1200, { a: 0.012, b: 0.018, c: 0.006 }],
+      ['2026-09-03', 900, { a: 0.009, b: 0.021, c: 0.004 }],
+      ['2026-09-04', 1100, { a: 0.011, b: 0.019, c: 0.0055 }],
+    ]);
+    const { shares, sum } = allocateShares(e, ['a', 'b', 'c'], weightedLevel);
+    const shareSum = shares.a + shares.b + shares.c;
+    expect(shareSum).toBeCloseTo(1, 10);
+    expect(sum).toBeGreaterThan(0);
+    const total = 0.0385; // an arbitrary externally-computed "Smart" total
+    const allocated = total * shares.a + total * shares.b + total * shares.c;
+    expect(allocated).toBeCloseTo(total, 10);
+  });
+
+  it('produces the same guarantee through weightedRecencyLevel (the real Smart-target basis)', () => {
+    const e = entries(Array.from({ length: 60 }, (_, i) => {
+      const d = new Date('2026-09-13T00:00:00'); d.setDate(d.getDate() - i);
+      return [d.toISOString().slice(0, 10), 1000 + i, { a: 0.01 + i * 0.0001, b: 0.02 - i * 0.00005, c: 0.005 }];
+    }));
+    const { shares } = allocateShares(e, ['a', 'b', 'c'], weightedRecencyLevel, { asOf: new Date('2026-09-13T00:00:00') });
+    const shareSum = shares.a + shares.b + shares.c;
+    expect(shareSum).toBeCloseTo(1, 9);
+    const total = 100; // any number -- the guarantee is share-sum-to-1, not data-specific
+    expect(total * shares.a + total * shares.b + total * shares.c).toBeCloseTo(total, 6);
+  });
+
+  it('falls back to an equal 1/N split (still summing to 1) when every component is zero/missing', () => {
+    const e = entries([['2026-09-01', 1000, {}], ['2026-09-02', 1000, {}]]);
+    const { shares } = allocateShares(e, ['a', 'b', 'c', 'd'], weightedLevel);
+    expect(shares).toEqual({ a: 0.25, b: 0.25, c: 0.25, d: 0.25 });
+  });
+
+  it('a single component always gets a 100% share', () => {
+    const e = entries([['2026-09-01', 1000, { a: 0.02 }]]);
+    const { shares } = allocateShares(e, ['a'], weightedLevel);
+    expect(shares).toEqual({ a: 1 });
+  });
+
+  it('degrades gracefully on empty/null entries', () => {
+    expect(() => allocateShares(null, ['a', 'b'], weightedLevel)).not.toThrow();
+    expect(allocateShares([], ['a', 'b'], weightedLevel).shares).toEqual({ a: 0.5, b: 0.5 });
+  });
+
+  it('a component genuinely worth more of the total gets more than an equal share', () => {
+    // b's daily values run ~4x a's across every day -- b should end up with roughly
+    // 4x a's share, not merely more (a monotonic, not just directional, check).
+    const e = entries(Array.from({ length: 20 }, (_, i) => [
+      new Date(2026, 8, 1 + i).toISOString().slice(0, 10), 1000, { a: 0.01, b: 0.04 },
+    ]));
+    const { shares } = allocateShares(e, ['a', 'b'], weightedLevel);
+    expect(shares.b / shares.a).toBeCloseTo(4, 6);
   });
 });

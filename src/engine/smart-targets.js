@@ -228,6 +228,49 @@ export function weightedRecencyLevel(dailyWeighted, opts = {}) {
   return { level, windows: { L90, L42, L21 }, wSum };
 }
 
+// ── Component allocation (owner request, 2026-09-14) ──────────────────────────
+// Split a computed ratio target (e.g. the Smart FOB % number) across NAMED
+// sub-components (e.g. comp waste / raw waste / condiments / …) so the pieces are
+// visible without abandoning the weighted-level math the total itself uses.
+//
+// The hard part: each component's own MAD-based anomaly exclusion (inside
+// weightedLevel/weightedRecencyLevel) runs independently, so summing each
+// component's own weighted-recency level will NOT, in general, reconstruct the
+// total's own level exactly -- different days get excluded for a low-volume
+// component (e.g. unexplained variance, often near-zero) than for the total.
+// allocateShares sidesteps that: it normalizes each component's level against
+// the ACTUAL SUM of the levels it just computed, not against any externally
+// supplied total. That makes Σ shares === 1 true BY CONSTRUCTION, so
+// `total * shares[key]` for every key sums to exactly `total` (mod float
+// rounding) no matter how the per-component exclusion drifted from the total's.
+//
+//   entries : [{d, w, comps:{key: value, ...}}, ...]  (any order; same shape the
+//             view already carries per metric-daily-point -- `d` doubles as the
+//             `date` field weightedRecencyLevel wants, weightedLevel ignores it)
+//   keys    : [componentKey, ...]
+//   levelFn : weightedLevel | weightedRecencyLevel (or anything returning {level})
+//   opts    : passed through to levelFn (e.g. {asOf} for weightedRecencyLevel)
+// Returns {shares, levels, sum}. A component with no computable level (or an
+// all-null sum) falls back to an equal 1/N share so every key still gets
+// SOMETHING and the shares still sum to 1.
+export function allocateShares(entries, keys, levelFn, opts = {}) {
+  const list = keys || [];
+  const levels = {};
+  let sum = 0;
+  for (const key of list) {
+    const dailyW = (entries || []).map(x => ({ date: x.d, value: (x.comps && _isNum(x.comps[key])) ? x.comps[key] : 0, weight: x.w }));
+    let r = null;
+    try { r = levelFn(dailyW, opts); } catch { r = null; }
+    const lvl = r && _isNum(r.level) ? r.level : 0;
+    levels[key] = lvl;
+    sum += lvl;
+  }
+  const n = list.length || 1;
+  const shares = {};
+  for (const key of list) shares[key] = sum !== 0 ? levels[key] / sum : (1 / n);
+  return { shares, levels, sum };
+}
+
 // ── Generic projector scoreboard (which method wins per store) ────────────────
 // Walk back over the most recent completed periods, project each with every
 // supplied projector, compare to the actual period total, and grade. A projector
