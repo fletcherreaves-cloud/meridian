@@ -353,25 +353,37 @@ def patch_workbook(input_path, output_path, data, forecast_label):
             xml = set_numeric(xml, 'C' + str(row), data['gcL6W'][loc])
             xml = set_numeric(xml, 'D' + str(row), data['gcL2W'][loc])
 
-        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                content = zin.read(item.filename)
-                if item.filename == sheet_path:
-                    content = xml.encode()
-                zi = zipfile.ZipInfo(item.filename, date_time=item.date_time)
-                zi.compress_type = item.compress_type
-                zi.external_attr = item.external_attr
-                zout.writestr(zi, content)
+        # Read every original part into memory NOW, before writing anything -- output_path may be
+        # the SAME file as input_path (the documented default: "defaults to overwriting --input").
+        # Opening a 'w' ZipFile on that path truncates the file on disk immediately; the old code
+        # kept lazily calling zin.read() on other parts AFTER that truncation, which raised
+        # `zipfile.BadZipFile: Truncated file header` (reproduced 2026-09-14 running exactly the
+        # documented no-`--output` invocation -- this is almost certainly the "did not work
+        # properly" the owner hit, not a usage mistake). Capturing every part's bytes here, while
+        # zin is still backed by the untouched original file, avoids the self-clobber. It also
+        # gives verify_roundtrip a true pre-write snapshot to diff against even when
+        # output_path == input_path, where re-reading input_path afterward would just compare the
+        # new file to itself and silently prove nothing.
+        original_parts = {item.filename: (item, zin.read(item.filename)) for item in zin.infolist()}
 
-    verify_roundtrip(input_path, output_path, sheet_path)
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for filename, (item, content) in original_parts.items():
+            if filename == sheet_path:
+                content = xml.encode()
+            zi = zipfile.ZipInfo(filename, date_time=item.date_time)
+            zi.compress_type = item.compress_type
+            zi.external_attr = item.external_attr
+            zout.writestr(zi, content)
+
+    verify_roundtrip(original_parts, output_path, sheet_path)
 
 
-def verify_roundtrip(input_path, output_path, sheet_path):
-    with zipfile.ZipFile(input_path) as zin, zipfile.ZipFile(output_path) as zout:
-        names_in, names_out = set(zin.namelist()), set(zout.namelist())
+def verify_roundtrip(original_parts, output_path, sheet_path):
+    with zipfile.ZipFile(output_path) as zout:
+        names_in, names_out = set(original_parts.keys()), set(zout.namelist())
         if names_in != names_out:
             raise AssertionError(f"part list changed! missing={names_in-names_out} extra={names_out-names_in}")
-        changed = [n for n in names_in if n != sheet_path and zin.read(n) != zout.read(n)]
+        changed = [n for n in names_in if n != sheet_path and original_parts[n][1] != zout.read(n)]
         if changed:
             raise AssertionError(f"unexpected parts changed besides {sheet_path}: {changed}")
     log(f"✓ verified: only {sheet_path} changed, all {len(names_in)} other parts byte-identical")

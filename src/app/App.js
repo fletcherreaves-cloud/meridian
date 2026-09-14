@@ -293,6 +293,7 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 const CustomerComplaintsPanel = lazyPanel(() => import('../views/customer-complaints.js').then(m => ({ default: m.CustomerComplaintsPanel })));
 const StoreAssessmentsPanel = lazyPanel(() => import('../views/store-assessments.js').then(m => ({ default: m.StoreAssessmentsPanel })));
 const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })));
+const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })));
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
@@ -3225,6 +3226,7 @@ function App() {
         if(modal==='customer-complaints') perm('analytics.store')&&goRoute('customer-complaints');
         if(modal==='store-assessments') perm('analytics.store')&&goRoute('store-assessments');
         if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
+        if(modal==='trend-report')   perm('analytics.district')&&goRoute('trend-report');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
         // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
@@ -3569,6 +3571,7 @@ function App() {
       routePanel==='customer-complaints'&&h(CustomerComplaintsPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='store-assessments'&&h(StoreAssessmentsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/

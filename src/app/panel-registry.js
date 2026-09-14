@@ -407,6 +407,13 @@ export const PANELS = [
   // through 'ranking' now). tkOrder dropped (no longer a Test Kitchen panel). Same "kept
   // registered so old deep links redirect" pattern as record-day just above.
   { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'internal', section:'analytics' },
+  // Performance Trends (owner-requested 2026-09-14) -- Current MTD (completed days only) / Last
+  // complete month / Two months back, one table for All locations plus OK/FL breakouts,
+  // sortable by Top/Bottom 25%/50%, reusable for Labor %, FOB % and every other primary metric
+  // via engine/trend-report.js's thin registry over metric-source.js. kind:'test-kitchen' with
+  // its real eventual section:'analytics' set from day one, per the standing promotion rule
+  // (dispatch #61) -- cross-store rollup, same perm tier as Top/Bottom Performers.
+  { id:'trend-report', label:'Performance Trends', icon:'📊', perm:'analytics.district', kind:'test-kitchen', section:'analytics', route:true, tkOrder:15 },
   // Trend Explorer (owner-requested 2026-09-05, memory/project-trends-panel.md) -- pick any
   // registry metric + store, a date range and a daily/weekly/monthly/yearly frequency, see the
   // series as a sparkline + table, and get a day-of-week diagnostic read plus what else moves
