@@ -140,7 +140,11 @@ function renderNavTexts(permFn) {
 // section:'operations', route:true, perm:'analytics.store' entry, tkOrder:14 -- lands LAST in
 // ⚗ TEST KITCHEN, right after Opportunity $ (tkOrder:13), sorted by tkOrder not declaration
 // order (testKitchenPanels()'s own sort, see panel-registry.js).
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-09-14 for the new Performance Trends panel (owner request -- Current
+// MTD/last month/two-months-back store-level report, reusable across metrics): a brand-new
+// kind:'test-kitchen', section:'analytics', route:true, perm:'analytics.district' entry,
+// tkOrder:15 -- lands LAST in ⚗ TEST KITCHEN, right after Store Assessments (tkOrder:14).
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -221,7 +225,11 @@ const HIDDEN_WHEN_DENIED = {
   // -- top-bottom is kind:'internal' now (merged into 'ranking'/Leaderboards as a mode), no longer
   // a sidebar entry to hide at all (same "renders nowhere in the sidebar any more" shape as
   // fob-eom/count-cycle/time-punches/eom-summary above).
-  'analytics.district': ['Above-Store One-Pager', 'District View', 'Inventory Control', 'Opportunity $', 'Org Summary', '⊞', '💰'],
+  // 2026-09-14: 'trend-report' (Performance Trends) added as a new perm:'analytics.district'
+  // test-kitchen panel -- its label joins this list. Its icon ('📊') does NOT, because 'lfz-gap'
+  // (LifeLenz Gap, perm analytics.forecasting, unaffected by this denial) already shares it, the
+  // same "icon has another owner" reasoning as the 📦/Inventory note above this map.
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞', '💰'],
   // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
   // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
   // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
@@ -397,8 +405,10 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // route:true) -- 12 - 1 = 11, a deliberate shrink, not drift. 2026-09-07 added
     // 'store-assessments' (Store Assessments) as a new kind:'test-kitchen' panel, per the
     // standing rule that every new panel starts in Test Kitchen regardless of who requested
-    // it -- 11 + 1 = 12, a deliberate growth, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (store-assessments added 2026-09-07), the CENSUS must not drift silently').toBe(12);
+    // it -- 11 + 1 = 12, a deliberate growth, not drift. 2026-09-14 added 'trend-report'
+    // (Performance Trends) as a new kind:'test-kitchen' panel -- 12 + 1 = 13, a deliberate
+    // growth, not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (trend-report added 2026-09-14), the CENSUS must not drift silently').toBe(13);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -434,7 +444,7 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all twelve current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+  it('covers all thirteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
     // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
     // 12 -> 11: dispatch #203 promoted 'top-bottom' OUT of Test Kitchen (kind:'test-kitchen' ->
@@ -445,7 +455,8 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
     // route:true) -- owner: "make it a URL page for starters."
     // 11 -> 12: 2026-09-07 added 'store-assessments' (Store Assessments) as a new
     // kind:'test-kitchen' panel (Staged Experiments / Risk Tracking backlog).
-    expect(testKitchenPanels.length).toBe(12);
+    // 12 -> 13: 2026-09-14 added 'trend-report' (Performance Trends).
+    expect(testKitchenPanels.length).toBe(13);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {

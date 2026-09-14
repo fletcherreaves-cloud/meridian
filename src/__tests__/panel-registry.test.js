@@ -305,12 +305,15 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // memory/backlog-open-2026-09-06.md §12) -- built route:true from day one, same as
     // 'trends'/'customer-complaints' above, even though kind:'test-kitchen' (the standing
     // kind/section rule applies regardless of route status -- a panel can be both "not shown in
-    // nav yet" and "has a real URL once opened") (thirty-seven -> thirty-eight).
+    // nav yet" and "has a real URL once opened") (thirty-seven -> thirty-eight). 2026-09-14:
+    // 'trend-report' (Performance Trends) is a brand-new panel (owner request, "make it a home
+    // inside MBI") -- built route:true from day one, same as 'store-assessments' above, also
+    // kind:'test-kitchen' (thirty-eight -> thirty-nine).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'customer-complaints', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
       'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
       'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'pricing-engine', 'proj',
-      'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trends',
+      'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends',
       'visit-readiness',
     ]);
   });
