@@ -105,13 +105,10 @@ export const FOB_COMPONENTS = [
 ];
 
 // qsr_fob rows are DAILY but carry CUMULATIVE month-to-date amounts, so the latest
-// daily row per (loc, month) IS that month's total. Collapse to one monthly point
-// per store: FOB % = Σ(6 waste/variance components)/prodSales (the At-A-Glance
-// canonical formula), dollar-weighted by prodSales. `comps` carries each of the 6
-// components' own %-of-sales alongside the total, so the Smart Targets view can
-// allocate the Smart FOB number across them (allocateShares, engine/smart-targets.js)
-// without re-deriving the raw dollar fields itself.
-export function fobMonthly(rows) {
+// daily row per (loc, month) IS that month's total. Shared by FOB % and the 3
+// non-FOB cost lines below (Base Food Cost, Paper Cost, Disc/Coup) -- all four
+// read this SAME table under the SAME cumulative-row convention.
+function fobLatestPerMonth(rows) {
   const byMonth = new Map();
   for (const r of rows || []) {
     if (!r || !r.date || r.loc == null) continue;
@@ -121,8 +118,18 @@ export function fobMonthly(rows) {
     const ex = byMonth.get(k);
     if (!ex || d.getTime() > ex._ms) byMonth.set(k, { r, loc, _ms: d.getTime(), _d: d });
   }
+  return [...byMonth.values()];
+}
+
+// Collapse to one monthly point per store: FOB % = Σ(6 waste/variance
+// components)/prodSales (the At-A-Glance canonical formula), dollar-weighted by
+// prodSales. `comps` carries each of the 6 components' own %-of-sales alongside
+// the total, so the Smart Targets view can allocate the Smart FOB number across
+// them (allocateShares, engine/smart-targets.js) without re-deriving the raw
+// dollar fields itself.
+export function fobMonthly(rows) {
   const out = [];
-  for (const { r, loc, _d } of byMonth.values()) {
+  for (const { r, loc, _d } of fobLatestPerMonth(rows)) {
     const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
     const comps = {
       compWaste: (r.compWasteAmt || 0) / sales,
@@ -134,6 +141,39 @@ export function fobMonthly(rows) {
     };
     const v = FOB_COMPONENTS.reduce((a, c) => a + comps[c.key], 0);
     out.push({ loc, date: _d, v, w: sales, comps });
+  }
+  return out;
+}
+
+// Base Food Cost %, Paper Cost %, Disc/Coup % (owner request, 2026-09-14) --
+// same qsr_fob source and monthly collapse as FOB %, but genuinely separate
+// lines: NONE of the three feed FOB %'s 6-component sum (owner explicit: "None
+// of which affect the FOB Calculation"). Field names + the paper-cost derive
+// (no stored pct column -- summed from the 6 P&L paper-cost legs) confirmed
+// against at-a-glance.js's own fobAgg/fobAuto (~L793-799, L838-842), the same
+// formula the At-A-Glance FOB tile already ships.
+export function baseFoodMonthly(rows) {
+  const out = [];
+  for (const { r, loc, _d } of fobLatestPerMonth(rows)) {
+    const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
+    out.push({ loc, date: _d, v: (r.totalBaseFood || 0) / sales, w: sales });
+  }
+  return out;
+}
+export function paperCostMonthly(rows) {
+  const out = [];
+  for (const { r, loc, _d } of fobLatestPerMonth(rows)) {
+    const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
+    const paperAmt = (r.pnlPaperCostBegin || 0) + (r.pnlPaperCostPurchases || 0) + (r.pnlPaperCostAdjustments || 0) + (r.pnlPaperCostTransfers || 0) - (r.pnlPaperCostPromotions || 0) - (r.pnlPaperCostEnd || 0);
+    out.push({ loc, date: _d, v: paperAmt / sales, w: sales });
+  }
+  return out;
+}
+export function discCoupMonthly(rows) {
+  const out = [];
+  for (const { r, loc, _d } of fobLatestPerMonth(rows)) {
+    const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
+    out.push({ loc, date: _d, v: (r.discountCouponsAmt || 0) / sales, w: sales });
   }
   return out;
 }
@@ -218,9 +258,85 @@ export const METRICS = [
     daily: r => r.v, weight: r => r.w,
     officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tPromoPct) ? t.tPromoPct : null; },
     fmt: pct2 },
+  // Base Food Cost % (owner request, 2026-09-14) — the core food-cost line
+  // BEFORE the FOB waste/variance additions; NOT part of FOB %'s 6-component
+  // sum. From qsr_fob (totalBaseFood ÷ prodSales), same monthly-collapse as FOB.
+  { key: 'basefood', label: 'Base Food Cost %', direction: 'lower', monthly: false, ratio: true, officialCol: 'base_food_pct',
+    mem: () => [],
+    fetch: () => loadQsrFob().then(baseFoodMonthly),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tFOBBase) ? t.tFOBBase : null; },
+    fmt: pct2 },
+  // Paper Cost % (owner request, 2026-09-14) — separate P&L line, not part of
+  // FOB %. No stored pct column on qsr_fob; derived from the 6 P&L paper-cost
+  // legs, matching at-a-glance.js's own formula exactly.
+  { key: 'papercost', label: 'Paper Cost %', direction: 'lower', monthly: false, ratio: true, officialCol: 'paper_cost_pct',
+    mem: () => [],
+    fetch: () => loadQsrFob().then(paperCostMonthly),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tPaperCost) ? t.tPaperCost : null; },
+    fmt: pct2 },
+  // Disc/Coup % (owner request, 2026-09-14) — discount + coupon $ as a % of
+  // sales, a loss-prevention/discount-discipline line separate from the Promo %
+  // metric above (Promo reads Daily Glimpse's promoPct; this reads qsr_fob's
+  // own discountCouponsAmt -- different sources, both real, neither a duplicate
+  // of the other's underlying dollars).
+  { key: 'disccoup', label: 'Disc/Coup %', direction: 'lower', monthly: false, ratio: true, officialCol: 'disc_coup_pct',
+    mem: () => [],
+    fetch: () => loadQsrFob().then(discCoupMonthly),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tDiscCoupPct) ? t.tDiscCoupPct : null; },
+    fmt: pct2 },
 ];
 
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
+
+// ── Column sorting (owner request, 2026-09-14) — click any header to sort by it ──
+// Pure + exported for direct testing (no render needed). `key` matches the `Th()`
+// keys used in the table header below; `comp:<componentKey>` sorts by a single FOB
+// component's Smart value. Ranked (not string) confidence so High/Med/Low sorts
+// meaningfully rather than alphabetically ("High" < "Low" < "Med").
+const CONF_RANK = { High: 3, Med: 2, Low: 1 };
+export function smartTargetsSortValue(r, key) {
+  if (!r || !key) return null;
+  if (key === 'store') return storeNm(r.loc);
+  if (key === 'official') return r.official;
+  if (key === 'smart') return r.smart;
+  if (key === 'current') return r.current;
+  if (key === 'vsOfficial') return r.vsOff;
+  if (key === 'bestFit') return (r.winner && r.btPerMethod && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : null;
+  if (key === 'conf') return CONF_RANK[r.confidence] || 0;
+  if (key === 'anomalies') return r.excludedDays;
+  if (key === 'adj') return r.eventDelta || (r.excludedManual ? 1 : 0);
+  if (key.indexOf('comp:') === 0) {
+    const ck = key.slice(5);
+    return (r.components && r.components[ck]) ? r.components[ck].smart : null;
+  }
+  return null;
+}
+
+// Nulls always sort last regardless of direction (a missing value is never the
+// "biggest" or "smallest," it just shouldn't jump to the top on desc). Ties keep
+// their original relative order (stable). Strings (Store) compare lexically,
+// everything else numerically. `key: null` (no column clicked yet) is a no-op —
+// the caller's own default (direction-aware) order passes through untouched.
+export function sortSmartRows(rows, key, dir) {
+  if (!key) return rows || [];
+  const sign = dir === 'desc' ? -1 : 1;
+  const withIdx = (rows || []).map((r, i) => ({ r, i, v: smartTargetsSortValue(r, key) }));
+  withIdx.sort((a, b) => {
+    // Null-handling is NOT multiplied by `sign` -- nulls stay last in both
+    // directions (a blank reversing to the TOP on desc, ahead of every real
+    // number, is the classic bug this guards against; caught by this file's
+    // own test before it ever shipped).
+    if (a.v == null && b.v == null) return a.i - b.i;
+    if (a.v == null) return 1;
+    if (b.v == null) return -1;
+    const cmp = typeof a.v === 'string' ? a.v.localeCompare(b.v) : a.v - b.v;
+    return cmp !== 0 ? sign * cmp : a.i - b.i;
+  });
+  return withIdx.map(x => x.r);
+}
 
 export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const { useState, useMemo, useEffect, useRef } = React;
@@ -238,11 +354,17 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const [adjMsg, setAdjMsg] = useState('');
   const [appliedOff, setAppliedOff] = useState({});      // {loc: value} applied-as-Official this session (per metric)
   const [applyMsg, setApplyMsg] = useState('');
+  const [sortKey, setSortKey] = useState(null);           // owner request: click any header to sort
+  const [sortDir, setSortDir] = useState('asc');
   const [applyBusy, setApplyBusy] = useState(false);
   const fcCache = useRef(new Map());                     // `${loc}|${iso}` -> {m1,m3,m4,ens} daily forecasts
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
   // Applied-official overrides are per-metric — clear when the metric changes.
   useEffect(() => { setAppliedOff({}); setApplyMsg(''); }, [metricKey]);
+  // A sort key from one metric (e.g. a FOB `comp:xxx`) is meaningless for another
+  // metric's column set, so reset to the default order whenever the metric changes.
+  useEffect(() => { setSortKey(null); setSortDir('asc'); }, [metricKey]);
+  const toggleSort = key => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); } };
   // The (year, month) this target is FOR — the upcoming month.
   const targetYM = useMemo(() => { const d = new Date(); const t = new Date(d.getFullYear(), d.getMonth() + 1, 1); return { ty: t.getFullYear(), tm: t.getMonth() + 1 }; }, []);
 
@@ -512,11 +634,23 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const useModels = showModels && Object.keys(modelBt).length > 0;
   const methodsMeta = useModels ? ALL_META : PROJECTORS;
   const shownRaw = model.rows.filter(r => activeLocs === null || activeLocs.has(locNum(r.loc)));
-  const shown = shownRaw.map(r => { const mb = modelBt[r.loc]; return (useModels && mb) ? { ...r, winner: mb.winner, btPerMethod: mb.perMethod, btFolds: mb.folds } : r; });
+  const shownDefaultOrder = shownRaw.map(r => { const mb = modelBt[r.loc]; return (useModels && mb) ? { ...r, winner: mb.winner, btPerMethod: mb.perMethod, btFolds: mb.folds } : r; });
+  const shown = sortSmartRows(shownDefaultOrder, sortKey, sortDir);
 
   const selStyle = { fontSize: 10, padding: '3px 7px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', colorScheme: 'dark', cursor: 'pointer' };
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
+  // Sortable header cell (owner request, 2026-09-14). `key` matches
+  // smartTargetsSortValue's keys; clicking toggles asc/desc, an arrow marks the
+  // active column. `extraStyle` lets a header keep its own alignment (Store is
+  // left-aligned, Conf/Best-fit are centered) while still picking up the sort
+  // cursor/click behavior uniformly.
+  const sortArrow = key => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  const Th = (key, label, extraStyle, extraTitle) => h('th', {
+    style: { ...th, ...extraStyle, cursor: 'pointer', userSelect: 'none' },
+    title: (extraTitle ? extraTitle + ' · ' : '') + 'Click to sort',
+    onClick: () => toggleSort(key),
+  }, label + sortArrow(key));
 
   // Known-event editor: open with the store's current adjustment, save to Supabase.
   const openEditor = loc => {
@@ -683,16 +817,19 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
             div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                 h('thead', null, h('tr', null,
-                  h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),
-                  h('th', { style: th }, 'Official'),
-                  h('th', { style: th }, 'Smart'),
-                  ...(metric.components ? metric.components.map(c => h('th', { key: c.key, style: th, title: c.label + ' — Smart target for this component; hover a cell for its Official/Current values. Sums with its siblings to the Smart total.' }, c.label)) : []),
-                  h('th', { style: th }, 'Current'),
-                  h('th', { style: th }, 'vs Official'),
-                  model.doBacktest ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Which projection method fits this store best on held-out history (lowest MAPE)' }, 'Best fit') : null,
-                  h('th', { style: { ...th, textAlign: 'center' } }, 'Conf'),
-                  h('th', { style: th }, 'Anomalies'),
-                  h('th', { style: { ...th, textAlign: 'center' }, title: 'Known-event adjustment: exclude one-off days from learning · add an event ± to the target' }, 'Adj'),
+                  Th('store', 'Store', { textAlign: 'left' }),
+                  Th('official', 'Official'),
+                  Th('smart', 'Smart'),
+                  ...(metric.components ? metric.components.map(c => Th('comp:' + c.key, c.label, {}, c.label + ' — Smart target for this component; hover a cell for its Official/Current values. Sums with its siblings to the Smart total.')) : []),
+                  Th('current', 'Current'),
+                  Th('vsOfficial', 'vs Official'),
+                  model.doBacktest ? Th('bestFit', 'Best fit', { textAlign: 'center' }, 'Which projection method fits this store best on held-out history (lowest MAPE)') : null,
+                  Th('conf', 'Conf', { textAlign: 'center' }),
+                  Th('anomalies', 'Anomalies'),
+                  Th('adj', 'Adj', { textAlign: 'center' }, 'Known-event adjustment: exclude one-off days from learning · add an event ± to the target'),
+                  // Apply is an action button, not a data value -- no natural sort key, so it
+                  // stays a plain (non-clickable) header, matching every other action column
+                  // in this app's dense tables.
                   metric.officialCol ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Apply the Smart number as the official monthly target for ' + targetLabel }, 'Apply') : null)),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
