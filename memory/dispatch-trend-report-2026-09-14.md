@@ -105,3 +105,58 @@ sum/sum path it claimed to test).
 
 Full suite 514/514 files, 4926/4926 tests. Build clean, eager payload 547.50 KB / 850 KB budget
 (trend-report.js lazy-chunked).
+
+## v5.444 follow-up: owner caught a real accuracy bug within minutes of shipping
+
+Owner: *"All percents should be 2 decimals, please. Also, look at what was generated vs what I
+uploaded. They are not close, and June missing data"* — with a screenshot of the live rendered
+panel (June's Sales/GC columns both blank, July/Aug/Sept numbers meaningfully different from his
+real reference table) and, a moment later, *"average check also needs $xx.xx format"*.
+
+**Root cause 1 — wrong comp methodology.** The shipped `computeScopeSummary` used
+`engine/vs-ly.js`'s `matchedVsLY` for Sales/GC. That helper sums each DAY against its OWN
+364-day-back/matched-weekday shadow value (`qsr_daily_activity_rollup`'s
+`ly_product_sales`/`ly_transactions`) — the right comparison for a WEEK-shaped window (Block 1 of
+the owner's own projections workbook uses exactly this, correctly), but wrong for a calendar
+MONTH: the set of "last year" days a 364-day shift lands on is weekday-shifted, not the actual
+prior-year calendar month. **This is the identical bug class `scripts/refresh-projections-
+workbook.py`'s own docstring already found and fixed** for that script's monthly comps ("Monthly
+comps use genuine calendar-to-calendar sums, not the `ly_` shadow fields... December came out
++5.2pp too high on AVERAGE") — a lesson already sitting in the same file I'd read minutes earlier
+in the same session, not re-applied to this new code. Fixed the same way: `periodRealComp`
+(new, `engine/trend-report.js`) sums real per-day rows independently on both sides — `range`'s
+own total vs. the exact same month/day span shifted back one calendar year
+(`shiftYearBack`, pure string year-decrement, no Date-object arithmetic so no DST/timezone risk
+on a pure calendar date) — generalizing the Python script's whole-month-only fix to any `{s,e}`
+range, so the MTD row correctly compares against the SAME partial-month range last year rather
+than a full prior month.
+
+**Root cause 2 — missing June, a data-coverage gap, not a math bug.** `computeScopeSummary` read
+straight from whatever `ds.qsrActSummaryRows` the app's normal startup flow had already loaded —
+and App.js's `_stQsrsoftActSummary` defaults that load to **60 days back**, nowhere near the ~1
+year of history a calendar-YoY comp on the OLDEST of 3 trailing months needs. Fixed by having the
+Email Summary view fetch its OWN sufficient window on first entering that mode (a `useEffect`
+gated on `viewMode==='summary'`, mirroring Smart Targets' Backtest-toggle on-demand fetch
+pattern) via the existing `loadQsrActSummary(daysBack)` loader — `scopeSummaryFetchDaysBack()`
+computes exactly how far back that needs to reach (the oldest trailing month's start, shifted
+back a year, +7 day buffer), not a round/padded guess. Labor %/FOB % were left untouched — the
+owner didn't report those as wrong (their delta against his reference was ~0.1-0.5pp, consistent
+with ordinary source/window differences already documented elsewhere in this codebase, e.g.
+dispatch #327's still-open 10.2% gap investigation), and nothing pointed at their `periodValue`/
+`metricRate` sourcing being broken. Chasing a bug nobody reported would have widened this fix
+well past what was asked.
+
+**Formatting**: `fmtTrendValue`'s `pct` branch moved from 1 decimal to 2 (applies everywhere in
+the panel, not just Email Summary — a single shared formatter, never two divergent ones). Avg
+Check got a dedicated `'$$'` unit (`$xx.xx`, cents-precision) split out from Sales' `'$'`
+(whole-dollar, since a `$50,000`-scale period total in cents would be unreadable noise) — the two
+`$`-shaped metrics needed different precision, so they needed different unit tags, not a shared
+one silently serving both badly.
+
+8 new/extended tests: `shiftYearBack` (year-decrement correctness), `periodRealComp` (hand-
+computed real numbers, null-when-no-LY-data, loc/date scope filtering), `scopeSummaryFetchDaysBack`
+(reaches the oldest period's LY leg + buffer), `computeScopeSummary` re-tested with a **decoy**
+`lySales`/`lyGc` field on the fixture the fix must NOT read (proves the old matchedVsLY path is
+truly gone, not just untested), 2-decimal `pct` formatting, `$$` formatting, and a real panel
+render asserting `10.00%` appears (2 decimals) after the mocked `loadQsrActSummary` fetch
+resolves. Full suite 514/514 files, 4934/4934 tests. Build clean.

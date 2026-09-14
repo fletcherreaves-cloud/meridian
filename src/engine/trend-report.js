@@ -11,7 +11,6 @@
 // rule against introducing yet another one applies here). metricRate/metricSeries are the same
 // primitives Trend Explorer, Signals and the At-A-Glance tiles already read for these fields.
 import { metricRate, metricSeries, metricDirection } from './metric-source.js';
-import { matchedVsLY } from './vs-ly.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
 
 const _iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -40,7 +39,7 @@ export const TREND_REPORT_METRICS = [
   { key: 'tpph', label: 'TPPH', unit: 'num', agg: 'rate' },
   { key: 'oepe', label: 'OEPE', unit: 'sec', agg: 'rate' },
   { key: 'r2p', label: 'R2P', unit: 'sec', agg: 'rate' },
-  { key: 'avgCheck', label: 'Avg Check', unit: '$', agg: 'rate' },
+  { key: 'avgCheck', label: 'Avg Check', unit: '$$', agg: 'rate' },
   { key: 'cashOSPct', label: 'Cash O/S %', unit: 'pct', agg: 'rate' },
   { key: 'discPct', label: 'Disc %', unit: 'pct', agg: 'rate' },
 ].map(m => ({ ...m, direction: metricDirection(m.key) }));
@@ -51,7 +50,10 @@ export function findTrendMetric(key) {
 
 export function fmtTrendValue(v, unit) {
   if (v == null || isNaN(v)) return '—';
-  if (unit === 'pct') return (v * 100).toFixed(1) + '%';
+  if (unit === 'pct') return (v * 100).toFixed(2) + '%';
+  // '$$' -- a per-transaction dollar figure (Avg Check) where cents matter; '$' -- a period
+  // total (Sales), where cents are noise on a number already in the thousands+.
+  if (unit === '$$') return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (unit === '$') return '$' + Math.round(v).toLocaleString();
   if (unit === 'sec') return Math.round(v) + 's';
   return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -136,10 +138,65 @@ export function computeTrendReport(ds, metric, locs, periods) {
 // spec), because it reproduces the owner's actual reference table exactly rather than reusing
 // the drill-down's periods for convenience.
 //
-// Sales/GC are vs-LY comps, NOT raw totals -- computed via engine/vs-ly.js's matchedVsLY (the
-// standing shared auto-first + matched-day helper CLAUDE.md's "source data through the shared
-// helpers" rule requires), never a hand-rolled comp calc. Labor/FOB are true period Σ÷Σ rates via
-// the same periodValue used above.
+// Sales/GC are vs-LY comps, computed as two INDEPENDENT calendar-range sums (this period's raw
+// total vs. the exact same month/day range one year earlier), never engine/vs-ly.js's
+// matchedVsLY. That's a deliberate reversal of the first version of this feature (owner-caught
+// bug, 2026-09-14): matchedVsLY sums each DAY against ITS OWN 364-day-back/matched-weekday
+// value (qsr_daily_activity_rollup's `ly_product_sales`/`ly_transactions` shadow fields) --
+// correct for a week-shaped window, but wrong for a calendar MONTH, because the set of "last
+// year" days it lands on is weekday-shifted, not the actual prior-year calendar month. This is
+// the EXACT bug class scripts/refresh-projections-workbook.py's own docstring already documents
+// and fixes for its own monthly comps ("Monthly comps use genuine calendar-to-calendar sums, not
+// the `ly_` shadow fields" -- up to +5.2pp off on a real measured case); this file repeats that
+// fix, generalized to any {s,e} range (so a partial-month MTD row compares against the SAME
+// partial-month range last year, not a full prior month). Labor/FOB are unchanged -- true period
+// Σ÷Σ rates via the same periodValue used above; the owner did not report those as wrong, and
+// nothing here suggests their underlying sourcing is.
+const _parseISODate = s => { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return { y, m, d }; };
+
+// Exact calendar-year-back date string, no Date-object arithmetic (no DST/timezone risk on a
+// pure calendar date) -- Feb 29 shifted onto a non-leap year simply never matches a real row,
+// which is the correct "absence is honest" degradation, not a crash or a silently wrong date.
+export function shiftYearBack(dateISO) {
+  const { y, m, d } = _parseISODate(dateISO);
+  return `${y - 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function sumFieldInRange(rows, locs, range, field) {
+  const locSet = new Set(locs.map(String));
+  let sum = 0, n = 0;
+  for (const r of (rows || [])) {
+    if (!r || r[field] == null || !locSet.has(String(r.loc)) || !r.date) continue;
+    const dISO = r.date instanceof Date ? _iso(r.date) : String(r.date).slice(0, 10);
+    if (dISO >= range.s && dISO <= range.e) { sum += r[field]; n++; }
+  }
+  return { sum, n };
+}
+
+// A genuine calendar-year-over-year comparison: `range`'s own total vs. the exact same
+// month/day span shifted back one year, both summed independently from real per-day rows
+// (never a `ly_*` shadow field). Absence is honest: null when either side has no data at all,
+// or the LY side sums to <= 0 (nothing to divide by) -- never a fabricated 0%.
+export function periodRealComp(rows, locs, range, field) {
+  const lyRange = { s: shiftYearBack(range.s), e: shiftYearBack(range.e) };
+  const cur = sumFieldInRange(rows, locs, range, field);
+  const ly = sumFieldInRange(rows, locs, lyRange, field);
+  if (!cur.n || !ly.n || ly.sum <= 0) return null;
+  return { cur: cur.sum, ly: ly.sum, pct: (cur.sum - ly.sum) / ly.sum };
+}
+
+// How many days of qsr_daily_activity_rollup history (via loadQsrActSummary(daysBack)) the
+// Email Summary view needs fetched to cover every period's LY leg, not just whatever the app's
+// already-loaded `ds` happens to hold -- the app's default load window is 60 days (App.js's
+// `_stQsrsoftActSummary`), nowhere near enough to reach a full calendar year back from the
+// OLDEST of the 3 trailing months. +7 buffers month-length/leap-day edges.
+export function scopeSummaryFetchDaysBack(asOf = lastClosedBusinessDay()) {
+  const oldestStart = trailingCompleteMonths(3, asOf)[0].s;
+  const lyStart = shiftYearBack(oldestStart);
+  const days = Math.ceil((new Date(asOf) - new Date(lyStart + 'T00:00:00')) / 86400000);
+  return days + 7;
+}
+
 export function trailingCompleteMonths(n, asOf = lastClosedBusinessDay()) {
   const d = new Date(asOf);
   const y = d.getFullYear(), m = d.getMonth() + 1;
@@ -167,17 +224,22 @@ export function scopeSummaryPeriods(asOf = lastClosedBusinessDay()) {
   return [...trailingCompleteMonths(3, asOf), currentMtdPeriod(asOf)];
 }
 
-export function computeScopeSummary(ds, locs, periods) {
+// `actRows`: real per-day {loc, date, sales, gc} rows -- deliberately NOT read from `ds`, which
+// (per App.js's own default load) only carries a 60-day trailing window, nowhere near the ~1
+// year of history a real calendar-YoY comp needs for the OLDEST of the 3 trailing months. The
+// view fetches its own broader window (scopeSummaryFetchDaysBack) once, on entering this mode,
+// and passes the result in here.
+export function computeScopeSummary(ds, actRows, locs, periods) {
   const laborMetric = findTrendMetric('laborPct');
   const fobMetric = findTrendMetric('fobPct');
   return periods.map(period => {
     const range = { s: period.s, e: period.e };
-    const salesComp = matchedVsLY(ds, locs, range, 'sales');
-    const gcComp = matchedVsLY(ds, locs, range, 'gc');
+    const salesComp = periodRealComp(actRows, locs, range, 'sales');
+    const gcComp = periodRealComp(actRows, locs, range, 'gc');
     return {
       ...period,
-      salesPct: salesComp.pct,
-      gcPct: gcComp.pct,
+      salesPct: salesComp ? salesComp.pct : null,
+      gcPct: gcComp ? gcComp.pct : null,
       laborPct: periodValue(ds, locs, range, laborMetric),
       fobPct: periodValue(ds, locs, range, fobMetric),
     };
