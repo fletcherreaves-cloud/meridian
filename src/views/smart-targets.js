@@ -7,7 +7,7 @@
 // FL and OK are anchored SEPARATELY (peers are same-state, like-sized only).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
-import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
+import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum, allocateShares } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
 import { businessDate } from '../engine/swing-feed.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadQsrActSummary, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
@@ -88,11 +88,30 @@ const secs = v => v == null ? '—' : Math.round(v) + 's';
 const num1 = v => v == null ? '—' : v.toFixed(1);
 const dollar2 = v => v == null ? '—' : '$' + v.toFixed(2);
 
+// The 6 waste/variance line items that make up FOB % (owner request, 2026-09-14:
+// break the Smart FOB % target into these, guaranteed to sum back to the total).
+// `officialKey` is the matching field already on every store's merged target
+// object (constants.js) -- confirmed these 6 fields literally SUM to tFOBTarget
+// for every store in DEFAULT_TARGETS (e.g. store 3708: 0.002+0.0035+0.0205+0.002+
+// 0.0105+0.0 = 0.0385 = tFOBTarget exactly), so the Official component figures
+// below are direct reads, not a derived split.
+export const FOB_COMPONENTS = [
+  { key: 'compWaste', label: 'Comp Waste', officialKey: 'tCompWaste' },
+  { key: 'rawWaste', label: 'Raw Waste', officialKey: 'tRawWaste' },
+  { key: 'condiment', label: 'Condiments', officialKey: 'tCondiment' },
+  { key: 'empFood', label: 'Emp/Mgr Meals', officialKey: 'tEmpFood' },
+  { key: 'statLoss', label: 'Stat Variance', officialKey: 'tStatLoss' },
+  { key: 'unex', label: 'Unexplained', officialKey: 'tUnex' },
+];
+
 // qsr_fob rows are DAILY but carry CUMULATIVE month-to-date amounts, so the latest
 // daily row per (loc, month) IS that month's total. Collapse to one monthly point
 // per store: FOB % = Σ(6 waste/variance components)/prodSales (the At-A-Glance
-// canonical formula), dollar-weighted by prodSales.
-function fobMonthly(rows) {
+// canonical formula), dollar-weighted by prodSales. `comps` carries each of the 6
+// components' own %-of-sales alongside the total, so the Smart Targets view can
+// allocate the Smart FOB number across them (allocateShares, engine/smart-targets.js)
+// without re-deriving the raw dollar fields itself.
+export function fobMonthly(rows) {
   const byMonth = new Map();
   for (const r of rows || []) {
     if (!r || !r.date || r.loc == null) continue;
@@ -105,8 +124,16 @@ function fobMonthly(rows) {
   const out = [];
   for (const { r, loc, _d } of byMonth.values()) {
     const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
-    const fobAmt = (r.rawWasteAmt || 0) + (r.compWasteAmt || 0) + (r.condimentsAmt || 0) + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
-    out.push({ loc, date: _d, v: fobAmt / sales, w: sales });
+    const comps = {
+      compWaste: (r.compWasteAmt || 0) / sales,
+      rawWaste: (r.rawWasteAmt || 0) / sales,
+      condiment: (r.condimentsAmt || 0) / sales,
+      empFood: (r.empMgrMealsAmt || 0) / sales,
+      statLoss: (r.statVarianceAmt || 0) / sales,
+      unex: (r.unexplainedAmt || 0) / sales,
+    };
+    const v = FOB_COMPONENTS.reduce((a, c) => a + comps[c.key], 0);
+    out.push({ loc, date: _d, v, w: sales, comps });
   }
   return out;
 }
@@ -145,6 +172,12 @@ export const METRICS = [
     fetch: () => loadQsrFob().then(fobMonthly),
     daily: r => r.v, weight: r => r.w,
     officialVal: (loc, settings) => { const t = mergedTarget(loc, settings); return _isNum(t.tFOBTarget) ? t.tFOBTarget : null; },
+    // Owner request (2026-09-14): break the Smart/Current FOB % numbers into their
+    // 6 components. `components` drives allocateShares() in the model memo below;
+    // `officialComponent` is a direct field read (see FOB_COMPONENTS' own comment
+    // on why that's exact, not a split) rather than another allocation.
+    components: FOB_COMPONENTS,
+    officialComponent: (key, loc, settings) => { const t = mergedTarget(loc, settings); const c = FOB_COMPONENTS.find(x => x.key === key); const v = c ? t[c.officialKey] : null; return _isNum(v) ? v : null; },
     fmt: pct2 },
   // TPPH (transactions per actual-punched labor hour) — labor-productivity companion to Labor
   // %, higher is better. From the DAR rollup (ds.qsrActSummaryRows), weighted by actHrs (the
@@ -309,8 +342,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
       if (typeof v !== 'number' || isNaN(v) || v <= 0) continue;
       const loc = locNum(r.loc);
       const w = metric.weight ? metric.weight(r) : 1;
-      (btByLoc[loc] = btByLoc[loc] || []).push({ d, v, w });
-      if (d >= cutoff && !(exclByLoc[loc] && exclByLoc[loc].has(d))) (byLoc[loc] = byLoc[loc] || []).push({ d, v, w });
+      const comps = r.comps; // FOB's per-component ratios (fobMonthly), undefined for every other metric
+      (btByLoc[loc] = btByLoc[loc] || []).push({ d, v, w, comps });
+      if (d >= cutoff && !(exclByLoc[loc] && exclByLoc[loc].has(d))) (byLoc[loc] = byLoc[loc] || []).push({ d, v, w, comps });
     }
     const ratio = !!metric.ratio;
     // Per-loc baseline + volume — used as peers. Monthly metrics use a robust daily
@@ -347,6 +381,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
       const excludedManual = (adj.excludeDates || []).length;
       let smart, stretch, current, baseline, own, anchor, tierN, conf, excludedDays, n;
       let bt = { perMethod: {}, winner: null, folds: 0 };
+      let components = null; // FOB's 6-component breakdown (metric.components only)
 
       if (ratio) {
         // WEIGHTED ratio target (labor %, speed). Primary = recency-weighted blend of
@@ -362,13 +397,31 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
         anchor = pa.anchor; tierN = pa.tierN;
         smart = own == null ? null : blend(own, anchor, { closeGapFrac: 0.5, capFrac: 0.05, direction: metric.direction });
         stretch = own;                                                  // pre-nudge level (hover)
-        const last28 = entries.slice(-28).map(x => ({ value: x.v, weight: x.w }));
+        const last28entries = entries.slice(-28);
+        const last28 = last28entries.map(x => ({ value: x.v, weight: x.w }));
         current = weightedLevel(last28).level;
         n = wl.n; excludedDays = wl.excluded;
         const ratios = entries.map(x => x.v);
         const mean = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
         const sd = ratios.length > 1 ? Math.sqrt(ratios.reduce((a, b) => a + (b - mean) ** 2, 0) / (ratios.length - 1)) : null;
         conf = confidence(n, mean ? Math.abs(sd / mean) : null);
+        // Owner request (2026-09-14): split Smart/Current across metric.components
+        // (FOB's 6 waste/variance lines), guaranteed by allocateShares' own
+        // sum-to-1 construction to add back up to `smart`/`current` exactly.
+        if (metric.components) {
+          const compKeys = metric.components.map(c => c.key);
+          const smartShares = allocateShares(entries, compKeys, weightedRecencyLevel, { asOf: openDayDate }).shares;
+          const curShares = allocateShares(last28entries, compKeys, weightedLevel, {}).shares;
+          components = {};
+          for (const c of metric.components) {
+            components[c.key] = {
+              label: c.label,
+              official: metric.officialComponent ? metric.officialComponent(c.key, loc, settings) : null,
+              smart: _isNum(smart) ? smart * smartShares[c.key] : null,
+              current: _isNum(current) ? current * curShares[c.key] : null,
+            };
+          }
+        }
       } else {
         const series = entries.map(x => x.v);
         const vol = series.reduce((a, b) => a + b, 0);
@@ -397,7 +450,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
       const vsGood = vsOff == null ? null : (metric.direction === 'lower' ? vsOff <= 0 : vsOff >= 0);
       const ownerMape = bt.perMethod.owner ? bt.perMethod.owner.mape : null;
       return { loc, smart, stretch, current, official: official != null ? official : null, vsOff, vsGood,
-        confidence: conf, excludedDays, n, baseline, anchor, own, tierN,
+        confidence: conf, excludedDays, n, baseline, anchor, own, tierN, components,
         eventDelta, excludedManual, adjNote: adj.note || '',
         winner: bt.winner, btFolds: bt.folds, btPerMethod: bt.perMethod, ownerMape };
     }).filter(r => r.smart != null);
@@ -513,10 +566,16 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const row = r => h('tr', { key: r.loc, title: (metric.ratio
       ? `Smart = recency-weighted trailing level ${metric.fmt(r.own)} nudged toward peer best-quartile ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · full-window weighted level ${metric.fmt(r.baseline)}`
       : `Smart = median of simple methods · peer-stretch target ${metric.fmt(r.stretch)} · baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers)`)
-      + ` · ${r.n} days, ${r.excludedDays} anomalies excluded` },
+      + ` · ${r.n} days, ${r.excludedDays} anomalies excluded`
+      + (metric.components && r.components ? ('\nComponents (sum to Smart): ' + metric.components.map(c => `${c.label} ${metric.fmt(r.components[c.key] && r.components[c.key].smart)}`).join(' · ')) : '') },
     h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(r.loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + locNum(r.loc))),
     h('td', { style: td }, metric.fmt(r.official)),
     h('td', { style: { ...td, fontWeight: 800, color: 'var(--amber)' } }, metric.fmt(r.smart)),
+    // Owner request (2026-09-14): the 6 FOB components, in Smart-target order.
+    // allocateShares (engine/smart-targets.js) guarantees these sum to r.smart
+    // exactly -- not approximately -- by normalizing against the ACTUAL sum of
+    // the per-component levels it computes, never against r.smart itself.
+    ...(metric.components ? metric.components.map(c => h('td', { key: c.key, style: { ...td, color: 'var(--text2)' }, title: c.label + ' — official ' + metric.fmt(r.components && r.components[c.key] && r.components[c.key].official) + ' · current ' + metric.fmt(r.components && r.components[c.key] && r.components[c.key].current) }, metric.fmt(r.components && r.components[c.key] && r.components[c.key].smart))) : []),
     h('td', { style: td }, metric.fmt(r.current)),
     h('td', { style: { ...td, fontWeight: 700, color: r.vsGood == null ? 'var(--text3)' : r.vsGood ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(2) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
@@ -544,9 +603,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const csvNum = v => v == null ? '' : (metric.ratio ? +v.toFixed(4) : Math.round(v));
   const exportCSV = () => {
     const lvlLabel = metric.monthly ? '(mo)' : '(level)';
-    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline ' + lvlLabel, 'Peer anchor ' + lvlLabel, 'Event delta', 'Days excluded (manual)', 'Days', 'Lookback days', 'Target month'];
+    const compCols = metric.components ? metric.components.flatMap(c => [c.label + ' Official', c.label + ' Smart', c.label + ' Current']) : [];
+    const cols = ['Store', 'NSN', 'Official', 'Smart', ...compCols, 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline ' + lvlLabel, 'Peer anchor ' + lvlLabel, 'Event delta', 'Days excluded (manual)', 'Days', 'Lookback days', 'Target month'];
     const lines = [cols.map(csvCell).join(',')];
-    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.eventDelta || '', r.excludedManual || '', r.n, windowDays, targetLabel].map(csvCell).join(','));
+    for (const r of shown) {
+      const compVals = metric.components ? metric.components.flatMap(c => { const cc = r.components && r.components[c.key]; return [csvNum(cc && cc.official), csvNum(cc && cc.smart), csvNum(cc && cc.current)]; }) : [];
+      lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), ...compVals, csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.eventDelta || '', r.excludedManual || '', r.n, windowDays, targetLabel].map(csvCell).join(','));
+    }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}-exported-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -623,6 +686,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
                   h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),
                   h('th', { style: th }, 'Official'),
                   h('th', { style: th }, 'Smart'),
+                  ...(metric.components ? metric.components.map(c => h('th', { key: c.key, style: th, title: c.label + ' — Smart target for this component; hover a cell for its Official/Current values. Sums with its siblings to the Smart total.' }, c.label)) : []),
                   h('th', { style: th }, 'Current'),
                   h('th', { style: th }, 'vs Official'),
                   model.doBacktest ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Which projection method fits this store best on held-out history (lowest MAPE)' }, 'Best fit') : null,
@@ -632,7 +696,8 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
                   metric.officialCol ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Apply the Smart number as the official monthly target for ' + targetLabel }, 'Apply') : null)),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Adj = per-store known-event adjustment: exclude one-off days from learning, add a signed event ± to the target. Apply = write the Smart number to the official monthly_targets for ' + targetLabel + ' (feeds Projections; per-store or all-shown). Metrics: Sales (median-of-simple) · Labor % · DT speed (OEPE) · FOB % — ratio metrics are dollar/volume-weighted trailing levels (FOB from qsr_fob monthly, matching the At-A-Glance formula).')
+          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Adj = per-store known-event adjustment: exclude one-off days from learning, add a signed event ± to the target. Apply = write the Smart number to the official monthly_targets for ' + targetLabel + ' (feeds Projections; per-store or all-shown). Metrics: Sales (median-of-simple) · Labor % · DT speed (OEPE) · FOB % — ratio metrics are dollar/volume-weighted trailing levels (FOB from qsr_fob monthly, matching the At-A-Glance formula).'
+          + (metric.components ? ' FOB % component columns (Comp Waste / Raw Waste / Condiments / Emp-Mgr Meals / Stat Variance / Unexplained) show each line item\'s own Smart target, allocated from each component\'s own trailing weighted-recency level as a share of the total — guaranteed to sum to the Smart FOB % shown, by construction (allocateShares, engine/smart-targets.js). Hover a component cell for its Official (direct read of the matching tXxx field — these 6 already sum to tFOBTarget in the source file) and Current (last-28-day) values.' : ''))
       )
     ),
     editorModal
