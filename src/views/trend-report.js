@@ -10,7 +10,7 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { escapeHtml } from '../utils/fmt.js';
-import { loadQsrActSummary } from '../lib/supabase.js';
+import { loadQsrActSummary, loadOpsLaborSummary, loadQsrFob, loadOpsCashSheet } from '../lib/supabase.js';
 import {
   TREND_REPORT_METRICS, findTrendMetric, fmtTrendValue, trendReportPeriods,
   computeTrendReport, rankFilterRows, RANK_MODES, scopeSummaryPeriods, computeScopeSummary,
@@ -62,8 +62,43 @@ function RankBadge({ pct }) {
   return span({ style: { fontSize: 9, fontWeight: 700, color: col, minWidth: 30, display: 'inline-block' } }, pct + '%ile');
 }
 
+// Column sort for the per-store table -- independent of `rank`/`pct` (which stay the metric's
+// own best-to-worst ordering, computed once by withRanks and never recomputed here). Clicking a
+// header re-orders the DISPLAYED rows only.
+const SORT_KEYS = {
+  rank: r => r.rank,
+  loc: r => Number(r.loc),
+  name: r => sNameC(r.loc),
+  value: r => r.value,
+  pct: r => r.pct ?? -1,
+};
+function sortRows(rows, sort) {
+  if (!sort) return rows;
+  const getKey = SORT_KEYS[sort.col];
+  const mul = sort.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = getKey(a), bv = getKey(b);
+    if (av < bv) return -1 * mul;
+    if (av > bv) return 1 * mul;
+    return 0;
+  });
+}
+function SortableTh({ col, label, align, sort, onSort }) {
+  const active = sort?.col === col;
+  return h('th', {
+    onClick: () => onSort(col),
+    style: {
+      textAlign: align || 'left', padding: '6px 10px', color: active ? 'var(--amber)' : 'var(--text3)',
+      fontSize: 10, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+    },
+  }, label, active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
+}
+
 function PeriodSection({ period, metric, rankMode, priorPoints }) {
-  const shown = rankFilterRows(period.rows, rankMode);
+  const { useState } = React;
+  const [sort, setSort] = useState(null); // null = natural rank order
+  const onSort = (col) => setSort(s => (s?.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' }));
+  const shown = sortRows(rankFilterRows(period.rows, rankMode), sort);
   return div({ style: { border: '.5px solid var(--bdr)', borderRadius: 'var(--rl)', overflow: 'hidden' } },
     div({ style: { padding: '10px 14px', background: 'var(--surf2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } },
       div(null,
@@ -82,13 +117,15 @@ function PeriodSection({ period, metric, rankMode, priorPoints }) {
       : div({ style: { overflowX: 'auto' } },
         h('table', { style: { width: '100%', minWidth: 420, borderCollapse: 'collapse', fontSize: 11.5 } },
           h('thead', null, h('tr', null,
-            h('th', { style: { textAlign: 'left', padding: '6px 10px', color: 'var(--text3)', fontSize: 10 } }, 'Rank'),
-            h('th', { style: { textAlign: 'left', padding: '6px 10px', color: 'var(--text3)', fontSize: 10 } }, 'Location'),
-            h('th', { style: { textAlign: 'right', padding: '6px 10px', color: 'var(--text3)', fontSize: 10 } }, metric.label),
-            h('th', { style: { textAlign: 'right', padding: '6px 10px', color: 'var(--text3)', fontSize: 10 } }, 'Percentile'),
+            h(SortableTh, { col: 'rank', label: 'Rank', sort, onSort }),
+            h(SortableTh, { col: 'loc', label: 'Loc #', sort, onSort }),
+            h(SortableTh, { col: 'name', label: 'Location', sort, onSort }),
+            h(SortableTh, { col: 'value', label: metric.label, align: 'right', sort, onSort }),
+            h(SortableTh, { col: 'pct', label: 'Percentile', align: 'right', sort, onSort }),
           )),
           h('tbody', null, ...shown.map(r => h('tr', { key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
             h('td', { style: { padding: '5px 10px', color: 'var(--text3)' } }, '#' + r.rank),
+            h('td', { style: { padding: '5px 10px', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, r.loc),
             h('td', { style: { padding: '5px 10px', color: 'var(--text)' } }, sNameC(r.loc)),
             h('td', { style: { padding: '5px 10px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' } }, fmtTrendValue(r.value, metric.unit)),
             h('td', { style: { padding: '5px 10px', textAlign: 'right' } }, h(RankBadge, { pct: r.pct })),
@@ -103,8 +140,8 @@ function exportCSV(metric, sections, scopeLabel) {
   for (const period of sections) {
     lines.push(`${period.label} (${period.s} to ${period.e})`);
     lines.push(`All Locations,${fmtTrendValue(period.combined, metric.unit)}`);
-    lines.push('Rank,Location,Value,Percentile');
-    for (const r of period.rows) lines.push(`${r.rank},${sNameC(r.loc)},${fmtTrendValue(r.value, metric.unit)},${r.pct ?? ''}`);
+    lines.push('Rank,Loc #,Location,Value,Percentile');
+    for (const r of period.rows) lines.push(`${r.rank},${r.loc},${sNameC(r.loc)},${fmtTrendValue(r.value, metric.unit)},${r.pct ?? ''}`);
     lines.push('');
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
@@ -120,8 +157,8 @@ function printReport(metric, sections, scopeLabel) {
     <h3>${escapeHtml(period.label)} <span style="font-weight:400;color:#888;font-size:12px">(${period.s} to ${period.e})</span></h3>
     <div style="margin:4px 0 8px;font-size:14px"><b>All Locations:</b> ${fmtTrendValue(period.combined, metric.unit)}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px">
-      <thead><tr style="background:#f3f4f6"><th style="text-align:left;padding:5px 8px;border:1px solid #ddd">Rank</th><th style="text-align:left;padding:5px 8px;border:1px solid #ddd">Location</th><th style="text-align:right;padding:5px 8px;border:1px solid #ddd">${escapeHtml(metric.label)}</th></tr></thead>
-      <tbody>${period.rows.map(r => `<tr><td style="padding:4px 8px;border:1px solid #ddd">#${r.rank}</td><td style="padding:4px 8px;border:1px solid #ddd">${escapeHtml(sNameC(r.loc))}</td><td style="text-align:right;padding:4px 8px;border:1px solid #ddd">${fmtTrendValue(r.value, metric.unit)}</td></tr>`).join('')}</tbody>
+      <thead><tr style="background:#f3f4f6"><th style="text-align:left;padding:5px 8px;border:1px solid #ddd">Rank</th><th style="text-align:left;padding:5px 8px;border:1px solid #ddd">Loc #</th><th style="text-align:left;padding:5px 8px;border:1px solid #ddd">Location</th><th style="text-align:right;padding:5px 8px;border:1px solid #ddd">${escapeHtml(metric.label)}</th></tr></thead>
+      <tbody>${period.rows.map(r => `<tr><td style="padding:4px 8px;border:1px solid #ddd">#${r.rank}</td><td style="padding:4px 8px;border:1px solid #ddd">${escapeHtml(String(r.loc))}</td><td style="padding:4px 8px;border:1px solid #ddd">${escapeHtml(sNameC(r.loc))}</td><td style="text-align:right;padding:4px 8px;border:1px solid #ddd">${fmtTrendValue(r.value, metric.unit)}</td></tr>`).join('')}</tbody>
     </table>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Performance Trends</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;padding:24px}h1{font-size:18px;margin:0 0 2px}h3{font-size:14px;margin:14px 0 4px}</style>
@@ -214,7 +251,42 @@ export function TrendReportPanel({ ds, onClose }) {
   const scopedLocs = useMemo(() => locationSelectorLocs(scopeValue, tree), [scopeValue, tree]);
 
   const periods = useMemo(() => trendReportPeriods(), []);
-  const sections = useMemo(() => computeTrendReport(ds, metric, scopedLocs, periods), [ds, metric, scopedLocs, periods]);
+
+  // Store Detail's oldest period ("Two Months Back") is a full calendar month that can start
+  // well before `ds`'s default load window (App.js loads qsrActSummaryRows/opsLaborRows/etc.
+  // only ~60 days back) -- the SAME root cause the Email Summary "missing June" bug (v5.444) had,
+  // just not yet fixed for this view. Rather than assume 60 days is still the live default (it
+  // has already drifted once), fetch fresh, sufficiently-deep rows on demand -- exactly like
+  // Email Summary's own actRows fetch just above -- covering every table a Store Detail metric
+  // can read (sales/gc/tpph/oepe/r2p/avgCheck -> qsrActSummaryRows, laborPct -> opsLaborRows,
+  // fobPct -> qsrFobRows, cashOSPct/discPct -> opsCashRows). Fetched ONCE per session (not per
+  // metric switch) since all 4 loaders take the same daysBack and the periods are fixed for the
+  // session; overlays (never merges into) the global `ds` arrays so every Store Detail figure is
+  // computed from a real, complete month -- never a silently truncated one.
+  const detailDaysBack = useMemo(() => {
+    const oldestStart = periods[periods.length - 1]?.s;
+    if (!oldestStart) return 60;
+    const days = Math.ceil((Date.now() - new Date(oldestStart + 'T00:00:00').getTime()) / 86400000);
+    return Math.max(days + 5, 60); // +5 buffer; never less than the old 60-day default
+  }, [periods]);
+  const [detailRows, setDetailRows] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  useEffect(() => {
+    if (viewMode !== 'detail' || detailRows != null || detailLoading) return;
+    setDetailLoading(true);
+    Promise.all([
+      loadQsrActSummary(detailDaysBack),
+      loadOpsLaborSummary(detailDaysBack),
+      loadQsrFob({ daysBack: detailDaysBack }),
+      loadOpsCashSheet(detailDaysBack),
+    ]).then(([act, labor, fob, cash]) => {
+      setDetailRows({ qsrActSummaryRows: act || [], opsLaborRows: labor || [], qsrFobRows: fob || [], opsCashRows: cash || [] });
+    }).catch(() => setDetailRows({ qsrActSummaryRows: [], opsLaborRows: [], qsrFobRows: [], opsCashRows: [] }))
+      .finally(() => setDetailLoading(false));
+  }, [viewMode, detailRows, detailLoading, detailDaysBack]);
+  const detailDs = useMemo(() => (detailRows ? { ...ds, ...detailRows } : ds), [ds, detailRows]);
+
+  const sections = useMemo(() => computeTrendReport(detailDs, metric, scopedLocs, periods), [detailDs, metric, scopedLocs, periods]);
 
   // twoBack -> lastMonth -> mtd, oldest first, for the mini trend line.
   const combinedTrendPoints = [...sections].reverse().map(p => ({ value: p.combined }));
@@ -251,8 +323,14 @@ export function TrendReportPanel({ ds, onClose }) {
       viewMode === 'detail' && h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scopeValue, onChange: setScopeValue }),
       viewMode === 'detail' && div({ style: { display: 'flex', gap: 4 } },
         ...RANK_MODES.map(rm => btn({ key: rm.id, style: _pillStyle(rankMode === rm.id), onClick: () => setRankMode(rm.id) }, rm.label))),
-      btn({ className: 'btn btn-sm', onClick: () => (viewMode === 'summary' ? exportSummaryCSV(scopeTables) : exportCSV(metric, sections, scopeLabel)) }, '⬇ CSV'),
-      btn({ className: 'btn btn-sm', onClick: () => (viewMode === 'summary' ? printSummary(scopeTables) : printReport(metric, sections, scopeLabel)) }, '🖨 Print'),
+      btn({
+        className: 'btn btn-sm', disabled: viewMode === 'detail' && (detailLoading || detailRows == null),
+        onClick: () => (viewMode === 'summary' ? exportSummaryCSV(scopeTables) : exportCSV(metric, sections, scopeLabel)),
+      }, '⬇ CSV'),
+      btn({
+        className: 'btn btn-sm', disabled: viewMode === 'detail' && (detailLoading || detailRows == null),
+        onClick: () => (viewMode === 'summary' ? printSummary(scopeTables) : printReport(metric, sections, scopeLabel)),
+      }, '🖨 Print'),
     ),
   },
     viewMode === 'summary'
@@ -266,15 +344,19 @@ export function TrendReportPanel({ ds, onClose }) {
             'one year earlier, both summed independently (never a matched-weekday/364-day-shifted shadow field). ' +
             'Labor % and FOB % are a true Σnumerator ÷ Σdenominator across each period, not an average of daily percentages.')
         )
-      : div({ style: { display: 'flex', flexDirection: 'column', gap: 16, padding: 16 } },
-        ...sections.map((period, i) => h(PeriodSection, {
-          key: period.key, period, metric, rankMode,
-          priorPoints: combinedTrendPoints.slice(0, sections.length - i),
-        })),
-        div({ style: { fontSize: 10, color: 'var(--text3)', padding: '4px 4px 0' } },
-          'Current MTD counts only completed business days (never an in-progress "today"). ' +
-          'Ratio metrics (Labor %, FOB %, TPPH, OEPE, R2P, Cash O/S %, Disc %) are a true Σnumerator ÷ Σdenominator ' +
-          'across the period, not an average of daily percentages — the same convention every other Meridian rollup uses.'),
-      ),
+      : (detailLoading || detailRows == null)
+        ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } },
+          'Loading ~' + Math.round(detailDaysBack / 30) + ' months of history so Two Months Back reflects the full month…')
+        : div({ style: { display: 'flex', flexDirection: 'column', gap: 16, padding: 16 } },
+          ...sections.map((period, i) => h(PeriodSection, {
+            key: period.key, period, metric, rankMode,
+            priorPoints: combinedTrendPoints.slice(0, sections.length - i),
+          })),
+          div({ style: { fontSize: 10, color: 'var(--text3)', padding: '4px 4px 0' } },
+            'Current MTD counts only completed business days (never an in-progress "today"). ' +
+            'Ratio metrics (Labor %, FOB %, TPPH, OEPE, R2P, Cash O/S %, Disc %) are a true Σnumerator ÷ Σdenominator ' +
+            'across the period, not an average of daily percentages — the same convention every other Meridian rollup uses. ' +
+            'Click a column header to sort.'),
+        ),
   );
 }
