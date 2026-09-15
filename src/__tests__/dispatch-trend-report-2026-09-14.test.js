@@ -281,11 +281,38 @@ vi.mock('../utils/print-html.js', () => ({ printHtml: vi.fn() }));
 // Email Summary mode fetches its own broader sales history on entry (loadQsrActSummary) rather
 // than trusting ds's default 60-day window -- mocked here the same way other Supabase-backed
 // panel tests in this suite do, so the fetch resolves instead of hanging on a real network call.
+// Kept tiny and exact so the "10.00%" Sales-comp assertion below stays hand-verifiable.
 const mockActRows = [
   { loc: '3708', date: '2026-08-01', sales: 3300, gc: 190 },
   { loc: '3708', date: '2025-08-01', sales: 3000, gc: 200 },
 ];
-vi.mock('../lib/supabase.js', () => ({ loadQsrActSummary: vi.fn().mockResolvedValue(mockActRows) }));
+// Store Detail ALSO now fetches loadQsrActSummary on entry (dispatch: "Two Months Back" was
+// silently reading ds's truncated 60-day window instead of a real full month -- same class of
+// bug Email Summary's "missing June" already was). It needs real multi-day, multi-store coverage
+// (not the 2-row Email Summary fixture above), so the mock branches on `daysBack`: Email
+// Summary's own scopeSummaryFetchDaysBack() is always ~1 year+ (>200), Store Detail's
+// detailDaysBack covers only the 3 stacked periods (well under 200).
+const mockDetailActRows = [];
+const mockDetailLaborRows = [];
+{
+  const today = new Date();
+  for (let back = 0; back < 100; back++) {
+    const d = new Date(today); d.setDate(d.getDate() - back);
+    const dt = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    for (const loc of ['3708', '5183']) {
+      const sales = loc === '3708' ? 3200 : 2100;
+      const pct = loc === '3708' ? 0.19 : 0.24;
+      mockDetailActRows.push({ loc, date: dt, sales, gc: loc === '3708' ? 190 : 130 });
+      mockDetailLaborRows.push({ loc, date: dt, laborDollar: sales * pct });
+    }
+  }
+}
+vi.mock('../lib/supabase.js', () => ({
+  loadQsrActSummary: vi.fn().mockImplementation(daysBack => Promise.resolve(daysBack > 200 ? mockActRows : mockDetailActRows)),
+  loadOpsLaborSummary: vi.fn().mockResolvedValue(mockDetailLaborRows),
+  loadQsrFob: vi.fn().mockResolvedValue([]),
+  loadOpsCashSheet: vi.fn().mockResolvedValue([]),
+}));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { TrendReportPanel } = await import('../views/trend-report.js');
 
@@ -310,12 +337,19 @@ describe('TrendReportPanel — real render (owner request, 2026-09-14)', () => {
   beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); });
   afterEach(() => { act(() => { root.unmount(); }); container.remove(); });
 
-  it('renders 3 stacked period sections with real store data for the default metric', async () => {
-    const ds = buildDs();
+  // Store Detail's own extended fetch (Promise.all of 4 mocked loaders) needs a few more
+  // microtask ticks to resolve than a single mocked promise -- mirrors the Email Summary
+  // toggle test's own multi-await pattern just below.
+  async function renderAndWaitForDetail(ds) {
     await act(async () => {
       root.render(React.createElement(TrendReportPanel, { ds, onClose: () => {} }));
-      await Promise.resolve();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     });
+  }
+
+  it('renders 3 stacked period sections with real store data for the default metric', async () => {
+    const ds = buildDs();
+    await renderAndWaitForDetail(ds);
     expect(container.textContent).toContain('Performance Trends');
     expect(container.textContent).toContain('Current MTD');
     expect(container.textContent).toContain('All Locations');
@@ -325,10 +359,7 @@ describe('TrendReportPanel — real render (owner request, 2026-09-14)', () => {
 
   it('switching the metric dropdown to FOB % changes the rendered metric label', async () => {
     const ds = buildDs();
-    await act(async () => {
-      root.render(React.createElement(TrendReportPanel, { ds, onClose: () => {} }));
-      await Promise.resolve();
-    });
+    await renderAndWaitForDetail(ds);
     const select = container.querySelector('select');
     expect(select).toBeTruthy();
     await act(async () => {
@@ -341,14 +372,45 @@ describe('TrendReportPanel — real render (owner request, 2026-09-14)', () => {
 
   it('clicking a rank-mode pill (Top 25%) narrows the visible rows without throwing', async () => {
     const ds = buildDs();
-    await act(async () => {
-      root.render(React.createElement(TrendReportPanel, { ds, onClose: () => {} }));
-      await Promise.resolve();
-    });
+    await renderAndWaitForDetail(ds);
     const top25 = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === 'Top 25%');
     expect(top25).toBeTruthy();
     await act(async () => { top25.click(); await Promise.resolve(); });
     expect(container.textContent).toContain('Performance Trends');
+  });
+
+  it('Store Detail reads Two Months Back from its OWN fetched data, not a truncated `ds` prop (regression)', async () => {
+    // Reproduces the real bug: `ds`'s default load window (App.js) is only 60 days back, so a
+    // full calendar month 2+ months back is silently truncated -- exactly what previously made
+    // "Two Months Back" wrong for every single store (the owner's report: "I don't think I have
+    // found a single store match"). `ds` here deliberately carries a WRONG value for twoBack
+    // (would compute to a very different % if read); the mocked loaders carry the real, correct
+    // full-month data. If the panel is still reading `ds` for this period, this test catches it.
+    const [, , twoBack] = trendReportPeriods();
+    const wrongDs = {
+      glimpseRows: [],
+      opsLaborRows: [{ loc: '3708', date: twoBack.s, laborDollar: 999999 }], // absurd, would stand out
+      qsrActSummaryRows: [{ loc: '3708', date: twoBack.s, sales: 1 }],
+    };
+    // Correct fixture returned by the mocked loaders: every day of the real twoBack month,
+    // laborDollar = 20% of sales exactly -> a clean, hand-verifiable 20.00%.
+    const correctAct = [], correctLabor = [];
+    const [y, m, d0] = twoBack.s.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    for (let day = 1; day <= lastDay; day++) {
+      const dt = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      correctAct.push({ loc: '3708', date: dt, sales: 1000 });
+      correctLabor.push({ loc: '3708', date: dt, laborDollar: 200 });
+    }
+    const { loadQsrActSummary, loadOpsLaborSummary } = await import('../lib/supabase.js');
+    loadQsrActSummary.mockImplementation(daysBack => Promise.resolve(daysBack > 200 ? mockActRows : correctAct));
+    loadOpsLaborSummary.mockResolvedValue(correctLabor);
+
+    await renderAndWaitForDetail(wrongDs);
+    // The twoBack section must show the CORRECT 20.00%, not some wrong figure derived from
+    // wrongDs's 999999/1 fixture (which would render as an absurd, clearly-off percentage).
+    expect(container.textContent).toContain('20.00%');
+    expect(container.textContent).not.toMatch(/9{5,}/); // wrongDs's absurd $999999 never surfaces
   });
 
   it('the Email Summary toggle switches to the Combined/OK/FL scorecard (owner\'s own reference table)', async () => {

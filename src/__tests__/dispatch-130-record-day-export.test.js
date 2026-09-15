@@ -23,16 +23,20 @@ const SALES = { '2026-06-01': 10000, '2026-07-10': 15000, '2026-07-15': 12000 };
 const GC    = { '2026-06-01': 500,   '2026-07-10': 700,   '2026-07-15': 600 };
 const OEPE  = { '2026-06-01': 120,   '2026-07-10': 95,    '2026-07-15': 110 };
 
-vi.mock('../engine/metric-source.js', () => ({
-  dailyDataFreshness: () => new Date('2026-07-20T00:00:00'),
-  metricSeries: (ds, loc, range, key) => {
-    if (String(loc) !== LOC) return {};
-    if (key === 'sales') return { ...SALES };
-    if (key === 'gc')    return { ...GC };
-    if (key === 'oepe')  return { ...OEPE };
-    return {};
-  },
-}));
+vi.mock('../engine/metric-source.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    dailyDataFreshness: () => new Date('2026-07-20T00:00:00'),
+    metricSeries: (ds, loc, range, key) => {
+      if (String(loc) !== LOC) return {};
+      if (key === 'sales') return { ...SALES };
+      if (key === 'gc')    return { ...GC };
+      if (key === 'oepe')  return { ...OEPE };
+      return {};
+    },
+  };
+});
 
 import { RecordDayTab } from '../views/record-day.js';
 

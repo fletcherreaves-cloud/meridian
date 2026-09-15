@@ -15,7 +15,7 @@ import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoo
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
-import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
@@ -2643,10 +2643,33 @@ function StoreRecordsTab({ds, loc, name}) {
   const liveBreaks = (liveScoped && liveScoped.recentBreakers) || [];
   const liveTop    = (liveScoped && liveScoped.topDays) || [];
 
+  // "Go back to 2022" (owner request, 2026-09-15) — same wide-tier laborRows fetch record-day.js's
+  // own RecordDayTab uses (App.js's `wideLoaders.laborRows`); see that file's comment for the full
+  // rationale. Declared before the empty-state early return below so the button is reachable even
+  // when this store has no record data in the currently-loaded (recent-only) window — exactly the
+  // case this fixes.
+  const [deepHistoryState, setDeepHistoryState] = React.useState(() => (isLazyFillWideLoaded('laborRows') ? 'loaded' : 'idle'));
+  const handleLoadFullHistory = React.useCallback(() => {
+    ensureLazyFillWide('laborRows');
+    setDeepHistoryState('loading');
+  }, []);
+  React.useEffect(() => {
+    if (deepHistoryState !== 'loading') return;
+    if (isLazyFillWideLoaded('laborRows')) setDeepHistoryState('loaded');
+    else if (isLazyFillWideError('laborRows')) setDeepHistoryState('error');
+  }, [ds, deepHistoryState]);
+  const loadHistoryBtn = deepHistoryState !== 'loaded' && h('button',{
+    className:'btn btn-sm',
+    disabled: deepHistoryState === 'loading',
+    onClick: handleLoadFullHistory,
+    title: 'Records only cover data already loaded into the app — this pulls the full sales history already saved in the cloud, back to 2022.',
+  }, deepHistoryState === 'loading' ? 'Loading history since 2022…' : deepHistoryState === 'error' ? '⚠ Retry: full history since 2022' : '🕰 Load full history (since 2022)');
+
   if(!recs && !liveRec) return div({style:{padding:20}},
     div({className:'empty-st'},
       div({className:'empty-st-t'},'No Records Data'),
-      div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file, or load daily sales/ops data, to see store records.')
+      div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file, or load daily sales/ops data, to see store records.'),
+      div({style:{marginTop:10}}, loadHistoryBtn),
     )
   );
 
@@ -2741,9 +2764,10 @@ function StoreRecordsTab({ds, loc, name}) {
 
     // ── Live-data records (dispatch #200) ─────────────────────────────────
     liveRec && div(null,
-      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6,marginTop:recs?8:0}},
+      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6,marginTop:recs?8:0,flexWrap:'wrap'}},
         div({style:{fontSize:'13px',fontWeight:700}},'📈 Live Data Records'),
-        div({style:{fontSize:'10px',color:'var(--text3)'}},'Computed from daily sales/ops data already loaded — updates automatically, no upload needed')
+        div({style:{fontSize:'10px',color:'var(--text3)',flex:1}},'Computed from daily sales/ops data already loaded — updates automatically, no upload needed'),
+        loadHistoryBtn,
       ),
       div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,marginBottom:14}},
         liveCards

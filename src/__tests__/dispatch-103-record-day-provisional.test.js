@@ -35,15 +35,19 @@ const TODAY_DK       = '2026-08-24'; // still-open business day -- provisional o
 const SALES = { [OLD_BEST_DK]: 10000, [CLOSED_DK]: 11000, [TODAY_DK]: 9000 };
 const OEPE  = { [OLD_BEST_DK]: 97,    [CLOSED_DK]: 90,    [TODAY_DK]: 85 };
 
-vi.mock('../engine/metric-source.js', () => ({
-  dailyDataFreshness: () => new Date(TODAY_DK + 'T00:00:00'),
-  metricSeries: (ds, loc, range, key) => {
-    if (String(loc) !== LOC) return {};
-    if (key === 'sales') return { ...SALES };
-    if (key === 'oepe')  return { ...OEPE };
-    return {};
-  },
-}));
+vi.mock('../engine/metric-source.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    dailyDataFreshness: () => new Date(TODAY_DK + 'T00:00:00'),
+    metricSeries: (ds, loc, range, key) => {
+      if (String(loc) !== LOC) return {};
+      if (key === 'sales') return { ...SALES };
+      if (key === 'oepe')  return { ...OEPE };
+      return {};
+    },
+  };
+});
 
 import { RecordDayTab } from '../views/record-day.js';
 
