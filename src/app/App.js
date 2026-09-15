@@ -717,7 +717,24 @@ function App() {
   // default — measured to already cover the table's real history, which starts 2026-01-01) for
   // `ensureLazyFillWide('pmixRows')` callers that need real breadth (ProductMixPanel's
   // 90D/180D/All ranges, Signal Lab/Scanner's item correlations).
-  React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows }, wideLoaders: { pmixRows: () => loadPmixRows(400) } }); }, []);
+  // `laborRows` wide tier (owner request, 2026-09-15): Records' "Best Day Sales" needed to reach
+  // back to 2022 -- measured live (service-role read) that labor_rows (the manual-upload fallback
+  // METRIC_SOURCES' `sales` chain resolves to once qsr_daily_activity_rollup's own 2024-01-01
+  // backfill floor is exhausted) ALREADY holds real 2022 data (9,074 rows for 2022 alone, `sales`
+  // populated) -- no QSRSoft API backfill needed, purely a fetch-depth problem. laborRows is
+  // already eagerly loaded at startup (400 days, below) for every other consumer, so it is NOT in
+  // LAZY_FILL_SOURCES -- but _triggerLazyFillWide has no such requirement (only checks
+  // `wideLoaders[src]` exists), so this wide tier layers on top with zero effect on the eager
+  // load. `daysBackTo(...)` is computed from a fixed calendar anchor (2022-01-01), not a round
+  // number, so "since 2022" stays accurate as today's date moves forward.
+  React.useEffect(() => {
+    const daysBackTo = isoDate => Math.ceil((Date.now() - Date.parse(isoDate + 'T00:00:00')) / 86400000) + 5;
+    configureLazyFill({
+      setDs,
+      loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows },
+      wideLoaders: { pmixRows: () => loadPmixRows(400), laborRows: () => loadLaborRows(daysBackTo('2022-01-01')) },
+    });
+  }, []);
   const [view, setView]           = useState('command'); // command | district | store | org
   // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/
   // forecast-reports/proj/report, per panel-registry.js's route:true — forecast-reports

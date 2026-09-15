@@ -3,7 +3,7 @@ import * as React from 'react';
 import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
-import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
+import { metricSeries, dailyDataFreshness, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
 import { printHtml } from '../utils/print-html.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
@@ -26,7 +26,7 @@ const LazyExportDropdown = React.lazy(() =>
 );
 
 const h        = React.createElement;
-const { useState, useMemo, useCallback } = React;
+const { useState, useMemo, useCallback, useEffect } = React;
 const div      = (p,...c) => h('div', p, ...c);
 const span     = (p,...c) => h('span', p, ...c);
 const table    = (p,...c) => h('table', p, ...c);
@@ -1233,6 +1233,28 @@ export function RecordDayTab({ stores, ds }) {
 
   const recentCount = viewData?.recentBreakers?.length || 0;
 
+  // "Go back to 2022" (owner request, 2026-09-15) -- computeRecords/scopeRecordData already scan
+  // an unbounded range (see this file's own `range = {s:new Date('2000-01-01'), e:dataEnd}`
+  // inside computeRecords); the real limiter was the laborRows array (this component's `ds` prop)
+  // only being eagerly loaded 400 days back at startup, nowhere near 2022. Real 2022 data already
+  // sits in Supabase's `labor_rows` table (measured live: 9,074 rows for 2022 alone, `sales`
+  // populated) -- this is a fetch-depth problem, not a missing-data one, so no QSRSoft backfill
+  // is involved. Reuses the SAME wide-tier lazy-fill mechanism ProductMixPanel's 90D/180D/All
+  // range options already use (metric-source.js's LAZY_FILL_SOURCES "wide" tier, dispatch #170)
+  // -- App.js's `wideLoaders.laborRows` does the actual fetch; `ensureLazyFillWide` just triggers
+  // it and the prop's laborRows array gets replaced once it resolves, which flows down here as
+  // an ordinary prop change (no local merge needed).
+  const [deepHistoryState, setDeepHistoryState] = useState(() => (isLazyFillWideLoaded('laborRows') ? 'loaded' : 'idle'));
+  const handleLoadFullHistory = useCallback(() => {
+    ensureLazyFillWide('laborRows');
+    setDeepHistoryState('loading');
+  }, []);
+  useEffect(() => {
+    if (deepHistoryState !== 'loading') return;
+    if (isLazyFillWideLoaded('laborRows')) setDeepHistoryState('loaded');
+    else if (isLazyFillWideError('laborRows')) setDeepHistoryState('error');
+  }, [ds, deepHistoryState]);
+
   // Per-tab CSV/Excel export spec -- recomputed whenever the active tab, the underlying
   // (now scope-filtered) records, or the Recent Breaks window changes, so an export triggered
   // right after switching tabs, scope, or the window always reflects what's actually on screen,
@@ -1252,6 +1274,12 @@ export function RecordDayTab({ stores, ds }) {
         viewData
           ? `${viewData.totalStores} stores${scope.level!=='all'?' in scope':''} · data through ${fDate(dKey(viewData.dataEnd))} · records accumulate across uploads`
           : 'Upload sales data to track records'),
+      deepHistoryState !== 'loaded' && h('button',{
+        style: S.ghostBtn,
+        disabled: deepHistoryState === 'loading',
+        onClick: handleLoadFullHistory,
+        title: 'Sales records only go back as far as the app has loaded -- this pulls the full history already saved in the cloud, back to 2022.',
+      }, deepHistoryState === 'loading' ? 'Loading history since 2022…' : deepHistoryState === 'error' ? '⚠ Retry: full history since 2022' : '🕰 Load full history (since 2022)'),
       viewData && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
         h(LazyExportDropdown, { btnClassName:undefined, rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
       ),
