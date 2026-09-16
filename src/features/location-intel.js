@@ -1,10 +1,12 @@
 // @ts-nocheck
 import * as React from 'react';
-import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
+import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS } from '../constants.js';
 import { dKey, nDays } from '../utils/date.js';
 import { gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
+import { loadStoreDemographics, saveStoreDemographics } from '../lib/supabase.js';
+import { fetchAllStoreDemographics } from '../engine/census-demographics.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -363,6 +365,120 @@ async function liGenerateAI(stats,roadmap,onUpdate){
     onUpdate(text);
   }catch(e){onUpdate('Error generating AI narrative: '+e.message);}
 }
+// ── Demographics mode — per-store Census-tract trade-area snapshot ───────────────
+// Independent of ds (Meridian ops data) — pulls straight from Supabase's store_demographics
+// table (supabase/schema-store-demographics.sql), which itself only refreshes on the
+// "🔄 Refresh Demographics" click (src/engine/census-demographics.js does the actual Census
+// Geocoder + ACS5 fetching). Deliberately its own component (not another branch of the giant
+// bodyEl ternary chain) since it owns real state (load/refresh/progress/errors) the
+// statistical/AI modes don't need.
+function DemographicsSection({selLoc,activeLevel,locs}){
+  var {useState:uS2,useEffect:uE2,useCallback:uC2}=React;
+  var [byLoc,setByLoc]=uS2({});
+  var [loaded,setLoaded]=uS2(false);
+  var [refreshing,setRefreshing]=uS2(false);
+  var [progress,setProgress]=uS2(null);
+  var [errors,setErrors]=uS2([]);
+  var [err,setErr]=uS2(null);
+
+  var reload=uC2(function(){
+    loadStoreDemographics().then(function(rows){
+      var m={}; rows.forEach(function(r){m[r.loc]=r;});
+      setByLoc(m);
+    }).catch(function(){}).finally(function(){setLoaded(true);});
+  },[]);
+  uE2(function(){reload();},[reload]);
+
+  var runFetch=async function(){
+    setRefreshing(true);setErrors([]);setErr(null);
+    setProgress({done:0,total:Object.keys(STORE_COORDS).length,loc:''});
+    try{
+      var res=await fetchAllStoreDemographics(STORE_COORDS,function(done,total,loc){setProgress({done:done,total:total,loc:loc});});
+      if(res.rows.length){
+        var saved=await saveStoreDemographics(res.rows);
+        if(saved.error)setErr(saved.error);
+      }
+      setErrors(res.errors);
+      reload();
+    }catch(e){setErr(e&&e.message||String(e));}
+    finally{setRefreshing(false);setProgress(null);}
+  };
+
+  var fmtMoney=function(v){return v==null?'—':'$'+Math.round(v).toLocaleString();};
+  var fmtPct1=function(v){return v==null?'—':(v*100).toFixed(1)+'%';};
+  var fmtNum=function(v,d){return v==null?'—':v.toFixed(d==null?0:d);};
+
+  var secStyle={marginBottom:16,background:'var(--surf2)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr)',overflow:'hidden'};
+  var secHdrStyle={padding:'9px 14px',borderBottom:'.5px solid var(--bdr)',fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.8px',color:'var(--amber)'};
+  var thStyle={fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',padding:'6px 8px',textAlign:'left',whiteSpace:'nowrap',borderBottom:'.5px solid var(--bdr)'};
+  var thNumStyle={...thStyle,textAlign:'right'};
+  var tdStyle={padding:'5px 8px',fontSize:'10.5px',color:'var(--text)',whiteSpace:'nowrap'};
+  var tdNumStyle={...tdStyle,textAlign:'right',fontFamily:'var(--mono)'};
+
+  var header=div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}},
+    div({style:{fontSize:'10px',color:'var(--text3)',lineHeight:1.6,flex:1,minWidth:220}},
+      'Per-store Census-tract snapshot — population, income, age, poverty, and home-ownership around each store’s coordinates. Not a modeled drive-time trade area. Free/keyless US Census Bureau data (Geocoder + ACS 5-Year), refreshed on demand.'),
+    btn({className:'btn btn-sm btn-a',disabled:refreshing,style:{fontSize:'9px',whiteSpace:'nowrap'},onClick:runFetch},
+      refreshing?(progress?('⏳ '+progress.done+'/'+progress.total+'…'):'⏳ Fetching…'):'🔄 Refresh Demographics'));
+
+  var errBanner=(err||errors.length>0)&&div({style:{padding:'8px 12px',marginBottom:12,borderRadius:8,background:'rgba(239,68,68,.08)',border:'.5px solid rgba(239,68,68,.3)',fontSize:'10px',color:'#fca5a5',lineHeight:1.6}},
+    err&&div(null,'⚠ '+err),
+    errors.length>0&&div(null,errors.length+' store'+(errors.length===1?'':'s')+' failed: '+errors.map(function(e){return sNameC(e.loc)+' ('+e.error+')';}).join('; ')));
+
+  if(activeLevel!=='store'){
+    var rows=locs.slice().sort(function(a,b){return sNameC(a).localeCompare(sNameC(b));});
+    return div(null,header,errBanner,
+      div({style:secStyle},
+        div({style:secHdrStyle},'All Stores — Trade-Area Snapshot'),
+        div({style:{overflowX:'auto'}},
+          tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10.5px',minWidth:640}},
+            h('thead',null,tr(null,
+              th({style:thStyle},'Store'),th({style:thNumStyle},'Population'),th({style:thNumStyle},'Median Income'),
+              th({style:thNumStyle},'Median Age'),th({style:thNumStyle},'Poverty Rate'),th({style:thNumStyle},'Owner-Occ %'),
+              th({style:thNumStyle},'Avg HH Size'),th({style:thNumStyle},'ACS'))),
+            h('tbody',null,rows.map(function(loc){
+              var d=byLoc[loc];
+              return tr({key:loc,style:{borderTop:'.5px solid var(--bdr)'}},
+                td({style:tdStyle},sNameC(loc)),
+                td({style:tdNumStyle},d&&d.population!=null?d.population.toLocaleString():'—'),
+                td({style:tdNumStyle},d?fmtMoney(d.medianHouseholdIncome):'—'),
+                td({style:tdNumStyle},d?fmtNum(d.medianAge,1):'—'),
+                td({style:tdNumStyle},d?fmtPct1(d.povertyRate):'—'),
+                td({style:tdNumStyle},d?fmtPct1(d.ownerOccupiedPct):'—'),
+                td({style:tdNumStyle},d?fmtNum(d.avgHouseholdSize,2):'—'),
+                td({style:tdNumStyle},d&&d.acsVintage||'—'));
+            }))))));
+  }
+
+  var d=byLoc[selLoc];
+  if(!loaded)return div(null,header,div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:11}},'Loading…'));
+  if(!d)return div(null,header,errBanner,
+    div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:11,lineHeight:1.8}},
+      'No demographic data yet for '+sNameC(selLoc)+'.',
+      div(null,'Click 🔄 Refresh Demographics above to pull it (fetches all 27 stores, ~30-60s).')));
+
+  var kpis=[
+    {l:'Population (tract)',v:d.population!=null?d.population.toLocaleString():'—'},
+    {l:'Median HH Income',v:fmtMoney(d.medianHouseholdIncome)},
+    {l:'Median Age',v:fmtNum(d.medianAge,1)},
+    {l:'Poverty Rate',v:fmtPct1(d.povertyRate)},
+    {l:'Owner-Occupied',v:fmtPct1(d.ownerOccupiedPct)},
+    {l:'Avg Household Size',v:fmtNum(d.avgHouseholdSize,2)},
+  ];
+  return div(null,header,errBanner,
+    div({style:secStyle},
+      div({style:secHdrStyle},sNameC(selLoc)+' — Trade-Area Snapshot'),
+      div({style:{padding:'12px 14px'}},
+        div({style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:10}},
+          kpis.map(function(k,i){
+            return div({key:i,style:{background:'var(--surf3)',borderRadius:'var(--r)',padding:'10px 12px',border:'.5px solid var(--bdr)'}},
+              div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:3}},k.l),
+              div({style:{fontSize:'15px',fontWeight:700,fontFamily:'var(--mono)'}},k.v));
+          })),
+        div({style:{fontSize:'9px',color:'var(--text3)'}},
+          'Census Tract '+(d.tractGeoid||'—')+' · ACS '+(d.acsVintage||'—')+' 5-Year estimates'+(d.updatedAt?' · refreshed '+new Date(d.updatedAt).toLocaleDateString():'')))));
+}
+
 function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedded}){
   var [mode,setMode]=React.useState('statistical');
   var [activeLevel,setActiveLevel]=React.useState(scope||'store');
@@ -451,19 +567,25 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
       locs.map(function(l){return h('option',{key:l,value:l},sNameC(l));})
     ),
     div({key:'mode',style:{display:'flex',gap:0,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden',marginLeft:'auto'}},
-      [['statistical','📊 Statistical'],['ai','🤖 AI Narrative']].map(function(pair){
+      [['statistical','📊 Statistical'],['ai','🤖 AI Narrative'],['demographics','🏘 Demographics']].map(function(pair){
         return btn({key:pair[0],onClick:function(){setMode(pair[0]);},style:{padding:'4px 11px',fontSize:'9px',fontWeight:600,border:'none',
           background:mode===pair[0]?'var(--amber)':'var(--surf)',color:mode===pair[0]?'#000':'var(--text3)',cursor:'pointer'}},pair[1]);
       })
     ),
     mode==='ai'&&btn({key:'gen',className:'btn btn-sm btn-a',style:{fontSize:'9px'},onClick:handleGenAI,disabled:generating||noData},generating?'⏳ Generating…':'⚡ Generate'),
-    btn({key:'print',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handlePrint,title:'Print / Save as PDF'},'🖨 Print'),
-    btn({key:'dl',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handleDownload,title:'Download HTML report'},'⬇ Download'),
+    // Print/Download build the statistical/AI report (liGenerateExportHTML) -- not meaningful
+    // for the Demographics tab, which has its own 🔄 Refresh action instead (in DemographicsSection).
+    mode!=='demographics'&&btn({key:'print',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handlePrint,title:'Print / Save as PDF'},'🖨 Print'),
+    mode!=='demographics'&&btn({key:'dl',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handleDownload,title:'Download HTML report'},'⬇ Download'),
   ];
   // BODY -- extracted to its own variable so both call shapes (embedded's own card, and the
   // standalone route's RoutePanelShell below) render the identical body, never a second copy.
   var bodyEl=div({style:{flex:1,overflowY:'auto',padding:18}},
-        noData&&div({style:{textAlign:'center',padding:60,color:'var(--text3)'}},
+        // Demographics reads Supabase's store_demographics directly, independent of ds (Meridian
+        // ops data) -- the noData empty-state below is specific to statistical/AI, which DO need
+        // laborRows/opsRows, so it's gated to skip the Demographics tab entirely.
+        mode==='demographics'&&h(DemographicsSection,{selLoc:selLoc,activeLevel:activeLevel,locs:locs}),
+        noData&&mode!=='demographics'&&div({style:{textAlign:'center',padding:60,color:'var(--text3)'}},
           div({style:{fontSize:40,marginBottom:12}},'📊'),
           div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:8}},'Load your data to generate Location Intelligence'),
           div({style:{fontSize:'10px',lineHeight:1.8,color:'var(--text3)'}},

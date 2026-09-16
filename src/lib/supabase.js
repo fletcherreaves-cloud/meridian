@@ -771,6 +771,54 @@ export async function saveStoreAssessment(loc, fields, assessmentType = 'schedul
   return { error: null };
 }
 
+// ── Store Demographics (Location Intel — Census/ACS trade-area snapshot) ─────────
+// Manual, infrequently-refreshed per-store table (supabase/schema-store-demographics.sql),
+// same user-editable-not-pull-written shape as store_assessments just above — written by
+// src/features/location-intel.js's "🔄 Refresh Demographics" action (src/engine/
+// census-demographics.js does the actual Census Geocoder + ACS5 fetching), not a scheduled pull.
+export async function loadStoreDemographics() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('store_demographics').select('*');
+  if (error || !data) {
+    if (error && _isMissingTable(error)) {
+      console.error('[store_demographics] Table does not exist in Supabase. Run supabase/schema-store-demographics.sql in your Supabase SQL editor.');
+    } else if (error) {
+      console.warn('[store_demographics] load error:', error.message);
+    }
+    return [];
+  }
+  return data.map(r => ({
+    loc: r.loc, tractGeoid: r.tract_geoid, countyFips: r.county_fips, stateFips: r.state_fips,
+    acsVintage: r.acs_vintage, population: r.population, medianHouseholdIncome: r.median_household_income,
+    medianAge: r.median_age, povertyRate: r.poverty_rate, ownerOccupiedPct: r.owner_occupied_pct,
+    avgHouseholdSize: r.avg_household_size, updatedAt: r.updated_at,
+  }));
+}
+
+// Upsert a batch of demographic records (the shape fetchStoreDemographics/
+// fetchAllStoreDemographics in census-demographics.js return — camelCase, one object per store).
+export async function saveStoreDemographics(rows) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const payload = (rows || []).map(r => ({
+    loc: String(r.loc || ''), tract_geoid: r.tractGeoid || null, county_fips: r.countyFips || null,
+    state_fips: r.stateFips || null, acs_vintage: r.acsVintage || null, population: r.population,
+    median_household_income: r.medianHouseholdIncome, median_age: r.medianAge, poverty_rate: r.povertyRate,
+    owner_occupied_pct: r.ownerOccupiedPct, avg_household_size: r.avgHouseholdSize,
+    updated_at: new Date().toISOString(),
+  })).filter(r => r.loc);
+  if (!payload.length) return { error: null };
+  const { error } = await supabase.from('store_demographics').upsert(payload, { onConflict: 'loc' });
+  if (error) {
+    if (_isMissingTable(error)) {
+      console.error('[store_demographics] Table does not exist in Supabase. Run supabase/schema-store-demographics.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[store_demographics] save error:', error.message);
+    }
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
 // ── SMG FullScale persistence ─────────────────────────────────────────────────
 // rows: array of { loc, year, month, reportStart, reportEnd, osatTop2, osat5, osatAvg,
 //                  osatB2B, accuracyB2B, dtProblem, overallProblem }
