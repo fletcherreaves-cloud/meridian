@@ -995,9 +995,20 @@
   within-shift-window test (transaction time vs. punch window, not just same-day presence) still
   needs #275's transaction-detail probe. **Next step is the owner's — review the sample, decide
   whether/how to build the state design**, not more engineering work first.
-- [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
-  store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
-  itself isn't built.
+- ✅ **SHIPPED 2026-09-16 (Task #56) — VLH guide-based needed-hours calculation, Drive Thru +
+  In-Store.** Was blocked on the actual 2022 VLH Workbook PDFs (owner-provided workbook tables);
+  once supplied, `docs/2022_VLH_Workbook_{High_Productivity,Standard}_Guides.pdf` were parsed
+  (`scripts/parse-vlh-workbook.py`, validated zero structural issues across all 96 config pages)
+  into `scripts/data/vlh-guide-2022-seed.json` (4,592 rows) → `supabase/schema-vlh-guide.sql` +
+  `scripts/seed-vlh-guide.mjs` → `src/engine/vlh-guide.js` (`guideNeededHoursForRow`,
+  `guideVsReportedByStoreDaypart`), 14 tests. **Live-measured against real data** (27 stores,
+  14 days, `store_vlh_config` already fully populated): the guide's Drive Thru + In-Store hours
+  cover 38.6% of `total_needed_hours` — expected, not a bug, since `total_needed_hours` also
+  includes Fixed Sched + Floor Need plus ~8 other guide positions this scope deliberately
+  doesn't wire (their guest-count driver isn't confirmed from the PDF text). Full writeup:
+  `memory/finding-vlh-guide-tables-2026-09-16.md`. **⚠️ Pending owner action:** run
+  `supabase/schema-vlh-guide.sql` then `node scripts/seed-vlh-guide.mjs` to make the table live
+  (same "owner runs the SQL" pattern as every other new-table task this session).
 - ⚠️ **RE-SCOPED 2026-09-08 — a large chunk of this is already built; not greenfield.** Checked
   step (1) directly: `lifelenz_schedule`'s per-shift position/job-code detail is NOT the source
   — but a separate, already-live pipeline covers most of what was asked for.
