@@ -205,9 +205,23 @@ largely an EVENING comparison, not an overnight one. Re-run before trusting it.*
 1. **The 19.4s speed payoff for staffing breakfast to guide was measured on the wrong
    boundaries.** Hours arithmetic above is solid; the seconds figure is not. **Re-run
    before telling any GM "this buys you X seconds."**
-2. **`total_needed_hours` is assumed to be the VLH guide.** Strong evidence — `sched vs
-   guide` runs 1.046–1.426, systematically ≠ 1.0, so it is demonstrably not a copy of
-   `total_scheduled_hours` — but not confirmed against the workbook tables.
+2. **✅ MEASURED 2026-09-16 (Task #56, dispatch memory/finding-vlh-guide-tables-2026-09-16.md)
+   — `total_needed_hours` is NOT the VLH guide's Drive Thru + In-Store sum; it runs ~2.6x
+   higher.** The real 2022 VLH Workbook tables are now parsed and queryable
+   (`vlh_guide_hours`, `src/engine/vlh-guide.js`), and a live comparison against real DAR
+   rows (27 stores, 14 days, 9,720 rows, real `store_vlh_config`) found the guide-derived
+   Drive Thru + In-Store hours cover only **38.6%** of `total_needed_hours`
+   (26,498 guide hours vs 68,669 reported hours). This is expected, not a discrepancy: the
+   DAR field dictionary's own description of `total_needed_hours` is "Variable Needed +
+   Fixed Sched + Floor Need," and this measurement only covers 2 of the guide's ~10
+   labor-position tables (Order Takers/Assemblers/Curbside/Table Service/BDAP/McCafe/Hash
+   Browns & Fries/Sandwiches aren't wired — their guest-count driver isn't confirmed from
+   the PDF text, see that finding doc) plus the Fixed Sched/Floor Need components aren't
+   guide-driven at all. **What this DOES confirm:** `total_needed_hours` is not simply
+   `total_scheduled_hours` copied through (already known from the 1.046–1.426 sched-vs-guide
+   ratio) and the guide-derived and reported figures move together directionally across
+   stores/dayparts — the previous "not confirmed against the workbook tables" caveat is
+   resolved into an actual measured relationship, not a blank unknown.
 3. **Per-store rates mix stores.** A chronically-under-guide restaurant may also be a slow
    restaurant. Query 2 gives the per-store split.
 4. **Guides are per-configuration** — 48 variants × 2 workbooks. Store mapping lives in

@@ -2466,6 +2466,36 @@ export async function loadSelfServeTowerLocs() {
   } catch (e) { console.warn('[Meridian] loadSelfServeTowerLocs:', e?.message || e); return new Set(); }
 }
 
+// Full store_vlh_config rows, keyed by UNPADDED loc -- src/engine/vlh-guide.js's
+// guideVsReportedByStoreDaypart() needs the whole config (aot/dt_type/in_store/kitchen/
+// vlh_guide), not just the in_store flag loadSelfServeTowerLocs() above reads.
+export async function loadVlhStoreConfigs() {
+  if (!supabase) return {};
+  try {
+    const { data, error } = await supabase.from('store_vlh_config')
+      .select('loc,aot,dt_type,in_store,kitchen,vlh_guide,coffee');
+    if (error) { console.warn('[Meridian] loadVlhStoreConfigs:', error.message); return {}; }
+    const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+    const out = {};
+    for (const r of data || []) out[norm(r.loc)] = r;
+    return out;
+  } catch (e) { console.warn('[Meridian] loadVlhStoreConfigs:', e?.message || e); return {}; }
+}
+
+// vlh_guide_hours — Task #56, ~4,600 rows (96 config pages x 2 positions x 5 dayparts x
+// ~5-9 tiers each). Reference data, no date/loc column to filter by, so _pagedParallel is
+// called with only orderCol for stable paging -- same helper loadDtHistory uses, avoiding
+// the 1000-row-cap truncation bug loadQsrActSummary had before it was fixed (CLAUDE.md's
+// own "Freshness banner" note).
+export async function loadVlhGuideHours() {
+  return _pagedParallel({
+    table: 'vlh_guide_hours',
+    select: 'guide,aot,dt_type,in_store,kitchen,position,daypart,ipo,tier,guest_start,guest_end',
+    orderCol: 'id', ascending: true,
+    pageSize: 1000, label: 'vlhGuideHours',
+  });
+}
+
 // #365 -- MEASURED against live Supabase, not assumed: `lte('date', `${y}-${m}-31`)` throws
 // Postgres error 22008 ("date/time field value out of range") for every month with fewer than
 // 31 days -- confirmed live with a direct REST call for 2026-02-31. The old comment ("gt/lte
