@@ -215,10 +215,25 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 **Self-instrumenting + prompt library (v4.487):** every SAGE answer has a **🐞 Log** action → opens a modal that turns the response into a **Task Queue** ticket (data-pull failures) or **Feature Request** (capability gaps) — auto-suggested by failure-language + data-source detection (`query_daily_activity`/`query_lifelenz_labor`/`query_forecast_snapshots`), pre-filled with the Q+A context AND a ready-to-paste **troubleshooting prompt** for Claude Code. Header **📚 Prompts** = saved-prompt library (`sage_prompts` table): save the current input, Use/Run/Delete saved prompts, and **⏰ Schedule** each to auto-run (daily/weekly at a UTC hour). **Phase 2 shipped (v4.488):** `scripts/sage-run.mjs` (hourly GitHub Action `.github/workflows/sage-run.yml`) signs in the `SAGE_RUNNER` service account → mints a user JWT → calls `sage-chat` for each due prompt → writes `sage_prompt_runs`, surfaced by the **first At-A-Glance tile "SAGE Scheduled Runs"** (`SageRunsTile` in analytics.js; added as `DEF_SECS[0]` + first grid child). `send`→`sendMessage(text)` refactor enables the headless call.
 
 **Vision (future enhancements):**
-- Cross-device session memory and conversation retention
 - Action plans, tables/charts in responses, copy/email output
 - Prompt catalog with thumbs-up/down rating
 - ✅ RBAC-aware (v4.494) — data tools hard-filtered by the caller's `accessible_locs`; role tunes the advice (manager=tactical, supervisor=patch, admin=district). Needs a `sage-chat` redeploy.
+- ✅ **Cross-device session memory and conversation retention — already SHIPPED (dispatch #187),
+  re-measured live 2026-09-16, do not re-implement.** `src/views/sage.js`'s `SagePanel` wraps both
+  the active thread (`mf_sage_thread_v1` → `user_settings.sage_thread`) and the archived-session
+  list (`mf_sage_sessions_v1` → `sage_sessions`) in the same `{data,savedAt}`-guarded cloud mirror
+  `_stDialedIn`/Model Assignment already use (`src/lib/blob-sync.js`'s `pushBlob`/`hydrateBlob` —
+  cloud wins a hydration ONLY when strictly newer, so an in-progress conversation on one device
+  can't be clobbered by a stale cloud read from another). Pushed at natural settle points only
+  (turn-complete, archive, clear, session switch), never per stream chunk. Session archive is
+  additionally size-capped at 300 KB (measured a realistic 25-session archive at 428–646 KB,
+  genuinely over budget) by dropping the oldest sessions, not just count-capped. Zero new Supabase
+  schema — reuses the same `user_settings` table `model_assignments`/`mf_bt_summary`/`dialed_in`
+  already prove live. 26 tests (`src/__tests__/sage-cloud-persistence.test.js`), including a
+  direct test of the savedAt guard against a stale-cloud-arrives-after-newer-local-write
+  scenario. This line had gone stale — the feature shipped but was never checked off here or in
+  `memory/project-sage.md`, which is exactly the "verify against the actual code before assuming
+  a 'next up' item is undone" trap this file's own Dev Rules section warns about.
 
 ---
 
