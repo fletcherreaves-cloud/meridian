@@ -324,8 +324,12 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
               ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['oms','⚙ OMs'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
               ...(onOpenAdmin?[['users','👥 Users']]:[]),
-              ...(userRole==='developer'?[['dev','🛠 Dev']]:[]),
-              ...(userRole==='admin'||userRole==='developer'?[['data','🗄 Data']]:[])]
+              // ⚠️ CORRECTED (RBAC audit, 2026-09-16): 'developer' is not a real profiles.role
+              // value (the live DB constraint allows admin/owner/vp/do/om/area_supervisor/gm/
+              // sm_am_dm/manager, per src/engine/permissions.js's DEFAULT_ROLES) -- both tabs
+              // below were previously unreachable by any real profile, including the owner's own.
+              ...(userRole==='admin'||userRole==='owner'?[['dev','🛠 Dev']]:[]),
+              ...(userRole==='admin'||userRole==='owner'?[['data','🗄 Data']]:[])]
           .map(([k,l])=>div({key:k,
             onClick:()=>setActiveSection(k),
             style:{padding:'8px 14px',fontSize:'10px',fontWeight:activeSection===k?700:400,

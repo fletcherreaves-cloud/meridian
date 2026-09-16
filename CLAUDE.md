@@ -98,18 +98,42 @@ scripts/               — lifelenz-pull.mjs, qsrsoft-ebos-pull.mjs, qsrsoft-dar
 
 ## RBAC Roles (most → least access)
 
-| Role | Scope |
-|---|---|
-| Developer | Full access + dev tools (Fletcher) |
-| Admin | Full operational access, no dev tools |
-| Owner / OO | Org-level view |
-| VP | Multi-district |
-| DO | District-level |
-| Supervisor | Patch-level (subset of stores) |
-| GM | Own store only |
-| Office Staff | Read-only |
+**⚠️ CORRECTED 2026-09-16 (RBAC audit) — this table used to document an 8-tier ladder
+(Developer/Admin/Owner/VP/DO/Supervisor/GM/Office Staff) that does not exist in the live app.**
+`profiles.role`'s DB CHECK constraint (`supabase/schema.sql`) allows **exactly** these 9 ids —
+`src/engine/permissions.js`'s `DEFAULT_ROLES` is the real source of truth, agrees with the DB:
 
-Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items and data views gate by role.
+| Role id | Label | Level | Scope |
+|---|---|---|---|
+| `admin` | Admin | 1 | Full access, level-1 bypasses all permission checks |
+| `owner` | Owner / Developer | 1 | Same top tier as `admin` — **not** a separate "Developer" role; there is no `developer` id anywhere in the system |
+| `vp` | VP | 2 | Multi-district |
+| `do` | DO (District Ops) | 3 | District-level |
+| `om` | OM (Ops Manager) | 4 | — |
+| `area_supervisor` | AS (Area Supervisor) | 5 | Patch-level (subset of stores) |
+| `gm` | GM (General Manager) | 6 | Own store only |
+| `sm_am_dm` | SM / AM / DM | 7 | — |
+| `manager` | Manager | 3 | Pre-existing/default role — **new signups default here** (`profiles.role default 'manager'`), not to the top tier |
+
+**There is no `office_staff` id and no literal `'developer'` role value — code that checks either
+string is checking something that can never be true.** This was a real, live bug, not just doc
+drift: `management.js`'s "🛠 Dev" tab (`userRole==='developer'`) could never render for anyone,
+including the real owner's own account; `task-queue.js`'s `isDev` read a `settings.role` field
+that was never populated, silently disabling Feature-Request dev-notes editing for every user;
+`security-panel.js` and `sage-chat/index.ts` both checked the pre-dispatch-#148 string
+`'supervisor'` instead of the real `'area_supervisor'`. All fixed in the same pass that corrected
+this table — see `memory/finding-rbac-role-ladder-2026-09-16.md` for the full audit.
+
+Roles are enforced two ways, both real: (1) `src/engine/permissions.js`'s `hasPermission(roleId,
+permKey)` gates nav items and panels via `panel-registry.js`'s `perm:` field (fails closed — an
+unrecognized role id gets zero permissions, not "everything"); (2) Supabase RLS on the
+`accessible_locs` profile field (`public.my_locs()`, installed on 51 core tables via
+`schema-rls-phase2-loc.sql`) scopes which stores' data a query returns. **The RLS store-scoping
+mechanism has never been exercised with a real restricted account** — the only profile that has
+ever existed has `accessible_locs = NULL` (unrestricted). Before onboarding a second operator with
+a real restricted role, create a test profile with a non-null `accessible_locs` and confirm
+scoping holds across more than one panel — do not assume the mechanism works end-to-end just
+because it's installed and was correct in a point-in-time structural check.
 
 ---
 

@@ -61,15 +61,25 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&
 
 // ── Pure logic — exported and tested independently of any rendering ─────────────────────────────
 
-// admin/supervisor always allowed, matching security_findings' RLS exactly. manager allowed ONLY
-// when the caller has already confirmed org_config.gm_identity_reveal_enabled (loaded separately,
-// async -- this function itself makes no network call, so it can be used as a pure gate both for
-// the initial "should I even bother checking" decision and the final verdict once that flag is in).
-// Everything else (gm/office_staff/do/vp/owner/undefined) is denied -- CLAUDE.md's own documented
-// finding that profiles.role only carries 3 real values today does not change what the SQL policy
-// actually checks, and this must never be looser than that policy.
+// admin/owner/area_supervisor always allowed, matching security_findings' RLS exactly. manager
+// allowed ONLY when the caller has already confirmed org_config.gm_identity_reveal_enabled (loaded
+// separately, async -- this function itself makes no network call, so it can be used as a pure
+// gate both for the initial "should I even bother checking" decision and the final verdict once
+// that flag is in). Everything else (vp/do/om/gm/sm_am_dm/undefined) is denied.
+// ⚠️ CORRECTED (RBAC audit, 2026-09-16) -- this used to check the literal string 'supervisor' and
+// exclude 'owner' entirely, on the assumption (from an earlier, pre-dispatch-#148 CLAUDE.md draft)
+// that profiles.role only carried 3 real values (admin/supervisor/manager). The live DB constraint
+// (supabase/schema.sql's profiles_role_check) has carried 9 real ids since dispatch #148 --
+// 'area_supervisor' (not 'supervisor'), plus 'owner' as a second level-1 (top-tier, same as admin)
+// role -- src/engine/permissions.js's DEFAULT_ROLES is the source of truth. Neither a real
+// area_supervisor-role profile nor a real owner-role profile could ever pass this check before.
+// Currently dormant (the one live account is role='admin'), fixed opportunistically as part of the
+// broader RBAC audit rather than left for a real account to hit it first. security_findings' RLS
+// policy (supabase/schema-security-findings-role-fix.sql) is updated in the same pass -- see this
+// function's own "must never be looser than that policy" rule above, still true, now against the
+// corrected policy.
 export function securityPanelAccess(userRole, gmRevealEnabled) {
-  if (userRole === 'admin' || userRole === 'supervisor') return 'allowed';
+  if (userRole === 'admin' || userRole === 'owner' || userRole === 'area_supervisor') return 'allowed';
   if (userRole === 'manager') return gmRevealEnabled ? 'allowed' : 'denied';
   return 'denied';
 }
@@ -1043,7 +1053,10 @@ export function SecurityPanel({ userRole, onClose }) {
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (userRole === 'admin' || userRole === 'supervisor') { if (!cancelled) setPermState('allowed'); return; }
+      // Was a hand-duplicated copy of securityPanelAccess()'s own admin/owner/area_supervisor
+      // check (and drifted from it, still checking the stale 'supervisor' string after the
+      // exported function was corrected) -- call the real one instead of re-deriving it.
+      if (securityPanelAccess(userRole, false) === 'allowed') { if (!cancelled) setPermState('allowed'); return; }
       if (userRole !== 'manager') { if (!cancelled) setPermState('denied'); return; }
       const enabled = await loadGmIdentityRevealEnabled();
       if (!cancelled) setPermState(securityPanelAccess(userRole, enabled));
@@ -1073,11 +1086,14 @@ export function SecurityPanel({ userRole, onClose }) {
     return () => { cancelled = true; };
   }, [permState]);
 
-  // dispatch #50 Part B -- frictionless reveal for the privileged tier only. "Developer/Admin/
-  // Owner" in the owner's own words collapses to the single real DB role value 'admin'
-  // (profiles.role's check constraint allows exactly admin/supervisor/manager -- CLAUDE.md's own
-  // documented finding). Supervisor/manager/GM keep the existing click-through RevealName path
-  // unchanged -- this is additive, not a widening of who MAY reveal, only who is asked to click.
+  // dispatch #50 Part B -- frictionless reveal for the privileged tier only: "Developer/Admin/
+  // Owner" in the owner's own words. ⚠️ CORRECTED (RBAC audit, 2026-09-16) -- this used to check
+  // only 'admin', on the stale pre-dispatch-#148 assumption that 'owner' collapsed into the same
+  // DB value; 'owner' is now a real, distinct, equally-top-tier role (permissions.js's
+  // DEFAULT_ROLES: both level 1), so a real owner-role profile was silently excluded from the
+  // exact tier this comment says it belongs to. Area_supervisor/manager/GM keep the existing
+  // click-through RevealName path unchanged -- this is additive, not a widening of who MAY
+  // reveal (securityPanelAccess already allows all three), only who is asked to click.
   // A ref, not a state flag, guards this to run exactly once per mount: it must not re-fire if
   // `findings` happens to get a new array reference for an unrelated reason, and it must not be a
   // dependency itself (same self-retrigger risk the data-load effect's own comment above warns
@@ -1085,7 +1101,7 @@ export function SecurityPanel({ userRole, onClose }) {
   // depends on, but the ref keeps that invariant explicit rather than relying on it never changing).
   const bulkRevealTried = React.useRef(false);
   React.useEffect(() => {
-    if (userRole !== 'admin' || dataState !== 'loaded' || bulkRevealTried.current) return;
+    if ((userRole !== 'admin' && userRole !== 'owner') || dataState !== 'loaded' || bulkRevealTried.current) return;
     const tokens = [...new Set(findings.map(f => f.empToken).filter(Boolean))];
     if (!tokens.length) return; // nothing to resolve (an inventory-only run, or empty) -- no call
     bulkRevealTried.current = true;
