@@ -97,6 +97,9 @@ a restricted role.
 
 ### Pending owner action
 
-- Run `supabase/schema-security-findings-role-fix.sql`
-- Run `supabase/schema-sage-prompts-role-fix.sql`
+- ✅ **DONE (owner-confirmed 2026-09-16)** — `supabase/schema-security-findings-role-fix.sql` and
+  `supabase/schema-sage-prompts-role-fix.sql` both run. Not independently re-verified this session
+  (no live DB access to confirm the policies/trigger actually changed) — re-check live if a
+  `security_findings` or `sage_prompts` RLS question comes up again.
 - Decide whether to authorize a throwaway restricted-role test account for live RLS verification
+  (still open — the single highest-value item above)
