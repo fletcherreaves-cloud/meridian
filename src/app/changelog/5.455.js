@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.452', date:'2026-09-16', changes:[
+export default {version:'5.455', date:'2026-09-16', changes:[
   'Stream-freshness coverage audit (Task #70): 8 auto/emailed streams that were already eager-' +
   'loaded into ds and consumed by live panels (eBOS Purchases, Forecast Week Cache, and 6 ' +
   'monthly Performance-Review streams -- Roster Statistics, Employee Roster, Turnover, Digital ' +
