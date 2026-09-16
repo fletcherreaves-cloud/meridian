@@ -14,6 +14,8 @@ import * as React from 'react';
 import { loadEventImpact, saveEventImpact } from '../lib/supabase.js';
 import { setEventImpact } from '../engine/forecast.js';
 import { STORE_NAMES, INV_ORG_COORDS, sName } from '../constants.js';
+import { ModalShell } from '../components/ModalShell.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -32,16 +34,17 @@ export function EventImpactPanel({ onClose }) {
   const [rows, setRows] = useState(null);       // loaded registry rows (camelCase)
   const [edits, setEdits] = useState({});       // key `loc|type` → {homeImpact, awayImpact, storeType}
   const [evType, setEvType] = useState('sports');
-  const [scope, setScope] = useState('all');    // all | ok | fl
+  const [locScope, setLocScope] = useState({ level: 'all', id: null }); // LocationSelector value
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
   useEffect(() => { let live = true; loadEventImpact().then(r => { if (live) setRows(r || []); }).catch(() => { if (live) setRows([]); }); return () => { live = false; }; }, []);
 
   const byKey = useMemo(() => { const m = {}; for (const r of (rows || [])) m[r.loc + '|' + r.eventType] = r; return m; }, [rows]);
-  const LOCS = useMemo(() => Object.keys(STORE_NAMES)
-    .filter(l => scope === 'all' || (INV_ORG_COORDS[l] || {}).state === (scope === 'ok' ? 'OK' : 'FL'))
-    .sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)), [scope]);
+  const allStores = useMemo(() => Object.keys(STORE_NAMES).map(l => ({ loc: l })), []);
+  const locTree = useMemo(() => buildLocationHierarchy(allStores, INV_ORG_COORDS, STORE_NAMES), [allStores]);
+  const LOCS = useMemo(() => locationSelectorLocs(locScope, locTree)
+    .slice().sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)), [locScope, locTree]);
 
   const cur = (loc, field) => {
     const k = loc + '|' + evType;
@@ -89,23 +92,20 @@ export function EventImpactPanel({ onClose }) {
     style: { width: 52, textAlign: 'right', fontSize: '11px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: 4, padding: '3px 5px', fontVariantNumeric: 'tabular-nums' } });
   const sportsT = evType === 'sports';
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, paddingTop: 24 } },
-    div({ style: { background: 'var(--surf)', border: '.5px solid var(--bdr2)', borderRadius: 'var(--rl)', width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.5)', overflow: 'hidden' } },
-      // header
-      div({ style: { padding: '12px 16px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 18 } }, '📈'),
-        div({ style: { flex: 1, minWidth: 160 } },
-          div({ style: { fontSize: '13px', fontWeight: 800, color: 'var(--text)' } }, 'Event Impact Registry'),
-          div({ style: { fontSize: '9px', color: 'var(--text3)' } }, 'Measured per-store sales lift by event type — editable; feeds the forecast')),
-        h('select', { value: evType, onChange: e => setEvType(e.target.value), style: { fontSize: '11px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: 5, padding: '4px 7px' } },
-          TYPES.map(([v, l]) => h('option', { key: v, value: v }, l))),
-        div({ style: { display: 'flex', gap: 3 } },
-          ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([id, l]) =>
-            btn({ key: id, onClick: () => setScope(id), style: { fontSize: '10px', padding: '4px 9px', borderRadius: 'var(--r)', background: scope === id ? 'var(--adim)' : 'transparent', color: scope === id ? 'var(--amber)' : 'var(--text3)', border: '.5px solid ' + (scope === id ? 'rgba(245,188,0,.4)' : 'var(--bdr)'), cursor: 'pointer' } }, l))),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+  const headerExtra = div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+    h('select', { value: evType, onChange: e => setEvType(e.target.value), style: { fontSize: '11px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: 5, padding: '4px 7px' } },
+      TYPES.map(([v, l]) => h('option', { key: v, value: v }, l))),
+    h(LocationSelector, { stores: allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'progressive' }));
+
+  return h(ModalShell, { title: 'Event Impact Registry', subtitle: 'Measured per-store sales lift by event type — editable; feeds the forecast', icon: '📈', onClose, maxWidth: 860, headerExtra, tintHeader: true,
+    footer: div({ style: { display: 'flex', alignItems: 'center', gap: 10 } },
+      div({ style: { flex: 1, fontSize: '10px', color: msg.startsWith('✓') ? '#6ee7b7' : msg ? '#fca5a5' : 'var(--text3)' } },
+        msg || (sportsT ? 'Home/Away = sales lift; GC Home/Away = guest-count lift (independent — a store can have one without the other). Values are % (e.g. 7.5). Edit = override; ↺ = reset to measured.' : 'Impact = sales lift %; GC % = guest-count lift %, independently measured. Edit to set; ↺ resets both to measured.')),
+      dirtyKeys.length ? span({ style: { fontSize: '10px', color: 'var(--amber)', fontWeight: 700 } }, dirtyKeys.length + ' unsaved') : null,
+      btn({ className: 'btn btn-sm btn-a', disabled: busy || !dirtyKeys.length, style: { fontWeight: 700, opacity: (busy || !dirtyKeys.length) ? 0.5 : 1 }, onClick: save }, busy ? 'Saving…' : '✓ Save changes')) },
       // body
       rows === null ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: '12px' } }, 'Loading…')
-      : div({ style: { flex: 1, overflow: 'auto', padding: '0 4px' } },
+      : div({ style: { padding: '0 4px' } },
         h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } },
           h('thead', null, h('tr', null,
             th('Store'), th('Type'),
@@ -138,11 +138,5 @@ export function EventImpactPanel({ onClose }) {
                 hasReset ? btn({ onClick: () => resetToMeasured(loc), title: 'Reset to measured', style: { fontSize: '9px', color: 'var(--text3)', background: 'transparent', border: '1px solid var(--bdr2)', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' } }, '↺') : null));
           }))),
         LOCS.every(l => !byKey[l + '|' + evType]) ? div({ style: { padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px', lineHeight: 1.6 } },
-          'No measured data for this event type yet. Sports/retail/holiday are measured; weather has nothing tagged yet in the calendar to measure against. You can still enter values manually.') : null),
-      // footer
-      div({ style: { padding: '10px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10 } },
-        div({ style: { flex: 1, fontSize: '10px', color: msg.startsWith('✓') ? '#6ee7b7' : msg ? '#fca5a5' : 'var(--text3)' } },
-          msg || (sportsT ? 'Home/Away = sales lift; GC Home/Away = guest-count lift (independent — a store can have one without the other). Values are % (e.g. 7.5). Edit = override; ↺ = reset to measured.' : 'Impact = sales lift %; GC % = guest-count lift %, independently measured. Edit to set; ↺ resets both to measured.')),
-        dirtyKeys.length ? span({ style: { fontSize: '10px', color: 'var(--amber)', fontWeight: 700 } }, dirtyKeys.length + ' unsaved') : null,
-        btn({ className: 'btn btn-sm btn-a', disabled: busy || !dirtyKeys.length, style: { fontWeight: 700, opacity: (busy || !dirtyKeys.length) ? 0.5 : 1 }, onClick: save }, busy ? 'Saving…' : '✓ Save changes'))));
+          'No measured data for this event type yet. Sports/retail/holiday are measured; weather has nothing tagged yet in the calendar to measure against. You can still enter values manually.') : null));
 }

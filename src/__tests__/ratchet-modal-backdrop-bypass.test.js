@@ -130,7 +130,20 @@ const ROOTS = ['src/views', 'src/features'];
 // Dispatch #207 converted 'planning' (PlanningHubPanel) to route:true too, but that component
 // lives in src/app/App.js, which ROOTS above never walks -- confirmed by re-running this file's
 // own scan after the conversion: still exactly 42 hits, no change.
-const CEILING = 42;
+// Lowered 42 → 40 by the 2026-09-16 panel-contract sweep (Task #55): EventImpactPanel
+// (src/views/event-impact.js) converted to ModalShell + LocationSelector (also closed a
+// hand-rolled-location-selector gap the same pass), and PromoteModal
+// (src/views/signals.js) converted to ModalShell (closeOnBackdrop:true replaces its old
+// onClick-outside-to-cancel div). Re-measured fresh on this branch, not by arithmetic.
+// NOT converted this pass, on purpose: pace-to-target.js / schedule-summary.js /
+// skills-matrix.js / yearly-projections.js / labor-analysis.js / features/lifelenz.js all share
+// one deliberate "embedded ? fill the Planning-hub tab : near-fullscreen bottom-sheet with
+// rounded-top-only card" layout, not ModalShell's centered/capped dialog — collapsing that
+// family into ModalShell would be a real, unattended visual regression across 6 working panels,
+// not a mechanical shell swap. features/smart-targets.js's Smart Target Engine is a third
+// distinct pattern (92%-width right-side drawer). All three shapes are candidates for a future
+// ModalShell variant (or their own shared shell), a product decision, not a sweep item.
+const CEILING = 40;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

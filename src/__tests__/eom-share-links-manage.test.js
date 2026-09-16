@@ -81,12 +81,24 @@ async function openLinksModal(container) {
   });
 }
 
+// Pre-existing date-boundary flake (v5.446's own changelog already documented it), root-caused
+// here: eom-dashboard.js's status column computes `expired = new Date(l.expiresAt) < new Date()`
+// against the REAL clock, but the "active" fixture link below hardcoded a fixed calendar
+// expiresAt ('2026-09-15T12:00:00Z') -- correct the day this test was written, but a ticking time
+// bomb that flips "Active" to "Expired" the moment real time crosses it, with no code change.
+// Fixed by deriving every fixture date from Date.now() at test-run time instead, so the "active"
+// link's expiry always stays in the future and the "revoked" one's always stays in the past,
+// regardless of when this file runs -- the same fix class CLAUDE.md's own date-boundary rule
+// calls for (never a literal "today"/fixed-date compare in test data that outlives the day it's written).
+const NOW = Date.now();
+const DAY = 86400000;
+
 describe('EOM Dashboard — Manage Share Links', () => {
   let container, root;
   beforeEach(() => {
     loadLinksMock = vi.fn(async () => [
-      { token: 'tok-active', loc: '3708', storeName: 'Ardmore-Broadway', createdAt: '2026-09-01T12:00:00Z', expiresAt: '2026-09-15T12:00:00Z', revoked: false, viewCount: 3, lastViewedAt: '2026-09-02T09:00:00Z', acknowledgedAt: null },
-      { token: 'tok-revoked', loc: '6178', storeName: 'Chipley', createdAt: '2026-08-20T12:00:00Z', expiresAt: '2026-09-03T12:00:00Z', revoked: true, viewCount: 1, lastViewedAt: null, acknowledgedAt: null },
+      { token: 'tok-active', loc: '3708', storeName: 'Ardmore-Broadway', createdAt: new Date(NOW - 15 * DAY).toISOString(), expiresAt: new Date(NOW + 14 * DAY).toISOString(), revoked: false, viewCount: 3, lastViewedAt: new Date(NOW - 14 * DAY).toISOString(), acknowledgedAt: null },
+      { token: 'tok-revoked', loc: '6178', storeName: 'Chipley', createdAt: new Date(NOW - 27 * DAY).toISOString(), expiresAt: new Date(NOW - 13 * DAY).toISOString(), revoked: true, viewCount: 1, lastViewedAt: null, acknowledgedAt: null },
     ]);
     revokeLinkMock = vi.fn(async () => ({ error: null }));
     ({ container, root } = mountRoot());

@@ -9,6 +9,7 @@ import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap, collapseS
 import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent, saveUserSetting } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -60,7 +61,16 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const today = new Date();
   const [viewY, setViewY] = uSt(today.getFullYear());
   const [viewM, setViewM] = uSt(today.getMonth()+1); // 1-12
-  const [scope, setScope] = uSt(initialScope || 'all'); // 'all' | 'ok' | 'fl' | a specific loc
+  // LocationSelector value ({level:'all'|'state'|'store', id}) — `scope` below derives the plain
+  // 'all' | 'ok' | 'fl' | loc string the rest of this component already reads/prints, so only the
+  // control itself (and its setter) needed to change, not every downstream consumer.
+  const [locScope, setLocScope] = uSt(() => {
+    const iv = initialScope || 'all';
+    if (iv === 'ok' || iv === 'fl') return { level: 'state', id: iv.toUpperCase() };
+    if (iv !== 'all') return { level: 'store', id: iv };
+    return { level: 'all', id: null };
+  });
+  const scope = locScope.level === 'state' ? locScope.id.toLowerCase() : locScope.level === 'store' ? locScope.id : 'all';
   // initialTab (Events Phase 3 (a)) — lets a caller open straight into 'rules' (the new unified
   // Events panel's Rules tab) instead of always landing on 'grid'. Same "raw prop, once" shape as
   // initialScope just above; falls back to 'grid' for any unrecognized value, same as before.
@@ -871,18 +881,8 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             btn({className:'btn btn-sm',onClick:()=>navMonth(1)},'▶'),
             btn({className:'btn btn-sm',style:{fontSize:'8px'},onClick:()=>{setViewY(today.getFullYear());setViewM(today.getMonth()+1);}},'Today')
           ),
-          div({style:{display:'flex',gap:2,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
-            ...['all','ok','fl'].map(g=>btn({key:g,onClick:()=>setScope(g),
-              style:{padding:'3px 8px',border:'none',fontSize:'9px',cursor:'pointer',
-                background:scope===g?'var(--amber)':'transparent',color:scope===g?'#000':'var(--text3)'}},
-              g==='all'?'All':g==='ok'?'OK':'FL'))
-          ),
-          h('select',{value:LOCS.includes(scope)?scope:'',onChange:e=>e.target.value&&setScope(e.target.value),
-            style:{fontSize:'9px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
-              borderRadius:'var(--r)',color:'var(--text)'}},
-            h('option',{value:''},'— single store —'),
-            LOCS.map(l=>h('option',{key:l,value:l},sNameC(l)))
-          ),
+          h(LocationSelector,{stores:LOCS.map(l=>({loc:l})),invOrgCoords:INV_ORG_COORDS,storeNames:STORE_NAMES,
+            value:locScope,onChange:setLocScope,mode:'progressive'}),
           div({style:{display:'flex',gap:2,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
             ...[['month','📆 Month'],['agenda','📋 Agenda']].map(([v,l])=>btn({key:v,onClick:()=>setGridView(v),
               style:{padding:'3px 8px',border:'none',fontSize:'9px',cursor:'pointer',

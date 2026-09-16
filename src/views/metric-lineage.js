@@ -8,6 +8,14 @@
 // no ds/Supabase coupling; the registry IS the source of truth.
 import * as React from 'react';
 import { METRIC_PROVENANCE } from '../engine/metric-provenance.js';
+import { ModalShell } from '../components/ModalShell.js';
+
+// Same lazy-load-on-first-render pattern as dt-speedofservice.js/record-day.js (dispatch #136
+// Part 1) — keeps store-dash.js's ExportDropdown (145 KB + chart.js/auto) out of this small
+// panel's own eager bundle.
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
 
 const h = React.createElement;
 const { useState, useMemo } = React;
@@ -41,15 +49,22 @@ export function MetricLineagePanel({ onClose }) {
   const btn = { padding: '6px 12px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 700 };
   const th = t => h('th', { style: { textAlign: 'left', padding: '7px 10px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--surf)' } }, t);
 
-  return div({ style: { position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,.55)', overflow: 'auto', padding: 18 }, onClick: onClose },
-    div({ onClick: e => e.stopPropagation(), style: { width: 'min(1100px,100%)', margin: '0 auto', background: 'var(--bg)', border: '1px solid var(--bdr)', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
-      // Header
-      div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)', flexWrap: 'wrap' } },
-        div({},
-          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, '🔍 Metric Lineage'),
-          div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } }, `How every calculated metric is built — ${composedCount} composed metrics, traceable to source`)),
-        h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕')),
+  const exportRows = entries.map(e => ({
+    metric: e.label || e.key, key: e.key, system: e.system, report: e.report || '', table: e.table || '',
+    inputs: (e.inputs || []).join('; '), formula: e.formula, grain: e.grain,
+  }));
+  const exportCols = [
+    { key: 'metric', label: 'Metric' }, { key: 'key', label: 'Key' }, { key: 'system', label: 'Source' },
+    { key: 'report', label: 'Report' }, { key: 'table', label: 'Table' }, { key: 'inputs', label: 'Inputs' },
+    { key: 'formula', label: 'Formula' }, { key: 'grain', label: 'Grain' },
+  ];
 
+  return h(ModalShell, {
+    icon: '🔍', title: 'Metric Lineage', subtitle: `How every calculated metric is built — ${composedCount} composed metrics, traceable to source`,
+    onClose, maxWidth: 1100, tintHeader: true,
+    headerExtra: h(React.Suspense, { fallback: null },
+      h(LazyExportDropdown, { rows: exportRows, columns: exportCols, title: 'Metric Lineage', filename: 'metric-lineage-' + new Date().toISOString().slice(0, 10) })),
+  },
       // Directive note + controls
       div({ style: { padding: '10px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
         div({ style: { fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.5 } },
@@ -91,6 +106,5 @@ export function MetricLineagePanel({ onClose }) {
         div({ style: { fontSize: 10, color: 'var(--text3,var(--text2))', marginTop: 10, lineHeight: 1.5 } },
           'This registry (src/engine/metric-provenance.js) is the single source of truth — the same text also powers the ⓘ source tooltip on each KPI. Speed metrics (OEPE / R2P / TPPH / Avg Win TTL / Avg DT TTL) were each reconciled field-by-field to the QSRSoft Daily Activity report.')
       )
-    )
   );
 }
