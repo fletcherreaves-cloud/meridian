@@ -37,6 +37,14 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 ✅ **"Conversation memory across sessions" — SHIPPED (dispatch #187), do not re-implement.** See
 the "Cross-device conversation persistence" section below.
 
+⚠️ **"Generic metric-resolver" (replace the 7 tools with one, porting metric-source.js server-
+side) — measured NOT a small port, 2026-09-16, not attempted.** The registry itself is portable,
+but its real dependency is `src/lib/supabase.js`'s ~15 loader/aliasing functions (5,400+ lines),
+not raw Supabase rows — porting "the resolver" without those loaders resolves to nothing for most
+metrics. Full measurement + two safer scoped-down alternatives:
+`memory/finding-sage-metric-resolver-not-a-small-port-2026-09-16.md`. Get the owner's steer on
+which specific metric(s) are actually missing before re-proposing this.
+
 **Why `thinking: {type: "adaptive"}`:** `budget_tokens` is deprecated on Opus 4.8, rejected with 400. Use `{type: "adaptive"}` only.
 
 **System prompt** includes: store count, orgs (MCDOK/Emerald Arches), data date ranges, row counts for all data types, confirmed and plausible signals from the correlation engine.
