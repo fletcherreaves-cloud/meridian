@@ -15,6 +15,7 @@ import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifel
 // dialed_in — CLAUDE.md's "check whether a helper exists before writing one." blob-sync.js
 // is already the shared push/hydrate abstraction; no SAGE-specific wrapper needed.
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob } from '../lib/blob-sync.js';
+import { callSageStream } from '../lib/sage-client.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -614,55 +615,9 @@ TERMINOLOGY: OEPE, TPPH, Labor%, FOB, Base Food%, OSAT, DT%, B2B, MOP, Kiosk, 3P
 This is a private tool for one operator. Be candid, specific, and direct.${buildFieldDefsSection(ds?.qsrFieldDefs)}`;
 }
 
-// ── Edge Function call with SSE streaming ─────────────────────────────────────
-async function callSageStream(messages, systemPrompt, onChunk, signal, onStatus) {
-  const sbUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  if (!sbUrl) throw new Error('VITE_SUPABASE_URL not set — Supabase not configured.');
-
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Not signed in — sign in to use SAGE.');
-
-  const response = await fetch(`${sbUrl}/functions/v1/sage-chat`, {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({ messages, systemPrompt }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text().catch(() => String(response.status));
-    throw new Error(err || `SAGE error ${response.status}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') return;
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.text)   onChunk(parsed.text);
-        if (parsed.status && onStatus) onStatus(parsed.status);
-        if (parsed.error)  throw new Error(parsed.error);
-      } catch (e) { if (e.message && !e.message.startsWith('data:')) throw e; }
-    }
-  }
-}
+// ── Edge Function call with SSE streaming — src/lib/sage-client.js (shared with
+// coaching.js/analytics.js so those panels reuse the same already-deployed
+// sage-chat Edge Function instead of requiring their own Anthropic API key) ────
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 function renderInline(text) {
