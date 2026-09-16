@@ -143,7 +143,18 @@ const ROOTS = ['src/views', 'src/features'];
 // not a mechanical shell swap. features/smart-targets.js's Smart Target Engine is a third
 // distinct pattern (92%-width right-side drawer). All three shapes are candidates for a future
 // ModalShell variant (or their own shared shell), a product decision, not a sweep item.
-const CEILING = 40;
+// Lowered 40 → 39 by Task #72 (panel-contract round 2): sage.js's LogIssueModal (the "🐞 Log
+// this as an issue" popup) converted to ModalShell, zIndex:2100 preserved explicitly since it
+// and its still-hand-rolled sibling PromptLibraryModal both stack above SAGE's own composer.
+// PromptLibraryModal (sage.js, same file) and KbViewerModal (sage.js, portal-based — see its
+// own createPortal(...,document.body) call, a different concern from a plain backdrop) were
+// deliberately NOT touched this pass: both are large multi-feature components (search, prompt
+// scheduling, selection) where a mechanical shell swap carries more risk than LogIssueModal's
+// single self-contained form, and this repo's own standing rule is opportunistic conversion,
+// not a sweep — see this file's own "NOT converted this pass" note above for the same posture
+// applied to the bottom-sheet/drawer family. Verified via a real render test (LogIssueModal
+// exported + mounted directly), not just this count dropping.
+const CEILING = 39;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

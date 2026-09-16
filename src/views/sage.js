@@ -876,7 +876,13 @@ function buildLogTarget(messages, i) {
   return { question: primary || immediate, immediate, conversation, answer };
 }
 
-function LogIssueModal({ question, answer, conversation, onClose }) {
+// Panel-contract round 2 (Task #72) -- converted to ModalShell (was a hand-rolled backdrop/
+// card, the exact pattern src/__tests__/ratchet-modal-backdrop-bypass.test.js's R7 flags).
+// zIndex:2100 preserved explicitly (ModalShell's default is Z.modal=300) -- this modal and its
+// sibling PromptLibraryModal (still hand-rolled, not touched this pass) both stack above SAGE's
+// own composer/chat surface, which itself sits at a high z-index; changing that silently would
+// risk this modal rendering BEHIND the chat panel it's meant to cover.
+export function LogIssueModal({ question, answer, conversation, onClose }) {
   const src = detectSource((question || '') + ' ' + (answer || ''));
   const [dest, setDest] = uSt(looksLikeFailure(answer) ? 'task' : 'fr');
   const [title, setTitle] = uSt(('SAGE data issue: ' + (question || '').trim()).slice(0, 80));
@@ -913,9 +919,7 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
   const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
   const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'var(--bdr)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
 
-  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
-    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid var(--bdr)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
-      h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🐞 Log this as an issue'),
+  return h(ModalShell, { title: '🐞 Log this as an issue', onClose, maxWidth: 560, zIndex: 2100, closeOnBackdrop: true },
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Turn SAGE’s response into a tracked ticket with a ready-to-run troubleshooting prompt.' + (src ? ' Detected source: ' + src.label + '.' : '')),
       h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: muted, marginBottom: 5 } }, 'Where should this go?'),
       h('div', { style: { display: 'flex', gap: 8, marginBottom: 4 } },
@@ -932,7 +936,7 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
           h('option', { value: 'high' }, 'High'), h('option', { value: 'medium' }, 'Medium'), h('option', { value: 'low' }, 'Low')),
         h('span', { style: { flex: 1, fontSize: 10, color: msg.startsWith('⚠') ? red : grn } }, msg),
         h('button', { onClick: onClose, style: { padding: '6px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Cancel'),
-        h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create'))));
+        h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create')));
 }
 
 // ── QSRSoft KB viewer — search + read the vendor's Help Center corpus (qsrsoft_kb) ──────────────
