@@ -22,7 +22,7 @@ import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { businessDate } from '../utils/date.js';
-import { normalizeForm, sectionColor, CARD_COLOR } from '../engine/forms-model.js';
+import { normalizeForm, sectionColor, CARD_COLOR, parseOptionBadge, formatOptionBadge } from '../engine/forms-model.js';
 import { loadChecklistSubmission, saveChecklistSubmission } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -227,14 +227,18 @@ function FillItem({ it, rkey, value, onChange }) {
     cursor: 'pointer', fontWeight: selected ? 700 : 400,
   });
   const circle = (selected) => ({ width: 12, height: 12, border: '1.5px solid #333', borderRadius: '50%', flex: 'none', display: 'inline-block', background: selected ? '#111' : 'transparent' });
+  const badgeStyle = (selected) => ({ marginLeft: 'auto', fontSize: 9, fontWeight: 700, color: selected ? '#111' : '#555', background: selected ? 'rgba(17,17,17,.14)' : '#eef0f4', borderRadius: 3, padding: '1px 6px', whiteSpace: 'nowrap' });
 
   if (it.kind === 'check') {
     const opts = (it.options && it.options.length ? it.options : ['Complete', 'Needs Action', 'Action Taken']);
     return div({ style: card },
       div({ style: title }, it.title),
-      opts.map((o, i) => div({
-        key: i, onClick: () => onChange(o), style: optRow(value === o),
-      }, span({ style: circle(value === o) }), o)),
+      opts.map((o, i) => {
+        const badge = formatOptionBadge(parseOptionBadge(o));
+        return div({
+          key: i, onClick: () => onChange(o), style: optRow(value === o),
+        }, span({ style: circle(value === o) }), o, badge ? span({ style: badgeStyle(value === o) }, badge) : null);
+      }),
     );
   }
   if (it.kind === 'field') {

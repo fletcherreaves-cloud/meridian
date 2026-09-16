@@ -42,6 +42,14 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   // button (eom-dashboard.js). Inputs must stay in sync with
   // .github/workflows/eom-notification-resend.yml's own `workflow_dispatch.inputs` block.
   resend_notify: { file: 'eom-notification-resend.yml', label: 'Resend Count Notification', inputs: { loc: '', period: '', debug: '0' } },
+  // Task #59 (Printable Forms expansion, self-serve "add form") — lets the Printable Forms
+  // panel (src/views/forms-print.js) request an on-demand re-pull of one specific form by
+  // title, instead of that always requiring someone to run scripts/qsrsoft-forms-pull.mjs
+  // locally with QSRSoft credentials and commit public/forms/*.json by hand. forms_match is a
+  // title regex (workflow default: blank = pull every published form); forms_ids is left
+  // available for a future exact-formId flow but unused by today's UI. Inputs must stay in
+  // sync with .github/workflows/qsrsoft-forms-pull.yml's own `workflow_dispatch.inputs` block.
+  forms: { file: 'qsrsoft-forms-pull.yml', label: 'Printable Forms Library', inputs: { forms_ids: '', forms_match: '', debug: '0' } },
 };
 
 const CORS = {
