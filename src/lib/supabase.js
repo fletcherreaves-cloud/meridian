@@ -2354,7 +2354,11 @@ export async function loadDailyActivityRange(startDate, endDate) {
   // silently resolved to a punchedHrs/0 = null ratio for every caller until this fix.
   return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
+    // dt_transactions/is_transactions added (Task #73) -- src/engine/vlh-guide.js's
+    // guideNeededHoursForRow() reads these two guest-count legs (distinct from dt_trans_cnt,
+    // a DT timing denominator, not a guest count) to look up the real VLH workbook tier.
+    // Additive select; this loader's other caller (labor-allocation.js) ignores unused columns.
+    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,dt_transactions,is_transactions,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
     .gte('dt', startDate)
     .lte('dt', endDate)
     .order('dt')
