@@ -70,6 +70,33 @@ export const STREAMS = [
   // _stInventorySummaryFreshness / supabase.js's loadQsrInventorySummaryFreshness) -- a single
   // {date} row, not the full ~10.5k-row table, since this check only needs the newest sync time.
   { key: 'inventorySummary', label: 'Inventory Summary/Usage',  dsField: 'qsrInventorySummaryRows', cadenceDays: 1 },
+  // ── Added 2026-09-16 (coverage audit) — 8 streams already eager-loaded into ds and consumed
+  // by a live panel (Performance Reviews' auto-populate, One Pager, At-A-Glance's forecast) but
+  // never covered here. Confirmed via a dedicated agent pass before adding, per this file's own
+  // standing pattern of citing why each entry is safe to check, not just that a workflow exists.
+  { key: 'ebos', label: 'eBOS Purchases', dsField: 'ebosRows', cadenceDays: 1 },
+  // Derived precompute artifact (computed FROM already-covered streams like labor/DAR), not a
+  // raw external pull -- "stale" here means a stale forecast cache, still a real thing to catch
+  // (At-A-Glance's weekProjections uses it as the PRIMARY current-week source, falling back to
+  // live forecastDay() only when missing/incomplete).
+  { key: 'forecastWeekCache', label: 'Forecast Week Cache', dsField: 'forecastWeekCache', cadenceDays: 1 },
+  // The 6 "monthly" Performance-Review streams below all pull DAILY (workflows run on a daily
+  // cron) but the pulled row is keyed by `month` ('YYYY-MM', from the DB's period_month column),
+  // not a daily date -- new Date('2026-08') parses as that month's 1st. A daily-cadence
+  // threshold against a value that only CHANGES once a month would false-alarm every single day
+  // after the month's first ~4 days, even while the underlying daily pull is running fine and
+  // refreshing that same row's other fields -- the exact trap the coverage audit flagged.
+  // cadenceDays:31 means this only fires if the month value itself hasn't rolled over across a
+  // full month boundary, i.e. the pull has been dead long enough to miss an entire period, not
+  // "hasn't updated today" (which this row shape can't distinguish from "updated today, same
+  // month as yesterday"). A coarser, monthly-grained signal, not a daily one -- correct for what
+  // these rows actually are.
+  { key: 'rosterStats', label: 'Roster Statistics', dsField: 'rosterStatsRows', dateField: 'month', cadenceDays: 31 },
+  { key: 'rosterRoleCounts', label: 'Employee Roster', dsField: 'rosterRoleCounts', dateField: 'month', cadenceDays: 31 },
+  { key: 'turnover', label: 'Turnover', dsField: 'turnoverRows', dateField: 'month', cadenceDays: 31 },
+  { key: 'digitalApp', label: 'Digital App', dsField: 'digitalAppRows', dateField: 'month', cadenceDays: 31 },
+  { key: 'mcdelivery', label: 'McDelivery', dsField: 'mcdeliveryRows', dateField: 'month', cadenceDays: 31 },
+  { key: 'shiftManager', label: 'Shift Manager', dsField: 'shiftManagerRows', dateField: 'month', cadenceDays: 31 },
 ];
 
 const _toMs = d => {
@@ -78,11 +105,14 @@ const _toMs = d => {
   return ms;
 };
 
-/** Latest date in `rows` that is <= asOf (ms), or null if none. */
-function _latestDateOf(rows, asOfMs) {
+/** Latest date in `rows` that is <= asOf (ms), or null if none. `dateField` defaults to
+ *  'date' -- override for a stream whose rows carry a different field (e.g. 'month' for
+ *  the roster/turnover/digital-app family below, which key by a 'YYYY-MM' period_month
+ *  rather than a daily date; new Date('2026-08') parses fine as the first of that month). */
+function _latestDateOf(rows, asOfMs, dateField = 'date') {
   let best = null;
   for (const r of rows || []) {
-    const ms = _toMs(r && r.date);
+    const ms = _toMs(r && r[dateField]);
     if (isNaN(ms) || ms > asOfMs) continue;
     if (best === null || ms > best) best = ms;
   }
@@ -105,7 +135,7 @@ export function streamFreshness(ds, asOf = new Date()) {
   for (const s of STREAMS) {
     const rows = ds ? ds[s.dsField] : undefined;
     if (!Array.isArray(rows)) continue; // not loaded into ds this session — no verdict
-    const latestDate = _latestDateOf(rows, asOfMs);
+    const latestDate = _latestDateOf(rows, asOfMs, s.dateField);
     const staleDays = latestDate ? Math.floor((asOfMs - latestDate.getTime()) / 864e5) : Infinity;
     const warnAt = s.cadenceDays + WARN_GRACE_DAYS;
     const critAt = s.cadenceDays + CRIT_GRACE_DAYS;
