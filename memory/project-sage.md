@@ -45,6 +45,13 @@ metrics. Full measurement + two safer scoped-down alternatives:
 `memory/finding-sage-metric-resolver-not-a-small-port-2026-09-16.md`. Get the owner's steer on
 which specific metric(s) are actually missing before re-proposing this.
 
+✅ **Comprehensive app-awareness (Task #74, 2026-09-16) — real tool count corrected (9→10) +
+`search_project_memory` given a system-prompt writeup it never had + new `query_data_health`
+tool.** Full scoping, what shipped, and what's deliberately deferred:
+`memory/finding-sage-app-awareness-2026-09-16.md`. **⚠️ Needs `supabase functions deploy
+sage-chat --no-verify-jwt` before `query_data_health` actually works — do not report it live
+until the owner confirms the redeploy.**
+
 **Why `thinking: {type: "adaptive"}`:** `budget_tokens` is deprecated on Opus 4.8, rejected with 400. Use `{type: "adaptive"}` only.
 
 **System prompt** includes: store count, orgs (MCDOK/Emerald Arches), data date ranges, row counts for all data types, confirmed and plausible signals from the correlation engine.
