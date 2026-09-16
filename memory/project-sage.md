@@ -45,6 +45,14 @@ metrics. Full measurement + two safer scoped-down alternatives:
 `memory/finding-sage-metric-resolver-not-a-small-port-2026-09-16.md`. Get the owner's steer on
 which specific metric(s) are actually missing before re-proposing this.
 
+✅ **`sage-chat` reused as a general AI backend for other panels (Task #76, 2026-09-16).** New
+`src/lib/sage-client.js` extracts `sage.js`'s own `callSageStream` (unchanged behavior) plus a
+`callSageOnce` convenience wrapper, so any panel needing an AI-generated brief/letter can call
+`sage-chat` instead of requiring its own personal Anthropic API key. First two consumers: GM
+Coaching Brief (`coaching.js`) and Forecast Brief (`analytics.js`'s `LocationBrief`), both of
+which were dead-by-default without this (no user had `mf_anthropic_key` set). Full details:
+`memory/finding-p2-scorecard-sage-brief-fix-2026-09-16.md`.
+
 ✅ **Comprehensive app-awareness (Task #74, 2026-09-16) — real tool count corrected (9→10) +
 `search_project_memory` given a system-prompt writeup it never had + new `query_data_health`
 tool.** Full scoping, what shipped, and what's deliberately deferred:
