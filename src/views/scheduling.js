@@ -186,7 +186,7 @@ function StoreScheduleTable({ rows }) {
           const idealDiff = r.schVsIdealDiff;
           const dayLabel  = r.date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
           const fixLabel  = r.fixGuideHrs > 0 ? fmtN(r.schFixHrs) + '/' + fmtN(r.fixGuideHrs) : fmtN(r.schFixHrs);
-          return h('tr', { key: i, style: { background: i%2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)' } },
+          return h('tr', { key: i, style: { background: i%2 === 0 ? 'transparent' : 'var(--surf2)' } },
             h('td', { style: tdS(TEXT2, true) }, dayLabel),
             h('td', { style: tdS(TEXT) }, fmt$(r.sales)),
             h('td', { style: tdS(TEXT2) }, (r.tcs||0).toLocaleString()),
@@ -278,7 +278,7 @@ function DistrictSummary({ schedRows }) {
             const cDiff = rows.reduce((s,r) => s+(r.schVsIdealDiff||0),0) / rows.length;
             const name  = sName(loc);
             const td = (val, color) => h('td', { style: { padding:'6px 10px', fontSize:12, color:color||TEXT2, textAlign:'right', borderBottom:`1px solid ${BDR}` } }, val);
-            return h('tr', { key: loc, style: { background: i%2===0?'transparent':'rgba(255,255,255,.02)' } },
+            return h('tr', { key: loc, style: { background: i%2===0?'transparent':'var(--surf2)' } },
               h('td', { style: { padding:'6px 10px', fontSize:12, color:TEXT, textAlign:'left', borderBottom:`1px solid ${BDR}` } },
                 h('span', { style: { fontWeight:600 } }, shortLoc(loc)),
                 name && h('span', { style: { color:TEXT3, marginLeft:6, fontSize:11 } }, name)
@@ -531,7 +531,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
 
   // ── Styles ──
   const pillBtn = (active) => ({
-    background: active ? 'rgba(245,158,11,.18)' : 'rgba(255,255,255,.04)',
+    background: active ? 'rgba(245,158,11,.18)' : 'var(--surf2)',
     border: `1px solid ${active ? AMBER : BDR}`,
     color: active ? AMBER : TEXT3, borderRadius: 20,
     padding: '3px 10px', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
@@ -677,7 +677,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
               h('tr', {
                 key: s.loc,
                 onClick: () => toggleExp(s.loc),
-                style: { background: i%2===0?'transparent':'rgba(255,255,255,.015)', cursor:'pointer' }
+                style: { background: i%2===0?'transparent':'var(--surf2)', cursor:'pointer' }
               },
                 h('td', { style: { ...tdS(TEXT, true), paddingLeft:8 } },
                   h('span', { style: { fontWeight:700 } }, s.loc),
@@ -699,7 +699,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
                 h('td', { colSpan:11, style: { padding:'0 0 0 24px', borderBottom:`2px solid ${BDR}` } },
                   div({ style: { padding:'10px 0 14px', overflowX:'auto' } },
                     // Story callout for this store
-                    div({ style: { fontSize:11, color:TEXT2, lineHeight:1.7, marginBottom:10, padding:'8px 12px', background:'rgba(255,255,255,.03)', borderRadius:R, borderLeft:`3px solid ${AMBER}` } },
+                    div({ style: { fontSize:11, color:TEXT2, lineHeight:1.7, marginBottom:10, padding:'8px 12px', background:'var(--surf2)', borderRadius:R, borderLeft:`3px solid ${AMBER}` } },
                       `LifeLenz forecast `,
                       h('strong', null, fmtN(s.tot.needHrs,1)+' hrs'),
                       `. GM scheduled `,
@@ -1013,13 +1013,13 @@ function SyncPanel({ schedRows }) {
   }, [cmd]);
 
   const inputStyle = {
-    background: 'rgba(255,255,255,.06)', border: `1px solid ${BDR}`, borderRadius: 4,
+    background: 'var(--surf3)', border: `1px solid ${BDR}`, borderRadius: 4,
     color: TEXT, fontSize: 12, padding: '4px 8px', cursor: 'pointer', colorScheme: 'dark',
   };
   const labelStyle = { fontSize: 11, color: TEXT3, marginBottom: 3 };
 
   return div({
-    style: { background: 'rgba(255,255,255,.03)', border: `1px solid ${BDR}`, borderRadius: R,
+    style: { background: 'var(--surf2)', border: `1px solid ${BDR}`, borderRadius: R,
              padding: '14px 16px', marginBottom: 20 }
   },
     div({ style: { fontSize: 11, fontWeight: 600, color: TEXT2, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '.5px' } },
@@ -1069,7 +1069,7 @@ function SyncPanel({ schedRows }) {
         }, cmd),
         h('button', {
           onClick: copy,
-          style: { background: copied ? 'rgba(34,197,94,.15)' : 'rgba(255,255,255,.07)',
+          style: { background: copied ? 'rgba(34,197,94,.15)' : 'var(--surf3)',
                    border: `1px solid ${copied ? GREEN : BDR}`, color: copied ? GREEN : TEXT2,
                    borderRadius: 4, padding: '5px 10px', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
         }, copied ? '✓ Copied' : 'Copy')
@@ -1177,7 +1177,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
   });
 
   const pillBtn = (active) => ({
-    background: active ? 'rgba(245,158,11,.18)' : 'rgba(255,255,255,.04)',
+    background: active ? 'rgba(245,158,11,.18)' : 'var(--surf2)',
     border: `1px solid ${active ? AMBER : BDR}`,
     color: active ? AMBER : TEXT3, borderRadius: 20,
     padding: '3px 10px', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
@@ -1207,7 +1207,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
           div({ style: { position:'relative', display:'inline-flex' } },
             h('button', {
               onClick: () => setShowSync(s => !s),
-              style: { background: showSync ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.06)',
+              style: { background: showSync ? 'rgba(59,130,246,.15)' : 'var(--surf3)',
                        border: `1px solid ${showSync ? BLUE : missingCount ? 'rgba(239,68,68,.5)' : BDR}`,
                        color: showSync ? BLUE : missingCount ? '#fca5a5' : TEXT2,
                        borderRadius: R, padding:'5px 11px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }
@@ -1227,7 +1227,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
 
       // ── Week navigator (panel-level — controls all tabs) ─────────────────────
       div({ style: { display:'flex', alignItems:'center', gap:8, marginBottom: showSync ? 12 : 16,
-        padding:'8px 12px', background:'rgba(255,255,255,.03)', border:`1px solid ${BDR}`,
+        padding:'8px 12px', background:'var(--surf2)', border:`1px solid ${BDR}`,
         borderRadius:R, flexWrap:'wrap' } },
         div({ style: { fontSize:10, color:TEXT3, textTransform:'uppercase', letterSpacing:'.5px', flexShrink:0 } }, 'Week:'),
         h('button', { onClick:()=>navigateWeek(-1),
@@ -1246,10 +1246,10 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
         div({ style: { display:'flex', gap:4, alignItems:'center', borderLeft:`1px solid ${BDR}`, paddingLeft:8 } },
           h('input', { type:'date', value:manualWeekDate, onChange:e=>setManualWeekDate(e.target.value),
             title:'Jump to week containing this date',
-            style:{background:'rgba(255,255,255,.06)',border:`1px solid ${BDR}`,borderRadius:4,
+            style:{background:'var(--surf3)',border:`1px solid ${BDR}`,borderRadius:4,
               color:TEXT,fontSize:11,padding:'3px 6px',cursor:'pointer',colorScheme:'dark'} }),
           h('button', { onClick:manualPickWeek, disabled:!manualWeekDate,
-            style:{background:'rgba(255,255,255,.07)',border:`1px solid ${BDR}`,color:TEXT2,
+            style:{background:'var(--surf3)',border:`1px solid ${BDR}`,color:TEXT2,
               borderRadius:4,padding:'3px 8px',fontSize:11,cursor:'pointer'} }, 'Go')
         ),
         // Data availability badge
@@ -1268,7 +1268,7 @@ export function SchedulingPanel({ ds, settings, onClose, embedded }) {
       // ── No data for selected week notice ─────────────────────────────────────
       !weekHasData && activeWeekKey && schedRows.length > 0 && div({
         style:{padding:'20px',textAlign:'center',color:TEXT3,
-          background:'rgba(255,255,255,.02)',border:`1px solid ${BDR}`,borderRadius:R,marginBottom:16}
+          background:'var(--surf2)',border:`1px solid ${BDR}`,borderRadius:R,marginBottom:16}
       },
         div({style:{fontSize:20,marginBottom:8}},'📅'),
         div({style:{fontWeight:600,color:TEXT2,marginBottom:4}},'No scheduling data for this week'),

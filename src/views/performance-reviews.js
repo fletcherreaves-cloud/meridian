@@ -2219,7 +2219,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
             div({style:{
               display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
               padding:'4px 10px',
-              background:'rgba(255,255,255,.03)',
+              background:'var(--surf2)',
               borderBottom:`1px solid ${BDR}`,
               fontSize:10, color:TEXT3, fontWeight:700,
             }},
@@ -2235,7 +2235,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
               const isOpen = expanded.has(mKey);
               return div({key:m.key, style:{
                 borderBottom: i < cat.metrics.length - 1 ? `1px solid ${BDR}33` : 'none',
-                background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)',
+                background: i%2===0 ? 'transparent' : 'var(--surf2)',
               }},
                 // Summary row (clickable)
                 div({
@@ -2276,7 +2276,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
                   // Monthly header
                   div({style:{
                     display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
-                    padding:'4px 8px', background:'rgba(255,255,255,.05)',
+                    padding:'4px 8px', background:'var(--surf3)',
                     borderBottom:`1px solid ${BDR}`,
                     color:TEXT3, fontWeight:700, fontSize:9,
                   }},
@@ -2291,7 +2291,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
                     div({key:mi, style:{
                       display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
                       padding:'4px 8px',
-                      background: mi%2===0?'transparent':'rgba(255,255,255,.02)',
+                      background: mi%2===0?'transparent':'var(--surf2)',
                       borderBottom: mi < m.monthlyData.length-1 ? `1px solid ${BDR}22` : 'none',
                       alignItems:'center',
                     }},
@@ -2317,7 +2317,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
                   m.avgRating != null && div({style:{
                     display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
                     padding:'4px 8px', borderTop:`1px solid ${BDR}`,
-                    background:'rgba(255,255,255,.05)', fontWeight:700, fontSize:9,
+                    background:'var(--surf3)', fontWeight:700, fontSize:9,
                   }},
                     span({style:{color:TEXT3,gridColumn:'1/4'}},'6-month avg'),
                     span({style:{textAlign:'right',...mono,gridColumn:'4/5'}}),
@@ -2340,7 +2340,7 @@ function ScoreBreakdownPanel({review, cfg, period}) {
             div({style:{
               display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
               padding:'7px 10px',
-              background:'rgba(255,255,255,.05)',
+              background:'var(--surf3)',
               borderTop:`1px solid ${BDR}`,
               fontSize:11, fontWeight:700,
             }},

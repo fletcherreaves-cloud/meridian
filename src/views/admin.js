@@ -42,7 +42,7 @@ function RoleDot({ color, size = 10 }) {
 function LevelBadge({ level }) {
   return span({style:{
     fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:8,
-    background:'rgba(255,255,255,.07)',color:TEXT3,border:`1px solid ${BDR}`,
+    background:'var(--surf3)',color:TEXT3,border:`1px solid ${BDR}`,
     whiteSpace:'nowrap',
   }}, `Level ${level}`);
 }
@@ -193,7 +193,7 @@ function UsersTab({ orgRoles }) {
           style:{display:'grid',gridTemplateColumns:'1fr 110px 1fr 1fr',minWidth:720,
             padding:'12px 14px',gap:12,alignItems:'center',
             borderBottom:idx<users.length-1?`1px solid ${BDR}`:'none',
-            background:idx%2===0?'transparent':'rgba(255,255,255,.015)'}},
+            background:idx%2===0?'transparent':'var(--surf2)'}},
           div({style:{minWidth:0}},
             div({style:{display:'flex',alignItems:'center',gap:8}},
               div({style:{width:28,height:28,borderRadius:'50%',flexShrink:0,

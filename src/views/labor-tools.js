@@ -271,7 +271,7 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
               const isPeakOepe=data.peakOepeHour&&hr.hour===data.peakOepeHour.hour;
               return h('tr',{key:i,style:{
                 background:isPeakGC?'rgba(52,211,153,.08)':isPeakOepe?'rgba(239,68,68,.06)':
-                  i%2?'rgba(255,255,255,.015)':'transparent',
+                  i%2?'var(--surf2)':'transparent',
                 borderBottom:'.5px solid var(--bdr)'}},
                 td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text2)'}},hr.label),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
@@ -608,7 +608,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
                     (f.discRate*100).toFixed(2)+'% discounted')
                 )
               ),
-              div({style:{height:12,background:'rgba(255,255,255,.05)',borderRadius:4,overflow:'hidden'}},
+              div({style:{height:12,background:'var(--surf3)',borderRadius:4,overflow:'hidden'}},
                 div({style:{height:'100%',width:pct+'%',background:col,borderRadius:4,
                   transition:'width .4s ease'}})
               )
@@ -960,7 +960,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                     div({style:{display:'flex',gap:3,justifyContent:'center',flexWrap:'wrap'}},
                       ...(['simple','ae','ewma','di','ly','dow'].filter(opt=>opt!==m).map(opt=>
                         btn({key:opt,style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
-                          background:'rgba(255,255,255,.05)',border:'.5px solid var(--bdr)',
+                          background:'var(--surf2)',border:'.5px solid var(--bdr)',
                           color:'var(--text3)',cursor:'pointer'},onClick:()=>handleOvr(loc,hz.id,opt)},
                           opt==='simple'?'SIMPLE':opt.toUpperCase())
                       )),
@@ -1329,7 +1329,7 @@ function StoreKBEditor({onClose, ds}) {
                 div({style:{display:'flex',gap:2,flexWrap:'wrap',marginTop:2}},
                   (kb.tags||[]).slice(0,3).map((t,i)=>
                     span({key:i,style:{fontSize:'6.5px',padding:'1px 4px',borderRadius:99,
-                      background:'rgba(255,255,255,.07)',color:tagCol(t)}},t)
+                      background:'var(--surf2)',color:tagCol(t)}},t)
                   )
                 )
               );
@@ -1412,7 +1412,7 @@ function StoreKBEditor({onClose, ds}) {
                             const on=activeTags.has(item.tag);
                             return btn({key:item.tag,onClick:()=>toggleTag(item.tag),
                               style:{fontSize:'8px',padding:'3px 8px',borderRadius:99,cursor:'pointer',border:'none',
-                                background:on?item.col+'30':'rgba(255,255,255,.06)',
+                                background:on?item.col+'30':'var(--surf3)',
                                 color:on?item.col:'var(--text3)',
                                 outline:on?'1px solid '+item.col+'80':'1px solid transparent',
                                 transition:'all .15s'}},item.label);
@@ -1453,7 +1453,7 @@ function StoreKBEditor({onClose, ds}) {
                         padding:'6px 10px',boxSizing:'border-box'}})
                   );
                 })(),
-                div({style:{padding:'8px 10px',background:'rgba(255,255,255,.03)',
+                div({style:{padding:'8px 10px',background:'var(--surf2)',
                   borderRadius:'var(--r)',border:'.5px solid var(--bdr)',fontSize:'8.5px',color:'var(--text3)',lineHeight:1.7}},
                   span({style:{fontWeight:700,color:'var(--text)'}},'How this is used: '),
                   '📊 Ops Analysis — note shown on every anomaly. ',
@@ -1493,7 +1493,7 @@ function StoreKBEditor({onClose, ds}) {
                   div({style:{display:'flex',flexDirection:'column',gap:4}},
                     storeSignals.map((sig,i)=>div({key:i,
                       style:{padding:'7px 10px',borderRadius:'var(--r)',border:'.5px solid var(--bdr)',
-                        background:'rgba(255,255,255,.025)',display:'flex',gap:8,alignItems:'flex-start'}},
+                        background:'var(--surf2)',display:'flex',gap:8,alignItems:'flex-start'}},
                       div({style:{flex:1}},
                         div({style:{fontSize:'10px',fontWeight:600,color:'var(--text)',marginBottom:2}},sig.name),
                         div({style:{fontSize:'8px',color:'var(--text3)',lineHeight:1.5}},sig.summary)
@@ -1925,7 +1925,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                 )),
                 h('tbody',null,...op.stores.filter(s=>s.sales>0).map((s,i)=>{
                   const vsLY=s.vsLY;   // matched-day (precomputed)
-                  return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+                  return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
                     td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',whiteSpace:'nowrap',fontSize:'8.5px'}},s.storeName),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}},s.sales>0?f$(s.sales):'—'),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},s.lySales>0?f$(s.lySales):'—'),
@@ -2238,14 +2238,14 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
        bg:labDiffPP!=null&&labDiffPP>(settings.laborYellowPct||1.5)?'rgba(239,68,68,.06)':labDiffPP!=null&&labDiffPP>(settings.laborGreenPct||0.5)?'rgba(245,158,11,.06)':'rgba(16,185,129,.06)'},
       {l:'TPPH',         v:nFmtL(dist.tpph),
        sub:distTgt.tTpph?'Target: '+nFmtL(distTgt.tTpph,1):'No target set',
-       col:tpCol(dist.tpph,distTgt.tTpph), bg:'rgba(255,255,255,.02)'},
+       col:tpCol(dist.tpph,distTgt.tTpph), bg:'var(--surf2)'},
       {l:'OT Hrs / Day', v:nFmtL(dist.otHrs,1),
        sub:'District avg  ·  Target: ≤ 2.0 hrs',
        col:otCol(dist.otHrs),
        bg:(dist.otHrs||0)>4?'rgba(239,68,68,.06)':(dist.otHrs||0)>2?'rgba(245,158,11,.06)':'rgba(16,185,129,.06)'},
       {l:'Act vs Need',  v:avnFmt(dist.actVsNeed),
        sub:'+ overstaffed  ·  − understaffed',
-       col:avCol(dist.actVsNeed), bg:'rgba(255,255,255,.02)'},
+       col:avCol(dist.actVsNeed), bg:'var(--surf2)'},
       {l:'OT Cost (Period)',v:dist.otCostKnown?f$(dist.otCost):'—', // #303: was unconditional f$(dist.otCost), showed "$0" when every store's input was missing
        sub:(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
        col:dist.otCost>5000?'#ef4444':dist.otCost>1000?'#f59e0b':'#a5b4fc',
@@ -2290,7 +2290,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         h('tbody',null,...locStats.map((s,i)=>{
           const lc=lbCol(s.laborPct,resolveLaborTarget(s.tgt)),tc=tpCol(s.tpph,s.tgt.tTpph),oc=otCol(s.otHrs),ac=avCol(s.actVsNeed);
           const ld=s.laborPct!=null&&resolveLaborTarget(s.tgt)?(s.laborPct-resolveLaborTarget(s.tgt))*100:null;
-          return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+          return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
             td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}},s.storeName),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lc}},pFmtL(s.laborPct)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},resolveLaborTarget(s.tgt)?pFmtL(resolveLaborTarget(s.tgt)):'—'),
@@ -2338,7 +2338,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         th({style:{...thSL,textAlign:'left'}},'Store'),
         ...RANK_MET.map((m,i)=>th({key:i,style:{...thSL,textAlign:'right',color:m.id===sortMet?'var(--amber)':'var(--text3)',cursor:'pointer'},onClick:()=>{if(sortMet===m.id)setSortDir(d=>d*-1);else{setSortMet(m.id);setSortDir(1);}}},m.l+(m.id===sortMet?(sortDir===1?' ↑':' ↓'):'')))
       )),
-      h('tbody',null,...rankSorted.map((s,i)=>tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+      h('tbody',null,...rankSorted.map((s,i)=>tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
         td({style:{padding:'5px 8px',textAlign:'center',fontFamily:'var(--mono)',fontSize:'8.5px',color:'var(--text3)'}},
           i===0?span({style:{fontSize:'11px'}},'🥇'):i===1?span({style:{fontSize:'11px'}},'🥈'):i===2?span({style:{fontSize:'11px'}},'🥉'):(i+1)),
         td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}},s.storeName),
@@ -2358,7 +2358,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       h('tbody',null,...dowStats.map((d,i)=>{
         const lpDiff=d.laborPct!=null&&resolveLaborTarget(distTgt)?(d.laborPct-resolveLaborTarget(distTgt))*100:null;
         const tpDiff=d.tpph!=null&&distTgt.tTpph?(d.tpph-distTgt.tTpph):null;
-        return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:d.count>0?i%2?'rgba(255,255,255,.015)':'transparent':'transparent',opacity:d.count>0?1:.35}},
+        return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:d.count>0?i%2?'var(--surf2)':'transparent':'transparent',opacity:d.count>0?1:.35}},
           td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',width:60}},d.name),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lbCol(d.laborPct,resolveLaborTarget(distTgt))}},pFmtL(d.laborPct)),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:lbCol(d.laborPct,resolveLaborTarget(distTgt))}},lpDiff!=null?(lpDiff>0?'+':'')+lpDiff.toFixed(2)+'%':'—'),
@@ -2471,7 +2471,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
               avCol(s.combinedGapHrs)==='#10b981' ? 'On plan' :
               Math.abs(s.planningGapHrs)>=Math.abs(s.executionGapHrs) ? 'Scheduler' : 'Shift Manager';
             const coachColor = coach==='Scheduler'?'#f59e0b':coach==='Shift Manager'?'#ef4444':'var(--text3)';
-            return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+            return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
               td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}}, STORE_NAMES[s.loc]||s.loc),
               td({style:{padding:'5px 8px',color:'var(--text3)',fontSize:'8.5px',whiteSpace:'nowrap'}}, s.weekStart),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}}, nFmtL(s.needHrs,0)),
@@ -2726,7 +2726,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
             allLocs.map(l=>h('option',{key:l,value:l},sNameC(l)))
           )
         ),
-        dist&&span({style:{fontSize:'9px',padding:'3px 10px',borderRadius:99,background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',color:'var(--text2)'}},
+        dist&&span({style:{fontSize:'9px',padding:'3px 10px',borderRadius:99,background:'var(--surf2)',border:'.5px solid var(--bdr)',color:'var(--text2)'}},
           dist.storeCount+' stores'+(dist.totalSales>0?'  ·  $'+(dist.totalSales/1000).toFixed(0)+'K sales':'')
         ),
         div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},

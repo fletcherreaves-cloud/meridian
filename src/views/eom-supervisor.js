@@ -463,9 +463,9 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
     totalShaded, pctImpact,
   } = data;
 
-  const rowBg = (i) => i % 2 === 0 ? 'rgba(255,255,255,.025)' : 'transparent';
+  const rowBg = (i) => i % 2 === 0 ? 'var(--surf2)' : 'transparent';
   const bdr   = isRollup ? '2px solid rgba(245,158,11,.35)' : '1px solid var(--bdr)';
-  const bg    = isRollup ? 'rgba(245,158,11,.04)' : 'rgba(255,255,255,.02)';
+  const bg    = isRollup ? 'rgba(245,158,11,.04)' : 'var(--surf2)';
 
   // Render the 4-row x 8-col data table
   const dataTable = h('div', { style: { overflowX: 'auto' } },
@@ -637,7 +637,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
       style: {
         padding: '8px 12px', cursor: isRollup ? 'default' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: isRollup ? 'rgba(245,158,11,.07)' : 'rgba(255,255,255,.03)',
+        background: isRollup ? 'rgba(245,158,11,.07)' : 'var(--surf2)',
         borderBottom: '1px solid var(--bdr)',
       },
       onClick: isRollup ? undefined : () => setExpanded(isExp && !forPrint ? null : id),
@@ -1057,7 +1057,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
             onClick: copyOpSupplies, disabled: opSupplyRows.length === 0,
             title: 'Copy every store’s OP Supplies for the selected Period above (actual + projected), sorted by store number — paste into Excel',
             style: {
-              background: opCopied ? 'rgba(16,185,129,.18)' : 'rgba(255,255,255,.06)',
+              background: opCopied ? 'rgba(16,185,129,.18)' : 'var(--surf3)',
               border: '1px solid var(--bdr)', color: opCopied ? grn : 'var(--text,#111827)',
               borderRadius: '7px', padding: '6px 12px', cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
             }
@@ -1066,7 +1066,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
             onClick: exportOpCsv, disabled: opSupplyRows.length === 0,
             title: 'Download OP Supplies per store as CSV, sorted by store number',
             style: {
-              background: 'rgba(255,255,255,.06)', border: '1px solid var(--bdr)',
+              background: 'var(--surf3)', border: '1px solid var(--bdr)',
               color: 'var(--text,#111827)', borderRadius: '7px', padding: '6px 12px',
               cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
             }
@@ -1131,7 +1131,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
 // ── Style helpers ─────────────────────────────────────────────────────────────
 function ctrlStyle() {
   return {
-    background: 'rgba(255,255,255,.07)', border: '1px solid var(--bdr)',
+    background: 'var(--surf3)', border: '1px solid var(--bdr)',
     borderRadius: '7px', padding: '5px 10px', color: 'var(--text,#111827)',
     fontSize: '12px', cursor: 'pointer',
   };

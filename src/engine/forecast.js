@@ -1469,7 +1469,7 @@ function KnowledgeBasePanel({onClose}) {
           filtered.map(art=>div({key:art.key,onClick:()=>setSelKey(selKey===art.key?null:art.key),
             style:{padding:'9px 13px',cursor:'pointer',borderBottom:'.5px solid var(--bdr)',
               background:selKey===art.key?'var(--adim)':'transparent'},
-            onMouseEnter:e=>{if(selKey!==art.key)e.currentTarget.style.background='rgba(255,255,255,.04)';},
+            onMouseEnter:e=>{if(selKey!==art.key)e.currentTarget.style.background='var(--surf2)';},
             onMouseLeave:e=>{if(selKey!==art.key)e.currentTarget.style.background='transparent';}},
             div({style:{fontSize:'8px',fontWeight:700,letterSpacing:'.4px',textTransform:'uppercase',
               color:'var(--amber)',marginBottom:2,opacity:.8}},art.category),
@@ -1510,12 +1510,12 @@ function InfoIcon({articleKey, inline}) {
     span({
       onClick:(e)=>{e.stopPropagation();setOpen(o=>!o);},
       title:'Click for details: '+article.title,
-      style:{width:14,height:14,borderRadius:'50%',background:'rgba(255,255,255,.12)',
+      style:{width:14,height:14,borderRadius:'50%',background:'var(--surf3)',
         color:'var(--text3)',fontSize:'8px',fontWeight:700,cursor:'pointer',
         display:'inline-flex',alignItems:'center',justifyContent:'center',
         userSelect:'none',flexShrink:0,transition:'background .1s',lineHeight:1},
       onMouseEnter:e=>{e.currentTarget.style.background='rgba(255,188,13,.25)';e.currentTarget.style.color='var(--amber)';},
-      onMouseLeave:e=>{e.currentTarget.style.background='rgba(255,255,255,.12)';e.currentTarget.style.color='var(--text3)';}
+      onMouseLeave:e=>{e.currentTarget.style.background='var(--surf3)';e.currentTarget.style.color='var(--text3)';}
     },'?'),
     open&&div({
       style:{position:'fixed',zIndex:500,width:420,maxHeight:'80vh',overflowY:'auto',

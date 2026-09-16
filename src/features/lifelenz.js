@@ -191,7 +191,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
             h('tbody',null,...sorted.map((r,i)=>{
               const stats=period==='pre'?r.pre:period==='post'?r.post:r.all;
               return h('tr',{key:r.loc,style:{
-                background:i%2?'rgba(255,255,255,.015)':'transparent',
+                background:i%2?'var(--surf2)':'transparent',
                 borderBottom:'.5px solid var(--bdr)'}},
                 h('td',{style:{padding:'7px 8px 7px 14px',fontWeight:600,color:'var(--amber)',verticalAlign:'middle'}},
                   div(null,STORE_NAMES[r.loc]||r.loc),
@@ -845,7 +845,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
                 ...scanResult.biasStats.dowStats.filter(d=>d.n>=2).map(d=>{
                   const attr = scanResult.dowAttribution&&scanResult.dowAttribution[d.dow];
                   const attrCol = attr ? (attr.topBucket==='unexplained'?'#818cf8':attr.topBucket==='weather'||attr.topBucket==='event'?'#93c5fd':'#94a3b8') : 'var(--text3)';
-                  return div({key:d.dow,style:{padding:'5px 10px',borderRadius:4,background:'rgba(255,255,255,.04)',
+                  return div({key:d.dow,style:{padding:'5px 10px',borderRadius:4,background:'var(--surf2)',
                     border:'.5px solid var(--bdr)',fontSize:'8px'}},
                     span({style:{color:'var(--text3)',fontWeight:700}},DOW_NAMES[d.dow]+': '),
                     span({style:{color:d.avgBiasPct>=0?'#10b981':'var(--crit)',fontWeight:700}},fmtPct(d.avgBiasPct)),

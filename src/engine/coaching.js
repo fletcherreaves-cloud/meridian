@@ -327,7 +327,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
     const trendCol = ctx&&ctx.laborTrend ? (ctx.laborTrend.dir==='worsening'?'#ef4444':ctx.laborTrend.dir==='improving'?'#10b981':'var(--text3)') : 'var(--text3)';
 
     if(entry.skipped) return div({style:{padding:'7px 12px',borderRadius:'var(--r)',
-      background:'rgba(255,255,255,.02)',border:'.5px solid var(--bdr)',marginBottom:6,
+      background:'var(--surf2)',border:'.5px solid var(--bdr)',marginBottom:6,
       display:'flex',alignItems:'center',gap:8,opacity:.5}},
       span({style:{fontSize:'9px',fontWeight:600,color:'var(--text3)'}},STORE_NAMES[loc]||loc),
       span({style:{fontSize:'8px',color:'var(--text3)',marginLeft:'auto'}},'— not enough data —'));

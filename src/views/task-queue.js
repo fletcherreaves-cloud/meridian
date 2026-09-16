@@ -470,7 +470,7 @@ function AddEntrySheet({ defaultType, onSaveTask, onSaveFR, onClose }) {
 
       // Handle
       div({ style:{ display:'flex', justifyContent:'center', padding:'10px 0 4px' }},
-        div({ style:{ width:40, height:4, borderRadius:2, background:'rgba(255,255,255,.2)' }})),
+        div({ style:{ width:40, height:4, borderRadius:2, background:'var(--surf3)' }})),
 
       div({ style:{ padding:'8px 20px 20px' }},
 
@@ -866,7 +866,7 @@ export function TaskQueuePanel({ onClose, settings, initialType, userRole }) {
     btn({ onClick:()=>setCatFilter('all'),
       style:{ padding:'5px 12px', borderRadius:99, whiteSpace:'nowrap',
         border:`.5px solid ${catFilter==='all'?'var(--text3)':'var(--bdr)'}`,
-        background:catFilter==='all'?'rgba(255,255,255,.06)':'transparent',
+        background:catFilter==='all'?'var(--surf3)':'transparent',
         color:catFilter==='all'?'var(--text)':'var(--text3)',
         fontSize:11, fontWeight:catFilter==='all'?700:400, cursor:'pointer' }},
       'All categories'),

@@ -528,7 +528,7 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
               ['Current Target', selData.metric.fmt(selData.currentTarget), '#e2e8f0'],
             ].map(([lbl,val,col])=>div({key:lbl,style:{
               display:'flex',justifyContent:'space-between',alignItems:'center',
-              padding:'5px 8px',marginBottom:3,background:'rgba(255,255,255,.04)',
+              padding:'5px 8px',marginBottom:3,background:'var(--surf2)',
               borderRadius:'var(--r)'}},
               span({style:{fontSize:'8px',color:'var(--text3)'}},'lbl'),
               span({style:{fontSize:'9px',fontWeight:700,color:col,

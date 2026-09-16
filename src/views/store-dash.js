@@ -2051,7 +2051,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
             .map((s,i)=>div({key:s.loc,style:{position:'relative'}},
               div({style:{position:'absolute',top:6,right:6,zIndex:2,fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,
                 padding:'1px 6px',borderRadius:3,
-                background:i===0?tier.col+'33':i<3?'rgba(255,255,255,.08)':'rgba(255,255,255,.04)',
+                background:i===0?tier.col+'33':i<3?'var(--surf3)':'var(--surf2)',
                 color:i===0?tier.col:i<3?'var(--text2)':'var(--text3)',
                 border:'.5px solid '+(i===0?tier.col+'55':'var(--bdr)')
               }},['#1','#2','#3'][i]||(i===tier.stores.length-1?'↓last':'#'+(i+1))),
@@ -2723,7 +2723,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
               m.unit==='%'?(gap>0?'+':'')+((gap*100).toFixed(2))+'%':
               (gap>0?'+':'')+gap.toFixed(1)):null;
             return tr({key:m.id,style:{borderBottom:'.5px solid var(--bdr)',
-              background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+              background:i%2?'var(--surf2)':'transparent'}},
               td({style:{padding:'5px 8px 5px 14px',fontWeight:600,color:'var(--text2)'}},(m.l)),
               td({style:{padding:'5px 8px',textAlign:'right'}},
                 offVal!=null
@@ -2994,7 +2994,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
       // Mode toggle: Monthly vs Yearly
       // Import panel
       showImport&&div({style:{padding:'12px 20px',borderBottom:'.5px solid var(--bdr)',
-        background:'rgba(255,255,255,.02)',flexShrink:0}},
+        background:'var(--surf2)',flexShrink:0}},
         div({style:{fontSize:'10px',fontWeight:600,color:'var(--text2)',marginBottom:6}},
           'Paste exported JSON to import targets:'),
         div({style:{display:'flex',gap:8,alignItems:'flex-start'}},
@@ -3021,7 +3021,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
               style:{padding:'8px 12px',cursor:'pointer',borderBottom:'.5px solid var(--bdr)',
                 background:activeMonth===m.ym?'var(--adim)':'transparent',
                 display:'flex',alignItems:'center',justifyContent:'space-between'},
-              onMouseEnter:e=>{if(activeMonth!==m.ym)e.currentTarget.style.background='rgba(255,255,255,.03)';},
+              onMouseEnter:e=>{if(activeMonth!==m.ym)e.currentTarget.style.background='var(--surf2)';},
               onMouseLeave:e=>{if(activeMonth!==m.ym)e.currentTarget.style.background='transparent';}},
               div(null,
                 div({style:{fontSize:'11px',fontWeight:activeMonth===m.ym?700:400,

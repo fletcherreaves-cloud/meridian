@@ -562,7 +562,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
         border: '1px solid var(--bdr)', background: exportScope === val ? 'var(--amber)' : 'var(--surf)',
         color: exportScope === val ? '#1a1a1a' : (val === 'near' && !canNear) ? 'var(--text3)' : 'var(--text2)' } }, label);
     const expBtn = (label, onClick) => btn({ onClick, style: { padding: '2px 9px', fontSize: 10, fontWeight: 600, borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', cursor: 'pointer' } }, label);
-    return div({ style: { padding: '10px 14px', background: 'rgba(255,255,255,.02)' } },
+    return div({ style: { padding: '10px 14px', background: 'var(--surf2)' } },
       div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 } },
         div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '') + (v.completionTime ? ' · visit ' + v.completionTime : '')),
         // Export toolbar (right-aligned): row scope + Print / CSV

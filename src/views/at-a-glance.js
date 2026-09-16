@@ -445,7 +445,7 @@ function ItemsRecountedTile({ onOpenModal }) {
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' · items counted again within a few days · did recounts help or hurt')),
-    totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
+    totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'var(--surf3)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
   // A failed read is NOT "no data" — say so, and offer a way out. The tile fires an
   // uncoordinated district-wide read at dashboard mount, competing with the cold-start
   // burst, so a transient 500 here is expected rather than exceptional.
@@ -2068,7 +2068,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           allActiveItems.map(item=>
             div({key:item.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 8px',
               borderRadius:5,background:item.priority==='high'?'rgba(244,63,94,.08)':
-                item.priority==='medium'?'rgba(245,158,11,.08)':'rgba(255,255,255,.04)',
+                item.priority==='medium'?'rgba(245,158,11,.08)':'var(--surf2)',
               border:'.5px solid '+(item.priority==='high'?'rgba(244,63,94,.2)':
                 item.priority==='medium'?'rgba(245,158,11,.2)':'var(--bdr)')}}, // #296 step 2 review: missed by step 1 -- the border: key sat on the line above this occurrence, outside step 1's same-line classifier window
               btn({style:{flexShrink:0,width:16,height:16,borderRadius:3,
@@ -2105,7 +2105,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         div({style:{display:'flex',flexWrap:'wrap',gap:6}},
           secs.map((s,i)=>
             div({key:s.id,style:{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',
-              borderRadius:5,background:s.on?'rgba(245,158,11,.12)':'rgba(255,255,255,.04)',
+              borderRadius:5,background:s.on?'rgba(245,158,11,.12)':'var(--surf3)',
               border:'.5px solid '+(s.on?'rgba(245,158,11,.3)':'var(--bdr)')}},
               btn({style:{fontSize:'9px',background:'none',border:'none',cursor:'pointer',color:'var(--text3)'},
                 onClick:()=>moveSec(s.id,-1),disabled:i===0},'↑'),
@@ -2114,7 +2114,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               span({style:{fontSize:'12px'}},s.icon),
               span({style:{fontSize:'10px',color:s.on?'var(--amber)':'var(--text3)'}},s.label),
               btn({style:{fontSize:'9px',padding:'1px 6px',borderRadius:3,cursor:'pointer',
-                background:s.on?'var(--amber)':'rgba(255,255,255,.08)',
+                background:s.on?'var(--amber)':'var(--surf3)',
                 color:s.on?'var(--navy)':'var(--text3)',border:'none'},
                 onClick:()=>toggleSec(s.id)},s.on?'On':'Off')
             )
@@ -2149,7 +2149,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             const rows=src.rows||[];
             if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
               color:'var(--text3)',padding:'2px 8px',borderRadius:3,
-              background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
+              background:'var(--surf2)',border:'.5px solid var(--bdr)'}},
               src.icon+' '+src.name+': Not loaded');
             // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
             // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
@@ -2509,7 +2509,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{fontSize:'9px',fontWeight:600,color:'var(--text3)',marginBottom:4,letterSpacing:'.5px'}},'CHANNEL MIX'),
               div({style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4}},
                 salesSec.channels.filter(c=>c.sales>0).map(ch=>
-                  div({key:ch.key,style:{textAlign:'center',padding:'4px 2px',borderRadius:4,background:'rgba(255,255,255,.04)'}},
+                  div({key:ch.key,style:{textAlign:'center',padding:'4px 2px',borderRadius:4,background:'var(--surf2)'}},
                     div({style:{fontSize:'11px',fontWeight:700,fontFamily:'var(--mono)',color:'var(--text)'}},
                       ch.pct!=null?(ch.pct*100).toFixed(2)+'%':'—'),
                     div({style:{fontSize:'8px',color:'var(--text3)',lineHeight:1.2}},ch.label)
@@ -2548,7 +2548,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             ),
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
               div({style:{textAlign:'center',padding:'6px',borderRadius:5,
-                background:laborSec.avn!=null?(laborSec.avn>=-2?'rgba(16,185,129,.08)':'rgba(244,63,94,.08)'):'rgba(255,255,255,.04)'}},
+                background:laborSec.avn!=null?(laborSec.avn>=-2?'rgba(16,185,129,.08)':'rgba(244,63,94,.08)'):'var(--surf2)'}},
                 div({style:{fontSize:'14px',fontWeight:700,fontFamily:'var(--mono)',
                   color:laborSec.avn!=null?(laborSec.avn>=-2?'#10b981':'var(--crit)'):'var(--text3)'}},
                   laborSec.avn!=null?(laborSec.avn>0?'+':'')+laborSec.avn.toFixed(1):'—'),
@@ -2624,7 +2624,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   {lbl:'OT Hours',v:laborSec.otHrs,ok:null,fl:null,
                    fmt:v=>(v||0).toFixed(1)+'h',
                    clr:(laborSec.otHrs||0)<20?'#10b981':(laborSec.otHrs||0)<50?'var(--warn)':'var(--crit)'},
-                ].map((r,i)=>div({key:'lm'+i,style:{padding:'4px 5px',borderRadius:3,background:'rgba(255,255,255,.03)'}},
+                ].map((r,i)=>div({key:'lm'+i,style:{padding:'4px 5px',borderRadius:3,background:'var(--surf2)'}},
                   div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline'}},
                     span({style:{fontSize:'8px',color:'var(--text3)'}},r.lbl),
                     span({style:{fontSize:'10px',fontFamily:'var(--mono)',fontWeight:700,color:r.clr}},
@@ -2671,7 +2671,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             // Big FOB%, Food Cost%, Base Food%
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}},
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,
-                background:fobSec.fobPct!=null?(fobSec.fobPct<.035?'rgba(16,185,129,.08)':fobSec.fobPct<.055?'rgba(245,158,11,.08)':'rgba(244,63,94,.08)'):'rgba(255,255,255,.04)'}},
+                background:fobSec.fobPct!=null?(fobSec.fobPct<.035?'rgba(16,185,129,.08)':fobSec.fobPct<.055?'rgba(245,158,11,.08)':'rgba(244,63,94,.08)'):'var(--surf2)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',
                   color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'var(--warn)':'var(--crit)'):'var(--text3)'}},
                   fobSec.fobPct!=null?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—'),
@@ -2680,14 +2680,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 fobSec.priorFobPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorFobPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okFobPct,fl:fobSec.flFobPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
-              div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
+              div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'var(--surf2)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
                   fobSec.pLFoodPct!=null?((fobSec.pLFoodPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'P&L Food Cost %'+(fobSec.primaryIsMTD?' · MTD':'')),
                 fobSec.priorPLFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorPLFoodPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okPLFoodPct,fl:fobSec.flPLFoodPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
-              div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
+              div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'var(--surf2)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
                   fobSec.baseFoodPct!=null?((fobSec.baseFoodPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Base Food %'+(fobSec.primaryIsMTD?' · MTD':'')),
@@ -2710,7 +2710,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 ].map((item,i)=>
                   div({key:i,style:{display:'flex',flexDirection:'column',
                     padding:'2px 5px',borderRadius:3,
-                    background:item.alert?'rgba(244,63,94,.08)':'rgba(255,255,255,.02)'}},
+                    background:item.alert?'rgba(244,63,94,.08)':'var(--surf2)'}},
                     div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                       span({style:{fontSize:'8px',color:'var(--text3)'}},item.l),
                       span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,
@@ -2728,7 +2728,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               // Disc/Coupon — tracked but not included in FOB calculation
               div({style:{marginTop:4,paddingTop:4,borderTop:'.5px dashed var(--bdr)'}},
                 div({style:{display:'flex',flexDirection:'column',
-                  padding:'2px 5px',borderRadius:3,background:'rgba(255,255,255,.02)'}},
+                  padding:'2px 5px',borderRadius:3,background:'var(--surf2)'}},
                   div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                     span({style:{fontSize:'8px',color:'var(--text)',fontWeight:600}},
                       'Disc/Coupon ',
@@ -2770,7 +2770,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   textTransform:'uppercase',marginTop:2}},'Digital Mix'),
                 MktBadge({ok:digitalSec.okDigPct,fl:digitalSec.flDigPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
-              div({style:{textAlign:'center',padding:'8px',borderRadius:6,background:'rgba(255,255,255,.04)'}},
+              div({style:{textAlign:'center',padding:'8px',borderRadius:6,background:'var(--surf2)'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
                   digitalSec.digitalSales>0?f$(Math.round(digitalSec.digitalSales)):'--'),
                 div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',
@@ -2786,7 +2786,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{display:'flex',justifyContent:'space-between',fontSize:'8px',
                 color:'var(--text3)',marginBottom:3}},
                 span(null,'Digital'),span(null,'Traditional')),
-              div({style:{background:'rgba(255,255,255,.06)',borderRadius:4,height:12,overflow:'hidden',
+              div({style:{background:'var(--surf3)',borderRadius:4,height:12,overflow:'hidden',
                 display:'flex'}},
                 div({style:{width:((digitalSec.digitalPct||0)*100).toFixed(1)+'%',
                   background:'linear-gradient(90deg,#60a5fa,#818cf8)',height:'100%',
@@ -2808,7 +2808,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 {icon:'\uD83D\uDCF2',label:'MOP',pct:digitalSec.mopPct,ok:digitalSec.okMopPct,fl:digitalSec.flMopPct,clr:'#34d399'},
                 {icon:'\u2328\uFE0F',label:'Kiosk',pct:digitalSec.kioskPct,ok:digitalSec.okKioskPct,fl:digitalSec.flKioskPct,clr:'#a78bfa'},
               ].map((ch,i)=>div({key:'ch'+i,style:{padding:'6px',borderRadius:5,textAlign:'center',
-                background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)'}},
+                background:'var(--surf2)',border:'.5px solid var(--bdr)'}},
                 div({style:{fontSize:'10px',marginBottom:2}},ch.icon),
                 div({style:{fontSize:'12px',fontWeight:800,fontFamily:'var(--mono)',color:ch.clr}},
                   ch.pct!=null?((ch.pct||0)*100).toFixed(2)+'%':'--'),
@@ -2934,7 +2934,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       span({style:{fontSize:'8px',color:'var(--text)',fontWeight:500}},m.icon+' '+m.label),
                       span({style:{fontSize:'8px',fontFamily:'monospace',color:barClr,fontWeight:700}},m.display)
                     ),
-                    div({style:{background:'rgba(255,255,255,.06)',borderRadius:2,height:4,overflow:'hidden'}},
+                    div({style:{background:'var(--surf3)',borderRadius:2,height:4,overflow:'hidden'}},
                       div({style:{width:pct+'%',height:'100%',background:barClr,
                         borderRadius:2,transition:'width .6s ease'}})
                     ),
@@ -2970,7 +2970,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             div({style:{display:'flex',gap:3,marginBottom:8,flexWrap:'wrap'}},
               [['sales','💰 Sales'],['oepe','⚡ OEPE'],['labor','👥 Labor%'],['tred','🔒 T-Reds']].map(([k,l])=>
                 btn({key:k,style:{fontSize:'9px',padding:'3px 8px',borderRadius:4,cursor:'pointer',fontWeight:600,
-                  background:lbMetric===k?'var(--amber)':'rgba(255,255,255,.07)',
+                  background:lbMetric===k?'var(--amber)':'var(--surf3)',
                   color:lbMetric===k?'var(--navy)':'var(--text3)',border:'none'},
                   onClick:()=>setLbMetric(k)},l)
               )
@@ -3001,7 +3001,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       color:isTop?'#10b981':'var(--crit)',marginLeft:4,flexShrink:0}},fmt(s.value))
                   ),
                   div({style:{display:'flex',gap:4,alignItems:'center'}},
-                    div({style:{flex:1,background:'rgba(255,255,255,.06)',borderRadius:2,height:3}},
+                    div({style:{flex:1,background:'var(--surf3)',borderRadius:2,height:3}},
                       div({style:{width:barPct.toFixed(0)+'%',height:'100%',
                         background:isTop?'rgba(16,185,129,.6)':'rgba(244,63,94,.5)',borderRadius:2}})
                     ),
@@ -3094,7 +3094,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   const vsLYActNum=vsLYAct!=null?parseFloat(vsLYAct):null;
                   const vsActClr=vsLYActNum==null?'var(--text3)':vsLYActNum>=0?'#10b981':'var(--crit)';
                   return h('tr',{key:sp.loc,style:{borderBottom:'.5px solid var(--bdr)',
-                    background:si%2===0?'transparent':'rgba(255,255,255,.02)'}},
+                    background:si%2===0?'transparent':'var(--surf2)'}},
                     h('td',{style:{padding:'4px 6px',color:'var(--text)',whiteSpace:'nowrap',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',fontSize:'10px'}},
                       span({style:{marginRight:4,fontSize:'7px',color:sp.org==='MCDOK'?'#60a5fa':'#34d399'}},sp.org==='MCDOK'?'OK':'FL'),
                       sp.name),

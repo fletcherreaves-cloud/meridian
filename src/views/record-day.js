@@ -725,7 +725,7 @@ function SalesVolumeTab({ data, breakIndex }) {
           tbody({},
             ...sorted.map((loc,i) => {
               const r=stores[loc];
-              return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
+              return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
                 td({style:{...S.td,fontWeight:500}}, sName(loc)),
                 td({style:{...S.tdR,fontWeight:600,color:sortKey==='salesDay'?'var(--acc)':'var(--txt)'}}, r.sales?.day?.val?f$2(r.sales.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Sales Day',r.sales?.day?.dk)})),
                 td({style:S.tdM}, fDateShort(r.sales?.day?.dk)),
@@ -757,7 +757,7 @@ function SalesVolumeTab({ data, breakIndex }) {
           tbody({},
             ...sorted.map((loc,i) => {
               const r=stores[loc];
-              return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
+              return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
                 td({style:{...S.td,fontWeight:500}}, sName(loc)),
                 td({style:{...S.tdR,fontWeight:600,color:sortKey==='gcDay'?'var(--acc)':'var(--txt)'}}, r.gc?.day?.val?fGC(r.gc.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'GC Day',r.gc?.day?.dk)})),
                 td({style:S.tdM}, fDateShort(r.gc?.day?.dk)),
@@ -808,7 +808,7 @@ function SpeedTab({ data, breakIndex }) {
           ...sorted.map((loc,i) => {
             const r=stores[loc];
             const oepe=r.speed?.oepe, kvs=r.speed?.kvs, r2p=r.speed?.r2p;
-            return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
+            return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
               td({style:{...S.td,fontWeight:500}}, sName(loc)),
               td({style:{...S.tdR,fontWeight:600,color:sortKey==='oepe'?'var(--acc)':'var(--txt)'}}, oepe?.val?fSec(oepe.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'OEPE',oepe?.dk)})),
               td({style:S.tdM}, fDateShort(oepe?.dk)),
