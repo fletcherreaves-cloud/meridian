@@ -689,8 +689,14 @@ function SessionNotesTab() {
 // ── Main Panel ────────────────────────────────────────────────────────────────
 // initialType: 'feature_request' | 'task' | null — pre-selects the type filter, used by App.js's
 // ?modal=feature-requests redirect so the old deep link still lands on Feature Request content.
-export function TaskQueuePanel({ onClose, settings, initialType }) {
-  const isDev = settings?.role === 'developer' || settings?.role === 'admin';
+export function TaskQueuePanel({ onClose, settings, initialType, userRole }) {
+  // ⚠️ CORRECTED (RBAC audit, 2026-09-16) -- this used to read `settings?.role`, which does not
+  // exist: `settings` is the app-wide UI-settings object (theme/colorMode/etc, constants.js's
+  // DEF_SETTINGS shape) and has never carried a `role` field -- App.js never assigns one. isDev
+  // was therefore always false for every user including the real admin, silently disabling
+  // dev_notes editing for everyone. The real per-user role lives in App.js's own `userRole` state
+  // (passed to every other role-aware panel as a `userRole` prop) -- reading that instead.
+  const isDev = userRole === 'admin' || userRole === 'owner';
 
   const [tab,     setTab]     = useState('queue');
   const [items,   setItems]   = useState([]);

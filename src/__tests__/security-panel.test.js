@@ -54,17 +54,19 @@ import { INV_ORG_COORDS } from '../constants.js';
 // ── Pure logic ────────────────────────────────────────────────────────────────────────────────
 
 describe('securityPanelAccess() — matches security_findings\' RLS tier exactly, never looser', () => {
-  it('admin and supervisor are always allowed, without needing the org_config flag', () => {
+  it('admin, owner, and area_supervisor are always allowed, without needing the org_config flag', () => {
     expect(securityPanelAccess('admin', false)).toBe('allowed');
-    expect(securityPanelAccess('supervisor', false)).toBe('allowed');
+    expect(securityPanelAccess('owner', false)).toBe('allowed');
+    expect(securityPanelAccess('area_supervisor', false)).toBe('allowed');
   });
   it('manager is allowed ONLY when gmRevealEnabled is true', () => {
     expect(securityPanelAccess('manager', true)).toBe('allowed');
     expect(securityPanelAccess('manager', false)).toBe('denied');
   });
-  it('every other role (including undefined) is denied', () => {
+  it('every other role (including undefined, and the stale pre-dispatch-#148 "supervisor" string) is denied', () => {
     expect(securityPanelAccess('gm', true)).toBe('denied');
     expect(securityPanelAccess(undefined, true)).toBe('denied');
+    expect(securityPanelAccess('supervisor', true)).toBe('denied'); // real id is 'area_supervisor'
   });
 });
 
@@ -828,8 +830,17 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
     expect(container.textContent).not.toMatch(/🔒 reveal/);
   });
 
-  it('supervisor: never calls the bulk RPC -- keeps the existing click-through path unchanged, dispatch #50\'s own explicit scope', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'supervisor', onClose: vi.fn() })); });
+  it('owner: same frictionless bulk-reveal as admin -- both are the "Developer/Admin/Owner" privileged tier dispatch #50 describes', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'owner', onClose: vi.fn() })); });
+    await flush(container);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    await flush(container);
+    expect(container.textContent).toMatch(/Alice Andrews/);
+    expect(container.textContent).not.toMatch(/🔒 reveal/);
+  });
+
+  it('area_supervisor: never calls the bulk RPC -- keeps the existing click-through path unchanged, dispatch #50\'s own explicit scope', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'area_supervisor', onClose: vi.fn() })); });
     await flush(container);
     expect(rpcMock).not.toHaveBeenCalled();
     expect(container.textContent).toMatch(/🔒 reveal/);
