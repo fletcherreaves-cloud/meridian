@@ -7,6 +7,7 @@ import { buildBrief, buildStore } from '../engine/pipeline.js';
 import { TH, escapeHtml as esc } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -187,18 +188,19 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 '- Do not mention Meridian, software, or "the data" explicitly -- sound like a human field coach who knows this store.';
   };
 
-  // ── API call (established app pattern: localStorage key, no server) ────────
+  // ── API call — routed through the already-deployed sage-chat Edge Function
+  // (src/lib/sage-client.js) instead of a personal Anthropic API key. This panel
+  // used to require localStorage `mf_anthropic_key` and call api.anthropic.com
+  // directly with a stale model id (`claude-sonnet-4-6`); with no key set (the
+  // default for every user, including the owner) it always threw before ever
+  // generating a letter — a dead-by-default panel found by the P2 scorecard pass.
   const callClaude = async (prompt) => {
-    const apiKey = (()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-    if(!apiKey) throw new Error('No Anthropic API key set. Add one in Settings → AI & Integrations.');
-    const resp = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, messages:[{role:'user',content:prompt}]})
-    });
-    const json = await resp.json();
-    if(json.error) throw new Error(json.error.message||'API error');
-    return (json.content||[]).map(b=>b.text||'').join('\n').trim();
+    const text = await callSageOnce(
+      [{role:'user', content:prompt}],
+      'You are a McDonald’s field coach writing a short weekly note directly to one GM. Follow the user’s formatting and length instructions exactly — do not add a preamble, sign-off, or any text outside the requested structure.',
+    );
+    if(!text) throw new Error('SAGE returned no content.');
+    return text.trim();
   };
 
   // ── Single-store generation ─────────────────────────────────────────────────

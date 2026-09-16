@@ -28,6 +28,7 @@ import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
 import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY } from '../engine/correlation-predictors.js';
 import { CoachingModal } from './coaching-modal.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6411,10 +6412,6 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
   const [error,   setError]   = React.useState(null);
   const [selStore, setSelStore] = React.useState(stores&&stores[0]&&stores[0].loc);
 
-  const apiKey = React.useMemo(()=>{
-    try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}
-  },[]);
-
   // Build the data context for the brief
   const buildBriefContext = (locs) => {
     const storeList = (stores||[]).filter(s=>locs.includes(s.loc));
@@ -6455,7 +6452,6 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
   };
 
   const generateBrief = async (locs, label) => {
-    if(!apiKey){setError('Set your Anthropic API key in Settings → AI to use this feature.');return;}
     setLoading(true); setBrief(null); setError(null);
     const context = buildBriefContext(locs);
     const isMulti = locs.length > 1;
@@ -6485,27 +6481,11 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
         'Format: Bold key numbers. Use bullet points. Keep under 350 words.';
 
     try{
-      const resp = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'x-api-key':apiKey,
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true'
-        },
-        body:JSON.stringify({
-          model:'claude-haiku-4-5-20251001',
-          max_tokens:2000,
-          messages:[{role:'user',content:prompt}]
-        })
-      });
-      if(!resp.ok){
-        const errData = await resp.json().catch(()=>({}));
-        throw new Error('API error '+resp.status+': '+(errData.error&&errData.error.message||'Check API key in Settings → AI'));
-      }
-      const data = await resp.json();
-      if(data.error) throw new Error(data.error.message+' — Check API key in Settings → AI');
-      const text = data.content.map(b=>b.type==='text'?b.text:'').join('');
+      const text = await callSageOnce(
+        [{role:'user', content:prompt}],
+        'You are an expert McDonald’s district operations analyst writing a location intelligence brief. Follow the user’s requirements and format instructions exactly.',
+      );
+      if(!text) throw new Error('SAGE returned no content.');
       setBrief(text);
     }catch(e){
       setError('Brief generation failed: '+e.message);
@@ -6549,15 +6529,11 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
     // Main content
     div({style:{flex:1,overflowY:'auto',padding:'16px 18px'}},
       !brief&&!loading&&!error&&div({style:{textAlign:'center',padding:40}},
-        !apiKey&&div({style:{background:'rgba(239,68,68,.08)',border:'.5px solid rgba(239,68,68,.3)',
-          borderRadius:'var(--r)',padding:'10px 16px',marginBottom:16,fontSize:'10px',color:'var(--crit)'}},
-          '🔑 No API key set — go to Settings → AI to add your Anthropic API key. The key is required for all AI features including this brief.'),
-        div({style:{fontSize:'14px',marginBottom:8,color:'var(--text3)'}},apiKey?'🧠':'🔑'),
-        div({style:{fontWeight:600,marginBottom:6}},apiKey?'Ready to generate brief':'API key required'),
+        div({style:{fontSize:'14px',marginBottom:8,color:'var(--text3)'}},'🧠'),
+        div({style:{fontWeight:600,marginBottom:6}},'Ready to generate brief'),
         div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:16,maxWidth:300,margin:'0 auto 16px'}},
-          apiKey?'Click below to generate a comprehensive analysis for '+activeLabel:
-          'Set your Anthropic API key in Settings → AI to enable AI-powered briefs'),
-        apiKey&&btn({className:'btn btn-a',style:{padding:'8px 20px',fontSize:'11px'},
+          'Click below to generate a comprehensive analysis for '+activeLabel),
+        btn({className:'btn btn-a',style:{padding:'8px 20px',fontSize:'11px'},
           onClick:()=>generateBrief(getLocs(),activeLabel)},
           '🧠 Generate Intelligence Brief for '+activeLabel)
       ),
