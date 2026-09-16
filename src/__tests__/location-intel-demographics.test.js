@@ -15,6 +15,7 @@ import { act } from 'react';
 vi.mock('../lib/supabase.js', () => ({
   loadStoreDemographics: vi.fn(() => Promise.resolve([])),
   saveStoreDemographics: vi.fn(() => Promise.resolve({ error: null })),
+  getAuthToken: vi.fn(() => Promise.resolve('test-token')),
 }));
 vi.mock('../engine/census-demographics.js', () => ({
   fetchAllStoreDemographics: vi.fn(),

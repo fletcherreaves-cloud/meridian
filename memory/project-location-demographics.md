@@ -24,8 +24,8 @@ average household size — sourced from the free, keyless US Census Bureau APIs.
   `B25003_002E`/`B25003_003E`/`B25003_001E` owner/renter/total occupied units,
   `B25010_001E` average household size). Vintage `ACS_VINTAGE` (currently 2023) — bump when a
   newer 5-year release ships (~annually).
-- Both APIs are CORS-enabled and keyless at this volume (27 stores) — the exact same "free,
-  direct client fetch, no server-side secret" shape `fetchOpenMeteoWeather` already uses.
+- Both APIs are keyless. **They are NOT CORS-enabled for direct browser calls** — see the
+  ✅ MEASURED correction below; the original build's claim here was wrong and unverified.
 
 **Tract-level, NOT a modeled drive-time trade area.** Meridian has no GIS radius/isochrone
 tooling. This is honestly "the Census tract containing this store's coordinates" — a reasonable,
@@ -56,16 +56,27 @@ the whole batch.
   of `laborRows`/`opsRows`. Print/Download (which build the statistical/AI report) are hidden on
   this mode; it has its own Refresh action instead.
 
-**⚠️ Could not be smoke-tested against the live Census APIs before merge.** This session's sandbox
-network-egress policy blocks `geocoding.geo.census.gov`/`api.census.gov` outright (confirmed via
-both `curl` and `WebFetch` — a `policy denial`, not an auth/CORS issue) — unlike every other
-external-pull script in this repo, which per CLAUDE.md's "measure it, don't reason about it"
-standing rule normally gets a live run before shipping. The Geocoder + ACS5 request/response
-shapes are well-documented, keyless, and have been stable for years, so this was written
-defensively (explicit HTTP-status checks, step-named errors) and is covered by 13 tests
-(`src/__tests__/census-demographics.test.js`) against literal Census-response-shaped fixtures,
-plus 6 tests (`src/__tests__/location-intel-demographics.test.js`) rendering the real
-`LocationIntelligence` → `DemographicsSection` consumer. **But the first real click of
-"🔄 Refresh Demographics" in the actual app is this feature's true first live test** — if it
-errors, the message will name which step failed (geocoder vs. ACS, and the HTTP status or
-Census-side reason), which is the first thing to check.
+**✅ MEASURED 2026-09-16 — the "CORS-enabled" claim was wrong, and the first live click found it
+within minutes.** Could not be smoke-tested before merge (this session's sandbox network-egress
+policy blocks `geocoding.geo.census.gov`/`api.census.gov` outright — a `policy denial`, confirmed
+via both `curl` and `WebFetch`), so the original build shipped on an unverified assumption instead
+of CLAUDE.md's normal "measure it, don't reason about it" live run. The owner's first real click of
+"🔄 Refresh Demographics" failed for **all 27 stores** with `Census geocoder request failed: Failed
+to fetch` — the standard browser symptom of a cross-origin fetch the target server never sends
+`Access-Control-Allow-Origin` for. The Census Bureau's APIs are keyless and public, but **not**
+CORS-enabled for direct browser calls.
+
+**Fixed the same day** by routing both Census calls through a new Edge Function,
+`supabase/functions/census-proxy` (server-to-server, no browser CORS involved) — deploy with
+`supabase functions deploy census-proxy --no-verify-jwt`, no secrets needed (Census's calls stay
+keyless). `geocodeToTract`/`fetchAcsForTract`/`fetchStoreDemographics`/`fetchAllStoreDemographics`
+in `census-demographics.js` all gained `sbUrl`/`authToken` parameters (the caller now needs
+`VITE_SUPABASE_URL` + a live session token, via `supabase.js`'s new `getAuthToken()`) — every line
+of the actual parsing/shaping logic (`shapeAcsRow`, the `-666666666` null-sentinel handling, tier
+lookups) is untouched and still covered by the same tests, now updated to assert against the proxy
+call shape instead of the direct Census URL. 15 tests in `census-demographics.test.js` (2 new: a
+proxy-network-failure case and the missing-auth guard), 6 in
+`location-intel-demographics.test.js`. Full suite 521/521 files, 4993/4993 tests.
+
+**⚠️ Needs `supabase functions deploy census-proxy --no-verify-jwt` before "🔄 Refresh Demographics"
+will work** — same manual step every new Edge Function in this repo needs.

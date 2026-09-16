@@ -1,23 +1,24 @@
 // @ts-nocheck
 // ── Trade-area demographics per store (backlog: "Demographics per location, Census/ACS API") ──
 // Free, keyless US Census Bureau APIs — TIGERweb Geocoder (lat/lon -> Census Tract) + ACS 5-Year
-// Detailed Tables (tract -> population/income/age/poverty/tenure). Both are CORS-enabled and
-// need no API key at Meridian's volume (27 stores), the same "free, keyless, direct client
-// fetch" shape as constants.js's fetchOpenMeteoWeather.
+// Detailed Tables (tract -> population/income/age/poverty/tenure), at Meridian's volume
+// (27 stores).
 //
 // Tract-level, NOT a modeled drive-time trade area — Meridian has no GIS radius/isochrone
 // tooling. This is "the Census tract containing this store's coordinates," a coarser but
 // honest proxy — never present it in the UI as a drawn trade-area boundary.
 //
-// ⚠️ Built and shipped from an environment whose network egress policy blocks
-// geocoding.geo.census.gov / api.census.gov outright, so this could NOT be smoke-tested against
-// the live APIs before merge (unlike every other external-pull script in this repo, which per
-// CLAUDE.md's "measure it, don't reason about it" standing rule normally gets a live run before
-// shipping). The Census Geocoder + ACS5 request/response shapes are well-documented, keyless,
-// and have been stable for years, so this is written defensively (explicit HTTP-status checks,
-// clear errors naming which step failed), but the FIRST real use (Location Intel's "🔄 Refresh
-// Demographics" button) is this feature's actual live test. If it fails, the error will name
-// which of the two API calls failed and why — check that message first.
+// ✅ MEASURED LIVE 2026-09-16, and the original build's assumption was WRONG: this file's
+// header used to claim "Both are CORS-enabled... the same direct client fetch shape as
+// fetchOpenMeteoWeather" — never actually verified, because the build environment's network
+// egress policy blocked *.census.gov outright. The owner's first real click of "🔄 Refresh
+// Demographics" failed for all 27 stores with "Census geocoder request failed: Failed to
+// fetch" — the standard browser symptom of a cross-origin request the target never sends
+// Access-Control-Allow-Origin for. The Census Bureau's APIs are keyless and public, but NOT
+// CORS-enabled for direct browser calls. Fixed by routing both calls through a new Edge
+// Function (supabase/functions/census-proxy, server-to-server, no browser CORS involved)
+// instead of calling geocoding.geo.census.gov/api.census.gov directly — every other line of
+// parsing/shaping logic below is unchanged and still covered by the same tests.
 
 export const ACS_VINTAGE = 2023; // ACS 5-Year estimates release year — bump when a newer one ships
 
@@ -38,17 +39,26 @@ const ACS_VARS = {
   avgHouseholdSize: 'B25010_001E',
 };
 
-const GEOCODER_URL = 'https://geocoding.geo.census.gov/geocoder/geographies/coordinates';
-const acsUrl = (vintage) => `https://api.census.gov/data/${vintage}/acs/acs5`;
+// Both Census calls now go through this Edge Function (server-side, no browser CORS) instead
+// of geocoding.geo.census.gov/api.census.gov directly -- see this file's own header comment.
+// `sbUrl`/`authToken` are injected by the caller (location-intel.js already has both, via
+// import.meta.env.VITE_SUPABASE_URL and supabase.js's getAuthToken()) rather than imported
+// here, keeping this module free of a dependency on the 5,400+-line supabase.js.
+function proxyUrl(sbUrl) { return `${sbUrl}/functions/v1/census-proxy`; }
 
 // lat/lon -> {stateFips, countyFips, tractFips, geoid} via the Census Geocoder (TIGERweb),
 // "Current" benchmark/vintage (always the latest published geography, matching how every other
 // consumer of a live-but-slow-moving reference dataset in this app works — no version pinning
 // needed for tract boundaries, which change only at each decennial Census).
-export async function geocodeToTract(lat, lon) {
-  const url = `${GEOCODER_URL}?x=${lon}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=10&format=json`;
+export async function geocodeToTract(lat, lon, sbUrl, authToken) {
   let resp;
-  try { resp = await fetch(url); } catch (e) { throw new Error('Census geocoder request failed: ' + (e?.message || e)); }
+  try {
+    resp = await fetch(proxyUrl(sbUrl), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ step: 'geocode', lat, lon }),
+    });
+  } catch (e) { throw new Error('Census geocoder request failed: ' + (e?.message || e)); }
   if (!resp.ok) throw new Error('Census geocoder HTTP ' + resp.status);
   const data = await resp.json();
   const tracts = data?.result?.geographies?.['Census Tracts'];
@@ -59,11 +69,15 @@ export async function geocodeToTract(lat, lon) {
 
 // {stateFips, countyFips, tractFips} -> raw ACS5 variable values for that tract, keyed by
 // variable code. The ACS API returns [headerRow, dataRow] — one data row per matched geography.
-export async function fetchAcsForTract({ stateFips, countyFips, tractFips }, vintage = ACS_VINTAGE) {
-  const vars = Object.values(ACS_VARS).join(',');
-  const url = `${acsUrl(vintage)}?get=NAME,${vars}&for=tract:${tractFips}&in=state:${stateFips}+county:${countyFips}`;
+export async function fetchAcsForTract({ stateFips, countyFips, tractFips }, vintage = ACS_VINTAGE, sbUrl, authToken) {
   let resp;
-  try { resp = await fetch(url); } catch (e) { throw new Error('Census ACS request failed: ' + (e?.message || e)); }
+  try {
+    resp = await fetch(proxyUrl(sbUrl), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ step: 'acs', stateFips, countyFips, tractFips, vintage }),
+    });
+  } catch (e) { throw new Error('Census ACS request failed: ' + (e?.message || e)); }
   if (!resp.ok) throw new Error('Census ACS HTTP ' + resp.status);
   const rows = await resp.json();
   const header = rows && rows[0], row = rows && rows[1];
@@ -99,9 +113,10 @@ export function shapeAcsRow(byVar) {
 
 // One store: coordinates -> a full demographic record ready to persist (store_demographics
 // shape, camelCase — supabase.js's saveStoreDemographics maps to the snake_case columns).
-export async function fetchStoreDemographics(loc, lat, lon, vintage = ACS_VINTAGE) {
-  const tract = await geocodeToTract(lat, lon);
-  const byVar = await fetchAcsForTract(tract, vintage);
+// `sbUrl`/`authToken` are required now that both Census calls route through census-proxy.
+export async function fetchStoreDemographics(loc, lat, lon, sbUrl, authToken, vintage = ACS_VINTAGE) {
+  const tract = await geocodeToTract(lat, lon, sbUrl, authToken);
+  const byVar = await fetchAcsForTract(tract, vintage, sbUrl, authToken);
   const shaped = shapeAcsRow(byVar);
   return {
     loc, tractGeoid: tract.geoid, countyFips: tract.countyFips, stateFips: tract.stateFips,
@@ -114,17 +129,19 @@ export async function fetchStoreDemographics(loc, lat, lon, vintage = ACS_VINTAG
 // one store per ~1.1s keeps the combined rate under 1 req/s, the same caution
 // fetchOpenMeteoWeather already documents for the identical reason (one burst gets everyone
 // rate-limited, not just this session). `onProgress(done, total, loc)` lets the UI show a
-// "N of 27" indicator across the ~30-60s this takes.
-export async function fetchAllStoreDemographics(storeCoords, onProgress) {
+// "N of 27" indicator across the ~30-60s this takes. `sbUrl`/`authToken`: see
+// fetchStoreDemographics — the caller (location-intel.js) already has both.
+export async function fetchAllStoreDemographics(storeCoords, onProgress, sbUrl, authToken) {
   const locs = Object.keys(storeCoords || {});
   const rows = [];
   const errors = [];
+  if (!sbUrl || !authToken) return { rows, errors: [{ loc: null, error: 'Not authenticated, or VITE_SUPABASE_URL not set' }] };
   for (let i = 0; i < locs.length; i++) {
     const loc = locs[i];
     const { lat, lon } = storeCoords[loc] || {};
     if (lat == null || lon == null) { errors.push({ loc, error: 'no coordinates on file' }); continue; }
     try {
-      rows.push(await fetchStoreDemographics(loc, lat, lon));
+      rows.push(await fetchStoreDemographics(loc, lat, lon, sbUrl, authToken));
     } catch (e) {
       errors.push({ loc, error: e?.message || String(e) });
     }
