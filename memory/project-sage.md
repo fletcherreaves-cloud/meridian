@@ -33,7 +33,9 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 **Enhancement ideas (deferred):**
 - More data context in system prompt (FOB variance, target gaps, store rankings)
 - Tool use so SAGE can query Supabase directly for precise numbers
-- Conversation memory across sessions
+
+✅ **"Conversation memory across sessions" — SHIPPED (dispatch #187), do not re-implement.** See
+the "Cross-device conversation persistence" section below.
 
 **Why `thinking: {type: "adaptive"}`:** `budget_tokens` is deprecated on Opus 4.8, rejected with 400. Use `{type: "adaptive"}` only.
 
@@ -111,3 +113,35 @@ Owner chose **hard-filter tools** + **allow district aggregates**. All in
   admin=district). The tools are the real enforcement.
 - **Owner (accessible_locs null) = unchanged full access.** RBAC only bites for
   restricted beta operators. **Deploy:** `supabase functions deploy sage-chat --no-verify-jwt`.
+
+## Cross-device conversation persistence ✅ SHIPPED (dispatch #187, client-only, no redeploy)
+
+Full spec: `memory/dispatch-187.md`. The active thread and archived-session list were
+`localStorage`-only (device-local) — a real, long-standing gap this closes by mirroring both into
+the existing `user_settings` cloud blob store, zero new schema.
+
+- `src/lib/blob-sync.js` — `pushBlob`/`readBlobLocal`/`hydrateBlob`, the same `{data,savedAt}`
+  cloud-wins-only-if-newer pattern `_stDialedIn`/Model Assignment already use (App.js). Extracted
+  out of `labor-tools.js` specifically so panels don't have to statically import that whole module.
+- `src/views/sage.js`'s `SagePanel`: `mf_sage_thread_v1` ↔ `user_settings.sage_thread`,
+  `mf_sage_sessions_v1` ↔ `sage_sessions`. Hydrates once on panel mount (not app-wide startup —
+  SAGE is already lazy-loaded). Pushes to cloud only at settle points (turn-complete i.e.
+  `streaming` true→false, archive-to-history, clear, session switch) — never per stream chunk.
+  `localStorage` stays the instant read/write path, unchanged.
+- Archived-session list is additionally byte-capped at 300 KB (`_capSessionsBySize`, drops the
+  oldest sessions first) — measured a realistic 25-session archive at 428–646 KB, genuinely over
+  budget, before adding the cap (never added one speculatively).
+- `_normSageBlob` migrates a pre-#187 bare-array localStorage value to `savedAt:0` (oldest) so it
+  never wins a hydration comparison against a real stamped write, same migration shape
+  `normalizeDialedIn` uses for the pre-#118 dialed-in blob.
+- 26 tests, `src/__tests__/sage-cloud-persistence.test.js` — including the dispatch's own required
+  check that a newer local write survives a stale cloud value arriving after it (an in-progress
+  conversation on one device must never be clobbered by an older session's cloud read from
+  another device).
+
+**Re-measured live 2026-09-16 (Task #57, "SAGE conversation persistence" — do not re-implement or
+re-dispatch):** confirmed this
+was fully wired end-to-end in the actual `SagePanel` call sites, not just present in `blob-sync.js`
+unused, and all 26 tests pass on `main`. This had never been checked off in CLAUDE.md's SAGE
+"Vision" list or this file's own "Enhancement ideas" list, which is why it resurfaced as an open
+item on a later planning pass — corrected in both places in the same commit as this note.
