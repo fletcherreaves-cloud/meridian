@@ -1330,9 +1330,14 @@ function App() {
           setUserName(data?.name || data?.email || user.email || '');
           if (data?.role) {
             setUserRole(data.role);
-            // Non-developer roles default to release mode (Test Kitchen hidden)
-            // unless the user has already stored an explicit preference
-            if (data.role !== 'developer' && localStorage.getItem('mf_beta_mode') === null) {
+            // Non-top-tier roles default to release mode (Test Kitchen hidden) unless the user
+            // has already stored an explicit preference. ⚠️ CORRECTED (RBAC audit, 2026-09-16):
+            // checked 'developer', which is not a real profiles.role value (dispatch #148's real
+            // ladder has no such id) -- this condition was always true, so EVERY first-time login
+            // on a fresh device, including the owner's own admin/owner account, defaulted Test
+            // Kitchen to hidden, not just non-owner logins as intended. 'admin'/'owner' are the
+            // real top-tier (level 1) ids, permissions.js's DEFAULT_ROLES.
+            if (data.role !== 'admin' && data.role !== 'owner' && localStorage.getItem('mf_beta_mode') === null) {
               setBetaMode(true);
               localStorage.setItem('mf_beta_mode', 'true');
             }
@@ -3609,7 +3614,7 @@ function App() {
           else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
         }}),
       routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>goRoute(null)}),
-      routePanel==='task-queue'&&h(TaskQueuePanel,{settings,initialType:tqInitialType,onClose:()=>goRoute(null)})
+      routePanel==='task-queue'&&h(TaskQueuePanel,{settings,userRole,initialType:tqInitialType,onClose:()=>goRoute(null)})
     )  // close main content scroll area
     )  // close right panel flex-col
 

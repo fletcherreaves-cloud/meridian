@@ -169,6 +169,12 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   const needsCount = (stores||[]).filter(s=>s.findings&&s.findings.some(f=>f.t==='crit')).length;
 
   // Permission helpers — pi is a permission-gated navItem
+  // ⚠️ FAIL-OPEN by design of the fallback (RBAC audit, 2026-09-16, not changed -- flagging for
+  // the next person who touches this line): if `perm` is ever omitted, `can` grants everything.
+  // Currently inert -- App.js always passes `perm = (key) => hasPermission(userRole, key,
+  // orgRoles)` -- but this is the one fail-OPEN point in an otherwise fail-CLOSED system
+  // (hasPermission() itself denies every permission for an unrecognized role). Don't drop the
+  // `perm` prop at this call site without also reconsidering this fallback.
   const can = perm || (() => true);
   // pis = stable (always visible), pi = experimental (hidden when betaMode=true)
   const pis = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;

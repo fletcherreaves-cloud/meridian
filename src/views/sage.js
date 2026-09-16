@@ -983,11 +983,13 @@ function KbViewerModal({ onClose, onAskSage }) {
 }
 
 function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRole, userName, onClose, onUse, onRun, onRefresh }) {
-  // Locked to Admin/Developer (owner-stated 2026-09-03) -- same idiom src/views/task-queue.js
-  // and src/views/management.js already use for this exact distinction. This is a UI
-  // convenience only; the real enforcement boundary is the sage_prompts_guard DB trigger
-  // (schema-sage-prompts-sharing.sql), which rejects a non-privileged share attempt outright.
-  const canShare = userRole === 'admin' || userRole === 'developer';
+  // Locked to Admin/Owner (owner-stated 2026-09-03, "Admin/Developer" in intent -- 'developer' is
+  // not a real profiles.role value, corrected RBAC audit 2026-09-16, same fix as
+  // src/views/task-queue.js and src/views/management.js). This is a UI convenience only; the real
+  // enforcement boundary is the sage_prompts_guard DB trigger
+  // (schema-sage-prompts-sharing.sql + schema-sage-prompts-role-fix.sql), which rejects a
+  // non-privileged share attempt outright.
+  const canShare = userRole === 'admin' || userRole === 'owner';
   const creatorLabel = userName || 'Unknown';
   // Org-level byline for the SHARED badge, not the sharer's personal name (owner-stated
   // 2026-09-03) -- cleaner for a stranger encountering the badge who wouldn't know who a
