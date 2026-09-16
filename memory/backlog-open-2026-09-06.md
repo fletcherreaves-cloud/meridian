@@ -424,7 +424,11 @@
   a real DevTools capture. (PMIX itself, the multi-store `loc` field question, the scheduled
   Action, and the failure-watch entry are all already shipped — don't re-scope those.)
 - [ ] Graded Visits auto-pull from McDonald's (currently manual).
-- [ ] Demographics per location (Census/ACS API).
+- [x] Demographics per location (Census/ACS API). ✅ SHIPPED v5.448 (Task #58) — Location Intel's
+  new 🏘 Demographics mode. See `memory/project-location-demographics.md`. Note: the live Census
+  APIs could not be smoke-tested from the build session (sandbox network policy blocks
+  `*.census.gov` outright) — the first real "🔄 Refresh Demographics" click in the app is this
+  feature's true first live test.
 - [ ] Register Audit **engine** (searchable, smart detection, SAGE+Signals integrated) — whole
   workstream, not started. (The Register Audit *pull* itself is live — see §15/§14, different
   scope: this is the analysis layer on top.)
