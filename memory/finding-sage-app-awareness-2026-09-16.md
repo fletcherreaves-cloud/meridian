@@ -74,14 +74,15 @@ individually-testable additions -- Path A from that finding's own menu.
      low/zero/empty, check `query_data_health` before concluding something is operationally
      wrong at the stores.
 
-### ⚠️ Pending owner action
+### ✅ Deployed (owner-confirmed 2026-09-16) — `query_data_health` should now be live
 
-**Deploy required for `query_data_health` to actually work:**
-`supabase functions deploy sage-chat --no-verify-jwt`. The tool-count/documentation fixes and
-the new `data-health.js` module ship inert (unused) client-side until this runs -- SAGE won't
-call a tool the live function doesn't yet expose. Until deployed, this is dead code with real
-test coverage, not a live capability; do not report `query_data_health` as working until the
-owner confirms the redeploy AND a live SAGE conversation actually invokes it.
+Owner ran `supabase functions deploy sage-chat --no-verify-jwt`. **Not yet independently
+verified end-to-end** — this session has no way to open a live SAGE conversation and confirm the
+tool actually gets called and returns real data (same standing gap as the rest of this file's
+"cannot deploy or exercise the live Edge Function" note). Re-measure before treating this as
+proven: ask SAGE something like "is my data current?" and confirm it calls `query_data_health`
+and returns real per-stream results, not a tool-not-found error. Until that live check happens,
+"deployed" and "working" are two different claims -- this note only supports the first one.
 
 ### What's deliberately NOT attempted this pass, and why
 

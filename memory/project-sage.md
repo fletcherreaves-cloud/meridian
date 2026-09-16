@@ -56,9 +56,10 @@ which were dead-by-default without this (no user had `mf_anthropic_key` set). Fu
 ✅ **Comprehensive app-awareness (Task #74, 2026-09-16) — real tool count corrected (9→10) +
 `search_project_memory` given a system-prompt writeup it never had + new `query_data_health`
 tool.** Full scoping, what shipped, and what's deliberately deferred:
-`memory/finding-sage-app-awareness-2026-09-16.md`. **⚠️ Needs `supabase functions deploy
-sage-chat --no-verify-jwt` before `query_data_health` actually works — do not report it live
-until the owner confirms the redeploy.**
+`memory/finding-sage-app-awareness-2026-09-16.md`. **✅ Deployed (owner-confirmed 2026-09-16)** —
+`supabase functions deploy sage-chat --no-verify-jwt` has run. Not yet independently verified
+end-to-end (no live SAGE conversation confirmed calling it this session) — see that file's own
+note before assuming a live check already happened.
 
 **Why `thinking: {type: "adaptive"}`:** `budget_tokens` is deprecated on Opus 4.8, rejected with 400. Use `{type: "adaptive"}` only.
 
