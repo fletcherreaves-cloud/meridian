@@ -20,6 +20,13 @@ import { aggregateSmgFullscale, SMG_STANDARDS, SMG_NOTE } from './smg-agg.js';
 // was assumed impossible, never actually tested. Reused verbatim here for zero drift between what
 // the in-app EOM Dashboard's Change Monitor shows and what SAGE reports on the same data.
 import { closeWindowStartFor, ledgerScopeDiff, crossStoreRecountConsistency, crossStoreConsistencyText } from '../../../src/engine/eom-ledger-baseline.js';
+// Task #74 -- query_data_health tool. scripts/lib/scheduled-pull-registry.mjs is plain JS with
+// no Node-specific APIs (same shape as the src/engine/ imports above), so it should resolve the
+// same way in Deno; not independently re-verified against the live function (this session has
+// no way to deploy or exercise it -- see memory/finding-sage-metric-resolver-not-a-small-port-
+// 2026-09-16.md's own note on that gap). The actual query/classify logic lives in ./data-health.js
+// specifically so it's testable from the Vitest suite even though this import path isn't.
+import { streamRegistryEntries, classifyStream, summarizeDataHealth } from './data-health.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -250,6 +257,14 @@ Returns: district totals + per-store rows with each metric and a pass/fail flag 
       },
       required: ['period'],
     },
+  },
+  {
+    name: 'query_data_health',
+    description: `Check whether Meridian's own automated data streams are current -- QSRSoft DAR, FOB, eBOS, LifeLenz labor/schedule, LifeLenz Attendance, the 3 emailed streams (Daily Glimpse/Sales Ledger/Cash Sheet), Inventory Summary, Forecast Week Cache, and the 6 monthly Performance-Review streams (Roster Statistics, Employee Roster, Turnover, Digital App, McDelivery, Shift Manager) -- using the SAME per-stream freshness check and thresholds the in-app At-A-Glance data-freshness checklist uses, so this always agrees with what the app itself shows.
+Use this whenever: the owner asks if data is current/up to date/why a number looks missing or stale, a query_* tool result looks surprisingly low, zero, or empty and a stale pull is a plausible explanation worth checking BEFORE concluding something is operationally wrong, or you are generally troubleshooting "why don't I see today's numbers."
+This is a TROUBLESHOOTING/meta tool, not a business-data tool -- it never returns any store-level figures, only how current each tracked table is as of right now (one query per stream, no per-store breakdown).
+Returns every tracked stream's latest date, days stale, and severity (ok / warn = 1+ day past its own cadence / crit = 3+ days past it), plus the single worst stream if any are behind schedule.`,
+    input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'search_qsr_kb',
@@ -810,6 +825,22 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: SMG_NOTE,
     });
+  }
+
+  if (name === 'query_data_health') {
+    const now = new Date();
+    const entries = streamRegistryEntries();
+    // One tiny indexed query per stream (order+limit 1, same shape scheduled-pull-watchdog.mjs's
+    // fetchLatestDate() already uses in production) -- run in parallel since there are ~21 and
+    // this tool has no other work to overlap them with.
+    const classified = await Promise.all(entries.map(async (entry) => {
+      let q = sb.from(entry.table).select(entry.dateCol).order(entry.dateCol, { ascending: false }).limit(1);
+      if (entry.clampToToday) q = q.lte(entry.dateCol, now.toISOString().slice(0, 10));
+      const { data, error } = await q;
+      const latest = (!error && data && data[0]) ? (data[0] as Record<string, unknown>)[entry.dateCol] : null;
+      return classifyStream(entry, latest as string | null, now);
+    }));
+    return JSON.stringify(summarizeDataHealth(classified, now));
   }
 
   if (name === 'search_qsr_kb') {

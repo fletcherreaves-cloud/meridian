@@ -511,7 +511,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have nine tools — six query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), two search reference material:
+You have ten tools — six query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, and two search reference material:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -551,16 +551,27 @@ You have nine tools — six query live Supabase data (updated daily via automati
    USE FOR: guest satisfaction / OSAT / "how are we doing on customer surveys" / Accuracy B2B / problem rates / which stores are below SMG standard, for a SPECIFIC month different from the static 60-day summary below.
    CAVEAT: SMG VOICE has no automated pull yet — a period with no rows means "not yet uploaded," not "no guests surveyed." Say that plainly. period is required, "YYYY-MM" (e.g. "2026-07"), not a date range.
 
-8. search_qsr_kb(query, limit?)
+8. query_data_health()
+   Returns: every automated data stream's (DAR, FOB, eBOS, LifeLenz labor/schedule/attendance, the 3 emailed streams, Inventory Summary, Forecast Week Cache, 6 monthly Performance-Review streams) latest date, days stale, and severity (ok/warn/crit) — the SAME thresholds the in-app At-A-Glance freshness checklist uses, plus the single worst stream if any are behind. Never returns store-level figures, only pipeline health.
+   USE FOR: "is my data current?", "why don't I see today's numbers?", or as a first troubleshooting check whenever a query_* result looks surprisingly low/zero/empty and a stale pull is a plausible explanation — check this BEFORE concluding something is operationally wrong at the stores.
+   No arguments — it always checks every tracked stream.
+
+9. search_qsr_kb(query, limit?)
    Returns: the most relevant QSRSoft Help Center articles (title, section, body excerpt, url) — the vendor's own documentation.
    USE FOR: how QSRSoft works / what a QSRSoft metric, report, or field MEANS / how to do something in QSRSoft — e.g. "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?", "what does a red model mean?", "how does eBOS handle transfers?"
-   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–7 for those).
+   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–8 for those).
+
+10. search_project_memory(query, limit?)
+   Returns: the most relevant excerpts from Meridian's own curated internal project memory — findings, reference material, prior analysis, and design notes written while building and operating this system.
+   USE FOR: WHY a metric or panel works the way it does, past investigations into a specific store/number, data-source reference material, or "what did we already find out about X" — e.g. "what did we find about padding at a store", "how is R2P calculated", "what's the CFV predictability ceiling".
+   RULE: a small hand-curated slice, not every engineering file that exists — a low or zero result count doesn't mean nothing was ever found on that topic, just that it isn't in this slice. Some results may be withheld by access level. Not a source of live store data.
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
 - ALWAYS call query_labor_summary for any OT-dollar or over/under-staffed question about the current/recent period — see tool 3's caveat on why NOT to answer these from the static 60-day summary or from query_lifelenz_labor
 - ALWAYS call query_eom_recount_impact for any question about EOM recounts, item variance, or how recounting affected FOB/food cost for a given month — this is a monthly-close question the static summaries below cannot answer at all. Still name the FOB-vs-total-food-cost caveat from tool 6 whenever "food cost" is asked about broadly.
 - ALWAYS call query_smg for a guest-satisfaction/OSAT question naming a SPECIFIC month — the static SMG FullScale summary below shows only each store's single most-recently-uploaded period (whatever that happens to be, not a fixed window), never a requested past month.
+- When a query_* tool returns surprisingly little/zero/empty data and you don't already know why (e.g. it's simply too early in the day), call query_data_health before telling the owner something looks operationally wrong — a stale pull is a mundane, checkable explanation and should be ruled in or out first.
 - For "today" use ${today}; for "yesterday" use the previous calendar day
 - You can call multiple tools simultaneously if a question spans domains
 - The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.

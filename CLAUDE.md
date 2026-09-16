@@ -234,7 +234,27 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Model:** `claude-opus-5` with `thinking: {type: "adaptive"}`, `max_tokens: 8000` (upgraded from the 4.8 generation 2026-08-13)
 - **Deploy command:** `supabase functions deploy sage-chat --no-verify-jwt` (`--no-verify-jwt` required for CORS)
 
-**Live tools (v4.373–v4.379, +v4.500; re-inventoried 2026-09-07 — this list had drifted to 4 of the real 7, re-verify against `supabase/functions/sage-chat/index.ts` before trusting it again rather than assuming this correction stays current forever):** `query_daily_activity` (sales + DT), `query_lifelenz_labor` (VLH gap), `query_forecast_snapshots` (MAPE by model), `query_promo_roi` (matched-day promo/discount ROI — mirrors the Promo/Discount ROI panel, RBAC-scoped), `query_labor_summary` (exact-window OT $/hrs + Controls-basis Act-vs-Need staffing gap, from the SAME auto QSRSoft streams the Controls exports read — NOT LifeLenz; deliberately preferred over `query_lifelenz_labor` for OT/staffing questions since the two baselines can disagree sharply), `query_eom_recount_impact` (EOM recount-vs-FOB impact, same engine the EOM Dashboard's Change Monitor uses; explicitly scoped to FOB only — total food cost % isn't in Meridian's data model and the tool's own prompt says so rather than implying coverage), `query_smg` (SMG VOICE OSAT/Accuracy B2B/problem rates from the monthly FullScale upload, response-count-weighted district totals). System prompt documents tools explicitly so SAGE calls them proactively.
+**Live tools (v4.373–v4.379, +v4.500, +v5.457; re-inventoried 2026-09-16 — the 2026-09-07 pass
+itself drifted, missing 3 real tools it never re-checked against `index.ts`'s actual `TOOLS`
+array; re-verify there again before trusting this list rather than assuming this correction
+stays current forever):** `query_daily_activity` (sales + DT), `query_lifelenz_labor` (VLH gap),
+`query_forecast_snapshots` (MAPE by model), `query_promo_roi` (matched-day promo/discount ROI —
+mirrors the Promo/Discount ROI panel, RBAC-scoped), `query_labor_summary` (exact-window OT $/hrs
++ Controls-basis Act-vs-Need staffing gap, from the SAME auto QSRSoft streams the Controls
+exports read — NOT LifeLenz; deliberately preferred over `query_lifelenz_labor` for OT/staffing
+questions since the two baselines can disagree sharply), `query_eom_recount_impact` (EOM
+recount-vs-FOB impact, same engine the EOM Dashboard's Change Monitor uses; explicitly scoped to
+FOB only — total food cost % isn't in Meridian's data model and the tool's own prompt says so
+rather than implying coverage), `query_smg` (SMG VOICE OSAT/Accuracy B2B/problem rates from the
+monthly FullScale upload, response-count-weighted district totals), `search_qsr_kb` (searches
+`qsrsoft_kb`, the vendor's own Help Center docs — how QSRSoft works/what a term means), and
+`search_project_memory` (searches `sage_memory_kb`, a curated slice of this repo's own `memory/`
+notes — why a metric/panel works the way it does). **New in v5.457, Task #74:**
+`query_data_health` — checks whether the ~21 automated data streams themselves are current, same
+thresholds as `stream-freshness.js`'s STREAMS/At-A-Glance checklist, never returns store-level
+figures. System prompt (`src/views/sage.js`'s `buildSystemPrompt`) documents all 10 explicitly so
+SAGE calls them proactively — that file had also drifted (claimed "nine tools" but only wrote up
+8, missing `search_project_memory` entirely), fixed in the same pass.
 
 **Self-instrumenting + prompt library (v4.487):** every SAGE answer has a **🐞 Log** action → opens a modal that turns the response into a **Task Queue** ticket (data-pull failures) or **Feature Request** (capability gaps) — auto-suggested by failure-language + data-source detection (`query_daily_activity`/`query_lifelenz_labor`/`query_forecast_snapshots`), pre-filled with the Q+A context AND a ready-to-paste **troubleshooting prompt** for Claude Code. Header **📚 Prompts** = saved-prompt library (`sage_prompts` table): save the current input, Use/Run/Delete saved prompts, and **⏰ Schedule** each to auto-run (daily/weekly at a UTC hour). **Phase 2 shipped (v4.488):** `scripts/sage-run.mjs` (hourly GitHub Action `.github/workflows/sage-run.yml`) signs in the `SAGE_RUNNER` service account → mints a user JWT → calls `sage-chat` for each due prompt → writes `sage_prompt_runs`, surfaced by the **first At-A-Glance tile "SAGE Scheduled Runs"** (`SageRunsTile` in analytics.js; added as `DEF_SECS[0]` + first grid child). `send`→`sendMessage(text)` refactor enables the headless call.
 
