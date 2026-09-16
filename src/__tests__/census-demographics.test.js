@@ -1,18 +1,19 @@
 // @ts-nocheck
 // Census/ACS trade-area demographics (backlog: "Demographics per location, Census/ACS API").
-// This session's sandbox network policy blocks geocoding.geo.census.gov / api.census.gov
-// outright (confirmed via both curl and WebFetch), so the live APIs could not be smoke-tested
-// before merge -- see src/engine/census-demographics.js's own header comment. These tests
-// exercise the pure shaping logic directly (shapeAcsRow) against literal ACS-response fixtures,
-// and the orchestration logic (geocodeToTract/fetchAcsForTract/fetchAllStoreDemographics)
-// against a mocked global fetch built from the Census APIs' own documented response shapes --
-// the standard way this repo tests external-pull logic it can't hit live (e.g. the QSRSoft pull
-// scripts' own response-shape tests).
+// Both Census calls route through the census-proxy Edge Function (server-side, avoiding the
+// browser CORS failure the live app hit on first use — see this file's own module header for
+// the measured root cause). These tests exercise the pure shaping logic directly (shapeAcsRow)
+// against literal ACS-response fixtures, and the orchestration logic
+// (geocodeToTract/fetchAcsForTract/fetchAllStoreDemographics) against a mocked global fetch
+// built from the Census APIs' own documented response shapes, now reached via the proxy.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   ACS_VINTAGE, geocodeToTract, fetchAcsForTract, shapeAcsRow,
   fetchStoreDemographics, fetchAllStoreDemographics,
 } from '../engine/census-demographics.js';
+
+const SB_URL = 'https://test.supabase.co';
+const TOKEN = 'test-token';
 
 describe('shapeAcsRow — pure ACS-row shaping + the -666666666 null sentinel', () => {
   it('maps a normal ACS row into Meridian\'s camelCase shape, computing poverty rate and owner-occupied % as ratios', () => {
@@ -69,7 +70,7 @@ describe('shapeAcsRow — pure ACS-row shaping + the -666666666 null sentinel', 
   });
 });
 
-describe('geocodeToTract / fetchAcsForTract — mocked fetch, documented Census response shapes', () => {
+describe('geocodeToTract / fetchAcsForTract — mocked fetch, via the census-proxy Edge Function', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
 
   it('parses a real-shaped Census Geocoder response into {stateFips,countyFips,tractFips,geoid}', async () => {
@@ -79,23 +80,31 @@ describe('geocodeToTract / fetchAcsForTract — mocked fetch, documented Census 
         result: { geographies: { 'Census Tracts': [{ STATE: '40', COUNTY: '019', TRACT: '000600', GEOID: '40019000600' }] } },
       }),
     }));
-    const tract = await geocodeToTract(34.1741, -97.1434);
+    const tract = await geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN);
     expect(tract).toEqual({ stateFips: '40', countyFips: '019', tractFips: '000600', geoid: '40019000600' });
-    // Confirms the actual coordinates are threaded into the request URL (x=lon, y=lat -- easy
-    // to transpose and silently geocode a store to the wrong tract).
-    const url = global.fetch.mock.calls[0][0];
-    expect(url).toContain('x=-97.1434');
-    expect(url).toContain('y=34.1741');
+    // Confirms the request hits the proxy (not geocoding.geo.census.gov directly), carries the
+    // caller's auth token, and threads the actual coordinates into the POST body -- easy to
+    // transpose lat/lon and silently geocode a store to the wrong tract.
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe(`${SB_URL}/functions/v1/census-proxy`);
+    expect(opts.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ step: 'geocode', lat: 34.1741, lon: -97.1434 });
   });
 
   it('throws a clear, step-named error when the geocoder returns no matching tract (e.g. coordinates outside the US)', async () => {
     global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ result: { geographies: {} } }) }));
-    await expect(geocodeToTract(0, 0)).rejects.toThrow(/No Census Tract found/);
+    await expect(geocodeToTract(0, 0, SB_URL, TOKEN)).rejects.toThrow(/No Census Tract found/);
   });
 
   it('throws a clear error naming the geocoder step on a non-2xx HTTP status', async () => {
     global.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 503 }));
-    await expect(geocodeToTract(34.1741, -97.1434)).rejects.toThrow(/Census geocoder HTTP 503/);
+    await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN)).rejects.toThrow(/Census geocoder HTTP 503/);
+  });
+
+  it('throws a clear, network-level error when the proxy call itself fails (e.g. no auth token / not deployed)', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('Failed to fetch')));
+    await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN)).rejects.toThrow(/Census geocoder request failed/);
   });
 
   it('parses a real-shaped ACS5 [header,row] response into a variable-code-keyed object', async () => {
@@ -106,18 +115,18 @@ describe('geocodeToTract / fetchAcsForTract — mocked fetch, documented Census 
         ['Census Tract 6, Carter County, Oklahoma', '4200', '58000', '40', '019', '000600'],
       ]),
     }));
-    const byVar = await fetchAcsForTract({ stateFips: '40', countyFips: '019', tractFips: '000600' });
+    const byVar = await fetchAcsForTract({ stateFips: '40', countyFips: '019', tractFips: '000600' }, ACS_VINTAGE, SB_URL, TOKEN);
     expect(byVar.B01003_001E).toBe('4200');
     expect(byVar.B19013_001E).toBe('58000');
-    const url = global.fetch.mock.calls[0][0];
-    expect(url).toContain(`/${ACS_VINTAGE}/acs/acs5`);
-    expect(url).toContain('for=tract:000600');
-    expect(url).toContain('in=state:40+county:019');
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe(`${SB_URL}/functions/v1/census-proxy`);
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ step: 'acs', stateFips: '40', countyFips: '019', tractFips: '000600', vintage: ACS_VINTAGE });
   });
 
   it('throws a clear error when the ACS API returns only a header row (tract genuinely has no data)', async () => {
     global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([['NAME', 'B01003_001E']]) }));
-    await expect(fetchAcsForTract({ stateFips: '40', countyFips: '019', tractFips: '999999' }))
+    await expect(fetchAcsForTract({ stateFips: '40', countyFips: '019', tractFips: '999999' }, ACS_VINTAGE, SB_URL, TOKEN))
       .rejects.toThrow(/No ACS data returned/);
   });
 });
@@ -130,7 +139,7 @@ describe('fetchStoreDemographics — one store, geocoder then ACS chained', () =
         ['NAME', 'B01003_001E', 'B19013_001E', 'B01002_001E', 'B17001_002E', 'B17001_001E', 'B25003_002E', 'B25003_003E', 'B25003_001E', 'B25010_001E'],
         ['x', '4200', '58000', '36.4', '420', '4100', '1200', '800', '2000', '2.6'],
       ]) });
-    const rec = await fetchStoreDemographics('3708', 34.1741, -97.1434);
+    const rec = await fetchStoreDemographics('3708', 34.1741, -97.1434, SB_URL, TOKEN);
     expect(rec.loc).toBe('3708');
     expect(rec.tractGeoid).toBe('40019000600');
     expect(rec.acsVintage).toBe(ACS_VINTAGE);
@@ -152,7 +161,7 @@ describe('fetchAllStoreDemographics — sequential, per-store error isolation, t
         ['NAME', 'B01003_001E', 'B19013_001E', 'B01002_001E', 'B17001_002E', 'B17001_001E', 'B25003_002E', 'B25003_003E', 'B25003_001E', 'B25010_001E'],
         ['x', '3000', '52000', '34', '300', '2900', '900', '600', '1500', '2.4'],
       ]) });
-    const { rows, errors } = await fetchAllStoreDemographics(coords, () => {});
+    const { rows, errors } = await fetchAllStoreDemographics(coords, () => {}, SB_URL, TOKEN);
     expect(rows.map(r => r.loc)).toEqual(['5183']);
     expect(errors).toEqual([{ loc: '3708', error: 'Census geocoder HTTP 500' }]);
   }, 10000);
@@ -160,7 +169,7 @@ describe('fetchAllStoreDemographics — sequential, per-store error isolation, t
   it('a store with no coordinates on file is reported as an error, never a crash', async () => {
     const coords = { '9999': {} };
     global.fetch = vi.fn();
-    const { rows, errors } = await fetchAllStoreDemographics(coords, () => {});
+    const { rows, errors } = await fetchAllStoreDemographics(coords, () => {}, SB_URL, TOKEN);
     expect(rows).toEqual([]);
     expect(errors).toEqual([{ loc: '9999', error: 'no coordinates on file' }]);
     expect(global.fetch).not.toHaveBeenCalled();
@@ -172,7 +181,16 @@ describe('fetchAllStoreDemographics — sequential, per-store error isolation, t
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ result: { geographies: { 'Census Tracts': [{ STATE: '40', COUNTY: '019', TRACT: '000600', GEOID: '40019000600' }] } } }) })
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([['NAME'], ['x']]) });
     const progress = [];
-    await fetchAllStoreDemographics(coords, (done, total, loc) => progress.push({ done, total, loc }));
+    await fetchAllStoreDemographics(coords, (done, total, loc) => progress.push({ done, total, loc }), SB_URL, TOKEN);
     expect(progress).toEqual([{ done: 1, total: 1, loc: '3708' }]);
+  });
+
+  it('never calls fetch at all without sbUrl/authToken -- reports a clear error instead of a wall of per-store CORS failures', async () => {
+    const coords = { '3708': { lat: 1, lon: 1 } };
+    global.fetch = vi.fn();
+    const { rows, errors } = await fetchAllStoreDemographics(coords, () => {}, '', null);
+    expect(rows).toEqual([]);
+    expect(errors[0].error).toMatch(/Not authenticated|VITE_SUPABASE_URL/);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

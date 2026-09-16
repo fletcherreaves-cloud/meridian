@@ -2287,6 +2287,15 @@ export async function loadSmgComments({ daysBack = 365 } = {}) {
   }));
 }
 
+// The caller's current Supabase session access token, or null if not signed in. Extracted
+// out of triggerSync's own inline getSession() call so other Edge-Function callers (e.g.
+// census-demographics.js's proxy calls) can get the same token without duplicating it.
+export async function getAuthToken() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
+}
+
 // ── On-demand sync triggers ───────────────────────────────────────────────────
 // Dispatch any data-pull workflow from the app. `workflow` is one of
 // 'dar' | 'ebos' | 'fob' | 'lifelenz'; `inputs` optionally overrides that

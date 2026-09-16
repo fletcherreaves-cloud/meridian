@@ -5,7 +5,7 @@ import { dKey, nDays } from '../utils/date.js';
 import { gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
-import { loadStoreDemographics, saveStoreDemographics } from '../lib/supabase.js';
+import { loadStoreDemographics, saveStoreDemographics, getAuthToken } from '../lib/supabase.js';
 import { fetchAllStoreDemographics } from '../engine/census-demographics.js';
 
 const h=React.createElement;
@@ -393,7 +393,9 @@ function DemographicsSection({selLoc,activeLevel,locs}){
     setRefreshing(true);setErrors([]);setErr(null);
     setProgress({done:0,total:Object.keys(STORE_COORDS).length,loc:''});
     try{
-      var res=await fetchAllStoreDemographics(STORE_COORDS,function(done,total,loc){setProgress({done:done,total:total,loc:loc});});
+      var sbUrl=import.meta.env.VITE_SUPABASE_URL||'';
+      var authToken=await getAuthToken();
+      var res=await fetchAllStoreDemographics(STORE_COORDS,function(done,total,loc){setProgress({done:done,total:total,loc:loc});},sbUrl,authToken);
       if(res.rows.length){
         var saved=await saveStoreDemographics(res.rows);
         if(saved.error)setErr(saved.error);
