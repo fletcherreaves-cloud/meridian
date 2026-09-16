@@ -660,7 +660,7 @@ function renderInline(text) {
   if (parts.length === 1) return text;
   return parts.map((p, i) => {
     if (p.startsWith('**') && p.endsWith('**')) return h('strong', { key: i }, p.slice(2, -2));
-    if (p.startsWith('`') && p.endsWith('`')) return h('code', { key: i, style: { fontFamily: 'monospace', background: 'rgba(255,255,255,.08)', padding: '1px 4px', borderRadius: 3, fontSize: '0.9em' } }, p.slice(1, -1));
+    if (p.startsWith('`') && p.endsWith('`')) return h('code', { key: i, style: { fontFamily: 'monospace', background: 'var(--surf2)', padding: '1px 4px', borderRadius: 3, fontSize: '0.9em' } }, p.slice(1, -1));
     return p;
   });
 }
@@ -708,7 +708,7 @@ function renderMarkdown(text) {
                 color: 'var(--text,#f1f5f9)', textAlign: align[ci] || 'left',
                 fontVariantNumeric: align[ci] === 'right' ? 'tabular-nums' : 'normal',
                 whiteSpace: align[ci] === 'right' ? 'nowrap' : 'normal',
-                background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)',
+                background: ri % 2 === 0 ? 'transparent' : 'var(--surf2)',
               } }, renderInline(cell)))
             ))
           )
@@ -916,7 +916,7 @@ export function LogIssueModal({ question, answer, conversation, onClose }) {
     setTimeout(onClose, 900);
   };
 
-  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
   const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'var(--bdr)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
 
   return h(ModalShell, { title: '🐞 Log this as an issue', onClose, maxWidth: 560, zIndex: 2100, closeOnBackdrop: true },
@@ -1065,8 +1065,8 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRo
   const openSched = p => { setSdraft({ freq: p.scheduleFreq || 'daily', hour: p.scheduleHour != null ? p.scheduleHour : 13, dow: p.scheduleDow != null ? p.scheduleDow : 1 }); setSchedFor(p.id); };
   const saveSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: true, hour: +sdraft.hour, freq: sdraft.freq, dow: +sdraft.dow }); setSchedFor(null); onRefresh(); };
   const clearSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: false }); setSchedFor(null); onRefresh(); };
-  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
-  const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
   return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
     h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid var(--bdr)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
@@ -1080,7 +1080,7 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRo
           h('button', { onClick: saveCurrent, disabled: busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.25)', color: canSave ? '#000' : 'rgba(245,158,11,.85)', fontSize: 11, fontWeight: 800, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap', opacity: busy ? 0.6 : 1 } }, busy ? '…' : '★ Save'))),
       msg && h('div', { style: { fontSize: 10, color: msg.startsWith('⚠') ? red : grn, marginBottom: 8 } }, msg),
       // This chat's prompts — multi-select to save individually or combine into one saved prompt.
-      chatPrompts.length > 0 && h('div', { style: { marginBottom: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.02)' } },
+      chatPrompts.length > 0 && h('div', { style: { marginBottom: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px', background: 'var(--surf2)' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 } },
           h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, flex: 1 } }, 'This chat\'s prompts' + (sel.size ? ' · ' + sel.size + ' selected' : '')),
           h('button', { onClick: combineIntoDraft, disabled: busy, title: 'Combine the selected prompts into the box above to edit & save as one', style: { fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'transparent', color: muted, cursor: 'pointer', whiteSpace: 'nowrap' } }, '⧉ Combine → edit'),
@@ -1093,7 +1093,7 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRo
       !prompts.length
         ? h('div', { style: { fontSize: 11, color: muted, textAlign: 'center', padding: '20px 0' } }, 'No saved prompts yet.')
         : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'var(--bdr)'), borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
+            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'var(--bdr)'), borderRadius: 8, padding: '8px 10px', background: 'var(--surf2)' } },
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
                 h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', flex: 1 } }, p.title),
                 p.shared && h('span', { title: p.sharedBy ? ('Shared by ' + p.sharedBy) : 'Shared with your organization', style: { fontSize: 9, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,.14)', borderRadius: 99, padding: '1px 7px' } }, '🌐 Shared'),
@@ -1203,7 +1203,7 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
         maxWidth: isUser ? '80%' : '94%',
         padding: '10px 14px',
         borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-        background: isUser ? 'rgba(245,158,11,.12)' : 'rgba(255,255,255,.05)',
+        background: isUser ? 'rgba(245,158,11,.12)' : 'var(--surf2)',
         border: `1px solid ${isUser ? 'rgba(245,158,11,.22)' : 'var(--bdr)'}`,
         fontSize: '13px',
         lineHeight: 1.65,
@@ -1511,12 +1511,12 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
             key: p,
             onClick: () => setInput(p),
             style: {
-              background: 'rgba(255,255,255,.04)', border: '1px solid var(--bdr)',
+              background: 'var(--surf2)', border: '1px solid var(--bdr)',
               borderRadius: 8, padding: '9px 14px', cursor: 'pointer',
               fontSize: '12px', color: 'var(--text, #f1f5f9)', textAlign: 'left',
             },
             onMouseEnter: e => { e.currentTarget.style.background = 'rgba(245,158,11,.07)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,.2)'; },
-            onMouseLeave: e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)'; e.currentTarget.style.borderColor = 'var(--bdr)'; },
+            onMouseLeave: e => { e.currentTarget.style.background = 'var(--surf2)'; e.currentTarget.style.borderColor = 'var(--bdr)'; },
           }, '→  ' + p))
         ),
       ),
@@ -1572,7 +1572,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
         rows: 2,
         style: {
           flex: 1,
-          background: 'rgba(255,255,255,.05)',
+          background: 'var(--surf3)',
           border: '1px solid var(--bdr)',
           borderRadius: 8,
           padding: '10px 12px',

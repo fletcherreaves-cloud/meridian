@@ -294,7 +294,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
     background:col+'22',color:col,border:'.5px solid '+col+'55'}},txt);
 
   const iRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid var(--bdr)',
-    background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+    background:i%2?'var(--surf2)':'transparent'}},
     td({style:{padding:'4px 8px',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:'9px'}},(i+1)),
     td({style:{padding:'4px 8px',fontSize:'9px',color:'var(--text)'}},
       div({style:{display:'flex',alignItems:'baseline',gap:5}},
@@ -319,7 +319,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   );
 
   const oRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid var(--bdr)',
-    background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+    background:i%2?'var(--surf2)':'transparent'}},
     td({style:{padding:'4px 8px',fontSize:'9px',color:'var(--text)'}},
       div({style:{display:'flex',alignItems:'baseline',gap:5}},
         span({style:{fontSize:'8px',fontFamily:'var(--mono)',color:'var(--text3)',flexShrink:0}},r.wrin),

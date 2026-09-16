@@ -199,7 +199,7 @@ function StoreRow({ s, expanded, onToggle, jobRows }) {
       td(fracPct(s.fixedLaborPct), segColor(s.fixedLaborPct), true),
       td(fracPct(s.floorLaborPct), segColor(s.floorLaborPct), true),
       td(fracPct(s.combinedFixedFloorPct), combColor(s.combinedFixedFloorPct), true)),
-    expanded && h('tr', null, h('td', { colSpan: 11, style: { padding: '0 8px 12px 26px', background: 'rgba(255,255,255,.02)' } },
+    expanded && h('tr', null, h('td', { colSpan: 11, style: { padding: '0 8px 12px 26px', background: 'var(--surf2)' } },
       h('table', { style: { width: '100%', borderCollapse: 'collapse', marginTop: 4 } },
         h('thead', null, h('tr', { style: { color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase' } },
           ...['Day', 'Sched', 'Forecast', 'Over/Under', 'Labor %', 'Fcst Sales'].map((t, i) => h('th', { key: i, style: { textAlign: i ? 'right' : 'left', padding: '3px 8px', fontWeight: 700 } }, t)))),

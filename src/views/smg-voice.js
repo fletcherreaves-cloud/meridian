@@ -548,7 +548,7 @@ function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
             )
           ),
           h('tbody',null,
-            sorted.map((r,i)=>h('tr',{key:r.loc,style:{background:i%2===0?'transparent':'rgba(255,255,255,.015)',borderBottom:'1px solid var(--bdr)'}},
+            sorted.map((r,i)=>h('tr',{key:r.loc,style:{background:i%2===0?'transparent':'var(--surf2)',borderBottom:'1px solid var(--bdr)'}},
               h('td',{style:{padding:'5px 10px',borderRight:'1px solid var(--bdr)',fontSize:11}},
                 h('span',{style:{fontWeight:600,color:'var(--text)'}},'#'+(i+1)+' '),
                 h('span',{style:{color:'var(--text2)'}},'Store '+r.loc),
@@ -767,7 +767,7 @@ function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
               )
             ),
             h('tbody', null,
-              sorted.map((r, i) => h('tr', { key: r.loc + i, style: { background: i % 2 ? 'rgba(255,255,255,.015)' : 'transparent', borderBottom: '1px solid var(--bdr)' } },
+              sorted.map((r, i) => h('tr', { key: r.loc + i, style: { background: i % 2 ? 'var(--surf2)' : 'transparent', borderBottom: '1px solid var(--bdr)' } },
                 h('td', { style: { padding: '5px 10px', borderRight: '1px solid var(--bdr)' } },
                   h('div', { style: { fontWeight: 600, fontSize: 11 } }, sName(r.loc)),
                   h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, r.loc + (r.operator_name ? ' · ' + r.operator_name : ''))
@@ -823,7 +823,7 @@ function OpportunitiesPanel({ result, scopeText }) {
           h('th', { style: th }, 'Avg'),
           h('th', { style: { ...th, textAlign: 'left', minWidth: 220 } }, 'Top Issues (in negative comments)'),
         )),
-        h('tbody', null, stores.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)', background: i % 2 ? 'rgba(255,255,255,.015)' : 'transparent' } },
+        h('tbody', null, stores.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
           h('td', { style: { padding: '6px 8px' } },
             h('span', { style: { fontWeight: 700, color: 'var(--text3)', marginRight: 4 } }, '#' + (i + 1)),
             h('span', { style: { fontWeight: 600 } }, s.name),

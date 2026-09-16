@@ -690,7 +690,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
                     var barPct=Math.min(100,avg/grand*100),vsG=(avg-grand)/grand;
                     return div({key:d,style:{display:'flex',alignItems:'center',gap:8}},
                       div({style:{width:28,fontSize:'9px',color:'var(--text2)',flexShrink:0,textAlign:'right'}},d),
-                      div({style:{flex:1,background:'rgba(255,255,255,.06)',borderRadius:3,height:16,position:'relative',overflow:'hidden'}},
+                      div({style:{flex:1,background:'var(--surf3)',borderRadius:3,height:16,position:'relative',overflow:'hidden'}},
                         div({style:{position:'absolute',left:0,top:0,bottom:0,width:barPct+'%',background:'var(--amber)',opacity:.65,borderRadius:3}})
                       ),
                       div({style:{width:76,fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right',flexShrink:0}},fmtD(avg)),
@@ -735,7 +735,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
                       top&&div({style:{fontSize:'9px',color:'#10b981',fontWeight:600}},fmtD(top.dollarOpp)+' opp'),
                       div({style:{color:'var(--text3)',fontSize:11}},isExp?'▼':'▶')
                     ),
-                    isExp&&div({style:{padding:'10px 14px 14px 28px',background:'rgba(255,255,255,.02)'}},
+                    isExp&&div({style:{padding:'10px 14px 14px 28px',background:'var(--surf2)'}},
                       sR.slice(0,2).map(function(o,i){
                         return div({key:i,style:{marginBottom:8}},
                           div({style:{fontSize:'9px',color:'var(--amber)',fontWeight:700}},o.icon+' '+o.cat),

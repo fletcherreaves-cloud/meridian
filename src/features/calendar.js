@@ -1064,7 +1064,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               div({style:{display:'flex',flexWrap:'wrap',gap:3,maxHeight:100,overflowY:'auto'}},
                 ...LOCS.map(l=>btn({key:l,onClick:()=>toggleRuleLoc(l),
                   style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,cursor:'pointer',
-                    background:ruleDraft.locs.includes(l)?'rgba(165,180,252,.15)':'rgba(255,255,255,.04)',
+                    background:ruleDraft.locs.includes(l)?'rgba(165,180,252,.15)':'var(--surf2)',
                     border:'.5px solid '+(ruleDraft.locs.includes(l)?'rgba(165,180,252,.5)':'var(--bdr)'),
                     color:ruleDraft.locs.includes(l)?'#a5b4fc':'var(--text3)'}},
                   (ruleDraft.locs.includes(l)?'☑ ':'☐ ')+sNameC(l)))
@@ -1108,7 +1108,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               ...LOCS.filter(l=>(item.suggestedLocs||[]).includes(l)||c.locs.includes(l)).map(l=>
                 btn({key:l,onClick:()=>toggleLoc(item,l),
                   style:{fontSize:'7.5px',padding:'2px 6px',borderRadius:3,cursor:'pointer',
-                    background:c.locs.includes(l)?'rgba(245,158,11,.15)':'rgba(255,255,255,.04)',
+                    background:c.locs.includes(l)?'rgba(245,158,11,.15)':'var(--surf2)',
                     border:'.5px solid '+(c.locs.includes(l)?'rgba(245,158,11,.5)':'var(--bdr)'),
                     color:c.locs.includes(l)?'var(--amber)':'var(--text3)'}},
                   (c.locs.includes(l)?'☑ ':'☐ ')+sNameC(l)))
@@ -1198,7 +1198,7 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
     const name=sName(loc);
     return div({key:loc,onClick:()=>toggleLoc(loc),
       style:{cursor:'pointer',padding:'3px 7px',borderRadius:3,fontSize:'9px',
-        background:sel?'rgba(165,180,252,.15)':'rgba(255,255,255,.04)',
+        background:sel?'rgba(165,180,252,.15)':'var(--surf2)',
         border:'.5px solid '+(sel?'rgba(165,180,252,.5)':'var(--bdr)'),
         color:sel?'#a5b4fc':'var(--text2)',userSelect:'none'}},
       sel?'☑ ':'☐ ',name);
@@ -1282,7 +1282,7 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
                 const sel=selTypes.includes(k);
                 return btn({key:k,onClick:()=>toggleType(k),
                   style:{fontSize:'9px',padding:'3px 9px',
-                    background:sel?et.col+'33':'rgba(255,255,255,.04)',
+                    background:sel?et.col+'33':'var(--surf2)',
                     color:sel?et.col:'var(--text3)',
                     border:'.5px solid '+(sel?et.col+'88':'var(--bdr)'),
                     borderRadius:4,cursor:'pointer',fontWeight:sel?700:400}},
@@ -1668,7 +1668,7 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
               const sName=storeName(e.loc);
               const et=EVENT_TYPES[e.type]||{icon:'🏷',label:e.type};
               return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',
-                background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+                background:i%2?'var(--surf2)':'transparent'}},
                 td({style:{padding:'4px 8px',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:600,
                   color:'var(--text)',whiteSpace:'nowrap'}},e.dk),
                 td({style:{padding:'4px 8px',fontSize:'8.5px',color:'var(--text3)',whiteSpace:'nowrap'}},

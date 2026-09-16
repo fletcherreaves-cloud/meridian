@@ -113,7 +113,7 @@ function LockConfirmationModal({storeSummaries, periodLabel, lockType, onConfirm
           h('tbody',null,...storeSummaries.map((s,i)=>{
             const isWarn = s.mape>15;
             return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',
-              background:isWarn?'rgba(245,158,11,.04)':i%2?'rgba(255,255,255,.015)':'transparent'}},
+              background:isWarn?'rgba(245,158,11,.04)':i%2?'var(--surf2)':'transparent'}},
               td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',whiteSpace:'nowrap',fontSize:'8.5px'}},s.name),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},s.weekTotal>0?f$(s.weekTotal):'—'),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,
@@ -234,7 +234,7 @@ function LockHistoryPanel({stores, onClose}) {
             const dt=r.lockedAt?new Date(r.lockedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
             const scope=r.scope||'week'; // entries logged before v4.193 had no scope field — assume week (the only thing that existed then)
             return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',
-              background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+              background:i%2?'var(--surf2)':'transparent'}},
               td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',fontSize:'8.5px',whiteSpace:'nowrap'}},r.storeName||r.loc),
               td({style:{padding:'4px 8px',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:'8px'}},r.wk||'—'),
               td({style:{padding:'4px 8px',textAlign:'right',fontSize:'8px',fontWeight:600,
@@ -406,7 +406,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
           div({style:{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}},
             trendWeeks.map((w,i)=>{
               const vc=w.vsLY==null?'var(--text3)':w.vsLY>0.01?'#10b981':w.vsLY<-0.01?'var(--crit)':'var(--warn)';
-              return div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'6px 10px',minWidth:90,textAlign:'center'}},
+              return div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'6px 10px',minWidth:90,textAlign:'center'}},
                 div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},w.label),
                 div({style:{fontSize:'12px',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text)'}},f$(w.actual)),
                 w.vsLY!=null&&div({style:{fontSize:'9px',fontWeight:600,color:vc}},(w.vsLY>=0?'+':'')+(w.vsLY*100).toFixed(2)+'% vs LY'));
@@ -445,7 +445,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
            ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(2)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'var(--crit)':avgLaborPct>0.25?'var(--warn)':'#10b981'):null],
            ['DI Calibrated',calibrated+'/'+totalLocs,'stores','#a5b4fc'],
            ['Model MAPE',distMAPE?distMAPE.toFixed(2)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'var(--warn)':'var(--crit)']
-          ].map(([l,v,sub,col],i)=>div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'8px 12px',minWidth:100}},
+          ].map(([l,v,sub,col],i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'8px 12px',minWidth:100}},
             div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}}),
             div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:2}},l),
             div({style:{fontSize:'15px',fontFamily:'var(--mono)',fontWeight:700,color:col||'var(--text)'}},v),

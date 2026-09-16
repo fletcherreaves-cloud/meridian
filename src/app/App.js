@@ -488,7 +488,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
 function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose }) {
   const shownCount = OPTIONAL_PANELS.filter(p => vis && vis[p.id]).length;
   const cats = [...new Set(OPTIONAL_PANELS.map(p => p.cat))];
-  const sw = (on) => div({ style:{ width:34, height:19, borderRadius:99, background:on?'var(--amber)':'rgba(255,255,255,.14)', position:'relative', transition:'background .15s', flexShrink:0 } },
+  const sw = (on) => div({ style:{ width:34, height:19, borderRadius:99, background:on?'var(--amber)':'var(--surf3)', position:'relative', transition:'background .15s', flexShrink:0 } },
     div({ style:{ position:'absolute', top:2, left:on?17:2, width:15, height:15, borderRadius:'50%', background:'#fff', transition:'left .15s' } }));
   const row = (p) => {
     const on = !!(vis && vis[p.id]);
@@ -576,7 +576,7 @@ function DataPolicyBanner() {
       onClick: dismiss,
       style: {
         flexShrink: 0, padding: '5px 14px', borderRadius: 5, cursor: 'pointer',
-        background: 'rgba(255,255,255,.08)', color: 'var(--text2)', border: '.5px solid var(--bdr)',
+        background: 'var(--surf3)', color: 'var(--text2)', border: '.5px solid var(--bdr)',
         fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer',
       }
     }, 'Dismiss')

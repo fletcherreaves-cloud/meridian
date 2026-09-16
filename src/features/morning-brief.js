@@ -452,7 +452,7 @@ function getLatestBriefDate(ds){
 
 // ── Severity helpers ─────────────────────────────────────────────────────────
 const SCOLOR = {RED:'#ef4444',AMBER:'#f59e0b',GREEN:'#10b981',NODATA:'#4a6080'};
-const SBG    = {RED:'rgba(239,68,68,.08)',AMBER:'rgba(245,158,11,.07)',GREEN:'rgba(16,185,129,.06)',NODATA:'rgba(255,255,255,.03)'};
+const SBG    = {RED:'rgba(239,68,68,.08)',AMBER:'rgba(245,158,11,.07)',GREEN:'rgba(16,185,129,.06)',NODATA:'var(--surf2)'};
 const SBDR   = {RED:'rgba(239,68,68,.3)',AMBER:'rgba(245,158,11,.25)',GREEN:'rgba(16,185,129,.2)',NODATA:'var(--bdr)'};
 
 // ── StoreBriefCard component ─────────────────────────────────────────────────
@@ -579,7 +579,7 @@ function StoreBriefCard({store, expanded, setExpanded}){
               (()=>{const p=smgOsat>1?smgOsat:smgOsat*100;return p<65?'#ef4444':p<72?'#f59e0b':'#10b981';})()],
           ]:[]),
         ].map(([lbl,val,clr])=>
-          h('div',{style:{background:'rgba(255,255,255,.04)',borderRadius:'6px',padding:'8px 10px',textAlign:'center'}},
+          h('div',{style:{background:'var(--surf2)',borderRadius:'6px',padding:'8px 10px',textAlign:'center'}},
             h('div',{style:{fontFamily:'monospace',fontSize:'13px',fontWeight:700,color:clr||'var(--text,#111827)'}},val),
             h('div',{style:{fontSize:'9px',color:'#4a6080',textTransform:'uppercase',letterSpacing:'.06em',marginTop:'2px'}},lbl)
           )
@@ -630,7 +630,7 @@ function TodayPaceCard({date, darRows}) {
       .then(({data}) => setOwnRows(data || []));
   }, [targetDate, sharedMatch]);
 
-  if(!rows) return h('div',{style:{padding:'10px 14px',background:'rgba(255,255,255,.03)',borderRadius:8,
+  if(!rows) return h('div',{style:{padding:'10px 14px',background:'var(--surf2)',borderRadius:8,
     border:'.5px solid var(--bdr)',marginBottom:14,fontSize:'9px',color:'#4a6080'}},
     '↻ Loading today\'s pace…');
   if(!rows.length) return null;
@@ -715,7 +715,7 @@ function TodayPaceCard({date, darRows}) {
     // Daypart breakdown mini-pills
     dpData.length > 0 && h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
       dpData.map(dp =>
-        h('div',{key:dp.id,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',
+        h('div',{key:dp.id,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
           borderRadius:6,padding:'5px 10px',textAlign:'center',minWidth:80}},
           h('div',{style:{fontSize:'8px',fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}},
             dp.label+(dp.completed<dp.total?' ('+dp.completed+'/'+dp.total+'h)':'')),
@@ -811,7 +811,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
             dsCoverage.map(src=>
               h('span',{key:src.key,style:{
                 fontSize:'10px',fontWeight:600,padding:'2px 8px',borderRadius:'99px',
-                background:src.loaded?'rgba(16,185,129,.12)':'rgba(255,255,255,.05)',
+                background:src.loaded?'rgba(16,185,129,.12)':'var(--surf2)',
                 border:`1px solid ${src.loaded?'rgba(16,185,129,.3)':'var(--bdr)'}`,
                 color:src.loaded?'#10b981':'#4a6080'}},
                 (src.loaded?'✓ ':'○ ')+src.key+(src.loaded&&src.count?' ('+src.count+')':''))
@@ -822,7 +822,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
           h('input',{type:'date',
             value:briefDate instanceof Date && !isNaN(briefDate)?briefDate.toISOString().slice(0,10):'',
             onChange:e=>{ if(e.target.value) setBriefDate(new Date(e.target.value+'T12:00:00')); },
-            style:{background:'rgba(255,255,255,.07)',border:'1px solid var(--bdr)',
+            style:{background:'var(--surf3)',border:'1px solid var(--bdr)',
                    borderRadius:'7px',padding:'6px 10px',color:'var(--text,#111827)',fontSize:'12px',cursor:'pointer'}}),
           h('button',{
             onClick:()=>exportBriefHTML(brief),
@@ -844,7 +844,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
       ].map(([icon,count,label,c,bg,bdr,fv])=>
         h('div',{key:fv,
           onClick:()=>setFilter(filter===fv?'ALL':fv),
-          style:{background:filter===fv||filter==='ALL'?bg:'rgba(255,255,255,.02)',
+          style:{background:filter===fv||filter==='ALL'?bg:'var(--surf2)',
                  border:`1px solid ${filter===fv?c:bdr}`,borderRadius:'9px',
                  padding:'12px 14px',cursor:'pointer',transition:'all .15s',
                  textAlign:'center'}},
@@ -868,7 +868,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
             const a=Math.abs(d.latest_r);
             const col=a>=0.50?'#10b981':a>=0.30?'#f59e0b':'#6b7280';
             const strength=a>=0.70?'Strong':a>=0.50?'Confirmed':a>=0.30?'Moderate':'Weak';
-            return h('div',{key:d.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',background:'rgba(255,255,255,.04)',border:'1px solid var(--bdr)',borderRadius:'6px',fontSize:'11px'}},
+            return h('div',{key:d.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',background:'var(--surf2)',border:'1px solid var(--bdr)',borderRadius:'6px',fontSize:'11px'}},
               h('span',{style:{fontFamily:'monospace',fontWeight:700,color:col,minWidth:42}},(d.latest_r>=0?'+':'')+d.latest_r.toFixed(2)),
               h('div',null,
                 h('div',{style:{fontWeight:600,color:'var(--text,#f1f5f9)'}},'', d.name),

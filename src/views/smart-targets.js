@@ -922,7 +922,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     h('td', { style: { ...td, fontWeight: 700, color: r.vsGood == null ? 'var(--text3)' : r.vsGood ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(2) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
       r.winner
-        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
+        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'var(--surf3)', color: r.winner === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
             r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
         : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
@@ -1050,7 +1050,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
                   span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)' } }, 'Method scoreboard'),
                   ...methodsMeta.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: METH_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
                     span({ style: { fontWeight: 700, color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, p.name),
-                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
+                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'var(--surf3)', color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
                   useModels
                     ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · diagnostic models included')
                     : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold the engineered models (Composite/Momentum/Regression/Ensemble) into the backtest for diagnosis. They lost 0-for-27 to the simple family for monthly sales but are preserved here. Needs daily labor history; runs in the background.', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Diagnostic models'))

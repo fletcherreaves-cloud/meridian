@@ -38,7 +38,7 @@ const VERDICT = {
   pays:    { label: 'Pays',    col: '#10b981', bg: 'rgba(16,185,129,.12)' },
   costs:   { label: 'Costs',   col: '#ef4444', bg: 'rgba(239,68,68,.12)' },
   neutral: { label: 'Neutral', col: '#f59e0b', bg: 'rgba(245,158,11,.12)' },
-  'n/a':   { label: 'n/a',     col: '#6b7280', bg: 'rgba(255,255,255,.04)' },
+  'n/a':   { label: 'n/a',     col: '#6b7280', bg: 'var(--surf2)' },
 };
 
 function VerdictChip({ v }) {

@@ -129,7 +129,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       position:'relative',fontSize:'11px',fontWeight:active?600:400,
       borderLeft:collapsed?'none':'1.5px solid var(--bdr)'},
       onClick:(...a)=>{onClick(...a);closeMobile();}, title:collapsed?label:undefined,
-      onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'rgba(255,255,255,.04)';},
+      onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
       onMouseLeave:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       collapsed?null:span({style:{width:8,height:8,borderRadius:'50%',flexShrink:0,
         background:active?'var(--amber)':'var(--bdr2)'}},null),
@@ -450,7 +450,7 @@ function NotificationRow({ row, onClick }) {
     'data-notif-row': row.id, // stable hook for tests -- textContent alone can't disambiguate nested rows
     style: { padding: '9px 12px', borderBottom: '.5px solid var(--bdr)', cursor: 'pointer',
       background: unread ? 'rgba(245,188,0,.07)' : 'transparent' },
-    onMouseEnter: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.13)' : 'rgba(255,255,255,.04)'; },
+    onMouseEnter: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.13)' : 'var(--surf2)'; },
     onMouseLeave: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.07)' : 'transparent'; },
   },
     div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 } },
@@ -674,7 +674,7 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdm
     style: { display:'flex', alignItems:'center', gap:9, width:'100%', textAlign:'left',
       padding:'8px 12px', fontSize:'11px', color:'var(--text)', background:'transparent',
       border:'none', cursor:'pointer', whiteSpace:'nowrap' },
-    onMouseEnter:e=>e.currentTarget.style.background='rgba(255,255,255,.05)',
+    onMouseEnter:e=>e.currentTarget.style.background='var(--surf2)',
     onMouseLeave:e=>e.currentTarget.style.background='transparent',
   }, span({ style:{ width:15, textAlign:'center', flexShrink:0 } }, icon), label);
 
@@ -818,7 +818,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
         const label = ageDays===0?'Auto-saved today':ageDays===1?'Session: 1d old':'Session: '+ageDays+'d old';
         const tip = ageDays>3?'Consider loading a fresh Operations Report — session data may be stale':'Session data is current';
         return div({style:{display:'flex',alignItems:'center',gap:3,
-          background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',
+          background:'var(--surf2)',border:'.5px solid var(--bdr)',
           borderRadius:10,padding:'1px 8px',cursor:'pointer'},
           title:tip,
           onClick:onClearSession},

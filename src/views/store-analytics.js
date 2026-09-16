@@ -193,7 +193,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     ].map((f,i)=>div({key:i,
       onClick:()=>{const el=document.getElementById(f.id);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});},
       style:{padding:'2px 8px',borderRadius:3,border:'.5px solid var(--bdr)',
-      background:f.dim?'transparent':'rgba(255,255,255,.03)',
+      background:f.dim?'transparent':'var(--surf2)',
       color:f.dim?'var(--text3)':'var(--text2)',opacity:f.dim?.5:1,
       cursor:'pointer',userSelect:'none'}},
       f.icon+' '+f.label))
@@ -270,7 +270,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
             const lDiff=d.labor>0&&_lt>0?Math.abs(d.labor-_lt):null;
             const laborOk=lDiff!=null?lDiff<=(settings.laborGreenPct||0.5)/100:null;
             const otOk=d.ot>0?d.ot<=2:null;
-            return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2===0?'transparent':'rgba(255,255,255,.01)'}},
+            return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2===0?'transparent':'var(--surf2)'}},
               td({style:{padding:'4px 6px',fontWeight:isWknd?700:400,color:isWknd?'#f59e0b':'var(--text)'}},
                 d.dow+(d===best?' ▲':d===worst&&d.sales>0?' ▼':'')),
               td({style:{padding:'4px 6px',textAlign:'right',color:'var(--text3)'}},d.n>0?d.n:'—'),
@@ -390,7 +390,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
           sliceGaps.map(sg=>{
             const findingCol={understaffed:'var(--crit)',neutral:'#94a3b8','staffing not the issue':'#60a5fa',marginal:'var(--warn)'}[sg.finding]||'#94a3b8';
             const findingLabel={understaffed:'⚠ Understaffed',neutral:'✓ No gap','staffing not the issue':'ℹ Not labor-driven',marginal:'◉ Watch'}[sg.finding]||'—';
-            return div({key:sg.sl,style:{flex:1,minWidth:130,background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'8px 10px'}},
+            return div({key:sg.sl,style:{flex:1,minWidth:130,background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'8px 10px'}},
               div({style:{fontSize:'10px',fontWeight:700,color:sg.col,marginBottom:6}},sg.l),
               sg.allAbove&&div({style:{fontSize:'8px',color:'#f59e0b',marginBottom:4}},'All days above target — comparing worst vs best half'),
               div({style:{display:'flex',justifyContent:'space-between',fontSize:'10px',marginBottom:3}},
@@ -1490,7 +1490,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('Employee'),ColHdr('Risk'),ColHdr('Register'),ColHdr('Days'),ColHdr('T-Red A#','right'),ColHdr('T-Red A$','right'),
           ColHdr('Refunds','right'),ColHdr('POS Over','right'),ColHdr('O/S','right'),ColHdr('Disc%','right')
         )),
-        h('tbody',null,sorted.flatMap((e,i)=>[tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
+        h('tbody',null,sorted.flatMap((e,i)=>[tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           td({style:{padding:'5px 8px'}},span({style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,
             background:riskColor(e.riskScore||0)+'22',color:riskColor(e.riskScore||0),border:`.5px solid ${riskColor(e.riskScore||0)}44`}},riskLabel(e.riskScore||0))),
@@ -1515,7 +1515,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('T-Red Before #','right'),ColHdr('T-Red Before $','right'),ColHdr('Risk Flag')
         )),
         h('tbody',null,sorted.filter(e=>e.tRedACnt>0||e.tRedBCnt>0).map((e,i)=>tr({key:i,
-          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
+          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.tRedACnt, e.tRedACnt>5?'var(--crit)':e.tRedACnt>2?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.tRedADollar||0).toFixed(2), e.tRedADollar>20?'var(--crit)':e.tRedADollar>5?'var(--warn)':'var(--text)','right'),
@@ -1536,7 +1536,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('POS Overring #','right'),ColHdr('POS Overring $','right'),ColHdr('Manual Refund $','right')
         )),
         h('tbody',null,sorted.filter(e=>e.refundCnt>0||e.posOver>0||e.manualRef>0).map((e,i)=>tr({key:i,
-          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
+          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.refundCnt||0, e.refundCnt>5?'#f59e0b':'var(--text)','right'),
           Cell('$'+(e.refundCash||0).toFixed(2),'var(--text)','right'),
@@ -1556,7 +1556,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('Drawer Opens','right'),ColHdr('Avg Opens/day','right'),ColHdr('Disc/Promo %','right'),ColHdr('Promo $','right')
         )),
         h('tbody',null,sorted.map((e,i)=>tr({key:i,
-          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
+          style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.txCount||'—','var(--text3)','right'),
           Cell(((e.cashOSTotal||0)>=0?'+':'')+((e.cashOSTotal||0).toFixed(2)), Math.abs(e.cashOSTotal||0)>10?'var(--crit)':Math.abs(e.cashOSTotal||0)>3?'var(--warn)':'var(--text)','right'),
@@ -1657,7 +1657,7 @@ function DaypartPaceCard({loc}) {
   return div({style:{marginBottom:10,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
     // Card header
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',
-      background:'rgba(255,255,255,.03)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
+      background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
       onClick:()=>setCollapsed(c=>!c)},
       span({style:{fontSize:'11px',fontWeight:800,color:'var(--text)',flex:1}},'⏱ Daypart Pace'),
       div({style:{display:'flex',gap:4}},
@@ -1701,7 +1701,7 @@ function DaypartPaceCard({loc}) {
         div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:6}},
           visibleDp.map(dp =>
             div({key:dp.id,style:{
-              background:dp.isActive?'rgba(245,158,11,.06)':dp.isDone?'rgba(16,185,129,.05)':'rgba(255,255,255,.03)',
+              background:dp.isActive?'rgba(245,158,11,.06)':dp.isDone?'rgba(16,185,129,.05)':'var(--surf2)',
               border:'.5px solid '+(dp.isActive?'rgba(245,158,11,.2)':dp.isDone?'rgba(16,185,129,.15)':'var(--bdr)'),
               borderRadius:6,padding:'8px 10px'}},
               div({style:{display:'flex',alignItems:'center',gap:4,marginBottom:4}},
@@ -2120,7 +2120,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
       ),
       div({style:{marginLeft:'auto',display:'flex',gap:4,fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)'}},
         health.reasons.map((r,i)=>div({key:i,style:{textAlign:'center',padding:'2px 6px',
-          background:'rgba(255,255,255,.04)',borderRadius:3}},
+          background:'var(--surf2)',borderRadius:3}},
           div(null,r.cat),
           div({style:{color:r.pts>=r.max*.7?'#10b981':r.pts>=r.max*.4?'#f59e0b':'#ef4444',fontWeight:700}},r.pts+'/'+r.max)
         ))

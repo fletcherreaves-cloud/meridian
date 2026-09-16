@@ -63,7 +63,20 @@ import { execSync } from 'child_process';
 // file per version under src/app/changelog/, so the exclusion is a directory now, not a filename
 // -- re-measured after the split: 241, unchanged, confirming the new exclude-dir catches exactly
 // what the old --exclude=changelog-data.js did.
-const CEILING = 241;
+// Lowered 241 -> 40 by Task #71 (background/color-role follow-up sweep, 2026-09-16): converted
+// 192 of the 232 real remaining sites (background/boxShadow/fill role) across 29 files to
+// var(--surf2)/var(--surf3)/var(--bdr) tokens -- the exact sweep this guard's own header named
+// as deferred when the ceiling was last set. signals.js's module-level `surf2`/`bdr` consts
+// (a hand-rolled pseudo-token pair reused across ~50 call sites in that one file) were fixed at
+// the SOURCE by aliasing them to the real CSS vars, so far more than the 10 sites the grep
+// counted in that file actually got fixed. The 40 remaining sites are every one individually
+// justified, not just uncounted: standalone HTML-export template strings (analytics.js's
+// Anomaly Report, inventory.js's two reports, scheduling-deck.js's slide deck, morning-brief.js's
+// emailed brief -- none of these load meridian.css, so var(--bdr) would not resolve there) and
+// Chart.js canvas config literals (store-dash.js/dt-speedofservice.js radar-chart `scales`
+// colors -- no getComputedStyle precedent in either file to resolve a CSS var at config-build
+// time). Re-measured fresh on this branch, not copied from the sweep's own report.
+const CEILING = 40;
 
 describe('#296: no new hardcoded rgba(255,255,255,X) in src/**/*.js', () => {
   it('stays at or below the post-step-1 ceiling', () => {

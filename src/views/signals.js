@@ -41,7 +41,7 @@ const btn = (p, ...c) => h('button', p, ...c);
 const { useState: uSt, useMemo: uM, useEffect: uE, useCallback: uCB } = React;
 
 const amber = '#f59e0b', grn = '#10b981', red = '#ef4444', muted = '#6b7280', blue = '#60a5fa';
-const surf2 = 'rgba(255,255,255,.04)', bdr = 'rgba(255,255,255,.1)';
+const surf2 = 'var(--surf2)', bdr = 'var(--bdr)';
 
 // Local HTML-escaper for print reports only -- same tiny local pattern every print/export
 // builder in this codebase repeats (record-day.js, dt-speedofservice.js, security-panel.js, etc.)
@@ -160,7 +160,7 @@ function StatusChip({ r, n, confirmed, expectedDir }) {
 function CorrelationBar({ r }) {
   const a = Math.abs(r || 0), col = rColorSimple(r);
   return h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-    h('div', { style: { flex: 1, height: 6, background: 'rgba(255,255,255,.08)', borderRadius: 3, overflow: 'hidden' } },
+    h('div', { style: { flex: 1, height: 6, background: 'var(--surf3)', borderRadius: 3, overflow: 'hidden' } },
       h('div', { style: { width: Math.min(100, a * 100) + '%', height: '100%', background: col, borderRadius: 3, transition: 'width .4s' } })
     ),
     h('span', { style: { fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: col, minWidth: 44 } },
@@ -190,7 +190,7 @@ function SignalCard({ sig, expanded, onToggle }) {
     h('div', { onClick: onToggle, style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, userSelect: 'none' } },
       h('div', { style: {
         width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-        background: `conic-gradient(${col} ${Math.abs(sig.r || 0) * 360}deg, rgba(255,255,255,.08) 0deg)`,
+        background: `conic-gradient(${col} ${Math.abs(sig.r || 0) * 360}deg, var(--surf3) 0deg)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       } },
         h('div', { style: {
@@ -203,7 +203,7 @@ function SignalCard({ sig, expanded, onToggle }) {
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 } },
           h('span', { style: { fontWeight: 700, fontSize: 13 } }, sig.name),
           h(StatusChip, { r: sig.r, n: sig.n, confirmed: sig.confirmed, expectedDir: sig.expectedDir }),
-          sig.domain && h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', padding: '1px 6px', borderRadius: '99px', background: 'rgba(255,255,255,.06)', color: muted } }, sig.domain.replace('_', ' ')),
+          sig.domain && h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', padding: '1px 6px', borderRadius: '99px', background: 'var(--surf2)', color: muted } }, sig.domain.replace('_', ' ')),
         ),
         h('div', { style: { fontSize: 11, color: muted } }, sig.description),
         sig.note && h('div', { style: { fontSize: 10, color: amber, marginTop: 2 } }, '⚠ ' + sig.note),
@@ -269,7 +269,7 @@ function CascadeChain({ signals }) {
         if (i > 0) parts.push(h('span', { key: `a${i}`, style: { color: active ? blue : 'rgba(96,165,250,.3)', fontWeight: 700, fontSize: 12 } }, '→'));
         parts.push(h('div', { key: node.id, style: {
           padding: '3px 10px', borderRadius: '99px', fontSize: 11, fontWeight: 600,
-          background: active ? 'rgba(96,165,250,.15)' : 'rgba(255,255,255,.04)',
+          background: active ? 'rgba(96,165,250,.15)' : 'var(--surf2)',
           border: `1px solid ${active ? 'rgba(96,165,250,.35)' : 'var(--bdr)'}`,
           color: active ? blue : 'rgba(107,114,128,.6)',
         } }, node.label));
@@ -581,7 +581,7 @@ export function SignalBuilder({ ds, onSave, existingDefs }) {
       error && h('span', { style: { fontSize: 11, color: red } }, error),
     ),
     // Preview result
-    preview && h('div', { style: { marginTop: 14, padding: '12px 14px', background: 'rgba(255,255,255,.03)', borderRadius: 8, border: `1px solid ${bdr}` } },
+    preview && h('div', { style: { marginTop: 14, padding: '12px 14px', background: 'var(--surf2)', borderRadius: 8, border: `1px solid ${bdr}` } },
       h('div', { style: { fontSize: 11, fontWeight: 700, color: muted, marginBottom: 8 } }, 'Preview result'),
       h('div', { style: { display: 'flex', gap: 24, flexWrap: 'wrap' } },
         h('div', { style: { flex: 1, minWidth: 160 } },
@@ -621,7 +621,7 @@ function CustomSignalCard({ sig, def, expanded, onToggle, onPromote, onRetire, o
   } },
     h('div', { onClick: onToggle, style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, userSelect: 'none' } },
       // r circle
-      h('div', { style: { width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: `conic-gradient(${col} ${Math.abs(sig?.r || 0) * 360}deg, rgba(255,255,255,.08) 0deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      h('div', { style: { width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: `conic-gradient(${col} ${Math.abs(sig?.r || 0) * 360}deg, var(--surf3) 0deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
         h('div', { style: { width: 34, height: 34, borderRadius: '50%', background: 'var(--bg,#111827)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: col } },
           sig?.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(2) : '—'),
       ),
@@ -631,7 +631,7 @@ function CustomSignalCard({ sig, def, expanded, onToggle, onPromote, onRetire, o
           h(StatusChip, { r: sig?.r, n: sig?.n, confirmed: sig?.confirmed }),
           def.status === 'promoted' && h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: 'rgba(96,165,250,.15)', color: blue, border: '1px solid rgba(96,165,250,.3)' } }, '▲ PROMOTED'),
           retireProposed && h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: 'rgba(239,68,68,.12)', color: red } }, 'Retire?'),
-          h('span', { style: { fontSize: 9, padding: '1px 5px', borderRadius: '99px', background: 'rgba(255,255,255,.06)', color: muted } }, def.granularity),
+          h('span', { style: { fontSize: 9, padding: '1px 5px', borderRadius: '99px', background: 'var(--surf2)', color: muted } }, def.granularity),
         ),
         h('div', { style: { fontSize: 10, color: muted } },
           (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
@@ -2238,7 +2238,7 @@ const CSAT_TIER_META = {
   'slam-dunk': { label: 'Slam-dunk', color: grn,   bg: 'rgba(16,185,129,.14)', bd: 'rgba(16,185,129,.4)' },
   'strong':    { label: 'Strong',    color: amber, bg: 'rgba(245,158,11,.14)', bd: 'rgba(245,158,11,.4)' },
   'watch':     { label: 'Watch',     color: blue,  bg: 'rgba(96,165,250,.12)', bd: 'rgba(96,165,250,.3)' },
-  'noise':     { label: 'Noise',     color: muted, bg: 'rgba(255,255,255,.03)', bd: bdr },
+  'noise':     { label: 'Noise',     color: muted, bg: 'var(--surf2)', bd: bdr },
 };
 function CsatDriversTab({ ds, onTrack }) {
   const [scopeLoc, setScopeLoc] = uSt(null);
@@ -2375,7 +2375,7 @@ function CsatDriversTab({ ds, onTrack }) {
           h('div', { style: { display: 'flex', gap: 3 } },
             ['watching', 'confirmed', 'dismissed'].map(stt => h('button', { key: stt, onClick: () => setSavedStatus(s, stt),
               style: { fontSize: 8, padding: '2px 5px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${bdr}`,
-                background: s.status === stt ? (stt === 'confirmed' ? 'rgba(16,185,129,.15)' : stt === 'dismissed' ? 'rgba(255,255,255,.05)' : 'rgba(96,165,250,.15)') : 'transparent',
+                background: s.status === stt ? (stt === 'confirmed' ? 'rgba(16,185,129,.15)' : stt === 'dismissed' ? 'var(--surf2)' : 'rgba(96,165,250,.15)') : 'transparent',
                 color: s.status === stt ? (stt === 'confirmed' ? grn : stt === 'dismissed' ? muted : blue) : muted } }, stt))),
           h('button', { onClick: () => removeSaved(s), title: 'Remove', style: { fontSize: 12, padding: '2px 6px', cursor: 'pointer', border: 'none', background: 'transparent', color: muted } }, '✕'),
         );
