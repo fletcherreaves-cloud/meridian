@@ -39,4 +39,14 @@ export const PULL_REGISTRY = {
   // it moves forward with each day's pull, so `order by updated_at desc limit 1` works
   // identically to every dateCol entry above.
   inventorySummary: { table: 'qsr_inventory_summary', dateCol: 'updated_at', workflowFile: 'qsrsoft-inventory-summary-pull.yml' },
+  // Added 2026-09-16 (coverage audit) -- see stream-freshness.js's own comment on these same 8
+  // keys for why the 6 monthly ones use period_month as dateCol, not a daily date column.
+  ebos:              { table: 'qsr_ebos_daily',       dateCol: 'date',         workflowFile: 'qsrsoft-ebos-pull.yml' },
+  forecastWeekCache: { table: 'forecast_week_cache',  dateCol: 'dt',           workflowFile: 'forecast-week-precompute.yml' },
+  rosterStats:       { table: 'roster_statistics',    dateCol: 'period_month', workflowFile: 'qsrsoft-roster-stats-pull.yml' },
+  rosterRoleCounts:  { table: 'roster_role_counts',   dateCol: 'period_month', workflowFile: 'qsrsoft-employee-roster-pull.yml' },
+  turnover:          { table: 'turnover_monthly',     dateCol: 'period_month', workflowFile: 'qsrsoft-turnover-pull.yml' },
+  digitalApp:        { table: 'digital_app_monthly',  dateCol: 'period_month', workflowFile: 'qsrsoft-digital-app-pull.yml' },
+  mcdelivery:        { table: 'mcdelivery_monthly',   dateCol: 'period_month', workflowFile: 'qsrsoft-mcdelivery-pull.yml' },
+  shiftManager:      { table: 'shift_manager_monthly',dateCol: 'period_month', workflowFile: 'qsrsoft-shift-manager-pull.yml' },
 };

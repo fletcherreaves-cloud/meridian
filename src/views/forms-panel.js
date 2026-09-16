@@ -282,9 +282,12 @@ export function FormsCompletionPanel({ onClose, stores, userRole }) {
   const rollup = React.useMemo(() => computeFormStoreDayRollup(rows, { thresholds, defaultThreshold: DEFAULT_THRESHOLD }), [rows, thresholds]);
   const summary = React.useMemo(() => computeFormSummary(rollup), [rollup]);
   const freshness = React.useMemo(() => dataState === 'loaded' ? freshnessOf(rows, new Date()) : null, [rows, dataState]);
-  // Developer/Admin/Owner collapse to the single real DB role value 'admin' (CLAUDE.md's own
-  // documented finding, same tier Security panel's dispatch #50 Part B frictionless-reveal uses).
-  const isPrivileged = userRole === 'admin';
+  // "Developer/Admin/Owner" privileged tier -- ⚠️ CORRECTED (RBAC audit, 2026-09-16): this used
+  // to check only 'admin', on the stale pre-dispatch-#148 assumption that 'owner' collapsed into
+  // the same DB value. 'owner' is a real, distinct, equally-top-tier role (permissions.js's
+  // DEFAULT_ROLES: both level 1) -- same fix as Security panel's dispatch #50 Part B
+  // frictionless-reveal (src/views/security-panel.js).
+  const isPrivileged = userRole === 'admin' || userRole === 'owner';
 
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' } },

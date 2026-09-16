@@ -4,11 +4,14 @@ import { streamFreshness, worstStream, STREAMS, WARN_GRACE_DAYS, CRIT_GRACE_DAYS
 
 const day = n => new Date(2026, 7, n, 12); // Aug n 2026, noon local
 const rowsAt = date => [{ loc: '1', date }];
+const rowsAtField = (date, field) => [{ loc: '1', [field]: date }];
 
-/** A ds with every stream fresh at `asOf`, so tests can override just the one under test. */
+/** A ds with every stream fresh at `asOf`, so tests can override just the one under test.
+ *  Respects each stream's own dateField (defaults to 'date') -- the 'month'-keyed streams
+ *  need a row shaped { month: <date> }, not { date: <date> }, to read as fresh. */
 function freshDs(asOf) {
   const ds = {};
-  for (const s of STREAMS) ds[s.dsField] = rowsAt(asOf);
+  for (const s of STREAMS) ds[s.dsField] = rowsAtField(asOf, s.dateField || 'date');
   return ds;
 }
 
@@ -40,9 +43,11 @@ describe('streamFreshness — per-stream, not pooled', () => {
   });
 
   it('thresholds are per-stream cadence + grace, not the old hardcoded 14 days', () => {
-    // Every current stream is cadenceDays:1, so warn/crit land at 1+WARN_GRACE_DAYS and
-    // 1+CRIT_GRACE_DAYS — nowhere near the old pooled 7/14-day thresholds.
-    for (const s of STREAMS) expect(s.cadenceDays).toBe(1);
+    // Every daily stream is cadenceDays:1, so warn/crit land at 1+WARN_GRACE_DAYS and
+    // 1+CRIT_GRACE_DAYS — nowhere near the old pooled 7/14-day thresholds. The 6 'month'-keyed
+    // streams (added 2026-09-16) are genuinely monthly-grained and use cadenceDays:31 instead —
+    // see stream-freshness.js's own comment on why a daily threshold would false-alarm them.
+    for (const s of STREAMS) expect(s.cadenceDays).toBe(s.dateField === 'month' ? 31 : 1);
     expect(WARN_GRACE_DAYS).toBeLessThan(7);
     expect(CRIT_GRACE_DAYS).toBeLessThan(14);
   });
@@ -139,5 +144,45 @@ describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a document
     const s = res.find(r => r.key === 'inventorySummary');
     expect(s.staleDays).toBe(Infinity);
     expect(s.severity).toBe('crit');
+  });
+});
+
+describe('coverage audit additions (2026-09-16) -- eBOS, Forecast Week Cache, and 6 month-keyed streams', () => {
+  it('eBOS and Forecast Week Cache use the default date field, checked like any daily stream', () => {
+    const ebos = STREAMS.find(x => x.key === 'ebos');
+    const fwc = STREAMS.find(x => x.key === 'forecastWeekCache');
+    expect(ebos).toMatchObject({ dsField: 'ebosRows', cadenceDays: 1 });
+    expect(fwc).toMatchObject({ dsField: 'forecastWeekCache', cadenceDays: 1 });
+    expect(ebos.dateField).toBeUndefined();
+    expect(fwc.dateField).toBeUndefined();
+  });
+
+  it('the 6 month-keyed streams read their own `month` field (YYYY-MM), not `date`', () => {
+    const s = STREAMS.find(x => x.key === 'rosterStats');
+    const ds = { rosterStatsRows: [{ loc: '1', month: '2026-08' }] };
+    const res = streamFreshness(ds, day(16)); // Aug 16 2026
+    const found = res.find(r => r.key === 'rosterStats');
+    expect(found.staleDays).toBe(15); // Aug 16 - Aug 1 (month parses as the 1st)
+    expect(found.severity).toBe('ok'); // well within cadenceDays:31 + grace
+  });
+
+  it('THE BUG THIS PREVENTS: a month-keyed row has no `date` field at all -- without the dateField override, every one of these 6 streams would read Infinity-stale permanently, even on a fully healthy daily pull', () => {
+    const row = { loc: '1', month: '2026-08' };
+    expect(row.date).toBeUndefined(); // confirms these rows genuinely have nothing under 'date'
+    expect(STREAMS.find(x => x.key === 'rosterStats').dateField).toBe('month'); // the real entry overrides it
+  });
+
+  it('a real dead pull (month value frozen from over a month ago) IS flagged, not masked by the coarser threshold', () => {
+    const ds = { rosterStatsRows: [{ loc: '1', month: '2026-06' }] }; // frozen at June, asOf is Aug 16
+    const res = streamFreshness(ds, day(16));
+    const found = res.find(r => r.key === 'rosterStats');
+    expect(found.severity).toBe('crit'); // >34 days since Jun 1
+  });
+
+  it('all 8 new streams are skipped (not an incident) when not yet loaded into ds this session', () => {
+    const res = streamFreshness({}, day(16));
+    for (const key of ['ebos', 'forecastWeekCache', 'rosterStats', 'rosterRoleCounts', 'turnover', 'digitalApp', 'mcdelivery', 'shiftManager']) {
+      expect(res.find(r => r.key === key)).toBeUndefined();
+    }
   });
 });
