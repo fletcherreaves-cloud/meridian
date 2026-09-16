@@ -61,9 +61,8 @@ background audit (2026-09-16):
      search box is empty). Shows the dispatch result (success message or error) inline. Also
      converted the panel's hand-rolled backdrop to `ModalShell` while already deep in this file
      (panel-contract opportunistic check, CLAUDE.md's Dev Rules).
-   - **⚠️ Needs an Edge Function redeploy before it works live**: `supabase functions deploy
-     trigger-dar-sync` — same manual step every other Edge Function change in this repo needs.
-     Until that's run, clicking "Request pull" will fail with "Unknown workflow 'forms'".
+   - **✅ Deployed (owner-confirmed 2026-09-16) — `supabase functions deploy trigger-dar-sync`
+     has been run.** "Request pull" is live; do not re-raise this as a blocker.
    - 7 tests (`src/__tests__/forms-print-self-serve.test.js`) rendering the real `FormsPrintPanel`
      consumer: search filtering, the no-match → request-pull prompt, the actual `triggerSync`
      call shape (including regex-escaping the query), success/error message display, and the
