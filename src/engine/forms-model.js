@@ -81,6 +81,59 @@ function mapItem(q) {
   }
 }
 
+// ── Scored/rubric option hints ────────────────────────────────────────────────
+// Many `check`-kind options carry an embedded point value or percentage threshold in
+// their raw text (e.g. '135" or less - 8 pts', 'OUTSTANDING  21-30 POINTS / 70% - 100%',
+// 'Passed (23+ points AND 100% critical behaviors)') that today prints as plain prose
+// inside an otherwise-identical circle-and-label row, indistinguishable from a bare
+// Yes/No option. This surfaces that embedded weight as a small badge next to the option.
+//
+// Deliberately does NOT classify an option as good/bad/pass/fail or compute any total
+// score — that would require inferring which named tier in a multi-band scale (e.g. is
+// "GOOD" the 3rd-best of 4 bands, or a simple positive?) is actually favorable, a
+// judgment call this function has no reliable way to make from text alone, and getting
+// it wrong on a form a manager relies on would be worse than showing nothing. It only
+// echoes the numeric value QSRSoft's own option text already states.
+export function parseOptionBadge(text) {
+  const s = String(text || '');
+  const pointsRange = s.match(/(\d+)\s*[-–]\s*(\d+)\s*points?\b/i);
+  const pointsMin = !pointsRange ? s.match(/(\d+)\s*\+\s*points?\b/i) : null;
+  const pointsFlat = (!pointsRange && !pointsMin) ? s.match(/(-?\d+(?:\.\d+)?)\s*pts?\.?\b/i) : null;
+  const pctRange = s.match(/(\d+)\s*%\s*[-–]\s*(\d+)\s*%/);
+  const pctFlat = !pctRange ? s.match(/(\d+)\s*%/) : null;
+  if (!pointsRange && !pointsMin && !pointsFlat && !pctRange && !pctFlat) return null;
+  const out = {};
+  if (pointsRange) { out.pointsLow = Number(pointsRange[1]); out.pointsHigh = Number(pointsRange[2]); }
+  else if (pointsMin) { out.pointsMin = Number(pointsMin[1]); }
+  else if (pointsFlat) { out.points = Number(pointsFlat[1]); }
+  if (pctRange) { out.pctLow = Number(pctRange[1]); out.pctHigh = Number(pctRange[2]); }
+  else if (pctFlat) { out.pct = Number(pctFlat[1]); }
+  return out;
+}
+
+// badge (parseOptionBadge's output) -> a short display string, e.g. '8 pts', '21-30 pts
+// · 70-100%', '23+ pts · 100%'. Points shown before percent (points is QSRSoft's native
+// unit here; percent reads as a derived label on top of it) when both are present.
+export function formatOptionBadge(badge) {
+  if (!badge) return '';
+  let pts = '';
+  if (badge.points != null) pts = badge.points + ' pt' + (badge.points === 1 ? '' : 's');
+  else if (badge.pointsLow != null) pts = badge.pointsLow + '-' + badge.pointsHigh + ' pts';
+  else if (badge.pointsMin != null) pts = badge.pointsMin + '+ pts';
+  let pct = '';
+  if (badge.pctLow != null) pct = badge.pctLow + '-' + badge.pctHigh + '%';
+  else if (badge.pct != null) pct = badge.pct + '%';
+  return pts && pct ? pts + ' · ' + pct : (pts || pct);
+}
+
+// Shared by both print-HTML builders below — a small neutral badge after an option's
+// label when parseOptionBadge finds an embedded score/percent. Empty string (no markup
+// added) when nothing parses, so a plain Yes/No option is unaffected.
+function optionBadgeHTML(optionText, esc) {
+  const text = formatOptionBadge(parseOptionBadge(optionText));
+  return text ? ` <span class="badge">${esc(text)}</span>` : '';
+}
+
 // QSRSoft section-header palette (settings.color → background/foreground). Mirrors
 // the on-screen look: danger=maroon, success=green, blue, purple, grey.
 export const SECTION_COLORS = {
@@ -135,6 +188,7 @@ function buildStyledHTML(form, opts = {}) {
   .ctitle { font-weight: 600; margin-bottom: 5px; }
   .opt { background: #fff; color: #111; border: 1px solid #cbd2e0; border-radius: 4px; padding: 3px 8px; margin-top: 3px; display: flex; align-items: center; gap: 7px; }
   .rc { width: 11px; height: 11px; border: 1.5px solid #333; border-radius: 50%; display: inline-block; flex: none; }
+  .badge { margin-left: auto; font-size: 9px; font-weight: 700; color: #555; background: #eef0f4; border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
   .line { background: #fff; border-radius: 4px; height: 1.15em; margin-top: 3px; }
   .lines { background: #fff; color:#111; border-radius: 4px; padding: 4px 6px; }
   .lines .wl { border-bottom: 1px solid #999; height: 1.15em; }
@@ -151,7 +205,7 @@ function buildStyledHTML(form, opts = {}) {
 function styledItem(it, esc) {
   if (it.kind === 'check') {
     const opts = (it.options && it.options.length ? it.options : ['Complete', 'Action Needed'])
-      .map(o => `<div class="opt"><span class="rc"></span>${esc(o)}</div>`).join('');
+      .map(o => `<div class="opt"><span class="rc"></span>${esc(o)}${optionBadgeHTML(o, esc)}</div>`).join('');
     return `<div class="card"><div class="ctitle">${esc(it.title)}</div>${opts}</div>`;
   }
   if (it.kind === 'field') {
@@ -189,6 +243,7 @@ function buildCompactHTML(form, opts = {}) {
   tr.sec td { background: #111; color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; font-size: 10px; padding: 4px 6px; border: none; }
   .box { display: inline-block; margin-right: 3px; }
   .opt { margin-right: 12px; display: inline-block; }
+  .badge { font-size: 9px; font-weight: 700; color: #555; background: #eee; border-radius: 3px; padding: 0 4px; margin-left: 3px; }
   .writein { border-bottom: 1px solid #000; display: block; height: 1.25em; margin-top: 2px; }
   .writein + .writein { margin-top: 6px; }
   @media print { tr.sec td { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
@@ -206,7 +261,7 @@ function buildCompactHTML(form, opts = {}) {
 function renderItemRow(it, esc) {
   if (it.kind === 'check') {
     const opts = (it.options && it.options.length ? it.options : ['Complete', 'Action Needed'])
-      .map(o => `<span class="opt"><span class="box">&#9744;</span>${esc(o)}</span>`).join('');
+      .map(o => `<span class="opt"><span class="box">&#9744;</span>${esc(o)}${optionBadgeHTML(o, esc)}</span>`).join('');
     return `<tr><td class="item">${esc(it.title)}</td><td class="opts">${opts}</td></tr>`;
   }
   if (it.kind === 'field') {
