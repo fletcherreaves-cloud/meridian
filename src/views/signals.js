@@ -21,6 +21,7 @@ import { f$ } from '../utils/fmt.js';
 import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY } from '../engine/correlation-predictors.js';
 import { pearson, spearman, pValueFromR, benjaminiHochberg, SCANNER_DEFAULT_MIN_ABS_R, SCANNER_DEFAULT_ALPHA } from '../engine/correlation-stats.js';
 import { printHtml } from '../utils/print-html.js';
+import { ModalShell } from '../components/ModalShell.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -726,28 +727,28 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
     { key: 'morning_brief', label: '🌅 Morning Brief', desc: 'Flag this relationship in the daily store summary' },
     { key: 'sage', label: '🧠 SAGE', desc: 'Let the SAGE assistant use this link when it answers questions' },
   ];
-  return h('div', { onClick: onCancel, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' } },
-    h('div', { onClick: e => e.stopPropagation(), style: { width: 'min(420px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
-      h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 6 } }, '▲ Promote Signal'),
-      h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
-        `"${def.name}" is a confirmed link (strength ${sig?.r != null ? Math.abs(sig.r).toFixed(2) : '?'} out of 1). Promoting puts it to work across Meridian.`),
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 } },
-        options.map(opt => h('div', { key: opt.key, onClick: () => toggle(opt.key), style: {
-          padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-          border: `1px solid ${selected.includes(opt.key) ? blue : bdr}`,
-          background: selected.includes(opt.key) ? 'rgba(96,165,250,.08)' : surf2,
-        } },
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-            h('input', { type: 'checkbox', checked: selected.includes(opt.key), readOnly: true, style: { accentColor: blue } }),
-            h('span', { style: { fontWeight: 600, fontSize: 12, color: selected.includes(opt.key) ? blue : 'var(--text)' } }, opt.label),
-          ),
-          h('div', { style: { fontSize: 10, color: muted, marginTop: 3, marginLeft: 20 } }, opt.desc),
-        ))
-      ),
-      h('div', { style: { display: 'flex', gap: 10, justifyContent: 'flex-end' } },
-        h('button', { onClick: onCancel, style: { padding: '7px 16px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 12, cursor: 'pointer' } }, 'Cancel'),
-        h('button', { onClick: () => onConfirm(selected), style: { padding: '7px 16px', borderRadius: 6, border: 'none', background: blue, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, 'Promote'),
-      ),
+  return h(ModalShell, {
+    title: '▲ Promote Signal', onClose: onCancel, maxWidth: 420, closeOnBackdrop: true,
+    footer: h('div', { style: { display: 'flex', gap: 10, justifyContent: 'flex-end' } },
+      h('button', { onClick: onCancel, style: { padding: '7px 16px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 12, cursor: 'pointer' } }, 'Cancel'),
+      h('button', { onClick: () => onConfirm(selected), style: { padding: '7px 16px', borderRadius: 6, border: 'none', background: blue, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, 'Promote'),
+    ),
+    bodyStyle: { padding: '10px 18px' },
+  },
+    h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
+      `"${def.name}" is a confirmed link (strength ${sig?.r != null ? Math.abs(sig.r).toFixed(2) : '?'} out of 1). Promoting puts it to work across Meridian.`),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+      options.map(opt => h('div', { key: opt.key, onClick: () => toggle(opt.key), style: {
+        padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+        border: `1px solid ${selected.includes(opt.key) ? blue : bdr}`,
+        background: selected.includes(opt.key) ? 'rgba(96,165,250,.08)' : surf2,
+      } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h('input', { type: 'checkbox', checked: selected.includes(opt.key), readOnly: true, style: { accentColor: blue } }),
+          h('span', { style: { fontWeight: 600, fontSize: 12, color: selected.includes(opt.key) ? blue : 'var(--text)' } }, opt.label),
+        ),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 3, marginLeft: 20 } }, opt.desc),
+      ))
     ),
   );
 }

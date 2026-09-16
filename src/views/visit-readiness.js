@@ -9,6 +9,7 @@ import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince, activeV
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
 import { withAlpha } from '../utils/fmt.js';
 
@@ -635,7 +636,20 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   // Scope follows the app-wide selector standard (All → State → Patch → Store) and is
   // pushed INTO the engine, so the district rollup, the model check and the exported
   // report are all scoped consistently — never a screen filter over a district number.
-  const [scope, setScope] = useState(initialScope || 'all');
+  // LocationSelector value ({level:'all'|'state'|'patch'|'store', id}) — `scope` below derives
+  // the plain 'all' | 'ok' | 'fl' | 'grp:X' | loc string every downstream computation (locs,
+  // scopeLabel, the saved-report shape from My Reports) already reads, so only the control
+  // itself needed to change.
+  const [locScope, setLocScope] = useState(() => {
+    const iv = initialScope || 'all';
+    if (iv === 'ok' || iv === 'fl') return { level: 'state', id: iv.toUpperCase() };
+    if (String(iv).startsWith('grp:')) return { level: 'patch', id: iv.slice(4) };
+    if (iv !== 'all') return { level: 'store', id: iv };
+    return { level: 'all', id: null };
+  });
+  const scope = locScope.level === 'state' ? locScope.id.toLowerCase()
+    : locScope.level === 'patch' ? 'grp:' + locScope.id
+    : locScope.level === 'store' ? locScope.id : 'all';
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const locs = useMemo(() => {
     if (String(scope).startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => String(l).replace(/^0+/, ''));
@@ -677,16 +691,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   },
     // ── Scope + report options ──
     h('div', { style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-      h('div', { style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-        ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => h('button', { key: v, onClick: () => setScope(v),
-          style: { padding: '3px 10px', border: 'none', fontSize: 10, cursor: 'pointer', background: scope === v ? 'var(--amber)' : 'transparent', color: scope === v ? '#000' : 'var(--text3)', fontWeight: scope === v ? 700 : 400 } }, l))),
-      Object.keys(groups).length ? h('select', { value: String(scope).startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch',
-        style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-        h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
-      h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Single store',
-        style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-        h('option', { value: '' }, '— store —'),
-        Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l) || sName(l)))),
+      h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full' }),
       h('span', { style: { fontSize: 9.5, color: 'var(--text3)' } }, scopeLabel + ' · ' + (res.stores || []).length + ' with data'),
       h('span', { style: { flex: 1 } })),
 
