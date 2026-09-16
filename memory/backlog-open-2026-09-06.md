@@ -434,11 +434,23 @@
   scope: this is the analysis layer on top.)
 - [ ] Local News → event discovery, promoted into candidate Calendar events.
 - [ ] Calendar Manager smart insights (news-discovered events → forecast flag → owner accept).
-- [ ] **Online Reputation module** — 3-phase build plan ready, nothing built: Phase 1 (Google
-  Business Profile API application, DoorDash Reporting API request, direct-RSS local news), Phase
-  2 (GBP backfill + real-time alerts, DoorDash nightly, SerpApi gap-fill ~$25/mo), Phase 3 (Uber
-  Eats manual CSV, Apple Business Insights). Explicitly skip: Facebook, TripAdvisor, Yelp, Bing,
-  Grubhub, Postmates, Google Places, Instagram (no viable path).
+- [x] **✅ CORRECTED 2026-09-16 (Task #75) — this line's "nothing built" was stale.** Two of
+  Phase 1's three items are already live: the **direct-RSS local news backbone** (shipped
+  v4.879–v4.919: `scripts/news-rss-pull.mjs` + `news-panel.js` + `src/engine/locality.js`/
+  `news-sources.js`, swing-alarm cross-linked, both "Local News RSS Pull" and "YouTube Mentions
+  Pull" confirmed already watched in `sync-failure-watch.yml`) and, ahead of the original
+  schedule, the **YouTube mention pull** (v4.881, shipped knowing most towns yield zero — that's
+  documented as expected, not a bug). **Still genuinely open, and BOTH require the owner
+  personally, not code**: the **Google Business Profile API application** (must be filed from an
+  @mcreaves.com address, 7–10 business days stated / up to 6 weeks real-world — the long pole)
+  and the **DoorDash Reporting API access request** (interest form + per-store whitelisting).
+  Full runbook, exact steps, and the account/permission needed for each: `memory/notes-59-online-
+  reputation.md`'s "Build order" + "GBP setup runbook" sections — nothing to re-research, just
+  needs the owner to actually file them. Do not re-propose building GBP/DoorDash code before that
+  — there is no data to pull until access is granted. Phase 2/3 (GBP backfill, DoorDash nightly,
+  Uber Eats CSV, Apple Business Insights) stay blocked on the same two applications. Explicitly
+  skip (unchanged): Facebook, TripAdvisor, Yelp, Bing, Grubhub, Postmates, Google Places,
+  Instagram (no viable path).
 - [ ] Write-back to QSRSoft (push Targets, two-way sync) — exploration only.
 
 *(Archive: §5)*
