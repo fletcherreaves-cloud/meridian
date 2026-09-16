@@ -974,8 +974,14 @@
 - [ ] Insight ledger step 2 — persistence table + writers, dedupe by situation, close the loop by
   re-measuring after a fix. Step 1 instrumentation shipped and returned a first real reading (142
   distinct situations/day); step 2 is explicitly gated on more data, not started.
-- [ ] Printable Forms — extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
-  widen + scored-form field renderers + self-serve "add form" button).
+- [x] Printable Forms — extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
+  widen + scored-form field renderers + self-serve "add form" button). ✅ SHIPPED v5.449 (Task #59).
+  Of the 3 sub-items: pull-filter widen was ALREADY done (owner-requested 2026-09-01, before this
+  task — 53 forms already captured); this dispatch shipped the other two: option-text
+  score/percent badges (parseOptionBadge/formatOptionBadge, forms-model.js) and a self-serve
+  "🔄 Request pull" search box (FormsPrintPanel → trigger-dar-sync's new `forms` workflow entry).
+  See `memory/project-printable-forms-expansion.md`. Edge Function redeploy still needed
+  (`supabase functions deploy trigger-dar-sync`) before the self-serve button works live.
 - ⚠️ **RE-SCOPED 2026-09-08 — the blocking input this item was waiting on already landed (dispatch
   #124, unrelated at the time), the daily-grain version of the test is now runnable, and a first
   real sample has been pulled.** `qsr_punch_times` (QSRSoft per-employee shift punches, live,
