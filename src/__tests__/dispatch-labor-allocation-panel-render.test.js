@@ -22,9 +22,17 @@ import { act } from 'react';
 vi.mock('../lib/supabase.js', () => ({
   loadDailyActivityRange: vi.fn(),
   loadStoreLaborConfig: vi.fn(),
+  // Task #73 -- LaborAllocationPanel now also loads the real VLH-workbook guide (loadVlhStoreConfigs/
+  // loadVlhGuideHours) for its new "VLH Guide (Real)" tab. Every existing test below leaves these
+  // unmocked-default (undefined resolve), so add a default empty resolve here rather than letting
+  // Promise.all reject on a missing mock -- exactly the "would this still pass if reverted" trap this
+  // file's own header names: a mock left stale by a new import would silently break every pre-existing
+  // test's data load, not just skip the new tab.
+  loadVlhStoreConfigs: vi.fn(),
+  loadVlhGuideHours: vi.fn(),
 }));
 
-import { loadDailyActivityRange, loadStoreLaborConfig } from '../lib/supabase.js';
+import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours } from '../lib/supabase.js';
 import { LaborAllocationPanel } from '../views/labor-allocation.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -82,6 +90,8 @@ describe('LaborAllocationPanel renders District/By Store/Overnight (backlog item
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    loadVlhStoreConfigs.mockResolvedValue({});
+    loadVlhGuideHours.mockResolvedValue([]);
   });
   afterEach(() => {
     act(() => { root.unmount(); });
@@ -158,5 +168,41 @@ describe('LaborAllocationPanel renders District/By Store/Overnight (backlog item
     });
 
     expect(container.textContent).toContain('No hourly activity data loaded for this window.');
+  });
+
+  // Task #73 -- wires the real VLH-workbook engine (src/engine/vlh-guide.js) into a 4th tab.
+  // Mirrors this file's own header rule: verify through the PANEL, not the engine in isolation,
+  // so a wiring break here (wrong loader, wrong key normalization) actually shows up.
+  it('VLH Guide (Real) tab shows real coverage numbers for a configured store, not the empty-guide placeholder', async () => {
+    const guideRows = buildRows(); // Store 5 breakfast slots (06-11) carry total_needed_hours already
+    for (const r of guideRows) {
+      if (r.loc === '0000005') { r.dt_transactions = 8; r.is_transactions = 60; }
+    }
+    loadDailyActivityRange.mockResolvedValue(guideRows);
+    loadStoreLaborConfig.mockResolvedValue(STORE_LABOR_CONFIG);
+    loadVlhStoreConfigs.mockResolvedValue({
+      5: { loc: '0000005', aot: false, dt_type: 'side_tandem', in_store: 'self_serve', kitchen: 'fryer_same', vlh_guide: 'standard' },
+    });
+    loadVlhGuideHours.mockResolvedValue([
+      { guide: 'standard', aot: false, dt_type: 'side_tandem', in_store: 'self_serve', kitchen: 'fryer_same', position: 'drive_thru', daypart: 'breakfast', tier: 2, guest_start: 0, guest_end: 9999 },
+      { guide: 'standard', aot: false, dt_type: 'side_tandem', in_store: 'self_serve', kitchen: 'fryer_same', position: 'in_store', daypart: 'breakfast', tier: 1, guest_start: 0, guest_end: 9999 },
+    ]);
+
+    await act(async () => {
+      root.render(React.createElement(LaborAllocationPanel, { ds: {}, stores: [], settings: {}, onClose: NOOP, embedded: true }));
+      await new Promise(r => setTimeout(r, 0));
+    });
+    const guideTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'VLH Guide (Real)');
+    expect(guideTabBtn).toBeTruthy();
+    await act(async () => { guideTabBtn.click(); });
+
+    expect(container.textContent).toContain('Store 5');
+    expect(container.textContent).toContain('Breakfast');
+    expect(container.textContent).toContain('vlh_guide_hours');
+    expect(container.textContent).not.toContain('No VLH guide data for this window');
+    // Store 9 has no store_vlh_config entry in this fixture -- confirms the "skip stores with
+    // no config, never guess" contract survives the real panel wiring, not just the engine.
+    const guideTable = [...container.querySelectorAll('table')].pop();
+    expect(guideTable.textContent).not.toContain('Store 9');
   });
 });

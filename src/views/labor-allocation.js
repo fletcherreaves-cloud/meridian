@@ -11,10 +11,11 @@
 // add to App.js's startup ds — same reasoning dt-speedofservice.js's loadDtHistory
 // already uses) rather than joining the global pipeline.
 import * as React from 'react';
-import { loadDailyActivityRange, loadStoreLaborConfig } from '../lib/supabase.js';
+import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours } from '../lib/supabase.js';
 import {
   DAYPARTS, allocationDistrict, allocationByStoreDaypart, overnightOpenness, overnightExcessByStore,
 } from '../engine/labor-standard.js';
+import { buildVlhGuideIndex, guideVsReportedByStoreDaypart } from '../engine/vlh-guide.js';
 import { STORE_NAMES } from '../constants.js';
 import { ModalShell } from '../components/ModalShell.js';
 import { mark as _mark } from '../utils/click-trace.js';
@@ -67,6 +68,45 @@ function DistrictTable({ district }) {
           td(fmtRatio(d.punchedVsScheduled), 'right', guideColor(d.punchedVsScheduled)),
           td(fmtRatio(d.punchedVsGuide), 'right', guideColor(d.punchedVsGuide)));
       }))));
+}
+
+// Coverage color: this is NOT a guide-vs-actual ratio like guideColor above (which grades
+// near 1.0 as good) -- the real DT+In-Store guide is only a PARTIAL component of
+// total_needed_hours (Variable Needed for 2 of ~10 positions; total_needed_hours also
+// folds in Fixed Sched + Floor Need). Live-measured district average is ~38.6% coverage
+// (memory/finding-vlh-guide-tables-2026-09-16.md) -- so this just flags whether a store/
+// daypart's coverage sits near that established baseline or has drifted well off it, not
+// whether it's "correct."
+const coverageColor = pct => pct == null ? 'var(--text3)' : pct >= 25 && pct <= 55 ? 'var(--text2)' : '#f59e0b';
+
+function GuideDetailTable({ detail }) {
+  const rows = [];
+  for (const [loc, dps] of Object.entries(detail || {})) {
+    for (const dp of DAYPARTS) {
+      const v = dps[dp];
+      if (!v) continue;
+      rows.push({ loc, dp, ...v, coveragePct: v.reportedHours > 0 ? (v.guideHours / v.reportedHours) * 100 : null });
+    }
+  }
+  if (!rows.length) return h('div', { style: { padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 11 } },
+    'No VLH guide data for this window — either store_vlh_config or vlh_guide_hours may be empty.');
+  rows.sort((a, b) => sName(a.loc).localeCompare(sName(b.loc)) || DAYPARTS.indexOf(a.dp) - DAYPARTS.indexOf(b.dp));
+  return h('div', null,
+    h('div', { style: { fontSize: 10.5, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'Drive Thru + In-Store guest-count legs only, looked up directly against the actual 2022 VLH Workbook tables ',
+      '(', h('code', null, 'vlh_guide_hours'), ') — not a re-derivation of the full ', h('code', null, 'total_needed_hours'),
+      ' algorithm, which also folds in Fixed Sched + Floor Need and ~8 more positions. Live-measured baseline: guide hours ',
+      'cover ~38.6% of reported total_needed_hours on average, moving directionally together — this is not meant to reconcile 1:1.'),
+    h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+      h('thead', null, h('tr', null,
+        th('Store', 'left'), th('Daypart', 'left'), th('Guide Hrs (DT+IS)'), th('Reported (Needed)'), th('Coverage %'), th('Rows Missing Guide'))),
+      h('tbody', null, rows.map(r => h('tr', { key: r.loc + '|' + r.dp, style: { borderTop: '.5px solid var(--bdr)' } },
+        td(sName(r.loc), 'left', 'var(--text)', false),
+        td(r.dp, 'left', 'var(--text2)', false),
+        td(fmtHrs(r.guideHours), 'right', 'var(--text2)'),
+        td(fmtHrs(r.reportedHours), 'right', 'var(--text3)'),
+        td(r.coveragePct == null ? '—' : r.coveragePct.toFixed(1) + '%', 'right', coverageColor(r.coveragePct)),
+        td(r.rowsMissingGuide ? r.rowsMissingGuide.toLocaleString() : '—', 'right', r.rowsMissingGuide ? '#f59e0b' : 'var(--text3)'))))));
 }
 
 function PerStoreTable({ byStore, daypart }) {
@@ -137,14 +177,20 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [storeLaborConfig, setStoreLaborConfig] = useState({});
+  const [vlhStoreConfigs, setVlhStoreConfigs] = useState({});
+  const [vlhGuideRows, setVlhGuideRows] = useState([]);
   const [daypart, setDaypart] = useState('Breakfast');
-  const [tab, setTab] = useState('district'); // district | store | overnight
+  const [tab, setTab] = useState('district'); // district | store | overnight | guide
 
   useEffect(() => {
     setLoading(true);
     const { startDate, endDate } = dayKeyRange(DAYS_BACK);
-    Promise.all([loadDailyActivityRange(startDate, endDate), loadStoreLaborConfig()])
-      .then(([activityRows, cfg]) => { setRows(activityRows || []); setStoreLaborConfig(cfg || {}); setLoading(false); })
+    Promise.all([loadDailyActivityRange(startDate, endDate), loadStoreLaborConfig(), loadVlhStoreConfigs(), loadVlhGuideHours()])
+      .then(([activityRows, cfg, vlhCfg, vlhGuide]) => {
+        setRows(activityRows || []); setStoreLaborConfig(cfg || {});
+        setVlhStoreConfigs(vlhCfg || {}); setVlhGuideRows(vlhGuide || []);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -156,13 +202,20 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
   const byStore = useMemo(() => _mark('compute:laborAllocationByStore', () => allocationByStoreDaypart(rows)), [rows]);
   const openness = useMemo(() => _mark('compute:laborAllocationOvernightOpenness', () => overnightOpenness(rows)), [rows]);
   const excessByStore = useMemo(() => _mark('compute:laborAllocationOvernightExcess', () => overnightExcessByStore(storeLaborConfig, openness)), [storeLaborConfig, openness]);
+  // Task #73 -- wires the real VLH-workbook engine (src/engine/vlh-guide.js), shipped with
+  // live-seeded data (4,592 rows) but no UI, into this panel's existing allocation view
+  // rather than a new standalone panel (memory/finding-vlh-guide-tables-2026-09-16.md's own
+  // recommendation). guideIndex only needs to rebuild when the reference table itself
+  // changes (never, within one session), so it's keyed off vlhGuideRows not the 90-day rows.
+  const guideIndex = useMemo(() => _mark('compute:laborAllocationVlhGuideIndex', () => buildVlhGuideIndex(vlhGuideRows)), [vlhGuideRows]);
+  const guideDetail = useMemo(() => _mark('compute:laborAllocationVlhGuideDetail', () => guideVsReportedByStoreDaypart(guideIndex, vlhStoreConfigs, rows)), [guideIndex, vlhStoreConfigs, rows]);
 
   const tabBtn = (id, label) => h('button', { key: id, onClick: () => setTab(id),
     style: { padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
       border: '1px solid ' + (tab === id ? 'var(--amber)' : 'var(--bdr)'),
       background: tab === id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
       color: tab === id ? 'var(--amber)' : 'var(--text2)' } }, label);
-  const tabBar = h('div', { style: { display: 'flex', gap: 2 } }, tabBtn('district', 'District'), tabBtn('store', 'By Store'), tabBtn('overnight', 'Overnight'));
+  const tabBar = h('div', { style: { display: 'flex', gap: 2 } }, tabBtn('district', 'District'), tabBtn('store', 'By Store'), tabBtn('overnight', 'Overnight'), tabBtn('guide', 'VLH Guide (Real)'));
 
   const body = loading ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading 90 days of hourly activity…')
     : !rows.length ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
@@ -177,9 +230,12 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
               background: daypart === dp ? 'rgba(245,188,0,.14)' : 'var(--surf2)',
               color: daypart === dp ? 'var(--amber)' : 'var(--text2)' } }, dp))),
         h(PerStoreTable, { byStore, daypart }))
-    : h(OvernightTable, { byStore, openness, excessByStore, storeLaborConfig });
+    : tab === 'overnight' ? h(OvernightTable, { byStore, openness, excessByStore, storeLaborConfig })
+    : h(GuideDetailTable, { detail: guideDetail });
 
-  const footerNote = 'Ratio of sums, 24-hour-slot completeness guard applied. Daypart boundaries are the VLH guide\'s own (Breakfast 5a–11a, Lunch 11a–2p, Afternoon 2p–5p, Dinner 5p–11p, Late Night 11p–5a). Full analysis: memory/analysis-labor-allocation-2026-08-18.md.';
+  const footerNote = tab === 'guide'
+    ? 'Real DT+In-Store hours from the 2022 VLH Workbook tables (vlh_guide_hours), looked up by actual DAR guest counts — not the total_needed_hours proxy the other tabs\' "vs Guide" columns use. Full analysis: memory/finding-vlh-guide-tables-2026-09-16.md.'
+    : 'Ratio of sums, 24-hour-slot completeness guard applied. Daypart boundaries are the VLH guide\'s own (Breakfast 5a–11a, Lunch 11a–2p, Afternoon 2p–5p, Dinner 5p–11p, Late Night 11p–5a). Full analysis: memory/analysis-labor-allocation-2026-08-18.md.';
 
   // Dispatch30 (Workstream D follow-up): this branch was dead code before this pass —
   // App.js's SchedulingHubPanel is the only caller and always passes embedded:true — but a
