@@ -64,7 +64,16 @@ Deno.serve(async (req: Request) => {
   if (step === 'geocode') {
     const { lat, lon } = body as { lat?: number; lon?: number };
     if (lat == null || lon == null) return json({ error: 'lat/lon required' }, 400);
-    const url = `${GEOCODER_URL}?x=${lon}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=10&format=json`;
+    // `layers=10` was an unverified guess from the original build (never live-tested — this
+    // repo's own sandbox blocks *.census.gov outright, see this file's own header) and is the
+    // measured cause of the owner's second real click failing for all 27 stores with "No
+    // Census Tract found," right after the first CORS fix landed. `layers` genuinely defaults
+    // to 'all' when omitted (confirmed via the Census Geocoder API's own docs, reached through
+    // a non-census.gov mirror since this sandbox still can't reach census.gov directly), which
+    // returns every geography layer keyed by NAME -- including 'Census Tracts', the exact key
+    // census-demographics.js's geocodeToTract() already parses. Omit `layers` entirely rather
+    // than guess a second unverified numeric ID.
+    const url = `${GEOCODER_URL}?x=${lon}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
     const resp = await fetch(url);
     const text = await resp.text();
     if (!resp.ok) return json({ error: `Census geocoder HTTP ${resp.status}`, upstream: text }, 502);

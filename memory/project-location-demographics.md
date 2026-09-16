@@ -78,5 +78,35 @@ call shape instead of the direct Census URL. 15 tests in `census-demographics.te
 proxy-network-failure case and the missing-auth guard), 6 in
 `location-intel-demographics.test.js`. Full suite 521/521 files, 4993/4993 tests.
 
-**⚠️ Needs `supabase functions deploy census-proxy --no-verify-jwt` before "🔄 Refresh Demographics"
-will work** — same manual step every new Edge Function in this repo needs.
+**✅ Deployed (owner-confirmed 2026-09-16)** — `supabase functions deploy census-proxy
+--no-verify-jwt` has run, after the owner's first click (pre-deploy) reproduced exactly the
+predicted "Census geocoder request failed: Failed to fetch" for all 27 stores, confirming the
+diagnosis was right.
+
+## Second bug, found by the owner's SECOND real click (2026-09-16)
+
+Once `census-proxy` was actually reachable, the failure mode changed from a CORS/connection
+error to a substantive one: **"No Census Tract found for coordinates …" for all 27 stores again**
+— the proxy now genuinely reaches the Census Geocoder and gets a real response back, but that
+response contains no `Census Tracts` geography.
+
+**Root cause (measured as far as this sandbox allows):** the proxy's geocode request hardcoded
+`layers=10` — a second unverified guess from the original build, never live-tested for the exact
+same reason as the CORS bug (this sandbox's network egress policy blocks `*.census.gov` outright,
+confirmed again this pass via both `curl` and `WebFetch` returning `EGRESS_BLOCKED`). Reached the
+Census Geocoder API's own documentation instead through non-census.gov mirrors (a WebSearch
+snippet plus corroborating library docs): the `layers` parameter **defaults to `'all'` when
+omitted**, which returns every geography layer keyed by NAME (`Census Tracts`, `Counties`,
+`States`, etc.) — exactly the key `census-demographics.js`'s `geocodeToTract()` already parses
+(`data.result.geographies['Census Tracts']`). `layers=10` is not that.
+
+**Fix:** removed the `layers=10` parameter from `census-proxy/index.ts`'s geocode URL entirely,
+relying on the documented default rather than asserting a second unverified numeric ID.
+
+**⚠️ Still not independently verified end-to-end** — same standing gap as every Edge Function
+change this session: no way to deploy or call the live function here. This fix is backed by
+external documentation (not a guess), but it is still unverified against a real Census Geocoder
+response until redeployed and re-clicked. **Needs a second
+`supabase functions deploy census-proxy --no-verify-jwt`**, then a fresh "🔄 Refresh Demographics"
+click. If it fails a THIRD time, capture the exact new error text — that will pin down whatever
+this fix didn't anticipate faster than another round of docs archaeology.
