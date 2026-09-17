@@ -106,7 +106,36 @@ relying on the documented default rather than asserting a second unverified nume
 **⚠️ Still not independently verified end-to-end** — same standing gap as every Edge Function
 change this session: no way to deploy or call the live function here. This fix is backed by
 external documentation (not a guess), but it is still unverified against a real Census Geocoder
-response until redeployed and re-clicked. **Needs a second
+response until redeployed and re-clicked.
+
+## Third bug, found by the owner's THIRD real click (2026-09-16)
+
+It failed a third time, with a new, different error — captured per this file's own request above.
+All 27 stores failed uniformly with **"Unexpected token '<', \"<html styl\"... is not valid
+JSON"**. Uniform across every store (different lat/lon each time) rules out a per-tract data
+issue — this is systemic, pointing at the Edge Function's own outbound fetch to census.gov
+getting a 200-OK response back whose body is HTML, not JSON.
+
+**Root cause:** `census-proxy` passed the upstream response through **verbatim**, relabeling it
+`Content-Type: application/json` without ever checking the body actually was JSON. Deno's `fetch`
+sends no realistic `User-Agent` by default, and `.gov` sites commonly sit behind a WAF (Akamai
+etc.) that serves a 200-OK bot-block/challenge page to a non-browser client instead of a 4xx — so
+`resp.ok` alone can't distinguish a real API response from a block page. Passing an HTML block
+page through with a fake JSON content-type is exactly what turns a diagnosable upstream failure
+into an opaque client-side `JSON.parse` crash.
+
+**Fixed two ways** in `census-proxy/index.ts`:
+1. Both outbound fetches (geocoder + ACS) now send a real browser-like `User-Agent` header
+   (`UPSTREAM_HEADERS`) — the standard mitigation for this WAF-block class.
+2. `passThroughJson()` now `JSON.parse`s the upstream body before relabeling it — a non-JSON
+   response now returns a clear 502 naming which call failed (`geocoder`/`ACS`) plus a 300-char
+   snippet of the actual upstream body, instead of blindly passing it through.
+
+**⚠️ Still not independently verified end-to-end** — same standing gap. This is a well-reasoned,
+externally-justified fix (WAF-block pages returned with 200 status to non-browser clients is a
+well-documented class of failure), not a guess, but it is unverified against a real response from
+census.gov until redeployed and re-clicked. **Needs a third
 `supabase functions deploy census-proxy --no-verify-jwt`**, then a fresh "🔄 Refresh Demographics"
-click. If it fails a THIRD time, capture the exact new error text — that will pin down whatever
-this fix didn't anticipate faster than another round of docs archaeology.
+click. If (1) the User-Agent header doesn't resolve it, the improved error message from (2) should
+self-diagnose the next failure without another screenshot round-trip — capture whatever it reports
+and act on that directly rather than guessing again.
