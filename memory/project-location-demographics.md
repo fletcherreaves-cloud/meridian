@@ -166,3 +166,39 @@ documented historical reliability issues independent of this app. **The next cli
 will now include the actual upstream response text** (via `upstreamSnippet`), which should settle
 this without another guess — capture exactly what it reports next time rather than treating (a) or
 (b) as assumed.
+
+## FOURTH bug, resolved — root cause confirmed by the owner's FIFTH real click (2026-09-17)
+
+The diagnostic fix above worked exactly as intended: the client error now showed the actual
+upstream HTML, uniform across all 27 stores, titled **"Missing Key"**
+(`https://api.census.gov/data/missing_key.html`, 200 OK). That is Census's own error page, not a
+generic WAF challenge — searched and confirmed against Census's own developer documentation and
+third-party coverage (`api.census.gov/data/key_signup.html`, census.gov's own "Requesting a
+Census Data API Key" page, corroborating GitHub issues from `tidycensus`/`censusapi`/`census`
+client libraries): **the Census Bureau made an API key mandatory for every Census Data API
+request as of 2026-05-12** — previously a key was only required for high-volume use, which is
+exactly why this repo's original "both APIs are keyless" assumption was true when written and
+became false without this app changing anything. The Geocoder (TIGERweb,
+`geocoding.geo.census.gov`) is a **separate Census service** and was never part of this
+requirement — that's why the User-Agent fix (v5.460) fully resolved the geocoder step and only
+the ACS step kept failing.
+
+**Fix:** `census-proxy/index.ts`'s ACS request now appends `&key=${CENSUS_API_KEY}`, read from a
+new Supabase secret. A missing secret returns a clear, actionable 500 (the exact signup URL +
+`supabase secrets set` command) instead of silently re-hitting the same "Missing Key" page.
+
+**⚠️ Pending owner action (this is a real external step, not something this session can do):**
+1. Sign up for a free key at **https://api.census.gov/data/key_signup.html** — any
+   `.com`/`.net`/`.org`/`.gov`/`.edu` email works, no institutional requirement. **Must click the
+   activation link in the confirmation email** — the key does not work until activated.
+2. `supabase secrets set CENSUS_API_KEY=<key>`
+3. `supabase functions deploy census-proxy --no-verify-jwt` (the code change plus the new secret
+   both need this deploy to take effect)
+4. Fresh "🔄 Refresh Demographics" click.
+
+**Not independently verified end-to-end** — same standing gap as every Edge Function change this
+session. This fix is not a guess: the root cause is externally confirmed via Census's own docs
+and the exact page returned by the live app itself, not inferred. Sources: Census Bureau's own
+key-signup and API-key-request pages, plus third-party confirmations
+(`github.com/datamade/census` issue #165 "New API key requirement",
+`github.com/walkerke/tidycensus` issue #160, `censusapi` package changelog).
