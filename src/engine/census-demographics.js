@@ -46,6 +46,22 @@ const ACS_VARS = {
 // here, keeping this module free of a dependency on the 5,400+-line supabase.js.
 function proxyUrl(sbUrl) { return `${sbUrl}/functions/v1/census-proxy`; }
 
+// census-proxy's own error responses (Edge Function, supabase/functions/census-proxy/index.ts)
+// carry {error, upstreamSnippet} JSON on a non-ok status -- e.g. its non-JSON-body guard reports
+// exactly which upstream call failed and a snippet of what it actually returned. Before this,
+// every !resp.ok branch here discarded that body and threw a bare "HTTP 502" with no way to tell
+// a WAF block from a real Census-side outage from a malformed request -- the exact gap that made
+// the 2026-09-16/17 debugging cycle need a fresh screenshot for each new failure mode. Best-effort:
+// if the body isn't the expected JSON shape (or reading it throws), fall back to nothing extra
+// rather than let a diagnostic-only helper crash the real error path.
+async function proxyErrorDetail(resp) {
+  try {
+    const body = await resp.clone().json();
+    if (body?.error) return ' -- ' + body.error + (body.upstreamSnippet ? ' | upstream: ' + body.upstreamSnippet : '');
+  } catch { /* body wasn't JSON or already consumed -- no extra detail available */ }
+  return '';
+}
+
 // lat/lon -> {stateFips, countyFips, tractFips, geoid} via the Census Geocoder (TIGERweb),
 // "Current" benchmark/vintage (always the latest published geography, matching how every other
 // consumer of a live-but-slow-moving reference dataset in this app works — no version pinning
@@ -59,7 +75,7 @@ export async function geocodeToTract(lat, lon, sbUrl, authToken) {
       body: JSON.stringify({ step: 'geocode', lat, lon }),
     });
   } catch (e) { throw new Error('Census geocoder request failed: ' + (e?.message || e)); }
-  if (!resp.ok) throw new Error('Census geocoder HTTP ' + resp.status);
+  if (!resp.ok) throw new Error('Census geocoder HTTP ' + resp.status + await proxyErrorDetail(resp));
   const data = await resp.json();
   const tracts = data?.result?.geographies?.['Census Tracts'];
   const t = tracts && tracts[0];
@@ -78,7 +94,7 @@ export async function fetchAcsForTract({ stateFips, countyFips, tractFips }, vin
       body: JSON.stringify({ step: 'acs', stateFips, countyFips, tractFips, vintage }),
     });
   } catch (e) { throw new Error('Census ACS request failed: ' + (e?.message || e)); }
-  if (!resp.ok) throw new Error('Census ACS HTTP ' + resp.status);
+  if (!resp.ok) throw new Error('Census ACS HTTP ' + resp.status + await proxyErrorDetail(resp));
   const rows = await resp.json();
   const header = rows && rows[0], row = rows && rows[1];
   if (!row) throw new Error('No ACS data returned for tract ' + stateFips + '/' + countyFips + '/' + tractFips);
