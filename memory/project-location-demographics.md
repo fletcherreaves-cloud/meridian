@@ -139,3 +139,30 @@ census.gov until redeployed and re-clicked. **Needs a third
 click. If (1) the User-Agent header doesn't resolve it, the improved error message from (2) should
 self-diagnose the next failure without another screenshot round-trip — capture whatever it reports
 and act on that directly rather than guessing again.
+
+**✅ Deployed and progress confirmed (owner's FOURTH real click, 2026-09-17).** The User-Agent fix
+worked — no more geocoder HTML/WAF-block failures. The ACS step now fails instead, uniformly
+across all 27 stores, with **"Census ACS HTTP 502"**.
+
+**The self-diagnosis promise from the third-bug fix was not actually kept.** `census-proxy` does
+return a rich `{error, upstreamSnippet}` body on a bad ACS response (per fix (2) above), but
+`census-demographics.js`'s client-side `!resp.ok` branches threw only the bare `'Census ACS HTTP '
++ resp.status` and discarded that body entirely — the diagnostic detail was being generated
+server-side and then thrown away client-side, one line before it would have been useful. This is
+exactly the failure the "measure it" standing rule warns about: shipping a fix and asserting it
+closes the loop without actually verifying the loop closes.
+
+**Fixed (v5.461):** `geocodeToTract`/`fetchAcsForTract` now read the proxy's error body
+(`proxyErrorDetail()`) and append its `error` message + `upstreamSnippet` to the thrown error.
+Client-side only — `census-proxy/index.ts` itself is unchanged this round, so **no
+`supabase functions deploy` is needed** — this ships on the ordinary Vercel deploy once merged.
+
+**Root cause of the 502 itself is still open.** Two live possibilities, not yet distinguished:
+(a) `api.census.gov`'s ACS5 endpoint is a genuinely different host/service from the geocoder that
+independently sits behind its own WAF, and the User-Agent fix that cleared the geocoder simply
+hasn't been exercised against ACS's own block page yet (a 502 rather than a 200-HTML block is a
+plausible WAF response shape too); (b) a real, transient Census-side outage — `api.census.gov` has
+documented historical reliability issues independent of this app. **The next click's error message
+will now include the actual upstream response text** (via `upstreamSnippet`), which should settle
+this without another guess — capture exactly what it reports next time rather than treating (a) or
+(b) as assumed.

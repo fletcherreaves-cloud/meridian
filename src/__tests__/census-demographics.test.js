@@ -102,6 +102,32 @@ describe('geocodeToTract / fetchAcsForTract — mocked fetch, via the census-pro
     await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN)).rejects.toThrow(/Census geocoder HTTP 503/);
   });
 
+  // Dispatch (2026-09-17): the Edge Function's non-JSON-body guard returns a rich
+  // {error, upstreamSnippet} body on a bad response, but every !resp.ok branch here used to
+  // discard it and throw a bare "HTTP <status>" -- exactly the gap that made each new failure
+  // mode (WAF block, then a real upstream 502) need a fresh screenshot round-trip to diagnose.
+  it('surfaces the proxy\'s own {error, upstreamSnippet} body on a non-2xx status, not just the bare HTTP code', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: false, status: 502,
+      clone() { return this; },
+      json: () => Promise.resolve({
+        error: 'Census geocoder returned a non-JSON response (upstream HTTP 502) -- likely a bot/WAF block page, not real API data.',
+        upstreamSnippet: '<html><body>Bad Gateway</body></html>',
+      }),
+    }));
+    await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN))
+      .rejects.toThrow(/Census geocoder HTTP 502 -- .*bot\/WAF block.*upstream: <html>/);
+  });
+
+  it('falls back to the bare HTTP code when the error body is missing or unreadable, without crashing', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: false, status: 502,
+      clone() { return this; },
+      json: () => Promise.reject(new Error('not json')),
+    }));
+    await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN)).rejects.toThrow(/^Census geocoder HTTP 502$/);
+  });
+
   it('throws a clear, network-level error when the proxy call itself fails (e.g. no auth token / not deployed)', async () => {
     global.fetch = vi.fn(() => Promise.reject(new Error('Failed to fetch')));
     await expect(geocodeToTract(34.1741, -97.1434, SB_URL, TOKEN)).rejects.toThrow(/Census geocoder request failed/);
