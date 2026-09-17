@@ -8,15 +8,27 @@
 // click of "🔄 Refresh Demographics" in production failed for all 27 stores with
 // "Census geocoder request failed: Failed to fetch" — the classic browser symptom of a
 // cross-origin fetch the target server never sends Access-Control-Allow-Origin for. The
-// Census Bureau's APIs are documented to be keyless and public, but NOT CORS-enabled for
-// direct browser calls. Routing through this Edge Function (server-to-server, no browser
-// CORS involved) fixes it without changing any of the already-tested parsing/shaping logic
-// in census-demographics.js -- only the URL those two fetches hit changes.
+// Census Bureau's APIs are public, but NOT CORS-enabled for direct browser calls (and, as of
+// 2026-05-12, the ACS5 one also requires an API key -- see the dedicated note below). Routing
+// through this Edge Function (server-to-server, no browser CORS involved) fixes the CORS issue
+// without changing any of the already-tested parsing/shaping logic in census-demographics.js --
+// only the URL those two fetches hit changes.
 //
 // Body: { step: 'geocode', lat, lon } -> proxies the TIGERweb geocoder, returns its JSON verbatim.
 //       { step: 'acs', stateFips, countyFips, tractFips, vintage } -> proxies ACS5 Detailed
 //         Tables, returns its JSON verbatim.
-// Both upstream calls need no API key (Census's public, keyless tier) -- no secrets to set.
+//
+// ⚠️ 2026-09-17: the ACS5 call is NO LONGER keyless. The Census Bureau made an API key
+// mandatory for every Census Data API (api.census.gov/data/...) request as of 2026-05-12 --
+// previously a key was only needed for high-volume use. Confirmed by a live capture: the ACS
+// step started failing uniformly across all 27 stores with the upstream page titled
+// "Missing Key" (200 OK, HTML body -- https://api.census.gov/data/missing_key.html), which this
+// function's own passThroughJson() guard (added the same day for an unrelated reason) surfaced
+// verbatim instead of a generic 502, making this diagnosable without another guess. The
+// Geocoder (TIGERweb, geocoding.geo.census.gov) is a SEPARATE Census service and is NOT part of
+// this key requirement -- it kept working the whole time. Get a free key at
+// https://api.census.gov/data/key_signup.html (must click the activation link in the
+// confirmation email), then: `supabase secrets set CENSUS_API_KEY=<key>`.
 //
 // Deploy: supabase functions deploy census-proxy --no-verify-jwt
 //   (--no-verify-jwt for the same CORS-preflight reason sage-chat needs it; auth is checked
@@ -111,8 +123,21 @@ Deno.serve(async (req: Request) => {
     const { stateFips, countyFips, tractFips, vintage } = body as
       { stateFips?: string; countyFips?: string; tractFips?: string; vintage?: string | number };
     if (!stateFips || !countyFips || !tractFips) return json({ error: 'stateFips/countyFips/tractFips required' }, 400);
+    // Mandatory since 2026-05-12 -- see this file's header note. Fail with a clear, actionable
+    // error rather than letting a missing secret surface as the same opaque "Missing Key" HTML
+    // page a live click already had to be debugged once.
+    const CENSUS_API_KEY = Deno.env.get('CENSUS_API_KEY');
+    if (!CENSUS_API_KEY) {
+      return json({
+        error: 'CENSUS_API_KEY secret is not set. The Census ACS API has required a key for every ' +
+          'request since 2026-05-12. Get a free key at https://api.census.gov/data/key_signup.html ' +
+          '(click the activation link in the confirmation email), then run: ' +
+          'supabase secrets set CENSUS_API_KEY=<key>',
+      }, 500);
+    }
     const vars = ACS_VARS.join(',');
-    const url = `${acsUrl(vintage || 2023)}?get=NAME,${vars}&for=tract:${tractFips}&in=state:${stateFips}+county:${countyFips}`;
+    const url = `${acsUrl(vintage || 2023)}?get=NAME,${vars}&for=tract:${tractFips}&in=state:${stateFips}` +
+      `+county:${countyFips}&key=${CENSUS_API_KEY}`;
     const resp = await fetch(url, { headers: UPSTREAM_HEADERS });
     const text = await resp.text();
     if (!resp.ok) return json({ error: `Census ACS HTTP ${resp.status}`, upstream: text.slice(0, 300) }, 502);
