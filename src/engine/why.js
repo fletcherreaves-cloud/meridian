@@ -1,26 +1,43 @@
 // @ts-nocheck
 import * as React from 'react';
 import { addD, dKey } from '../utils/date.js';
-import { fetchRow, fetchWx, getForecastWeather, forecastDay } from '../engine/forecast.js';
+import { fetchWx, getForecastWeather, forecastDay } from '../engine/forecast.js';
+import { metricDaily, metricSeries } from '../engine/metric-source.js';
 import { DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS, DOW_BASE } from '../constants.js';
 
 const h = React.createElement;
 const a = (p, ...c) => h('a', p, ...c);
+
+// ~14 same-DOW weeks -- matches the EWMA DOW forecast model's own established lookback
+// convention (forecast.js's standalone EWMA model docs: "up to 14 most-recent same-DOW
+// actuals"), not an invented window. Was an unbounded raw ds.laborRows scan.
+const CROSS_STORE_LOOKBACK_DAYS = 98;
+
 function crossStoreCheck(loc, ds, missDate, missDir) {
-  if(!ds||!ds.loaded||!ds.laborRows) return null;
-  const dk = dKey(missDate);
+  if(!ds||!ds.loaded) return null;
   const dow = missDate.getDay();
   const allLocs = ds.storeIds||Object.keys(DEFAULT_TARGETS);
+  // Bounded trailing window ending the day before the miss -- same auto-first `sales` resolver
+  // (qsrActSummaryRows -> laborRows) used everywhere else, instead of a manual-only, unbounded
+  // ds.laborRows filter with no fallback for a cloud-only store.
+  const range = {s:addD(missDate,-CROSS_STORE_LOOKBACK_DAYS), e:addD(missDate,-1)};
   const results = [];
   for(const otherLoc of allLocs) {
     if(otherLoc===loc) continue;
-    const actual = fetchRow(ds.laborIdx, otherLoc, missDate, 'sales');
+    const actual = metricDaily(ds, otherLoc, missDate, 'sales');
     if(!actual||actual<=0) continue;
-    // Compute that store DOW baseline
-    const peers = ds.laborRows.filter(row=>row.loc===otherLoc&&row.date.getDay()===dow&&row.sales>0);
+    // Compute that store's DOW baseline from the auto-first series, bucketed by day-of-week.
+    // `T00:00:00` (not `Z`) parses the date-key in local time -- same pattern already proven in
+    // store-analytics.js's ShiftAnalysisTab DOW bucketing fix, avoiding the UTC-vs-local
+    // off-by-one a bare `new Date(dk)` would risk.
+    const series = metricSeries(ds, otherLoc, range, 'sales');
+    const peers = [];
+    for(const dk in series) {
+      if(new Date(dk+'T00:00:00').getDay()===dow && series[dk]>0) peers.push(series[dk]);
+    }
     if(peers.length<4) continue;
-    const mean = peers.reduce((a,p)=>a+p.sales,0)/peers.length;
-    const std  = Math.sqrt(peers.reduce((a,p)=>a+(p.sales-mean)**2,0)/peers.length);
+    const mean = peers.reduce((a,p)=>a+p,0)/peers.length;
+    const std  = Math.sqrt(peers.reduce((a,p)=>a+(p-mean)**2,0)/peers.length);
     const z    = std>0?(actual-mean)/std:0;
     if((missDir==='over'&&z<-1.2)||(missDir==='under'&&z>1.2)||Math.abs(z)>=1.5) {
       results.push({loc:otherLoc,name:STORE_NAMES[otherLoc]||otherLoc,z:+z.toFixed(2),actual,mean:Math.round(mean),sameDir:(missDir==='over'&&z<-1.2)||(missDir==='under'&&z>1.2)});
