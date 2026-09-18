@@ -6,7 +6,7 @@
 // actually moved (the accountability loop). Engines are pure + tested
 // (opportunity.js / one-pager.js); this panel wires ds→engines→Supabase.
 import * as React from 'react';
-import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups, whoRan } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
 import { printHtml } from '../utils/print-html.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
@@ -73,6 +73,25 @@ export const CASCADE_LEVELS = [
     talk: 'Tactical: speed of service (OEPE/R2P/KVS), labor %, food waste (FOB), guest counts — what to fix on the next shift.' },
 ];
 export const cascadeOf = id => CASCADE_LEVELS.find(c => c.id === id) || CASCADE_LEVELS[0];
+
+// Discussion sheet "who <-> whom" blanks (backlog: "pre-populate relevant names for scope").
+// Only the Supervisor side of a cascade pairing is resolvable -- whoRan() (constants.js,
+// effective-dated) is the one live org-assignment lookup that exists anywhere in the app;
+// Owner/DO/GM have no equivalent assignment data, so those blanks are left for hand-fill rather
+// than guessed. Resolved as-of `asOfDate` (the review period's END date, not "today" -- a sheet
+// printed for a past period should name whoever actually ran the store/patch then, not whoever
+// runs it now if a reassignment happened since). `locs[0]` is safe for both cascade levels that
+// resolve a name: 's_g' scope is always a single store, and 'd_s' scope is always one
+// supervisor's whole patch (every loc in it shares the same supervisor by definition), so
+// locs[0] and any other loc in scope agree.
+export function resolveDiscussionNames(cascadeId, locs, asOfDate) {
+  if (!(locs || []).length) return {};
+  const supName = whoRan(locs[0], asOfDate);
+  if (!supName) return {};
+  if (cascadeId === 's_g') return { name1: supName };   // Supervisor -> GM
+  if (cascadeId === 'd_s') return { name2: supName };   // DO -> Supervisor
+  return {};                                            // 'o_d': Owner -> DO, neither resolvable
+}
 // Reorder current-state rows by a cascade level's priority (unknown keys keep their order, appended).
 function orderByFocus(rows, priority) {
   const idx = k => { const i = (priority || []).indexOf(k); return i === -1 ? 999 : i; };
@@ -231,6 +250,7 @@ export function LeadershipCascadeBody({ ds, stores, settings }) {
     const storeLabel = (locs || []).length === 1 ? `${unpad(locs[0])} — ${nm(locs[0])}` : (page?.scopeLabel || '');
     return { managerNames, storeLabel };
   };
+  const discussionNames = () => resolveDiscussionNames(cascade, locs, range.e);
 
   // Dispatch #160 (panel-contract adoption pass) — RoutePanelShell (route:true in
   // panel-registry.js, "would I ever want to send someone a link to this week's review?" — yes)
@@ -256,7 +276,7 @@ export function LeadershipCascadeBody({ ds, stores, settings }) {
         h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
         h(ActionMenu, { label: '🖨 Reports', items: [
           { label: 'Print', onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems) },
-          { label: 'Discussion sheet', onClick: () => printBlankOnePager(page, period), title: 'Open-ended discussion sheet (auto state, blank sections)' },
+          { label: 'Discussion sheet', onClick: () => printBlankOnePager(page, period, discussionNames()), title: 'Open-ended discussion sheet (auto state, blank sections)' },
           { label: 'Weekly Review', onClick: () => printWeeklyReview(page, wkOpts()), title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' },
           { label: 'Download Word (filled)', onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), title: 'Download the filled Weekly Review as an editable Word (.doc)' },
           { label: 'Download Word (blank)', onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' },
@@ -601,7 +621,7 @@ function printOnePager(page, period, narrative, actions) {
 // Generic OPEN-ENDED discussion one-pager: auto current-state for reference, but blank
 // sections for any pairing (Owner↔DO, DO↔Supervisor, Supervisor↔GM) to fill in together —
 // which forces both parties to look the numbers up and drive the conversation.
-function printBlankOnePager(page, period) {
+export function printBlankOnePager(page, period, { name1 = null, name2 = null } = {}) {
   if (!page) return;
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || period;
@@ -619,7 +639,7 @@ function printBlankOnePager(page, period) {
     .ref{font-size:11px;color:#333;margin:6px 0}.wl{border-bottom:1px solid #999;height:1.5em;margin-top:7px}
     @media print{@page{margin:.5in}}</style></head><body>
     <h1>Leadership One-Pager — Discussion<span class="tag">${esc(casc.tag)}</span></h1>
-    <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)} &nbsp;·&nbsp; ______________ &nbsp;↔&nbsp; ______________</div>
+    <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)} &nbsp;·&nbsp; ${name1 ? `<b>${esc(name1)}</b>` : '______________'} &nbsp;↔&nbsp; ${name2 ? `<b>${esc(name2)}</b>` : '______________'}</div>
     ${casc.focus ? `<div style="font-size:11px;color:#333;margin:2px 0 10px;padding:5px 9px;border-left:3px solid #f5bc00;background:#faf7ea">Focus: ${esc(casc.focus)}</div>` : ''}
     <h2>Current state (reference)</h2><table><tr>${state}</tr></table>
     <div class="ref">Opportunity on the table (${esc(rLabel)}): <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))} (GC vs plan)</div>
