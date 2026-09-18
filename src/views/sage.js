@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, setSagePromptShared, searchQsrKb } from '../lib/supabase.js';
 import { STORE_NAMES, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
+import { businessDate } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
@@ -458,7 +459,14 @@ function buildFieldDefsSection(qsrFieldDefs) {
 
 // ── System prompt builder ─────────────────────────────────────────────────────
 export function buildSystemPrompt(ds, signals, customSignalDefs) {
-  const today = new Date().toISOString().slice(0, 10);
+  // CLAUDE.md standing rule: the business day runs 4:00am -> 4:00am, not midnight -> midnight —
+  // the 00:00-04:00 block belongs to the PREVIOUS business day (overnight close/clean-up/late-
+  // night volume land there). Previously this used calendar-day new Date().toISOString(), so
+  // between midnight and 4am SAGE would tell the owner "today" is a business day that hasn't
+  // started yet by the app's own definition, and would apply that wrong date to every query_*
+  // tool call it makes on the owner's behalf. businessDate() (utils/date.js) is the same shared
+  // ABC-cutover helper every other "today" in the app already uses — do not re-derive inline.
+  const today = businessDate();
   // #270 phase 1 review — ds.storeIds is manual-labor-derived (App.js sets it from laborRows),
   // so it was 0 on the exact cloud-only device this fix targets. Static roster, same as every
   // builder above.
@@ -509,6 +517,11 @@ You advise Fletcher Reaves, a McDonald's operator managing ${storeCount} locatio
   - Emerald Arches — Florida stores
 
 Today: ${today}
+BUSINESS DAY: each store's operating day runs 4:00am -> 4:00am, not midnight -> midnight — the
+00:00-04:00 stretch of the calendar clock still belongs to the PREVIOUS business day (overnight
+close, clean-up, late-night volume land there). "Today" above is already business-day-adjusted for
+this. When a question turns on a specific early-morning hour or a day boundary, say explicitly
+which business day that hour falls in rather than assuming a midnight cutover.
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
@@ -573,7 +586,7 @@ TOOL USAGE RULES:
 - ALWAYS call query_eom_recount_impact for any question about EOM recounts, item variance, or how recounting affected FOB/food cost for a given month — this is a monthly-close question the static summaries below cannot answer at all. Still name the FOB-vs-total-food-cost caveat from tool 6 whenever "food cost" is asked about broadly.
 - ALWAYS call query_smg for a guest-satisfaction/OSAT question naming a SPECIFIC month — the static SMG FullScale summary below shows only each store's single most-recently-uploaded period (whatever that happens to be, not a fixed window), never a requested past month.
 - When a query_* tool returns surprisingly little/zero/empty data and you don't already know why (e.g. it's simply too early in the day), call query_data_health before telling the owner something looks operationally wrong — a stale pull is a mundane, checkable explanation and should be ruled in or out first.
-- For "today" use ${today}; for "yesterday" use the previous calendar day
+- For "today" use ${today} (already business-day-adjusted, see BUSINESS DAY above); for "yesterday" subtract one day from it
 - You can call multiple tools simultaneously if a question spans domains
 - The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.
 ─────────────────────────────────────────────────────────────────────────────────────────
