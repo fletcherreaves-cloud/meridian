@@ -532,8 +532,12 @@
   `monthly_targets` into fob-components + variance threshold; on-demand raw-item-timing drill;
   store yield BAND; CoachQ curated prompts; notification-settings UI.
 - [ ] FOB day-by-day curve through the month (early-month skew theory) — needs historical mapping.
-- [ ] Custom reports for non-QSRSoft panels (SMG/Voice, LifeLenz, calendars) — PACE done as first
-  slice, rest open.
+- [x] ✅ **PARTIALLY RESOLVED 2026-09-18 (v5.469).** Custom reports for non-QSRSoft panels
+  (SMG/Voice, LifeLenz, calendars) — PACE and Calendar were already done; **SMG VOICE now also
+  ships** (new `initialScope` prop on `SMGVoicePanel`, wired the same way as Visit Readiness).
+  **LifeLenz remains open** — its relevant views (`lfz-gap`/`lifelenz-bridge`) are hub-tabs in
+  `panel-registry.js`, not standalone routes, so it needs the hub+tab-select wiring pattern
+  instead of a simple `initialScope` prop — more plumbing than SMG, not attempted this pass.
 - [ ] ❓ Inventory troubleshooting/variance-window engine with crew narrowing — explicitly never a
   verdict, confidence-scored only; parked, sensitive.
 - [ ] ❓ Original Food Cost panel — auto-source or merge into the newer area; decision needed first.

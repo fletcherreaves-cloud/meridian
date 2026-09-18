@@ -1000,6 +1000,7 @@ function App() {
   // showVisitReady — dispatch #205: replaced by routePanel==='visit-readiness' (see routePanel
   // above). visitReadyInit stays local state (still passed through as initialScope).
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
+  const [smgVoiceInit,setSmgVoiceInit]=useState(null);       // scope from a saved report (My Reports) -- SMG VOICE report-subscriptions slice
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
   const [showWorkflow,     setShowWorkflow]    = useState(false);
@@ -3649,9 +3650,10 @@ function App() {
           goRoute(null);
           if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsView('calendar'); goRoute('events'); }
           else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
+          else if(sub.report==='smg-voice'){ setSmgVoiceInit(sub.scope||'all'); goRoute('smg-voice'); }
           else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
         }}),
-      routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>goRoute(null)}),
+      routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,initialScope:smgVoiceInit,onClose:()=>{goRoute(null);setSmgVoiceInit(null);}}),
       routePanel==='task-queue'&&h(TaskQueuePanel,{settings,userRole,initialType:tqInitialType,onClose:()=>goRoute(null)})
     )  // close main content scroll area
     )  // close right panel flex-col

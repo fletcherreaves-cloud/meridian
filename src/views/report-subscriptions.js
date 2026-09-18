@@ -18,7 +18,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // Reports that can be subscribed to. `panels:true` = supports the build-your-own panel picker.
-const REPORTS = [
+export const REPORTS = [
   { key: 'above-store', label: 'Above-Store One-Pager', icon: '📄', periods: true, panels: true,
     desc: 'Sales/GC · FOB · Labor · Service · Controls · Voice rollup for a group + period.' },
   { key: 'calendar', label: 'Events Calendar', icon: '📅', periods: false, panels: false,
@@ -28,6 +28,13 @@ const REPORTS = [
   // latest month on record (SMG / FOB), so a user-chosen period would misrepresent it.
   { key: 'visit-readiness', label: 'Visit Readiness (PACE)', icon: '🛡️', periods: false, panels: false,
     desc: 'Graded-visit readiness + calibration audit: contribution per area, every target and source, declared gaps.' },
+  // Backlog: "Custom reports for non-QSRSoft panels (SMG/Voice, LifeLenz, calendars)" -- calendar
+  // and PACE (visit-readiness) above were already done; this is the SMG VOICE slice. No period
+  // picker, same reasoning as visit-readiness: SMGVoicePanel reads whatever's on file (comments +
+  // the latest FullScale month), not a chosen window, so a period selector here would imply a
+  // control that doesn't actually change what's shown.
+  { key: 'smg-voice', label: 'SMG VOICE', icon: '🗣️', periods: false, panels: false,
+    desc: 'Guest satisfaction: OSAT/Accuracy B2B scorecard + comment feed, for a scope.' },
 ];
 const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month']];
 
