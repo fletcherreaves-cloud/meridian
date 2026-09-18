@@ -827,7 +827,13 @@
   reference section. Added a collapsed-by-default "Core panels" section (44 `kind:'nav'` panels,
   grouped by real section label, reused directly from `panel-registry.js`'s `PANELS`/`SECTIONS`)
   alongside the existing toggleable optional-panel list.
-- [ ] Data Manager — show source report per data type, extend to auto-synced sources.
+- [x] ✅ **RESOLVED 2026-09-18 (v5.470).** Data Manager — show source report per data type, extend
+  to auto-synced sources. Per-source labeling (`SRC_INFO`) already existed for manual/legacy
+  streams; added the same labeling for the 13 `stream-freshness.js` STREAMS entries that were
+  eager-loaded into `ds` but had no row in this panel at all (Ops Cash/Labor/Service/Sales Mix,
+  LifeLenz Attendance, Inventory Summary, Forecast Week Cache, the 6 monthly Performance-Review
+  streams) — new "⚡ Auto-Synced (extended)" section, `calcCov()` over already-loaded `ds` arrays,
+  zero new network calls.
 - [ ] Save/Restore Session — verify it backs up what's needed, relocate in nav.
 - [ ] ❓ LifeLenz AOS — needs an explicit owner decision (rescope vs. close); should NOT be picked
   up as originally filed.
