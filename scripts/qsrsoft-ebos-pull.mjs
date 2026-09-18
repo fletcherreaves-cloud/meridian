@@ -35,6 +35,7 @@ import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
@@ -53,6 +54,7 @@ const STORE_NSNS = [
   33222, 33704, 34222, 35064, 35242, 37566,
   38609, 43380, 43701,
 ];
+const STORE_LOCS = STORE_NSNS.map(n => String(n).padStart(7, '0'));
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -526,6 +528,7 @@ async function pullViaPlaywright(startDate, endDate) {
 async function runWithToken(token, startDate, endDate) {
   let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, authFailed = false;
   const tracker = makeOutcomeTracker('ebos-pull');
+  const coveredStores = new Set();
   const buffer = [];
   const flush = async () => {
     if (!buffer.length) return;
@@ -557,6 +560,7 @@ async function runWithToken(token, startDate, endDate) {
       );
       if (clearErr) console.error(`[ebos] NSN ${nsn} stale-day clear error: ${clearErr.message}`);
       buffer.push(...rows);
+      if (rows.length > 0) coveredStores.add(loc);
       console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows`);
       if (buffer.length >= 500) await flush();
     } catch (e) {
@@ -573,6 +577,11 @@ async function runWithToken(token, startDate, endDate) {
   console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved`);
   if (authFailed) process.exit(1);
 
+  // R8 (dispatch #25/#32, Workstream C): unconditional per-store coverage -- a store that
+  // returned 200 with zero purchase-record line items in the window (no error, so tracker.fail()
+  // never sees it) is invisible without this.
+  logPartitionCoverage(coveredStores, STORE_LOCS, { label: 'ebos-pull', kind: 'store' });
+
   // #263: no store-subset override exists for this script today -- a re-run reruns
   // every store for the same date range until one is added.
   const code = tracker.finalize({
@@ -584,6 +593,14 @@ async function runWithToken(token, startDate, endDate) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
+  // R8 (dispatch #25/#32, Workstream C): freshness SLA, in addition to (not instead of) the
+  // existing gap-detection read inside getDateRange() below -- same second-cheap-read pattern
+  // and thresholds as qsrsoft-dar-pull.mjs's own R8 adoption (30h warn / 54h error mirrors one/
+  // two missed daily runs + the cron's own scheduling slack).
+  const latestForFreshness = await getLatestDate();
+  const fresh = checkFreshness(latestForFreshness, { warnAfterHours: 30, errorAfterHours: 54, label: 'ebos-pull' });
+  if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
+
   const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
   const { startDate, endDate } = await getDateRange();
   console.log(`[ebos-pull] stores: ${STORE_NSNS.length}`);
@@ -644,6 +661,12 @@ async function main() {
     else totalSaved += batch.length;
   }
   console.log(`[ebos-pull] done — ${rows.length} store-days aggregated, ${totalSaved} rows saved to qsr_ebos_daily`);
+
+  // R8 (dispatch #25/#32, Workstream C): unconditional per-store coverage, same as runWithToken's
+  // adoption above -- a store whose fetch succeeded but returned zero purchase-record line items
+  // in the window never appears in failedNsns (parsed only from error/HTTP log lines).
+  const coveredStores = new Set(rows.map(r => r.loc));
+  logPartitionCoverage(coveredStores, STORE_LOCS, { label: 'ebos-pull', kind: 'store' });
 
   const tracker = makeOutcomeTracker('ebos-pull');
   for (const nsn of failedNsns) tracker.fail(nsn, 'see [ebos] log above');

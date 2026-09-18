@@ -40,10 +40,14 @@ const NAMED_SCRIPTS = [
   'qsrsoft-email-parse.mjs', 'qsrsoft-pull.mjs', 'forecast-week-precompute.mjs',
   'qsrsoft-pmix-pull.mjs', 'qsrsoft-ops-pull.mjs',
 ];
-// Measured fresh on this branch AFTER converting lifelenz-pull.mjs and qsrsoft-dar-pull.mjs
-// (dispatch #32's own two hand-conversions) — not copied from dispatch #25/#32's own text, per
-// the standing rule those two dispatches (and R7 before this one) both state explicitly.
-const CEILING = 18;
+// Measured fresh on this branch AFTER converting lifelenz-pull.mjs, qsrsoft-dar-pull.mjs
+// (dispatch #32's own two hand-conversions), and qsrsoft-ebos-pull.mjs (2026-09-18, opportunistic
+// per this file's own "convert opportunistically, never as a sweep" scope note — added
+// checkFreshness in main() plus logPartitionCoverage on both the token-fetch and Playwright-
+// fallback paths, mirroring qsrsoft-dar-pull.mjs's own adoption shape) — not copied from
+// dispatch #25/#32's own text, per the standing rule those two dispatches (and R7 before this
+// one) both state explicitly.
+const CEILING = 17;
 
 function importsContract(file) {
   const p = join(ROOT, file);
