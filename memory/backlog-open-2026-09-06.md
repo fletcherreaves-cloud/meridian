@@ -624,7 +624,11 @@
 
 - [ ] Operator→DO pulse — 5-tile "any fires" card (design given, not built).
 - [ ] Promotions/Training/Other-Initiatives area — not built.
-- [ ] Top-of-Discussion report — pre-populate relevant names for scope.
+- [x] ✅ **RESOLVED 2026-09-18 (v5.467).** Top-of-Discussion report — pre-populate relevant names
+  for scope. `resolveDiscussionNames()` (`one-pager.js`) fills the Supervisor half of the "who
+  ↔ whom" line via `whoRan()`, as-of the review period's own end date. Only the Supervisor role
+  is resolvable — Owner/DO/GM have no assignment data anywhere in the app — so `d_s`/`s_g` fill
+  one side each and `o_d` stays fully blank, same as before.
 - [ ] ❓ Labor% current-day DAR fallback — deliberately deferred pending owner's explanation of
   FL-vs-OK labor-usage differences.
 - [x] ✅ **RESOLVED 2026-09-06 — do not re-open.** Re-measured live: FL district FOB% YTD 2026 is
