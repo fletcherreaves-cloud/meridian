@@ -943,7 +943,7 @@ function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
 }
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillComments, onClose }) {
+export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillComments, initialScope, onClose }) {
   const isMobile = useIsMobile();
   const rows = (ds && ds.smgRows) || [];
   const [bf, setBf] = React.useState(null); // {running} | {found,comments,saved}
@@ -966,8 +966,21 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
   const [sortBy, setSortBy] = React.useState('date-desc');
 
   // ── Location filter (app-standard: All / OK / FL / patch + store dropdown) ───
-  const [orgFilter, setOrgFilter] = React.useState('all');
-  const [storeSel, setStoreSel]   = React.useState('all'); // 'all' | normalized loc
+  // initialScope (My Reports saved subscriptions) follows the same 'all'|'ok'|'fl'|'grp:X'|loc
+  // convention every other routed panel's initialX prop reads (visit-readiness.js's own
+  // initialScope comment documents it) -- 'grp:X' maps straight onto orgFilter's own patch
+  // representation here, since orgFilter for a patch IS the raw supervisor name already (see
+  // orgMatch's header comment above), not a second encoding to translate.
+  const [orgFilter, setOrgFilter] = React.useState(() => {
+    const iv = initialScope || 'all';
+    if (iv === 'ok' || iv === 'fl') return iv;
+    if (String(iv).startsWith('grp:')) return iv.slice(4);
+    return 'all';
+  });
+  const [storeSel, setStoreSel]   = React.useState(() => { // 'all' | normalized loc
+    const iv = initialScope || 'all';
+    return (iv !== 'all' && iv !== 'ok' && iv !== 'fl' && !String(iv).startsWith('grp:')) ? iv : 'all';
+  });
   const inScope = React.useCallback(loc => orgMatch(orgFilter, loc), [orgFilter]);
   const nameOf = React.useCallback(loc => {
     const n = String(parseInt(loc, 10) || loc);
