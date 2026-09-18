@@ -225,15 +225,14 @@
     cloud-only device as predicted, with no `why.js`-local change needed. Not independently
     re-verified against a live cloud-only session (no such session available in this sandbox —
     see the standing "measure it" rule) — the derivation itself is unit-tested exhaustively.
-  - `crossStoreCheck()` (`why.js:9`) is a genuinely separate, harder conversion regardless of the
-    `ds.loaded` fix: it directly filters `ds.laborRows` to build a same-day-of-week peer baseline
-    (mean/std across ALL other stores) with no bound on history, plus `fetchRow(ds.laborIdx,...)`
-    for the "actual" value — both manual-only, no auto fallback, and NOT downstream of `ds.loaded`
-    (it has its own independent `!ds.laborRows` gate at line 10). Converting this needs
-    `metricSeries` bucketed by DOW (same pattern used in this session's store-analytics.js fix)
-    but ALSO needs a deliberate choice of lookback window, since the original code implicitly
-    uses unbounded history — don't invent a window without checking what "enough peer data"
-    (`peers.length<4`) implies about the original's effective sample depth.
+  - ✅ **RESOLVED (v5.463, 2026-09-18).** `crossStoreCheck()` (`engine/why.js`) now routes through
+    `metricDaily`/`metricSeries` (auto-first `sales` resolver) with a 98-day (~14 same-DOW weeks)
+    lookback — chosen to match the EWMA DOW forecast model's own already-established convention
+    (`forecast.js`'s standalone EWMA docs: "up to 14 most-recent same-DOW actuals"), not invented,
+    per this note's own caution. `peers.length<4` threshold kept unchanged. 3 new tests against
+    the real exported function, fixtures carrying only `qsrActSummaryRows` (no `laborRows`
+    anywhere) — would fail on a revert. This closes the one remaining piece of the `labor_rows`
+    sweep this file's own §3 entry above already called out as separate/unconverted.
   ✅ **Two more engine files audited 2026-09-07, confirmed clean:** `engine/promo-roi.js`'s
   `buildDailyRecords()` already sources sales/GC glimpse→salesLedger→laborRows→qsrActSummaryRows
   and discount opsCashRows(auto)→ctrlRows(manual) — its raw `ds.laborRows`/`ds.ctrlRows` reads
