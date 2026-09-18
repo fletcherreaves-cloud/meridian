@@ -648,8 +648,19 @@
   `metric-source.js` is a client `ds`-based module that can't run as-is inside the Deno Edge
   Function — porting its per-metric sourcing logic server-side is the actual scope here, not a
   quick wire-up).
-- [ ] Feed CLAUDE.md/memory standing rules into the system prompt.
-- [ ] Pass active panel state as context (not screenshots).
+- [x] ✅ **PARTIALLY RESOLVED 2026-09-18 (v5.465).** "Feed CLAUDE.md/memory standing rules into
+  the system prompt" — the one standing rule with concrete, checkable operational consequences
+  (the 4am -> 4am business-day boundary) is now in `buildSystemPrompt()`: `today` routes through
+  the shared `businessDate()` helper instead of calendar-day `toISOString()`, plus an explicit
+  BUSINESS DAY line explaining the cutover. Other standing rules (RBAC role tuning, etc.) are
+  either already covered elsewhere in the prompt or are broader/vaguer asks — not swept in one
+  pass; pick up opportunistically as a concrete gap is found, per this repo's own "don't launch a
+  sweep" rule.
+- [x] ✅ **RESOLVED 2026-09-18 (v5.466).** Pass active panel state as context (not screenshots) —
+  no screenshot mechanism existed to replace (none was ever built), so this was really "give SAGE
+  live situational awareness." App.js now builds `sageActiveContext` from the same
+  `view`/`selStore`/`routePanel` state that decides what's on screen behind SAGE's drawer, passed
+  through to `buildSystemPrompt`'s new 4th param as a "Currently viewing: ..." line.
 - [ ] Personality tuning (system-prompt only).
 - [ ] ❓ Outbound web access — needs a cost/abuse-boundary decision first.
 - [ ] Conversation persistence / self-learning loop.
