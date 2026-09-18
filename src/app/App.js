@@ -310,7 +310,7 @@ import { SignOutBtn } from '../components/AuthGate.js';
 // day.js was previously one of the few views/ modules statically imported here instead of behind
 // lazyPanel() (see record-day.js's own updated header comment for the before/after).
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
-import { PANEL_BY_ID } from './panel-registry.js';
+import { PANEL_BY_ID, PANELS, SECTIONS } from './panel-registry.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
 import { parseRoute, pushRoute, onRouteChange } from './routing.js';
@@ -486,9 +486,24 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
 // panels hidden from the sidebar. Lists each with a blurb; the switch shows/hides its nav
 // entry (persisted to localStorage). Nothing is deleted — hidden panels keep their modal
 // routing. Also the future basis for per-tenant module flags.
-function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose }) {
+export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose }) {
+  const [coreOpen, setCoreOpen] = React.useState(false);
   const shownCount = OPTIONAL_PANELS.filter(p => vis && vis[p.id]).length;
   const cats = [...new Set(OPTIONAL_PANELS.map(p => p.cat))];
+  // Core (always-shown, non-toggleable) panels — the backlog's own "Panel Manager: list every
+  // panel with a locked 'core' reference section" ask. panel-registry.js's PANELS/kind:'nav' is
+  // already the exact "what's always in the sidebar" list this file's own footer text used to
+  // just describe in prose ("the forecast / engineered-model diagnostic tools are always shown
+  // and are not listed here") — reused directly rather than a second hand-maintained list, which
+  // is exactly the kind of drift this registry itself was built to end (see its own header).
+  const coreSecs = [...new Set(PANELS.filter(p => p.kind === 'nav').map(p => p.section))];
+  const coreRow = (p) => {
+    const allowed = !p.perm || !perm || perm(p.perm);
+    return div({ key:p.id, style:{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderRadius:8, opacity:allowed?1:0.4, border:'.5px solid var(--bdr)', background:'var(--surf2)' } },
+      span({ style:{ fontSize:15, width:20, textAlign:'center', flexShrink:0 } }, p.icon),
+      div({ style:{ flex:1, minWidth:0, fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label),
+      !allowed ? span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access') : null);
+  };
   const sw = (on) => div({ style:{ width:34, height:19, borderRadius:99, background:on?'var(--amber)':'var(--surf3)', position:'relative', transition:'background .15s', flexShrink:0 } },
     div({ style:{ position:'absolute', top:2, left:on?17:2, width:15, height:15, borderRadius:'50%', background:'#fff', transition:'left .15s' } }));
   const row = (p) => {
@@ -520,8 +535,17 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
           div({ style:{ fontSize:9, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 } }, c),
           div({ style:{ display:'flex', flexDirection:'column', gap:6 } },
             ...OPTIONAL_PANELS.filter(p => p.cat === c).map(row)))),
-        div({ style:{ fontSize:9, color:'var(--text3)', marginTop:4, lineHeight:1.5, borderTop:'.5px solid var(--bdr)', paddingTop:10 } },
-          'These are lower-traffic experiments trimmed from the sidebar to reduce clutter (Notes 24). The forecast / engineered-model diagnostic tools are always shown and are not listed here.')))
+        div({ style:{ fontSize:9, color:'var(--text3)', marginTop:4, lineHeight:1.5, borderTop:'.5px solid var(--bdr)', paddingTop:10, marginBottom:10 } },
+          'These are lower-traffic experiments trimmed from the sidebar to reduce clutter (Notes 24). The forecast / engineered-model diagnostic tools are always shown and are not listed below.'),
+        div({ onClick:()=>setCoreOpen(v=>!v), style:{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:10, fontWeight:700, color:'var(--text2)', padding:'4px 0' } },
+          span({ style:{ fontSize:9 } }, coreOpen?'▾':'▸'),
+          `Core panels — always shown, reference only (${PANELS.filter(p=>p.kind==='nav').length})`),
+        coreOpen ? div({ style:{ marginTop:6 } },
+          ...coreSecs.map(sec => div({ key:sec||'_none', style:{ marginBottom:14 } },
+            div({ style:{ fontSize:9, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 } },
+              (SECTIONS.find(s=>s.id===sec)||{}).label || sec || 'Other'),
+            div({ style:{ display:'flex', flexDirection:'column', gap:6 } },
+              ...PANELS.filter(p => p.kind==='nav' && p.section===sec).map(coreRow))))) : null))
   );
 }
 

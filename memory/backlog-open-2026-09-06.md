@@ -819,7 +819,10 @@
 - [ ] Sooner Rd/Tinker AFB event tagging; broader Event Lookup (major-retailer proximity, pop-up
   event detection).
 - [ ] Task Queue + Feature Requests panel merge (IA decision).
-- [ ] Panel Manager — list every panel with a locked "core" reference section.
+- [x] ✅ **RESOLVED 2026-09-18 (v5.468).** Panel Manager — list every panel with a locked "core"
+  reference section. Added a collapsed-by-default "Core panels" section (44 `kind:'nav'` panels,
+  grouped by real section label, reused directly from `panel-registry.js`'s `PANELS`/`SECTIONS`)
+  alongside the existing toggleable optional-panel list.
 - [ ] Data Manager — show source report per data type, extend to auto-synced sources.
 - [ ] Save/Restore Session — verify it backs up what's needed, relocate in nav.
 - [ ] ❓ LifeLenz AOS — needs an explicit owner decision (rescope vs. close); should NOT be picked
