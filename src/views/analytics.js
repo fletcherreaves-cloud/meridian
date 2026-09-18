@@ -1358,6 +1358,34 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
      ds&&ds.laborRows,ds&&ds.opsRows,ds&&ds.ctrlRows,ds&&ds.fobRows,ds&&ds.darRows,
      ds&&ds.peaksSvcRows,ds&&ds.peaksSalesRows,ds&&ds.auditRows,ds&&ds.qsrFobRows]);
 
+  // Auto-synced streams that were already eager-loaded into ds at startup (same STREAMS
+  // entries src/engine/stream-freshness.js's own coverage checker reads) but had no source
+  // label anywhere in this panel — backlog: "Data Manager — show source report per data
+  // type, extend to auto-synced sources". No new network calls: every field here already
+  // lives in ds by the time this panel opens, so this is calcCov() over already-loaded
+  // arrays, the exact cloudOpRows pattern just above, not the separate live-Supabase-query
+  // mechanism the ⚡ Auto-Synced tiles above use. dateKey:'month' for the 6 "monthly"
+  // Performance-Review streams matches stream-freshness.js's own dateField override for the
+  // identical reason (period_month rows, not a daily date).
+  const extAutoCov = React.useMemo(()=>({
+    opsCashRows:      calcCov(ds&&ds.opsCashRows||[]),
+    opsLaborRows:     calcCov(ds&&ds.opsLaborRows||[]),
+    opsServiceRows:   calcCov(ds&&ds.opsServiceRows||[]),
+    opsSalesMixRows:  calcCov(ds&&ds.opsSalesMixRows||[]),
+    lifelenzAttendanceRows: calcCov(ds&&ds.lifelenzAttendanceRows||[]),
+    qsrInventorySummaryRows: calcCov(ds&&ds.qsrInventorySummaryRows||[]),
+    forecastWeekCache: calcCov(ds&&ds.forecastWeekCache||[]),
+    rosterStatsRows:  calcCov(ds&&ds.rosterStatsRows||[], 'month'),
+    rosterRoleCounts: calcCov(ds&&ds.rosterRoleCounts||[], 'month'),
+    turnoverRows:     calcCov(ds&&ds.turnoverRows||[], 'month'),
+    digitalAppRows:   calcCov(ds&&ds.digitalAppRows||[], 'month'),
+    mcdeliveryRows:   calcCov(ds&&ds.mcdeliveryRows||[], 'month'),
+    shiftManagerRows: calcCov(ds&&ds.shiftManagerRows||[], 'month'),
+  }),[ds&&ds.opsCashRows,ds&&ds.opsLaborRows,ds&&ds.opsServiceRows,ds&&ds.opsSalesMixRows,
+     ds&&ds.lifelenzAttendanceRows,ds&&ds.qsrInventorySummaryRows,ds&&ds.forecastWeekCache,
+     ds&&ds.rosterStatsRows,ds&&ds.rosterRoleCounts,ds&&ds.turnoverRows,ds&&ds.digitalAppRows,
+     ds&&ds.mcdeliveryRows,ds&&ds.shiftManagerRows]);
+
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
     + Object.values(sessionCov).reduce((a,v)=>a+(v?.count||0),0);
 
@@ -1395,6 +1423,19 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       qsrFobRows:     'QSRSoft FOB (auto-pulled, GitHub Actions)',
       schedRows:      'LifeLenz schedule (auto-synced daily)',
       monthlyTargets: 'Monthly Targets Excel drop',
+      opsCashRows:      'QSRSoft Ops Cash Sheet (auto-pulled, GitHub Actions daily)',
+      opsLaborRows:     'QSRSoft Ops Labor Summary (auto-pulled, GitHub Actions daily)',
+      opsServiceRows:   'QSRSoft Ops Service Stats (auto-pulled, GitHub Actions daily)',
+      opsSalesMixRows:  'QSRSoft Ops Sales Mix (auto-pulled, GitHub Actions daily)',
+      lifelenzAttendanceRows: 'LifeLenz attendance/T&A (auto-pulled, GitHub Actions daily)',
+      qsrInventorySummaryRows: 'QSRSoft Inventory Summary/Usage (auto-pulled, GitHub Actions daily)',
+      forecastWeekCache: 'Meridian forecast-week precompute (derived, not a raw pull)',
+      rosterStatsRows:  'QSRSoft Roster Statistics (auto-pulled monthly)',
+      rosterRoleCounts: 'QSRSoft Employee Roster (auto-pulled monthly)',
+      turnoverRows:     'QSRSoft Turnover (auto-pulled monthly)',
+      digitalAppRows:   'QSRSoft Digital App (auto-pulled monthly)',
+      mcdeliveryRows:   'QSRSoft McDelivery (auto-pulled monthly)',
+      shiftManagerRows: 'QSRSoft Shift Manager (auto-pulled monthly)',
     };
   const dataRow = (key, label, c, colorVar, altIdx, badges) => {
     const hasData = c.count>0;
@@ -1494,6 +1535,22 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
     ['peaksSalesRows','3 Peaks — Sales',     supabaseCov.peaksSalesRows],
     ['auditRows',     'Register Audit',      supabaseCov.auditRows],
   ].map(([k,label,c],i)=>dataRow(k+'-cloud', label, c||{count:0}, '#60a5fa', i%2));
+
+  const extAutoRows = [
+    ['opsCashRows',      'Ops Cash Sheet',       extAutoCov.opsCashRows],
+    ['opsLaborRows',     'Ops Labor Summary',    extAutoCov.opsLaborRows],
+    ['opsServiceRows',   'Ops Service Stats',    extAutoCov.opsServiceRows],
+    ['opsSalesMixRows',  'Ops Sales Mix',        extAutoCov.opsSalesMixRows],
+    ['lifelenzAttendanceRows', 'LifeLenz Attendance', extAutoCov.lifelenzAttendanceRows],
+    ['qsrInventorySummaryRows', 'Inventory Summary/Usage', extAutoCov.qsrInventorySummaryRows],
+    ['forecastWeekCache', 'Forecast Week Cache', extAutoCov.forecastWeekCache],
+    ['rosterStatsRows',  'Roster Statistics',    extAutoCov.rosterStatsRows],
+    ['rosterRoleCounts', 'Employee Roster',      extAutoCov.rosterRoleCounts],
+    ['turnoverRows',     'Turnover',             extAutoCov.turnoverRows],
+    ['digitalAppRows',   'Digital App',          extAutoCov.digitalAppRows],
+    ['mcdeliveryRows',   'McDelivery',           extAutoCov.mcdeliveryRows],
+    ['shiftManagerRows', 'Shift Manager',        extAutoCov.shiftManagerRows],
+  ].map(([k,label,c],i)=>dataRow(k, label, c||{count:0}, '#10b981', i%2));
 
   const vpPeriods = supabaseCov.smgVoicePerfPeriods||[];
 
@@ -1697,6 +1754,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
             syncNote&&h('tr',{key:'sync-note'},
               h('td',{colSpan:4,style:{padding:'2px 10px 8px',fontSize:'8px',
                 color:syncNote.err?'var(--crit)':'#10b981'}}, syncNote.msg)),
+            sectionHdr('hdr-auto-ext','⚡ Auto-Synced · GitHub Actions (extended)'),
+            ...extAutoRows,
             sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
             ...pipelineRows,
             sectionHdr('hdr-cloud','☁ Cloud-Persisted · Manual Upload'),
