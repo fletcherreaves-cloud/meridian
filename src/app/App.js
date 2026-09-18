@@ -310,6 +310,7 @@ import { SignOutBtn } from '../components/AuthGate.js';
 // day.js was previously one of the few views/ modules statically imported here instead of behind
 // lazyPanel() (see record-day.js's own updated header comment for the before/after).
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
+import { PANEL_BY_ID } from './panel-registry.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
 import { parseRoute, pushRoute, onRouteChange } from './routing.js';
@@ -3142,6 +3143,19 @@ function App() {
     return ()=>document.removeEventListener('keydown', onKey);
   },[]);
 
+  // SAGE lives as a right-anchored drawer over whatever the rest of the app is showing (see the
+  // showSage render block below), not a full-screen destination — so "what is the owner looking
+  // at right now" is real, live context SAGE can use instead of asking or requiring a screenshot.
+  // Recomputed on every render (cheap: a handful of property reads, no derivation), so it always
+  // reflects the CURRENT panel even if the owner navigates around while the drawer stays open.
+  const sageActiveContext = {
+    view,
+    storeLoc: view==='store'&&selStore ? selStore : null,
+    storeName: view==='store'&&selStore ? (stores.find(s=>s.loc===selStore)||{}).name||null : null,
+    routePanel,
+    routePanelLabel: routePanel ? (PANEL_BY_ID[routePanel]?.label||null) : null,
+  };
+
   return div({className:'mf-app-root',style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
 
     // ── Drag-drop overlay ─────────────────────────────────────────
@@ -3708,7 +3722,7 @@ function App() {
           h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
-        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName}),
+        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName,activeContext:sageActiveContext}),
       ),
     ),
     // Minimized pill — click to restore. Red dot = thinking, green = ready.

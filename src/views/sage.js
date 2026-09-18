@@ -458,7 +458,7 @@ function buildFieldDefsSection(qsrFieldDefs) {
 }
 
 // ── System prompt builder ─────────────────────────────────────────────────────
-export function buildSystemPrompt(ds, signals, customSignalDefs) {
+export function buildSystemPrompt(ds, signals, customSignalDefs, activeContext) {
   // CLAUDE.md standing rule: the business day runs 4:00am -> 4:00am, not midnight -> midnight —
   // the 00:00-04:00 block belongs to the PREVIOUS business day (overnight close/clean-up/late-
   // night volume land there). Previously this used calendar-day new Date().toISOString(), so
@@ -471,6 +471,23 @@ export function buildSystemPrompt(ds, signals, customSignalDefs) {
   // so it was 0 on the exact cloud-only device this fix targets. Static roster, same as every
   // builder above.
   const storeCount = Object.keys(STORE_NAMES).length;
+
+  // Live "what is the owner looking at right now" context, passed down from App.js's
+  // sageActiveContext (built from the SAME view/selStore/routePanel state that drives what's
+  // actually on screen behind the SAGE drawer) — a substitute for asking the owner to paste a
+  // screenshot when their question implicitly refers to whatever panel is currently open (e.g.
+  // "what's driving this?" while looking at a specific store). Optional: undefined for any
+  // caller that doesn't have a live app session (scheduled/headless prompt runs), in which case
+  // this line is simply omitted rather than guessed at.
+  const viewingLine = (() => {
+    if (!activeContext) return null;
+    if (activeContext.routePanelLabel) return `Currently viewing: ${activeContext.routePanelLabel}`;
+    if (activeContext.view === 'store' && activeContext.storeName) return `Currently viewing: Store Dashboard — ${activeContext.storeName} (${activeContext.storeLoc})`;
+    if (activeContext.view === 'district') return 'Currently viewing: Analytics (District Grid)';
+    if (activeContext.view === 'org') return 'Currently viewing: Org View';
+    if (activeContext.view === 'command') return 'Currently viewing: At A Glance';
+    return null;
+  })();
 
   const confirmedSigs = (signals || [])
     .filter(s => s.confirmed)
@@ -522,7 +539,7 @@ BUSINESS DAY: each store's operating day runs 4:00am -> 4:00am, not midnight -> 
 close, clean-up, late-night volume land there). "Today" above is already business-day-adjusted for
 this. When a question turns on a specific early-morning hour or a day boundary, say explicitly
 which business day that hour falls in rather than assuming a midnight cutover.
-
+${viewingLine ? `${viewingLine} — a question phrased without naming a store or panel ("what's driving this," "explain this number," "why is this red") likely refers to this. Confirm rather than guess if it's genuinely ambiguous.\n` : ''}
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
 You have ten tools — six query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, and two search reference material:
@@ -1231,7 +1248,7 @@ const QUICK_PROMPTS = [
 ];
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, userName }) {
+export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, userName, activeContext }) {
   const [messages, setMessages] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_THREAD_KEY)).data);
   const [sessions, setSessions] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_SESSIONS_KEY)).data);
   const [sessionsOpen, setSessionsOpen] = uSt(false);
@@ -1378,7 +1395,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    const systemPrompt = buildSystemPrompt(ds, signals, customSignalDefs);
+    const systemPrompt = buildSystemPrompt(ds, signals, customSignalDefs, activeContext);
     let full = '';
 
     try {
