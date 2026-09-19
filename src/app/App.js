@@ -3212,8 +3212,6 @@ function App() {
       betaMode,
       panelVis,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
-      onSaveSession: handleSaveSession,
-      onRestoreSession: handleRestoreSession,
       onOpenModal: (modal) => {
         if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),setLeaderboardMode('ranking'),goRoute('ranking'));
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
@@ -3396,6 +3394,7 @@ function App() {
         perm,
         onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
         onSaveSession: handleSaveSession,
+        onRestoreSession: handleRestoreSession,
         sessionBanner,
         onClearSession: handleClearSession,
         userRole,
