@@ -834,7 +834,21 @@
   LifeLenz Attendance, Inventory Summary, Forecast Week Cache, the 6 monthly Performance-Review
   streams) — new "⚡ Auto-Synced (extended)" section, `calcCov()` over already-loaded `ds` arrays,
   zero new network calls.
-- [ ] Save/Restore Session — verify it backs up what's needed, relocate in nav.
+- [x] 🟡 **PARTIALLY RESOLVED 2026-09-19 (v5.472) — relocation done, backup-coverage half still
+  open.** "Relocate in nav": both actions were two bare `navItem()` calls tacked onto the end of
+  `AppSidebar`'s render (`shell.js`), outside `panel-registry.js` entirely — no id/section/perm,
+  the exact dangling end-of-list pattern the `section:` rule exists to prevent. "Save Session"
+  also duplicated a home it already had (`ProfileMenu`'s account-icon dropdown, "Save session to
+  file"). Both now live only in `ProfileMenu` — "Restore session from file" added there, wired
+  through `AppTopbar`'s existing `onRestoreSession` prop (`App.js`'s `handleRestoreSession` was
+  already built, just unreachable outside the sidebar). **Still open, deliberately not touched in
+  this pass:** "verify it backs up what's needed" — `session.js`'s `mfExportSession`'s
+  `ROW_KEYS` covers only 9 legacy manual-upload streams (laborRows/opsRows/ctrlRows/fobRows/
+  weatherRows/peaksSvcRows/peaksSalesRows/auditRows/trendsRows); none of the ~21 cloud-auto-synced
+  streams (`qsr_daily_activity`, `lifelenz_schedule`, etc.) are included, so a Save-Session export
+  is stale relative to the cloud-first architecture. That's a bigger, more judgment-laden change
+  (what belongs in a portable file export vs. what's already cloud-persisted) — left for a
+  separate pass, not re-filed as a fresh item.
 - [ ] ❓ LifeLenz AOS — needs an explicit owner decision (rescope vs. close); should NOT be picked
   up as originally filed.
 - ✅ **RESOLVED 2026-09-08 — NO, traced end to end, both consumers confirmed correct.** Checked

@@ -90,7 +90,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode, panelVis}) {
+function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -383,8 +383,6 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 
       // ── ADMIN (pulled out of the section loop above, see its own comment) ───────
       ...(renderSection('admin') || []),
-      navItem('Save Session',    '💾', ()=>onSaveSession&&onSaveSession(),      false),
-      navItem('Restore Session', '📂', ()=>onRestoreSession&&onRestoreSession(),false),
     ),
 
     // ── Footer status ───────────────────────────────────────────
@@ -659,7 +657,7 @@ function NotificationBell({ onOpenModal, perm }) {
 // Consolidates account + utility actions that used to crowd the top bar (and were
 // unreachable on mobile): identity/role, theme, save session, help, user management,
 // Test Kitchen toggle, change password, sign out. Standard SaaS profile-menu pattern.
-function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm }) {
+function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   useEffect(() => {
@@ -701,6 +699,7 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdm
         }),
         onLoadFiles && (!perm||perm('data.upload')) && item('↑', 'Load files', onLoadFiles),
         onSaveSession && item('💾', 'Save session to file', onSaveSession),
+        onRestoreSession && item('📂', 'Restore session from file', onRestoreSession),
         onOpenModal && item('🧭', 'Workflow guide', ()=>onOpenModal('workflow')),
         onOpenModal && item('?', 'Troubleshooting', ()=>onOpenModal('troubleshoot')),
         // User management moved into Settings → Users (Notes 54) — still reachable via the ⚙ gear.
@@ -755,7 +754,7 @@ function DataErrorBanner() {
 }
 
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
-                    onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
+                    onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, setView,
                     sessionBanner, onClearSession, userRole, onOpenAdmin, perm,
                     betaMode, onToggleBeta}) {
   const today = new Date();
@@ -870,9 +869,9 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       (!perm||perm('settings.view'))&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         title:'Settings',
         onClick:()=>onOpenModal('settings')},'⚙'),
-      // Profile menu — consolidates Load, theme, save session, help, user mgmt, Test Kitchen,
-      // change password, sign out (previously crowded the top bar / unreachable on mobile)
-      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm})
+      // Profile menu — consolidates Load, theme, save/restore session, help, user mgmt, Test
+      // Kitchen, change password, sign out (previously crowded the top bar / unreachable on mobile)
+      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm})
     )
   ));
 }
