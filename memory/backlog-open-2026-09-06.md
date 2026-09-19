@@ -837,6 +837,22 @@
 - [ ] Save/Restore Session — verify it backs up what's needed, relocate in nav.
 - [ ] ❓ LifeLenz AOS — needs an explicit owner decision (rescope vs. close); should NOT be picked
   up as originally filed.
+- [ ] ❓ **`duplicateWrinFlags`/`transferOpportunities` live-wiring — needs a design decision, not a
+  copy-paste (re-measured 2026-09-19, corrects `backlog-master-2026-08-19.md`'s "`transferOpportunities`
+  wired into `buildAttentionFeed`" claim).** Both detectors are built, tested, and present in
+  `attention-feed.js`'s `bySource` object, but `attention-now.js`'s ONE live call site
+  (`useAttentionFeed`) never passes `transferRows`, so `transferOpportunities` is EQUALLY unwired
+  in production, not an "already live" precedent `duplicateWrinFlags` could copy. Both share the
+  same real blocker: they need per-store `qsr_inventory_summary` rows in panel shape
+  (`cloudRowsToPanelShape`+`avgDailyTxnsByLocMonth`, both exported from `inventory.js`), and that
+  stream is NOT one of the ~21 eager-loaded into `ds` at startup — `inventory.js`'s own panel loads
+  it on demand via an **unwindowed** `loadQsrInventorySummary()` (no `period` filter, ~10.5k rows
+  and growing). Wiring either detector into `useAttentionFeed` (mounted by several hot surfaces —
+  Needs Attention, At-A-Glance) means either duplicating that same unwindowed fetch on a hot path
+  (a real "Speed check" cost) or sharing one cached load between the Inventory panel and
+  `useAttentionFeed` — an architecture call, not a small fix. Not picked up for that reason. Full
+  measurement in `memory/backlog-master-2026-08-19.md`'s dispatch-16-era entry (search
+  "CORRECTED 2026-09-19").
 - ✅ **RESOLVED 2026-09-08 — NO, traced end to end, both consumers confirmed correct.** Checked
   the two real places `sales_proj`/`tProdSales` gets consumed: (1) `CurrentMonthPaceSection`
   (`analytics.js`, the engine behind both the Planning→Monthly pace view AND the standalone Pace

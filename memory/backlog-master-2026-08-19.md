@@ -1264,6 +1264,26 @@ first below.
   than risk a wrong field-mapping guess. 12 new tests total across both detectors +
   the refactor's own regression coverage (existing tests re-passed unchanged, import path
   updated).
+  🔴 **CORRECTED 2026-09-19 (backlog survey) — "`transferOpportunities` wired into
+  `buildAttentionFeed`" above is misleading; re-measured, it is EQUALLY unwired in production.**
+  It IS a key in `buildAttentionFeed`'s `bySource` object (`attention-feed.js`), so it's
+  structurally present in the function — but `attention-now.js`'s one live call site
+  (`useAttentionFeed`, the only caller in the whole repo per a repo-wide grep for
+  `buildAttentionFeed(`) never passes a `transferRows` argument, so in production it always
+  receives `transferRows || []` and contributes nothing to the real feed — same dead-on-arrival
+  state as `duplicateWrinFlags`, not the "already live" precedent a later backlog survey
+  (2026-09-19) initially assumed it was before re-verifying directly against `attention-now.js`.
+  **The real reason neither is wired is the same for both, and it's the blocker already named two
+  paragraphs up:** both need real per-store `qsr_inventory_summary` rows in panel shape
+  (`cloudRowsToPanelShape` + `avgDailyTxnsByLocMonth(ds.qsrActSummaryRows)`, both exported from
+  `inventory.js`), and `qsr_inventory_summary` is NOT one of the ~21 streams eager-loaded into
+  `ds` at startup — `inventory.js`'s own panel loads it on demand via an unwindowed
+  `loadQsrInventorySummary()` call (no `period` filter; ~10.5k rows and growing per that loader's
+  own comment). Wiring either detector into `useAttentionFeed` means either (a) duplicating that
+  same unwindowed fetch inside a hook several hot surfaces mount (Needs Attention / At-A-Glance),
+  a real "Speed check" cost per CLAUDE.md's standing rule, or (b) sharing one cached load between
+  the Inventory panel and `useAttentionFeed` — an actual design decision, not a copy-paste of an
+  existing live pattern. Left unpicked for that reason; not attempted in this pass.
   ⚠️ **Second correction, same day: `revintel` is not retired either.** It's the live "Revenue"
   panel (`panel-registry.js` id `revintel`, `kind:'optional'`) rendering `RevenueIntelligence`
   (`views/store-analytics.js`) — and that panel's own subtitle already reads *"OEPE dollar value
