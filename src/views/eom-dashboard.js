@@ -2689,6 +2689,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
       data: {
         fob: c.sales ? { sales: c.sales, compWaste: c.comp, rawWaste: c.raw, condiments: c.cond, empMgrMeals: c.emp, statVariance: c.statv, unexplained: c.unex } : null,
+        // dispatch #176's key-name-sync fix made the fob-components CHECK correct, but never
+        // wired -- this data object never carried a `targets` key at all, so `ctx.data.targets`
+        // was always {} and the check's `t[tk]` lookup always failed silently, for every store,
+        // ever. Same tg-building pattern diagOptsFor() already uses for the report narrative.
+        targets: { ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...(monthlyOverrideFor(loc, period) || {}) },
         onHand: (byLoc[loc] || []).map(r => ({
           wrin: r.wrin, cls: r.cls, descr: r.descr, onHandAmt: r.on_hand_amt ?? r.onHandAmt,
           totalUnits: r.total_units ?? r.totalUnits,
@@ -2700,7 +2705,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         fountainBaseline: fountainBaselineByLoc[unpad(loc)] || null,
       },
     });
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period, fountainBaselineByLoc]);
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period, fountainBaselineByLoc, monthlyOverrideFor]);
 
   // Cash Controls — EOM/FOB linkage (2026-08-31, owner req): "at some point we have to link cash
   // controls to food cost and report that as well." Generalized at the STORE level, never a
