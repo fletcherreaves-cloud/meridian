@@ -683,8 +683,16 @@
 - [ ] Personality tuning (system-prompt only).
 - [ ] ❓ Outbound web access — needs a cost/abuse-boundary decision first.
 - [ ] Conversation persistence / self-learning loop.
-- [ ] Document/forms access — the eBOS form library or Resource Library exposed as a queryable
-  source (SAGE's own ask; currently none of it reaches SAGE).
+- [x] ✅ **RESOLVED 2026-09-20 (v5.474) — Forms access done via a new `query_forms` tool; the
+  Resource Library half was not investigated.** SAGE now queries `qsr_forms_completion`
+  (shift-checklist/travel-path forms — Opening, Pre-Shift, Closing, etc.) for per-store
+  resolved/completed/missed counts + pass rate and per-form totals, reusing the SAME
+  `computeFormStoreDayRollup`/`computeFormSummary` logic (`src/engine/forms-completion.js`)
+  `src/views/forms-panel.js`'s in-app dashboard already uses — no re-derived pass/fail math. New
+  `supabase/functions/sage-chat/forms-agg.js` (single module, imported by both `index.ts` and its
+  own Vitest test, same pattern as `labor-summary-agg.js`/`smg-agg.js`) only shapes DB rows in and
+  the response out. **"Resource Library" (a separate, not-yet-scoped source) was not touched** —
+  if that's a distinct ask, it needs its own investigation.
 - [ ] Deeper history / longer lookback windows for trend and YoY work (SAGE's own ask — its tools
   are fixed ~60-day summaries today). ⚠️ **Partially stale, re-measured 2026-09-07 alongside the
   tool-breadth re-inventory above.** Most tools already take an arbitrary `start_date`/`end_date`
