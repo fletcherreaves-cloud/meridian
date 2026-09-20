@@ -528,9 +528,20 @@
   at the source, so Item Journeys/Swing Ledger/`reconstructMissingProducts` all tie out to
   `qsr_variance_stat`'s convention now, not just directionally. Full writeup:
   `memory/project-eom-item-journey.md` #3 (closed) and the PR body for #1205.
-- [ ] Remaining EOM list: Inventory-Summary/Physical-Inventory endpoint capture; wire
-  `monthly_targets` into fob-components + variance threshold; on-demand raw-item-timing drill;
-  store yield BAND; CoachQ curated prompts; notification-settings UI.
+- [x] ✅ **PARTIALLY RESOLVED 2026-09-20 (v5.473) — "wire `monthly_targets` into fob-components"
+  half done; the rest of this list is still open.** `eom-diagnosis.js`'s `fob-components` check
+  (order:10, the FIRST check in the registry) has never fired for ANY store, ever — dispatch #176
+  fixed its key-name mapping to match `FOB_COMPONENTS`, but `eom-dashboard.js`'s `buildDiagResult()`
+  (the only thing that feeds `runDiagnosis()` in production, via both 🔬 Diagnose and ✉️ Draft)
+  never included a `targets` key in its `data` object at all, so `ctx.data.targets` was always
+  `{}` and the `t[tk]` lookup always failed. Fixed by reusing `diagOptsFor()`'s existing tg-building
+  pattern (`{...DEFAULT_TARGETS[loc], ...monthlyOverrideFor(loc, period)}`) inside `buildDiagResult`
+  too. **"+ variance threshold" was NOT investigated in this pass** — that's a separate check
+  (`variance-top5`, hardcoded `topN`/no target-driven threshold) and needs its own look before
+  claiming it's done. Still open from this bullet: Inventory-Summary/Physical-Inventory endpoint
+  capture; the variance-threshold half above; on-demand raw-item-timing drill; store yield BAND;
+  CoachQ curated prompts; notification-settings UI (the last one needs a product spec — the table
+  exists with zero defined fields).
 - [ ] FOB day-by-day curve through the month (early-month skew theory) — needs historical mapping.
 - [x] ✅ **PARTIALLY RESOLVED 2026-09-18 (v5.469).** Custom reports for non-QSRSoft panels
   (SMG/Voice, LifeLenz, calendars) — PACE and Calendar were already done; **SMG VOICE now also
