@@ -27,6 +27,7 @@ import { closeWindowStartFor, ledgerScopeDiff, crossStoreRecountConsistency, cro
 // 2026-09-16.md's own note on that gap). The actual query/classify logic lives in ./data-health.js
 // specifically so it's testable from the Vitest suite even though this import path isn't.
 import { streamRegistryEntries, classifyStream, summarizeDataHealth } from './data-health.js';
+import { aggregateFormsCompletion, FORMS_NOTE } from './forms-agg.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -265,6 +266,32 @@ Use this whenever: the owner asks if data is current/up to date/why a number loo
 This is a TROUBLESHOOTING/meta tool, not a business-data tool -- it never returns any store-level figures, only how current each tracked table is as of right now (one query per stream, no per-store breakdown).
 Returns every tracked stream's latest date, days stale, and severity (ok / warn = 1+ day past its own cadence / crit = 3+ days past it), plus the single worst stream if any are behind schedule.`,
     input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'query_forms',
+    description: `Query QSRSoft Forms completion -- shift checklists / travel-path forms (Opening, Pre-Shift, Closing, etc.), from qsr_forms_completion (the same table src/views/forms-panel.js's dashboard reads). One row per SCHEDULED OCCURRENCE, so this answers "was the form done," not just "was it submitted."
+Use for questions about: form/checklist compliance, which stores are missing shift forms, which specific form (e.g. "Closing Checklist") is being skipped, form completion rate/pass rate by store or estate-wide.
+Rolls up to store-day pass/fail per form (a store-day "passes" a form when its completed-vs-resolved ratio clears that form's threshold, 80% by default) using the SAME computeFormStoreDayRollup/computeFormSummary logic the in-app panel uses -- never re-derive this independently. "Resolved" excludes occurrences still open (not yet due) -- an open occurrence is neither a pass nor a miss yet.
+Returns per-store totals (resolved/completed/missed counts, pass rate) and per-form totals across the range, worst-performing form first.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (inclusive). Required.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (inclusive). Defaults to start_date for single-day queries.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for every store the caller can see.',
+        },
+      },
+      required: ['start_date'],
+    },
   },
   {
     name: 'search_qsr_kb',
@@ -841,6 +868,45 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       return classifyStream(entry, latest as string | null, now);
     }));
     return JSON.stringify(summarizeDataHealth(classified, now));
+  }
+
+  if (name === 'query_forms') {
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = (input.start_date as string) || today;
+    const endDate   = (input.end_date   as string) || startDate;
+    const locs      = input.locs as string[] | undefined;
+    // occurrence_key is timestamptz; a date-only .lte() bound would parse as that day's midnight
+    // UTC and drop the rest of endDate's rows. Exclusive upper bound at the day AFTER endDate,
+    // same "date-only string in, half-open range out" shape query_daily_activity's dt column
+    // avoids needing (dt is a plain date column there, not a timestamp).
+    const endExclusive = new Date(`${endDate}T00:00:00Z`);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('qsr_forms_completion')
+        .select('loc,form_id,form_title,occurrence_key,status_state')
+        .gte('occurrence_key', `${startDate}T00:00:00Z`)
+        .lt('occurrence_key', endExclusive.toISOString())
+        // Full PK order (tenant_id is constant here, so loc/form_id/occurrence_key alone gives a
+        // deterministic total order over the filtered set) -- required for offset paging, see
+        // paginate.js.
+        .order('loc').order('form_id').order('occurrence_key');
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
+      return q;
+    });
+    if (error) return `Database error: ${error.message}`;
+    if (!data?.length) return `No Forms completion data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}.`;
+
+    const { stores, forms } = aggregateFormsCompletion(data as Array<{ loc: string; form_id: string; form_title: string; occurrence_key: string; status_state: string }>, STORE_NAMES);
+
+    const sc = applyScope(stores, allowed);
+    return JSON.stringify({
+      start_date: startDate, end_date: endDate,
+      stores: sc.stores, forms,
+      ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
+      note: FORMS_NOTE,
+    });
   }
 
   if (name === 'search_qsr_kb') {

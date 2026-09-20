@@ -542,7 +542,7 @@ which business day that hour falls in rather than assuming a midnight cutover.
 ${viewingLine ? `${viewingLine} — a question phrased without naming a store or panel ("what's driving this," "explain this number," "why is this red") likely refers to this. Confirm rather than guess if it's genuinely ambiguous.\n` : ''}
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have ten tools — six query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, and two search reference material:
+You have eleven tools — seven query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, and two search reference material:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -596,6 +596,11 @@ You have ten tools — six query live Supabase data (updated daily via automatio
    Returns: the most relevant excerpts from Meridian's own curated internal project memory — findings, reference material, prior analysis, and design notes written while building and operating this system.
    USE FOR: WHY a metric or panel works the way it does, past investigations into a specific store/number, data-source reference material, or "what did we already find out about X" — e.g. "what did we find about padding at a store", "how is R2P calculated", "what's the CFV predictability ceiling".
    RULE: a small hand-curated slice, not every engineering file that exists — a low or zero result count doesn't mean nothing was ever found on that topic, just that it isn't in this slice. Some results may be withheld by access level. Not a source of live store data.
+
+11. query_forms(start_date, end_date?, locs?)
+   Returns: QSRSoft Forms completion (shift checklists / travel-path forms — Opening, Pre-Shift, Closing, etc.) for the requested date range — per-store resolved/completed/missed counts + pass rate, and per-form totals district-wide (worst-performing form first). Same store-day rollup logic (completed÷resolved vs. each form's own threshold, 80% default) the in-app Forms dashboard uses.
+   USE FOR: form/checklist compliance, which stores are missing shift forms, which specific form is being skipped, form completion/pass rate by store or estate-wide.
+   CAVEAT: "resolved" excludes occurrences still open (not yet due) — those are neither a pass nor a miss. Manager/person attribution is NOT possible from this data (see the tool's own note) — never attribute a missed form to an individual.
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
