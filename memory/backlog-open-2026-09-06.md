@@ -542,6 +542,13 @@
   capture; the variance-threshold half above; on-demand raw-item-timing drill; store yield BAND;
   CoachQ curated prompts; notification-settings UI (the last one needs a product spec — the table
   exists with zero defined fields).
+  🟡 **"CoachQ curated prompts" — partially done 2026-09-21 (v5.475), do not confuse with the real
+  CoachQ-API integration (that's a separate, much bigger, Cognito-auth-blocked item — see
+  `memory/project-qsrsoft-coachq.md`; not touched here).** `ItemJourneyView`'s per-item count-cycle
+  drill-down had no SAGE entry point at all — added one, reusing the exact
+  `window.__MF_SAGE_SEED__`/`mf:open-sage` pattern `askSageWaste` (store-level) and the FOB-report
+  modal already use, one level deeper (a single item's own verdict/variance/signals). Still open:
+  any further curated-prompt entry points elsewhere in the app.
 - [ ] FOB day-by-day curve through the month (early-month skew theory) — needs historical mapping.
 - [x] ✅ **PARTIALLY RESOLVED 2026-09-18 (v5.469).** Custom reports for non-QSRSoft panels
   (SMG/Voice, LifeLenz, calendars) — PACE and Calendar were already done; **SMG VOICE now also

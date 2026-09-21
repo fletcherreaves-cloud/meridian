@@ -1272,7 +1272,7 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
   );
 }
 
-export function ItemJourneyView({ journey: j }) {
+export function ItemJourneyView({ journey: j, onAskSage }) {
   const [laneFilter, setLaneFilter] = useState(null); // click a flow chip to drill into that lane's events
   if (!j) return null;
   const inWindow = (when) => j.windowStart != null && when != null && when >= j.windowStart;
@@ -1283,9 +1283,20 @@ export function ItemJourneyView({ journey: j }) {
   return div({ style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
     // verdict banner
     div({ style: { padding: '10px 12px', borderRadius: '8px', background: 'var(--surf2)', borderLeft: `4px solid ${VERDICT_TONE[j.verdict.tone]}` } },
-      div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13.5px' } }, j.descr || j.wrin),
-      div({ style: { fontSize: '11px', color: 'var(--text3)', margin: '1px 0 5px' } },
-        [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
+      div({ style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' } },
+        div({ style: { flex: 1 } },
+          div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13.5px' } }, j.descr || j.wrin),
+          div({ style: { fontSize: '11px', color: 'var(--text3)', margin: '1px 0 5px' } },
+            [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  '))),
+        // Per-item curated SAGE prompt (backlog §6 "CoachQ curated prompts") -- same window.
+        // __MF_SAGE_SEED__ + mf:open-sage mechanism askSageWaste/the FOB-report button already
+        // use, one drill-down level deeper: this single item's own verdict/variance/signals,
+        // not the whole store's waste picture or FOB report.
+        onAskSage && h('button', {
+          onClick: () => onAskSage(j),
+          title: 'Open SAGE with this item\'s own count-cycle read — verified facts + likely causes',
+          style: { flexShrink: 0, background: 'none', color: 'var(--accent,#f5bc00)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '5px', padding: '1px 7px', fontSize: '10px', fontWeight: 700, cursor: 'pointer' },
+        }, '🧠 Ask SAGE')),
       div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
 
     // Variance reconciliation (Note 30 A3 / Notes 36) — the authoritative Variance Stat report
@@ -2868,6 +2879,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     onClose && onClose();
   }, [wasteEventsFor, period, onClose]);
 
+  // Hand ONE item's own journey (verdict + variance reconciliation + already-computed
+  // facts/inferences) to SAGE -- a drill-down level deeper than askSageWaste's whole-store
+  // picture, for the single item a coach is already looking at in ItemJourneyView.
+  const askSageItemJourney = useCallback((item, storeName) => {
+    const signalLines = (item.signals || []).map(s => `  • [${s.kind === 'fact' ? 'verified' : 'inference'}] ${s.text}`).join('\n');
+    const context = `Item journey — ${item.descr || item.wrin}${item.itemClass ? ` (${item.itemClass})` : ''}, ${storeName}, ${period}\n`
+      + `Verdict: ${item.verdict.text}\n`
+      + (item.netCountDollars != null ? `Net count variance: ${item.netCountDollars < 0 ? '-' : '+'}$${Math.abs(item.netCountDollars).toFixed(2)}` +
+          (item.netCountUnits != null && Math.abs(item.netCountUnits) >= 0.5 ? ` (${item.netCountUnits > 0 ? '+' : ''}${Math.round(item.netCountUnits)} ${item.uom || 'units'})` : '') + '\n' : '')
+      + (item.reportDollars != null ? `Variance Stat report: ${item.reportDollars < 0 ? '-' : '+'}$${Math.abs(item.reportDollars).toFixed(2)}\n` : '')
+      + (signalLines ? `\nWhat the data shows:\n${signalLines}` : '');
+    try {
+      window.__MF_SAGE_SEED__ = { context, prompt: `For this one item's count-cycle variance, give me a short read: is this a real loss worth fixing, a locked one-off that washes out of the monthly figure, or something to verify before assuming it's a loss? If it's real and recurring, name the likely cause (portion/yield/theft/process/UOM entry) and one thing to check on the floor. Keep it to 3-4 sentences — this is a single-item drill-down, not a full report.` };
+      window.dispatchEvent(new CustomEvent('mf:open-sage'));
+    } catch {}
+  }, [period]);
+
   // Generate a follow-up draft for EVERY store in scope — the ones that need a message first.
   const openBulk = useCallback(() => {
     const drafts = rows.map(r => ({ ...computeDraft(r.loc, r.name, r.components), commsSent: r.comms === 'sent' }));
@@ -4023,7 +4051,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                     (j.descr || j.wrin), Math.abs(j.netCountDollars) >= 1 && span({ style: { color: 'var(--text3)' } }, jMoney(j.netCountDollars)));
                 })),
               // selected item's journey
-              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel })))
+              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel, onAskSage: (item) => askSageItemJourney(item, journeys.name) })))
     })(),
 
     // FOB multi-location variance matrix modal
