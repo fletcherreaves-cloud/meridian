@@ -21,7 +21,7 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -1168,6 +1168,16 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
     loadQsrSecurityEventsCoverage({windowDays:14}).then(setSecEventsCov);
   },[]);
 
+  // #265 — data-completeness ledger, own effect (same "never block the other tiles" reasoning
+  // as security-events above). Backlog §14: the table was populated by scripts/check-data-
+  // completeness.mjs but had zero UI/SAGE consumer anywhere in src/ — this Incidents tab is that
+  // first consumer (notes column excluded, see loadDataCompletenessIncidents's own comment).
+  const [incidents, setIncidents] = uSt([]);
+  uE(()=>{
+    if(!supabase) return;
+    loadDataCompletenessIncidents().then(setIncidents);
+  },[]);
+
   const IDB_LABELS = {
     pmixRows:'Product Mix',
     weatherRows:'Weather Data',
@@ -1712,9 +1722,9 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       div({className:'tabs',style:{padding:'0 16px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)'}},
-        ['overview','coverage'].map(t2=>div({key:t2,className:'tab'+(tab===t2?' on':''),
+        ['overview','coverage','incidents'].map(t2=>div({key:t2,className:'tab'+(tab===t2?' on':''),
           onClick:()=>setTab(t2),style:{fontSize:'11px'}},
-          t2==='overview'?'Overview':'Coverage'))
+          t2==='overview'?'Overview':t2==='coverage'?'Coverage':`Incidents${incidents.length?` (${incidents.length})`:''}`))
       ),
       div({style:{padding:'16px',overflowY:'auto',flex:1,minHeight:0}},
         tab==='coverage'&&(auditGrid?div({style:{overflowX:'auto'}},
@@ -1739,6 +1749,28 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
             )))
           )
         ):div({style:{padding:20,color:'var(--text3)',textAlign:'center'}},'Load real data to run the coverage audit')),
+        tab==='incidents'&&(incidents.length===0
+          ?div({style:{padding:20,color:'var(--text3)',textAlign:'center'}},'No open data-completeness incidents — either none detected, or scripts/check-data-completeness.mjs hasn\'t run yet.')
+          :div({style:{overflowX:'auto'}},
+            div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:8}},'Scheduled expected-vs-actual gaps per store/stream (#265) — excludes legitimate closures/reduced-hours windows. Sorted oldest-detected first.'),
+            tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+              thead(null,tr(null,...['Store','Stream','Gap','Cause','Status','Days Open'].map(l=>
+                th({key:l,style:{padding:'4px 8px',background:'var(--surf3)',fontSize:'8px',textTransform:'uppercase',
+                  color:'var(--text2)',textAlign:'left',borderBottom:'.5px solid var(--bdr)'}},l)))),
+              tbody(null,incidents.map(inc=>{
+                const daysOpen=Math.max(0,Math.floor((Date.now()-new Date(inc.detectedAt).getTime())/86400000));
+                return tr({key:inc.id,style:{borderBottom:'.5px solid var(--bdr)'}},
+                  td({style:{padding:'4px 8px',fontWeight:500}},sNameC(inc.loc)),
+                  td({style:{padding:'4px 8px',fontFamily:'var(--mono)'}},inc.stream),
+                  td({style:{padding:'4px 8px'}},inc.dateStart===inc.dateEnd?inc.dateStart:`${inc.dateStart} → ${inc.dateEnd}`),
+                  td({style:{padding:'4px 8px'}},inc.cause.replace(/_/g,' ')),
+                  td({style:{padding:'4px 8px'}},span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',
+                    borderRadius:2,background:inc.classification==='outage'?'rgba(239,68,68,.1)':'rgba(245,158,11,.1)',
+                    color:inc.classification==='outage'?'#ef4444':'#f59e0b'}},inc.classification)),
+                  td({style:{padding:'4px 8px',fontFamily:'var(--mono)',color:daysOpen>=7?'#ef4444':'var(--text2)'}},daysOpen));
+              }))
+            )
+          )),
         tab==='overview'&&div(null,
           // Coverage table
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',marginBottom:14}},

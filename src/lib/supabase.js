@@ -4849,6 +4849,28 @@ export async function loadEomCountStatusHistory({ loc, period } = {}) {
   } catch { return []; }   // table may not exist yet → fail-soft
 }
 
+// ── Data completeness ledger (#265) — scheduled expected-vs-actual gaps per (store, stream,
+// date range), see supabase/schema-data-completeness.sql. Open, non-legitimate incidents only
+// (the dashboard question is "what's open and stale," matching the table's own partial index).
+// `notes` deliberately excluded from the select — it's RESTRICTED per the SAGE knowledge-
+// grounding handling-notice convention (memory/project-sage-knowledge-grounding.md) and needs
+// that same handling-notice treatment ported to a UI surface before it's safe to display; that
+// is a separate, not-yet-built piece (see the schema's own header comment), not done here.
+export async function loadDataCompletenessIncidents() {
+  if (!supabase) return [];
+  try {
+    const data = await fetchAll((from, to) => supabase.from('data_completeness_incidents')
+      .select('id,loc,stream,date_start,date_end,classification,cause,recovery_status,detected_at')
+      .eq('recovery_status', 'open').neq('classification', 'legitimate')
+      .order('detected_at').range(from, to));
+    return (data || []).map(r => ({
+      id: r.id, loc: String(parseInt(r.loc, 10)), stream: r.stream,
+      dateStart: r.date_start, dateEnd: r.date_end, classification: r.classification,
+      cause: r.cause, recoveryStatus: r.recovery_status, detectedAt: r.detected_at,
+    }));
+  } catch { return []; }   // table may not exist yet → fail-soft
+}
+
 export async function fetchSharedEom(token) { return callShareFn({ token }); }
 export async function refreshSharedEom(token) { return callShareFn({ token, action: 'refresh' }); }
 export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }

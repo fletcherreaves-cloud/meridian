@@ -959,12 +959,17 @@
   question, now settled. Not touching the scripts: the SSO attempt is a harmless ~1-2s first try
   that costs nothing if McDonald's/QSRSoft ever re-enables that path server-side; removing it isn't
   needed to close this item.
-- [ ] #263/#265 pull-completeness ledger system — ⚠️ **"schema never run in production" is now
-  stale (measured 2026-09-07): `data_completeness_incidents` exists and holds a real row** (a
-  genuine detected→backfilled incident, `qsr_service_stats`/loc 0035242, 2026-09-03/04 — service-
-  role read, `content-range: 0-0/1`). The rest of the item still holds — no `TOLERANCE`/tolerance
-  config or restricted-handling UI/SAGE gating exists anywhere in `src/`: only 2 of 7 pull
-  streams have tolerance rules, and the `notes` column has no UI/SAGE consumer yet.
+- [x] 🟡 **PARTIALLY RESOLVED 2026-09-21 (v5.475) — a UI consumer now exists; the tolerance-rule
+  gap for 5/7 streams and the restricted `notes` column stay open.** `data_completeness_incidents`
+  exists and holds real rows (measured 2026-09-07, and confirmed again `src/`-wide zero-reference
+  before this pass), but had NO UI/SAGE consumer anywhere. Data Manager's new "Incidents" tab
+  (`src/views/analytics.js`, new `loadDataCompletenessIncidents()` in `src/lib/supabase.js`) is
+  that first consumer — every OPEN, non-legitimate incident (store/stream/gap/cause/
+  classification/days-open), sorted oldest first. **Still open:** the `notes` column (RESTRICTED
+  per the SAGE knowledge-grounding handling-notice convention — needs that pattern ported to a UI
+  surface before it's safe to display, deliberately excluded here) and the tolerance-config gap
+  (only 2 of 7 pull streams have tolerance rules — needs a known incident per stream to design
+  against, real judgment, not a quick fix).
 - [x] ✅ **FIXED 2026-09-07 — app code shipped; ⚠️ needs a one-statement SQL run to fully work,
   see below.** `uploadReportFile()` (`src/lib/supabase.js`) now actually uploads to the `'reports'`
   Storage bucket (created for exactly this, per `schema.sql`'s own comment, but never used) instead
