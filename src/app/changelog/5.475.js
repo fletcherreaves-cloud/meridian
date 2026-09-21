@@ -1,18 +1,23 @@
 // @ts-nocheck
 export default {version:'5.475', date:'2026-09-21', changes:[
-  'Data Manager: new "Incidents" tab surfaces the data-completeness ledger (#265, ' +
-  'data_completeness_incidents) -- scheduled expected-vs-actual gaps per store/stream, ' +
-  'independent of whether the pull that should have written the data ever reported failure. The ' +
-  'table has been populated by scripts/check-data-completeness.mjs since #265 shipped but had ' +
-  'zero UI or SAGE consumer anywhere in the app (grep-confirmed) -- this is that first consumer.',
-  'Shows every OPEN, non-legitimate incident (store, stream, gap date range, cause, ' +
-  'classification, days open) sorted oldest-detected first, matching the table\'s own "what\'s ' +
-  'open and stale" partial index. The notes column (the table\'s own schema marks it RESTRICTED, ' +
-  'per the SAGE knowledge-grounding handling-notice convention) is deliberately excluded from ' +
-  'both the new loadDataCompletenessIncidents() query and this display -- surfacing it needs ' +
-  'that handling-notice pattern ported to a UI surface first, a separate, not-yet-built piece.',
-  '4 new tests against the real exported DataManagerPanel (tab count badge, populated rows ' +
-  'including single-day vs date-range gap formatting, notes column never rendered, empty state) ' +
-  '-- all 4 confirmed to fail against the pre-fix code (temporarily reverted and re-ran). Full ' +
-  'suite 538/538 files, 5075/5075 tests. Build clean, eager payload 551.74 KB gzip (budget 850 KB).',
+  'EOM Item Journey: added a per-item "🧠 Ask SAGE" curated prompt -- backlog §6\'s "CoachQ ' +
+  'curated prompts" ask, at the natural drill-down level the ask was really about. The real ' +
+  'CoachQ-API integration is a separate, much bigger, Cognito-auth-blocked item and was NOT ' +
+  'touched here -- this reuses the existing, proven window.__MF_SAGE_SEED__ + \'mf:open-sage\' ' +
+  'pattern (askSageWaste\'s whole-store waste picture, the FOB-report modal) one level deeper: a ' +
+  'single flagged item\'s own verdict, variance reconciliation, and already-computed facts/' +
+  'inferences, which ItemJourneyView had no SAGE entry point for at all.',
+  'ItemJourneyView (exported, src/views/eom-dashboard.js) gained an optional onAskSage prop, ' +
+  'rendered as a button in the verdict banner only when supplied -- existing callers (the case-' +
+  'pack-suffix tests) are unaffected. EOMDashboardPanel wires a new askSageItemJourney callback ' +
+  '(same file) into it, seeded from the real journey data already on screen -- no new fetch.',
+  '4 new tests: 2 mount the real exported ItemJourneyView and drive the actual button click (no ' +
+  'button renders without the prop; clicking it calls back with the real journey object) -- 3 of ' +
+  '4 assertions confirmed to fail against the pre-fix code (temporarily reverted and re-ran). The ' +
+  'other 2 read eom-dashboard.js\'s real source to confirm EOMDashboardPanel wires a REAL closure ' +
+  '(not a no-op) into the prop -- the full click-through fixture (Diagnose -> Item Journeys -> ' +
+  'pick an item) needs a much deeper raw-item-detail mock than this feature\'s own risk warrants, ' +
+  'same tradeoff sage-paginate.test.js already makes for an index.ts call site it can\'t click-' +
+  'test either. Full suite 538/538 files, 5075/5075 tests. Build clean, eager payload 551.62 KB ' +
+  'gzip (budget 850 KB).',
 ]};

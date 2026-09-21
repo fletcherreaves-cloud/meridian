@@ -26,9 +26,27 @@ const INCIDENTS = [
   { id: 'i2', loc: '5183', stream: 'qsr_daily_activity', dateStart: '2026-09-01', dateEnd: '2026-09-01', classification: 'unclassified', cause: 'unknown', recoveryStatus: 'open', detectedAt: new Date(Date.now() - 2 * 86400000).toISOString() },
 ];
 
+// DataManagerPanel's incidents effect (and its neighboring auto-synced-tile effect) both gate on
+// `if(!supabase) return` -- so the real (unmocked-via-importOriginal) `supabase` binding decides
+// whether loadDataCompletenessIncidents ever gets called at all. That real binding is env-
+// dependent (VITE_SUPABASE_URL/ANON_KEY set or not), which is exactly why this test passed in a
+// sandbox that happens to have those vars set and failed in CI, which doesn't: the guard skipped
+// the loader entirely and `incidents` stayed `[]`. Overriding `supabase` here to an always-truthy
+// fake chain (same shape as dispatch-225-location-month-picker.test.js's fakeSupabaseChain)
+// makes the effect deterministic in every environment.
+function fakeSupabaseChain() {
+  const chain = {
+    select: () => chain, order: () => chain, eq: () => chain, gte: () => chain, limit: () => chain,
+    single: async () => ({ data: null, error: null }),
+    then: (resolve) => resolve({ data: null, count: 0, error: null }),
+  };
+  return chain;
+}
+const fakeSupabase = { from: () => fakeSupabaseChain() };
+
 vi.mock('../lib/supabase.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, loadDataCompletenessIncidents: vi.fn(async () => INCIDENTS) };
+  return { ...actual, supabase: fakeSupabase, loadDataCompletenessIncidents: vi.fn(async () => INCIDENTS) };
 });
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
