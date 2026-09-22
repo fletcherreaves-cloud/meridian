@@ -315,7 +315,7 @@ import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
 import { parseRoute, pushRoute, onRouteChange } from './routing.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
-import { newsContextFor } from '../engine/swing-context.js';
+import { newsContextFor, metricContextFor } from '../engine/swing-context.js';
 // LocationIntelligence — dispatch #206: was a static top-level import; lazy-wrapped as part of
 // the route:true conversion (same "lazy-wrap + route conversion together" bundling dispatch #192
 // did for promo-roi/morning-brief). Its embedded:true call site (store-analytics.js's inline
@@ -2531,6 +2531,11 @@ function App() {
   }, [hasCrit]);
   const swingContextFor = React.useCallback((item) =>
     newsContextFor(swingNews, { loc: item.loc, from: item.swing?.from, to: item.swing?.to }), [swingNews]);
+  // The store's own other operational metrics (labor%, OEPE) during the swing window —
+  // separate from the news-based context above, no loading gate needed since metricAvg reads
+  // ds directly (already loaded), not a fetch.
+  const swingMetricContextFor = React.useCallback((item) =>
+    metricContextFor(ds, { loc: item.loc, from: item.swing?.from, to: item.swing?.to }), [ds]);
 
   const ackSwing = React.useCallback((item) => {
     // Who acknowledged matters — this is an audit trail, not just a dismissal. There is
@@ -3382,6 +3387,7 @@ function App() {
     div({style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
 
       h(SwingAlarm, { items: swingItems, acks: swingAcks, onAck: ackSwing, contextFor: swingContextFor,
+        metricContextFor: swingMetricContextFor,
         onOpenStore: (loc) => { const st=(stores||[]).find(x=>String(x.loc)===String(loc)); if(st) goStore(st); },
         onOpenPanel: () => goRoute('signals') }),
 

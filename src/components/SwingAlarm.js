@@ -21,6 +21,12 @@ import { KIND_LABEL } from '../engine/swing-detect.js';
 import { ackKey } from '../engine/swing-feed.js';
 import { contextSummary } from '../engine/swing-context.js';
 
+const metricRow = (m) => span({ key: m.key, style: { fontSize: 11.5, color: 'var(--text2,#9aa4b2)', padding: '3px 0', lineHeight: 1.45, display: 'block' } },
+  span({ style: { color: 'var(--text,#e8eaed)', fontWeight: 600 } }, m.label + ': '),
+  m.beforeFmt, ' → ',
+  span({ style: { color: m.worse ? '#ef4444' : 'var(--text,#e8eaed)', fontWeight: 700 } }, m.duringFmt),
+  span({ style: { color: 'var(--text3,#6b7280)', marginLeft: 6, fontSize: 10 } }, '(prior window → during)'));
+
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -30,7 +36,7 @@ const money = (n) => Math.round(Math.abs(n || 0)).toLocaleString('en-US', {
 const pct = (n) => `${n >= 0 ? '+' : ''}${(n || 0).toFixed(1)}%`;
 
 /** The blocking modal for a single critical swing. */
-function CriticalSwing({ item, onAck, onOpenStore, context = [] }) {
+function CriticalSwing({ item, onAck, onOpenStore, context = [], metricContext = [] }) {
   const s = item.swing || {};
   const down = s.direction === 'down';
   const col = down ? '#ef4444' : '#10b981';
@@ -85,7 +91,15 @@ function CriticalSwing({ item, onAck, onOpenStore, context = [] }) {
             n.url
               ? h('a', { href: n.url, target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--text,#e8eaed)', textDecoration: 'none' } }, n.title)
               : span({ style: { color: 'var(--text,#e8eaed)' } }, n.title),
-            span({ style: { color: 'var(--text3,#6b7280)', marginLeft: 6, fontSize: 10 } }, '· ' + n.whenRelative)))) : null),
+            span({ style: { color: 'var(--text3,#6b7280)', marginLeft: 6, fontSize: 10 } }, '· ' + n.whenRelative)))) : null,
+
+        // The store's own other operational metrics during the window, same "worth checking"
+        // framing as the news section above — a metric moving alongside the sales swing is a
+        // candidate to look at, not an explanation.
+        metricContext.length ? div({ style: { marginTop: 10 } },
+          div({ style: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3,#6b7280)', marginBottom: 5 } },
+            'Worth checking — this store\'s own metrics'),
+          ...metricContext.map(metricRow)) : null),
 
       div({ style: { padding: '12px 20px', borderTop: '.5px solid var(--bdr,#2a2f3a)',
                      display: 'flex', gap: 8, alignItems: 'center' } },
@@ -108,7 +122,7 @@ function CriticalSwing({ item, onAck, onOpenStore, context = [] }) {
  *
  * props: { items, acks, onAck(item), onOpenStore(loc), onOpenPanel() }
  */
-export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPanel, contextFor = null }) {
+export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPanel, contextFor = null, metricContextFor = null }) {
   const pending = (items || []).filter(i => !acks || !acks[ackKey(i)]);
   const crits = pending.filter(i => i.requiresAck);
   const rest = pending.filter(i => !i.requiresAck);
@@ -116,7 +130,9 @@ export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPa
   // One at a time — acknowledging should be a decision per store, not a bulk dismissal.
   if (crits.length) {
     return h(React.Fragment, null,
-      h(CriticalSwing, { item: crits[0], onAck, onOpenStore, context: contextFor ? contextFor(crits[0]) : [] }),
+      h(CriticalSwing, { item: crits[0], onAck, onOpenStore,
+        context: contextFor ? contextFor(crits[0]) : [],
+        metricContext: metricContextFor ? metricContextFor(crits[0]) : [] }),
       crits.length > 1
         ? div({ style: { position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
                          zIndex: 9001, fontSize: 11, color: '#fca5a5', fontFamily: 'var(--mono)' } },
