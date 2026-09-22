@@ -725,6 +725,17 @@
   the owner's named failure mode (a GM/supervisor seeing a restricted finding about their own
   store); the remaining gap is only an admin-tier person implicated in a finding about
   themselves. Full detail: `memory/dispatch-80.md`'s "Mandatory handling notice" section.
+  🟡 **Live bug fixed 2026-09-22: `qualifiesForRestricted()`'s "admin-only" gate above was itself
+  stale.** It was written when `profiles.role`'s DB constraint held only 3 values
+  (`admin`/`supervisor`/`manager`); CLAUDE.md's RBAC section was corrected 2026-09-16 to the real
+  9-value constraint, where `owner` is a distinct top-tier id at the SAME level as `admin` — every
+  other admin-tier check in the codebase (`permissions.js`, `forms-panel.js`, `sage.js`,
+  `security-panel.js`, `task-queue.js`) already treats `admin`/`owner` as equivalent, but
+  `memory-kb.js` was the one holdout still gating on `role === 'admin'` alone. That silently
+  denied the real owner account (whose `profiles.role` is `'owner'`, not `'admin'`) the restricted
+  SAGE memory results it should see. Fixed: `qualifiesForRestricted` now checks `admin` OR
+  `owner`. 3 tests updated/added in `src/__tests__/sage-memory-kb.test.js`, confirmed to fail
+  against the pre-fix code.
 
 *(Archive: §9, §14)*
 
