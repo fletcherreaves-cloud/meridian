@@ -556,6 +556,18 @@
   **LifeLenz remains open** — its relevant views (`lfz-gap`/`lifelenz-bridge`) are hub-tabs in
   `panel-registry.js`, not standalone routes, so it needs the hub+tab-select wiring pattern
   instead of a simple `initialScope` prop — more plumbing than SMG, not attempted this pass.
+  ❓ **Re-scoped 2026-09-22 (backlog firing #4) — the real blocker is bigger than "more
+  plumbing," it's a genuine design decision, so this stays parked rather than force-built.**
+  Read `LifeLenzBridgePanel` (`src/features/lifelenz.js`) directly: unlike the other four
+  REPORTS entries (which all share one `scopeToSelectorValue`/All·OK·FL·patch·store model), this
+  panel has NO unified scope at all — a single-store `selLoc` for its Scan sub-tab, a SEPARATE
+  single-store `accLoc` for its Accuracy sub-tab, and a top-level `mode:'single'|'district'`
+  toggle whose "district" meaning isn't a patch/state scope either. A saved subscription needs an
+  owner call on what "scope" even means here (does the subscription pick a store for both
+  sub-tabs at once? does "district" mode take a saved scope, or only ever mean literal "all
+  stores"?) before any wiring makes sense — guessing risks a saved report that silently launches
+  the wrong sub-tab's location. `lfz-gap` is also still `kind:'test-kitchen'` (unpromoted),
+  which is a second, independent reason not to wire a "My Reports" launch target at it yet.
 - [ ] ❓ Inventory troubleshooting/variance-window engine with crew narrowing — explicitly never a
   verdict, confidence-scored only; parked, sensitive.
 - [ ] ❓ Original Food Cost panel — auto-source or merge into the newer area; decision needed first.
