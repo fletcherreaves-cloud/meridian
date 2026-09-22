@@ -35,8 +35,13 @@ const UNCLASSIFIED_ROW = {
 };
 
 describe('sage-chat memory-kb gating (dispatch #80)', () => {
-  it('qualifiesForRestricted is admin-only, per the real profiles.role constraint', () => {
+  // 'owner' is a real, distinct profiles.role DB value (supabase/schema.sql's CHECK constraint),
+  // same top tier as 'admin' -- not a synonym, not a legacy alias. CLAUDE.md's RBAC table was
+  // corrected 2026-09-16 to say so; this gate was the one place in the codebase that still
+  // hadn't caught up (every other admin-tier check already treats admin/owner as equivalent).
+  it('qualifiesForRestricted is admin/owner (the real top RBAC tier), per profiles.role\'s actual DB constraint', () => {
     expect(qualifiesForRestricted('admin')).toBe(true);
+    expect(qualifiesForRestricted('owner')).toBe(true);
     expect(qualifiesForRestricted('supervisor')).toBe(false);
     expect(qualifiesForRestricted('manager')).toBe(false);
     expect(qualifiesForRestricted(undefined)).toBe(false);
@@ -56,6 +61,12 @@ describe('sage-chat memory-kb gating (dispatch #80)', () => {
     // the gate itself, not because it never matched the query in the first place.
     const adminResult = buildMemorySearchResult(rows, 'admin', 'padding', 5);
     expect(adminResult.results.some(r => r.filename === RESTRICTED_ROW.filename)).toBe(true);
+
+    // Owner qualifies too -- the real owner account's actual profiles.role value, distinct from
+    // 'admin' but the same tier. This is the exact bug: before the fix, an owner-role caller was
+    // silently denied restricted results despite being the top-tier account.
+    const ownerResult = buildMemorySearchResult(rows, 'owner', 'padding', 5);
+    expect(ownerResult.results.some(r => r.filename === RESTRICTED_ROW.filename)).toBe(true);
   });
 
   it('does not return an unclassified document to anyone, including admin', () => {
@@ -73,6 +84,7 @@ describe('sage-chat memory-kb gating (dispatch #80)', () => {
     expect(rowVisible('open', 'manager')).toBe(true);
     expect(rowVisible('restricted', 'manager')).toBe(false);
     expect(rowVisible('restricted', 'admin')).toBe(true);
+    expect(rowVisible('restricted', 'owner')).toBe(true);
   });
 
   it('still surfaces the open document to a restricted caller alongside a withheld restricted one', () => {
