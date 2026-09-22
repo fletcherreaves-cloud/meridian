@@ -5,15 +5,19 @@
 // See memory/dispatch-80.md.
 
 // "DO and above" per the SAGE-memory design (memory/project-sage-knowledge-grounding.md) means
-// admin/supervisor/manager and up in the aspirational 8-tier RBAC table in CLAUDE.md -- but
-// profiles.role's real DB constraint (supabase/schema.sql: check (role in ('admin','supervisor',
-// 'manager'))) only ever holds those 3 values. 'admin' is the one real value that can stand in
-// for "DO and above" while still honoring the design doc's explicit "Supervisor, GM and Office
-// Staff do not receive them" instruction. This is a considered interpretation given the real
-// constraint, not a guess -- see memory/dispatch-80.md's Resolution section, and revisit if a
-// future ruling adds an explicit DB-level tier above 'admin'.
+// admin/supervisor/manager and up in the aspirational 8-tier RBAC table in CLAUDE.md. That table
+// was itself corrected 2026-09-16 (CLAUDE.md's RBAC section) -- the real profiles.role DB CHECK
+// constraint (supabase/schema.sql) is 9 ids, and 'owner' is a distinct top-tier id at the SAME
+// level as 'admin' (level 1, "Owner / Developer" -- not a separate "Developer" role, and not a
+// subset of 'admin'). Every other admin-tier gate in this codebase already treats admin/owner as
+// equivalent (src/engine/permissions.js, forms-panel.js, sage.js, security-panel.js,
+// task-queue.js) -- this was the one remaining outlier still gating on 'admin' alone, silently
+// denying the real owner account (whose profiles.role is 'owner', not 'admin') the restricted
+// SAGE memory results it should see. See memory/dispatch-80.md's original Resolution section for
+// the "DO and above" interpretation itself, which is unchanged -- only the DB-value mapping was
+// stale.
 export function qualifiesForRestricted(role) {
-  return role === 'admin';
+  return role === 'admin' || role === 'owner';
 }
 
 // Gates by the DOCUMENT's classification, not only the caller's role (dispatch #80's explicit
