@@ -762,6 +762,14 @@
   is a separate, unconnected system wired to forecast-miss flows (`store-dash.js`/`calendar.js`)
   — `SwingAlarm.js`/`swing-context.js` never import or call it. Both enrichment asks are real,
   scoped, unbuilt work — not yet sized or picked up.
+  🟡 **Cross-metric half SHIPPED 2026-09-22.** `metricContextFor()` (`swing-context.js`) surfaces
+  the store's own labor% and OEPE (DT speed) readings during the swing window vs. the
+  equal-length window immediately before it, auto-sourced via `metric-source.js`'s `metricAvg`
+  (same freshest-wins resolution every other panel uses) — never a bespoke raw-stream read.
+  Wired into `SwingAlarm.js`'s critical-swing modal as a new "Worth checking — this store's own
+  metrics" section, same non-causal framing as the existing news-context section. **Still
+  genuinely open:** the AI-scour-for-causes half (wiring `why.js`'s `lookupMissEvent` in, or an
+  equivalent) — bigger, more judgment-laden, deliberately left out of this pass.
 
 *(Archive: §10)*
 

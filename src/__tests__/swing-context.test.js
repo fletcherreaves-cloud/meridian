@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newsContextFor, contextSummary, SIGNAL_WEIGHT, LEAD_DAYS } from '../engine/swing-context.js';
+import { newsContextFor, contextSummary, SIGNAL_WEIGHT, LEAD_DAYS, metricContextFor } from '../engine/swing-context.js';
 
 // Real Atoka (10422) headlines from news_mentions, and the real swing window.
 const ATOKA = [
@@ -76,6 +76,62 @@ describe('newsContextFor', () => {
     expect(SIGNAL_WEIGHT.roads).toBeGreaterThan(SIGNAL_WEIGHT.weather);
     expect(SIGNAL_WEIGHT.weather).toBeGreaterThan(SIGNAL_WEIGHT.community);
     expect(LEAD_DAYS).toBe(45);
+  });
+});
+
+// Notes 33 #9 -- the store's own other operational metrics alongside a swing, separate from
+// the news-based context above. Fixture rows follow metric-source.test.js's own real
+// conventions: glimpseRows { loc, date, laborPct (fraction, not percent), oepe (seconds) }.
+const d = (s) => new Date(s + 'T00:00:00');
+const WIN = { loc: '10422', from: '2026-08-01', to: '2026-08-03' };  // 3-day window
+
+describe('metricContextFor', () => {
+  it('compares the swing window to the equal-length window immediately before it', () => {
+    const ds = {
+      glimpseRows: [
+        // "before" window: 2026-07-29..2026-07-31 (3 days, same length as the swing window)
+        { loc: '10422', date: d('2026-07-29'), laborPct: 0.20, oepe: 150 },
+        { loc: '10422', date: d('2026-07-30'), laborPct: 0.20, oepe: 150 },
+        { loc: '10422', date: d('2026-07-31'), laborPct: 0.20, oepe: 150 },
+        // "during" window
+        { loc: '10422', date: d('2026-08-01'), laborPct: 0.30, oepe: 200 },
+        { loc: '10422', date: d('2026-08-02'), laborPct: 0.30, oepe: 200 },
+        { loc: '10422', date: d('2026-08-03'), laborPct: 0.30, oepe: 200 },
+      ],
+    };
+    const r = metricContextFor(ds, WIN);
+    const labor = r.find(m => m.key === 'laborPct');
+    const oepe = r.find(m => m.key === 'oepe');
+    expect(labor.beforeFmt).toBe('20.0%');
+    expect(labor.duringFmt).toBe('30.0%');
+    expect(labor.worse).toBe(true);        // labor% direction:'lower' -- rising is worse
+    expect(oepe.beforeFmt).toBe('150s');
+    expect(oepe.duringFmt).toBe('200s');
+    expect(oepe.worse).toBe(true);         // oepe direction:'lower' -- slower service is worse
+  });
+
+  it('marks an improving metric as not worse', () => {
+    // 1-day swing window -> the "before" comparison window is also exactly 1 day
+    // (2026-07-31, the day immediately preceding it).
+    const ds = {
+      glimpseRows: [
+        { loc: '10422', date: d('2026-07-31'), laborPct: 0.30 },
+        { loc: '10422', date: d('2026-08-01'), laborPct: 0.20 },
+      ],
+    };
+    const r = metricContextFor(ds, { loc: '10422', from: '2026-08-01', to: '2026-08-01' });
+    expect(r.find(m => m.key === 'laborPct').worse).toBe(false);
+  });
+
+  it('skips a metric with no reading on either side of the window, rather than a misleading blank', () => {
+    expect(metricContextFor({ glimpseRows: [] }, WIN)).toEqual([]);
+    expect(metricContextFor({}, WIN)).toEqual([]);
+  });
+
+  it('is safe on junk input', () => {
+    expect(metricContextFor(null, WIN)).toEqual([]);
+    expect(metricContextFor({ glimpseRows: [] }, {})).toEqual([]);
+    expect(metricContextFor({ glimpseRows: [] }, { loc: '10422' })).toEqual([]);
   });
 });
 
