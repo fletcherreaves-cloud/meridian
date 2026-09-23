@@ -298,7 +298,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1983,9 +1983,18 @@ function App() {
         }
       }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);} };
       // Load cross-device user settings (locked projections, AE calibration params)
+      // Batched (backlog firing #5, 2026-09-23): the 5 loadUserSetting() calls below
+      // (locked_projections/ae_params/model_assignments/dialed_in/recurring_rules) all run
+      // concurrently in the SAME T2 Promise.all tier and want the SAME signed-in user, but
+      // loadUserSetting pays its own auth.getUser() round trip + its own single-row select
+      // per call — 5 of each. loadUserSettings() does one auth.getUser() + one `.in('key',…)`
+      // select for all 5, kicked off here so it's already in flight before any _stXxx below
+      // awaits it.
+      const _settingsBatch = loadUserSettings(
+        ['locked_projections','ae_params','model_assignments','dialed_in','recurring_rules']);
       const _stLockedProjections = async () => {
       try{
-        const remoteProj=await loadUserSetting('locked_projections');
+        const remoteProj=(await _settingsBatch)['locked_projections'];
         if(remoteProj&&typeof remoteProj==='object'&&Object.keys(remoteProj).length>0){
           setLockedProjections(remoteProj);
           try{localStorage.setItem('mf_locked_projections',JSON.stringify(remoteProj));}catch{}
@@ -1994,7 +2003,7 @@ function App() {
       }catch(e){console.warn('[Meridian] locked projections load failed:',e);} };
       const _stAeParams = async () => {
       try{
-        const remoteAE=await loadUserSetting('ae_params');
+        const remoteAE=(await _settingsBatch)['ae_params'];
         if(remoteAE?.params&&typeof remoteAE.params==='object'){
           try{localStorage.setItem('mf_ae_params',JSON.stringify(remoteAE));}catch{}
           console.log('[Meridian] ✓ Loaded AE calibration params from Supabase');
@@ -2007,7 +2016,7 @@ function App() {
         // user across devices. Cloud is source of truth; local writes push back
         // (see labor-tools ModelAssignmentPanel). Then invalidate so
         // getModelAssignment re-reads the fresh blob.
-        const remoteMA=await loadUserSetting('model_assignments');
+        const remoteMA=(await _settingsBatch)['model_assignments'];
         if(remoteMA&&typeof remoteMA==='object'&&Object.keys(remoteMA).length>0){
           try{localStorage.setItem(MODEL_ASSIGNMENT_KEY,JSON.stringify(remoteMA));}catch{}
           _masgnInvalidate();
@@ -2027,7 +2036,7 @@ function App() {
         // already folded into `merged.dialedIn` — replaces it wholesale (not merged
         // key-by-key) since a winning cloud blob is a complete snapshot, not a patch.
         const {savedAt:localSavedAt}=_normalizeDialedIn(_readBlobLocal('mf_dialed_in'));
-        const remote=await loadUserSetting('dialed_in');
+        const remote=(await _settingsBatch)['dialed_in'];
         const {data:remoteData,savedAt:remoteSavedAt}=_normalizeDialedIn(remote);
         if(remote&&(remoteSavedAt||0)>(localSavedAt||0)&&Object.keys(remoteData).length>0){
           try{localStorage.setItem('mf_dialed_in',JSON.stringify({data:remoteData,savedAt:remoteSavedAt}));}catch{}
@@ -2080,7 +2089,7 @@ function App() {
         // saveRecurringRules itself (src/features/calendar.js), so there's nothing to
         // invalidate here beyond the localStorage cache CalendarManagerPanel's loadRecurringRules
         // reads synchronously on mount.
-        const remoteRules=await loadUserSetting('recurring_rules');
+        const remoteRules=(await _settingsBatch)['recurring_rules'];
         if(Array.isArray(remoteRules)&&remoteRules.length>0){
           try{localStorage.setItem('mf_recurring_rules',JSON.stringify(remoteRules));}catch{}
           console.log(`[Meridian] ✓ Loaded ${remoteRules.length} recurring rule(s) from Supabase`);
