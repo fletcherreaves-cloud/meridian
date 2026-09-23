@@ -3,7 +3,7 @@ import * as React from 'react';
 import {
   DEFAULT_REVIEW_CONFIG, getReviewConfig, saveReviewConfig, resetReviewConfig,
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
-  rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
+  rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown, yearlyTrendFor,
   transitionReview, REVIEW_STATUSES, reviewSummaryStatus,
   getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
   RATING_LABELS, MONTH_NAMES, qLabel, qMonths,
@@ -2758,6 +2758,16 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
     (!searchNorm || (r.name||'').toLowerCase().includes(searchNorm))
   ).sort((a,b)=>b.updatedAt?.localeCompare(a.updatedAt)||0);
 
+  // YoY trend strip (Performance Reviews Phase 2 punch list) — surfaces only when the name
+  // search has narrowed the result to ONE person (a review record has no other stable identity
+  // for the person being reviewed to key a trend on), and that person has scored records in 2+
+  // years. Reads from the FULL `reviews` set, not `filtered` — the role/year/status/score-band
+  // filters above are meant to narrow the LIST, not silently truncate whose years the trend
+  // covers for the one person the search already isolated.
+  const trendName = searchNorm && filtered.length && new Set(filtered.map(r=>r.name)).size===1
+    ? filtered[0].name : null;
+  const trend = trendName ? yearlyTrendFor(reviews, cfg, trendName).filter(t=>t.overall!=null) : [];
+
   return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
     // Toolbar
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'10px 16px',
@@ -2802,6 +2812,19 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
       GhostBtn({onClick:loadDemos,style:{fontSize:11,opacity:.75}},'📚 Demo Reviews'),
       PrimaryBtn({onClick:()=>setShowNew(true)},'+ New Review')
     ),
+    // YoY trend strip — appears once the name search narrows to one person with 2+ scored
+    // years on file. Never a claim of causation, just the year overalls side by side.
+    trend.length>=2 ? div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+      padding:'8px 16px',borderBottom:`1px solid ${BDR}`,background:S2}},
+      span({style:{fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px'}},
+        `${trendName} — year over year`),
+      ...trend.flatMap((t,i)=>[
+        i>0 ? span({key:`arrow-${t.year}`,style:{color:TEXT3,fontSize:12}},'→') : null,
+        div({key:t.year,style:{display:'flex',flexDirection:'column',alignItems:'center',gap:2}},
+          span({style:{fontSize:9,color:TEXT3}},String(t.year)),
+          h(ScorePill,{score:t.overall})),
+      ]).filter(Boolean)
+    ) : null,
     // New review form
     showNew&&h(NewReviewForm,{stores,cfg,shiftManagerRows,onCancel:()=>setShowNew(false),
       onCreate:(r)=>{upsertReview(r);setShowNew(false);onNew();}}),

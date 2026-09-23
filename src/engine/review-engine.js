@@ -988,6 +988,28 @@ export function computeScores(review, cfg) {
   return out;
 }
 
+// Performance Reviews Phase 2 punch list ("YoY trend view" — the one still-genuinely-open item
+// from the 2026-09-10 re-measurement; hourly-manager reviews, the sibling item, stays parked,
+// unscoped). A review record has NO stable identity for the person being reviewed — `review.geid`
+// is the ATTRIBUTING MANAGER's id (Notes 33 A#3, only set for shift-attributable roles), never
+// the reviewed person's own — so `name` (case/whitespace-normalized) is the only signal a trend
+// can match on across years. Returns [{year, overall}], sorted ascending; when the same name has
+// more than one record in a single year (shouldn't happen, but not assumed impossible), the
+// most-recently-updated one wins, matching ReviewList's own list sort.
+export function yearlyTrendFor(reviews, cfg, name) {
+  const want = String(name || '').trim().toLowerCase();
+  if (!want) return [];
+  const byYear = {};
+  for (const r of Object.values(reviews || {})) {
+    if (String(r.name || '').trim().toLowerCase() !== want) continue;
+    const existing = byYear[r.year];
+    if (!existing || (r.updatedAt || '') > (existing.updatedAt || '')) byYear[r.year] = r;
+  }
+  return Object.values(byYear)
+    .map(r => ({ year: r.year, overall: computeScores(r, cfg).year?.overall ?? null }))
+    .sort((a, b) => a.year - b.year);
+}
+
 // Dispatch #152 (Performance Review continuity, Phase 4a): returns a full step-by-step breakdown
 // for EVERY period in one call -- q1, q2, q3, q4, h1, h2, year (scope item 4) -- keyed the same
 // way computeScores() keys its own return object, each value the same flat shape this function

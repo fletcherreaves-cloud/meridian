@@ -648,9 +648,17 @@
     (`dispatch-review-list-search-score-filter.test.js`) render the real
     `PerformanceReviewsPanel` → `ReviewList` chain; 5/6 confirmed failing against the pre-fix
     code (the 6th is a no-filter baseline sanity check, expected to pass either way).
-  - **Still genuinely open:** YoY trend view, hourly-manager reviews (distinct from the
-    existing salaried `SM`/"Shift Manager" role — likely a different review structure for
-    hourly staff, not yet scoped). Neither picked up here — no design decision made on either.
+  - ✅ **YoY trend view — SHIPPED 2026-09-23 (backlog firing #5).** A review record has NO
+    stable identity for the person being reviewed — `review.geid` is the ATTRIBUTING MANAGER's
+    id (Notes 33 A#3), only set for shift-attributable roles, never the reviewed person's own —
+    so `name` (case/whitespace-normalized) is the only signal a trend can match on across years.
+    New `yearlyTrendFor(reviews,cfg,name)` (`review-engine.js`) returns each year's `computeScores
+    (r,cfg).year.overall` for a name, sorted ascending. `ReviewList` shows a trend strip (reusing
+    `ScorePill`) once the name search narrows to exactly one person with 2+ scored years — never
+    shown unfiltered (ambiguous which person) or for a single-year person (nothing to trend).
+  - **Still genuinely open:** hourly-manager reviews (distinct from the existing salaried
+    `SM`/"Shift Manager" role — likely a different review structure for hourly staff, not yet
+    scoped). Not picked up here — no design decision made.
 
 *(Archive: §7)*
 
