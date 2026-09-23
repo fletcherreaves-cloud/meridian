@@ -3415,6 +3415,26 @@ export async function loadUserSetting(key) {
   return data?.value ?? null;
 }
 
+// Batched sibling of loadUserSetting, for a caller that needs several keys at once (App.js's
+// startup T2 tier calls loadUserSetting 5x in the same instant — locked_projections/ae_params/
+// model_assignments/dialed_in/recurring_rules — each paying its OWN auth.getUser() round trip
+// plus its own single-row select, even though they all run concurrently and want the same
+// user). One auth.getUser() + one `.in('key', keys)` select replaces 5 of each. Returns
+// { [key]: value }; a key with no saved row is simply absent from the result (mirrors
+// loadUserSetting's null-for-unsaved contract, just as "missing from the map" instead of
+// "null value" — a caller does `result[key] ?? fallback` either way).
+export async function loadUserSettings(keys) {
+  if (!supabase || !keys || !keys.length) return {};
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return {};
+  const { data, error } = await supabase.from('user_settings')
+    .select('key,value').eq('user_id', user.id).in('key', keys);
+  if (error) return {};
+  const out = {};
+  for (const row of (data || [])) out[row.key] = row.value;
+  return out;
+}
+
 // ── EOM digest schedule config (dispatch #217) ────────────────────────────────
 // App-WIDE (not per-user) setting — which roll-up levels the daily scheduled EOM digest
 // emails, and at what UTC hour — so it lives in org_config, not user_settings, matching how

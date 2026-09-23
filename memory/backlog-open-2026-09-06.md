@@ -1186,9 +1186,17 @@
   `open`/`close` (used independently by `labor-standard.js`'s overnight-standard math, not shown
   in this table) stay untouched. 3 new regression tests against the real `LaborAnalysisPanel`
   call site.
-- [ ] Lazy-fill: dedupe duplicate startup requests (`auth`/`org_config`/`user_settings`); the
-  gap-scoped `(stream,loc,dateRange)` demand queue was never built beyond a simpler whole-table
-  version.
+- [ ] 🟡 **`user_settings` duplicate-request half PARTIALLY RESOLVED 2026-09-23 (backlog firing
+  #5).** `loadUserSetting(key)` (`src/lib/supabase.js`) paid its own `auth.getUser()` round trip
+  + its own single-row select PER CALL, and `App.js`'s startup T2 tier called it 5 times in the
+  same instant (`locked_projections`/`ae_params`/`model_assignments`/`dialed_in`/
+  `recurring_rules`) — all 5 already ran concurrently (same `Promise.all` tier), so this wasn't a
+  serial waterfall, but it was still 5 redundant auth revalidations + 5 separate queries for the
+  same signed-in user. New `loadUserSettings(keys)` batches all 5 into ONE `auth.getUser()` +
+  ONE `.in('key',keys)` select; `App.js` wired through it. **Still genuinely open:** the `auth`/
+  `org_config` duplication this line also named, and the broader gap-scoped
+  `(stream,loc,dateRange)` demand-queue redesign — neither touched here, scope was deliberately
+  the concrete, measured `user_settings` duplication only.
 - ✅ **MEASURED 2026-09-08 — run, and the result is a clean null, not a confirmation.** Replicated
   `engine/labor-gap-split.js`'s exact formula over a trailing 12 complete pay-weeks (27 stores,
   live `qsr_daily_activity_rollup` + `turnover_monthly` service-role reads) and correlated
