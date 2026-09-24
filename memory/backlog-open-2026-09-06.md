@@ -1207,6 +1207,14 @@
   `org_config` duplication this line also named, and the broader gap-scoped
   `(stream,loc,dateRange)` demand-queue redesign — neither touched here, scope was deliberately
   the concrete, measured `user_settings` duplication only.
+  🟡 **`org_config` half also PARTIALLY RESOLVED 2026-09-24 (backlog firing #6).** Same shape,
+  even simpler: `App.js`'s startup fired 4 separate `org_config` reads in the same instant
+  (`app_settings`/`store_registry`/`contact_registry`/`app_user_targets`), each its own
+  `.eq('key',X).maybeSingle()` round trip. `org_config` is app-wide (no `user_id` column, RLS is
+  "authenticated read"), so no `auth.getUser()` call was even needed — new `loadOrgConfigs(keys)`
+  is ONE `.in('key',keys)` select for all 4. **Still genuinely open:** the raw `auth.getUser()`
+  duplication (the standalone profile-role fetch at the bottom of the same startup block calls it
+  again independently) and the gap-scoped `(stream,loc,dateRange)` demand-queue redesign.
 - ✅ **MEASURED 2026-09-08 — run, and the result is a clean null, not a confirmation.** Replicated
   `engine/labor-gap-split.js`'s exact formula over a trailing 12 complete pay-weeks (27 stores,
   live `qsr_daily_activity_rollup` + `turnover_monthly` service-role reads) and correlated

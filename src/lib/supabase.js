@@ -3435,6 +3435,24 @@ export async function loadUserSettings(keys) {
   return out;
 }
 
+// Same batching idea as loadUserSettings above, for org_config (backlog firing #6, 2026-09-24):
+// App.js's startup fires 4 separate org_config reads in the same instant (app_settings/
+// store_registry/contact_registry/app_user_targets), each its own `.eq('key',X).maybeSingle()`
+// round trip. org_config is app-wide, not per-user (no user_id column, RLS is "authenticated
+// read" — see loadEomDigestConfig's own comment below), so this is even simpler than
+// loadUserSettings: no auth.getUser() call at all, just one `.in('key', keys)` select instead
+// of 4. Returns { [key]: data } (the JSON `data` column, matching what every existing call site
+// already reads via `row?.data`) — a key with no saved row is absent from the result.
+export async function loadOrgConfigs(keys) {
+  if (!supabase || !keys || !keys.length) return {};
+  const { data, error } = await supabase.from('org_config')
+    .select('key,data').in('key', keys);
+  if (error) return {};
+  const out = {};
+  for (const row of (data || [])) out[row.key] = row.data;
+  return out;
+}
+
 // ── EOM digest schedule config (dispatch #217) ────────────────────────────────
 // App-WIDE (not per-user) setting — which roll-up levels the daily scheduled EOM digest
 // emails, and at what UTC hour — so it lives in org_config, not user_settings, matching how
