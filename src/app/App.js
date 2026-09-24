@@ -298,7 +298,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1299,10 +1299,15 @@ function App() {
     // Sync org roles (role definitions + permissions) from Supabase
     syncOrgRolesFromSupabase(supabase).then(roles => { if (roles) setOrgRoles(roles); }).catch(()=>{});
     // Sync app settings from Supabase — Supabase wins over localStorage for any key it has
-    supabase.from('org_config').select('data').eq('key','app_settings').maybeSingle()
-      .then(({data})=>{
-        if(!data?.data) return;
-        const remote=data.data;
+    // Batched (backlog firing #6, 2026-09-24): these 4 org_config reads all fire in the same
+    // instant and each used to be its own round trip — loadOrgConfigs() does one `.in('key',…)`
+    // select for all 4 instead. Started here so it's already in flight before any of the 4
+    // .then() chains below reads from it.
+    const _orgConfigBatch = loadOrgConfigs(['app_settings','store_registry','contact_registry','app_user_targets']);
+    _orgConfigBatch.then((cfg)=>{
+        const data=cfg['app_settings'];
+        if(!data) return;
+        const remote=data;
         setSettings(cur=>{
           const merged={...DEF_SETTINGS,...cur,...remote};
           merged.operators={...DEF_SETTINGS.operators,...(cur.operators||{}),...(remote.operators||{})};
@@ -1314,20 +1319,20 @@ function App() {
     // Sync store registry from Supabase (Track-B onboarding plumbing) — a future tenant's
     // STORE_NAMES/DEFAULT_TARGETS override, mutated in place onto the constants.js seed.
     // No row for this owner yet → no-op, identical behavior.
-    supabase.from('org_config').select('data').eq('key','store_registry').maybeSingle()
-      .then(({data})=>{
-        if(!data?.data) return;
-        const remote=data.data;
+    _orgConfigBatch.then((cfg)=>{
+        const data=cfg['store_registry'];
+        if(!data) return;
+        const remote=data;
         if(remote.storeNames) setLiveStoreNames(remote.storeNames);
         if(remote.defaultTargets) setLiveDefaultTargets(remote.defaultTargets);
       }).catch(()=>{});
     // Sync contact registry from Supabase (Track-B onboarding plumbing) — a future tenant's
     // own GM/supervisor/operator names+emails, mutated in place onto the morning-brief.js
     // seed. No row for this owner yet → no-op, identical behavior.
-    supabase.from('org_config').select('data').eq('key','contact_registry').maybeSingle()
-      .then(({data})=>{
-        if(!data?.data) return;
-        const remote=data.data;
+    _orgConfigBatch.then((cfg)=>{
+        const data=cfg['contact_registry'];
+        if(!data) return;
+        const remote=data;
         if(!remote.storeStaff && !remote.contacts) return;
         // Dynamic import, not static — morning-brief.js is a lazyPanel() target now
         // (MorningBriefPanel, dispatch #192), and a module can't be both (see the const
@@ -1338,10 +1343,10 @@ function App() {
         }).catch(()=>{});
       }).catch(()=>{});
     // Sync user targets from Supabase — remote wins over localStorage for any key it has
-    supabase.from('org_config').select('data').eq('key','app_user_targets').maybeSingle()
-      .then(({data})=>{
-        if(!data?.data) return;
-        const remote=data.data;
+    _orgConfigBatch.then((cfg)=>{
+        const data=cfg['app_user_targets'];
+        if(!data) return;
+        const remote=data;
         setUserTargets(cur=>{
           const merged={...cur,...remote};
           try{localStorage.setItem('mf_targets',JSON.stringify(merged));}catch{}
