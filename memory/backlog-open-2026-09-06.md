@@ -55,9 +55,19 @@
   running over up to 90 days × 27 stores × 24 hour_slots) now wrapped in `_mark()`, matching
   the same `click-trace.js` idiom other heavy-compute panels (at-a-glance.js's
   `compute:weekProjections`) already use.
-- [ ] **C2 — idempotent partition replace.** Fully greenfield, no implementation found. (C1, the
-  pipeline-contract module + 2 script adopters + ratchet, already shipped — 18 scripts remain
-  unconverted, tracked by `ratchet-pipeline-contract-coverage.test.js`'s `CEILING`.)
+- [x] ✅ **C2 — idempotent partition replace, SHIPPED 2026-09-24 (backlog firing #6).** New
+  `replacePartition(rows, opts)` (`scripts/_pipeline-contract.mjs`) is a paced delete-then-insert
+  for one partition — `del`/`insertChunk` injected (unit-testable with zero live Supabase
+  credentials, same convention `logPartitionCoverage`/`checkFreshness` already use), wrapped in
+  the existing `withRetry` (`_retry.mjs`) so a transient mid-backfill blip retries instead of
+  aborting. Delete-then-insert (not upsert) so a re-run of the SAME partition actually replaces
+  it — a row a since-fixed source no longer sends disappears, which no existing upsert-only pull
+  can do. Paced (`chunkSize`/`pacingMs`) directly against the brief's own trigger
+  (`plan-normalization-2026-08-17.md`): a ~2.6M-row burst upsert took Supabase into Cloudflare
+  522s and collapsed sibling workflows + the SQL Editor. **The helper itself is the deliverable —
+  wiring it into a real pull script as proof is a separate, not-yet-done follow-on** (same
+  "helper first, adoption opportunistic" pattern C1's own ratchet already established for
+  `logPartitionCoverage`/`checkFreshness`).
 
 *(Archive: §0)*
 
