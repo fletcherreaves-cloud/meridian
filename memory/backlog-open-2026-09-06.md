@@ -115,9 +115,31 @@
   Inventory and Food Cost, Forecasting and Labor Projections, Analysis, HR); URL-view conversion
   for most standalone panels with an explicit modal-exception list (SAGE, Knowledge Base, About,
   Metric Lineage, Feature Requests, Local News) needing a minimize-and-close option that doesn't
-  universally exist today; District Overview needs a back button; Lifelenz Bridge rename to
-  "Recommended WFM Forecast Adjustments"; make all data tables filterable/sortable. **Not scoped
-  against current code yet** — needs a real panel/routing inventory before it becomes a dispatch.
+  universally exist today; make all data tables filterable/sortable. **Not scoped against current
+  code yet** — needs a real panel/routing inventory before it becomes a dispatch. Real inventory
+  already run 2026-09-25: `inventory-food-cost`/`forecasting`/`analysis` sections already exist
+  and match the ask closely; `reports` section exists but is still missing Above-Store One-Pager/
+  My Reports/Store One-Pager (still `section:'analytics'`); no `hr` section exists yet
+  (Performance Reviews still `section:'people'`); `about`/`kb`/`metric-lineage` are ordinary nav
+  items today, not right-side popups; the `feature-requests` popup ask conflicts with its own
+  later retirement (dispatch #194, folded into Task Queue) — needs Fletcher's call on all of these
+  before building.
+  🟢 **Two sub-items RESOLVED 2026-09-25, verified by direct code read (not by re-reading notes-67's
+  age) — do not re-raise:**
+  - **District Overview back button** — `loc-intel` (Market Intelligence, `routePanel==='loc-intel'`)
+    already uses `RoutePanelShell`'s real back button (dispatch #206) AND ships an in-panel
+    Store/District toggle (`location-intel.js`, built 2026-09-14 — after notes-67 was written) that
+    lets you return from the district rollup to store level in one click. Both postdate notes-67;
+    the "no back-navigation" note was accurate when written and is stale now.
+  - **Visit Readiness / Graded Visits misplaced under People** — already `section:'operations'`
+    (dispatch #54 Job B), which predates notes-67. Notes-67 flagging this as still-misplaced was
+    itself already stale when written.
+  🟡 **Lifelenz Bridge rename — genuinely ambiguous, needs Fletcher's call, do NOT auto-rename.**
+  The panel notes-67 saw as "Lifelenz Bridge" was independently converted by dispatch #106
+  (2026-08-24, 5 days after notes-67) to hub-tab `lifelenz-bridge`, currently labeled "MBI vs
+  LifeLenz Accuracy" — neither the old name nor the "Recommended WFM Forecast Adjustments" rename
+  Fletcher asked for. Does the current name already satisfy the intent, or does he still want the
+  literal rename?
 - [ ] Side-by-side LifeLenz-forecast-vs-Meridian-forecast comparison view (`notes-67-queue.md` §3)
   — check against existing Lifelenz Gap / DI Compare items first, may be partially covered.
 
@@ -315,6 +337,28 @@
 - [ ] **Metric Registry/Resolver unification** — merge `signal-registry.js` (~110 metrics) and
   `metric-source.js` (~50), add lineage, aggregation metadata, catalog UI, CI enforcement. Named
   independently in `notes-57`/`notes-60`/`notes-61`.
+  🟢 **The overlap-merging half is essentially DONE — re-measured 2026-09-25, do not re-scope as
+  "~110 vs ~50" or plan a routing follow-on blind.** Dispatch #229 (2026-09-12) plus an
+  unlogged-in-this-doc follow-up closed 2026-09-13 already routed all 32 confirmed field-identical
+  metrics through `metric-source.js`'s real chains (`signal-registry.js`'s `AUTO_FIRST_KEY_MAP`,
+  verified by direct read) — including `condiment`/`empMeal`/`unexplained`/`manualRefAmt`/
+  `discCnt`/`promoCnt`, which an earlier pass of this research mistakenly reported as still open.
+  What's left is two threads, **neither is "finish the routing" glue code**:
+  - `avgCheck` — deliberately excluded (its chain special-cases derive-before-srcs, a real
+    behavior change, not a mechanical swap) — needs its own dispatch with Fletcher's input on
+    correctness, per the code's own comment (`signal-registry.js` `AUTO_FIRST_KEY_MAP`).
+  - `baseFoodPct`/`discCoupon`/`pLFoodPct`/`pLPaperPct` (FOB sub-item %'s) — confirmed via direct
+    inspection: no matching `$` leg in `metric-source.js` today (unlike their 3 already-closed
+    siblings, whose `$` legs were already live from dispatch #64's `qsr_fob` pull). Possible lead,
+    **unverified, needs a real follow-up investigation, not assumed closeable**:
+    `scripts/qsrsoft-pull.mjs` already pulls `totalBaseFood`/`total_base_food`, and
+    `scripts/parse-field-defs.mjs` has a "Disc Coupon $" field definition — neither has been traced
+    through to confirm it's the right, already-flowing $ leg for a real chain.
+  The "catalog UI + lineage + CI enforcement" scope (the actual ask this line names) remains fully
+  unbuilt — re-scope/re-measure it before committing rather than building off the 2026-08-06 plan
+  as-is; the sibling SAGE metric-resolver port (`memory/finding-sage-metric-resolver-not-a-small-
+  port-2026-09-16.md`) is a directly relevant caution that "small on paper" undersold the real
+  surrounding-code cost there too.
 - [x] ✅ **MEASURED 2026-09-07 — settled.** A service-role read of `public.qsr_field_definitions`
   (bypasses RLS, so this is a real count, not an anon-key ambiguity) returned `content-range:
   */0` — **zero rows, across every `page_key`.** `backlog-master-2026-08-19.md`'s "done
