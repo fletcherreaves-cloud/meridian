@@ -111,35 +111,44 @@
   diagnostic screen.
 - [ ] Naming: Pace tab (collides with McDonald's internal "PACE" term), Help rename, Troubleshooting
   mode (End User/Dev).
-- [ ] **IA/navigation reorganization** (`notes-67-queue.md` §1) — new top-level groupings (Reports,
-  Inventory and Food Cost, Forecasting and Labor Projections, Analysis, HR); URL-view conversion
-  for most standalone panels with an explicit modal-exception list (SAGE, Knowledge Base, About,
-  Metric Lineage, Feature Requests, Local News) needing a minimize-and-close option that doesn't
-  universally exist today; make all data tables filterable/sortable. **Not scoped against current
-  code yet** — needs a real panel/routing inventory before it becomes a dispatch. Real inventory
-  already run 2026-09-25: `inventory-food-cost`/`forecasting`/`analysis` sections already exist
-  and match the ask closely; `reports` section exists but is still missing Above-Store One-Pager/
-  My Reports/Store One-Pager (still `section:'analytics'`); no `hr` section exists yet
-  (Performance Reviews still `section:'people'`); `about`/`kb`/`metric-lineage` are ordinary nav
-  items today, not right-side popups; the `feature-requests` popup ask conflicts with its own
-  later retirement (dispatch #194, folded into Task Queue) — needs Fletcher's call on all of these
-  before building.
-  🟢 **Two sub-items RESOLVED 2026-09-25, verified by direct code read (not by re-reading notes-67's
-  age) — do not re-raise:**
-  - **District Overview back button** — `loc-intel` (Market Intelligence, `routePanel==='loc-intel'`)
-    already uses `RoutePanelShell`'s real back button (dispatch #206) AND ships an in-panel
-    Store/District toggle (`location-intel.js`, built 2026-09-14 — after notes-67 was written) that
-    lets you return from the district rollup to store level in one click. Both postdate notes-67;
-    the "no back-navigation" note was accurate when written and is stale now.
+- [ ] **IA/navigation reorganization** (`notes-67-queue.md` §1) — owner decisions collected
+  2026-09-25 (backlog-correction PR #1332 + this pass); tracking each sub-item's real state below
+  rather than as one bundled item.
+  🟢 **SHIPPED 2026-09-25 (v5.483) — do not re-raise:**
+  - **Reports section completion** — Above-Store One-Pager, My Reports, Store One-Pager moved
+    `section:'analytics'` → `section:'reports'` (owner: "yes move all three"). Reports now reads
+    Above-Store One-Pager, My Reports, Store One-Pager, Org Summary, Leaderboards.
+  - **HR section** — new `section:'hr'` created (owner: "new HR section"), declared right after
+    `people` in `SECTIONS`. Performance Reviews moved `section:'people'` → `section:'hr'`, its
+    first member.
+  - **District Overview back button** — already resolved by independent later work (dispatch
+    #206's `RoutePanelShell` + a 2026-09-14 Store/District toggle in `location-intel.js`), both
+    postdating notes-67. Verified by direct code read, not by the note's own age.
   - **Visit Readiness / Graded Visits misplaced under People** — already `section:'operations'`
-    (dispatch #54 Job B), which predates notes-67. Notes-67 flagging this as still-misplaced was
-    itself already stale when written.
-  🟡 **Lifelenz Bridge rename — genuinely ambiguous, needs Fletcher's call, do NOT auto-rename.**
-  The panel notes-67 saw as "Lifelenz Bridge" was independently converted by dispatch #106
-  (2026-08-24, 5 days after notes-67) to hub-tab `lifelenz-bridge`, currently labeled "MBI vs
-  LifeLenz Accuracy" — neither the old name nor the "Recommended WFM Forecast Adjustments" rename
-  Fletcher asked for. Does the current name already satisfy the intent, or does he still want the
-  literal rename?
+    (dispatch #54 Job B), predates notes-67.
+  - **URL-view conversion list** (owner: "yes") — re-verified against live code and all 6 named
+    panels (Scheduling, Performance Reviews, Food Cost, End of Month, Inventory Control, Count
+    Cycle) already have real, bookmarkable URLs. Scheduling and Count Cycle got there via the
+    same established pattern as Food Cost/EOM — merged into a tabbed hub with deep-linkable tabs
+    (`SchedulingHubPanel`/`eom-dashboard`'s compliance tab), not a standalone `route:true` entry
+    — but the URL is real either way. Nothing to build.
+  - **Table filter/sort scope** (owner: "yes") — confirmed as its own separate future effort, not
+    part of this IA pass. No code, no further tracking here.
+  🟡 **Still open, needs a concrete design before building — "right-side popup" for Task
+  Queue/Feature Requests + About/Knowledge Base/Metric Lineage (owner: item 3 "I think making
+  this panel a popup would help to be able to add to it without losing current page"; item 4
+  "Yes").** Checked `ModalShell` (`src/components/ModalShell.js`) directly: it's a full blocking
+  backdrop modal with just a close button, no minimize, no coexist-with-the-page behavior. SAGE's
+  actual minimize-and-keep-running pattern (`App.js`, `sageMin` state) is bespoke — ~25 lines of
+  hand-rolled JSX directly in `App.js` (a right-anchored fixed drawer + a separate floating pill
+  when minimized), not a shared/reusable component today. So this is a real small feature build
+  (a shared non-blocking, minimizable shell, generalized from SAGE's pattern) for 4 panels to
+  adopt, not a `kind`/`route` flag flip. Also still open: what to rename the merged Task
+  Queue/Feature Requests panel to (owner: "probably should rename Task Queue to something that
+  encompasses both" — no exact wording given yet).
+  ⚪ **Left as-is for now, per owner (item 7): Lifelenz Bridge naming.** Currently "MBI vs
+  LifeLenz Accuracy" (dispatch #106, converted independently of notes-67's original ask). Revisit
+  only if the owner raises it again.
 - [ ] Side-by-side LifeLenz-forecast-vs-Meridian-forecast comparison view (`notes-67-queue.md` §3)
   — check against existing Lifelenz Gap / DI Compare items first, may be partially covered.
 
@@ -344,16 +353,19 @@
   verified by direct read) — including `condiment`/`empMeal`/`unexplained`/`manualRefAmt`/
   `discCnt`/`promoCnt`, which an earlier pass of this research mistakenly reported as still open.
   What's left is two threads, **neither is "finish the routing" glue code**:
-  - `avgCheck` — deliberately excluded (its chain special-cases derive-before-srcs, a real
-    behavior change, not a mechanical swap) — needs its own dispatch with Fletcher's input on
-    correctness, per the code's own comment (`signal-registry.js` `AUTO_FIRST_KEY_MAP`).
-  - `baseFoodPct`/`discCoupon`/`pLFoodPct`/`pLPaperPct` (FOB sub-item %'s) — confirmed via direct
-    inspection: no matching `$` leg in `metric-source.js` today (unlike their 3 already-closed
-    siblings, whose `$` legs were already live from dispatch #64's `qsr_fob` pull). Possible lead,
-    **unverified, needs a real follow-up investigation, not assumed closeable**:
-    `scripts/qsrsoft-pull.mjs` already pulls `totalBaseFood`/`total_base_food`, and
-    `scripts/parse-field-defs.mjs` has a "Disc Coupon $" field definition — neither has been traced
-    through to confirm it's the right, already-flowing $ leg for a real chain.
+  - `avgCheck` — **owner decision 2026-09-25: adopt it.** Fletcher approved trying the derive
+    (`sales÷gc`) ahead of any manual value, same as every other AUTO_FIRST_KEY_MAP chain, even
+    though this is a real behavior change (not just a routing fix) — see the code's own comment
+    (`signal-registry.js` `AUTO_FIRST_KEY_MAP`) for the exact fixture that flips from a
+    zero-variance driver to a computed one under this swap. **Not yet implemented** — next step
+    is its own dispatch, per that comment's own scoping.
+  - `baseFoodPct`/`discCoupon`/`pLFoodPct`/`pLPaperPct` (FOB sub-item %'s) — **owner decision
+    2026-09-25: proceed with the investigation.** Confirmed via direct inspection: no matching `$`
+    leg in `metric-source.js` today (unlike their 3 already-closed siblings, whose `$` legs were
+    already live from dispatch #64's `qsr_fob` pull). Lead to chase: `scripts/qsrsoft-pull.mjs`
+    already pulls `totalBaseFood`/`total_base_food`, and `scripts/parse-field-defs.mjs` has a
+    "Disc Coupon $" field definition — neither has been traced through yet to confirm it's the
+    right, already-flowing $ leg for a real chain. **Not yet started.**
   The "catalog UI + lineage + CI enforcement" scope (the actual ask this line names) remains fully
   unbuilt — re-scope/re-measure it before committing rather than building off the 2026-08-06 plan
   as-is; the sibling SAGE metric-resolver port (`memory/finding-sage-metric-resolver-not-a-small-
