@@ -154,7 +154,21 @@ function renderNavTexts(permFn) {
 // Save one, so Restore finally has a real home instead of none. Neither action is a modal/route
 // panel, so neither belongs in panel-registry.js's PANELS array; ProfileMenu was already the
 // established home for this exact class of action (theme toggle, Load files, Workflow guide).
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// Re-captured again 2026-09-25 (notes-67-queue.md §1, owner decisions on the IA reorg planning
+// pass, PR after the 2026-09-25 backlog correction): 'Above-Store One-Pager'/'My Reports'/'Store
+// One-Pager' moved section:'analytics' -> section:'reports' (owner: "yes move all three"),
+// landing in declaration order (above-store < my-reports < one-pager < operator-summary <
+// ranking by id) right before the section's existing 'Org Summary'/'Leaderboards' pair --
+// Reports now reads Above-Store One-Pager, My Reports, Store One-Pager, Org Summary,
+// Leaderboards. 'Performance Reviews' moved section:'people' -> a brand-new section:'hr' (owner:
+// "new HR section") -- SECTIONS declares 'hr' immediately after 'people', so a new 'HR' header +
+// 'Performance Reviews' now renders right after People's remaining two members (Crew Schedule,
+// Security) and right before Analytics. Icons: 📄 (Above-Store One-Pager) and 🗂 (My Reports)
+// keep their sole ownership in their new slot -- neither was shared with anything else in
+// Analytics or Reports. 📋 (Performance Reviews) is still shared with Graded Visits
+// (Operations) and fob-eom's old un-rendered claim -- unaffected, per the established
+// "icon has another owner" reasoning used throughout this file's own history above.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🗂','My Reports','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -311,7 +325,12 @@ const HIDDEN_WHEN_DENIED = {
   // SIDEBAR any more -- the Customize tab itself (inside Performance Reviews) is where that
   // permission now gates visibility, which this nav-only snapshot doesn't reach.
   'reviews.customize': [],
-  'reviews.view': ['Performance Reviews'],
+  // 2026-09-25: 'HR' (the section header itself) joins this list -- Performance Reviews is HR's
+  // only member (new section, see EXPECTED's own recapture note above), so denying reviews.view
+  // now empties the section entirely and renderSection() drops the header too, same "fully
+  // empty -> header vanishes" behavior 'Operations' (dispatch #202) and 'Scheduling & Labor'
+  // already demonstrate elsewhere in this file.
+  'reviews.view': ['HR', 'Performance Reviews'],
   // 'Crew Schedule' no longer carries perm:'security.view' as of dispatch #125 (moved to
   // analytics.store, see above) -- 🔒 is unique to 'Security' so it disappears with it.
   'security.view': ['Security', '🔒'],

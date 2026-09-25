@@ -43,7 +43,11 @@
 //            today; adding it to a panel is a real routing change (see routing.js), not a label.
 export const PANELS = [
   { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'admin' },
-  { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'analytics', route:true },
+  // section:'reports' (owner decision, 2026-09-25) -- notes-67-queue.md §1's Reports grouping
+  // ("Org Summary is a report," "Rankings can go under reports also") named Above-Store One-
+  // Pager/My Reports/Store One-Pager for the same move; that half sat unactioned in the backlog
+  // until now. Moves with above-store/my-reports/one-pager below, all three in the same pass.
+  { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'reports', route:true },
   { id:'aiscan', label:'Anomaly Scan', icon:'🔍', perm:'analytics.ai', kind:'optional', section:'intelligence' },
   { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily', route:true },
   { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics', route:true },
@@ -266,8 +270,9 @@ export const PANELS = [
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
-  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics', route:true },
-  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
+  // section:'reports' -- see above-store's own comment above; same 2026-09-25 move.
+  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'reports', route:true },
+  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
   // becomes recoverable dollars" panel. kind:'test-kitchen' with its real eventual section:
   // 'analytics' set from day one (promotion is a `kind:` flip only, dispatch #61); it sits next
@@ -287,7 +292,10 @@ export const PANELS = [
   // Customize tab's real (narrower) gate; see performance-calculator.js's header comment for
   // why that access-control narrowing is a deliberate, flagged side effect of this move.
   { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'hub-tab', section:'people' },
-  { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people', route:true },
+  // section:'hr' (owner decision, 2026-09-25) -- notes-67-queue.md §1 asked for a new HR
+  // grouping, Performance Reviews named as its one confirmed member. New section declared in
+  // SECTIONS below, right after 'people'.
+  { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'hr', route:true },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'inventory-food-cost' },
   // Dispatch #212 — first slice: per-item margin (menu price vs. unit_food_cost +
   // unit_paper_cost) off qsr_product_mix, the same stream ProductMixPanel ('pmix' above)
@@ -480,6 +488,9 @@ export const SECTIONS = [
   { id:'inventory-food-cost', label:'Inventory & Food Cost' },
   { id:'scheduling',         label:'Scheduling & Labor' },
   { id:'people',             label:'People' },
+  // New 2026-09-25 (owner decision) -- notes-67-queue.md §1's HR grouping ask; Performance
+  // Reviews is its one member so far (see its own PANELS entry above).
+  { id:'hr',                 label:'HR' },
   { id:'analytics',          label:'Analytics' },
   { id:'analysis',           label:'Analysis' },
   { id:'forecasting',        label:'Forecasting and Labor Projections' },
