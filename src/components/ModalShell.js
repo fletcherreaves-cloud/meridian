@@ -13,7 +13,11 @@ const btn = (p, ...c) => h('button', p, ...c);
 const { useRef: uR, useState: uSt } = React;
 
 // Shared z-index tiers so stacked modals (e.g. a confirm dialog over a panel) layer predictably.
-export const Z = { modal: 300, nested: 400, alert: 500, toast: 600 };
+// `drawer` folds in the right-anchored non-blocking drawer pattern (DrawerShell/MinimizedDock,
+// below) — SAGE hardcoded these as zIndex:360 (drawer) / 361 (pill) before this extraction;
+// 360 sits between `modal` and `nested` (unchanged value, now named) and the dock's pill uses
+// `Z.drawer + 1` directly rather than adding a second named tier for one caller.
+export const Z = { modal: 300, nested: 400, alert: 500, toast: 600, drawer: 360 };
 
 // Close buttons in the wild run 20-32px — short of the 44px touch-target spec.
 // Bump hit area via padding without touching the shared .btn-sm class other buttons rely on.
@@ -178,6 +182,126 @@ export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bo
       h(ScreenshotShareButton, { bodyRef, title }),
     ),
     div({ ref: bodyRef, style: { flex: 1, ...bodyStyle } }, children),
+  );
+}
+
+// Right-anchored, non-blocking "drawer" shell (IA reorg backlog, Phase 1 — extracted from SAGE's
+// own bespoke minimize-to-pill pattern in App.js, see memory/backlog-open-2026-09-06.md §2's
+// "shared non-blocking, minimizable popup shell" item). Unlike ModalShell/RoutePanelShell above,
+// this NEVER shows a backdrop — the rest of the app stays visible and interactive underneath —
+// and `minimized` is a CONTROLLED prop: the component stays mounted and only toggles
+// `display:'none'`, so a live session underneath (SAGE's conversation, a future half-filled form)
+// survives a minimize/restore cycle instead of being torn down and rebuilt. The floating
+// "restore" pill for a minimized drawer is NOT rendered here — see MinimizedDock below, which
+// renders once at the app root for every currently-minimized panel.
+//
+// Base button style for the header's minimize/close actions — CLOSE_STYLE's 44px touch-target
+// sizing (the spec's own ask: "same visual language/44px touch targets as ModalShell's own
+// CLOSE_STYLE constant"), but NOT its `.btn btn-sm` bordered/filled look — SAGE's drawer header
+// has always used plain transparent icon buttons (no border, no background), the conventional
+// look for an overlay/drawer chrome rather than an inline toolbar button.
+const DRAWER_BTN_BASE = { ...CLOSE_STYLE, background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 };
+
+export function DrawerShell({
+  title,
+  subtitle,
+  icon,
+  width = 460,
+  minimized,
+  onMinimize,
+  onClose,
+  // Optional content for the header's status indicator (SAGE passes a red/green "thinking" vs
+  // "ready" dot, built from its own `sageBusy` state) — rendered as-is, DrawerShell has no idea
+  // what it means. Omit it entirely for a panel with no busy/idle concept.
+  pillBadge,
+  headerExtra,
+  children,
+}) {
+  return div(
+    {
+      style: {
+        position: 'fixed', top: 0, right: 0, bottom: 0,
+        width: `min(${width}px, 100vw)`,
+        background: 'var(--surf)', borderLeft: '.5px solid var(--bdr2)',
+        boxShadow: '-12px 0 40px rgba(0,0,0,.45)', zIndex: Z.drawer,
+        // Stays MOUNTED while minimized — display toggled, never unmounted — so in-progress
+        // state underneath keeps running and is exactly as the user left it on restore.
+        display: minimized ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden',
+      },
+    },
+    div(
+      {
+        style: {
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: 'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',
+          borderBottom: '1px solid var(--bdr)', flexShrink: 0,
+        },
+      },
+      div(
+        { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+        pillBadge || null,
+        icon ? span({ style: { fontSize: '18px' } }, icon) : null,
+        div(
+          { style: { minWidth: 0 } },
+          title != null ? span({
+            style: {
+              fontFamily: "'Syne',sans-serif", fontWeight: 900, fontSize: '15px',
+              letterSpacing: '-.02em', color: 'var(--text)',
+            },
+          }, title) : null,
+          subtitle != null ? div({ style: { fontSize: '9px', color: 'var(--text3)' } }, subtitle) : null,
+        ),
+      ),
+      div(
+        { style: { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 } },
+        headerExtra || null,
+        btn({
+          onClick: onMinimize, title: 'Minimize — keep running while you look at other data',
+          'aria-label': 'Minimize', style: { ...DRAWER_BTN_BASE, fontSize: '22px' },
+        }, '—'),
+        btn({
+          onClick: onClose, title: 'Close', 'aria-label': 'Close',
+          style: { ...DRAWER_BTN_BASE, fontSize: '26px', margin: '-4px -8px' },
+        }, '✕'),
+      ),
+    ),
+    div({ style: { flex: 1, overflowY: 'hidden', background: 'var(--bg)', display: 'flex', flexDirection: 'column' } }, children),
+  );
+}
+
+// Rendered ONCE at the app root (App.js computes `items` itself from whichever panels' own
+// minimized booleans are currently true — this component holds no state and knows nothing about
+// any specific panel, SAGE included). One rounded pill per minimized item, stacked bottom-right,
+// each offset above the previous one so several can coexist without overlapping. Renders nothing
+// for an empty list.
+export function MinimizedDock({ items }) {
+  if (!items || !items.length) return null;
+  return h(
+    React.Fragment,
+    null,
+    ...items.map((item, i) => div(
+      {
+        key: item.id,
+        onClick: item.onRestore,
+        style: {
+          position: 'fixed', right: 16,
+          bottom: `calc(${16 + i * 56}px + env(safe-area-inset-bottom,0px))`,
+          zIndex: Z.drawer + 1,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 14px', borderRadius: '999px',
+          background: 'var(--surf,#1e293b)',
+          // Optional per-item accent (SAGE tints this red/green for thinking/ready, same colors
+          // as its pillBadge dot) — a plain, generic style parameter, not SAGE-specific logic.
+          border: '1px solid ' + (item.accentColor || 'var(--bdr2)'),
+          boxShadow: '0 8px 30px rgba(0,0,0,.5)', cursor: 'pointer',
+        },
+      },
+      item.icon ? span({ style: { fontSize: '13px' } }, item.icon) : null,
+      item.label != null ? span({
+        style: { fontFamily: "'Syne',sans-serif", fontWeight: 900, fontSize: '13px', color: 'var(--text)' },
+      }, item.label) : null,
+      item.pillBadge || null,
+    )),
   );
 }
 

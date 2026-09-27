@@ -312,7 +312,7 @@ import { SignOutBtn } from '../components/AuthGate.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { PANEL_BY_ID, PANELS, SECTIONS } from './panel-registry.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
-import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
+import { ModalShell, RoutePanelShell, DrawerShell, MinimizedDock, Z } from '../components/ModalShell.js';
 import { parseRoute, pushRoute, onRouteChange } from './routing.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor, metricContextFor } from '../engine/swing-context.js';
@@ -3750,32 +3750,41 @@ function App() {
     },
       h(FormsCompletionPanel,{stores,userRole,onClose:()=>setShowFormsCompletion(false)})
     ),
-    // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
-    // running in the background and you can look at other Meridian data at the
-    // same time. The floating pill (below) shows red while thinking, green when ready.
-    // Right-anchored drawer (not a full-screen backdrop) — the rest of the app
-    // stays visible and interactive while SAGE is open, same intent the minimize
-    // pill served before but without having to minimize to get it.
-    showSage&&div({style:{position:'fixed',top:0,right:0,bottom:0,width:'min(460px,100vw)',background:'var(--surf)',borderLeft:'.5px solid var(--bdr2)',boxShadow:'-12px 0 40px rgba(0,0,0,.45)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid var(--bdr)',flexShrink:0}},
-        div({style:{display:'flex',alignItems:'center',gap:8}},
-          span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
-          span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),
-          sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…')),
-        div({style:{display:'flex',alignItems:'center',gap:2}},
-          h('button',{onClick:()=>setSageMin(true),title:'Minimize — keep SAGE running while you look at other data',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'22px',lineHeight:1,padding:'4px 8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'—'),
-          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')),
+    // SAGE stays MOUNTED while minimized (DrawerShell toggles display, never unmounts) so the
+    // session keeps running in the background and you can look at other Meridian data at the
+    // same time. The floating restore pill (MinimizedDock, below) shows red while thinking,
+    // green when ready. Right-anchored drawer (not a full-screen backdrop) — the rest of the app
+    // stays visible and interactive while SAGE is open, same intent the minimize pill served
+    // before but without having to minimize to get it.
+    // Phase 1 of the IA-reorg backlog's "shared non-blocking, minimizable popup shell" item
+    // (memory/backlog-open-2026-09-06.md §2) — DrawerShell/MinimizedDock extracted from this
+    // exact hand-rolled JSX into src/components/ModalShell.js so About/Knowledge Base/Metric
+    // Lineage (Phase 2) and Task Queue (Phase 3) can adopt the same pattern instead of each
+    // hand-rolling their own. showSage/sageMin/sageBusy are unchanged — this is a pure refactor.
+    showSage&&h(DrawerShell,{
+      title:'🧠 SAGE',
+      minimized:sageMin,
+      onMinimize:()=>setSageMin(true),
+      onClose:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},
+      pillBadge:h(React.Fragment,null,
+        span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
+        sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…'),
       ),
-      div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
-        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName,activeContext:sageActiveContext}),
+    },
+      h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName,activeContext:sageActiveContext}),
+    ),
+    // Minimized-panel dock — rendered once, generic. Today only SAGE ever appears in `items`;
+    // About/Knowledge Base/Metric Lineage/Task Queue add their own entries in Phases 2-3.
+    h(MinimizedDock,{items:(showSage&&sageMin)?[{
+      id:'sage',
+      label:'🧠 SAGE',
+      pillBadge:h(React.Fragment,null,
+        span({style:{width:9,height:9,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 8px '+(sageBusy?'#ef4444':'#10b981')}}),
+        span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
       ),
-    ),
-    // Minimized pill — click to restore. Red dot = thinking, green = ready.
-    showSage&&sageMin&&div({onClick:()=>setSageMin(false),style:{position:'fixed',right:16,bottom:'calc(16px + env(safe-area-inset-bottom,0px))',zIndex:361,display:'flex',alignItems:'center',gap:8,padding:'10px 14px',borderRadius:'999px',background:'var(--surf,#1e293b)',border:'1px solid '+(sageBusy?'rgba(239,68,68,.5)':'rgba(16,185,129,.5)'),boxShadow:'0 8px 30px rgba(0,0,0,.5)',cursor:'pointer'}},
-      span({style:{width:9,height:9,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 8px '+(sageBusy?'#ef4444':'#10b981')}}),
-      span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'13px',color:'var(--text)'}},'🧠 SAGE'),
-      span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
-    ),
+      accentColor:sageBusy?'rgba(239,68,68,.5)':'rgba(16,185,129,.5)',
+      onRestore:()=>setSageMin(false),
+    }]:[]}),
     // showTaskQueue — Dispatch #206: moved to the routePanel gate in the main content area
     // (TaskQueuePanel carries RoutePanelShell internally; see routePanel==='task-queue').
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),

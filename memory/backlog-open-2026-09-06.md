@@ -134,18 +134,34 @@
     — but the URL is real either way. Nothing to build.
   - **Table filter/sort scope** (owner: "yes") — confirmed as its own separate future effort, not
     part of this IA pass. No code, no further tracking here.
-  🟡 **Still open, needs a concrete design before building — "right-side popup" for Task
-  Queue/Feature Requests + About/Knowledge Base/Metric Lineage (owner: item 3 "I think making
-  this panel a popup would help to be able to add to it without losing current page"; item 4
-  "Yes").** Checked `ModalShell` (`src/components/ModalShell.js`) directly: it's a full blocking
+  🟡 **"right-side popup" for Task Queue/Feature Requests + About/Knowledge Base/Metric Lineage
+  (owner: item 3 "I think making this panel a popup would help to be able to add to it without
+  losing current page"; item 4 "Yes") — Phase 1 SHIPPED (v5.484, 2026-09-27), Phases 2-3 still
+  open.** Checked `ModalShell` (`src/components/ModalShell.js`) directly: it's a full blocking
   backdrop modal with just a close button, no minimize, no coexist-with-the-page behavior. SAGE's
-  actual minimize-and-keep-running pattern (`App.js`, `sageMin` state) is bespoke — ~25 lines of
+  actual minimize-and-keep-running pattern (`App.js`, `sageMin` state) was bespoke — ~25 lines of
   hand-rolled JSX directly in `App.js` (a right-anchored fixed drawer + a separate floating pill
-  when minimized), not a shared/reusable component today. So this is a real small feature build
-  (a shared non-blocking, minimizable shell, generalized from SAGE's pattern) for 4 panels to
-  adopt, not a `kind`/`route` flag flip. Also still open: what to rename the merged Task
-  Queue/Feature Requests panel to (owner: "probably should rename Task Queue to something that
-  encompasses both" — no exact wording given yet).
+  when minimized), not a shared/reusable component. So this was a real small feature build (a
+  shared non-blocking, minimizable shell, generalized from SAGE's pattern), not a `kind`/`route`
+  flag flip.
+  - ✅ **Phase 1 (extraction + SAGE retrofit) — DONE.** `DrawerShell`/`MinimizedDock` now live in
+    `src/components/ModalShell.js` (no-backdrop right-anchored drawer with a controlled
+    `minimized` prop that toggles `display` without unmounting, so in-progress state survives a
+    minimize/restore cycle; a generic, stateless dock rendered once at the app root, stacking one
+    restore pill per currently-minimized panel). SAGE retrofitted onto both as a pure refactor —
+    same `showSage`/`sageMin`/`sageBusy` state, same visuals/mechanics. 15 tests
+    (`src/__tests__/dispatch-drawer-shell-phase1-2026-09-27.test.js`), confirmed red against the
+    pre-fix code before the fix.
+  - 🟡 **Phase 2 (About / Knowledge Base / Metric Lineage adopt DrawerShell/MinimizedDock) —
+    still open**, not started.
+  - 🟡 **Phase 3 (Task Queue adopts the same shell) — still open**, not started. Still carries its
+    own unresolved design decision from before Phase 1: what a Task-Queue URL means while it's
+    minimized (a route-backed panel minimized to a pill needs its own answer for what the URL bar
+    shows/does in that state — SAGE has no URL of its own today, so Phase 1 didn't have to solve
+    this).
+  - Also still open: what to rename the merged Task Queue/Feature Requests panel to (owner:
+    "probably should rename Task Queue to something that encompasses both" — no exact wording
+    given yet).
   ⚪ **Left as-is for now, per owner (item 7): Lifelenz Bridge naming.** Currently "MBI vs
   LifeLenz Accuracy" (dispatch #106, converted independently of notes-67's original ask). Revisit
   only if the owner raises it again.
