@@ -146,14 +146,14 @@ describe('runDiagnosis — editable check registry', () => {
     const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.0373, tgt: 0.0380, dollars: 9922 } });
     const full = formatDiagnosisReport(res, {});
     expect(recap).toMatch(/\*\*FOB 3\.73%\*\* · -0\.07pp vs 3\.80% target · \$9,922/);
-    expect(recap).toMatch(/Do these now/);
+    expect(recap).toMatch(/Recount Candidates/);
     expect(recap).toMatch(/Net variance/);
     expect(recap).toMatch(/optional polish/);  // 3.73% < 3.80% target → recount rule reframes as optional
     // Recap omits the heavy Focus-now / reference-table sections the full report carries.
     expect(recap).not.toMatch(/Focus now/);
     expect(recap.length).toBeLessThan(full.length);
-    // FOB line appears before the Top-5 (owner: FOB first).
-    expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Do these now'));
+    // FOB line appears before Recount Candidates (owner: FOB first).
+    expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Recount Candidates'));
   });
 
   it('over FOB target with clean item variance surfaces component levers in Top-5 (no false clean sweep)', () => {
@@ -243,8 +243,9 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap).toMatch(/Napkins/);                  // Paper listed (due today)
     expect(recap).not.toMatch(/Happy Meal Toy/);       // Non-Product omitted (not the last day)
     expect(recap).toMatch(/Grill Cheese \[b\]/);       // WRIN shown alongside the name (owner Notes 38)
-    // The count block appears before the Top-5 (prominence).
-    expect(recap.indexOf('Finish today')).toBeLessThan(recap.indexOf('Do these now'));
+    // Reordered (owner req, 2026-09-27): Recount Candidates leads, the uncounted/"Finish today"
+    // block is now third — after Recount Candidates (and Waste flags, when present).
+    expect(recap.indexOf('Finish today')).toBeGreaterThan(recap.indexOf('Recount Candidates'));
   });
 
   it('recap includes never-counted Non-Product on the LAST day of the month (owner Notes 38)', () => {
@@ -267,7 +268,9 @@ describe('runDiagnosis — editable check registry', () => {
     const hasIntegrity = (res.findings || []).some(f => f.checkId === 'waste-inflation' || f.checkId === 'waste-patterns');
     const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.04, tgt: 0.038, dollars: 5000 } });
     if (hasIntegrity) {
-      expect(recap).toMatch(/Second-Look Signals — worth a look together/);
+      // Promoted out of the old one-line soft footnote into its own "Waste flags" section
+      // (owner req, 2026-09-27) — same non-accusatory voice, now a real ranked list.
+      expect(recap).toMatch(/Waste flags — worth a look together/);
       expect(recap).toMatch(/Nothing's being called wrong/);   // non-accusatory framing
     }
   });
@@ -276,7 +279,7 @@ describe('runDiagnosis — editable check registry', () => {
     const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [] } });
     const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.037, tgt: 0.038, dollars: 8000 } });
     expect(recap).toMatch(/Clean sweep|Go ahead and finalize/);
-    expect(recap).not.toMatch(/Do these now/);
+    expect(recap).not.toMatch(/Recount Candidates/);
   });
 
   it('recount rule: at/under FOB target reframes recounts as optional polish; over target keeps the push (Notes 38)', () => {
