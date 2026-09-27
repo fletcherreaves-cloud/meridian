@@ -793,6 +793,28 @@ export const INTEGRITY_CHECK_IDS = new Set([
   'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
+// ── Recap-mode reorder (owner req, 2026-09-27): (a) Recount Candidates, (b) Waste flags,
+// (c) Missed/uncounted items — see formatDiagnosisReport's mode==='recap' branch. These three
+// tunables are exported so a test can pin the exact cap/exclusion behavior without hard-coding
+// magic numbers in two places (the mode==='full' Top-5 stays a literal 5, untouched).
+export const RECAP_RECOUNT_CAP = 10; // Recount Candidates — Food-only, raised from the old shared Top-5 cap
+export const RECAP_WASTE_FLAG_CAP = 8; // Waste flags — owner's own "sensible cap, 5-10" range
+// waste-patterns/waste-session are manager-attribution BY DESIGN (per-manager $ share; a named
+// manager's session) — exactly the "which manager, chronic-offender scoring" the owner said must
+// stay OUT of the recap, in the deep-dive tabs (Chronic Offenders / Count Swings) instead. Every
+// other INTEGRITY_CHECK_IDS check is item/pattern-level (no manager in its title) and safe to show.
+export const RECAP_WASTE_FLAG_EXCLUDE = new Set(['waste-patterns', 'waste-session']);
+const RECAP_WASTE_FLAG_HINT = {
+  'count-manipulation': 'excessive same-day re-counts — verify the entries',
+  'recount-swing': 'large recount swing — verify with a 3rd count',
+  'count-accumulation': 'count re-entered on top of a submitted count — verify true on-hand',
+  'waste-inflation': 'waste logged well above normal — verify it was really thrown',
+  'unrealistic-over': 'unrealistic gain — recount to confirm',
+  'negative-onhand': 'physically impossible balance — check for a keying error',
+  'negative-usage': 'physically impossible usage — check for a keying error',
+  'uom-sanity': 'check the units — likely a case-vs-each entry',
+};
+
 // The six FOB components, the DEFAULT_TARGETS key that sets each one's target %, and the matching
 // long-form key `ctx.data.fob` (built by eom-report-build.js / eom-dashboard.js) carries the $ under
 // — [shortKey, label, targetKey, longKey]. Single source for BOTH fobComponentDeltas() (narrative FOB
@@ -1098,12 +1120,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     doNow.length = 0; doNow.push(...kept);
   }
 
-  // ── TOP 5 — always surface five real Food/Condiment moves. Fill toward 5 from the next-best FC
-  // opportunities; if the store genuinely can't produce five, that's a WIN — celebrate it (owner).
-  if (doNow.length < 5) {
+  // ── TOP-N FILL — always surface a real, ranked slate of Food/Condiment moves. Fill toward the
+  // ACTIVE section's own target from the next-best FC opportunities; if the store genuinely can't
+  // produce that many, that's a WIN — celebrate it (owner). `topNTarget` is the ONE place this cap
+  // is defined — mode:'full' keeps the original 5 ("Top 5") unchanged; mode:'recap' targets
+  // RECAP_RECOUNT_CAP (10) instead, per the owner's "cap raised from 5 to 10" (2026-09-27). Widening
+  // the pool HERE (not just the render-time slice) is what makes a >5-item recap list possible at
+  // all — the three priority sources above (recount-worthy/portioning/topFC) top out at 5 on their
+  // own, so a render-time-only slice(0,10) of the old array would have shown at most 5 regardless.
+  const topNTarget = mode === 'recap' ? RECAP_RECOUNT_CAP : 5;
+  if (doNow.length < topNTarget) {
     const used = new Set(doNow.map(d => d.wrin).filter(Boolean));
     for (const v of V.filter(v => isFC(v) && !(recountByWrin[v.wrin] || '').startsWith('early') && !used.has(v.wrin) && !(isFountain(v) && fountainAll.length >= 2)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff))) {
-      if (doNow.length >= 5) break;
+      if (doNow.length >= topNTarget) break;
       used.add(v.wrin);
       doNow.push({ score: 1e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Investigate ${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}${casesNote(v)}) — ${causeTags(v)[0] || 'recount + verify waste logging'}.` });
     }
@@ -1149,18 +1178,52 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
   L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
 
-  // ── RECAP MODE — the super-abbreviated day-of message (owner Notes 37 C1) ──
-  // FOB line first → count status one-liner → Top-5 → net → soft integrity note → punchy close.
-  // Reuses doNow/net/shorts/overs/V + the count-timing buckets above, so it can't drift from the report.
+  // ── RECAP MODE — the super-abbreviated day-of message (owner Notes 37 C1; reordered 2026-09-27) ──
+  // FOB line first → (a) Recount Candidates → (b) Waste flags → (c) Missed/uncounted items → net →
+  // punchy close. Reuses doNow/net/shorts/overs/V + the count-timing buckets above, so it can't
+  // drift from the report. mode:'full' is completely unchanged by this reorder.
   if (mode === 'recap') {
     const R = [`**${result.storeName || result.store} — EOM FOB ${result.period}**`, ''];
     if (fob && fob.pct != null) {
       const dpp = (fob.tgt != null) ? (fob.pct - fob.tgt) * 100 : null;
       R.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
     }
-    // Uncounted items land on the recap IN PROMINENCE (owner Notes 37) — the actual items + $ on hand,
-    // right under the FOB line. Time/class-aware: Food, Condiment & Paper are due to 100% by EOD (list
-    // them); Non-Product isn't due until tomorrow, so it's omitted here (expected, not a gap).
+
+    // ── (a) RECOUNT CANDIDATES — leads the recap (owner req, 2026-09-27). Same scored `doNow`
+    // pool the full report's Top-5 uses (never re-derived, so the underlying scoring can't drift
+    // between the two modes) — but for the recap specifically, narrowed to Food-class ITEMS only
+    // (Condiment stays in the engine + mode:'full''s Top-5; only this section's own filter/cap
+    // changes) and capped at RECAP_RECOUNT_CAP (10), not 5. Group entries (never-counted/counted-
+    // early/verify-&-clear buckets, FOB component levers) have no single wrin/class and are
+    // deliberately excluded here — they stay visible via section (c) and the full report.
+    const recountCandidates = doNow
+      .filter(d => d.wrin && normClass((_vByWrin.get(String(d.wrin)) || {}).cls) === 'food')
+      .slice(0, RECAP_RECOUNT_CAP);
+    if (recountCandidates.length) {
+      R.push(`**Recount Candidates${recountCandidates.length < RECAP_RECOUNT_CAP ? ` (${recountCandidates.length})` : ''}:**`);
+      recountCandidates.forEach((d, i) => R.push(`${i + 1}. ${d.text}`));
+      R.push('');
+    } else {
+      R.push(`🏆 **Clean sweep on Food recounts** — nothing to action. Nice work.`, '');
+    }
+
+    // ── (b) WASTE FLAGS — promoted out of the old one-line soft footnote into its own visible,
+    // capped, ranked section (owner req, 2026-09-27): "a real ranked list a manager can act on,
+    // not a footnote." Same integrity/pattern pool the full report's Second-Look Signals draws
+    // from (already sorted severity desc, $ desc — see runDiagnosis), minus the two checks that
+    // ARE manager attribution by design — those stay in the deep-dive tabs, never here.
+    const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
+    const wasteFlags = intg.filter(f => !RECAP_WASTE_FLAG_EXCLUDE.has(f.checkId)).slice(0, RECAP_WASTE_FLAG_CAP);
+    if (wasteFlags.length) {
+      R.push(`**Waste flags — worth a look together (${wasteFlags.length}):**`);
+      wasteFlags.forEach(f => R.push(`- **${f.title}** (${money(f.dollars)}) — ${RECAP_WASTE_FLAG_HINT[f.checkId] || 'verify before it rides into next period'}`));
+      R.push('', `_Nothing's being called wrong; a clean verify just makes the number airtight and off our radar._`, '');
+    }
+
+    // ── (c) MISSED / UNCOUNTED ITEMS — the existing finish-today's-count list, content and
+    // wording UNCHANGED, now third (owner req, 2026-09-27 — Recount Candidates and Waste flags
+    // lead instead). Time/class-aware: Food, Condiment & Paper are due to 100% by EOD (list them);
+    // Non-Product isn't due until tomorrow, so it's omitted here (expected, not a gap).
     const showNP = npDueToday && neverNonProd.length;   // last day → Non-Product due today too
     if (earlyFC.length || neverFC.length || neverPaper.length || showNP) {
       R.push(`⏳ **Finish today's count — recount these before you close:**`);
@@ -1173,21 +1236,8 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     } else {
       R.push(npDueToday ? `✅ All classes counted.` : `✅ Food, Condiment & Paper counted.`, '');
     }
-    // Top 5 (scales down — celebrates a clean sweep).
-    if (doNow.length) {
-      R.push(`**Do these now${doNow.length < 5 ? ` (only ${doNow.length} — running tight, good sign)` : ''}:**`);
-      doNow.slice(0, 5).forEach((d, i) => R.push(`${i + 1}. ${d.text}`));
-      R.push('');
-    } else {
-      R.push(`🏆 **Clean sweep on Food & Condiment** — nothing to action. Nice work.`, '');
-    }
+
     if (V.length) R.push(`**Net variance ${money(net)}** across ${V.length} item${V.length === 1 ? '' : 's'} over ±$${threshold} (short ${shorts.length} / over ${overs.length}).`, '');
-    // Soft, non-accusatory note when an integrity/pattern check fired — give the why, recommend a look.
-    const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
-    if (intg.length) {
-      const names = [...new Set(intg.slice(0, 2).map(f => (f.title || '').replace(/\s*\(WRIN[^)]*\)/i, '').trim()))].filter(Boolean);
-      R.push(`_🔍 ${INTEGRITY_LABEL} — worth a look together: ${names.join(' · ') || 'a few entries'}. Nothing's being called wrong; a clean verify just makes the number airtight and off our radar._`, '');
-    }
     // Recount rule (owner Notes 38): a store already AT/UNDER its FOB target shouldn't be pushed to
     // chase variance-reduction recounts (no upside, real downside). But integrity items (padding,
     // swings, impossible values) are about TRUTH, not optimization — pursue them regardless of target.

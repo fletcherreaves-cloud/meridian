@@ -1059,6 +1059,12 @@ function App() {
   const [showScheduling,      setShowScheduling]      = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
   const [userName,            setUserName]            = useState('');
+  // The signed-in profile's own store-scope list (RLS `accessible_locs`, single source per
+  // CLAUDE.md's RBAC section) — fetched alongside role/name below and handed to panels that need
+  // to resolve "the current user's own store(s)" client-side (e.g. eom-dashboard.js's GM default
+  // view, dispatch 2026-09-27). null = unrestricted (every profile that has ever existed in
+  // production, per CLAUDE.md — this is the first client-side consumer of the field).
+  const [accessibleLocs,      setAccessibleLocs]      = useState(null);
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
   const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
@@ -1356,9 +1362,10 @@ function App() {
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from('profiles').select('role,name,email').eq('id', user.id).maybeSingle()
+      supabase.from('profiles').select('role,name,email,accessible_locs').eq('id', user.id).maybeSingle()
         .then(({ data }) => {
           setUserName(data?.name || data?.email || user.email || '');
+          setAccessibleLocs(Array.isArray(data?.accessible_locs) && data.accessible_locs.length ? data.accessible_locs : null);
           if (data?.role) {
             setUserRole(data.role);
             // Non-top-tier roles default to release mode (Test Kitchen hidden) unless the user
@@ -3553,7 +3560,7 @@ function App() {
         dataReady:cloudStreamsReady,
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,initialMode:eomInitialMode,
-        initialStore:eomInitialStore,
+        initialStore:eomInitialStore,userRole,accessibleLocs,
         onClose:()=>{setEomInitialMode(null);setEomInitialStore(null);goRoute(null);}}),
       // above-store — Dispatch #160 (panel-contract pass): RoutePanelShell now lives inside
       // AboveStoreOnePager itself, same "shell inside the component" pattern as sched-hub/

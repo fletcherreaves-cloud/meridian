@@ -1564,7 +1564,21 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // route (retired, folded into this panel's Count Cycle tab). null for every ordinary open;
 // App.js sets it to 'compliance' only when redirecting a legacy count-cycle link, same
 // one-shot-prop pattern as PerformanceReviewsPanel's initialTab/initialCustomizeSection.
-export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore }) {
+// Roles this app scopes to a SINGLE store (permissions.js DEFAULT_ROLES: analytics.district:false,
+// analytics.store:true, "Own store only" per CLAUDE.md's RBAC table) — the audience for the
+// promoted single-store recap default view below (owner req, 2026-09-27), as opposed to VP/DO/OM/
+// AS/Admin/Owner, who keep the existing multi-store Scoreboard/Cadence landing untouched.
+const SINGLE_STORE_ROLES = new Set(['gm', 'sm_am_dm']);
+
+export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs }) {
+  // The signed-in GM/SM-AM-DM's own store, resolved from their profile's accessible_locs (the
+  // established RBAC scoping field, per CLAUDE.md — this is the first client-side reader of it;
+  // see App.js's profile fetch). Only resolves for a SINGLE-STORE role scoped to EXACTLY one
+  // location — a multi-store accessible_locs list, or accessibleLocs===null (unrestricted, every
+  // profile that has ever existed in production), correctly falls through to the existing
+  // multi-store landing so Supervisor/DO/Admin/Owner behavior is unchanged.
+  const singleStoreLoc = (userRole && SINGLE_STORE_ROLES.has(userRole) && Array.isArray(accessibleLocs) && accessibleLocs.length === 1)
+    ? accessibleLocs[0] : null;
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
   // ALL monthly_targets overrides, every period -- `ds.allMonthlyTargets` is already loaded ONCE
   // at the App.js level (App.js:1523) and passed to every panel via `ds`, same source
@@ -1711,7 +1725,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     for (const op of Object.keys(opGroups || {})) if ((opGroups[op] || []).map(unpad).includes(u)) return op;
     return null;
   }, [opGroups]);
-  const [mode, setMode] = useState(() => initialMode || defaultModeFor(defaultPeriod())); // 'scoreboard' | 'eom' | 'progress' | 'compliance'
+  // 'mystore' (owner req, 2026-09-27) — the promoted single-store recap default for a GM/SM-AM-DM.
+  // Takes priority over defaultModeFor() whenever singleStoreLoc resolves; every other role's
+  // existing Scoreboard/Progress default is untouched.
+  const [mode, setMode] = useState(() => initialMode || (singleStoreLoc ? 'mystore' : defaultModeFor(defaultPeriod()))); // 'scoreboard' | 'eom' | 'progress' | 'compliance' | 'mystore'
   // Re-default the mode when the period changes (manual toggle still overrides after) — but
   // never override a legacy-redirect initialMode on the very first render (that useEffect
   // would fire immediately after mount since `period` is already set, undoing the redirect
@@ -1719,8 +1736,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const skipNextModeDefault = React.useRef(!!initialMode);
   useEffect(() => {
     if (skipNextModeDefault.current) { skipNextModeDefault.current = false; return; }
-    setMode(defaultModeFor(period));
-  }, [period]);
+    setMode(singleStoreLoc ? 'mystore' : defaultModeFor(period));
+  }, [period, singleStoreLoc]);
   const [diagCfg, setDiagCfg] = useState(null); // saved check overrides (or null = defaults)
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
@@ -3163,10 +3180,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     snapshot: 'A plain, printable Store/State/Count%/FOB%/FOB$ snapshot to send to a team — no diagnosis/communication workflow columns.',
     recount: 'Which items were recounted in the EOM close window and whether the recount helped or hurt the final result — sorted by class.',
     swing: 'Every material count-swing this period, locked (real loss, no recovery chance) vs recovered (washed out by a later count), with manager attribution and a coaching list of top items to recount at count time.',
+    mystore: 'Your store\'s EOM recap — the priority recount/waste/uncounted list, one click to share.',
   };
+  // Single-store roles (GM/SM-AM-DM) see ONLY their own store's recap — the other 9 tabs are all
+  // inherently district/multi-store constructs that don't apply once accessible_locs resolves to
+  // one location (owner req, 2026-09-27). Every other role's tab strip is completely unchanged.
+  const TAB_LIST = singleStoreLoc
+    ? [['mystore', 'My Store']]
+    : [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup'],
+       ['missing', 'Missing Items'], ['snapshot', 'Team Snapshot'], ['recount', 'Recount Impact'], ['swing', 'Count Swings']];
   const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
-    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup'],
-     ['missing', 'Missing Items'], ['snapshot', 'Team Snapshot'], ['recount', 'Recount Impact'], ['swing', 'Count Swings']].map(([k, label]) =>
+    TAB_LIST.map(([k, label]) =>
       h('button', {
         key: k, onClick: () => setMode(k),
         title: TAB_TITLES[k],
@@ -3243,8 +3267,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     ? 'Recount-impact report · which items were recounted this close window and whether it helped or hurt · sorted by class'
     : mode === 'swing'
     ? 'Count-swing ledger · every material count swing this period, locked vs recovered, with manager attribution'
+    : mode === 'mystore'
+    ? 'Your store\'s EOM recap · Recount Candidates, Waste flags, then uncounted items · one click to share'
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
-    + ((mode === 'supervisor' || mode === 'missing' || mode === 'snapshot' || mode === 'recount' || mode === 'swing') ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
+    + ((mode === 'supervisor' || mode === 'missing' || mode === 'snapshot' || mode === 'recount' || mode === 'swing' || mode === 'mystore') ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
 
   // Dispatch #202 originally hid PanelChrome's location/date/export/action bands entirely for
   // mode==='supervisor', since EOMSupervisorPanel brought its own internal month+year+groupType
@@ -3263,6 +3289,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // gates the RoutePanelShell class hooks below for all four "own print button" tabs together.
   const reportMode = mode === 'missing' || mode === 'snapshot' || mode === 'recount' || mode === 'swing';
   const printableMode = supervisorMode || reportMode;
+  // 'mystore' (owner req, 2026-09-27) — self-contained like Supervisor Rollup/the report tabs
+  // (own header, own Share action), and the district-wide location filter + CSV export + Reports/
+  // Scans/Monitor/Pulls action groups none apply to a single, already-known store.
+  const mystoreMode = mode === 'mystore';
+  // The GM's own row, found in `allRows` (computed live from `ds` above, never a stale snapshot)
+  // — and its draft (recap/full markdown) computed FRESH every render via the existing computeDraft
+  // (the same function the "🔬 Diagnose"/"✉️ Draft" buttons use), deliberately NOT memoized/stored
+  // in state so it can never go stale across a data refresh (owner req: "live when dashboard
+  // opens" and "re-evaluate on next data pull" must both fall out for free).
+  const myRow = singleStoreLoc ? allRows.find(r => unpad(r.loc) === unpad(singleStoreLoc)) : null;
+  const myDraft = (mystoreMode && myRow) ? computeDraft(myRow.loc, myRow.name, myRow.components) : null;
   // Print-CSS class hooks (see eom-supervisor.js's PRINT_STYLE comment) — only meaningful while
   // the active tab's own Print button can be clicked; harmless no-ops otherwise (they only take
   // effect under body.eom-printing, which nothing else in this panel ever sets).
@@ -3299,10 +3336,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
     div({ className: 'eom-no-print' },
       h(PanelChrome, {
-        location: locationSlot,
+        location: mystoreMode ? undefined : locationSlot,
         dateControl: dateControlSlot,
-        exportSlot: printableMode ? undefined : exportSlotContent,
-        actions: printableMode ? undefined : actionsSlot,
+        exportSlot: (printableMode || mystoreMode) ? undefined : exportSlotContent,
+        actions: (printableMode || mystoreMode) ? undefined : actionsSlot,
         tabs: tabsSlot,
       })),
 
@@ -3310,9 +3347,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // (CountCycleSection) instead of these tiles — SummaryTiles only knows the EOM/Cadence
     // shapes (dispatch #98 fixed exactly this "wrong tiles for the mode" bug for Cadence;
     // giving Count Cycle a third undefined branch here would reintroduce it, not extend it).
-    // Supervisor Rollup (dispatch #202) and the 3 dispatch #227 report tabs are excluded the same
-    // way — none of their data has any relationship to SummaryTiles' EOM/Cadence shapes.
-    mode !== 'compliance' && !printableMode && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
+    // Supervisor Rollup (dispatch #202), the 3 dispatch #227 report tabs, and 'mystore' (2026-09-27)
+    // are excluded the same way — none of their data has any relationship to SummaryTiles' EOM/
+    // Cadence shapes.
+    mode !== 'compliance' && !printableMode && !mystoreMode && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
 
     // "ready for review" notification banner — unconditional on mode (matches the existing
     // scoreboard/eom/progress/compliance precedent, no new per-mode judgment introduced here).
@@ -3359,6 +3397,38 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // standalone eom-summary panel), reads ds/settings/supabase directly, and owns its own
     // period/group filters + loading/empty states rather than this panel's `rows`/`loading`.
     supervisorMode ? h(EOMSupervisorPanel, { ds, settings, supabase, period, scopedLocs }) : null,
+
+    // 'mystore' (owner req, 2026-09-27) — the promoted single-store recap default for a GM/SM-AM-DM:
+    // Recount Candidates → Waste flags → Missed/uncounted items (the reordered mode:'recap' output,
+    // via the SAME computeDraft() the existing "🔬 Diagnose"/"✉️ Draft" flow uses — never a separate
+    // rendering path that could drift from it), plus a prominent, one-click Share (reuses the
+    // existing createShare()/createEomShareLink()/shareOrCopy() mechanism verbatim). The existing
+    // per-store "🔬 Diagnose" button + its draft modal, used by supervisors reviewing OTHER stores,
+    // is completely untouched — this is a new default landing surface, not a replacement for it.
+    mystoreMode
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : !myRow
+          ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, `No EOM data yet for your store this period (${period}).`)
+          : div({ className: 'eom-no-print', style: { maxWidth: '840px' } },
+              div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' } },
+                div(null,
+                  div({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--text)' } }, myRow.name),
+                  div({ style: { fontSize: '12px', color: 'var(--text2)', marginTop: '2px' } },
+                    `EOM FOB recap · ${period}${myRow.fobPct != null ? ` · FOB ${(myRow.fobPct * 100).toFixed(2)}%` : ''}`)),
+                div({ style: { display: 'flex', gap: '8px' } },
+                  h('button', {
+                    title: 'Create a read-only, no-login share link to this recap (scoped + expiring). Copies the URL.',
+                    onClick: () => createShare(myRow.loc, myRow.name, myRow.components),
+                    style: { background: '#f5bc00', border: 'none', borderRadius: '6px', color: '#0f1117', cursor: 'pointer', fontSize: '13px', fontWeight: 700, padding: '7px 14px' },
+                  }, '🔗 Share'),
+                  h('button', {
+                    title: 'Open the full diagnosis report + message draft (recap / full / housekeeping)',
+                    onClick: () => openDraft(myRow.loc, myRow.name, myRow.components),
+                    style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '6px', color: 'var(--text2)', cursor: 'pointer', fontSize: '13px', padding: '7px 14px' },
+                  }, 'Full report'))),
+              div({ className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(myDraft ? myDraft.recapBody : 'No diagnosis data yet for this period.') } }))
+      : null,
 
     // Dispatch #227 — the three new report tabs, same "own loading/empty state, own Print button"
     // shape as Count Cycle/Supervisor Rollup above. Each is presentation-only over data this hub
