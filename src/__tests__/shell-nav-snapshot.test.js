@@ -253,7 +253,11 @@ const HIDDEN_WHEN_DENIED = {
   // test-kitchen panel -- its label joins this list. Its icon ('📊') does NOT, because 'lfz-gap'
   // (LifeLenz Gap, perm analytics.forecasting, unaffected by this denial) already shares it, the
   // same "icon has another owner" reasoning as the 📦/Inventory note above this map.
-  'analytics.district': ['Above-Store One-Pager', 'District View', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞', '💰'],
+  // 2026-09-28: 'Inventory Control' (eom-dashboard) dropped OUT of this list -- its own registry
+  // perm widened 'analytics.district' -> 'analytics.store' (owner RBAC decision, "Narrower fix,
+  // store specific at that level unless overridden in settings"), so an analytics.district-only
+  // denial no longer touches it at all. It moves to the 'analytics.store' entry below instead.
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞', '💰'],
   // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
   // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
   // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
@@ -316,7 +320,20 @@ const HIDDEN_WHEN_DENIED = {
   // 2026-09-07: 'Store Assessments' (perm analytics.store, unique 🗒️ icon) joins this list --
   // Test Kitchen panels are gated by the SAME perm() check as any other panel (betaMode is a
   // separate, additive gate, not a substitute for perm), so denying analytics.store hides it too.
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '💲', '📈', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // 2026-09-28: 'Inventory Control' joins this list (perm widened from analytics.district, see
+  // the analytics.district entry's own note above). Its icon 📦 joins too -- previously 📦 had
+  // TWO owners (Inventory Control @ analytics.district, 'Inventory' @ analytics.store), so an
+  // analytics.store-only denial never removed it (Inventory Control alone kept it rendering).
+  // Now both owners share analytics.store, so denying it removes both text nodes AND the icon --
+  // the same "icon has another owner... until it doesn't" pattern this file already tracks for
+  // 🏆 (dispatch #77/#203 note above). This also empties 'Inventory & Food Cost' ENTIRELY under
+  // this denial for the first time -- Food Cost/Inventory were already analytics.store, and
+  // Inventory Control was the section's one surviving non-store member (see the analytics.store
+  // denial test's own updated comment below); fob-eom/count-cycle/pmix render nowhere in this
+  // perm:()=>true-but-optional-hidden baseline regardless of any perm. So the section header
+  // joins this list too, same "fully empty -> header vanishes" behavior 'Operations'/'Scheduling
+  // & Labor' already demonstrate.
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Inventory & Food Cost', 'Inventory Control', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '💲', '📈', '📦', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
@@ -367,11 +384,20 @@ describe('AppSidebar permission gates survive the Job B section-driven render', 
     // above, confirming this is still per-section-emptiness, not a special case for one section.
     expect(shown).not.toContain('Operations');
     expect(shown).not.toContain('EOM Supervisor');
-    // Inventory & Food Cost takes over as the "keeps a member, header survives" contrast case --
-    // Inventory Control (eom-dashboard, perm analytics.district) is its one non-store member,
-    // alongside Food Cost/Inventory (both analytics.store).
-    expect(shown).toContain('Inventory & Food Cost');
-    expect(shown).toContain('Inventory Control');
+    // 2026-09-28: Inventory & Food Cost ALSO lost its own "keeps a member, header survives"
+    // status this same way -- eom-dashboard's perm widened analytics.district -> analytics.store
+    // (owner RBAC decision), so Inventory Control is no longer a non-store member either. Food
+    // Cost/Inventory/Inventory Control are now all analytics.store, so this section behaves
+    // exactly like Scheduling & Labor/Operations above -- re-measured fresh, not assumed.
+    expect(shown).not.toContain('Inventory & Food Cost');
+    expect(shown).not.toContain('Inventory Control');
+    // Reports takes over as the "keeps a member, header survives" contrast case -- Above-Store
+    // One-Pager and Org Summary are both perm analytics.district, unaffected by this denial,
+    // alongside Store One-Pager/Leaderboards (analytics.store, which DO disappear) and My Reports
+    // (analytics.dashboard, also unaffected but a different perm entirely).
+    expect(shown).toContain('Reports');
+    expect(shown).toContain('Above-Store One-Pager');
+    expect(shown).not.toContain('Store One-Pager');
   });
 });
 

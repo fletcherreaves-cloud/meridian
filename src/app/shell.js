@@ -623,9 +623,11 @@ function NotificationBell({ onOpenModal, perm }) {
     onOpenModal && onOpenModal(`eom-dashboard:${row.loc}`);
   };
 
-  // Same perm as the panel it deep-links into (eom-dashboard is 'analytics.district') — a user
-  // who can't open that panel gets no bell rather than a dead-end click.
-  if (perm && !perm('analytics.district')) return null;
+  // Same perm as the panel it deep-links into (eom-dashboard widened to 'analytics.store'
+  // 2026-09-28, owner: "Narrower fix, store specific at that level unless overridden in
+  // settings") — a user who can't open that panel gets no bell rather than a dead-end click.
+  // This is exactly the manager/gm/sm_am_dm use case: a GM's own store's EOM count notification.
+  if (perm && !perm('analytics.store')) return null;
 
   return div({ style: { position: 'relative', flexShrink: 0 } },
     btn({ onClick: () => setOpen(o => !o), title: 'EOM count notifications',
