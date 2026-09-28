@@ -13,12 +13,18 @@
 // still works unmodified — the class hooks it targets are now supplied by RoutePanelShell's
 // className/headerClassName props instead of ModalShell's (see PRINT_STYLE's comment).
 //
-// Permission scoping (dispatch #202's explicit check): eom-summary's own perm was already
-// 'analytics.district' — identical to eom-dashboard's registry-level perm (panel-registry.js).
-// Measured, not assumed: there is no privilege mismatch to gate around here, unlike
-// SchedulingHubPanel's sched-hub (analytics.store) hosting one stricter-perm tab
-// (labor-analytics, analytics.labor) that IS internally gated via SCHED_TABS' own perm filter
-// (App.js). Folding this tab in widens nothing and narrows nothing.
+// Permission scoping (dispatch #202's explicit check): eom-summary's own perm was 'analytics.district'
+// — identical to eom-dashboard's registry-level perm (panel-registry.js) at the time. That
+// changed 2026-09-28: eom-dashboard's own registry perm widened to 'analytics.store' so
+// manager/gm/sm_am_dm could reach the panel's new single-store 'mystore' recap, while this tab's
+// content (a district/multi-store rollup) deliberately did NOT widen with it — a real privilege
+// mismatch now exists, the exact shape this comment used to say didn't apply here. It's resolved
+// the same way SchedulingHubPanel's own stricter tab is, just via a different mechanism: not a
+// per-tab SCHED_TABS-style perm filter, but TAB_LIST itself (eom-dashboard.js) never including
+// 'supervisor' in a single-store role's tab list at all — the same accessibleLocs-cardinality
+// check that resolves 'mystore' for them. A role that keeps analytics.district (VP/DO/OM/AS/
+// Admin/Owner) or a manager/gm/sm_am_dm whose accessible_locs has been widened past one store in
+// Settings sees this tab exactly as before; nothing here changed for them.
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
 import { loadEbosMonthlyByStore } from '../lib/supabase.js';

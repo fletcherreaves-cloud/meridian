@@ -3249,14 +3249,21 @@ function App() {
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&goRoute('morning-brief');
         // eom-summary RETIRED (dispatch #202) — redirects into eom-dashboard's Supervisor
-        // Rollup tab (eomInitialMode==='supervisor'), same pattern as count-cycle below. Same
-        // perm as before ('analytics.district') and identical to eom-dashboard's own registry
-        // perm — no widening, no narrowing.
+        // Rollup tab (eomInitialMode==='supervisor'). Deliberately STAYS 'analytics.district' as
+        // of 2026-09-28, even though eom-dashboard's own registry perm widened to
+        // 'analytics.store' in the same pass (owner: "Narrower fix") — Supervisor Rollup is
+        // genuinely district/multi-store content, not something the new manager/gm/sm_am_dm
+        // single-store audience should reach via this legacy redirect. No widening here.
         if(modal==='eom-summary')    perm('analytics.district')&&(setEomInitialMode('supervisor'),goRoute('eom-dashboard'));
         // eom-dashboard — dispatch #209: `eom-dashboard:<loc>` deep-links a notification into
         // that store's Scoreboard entry (mirrors the 'ranking:' colon-arg convention above).
+        // Widened to 'analytics.store' 2026-09-28, matching the panel's own registry perm — this
+        // is exactly the manager/gm/sm_am_dm use case (their own store's EOM notification), and
+        // eom-dashboard.js's mode-init fix (same pass) makes sure a single-store role lands on
+        // 'mystore' regardless of this call's own 'scoreboard' initialMode, not a stray tab their
+        // narrowed TAB_LIST has no button for.
         if(modal==='eom-dashboard'||modal.startsWith('eom-dashboard:'))
-          perm('analytics.district')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
+          perm('analytics.store')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
         if(modal==='brief')          perm('analytics.brief')&&(selStore?setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]}):setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null}),goRoute('brief'));
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
         if(modal==='operator-summary')  perm('analytics.district')&&goRoute('operator-summary');
@@ -3340,9 +3347,10 @@ function App() {
         if(modal==='inventory')      perm('analytics.store')&&goRoute('inventory');
         // 'count-cycle' — dispatch #189: no longer its own panel, redirects into Inventory
         // Control's Count Cycle tab (mirrors 'targets-editor' just above) so an old deep link
-        // doesn't 404. Gated on 'analytics.district' (not 'analytics.store') to match
-        // eom-dashboard's own registry perm — this redirect must not be looser than the hub
-        // it opens (see eom-summary just above, same perm for the same reason).
+        // doesn't 404. Deliberately STAYS 'analytics.district' as of 2026-09-28 (same reasoning as
+        // eom-summary just above) — Count Cycle's compliance view is multi-store content the new
+        // manager/gm/sm_am_dm single-store audience isn't meant to reach via this legacy redirect,
+        // even though eom-dashboard's own registry perm widened to 'analytics.store' in this pass.
         if(modal==='count-cycle')    perm('analytics.district')&&(setEomInitialMode('compliance'),goRoute('eom-dashboard'));
         if(modal==='news')           perm('analytics.store')&&goRoute('news');
         if(modal==='fob-analysis')   perm('analytics.store')&&goRoute('fob-analysis');
@@ -3438,9 +3446,12 @@ function App() {
           // links a fired notification into that store's Scoreboard entry. Same colon-arg +
           // perm gate as the sidebar's own 'eom-dashboard:' handler above (AppSidebar's
           // onOpenModal) — kept a separate branch here rather than sharing one function since
-          // AppTopbar's onOpenModal is intentionally the small, top-bar-only subset.
+          // AppTopbar's onOpenModal is intentionally the small, top-bar-only subset. Widened to
+          // 'analytics.store' 2026-09-28 alongside that same sidebar handler and shell.js's
+          // NotificationBell gate itself — all three must move together (see NotificationBell's
+          // own comment in shell.js).
           if(modal==='eom-dashboard'||modal.startsWith('eom-dashboard:'))
-            perm('analytics.district')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
+            perm('analytics.store')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
         }
       }),
 
@@ -3495,7 +3506,9 @@ function App() {
             goRoute('ranking');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
-          else if(modal==='eom-dashboard')perm('analytics.district')&&goRoute('eom-dashboard');
+          // Widened to 'analytics.store' 2026-09-28, matching the panel's own registry perm and
+          // its other 'eom-dashboard' open paths above (same pass, see their comments).
+          else if(modal==='eom-dashboard')perm('analytics.store')&&goRoute('eom-dashboard');
           else if(modal==='fob-analysis')goRoute('fob-analysis');
           else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');goRoute('sched-hub');}
           else if(modal==='fcst-accuracy'){setForecastReportsTab('fcst-accuracy');goRoute('forecast-reports');} // dispatch #106 Phase B merge

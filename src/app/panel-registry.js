@@ -143,7 +143,13 @@ export const PANELS = [
   // like 'targets-editor' selects PerformanceReviewsPanel's Customize>Targets tab. Its own
   // component (CountCycleSection, src/views/count-cycle-panel.js) is reused as-is, not deleted.
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'hub-tab', section:'inventory-food-cost' },
-  { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
+  // perm widened 'analytics.district' -> 'analytics.store' 2026-09-28 (owner: "Narrower fix, store
+  // specific at that level unless overridden in settings") so manager/gm/sm_am_dm can reach the
+  // panel at all -- they land on the single-store 'mystore' recap tab (eom-dashboard.js's
+  // SINGLE_STORE_ROLES), not the full district dashboard the other 9 tabs still need
+  // analytics.district-caliber scope to make sense of. See eom-supervisor.js's own comment for why
+  // its Supervisor Rollup tab needing no separate internal perm check still holds.
+  { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   // eom-summary RETIRED 2026-08-28 (dispatch #202, owner-approved) — folded into the Inventory
   // Control hub (eom-dashboard.js) as a new "Supervisor Rollup" mode/tab, alongside Scoreboard/
   // EOM Count/Cadence/Count Cycle, same "harvest-then-remove" pattern dispatch #189 used for

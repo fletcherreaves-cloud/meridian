@@ -1568,7 +1568,15 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // analytics.store:true, "Own store only" per CLAUDE.md's RBAC table) — the audience for the
 // promoted single-store recap default view below (owner req, 2026-09-27), as opposed to VP/DO/OM/
 // AS/Admin/Owner, who keep the existing multi-store Scoreboard/Cadence landing untouched.
-const SINGLE_STORE_ROLES = new Set(['gm', 'sm_am_dm']);
+// 'manager' added 2026-09-28 (owner: "Narrower fix, store specific at that level unless overridden
+// in settings") — this panel's own registry perm (panel-registry.js) widened from
+// 'analytics.district' to 'analytics.store' in the same pass so manager/gm/sm_am_dm can reach it
+// at all; 'manager' defaults to this SAME single-store treatment rather than the full district
+// dashboard. The override lever is already free: accessibleLocs resolving to more than one
+// location (or null/unrestricted) falls through to the ordinary multi-store landing below for
+// ANY role in this set, manager included — an admin widens a specific manager's own
+// accessible_locs (Settings/user management) to grant broader access, no new toggle needed.
+const SINGLE_STORE_ROLES = new Set(['gm', 'sm_am_dm', 'manager']);
 
 export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs }) {
   // The signed-in GM/SM-AM-DM's own store, resolved from their profile's accessible_locs (the
@@ -1725,10 +1733,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     for (const op of Object.keys(opGroups || {})) if ((opGroups[op] || []).map(unpad).includes(u)) return op;
     return null;
   }, [opGroups]);
-  // 'mystore' (owner req, 2026-09-27) — the promoted single-store recap default for a GM/SM-AM-DM.
-  // Takes priority over defaultModeFor() whenever singleStoreLoc resolves; every other role's
-  // existing Scoreboard/Progress default is untouched.
-  const [mode, setMode] = useState(() => initialMode || (singleStoreLoc ? 'mystore' : defaultModeFor(defaultPeriod()))); // 'scoreboard' | 'eom' | 'progress' | 'compliance' | 'mystore'
+  // 'mystore' (owner req, 2026-09-27) — the promoted single-store recap default for a GM/SM-AM-DM/
+  // manager. singleStoreLoc is checked BEFORE initialMode (not after) — 2026-09-28 fix: several
+  // legacy redirects (the EOM notification bell's 'eom-dashboard:<loc>' deep link, in particular)
+  // pass initialMode:'scoreboard', which used to win over singleStoreLoc via `initialMode || ...`.
+  // A single-store role has no meaningful 'scoreboard'/'eom'/'compliance' distinction any more
+  // (TAB_LIST below narrows to just 'mystore' for them) — landing them on a legacy mode with no
+  // matching tab button would be a real broken-UI bug, not just a missed nicety, now that the
+  // notification bell's own perm gate widened to analytics.store alongside this panel's registry
+  // perm (same pass). Every other role's existing initialMode-first / defaultModeFor() behavior
+  // is unchanged.
+  const [mode, setMode] = useState(() => singleStoreLoc ? 'mystore' : (initialMode || defaultModeFor(defaultPeriod()))); // 'scoreboard' | 'eom' | 'progress' | 'compliance' | 'mystore'
   // Re-default the mode when the period changes (manual toggle still overrides after) — but
   // never override a legacy-redirect initialMode on the very first render (that useEffect
   // would fire immediately after mount since `period` is already set, undoing the redirect

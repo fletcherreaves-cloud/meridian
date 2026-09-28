@@ -143,12 +143,26 @@ describe('dispatch #202 — Supervisor Rollup tab inside Inventory Control', () 
     expect(text).not.toMatch(/Avg count complete/);
   });
 
-  it('the old eom-summary registry entry is retired to kind:"internal" but keeps its id and perm, matching eom-dashboard\'s own perm (measured, not assumed — no privilege change)', () => {
+  it('the old eom-summary registry entry is retired to kind:"internal" but keeps its id and perm (measured, not assumed)', () => {
     const eomSummary = PANEL_BY_ID['eom-summary'];
-    const eomDashboard = PANEL_BY_ID['eom-dashboard'];
     expect(eomSummary).toBeTruthy();
     expect(eomSummary.kind).toBe('internal');
     expect(eomSummary.perm).toBe('analytics.district');
-    expect(eomSummary.perm).toBe(eomDashboard.perm);
+  });
+
+  // 2026-09-28 — eom-dashboard's own registry perm widened 'analytics.district' ->
+  // 'analytics.store' (owner RBAC decision, "Narrower fix, store specific at that level unless
+  // overridden in settings") so manager/gm/sm_am_dm can reach the panel's new single-store
+  // 'mystore' recap. eom-summary's Supervisor Rollup content deliberately did NOT widen with it
+  // -- this REPLACES the old "identical perm, no privilege mismatch" assertion above (accurate
+  // when dispatch #202 landed, no longer true) with the opposite, now-correct invariant: the two
+  // perms are expected to diverge, and eom-summary must stay the STRICTER of the two, never
+  // looser than the hub it's embedded in.
+  it('eom-summary is deliberately STRICTER than eom-dashboard now, not identical (2026-09-28 RBAC narrowing)', () => {
+    const eomSummary = PANEL_BY_ID['eom-summary'];
+    const eomDashboard = PANEL_BY_ID['eom-dashboard'];
+    expect(eomDashboard.perm).toBe('analytics.store');
+    expect(eomSummary.perm).toBe('analytics.district');
+    expect(eomSummary.perm).not.toBe(eomDashboard.perm);
   });
 });
