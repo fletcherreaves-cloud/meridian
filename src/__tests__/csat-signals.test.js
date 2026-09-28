@@ -94,8 +94,28 @@ describe('scanCsatDrivers', () => {
   it('drops zero-variance drivers instead of emitting bogus correlations', () => {
     const res = scanCsatDrivers(buildDs());
     const rows = res.byOutcome.osatTop2 || [];
-    // avgCheck / laborPct / tpph are constant in the fixture → no within-store r.
-    expect(rows.find(r => r.driverKey === 'avgCheck')).toBeFalsy();
+    // laborPct / tpph are constant in the fixture (read straight off laborRows, not routed
+    // through AUTO_FIRST_KEY_MAP) → no within-store r.
+    expect(rows.find(r => r.driverKey === 'laborPct')).toBeFalsy();
+    expect(rows.find(r => r.driverKey === 'tpph')).toBeFalsy();
+  });
+
+  // 2026-09-28 — avgCheck adopted into AUTO_FIRST_KEY_MAP (owner decision), so it now derives
+  // sales÷gc ahead of the fixture's own constant manual value (dispatch #182's derive-before-
+  // manual chain, previously excluded here specifically because of this fixture). gc varies
+  // month-to-month by design ("INDEPENDENT of the OEPE signal" per buildDs()'s own comment), but
+  // that variation still correlates with month index the same way the OSAT signal formula does —
+  // so avgCheck is no longer zero-variance and DOES surface now, with a strong raw within-store r
+  // that the volume partial correctly discounts back to noise. Pinning the real, measured numbers
+  // (not hand-derived) so a future change to either the derive or the partial is caught here.
+  it('avgCheck now derives (sales÷gc) and surfaces, but the volume partial washes it out to noise', () => {
+    const res = scanCsatDrivers(buildDs());
+    const rows = res.byOutcome.osatTop2 || [];
+    const avgCheck = rows.find(r => r.driverKey === 'avgCheck');
+    expect(avgCheck).toBeTruthy();
+    expect(avgCheck.withinR).toBeCloseTo(0.994, 2);
+    expect(avgCheck.partialR).toBeCloseTo(-0.008, 2);
+    expect(avgCheck.tier).toBe('watch');
   });
 
   it('exposes CSAT outcomes from the registry', () => {

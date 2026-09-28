@@ -101,6 +101,11 @@ describe('EOM Scoreboard "🔗 Share" — native OS Share sheet, real button cli
     const payload = share.mock.calls[0][0];
     expect(payload.url).toMatch(/\?share=77777777-7777-7777-7777-777777777777$/);
     expect(payload.title).toMatch(/EOM FOB/);
+    // 2026-09-28 owner report: on a desktop where navigator.share() exists, the OS's own native
+    // share sheet's "Copy" affordance combines a `text` field with the url, so whatever we hand
+    // navigator.share() here must NOT carry `text` -- otherwise copying from that sheet pastes
+    // the url plus a second line the owner has to manually strip before sending the link.
+    expect(payload.text).toBeUndefined();
     expect(writeText).not.toHaveBeenCalled();
     expect(container.textContent).toMatch(/✓ Shared/);
 
