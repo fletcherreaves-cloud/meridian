@@ -235,7 +235,7 @@ describe('runDiagnosis — editable check registry', () => {
       ],
     };
     const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'v', descr: 'Beef', dolDiff: -80, cls: 'food' }] } });
-    // asOf mid-window (not the last day) so Non-Product is still "tomorrow".
+    // asOf mid-window (not the last day) so Non-Product is not yet due.
     const recap = formatDiagnosisReport(res, { mode: 'recap', incomplete, asOf: new Date('2026-07-29T12:00:00'), fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
     expect(recap).toMatch(/Finish today's count — recount these/);
     expect(recap).toMatch(/McCrispy Strips/);          // early Food listed by name
@@ -243,9 +243,9 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap).toMatch(/Napkins/);                  // Paper listed (due today)
     expect(recap).not.toMatch(/Happy Meal Toy/);       // Non-Product omitted (not the last day)
     expect(recap).toMatch(/Grill Cheese \[b\]/);       // WRIN shown alongside the name (owner Notes 38)
-    // Reordered (owner req, 2026-09-27): Recount Candidates leads, the uncounted/"Finish today"
-    // block is now third — after Recount Candidates (and Waste flags, when present).
-    expect(recap.indexOf('Finish today')).toBeGreaterThan(recap.indexOf('Recount Candidates'));
+    // Reordered (owner req, 2026-09-27, RE-reordered 2026-09-28): the uncounted/"Finish today"
+    // block now leads, ahead of Recount Candidates (and Waste flags, when present).
+    expect(recap.indexOf('Finish today')).toBeLessThan(recap.indexOf('Recount Candidates'));
   });
 
   it('recap includes never-counted Non-Product on the LAST day of the month (owner Notes 38)', () => {
@@ -398,7 +398,7 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).not.toMatch(/true blanks/i);                // old blanket wording gone
     expect(rpt).toMatch(/Food\/Condiment item.*food-cost-consequential/i); // FC = real recovery in Count integrity
     // Time-aware: Non-Product (HM26) is not due today → expected, not a gap.
-    expect(rpt).toMatch(/Non-Product.*not due until tomorrow/i);
+    expect(rpt).toMatch(/Non-Product.*not due until the last day of the month/i);
     expect(rpt).toMatch(/EXPECTED/);
   });
 });

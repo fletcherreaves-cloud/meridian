@@ -1,7 +1,9 @@
-// Dispatch (2026-09-27, owner-approved design): retune formatDiagnosisReport's recap output —
-// (a) Recount Candidates first (cap raised 5→10, Food class only), (b) Waste flags second
-// (promoted out of the old one-line soft footnote into its own capped, ranked section), (c)
-// Missed/uncounted items third (unchanged content, moved down). mode:'full' is untouched.
+// Dispatch (2026-09-27, owner-approved design; RE-ordered 2026-09-28 — owner: "this is my fault
+// for mis directing you yesterday"): retune formatDiagnosisReport's recap output — cap raised
+// 5→10 on Recount Candidates (Food class only), Waste flags promoted out of the old one-line soft
+// footnote into its own capped, ranked section, and the three sections now read (a) Missed/
+// uncounted items first, (b) Recount Candidates second, (c) Waste flags third. mode:'full' is
+// untouched.
 //
 // Per CLAUDE.md's "would this verification still pass if reverted?" rule, these tests assert the
 // EXACT new shape (order + cap number + class filter + exclusion set) so they fail if any one of
@@ -53,7 +55,7 @@ describe('dispatch: EOM recap priority reorder (2026-09-27)', () => {
     expect(full).toMatch(/Condiment Item 0/); // still shown in the full report's Reference table
   });
 
-  it('reorders the recap to Recount Candidates → Waste flags → Missed/uncounted items', () => {
+  it('reorders the recap to Missed/uncounted items → Recount Candidates → Waste flags', () => {
     // Static nightly waste value on 5 distinct days → waste-inflation (shown); single-manager waste
     // concentration → waste-patterns (excluded, manager-attribution). Plus one never-counted item.
     const variance = [{ wrin: 'f', descr: 'Fries', dolDiff: -120, cls: 'food' }];
@@ -68,8 +70,8 @@ describe('dispatch: EOM recap priority reorder (2026-09-27)', () => {
     expect(iRecount).toBeGreaterThan(-1);
     expect(iWaste).toBeGreaterThan(-1);
     expect(iMissed).toBeGreaterThan(-1);
+    expect(iMissed).toBeLessThan(iRecount);
     expect(iRecount).toBeLessThan(iWaste);
-    expect(iWaste).toBeLessThan(iMissed);
   });
 
   it('Waste flags: promoted to a real visible section, capped, and excludes manager-attribution checks', () => {
@@ -113,11 +115,12 @@ describe('dispatch: EOM recap priority reorder (2026-09-27)', () => {
     expect(full).toMatch(/## 🔍 Second-Look Signals/); // full report's own integrity section, unchanged
   });
 
-  // "Would this still pass if reverted?" — a literal revert of the reorder (old order: uncounted →
-  // Top-5 → net → soft note) would make `Recount Candidates` not exist at all, and the old
-  // 'Do these now'-anchored ordering assertion above would fail because 'Recount Candidates' is
-  // simply absent, and because 'Finish today\'s count' would come BEFORE the (nonexistent) heading.
-  // A revert of just the cap (10→5) fails the exact-10 line-count assertion above. A revert of the
-  // Food-only filter fails the Condiment-absence assertion above. A revert of the Waste-flags
-  // promotion fails the section-heading + exclusion assertions above.
+  // "Would this still pass if reverted?" — a literal revert all the way back to the original
+  // (pre-2026-09-27) order (uncounted → Top-5 → net → soft note) would make `Recount Candidates`
+  // not exist at all, so the ordering assertion above fails outright. A revert of just the
+  // 2026-09-28 re-reorder (back to Recount Candidates → Waste flags → Missed/uncounted) fails the
+  // `iMissed < iRecount` half of that same assertion. A revert of just the cap (10→5) fails the
+  // exact-10 line-count assertion above. A revert of the Food-only filter fails the
+  // Condiment-absence assertion above. A revert of the Waste-flags promotion fails the
+  // section-heading + exclusion assertions above.
 });

@@ -171,7 +171,7 @@ export const DEFAULT_CHECKS = [
       if (fc.length) bits.push(`${fc.length} Food/Condiment (~$${Math.round(fcVal)} at risk — the cost-control money)`);
       if (paper.length) bits.push(`${paper.length} Paper (due by EOD for completeness — not cost-control)`);
       if (npDue && nonProd.length) bits.push(`${nonProd.length} Non-Product (due today — it's the last day of the month)`);
-      const npNote = (!npDue && nonProd.length) ? ` · ${nonProd.length} Non-Product not due until tomorrow (expected — not counted today)` : '';
+      const npNote = (!npDue && nonProd.length) ? ` · ${nonProd.length} Non-Product not due until the last day of the month (expected — not counted today)` : '';
       const sev = fcVal >= 500 ? SEVERITY.high : fc.length ? SEVERITY.medium : SEVERITY.info;
       return [mkFinding('incomplete-count', sev,
         `${dueToday} item${dueToday === 1 ? '' : 's'} still uncounted — due by EOD`,
@@ -1099,7 +1099,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');
     if (neverNonProd.length) L.push(npDueToday
       ? `- 🔴 **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and it's DUE TODAY** (last day of the month) — count these to hit 100%: ${listW(neverNonProd, 6)}`
-      : `- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);
+      : `- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until the last day of the month. Not a gap, not a today action.`);
     L.push(`_Today's 100% = ${npLabel}. Full itemized list in Count integrity below._`, '');
   }
 
@@ -1178,8 +1178,9 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
   L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
 
-  // ── RECAP MODE — the super-abbreviated day-of message (owner Notes 37 C1; reordered 2026-09-27) ──
-  // FOB line first → (a) Recount Candidates → (b) Waste flags → (c) Missed/uncounted items → net →
+  // ── RECAP MODE — the super-abbreviated day-of message (owner Notes 37 C1; reordered 2026-09-27,
+  // RE-reordered 2026-09-28 — owner: "this is my fault for mis directing you yesterday") ──
+  // FOB line first → (a) Missed/uncounted items → (b) Recount Candidates → (c) Waste flags → net →
   // punchy close. Reuses doNow/net/shorts/overs/V + the count-timing buckets above, so it can't
   // drift from the report. mode:'full' is completely unchanged by this reorder.
   if (mode === 'recap') {
@@ -1189,41 +1190,10 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       R.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
     }
 
-    // ── (a) RECOUNT CANDIDATES — leads the recap (owner req, 2026-09-27). Same scored `doNow`
-    // pool the full report's Top-5 uses (never re-derived, so the underlying scoring can't drift
-    // between the two modes) — but for the recap specifically, narrowed to Food-class ITEMS only
-    // (Condiment stays in the engine + mode:'full''s Top-5; only this section's own filter/cap
-    // changes) and capped at RECAP_RECOUNT_CAP (10), not 5. Group entries (never-counted/counted-
-    // early/verify-&-clear buckets, FOB component levers) have no single wrin/class and are
-    // deliberately excluded here — they stay visible via section (c) and the full report.
-    const recountCandidates = doNow
-      .filter(d => d.wrin && normClass((_vByWrin.get(String(d.wrin)) || {}).cls) === 'food')
-      .slice(0, RECAP_RECOUNT_CAP);
-    if (recountCandidates.length) {
-      R.push(`**Recount Candidates${recountCandidates.length < RECAP_RECOUNT_CAP ? ` (${recountCandidates.length})` : ''}:**`);
-      recountCandidates.forEach((d, i) => R.push(`${i + 1}. ${d.text}`));
-      R.push('');
-    } else {
-      R.push(`🏆 **Clean sweep on Food recounts** — nothing to action. Nice work.`, '');
-    }
-
-    // ── (b) WASTE FLAGS — promoted out of the old one-line soft footnote into its own visible,
-    // capped, ranked section (owner req, 2026-09-27): "a real ranked list a manager can act on,
-    // not a footnote." Same integrity/pattern pool the full report's Second-Look Signals draws
-    // from (already sorted severity desc, $ desc — see runDiagnosis), minus the two checks that
-    // ARE manager attribution by design — those stay in the deep-dive tabs, never here.
-    const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
-    const wasteFlags = intg.filter(f => !RECAP_WASTE_FLAG_EXCLUDE.has(f.checkId)).slice(0, RECAP_WASTE_FLAG_CAP);
-    if (wasteFlags.length) {
-      R.push(`**Waste flags — worth a look together (${wasteFlags.length}):**`);
-      wasteFlags.forEach(f => R.push(`- **${f.title}** (${money(f.dollars)}) — ${RECAP_WASTE_FLAG_HINT[f.checkId] || 'verify before it rides into next period'}`));
-      R.push('', `_Nothing's being called wrong; a clean verify just makes the number airtight and off our radar._`, '');
-    }
-
-    // ── (c) MISSED / UNCOUNTED ITEMS — the existing finish-today's-count list, content and
-    // wording UNCHANGED, now third (owner req, 2026-09-27 — Recount Candidates and Waste flags
-    // lead instead). Time/class-aware: Food, Condiment & Paper are due to 100% by EOD (list them);
-    // Non-Product isn't due until tomorrow, so it's omitted here (expected, not a gap).
+    // ── (a) MISSED / UNCOUNTED ITEMS — the existing finish-today's-count list, content and
+    // wording UNCHANGED, now first (owner req, 2026-09-28). Time/class-aware: Food, Condiment &
+    // Paper are due to 100% by EOD (list them); Non-Product isn't due until the last day of the
+    // month, so it's omitted here (expected, not a gap).
     const showNP = npDueToday && neverNonProd.length;   // last day → Non-Product due today too
     if (earlyFC.length || neverFC.length || neverPaper.length || showNP) {
       R.push(`⏳ **Finish today's count — recount these before you close:**`);
@@ -1235,6 +1205,45 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       R.push('');
     } else {
       R.push(npDueToday ? `✅ All classes counted.` : `✅ Food, Condiment & Paper counted.`, '');
+    }
+
+    // ── (b) RECOUNT CANDIDATES — second (owner req, 2026-09-28). Same scored `doNow` pool the
+    // full report's Top-5 uses (never re-derived, so the underlying scoring can't drift between
+    // the two modes) — but for the recap specifically, narrowed to Food-class ITEMS only
+    // (Condiment stays in the engine + mode:'full''s Top-5; only this section's own filter/cap
+    // changes) and capped at RECAP_RECOUNT_CAP (10), not 5. Group entries (never-counted/counted-
+    // early/verify-&-clear buckets, FOB component levers) have no single wrin/class and are
+    // deliberately excluded here — they stay visible via section (a) above and the full report.
+    const recountCandidates = doNow
+      .filter(d => d.wrin && normClass((_vByWrin.get(String(d.wrin)) || {}).cls) === 'food')
+      .slice(0, RECAP_RECOUNT_CAP);
+    if (recountCandidates.length) {
+      R.push(`**Recount Candidates${recountCandidates.length < RECAP_RECOUNT_CAP ? ` (${recountCandidates.length})` : ''}:**`);
+      recountCandidates.forEach((d, i) => R.push(`${i + 1}. ${d.text}`));
+      R.push('');
+    } else {
+      R.push(`🏆 **Clean sweep on Food recounts** — nothing to action. Nice work.`, '');
+    }
+
+    // ── (c) WASTE FLAGS — third (owner req, 2026-09-28). Promoted out of the old one-line soft
+    // footnote into its own visible, capped, ranked section (owner req, 2026-09-27): "a real
+    // ranked list a manager can act on, not a footnote." Same integrity/pattern pool the full
+    // report's Second-Look Signals draws from (already sorted severity desc, $ desc — see
+    // runDiagnosis), minus the two checks that ARE manager attribution by design — those stay in
+    // the deep-dive tabs, never here.
+    // NOT class-filtered to Food/Condiment (owner asked 2026-09-28; flagged back rather than
+    // faked) — qsr_waste (waste-inflation/waste-session's own source, mapWasteEvents() above) is
+    // event-level with no WRIN and no item/class field at all (confirmed against
+    // scripts/security-rules-run.mjs's own comment: "qsr_waste carries no wrin... item-level
+    // waste is [a different check]'s own territory against qsr_variance_stat, not this table").
+    // These findings are inherently store-wide across every class combined; there's no class
+    // dimension in the data to filter on.
+    const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
+    const wasteFlags = intg.filter(f => !RECAP_WASTE_FLAG_EXCLUDE.has(f.checkId)).slice(0, RECAP_WASTE_FLAG_CAP);
+    if (wasteFlags.length) {
+      R.push(`**Waste flags — worth a look together (${wasteFlags.length}):**`);
+      wasteFlags.forEach(f => R.push(`- **${f.title}** (${money(f.dollars)}) — ${RECAP_WASTE_FLAG_HINT[f.checkId] || 'verify before it rides into next period'}`));
+      R.push('', `_Nothing's being called wrong; a clean verify just makes the number airtight and off our radar._`, '');
     }
 
     if (V.length) R.push(`**Net variance ${money(net)}** across ${V.length} item${V.length === 1 ? '' : 's'} over ±$${threshold} (short ${shorts.length} / over ${overs.length}).`, '');
@@ -1478,16 +1487,16 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // it." "Uncounted" here = not counted in the final window, NOT "never counted."
   if (incomplete && incomplete.uncountedCount > 0) {
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
-    L.push('_"Uncounted" = not counted in the FINAL window. **Due by EOD: Food, Condiment, Paper. Non-Product is not counted until tomorrow** — so Non-Product here is expected, not a gap. Only Food/Condiment is food-cost-consequential._', '');
+    L.push('_"Uncounted" = not counted in the FINAL window. **Due by EOD: Food, Condiment, Paper. Non-Product is due on the last day of the month** — so Non-Product here is expected, not a gap. Only Food/Condiment is food-cost-consequential._', '');
 
     // NEVER counted, split THREE ways by count-timing + FOB consequence (owner 2026-07-30):
     // Food/Condiment (due today, real recovery), Paper (due today, completeness), Non-Product (tomorrow).
     if (neverFC.length) L.push(`- **${neverFC.length} Food/Condiment item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) not yet counted** — food-cost-consequential, due by EOD. Count before close to recover real dollars.`);
     if (neverPaper.length) L.push(`- **${neverPaper.length} Paper item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) not yet counted** — due by EOD too, but **not** food-cost-consequential (completeness, not recovery).`);
-    if (neverNonProd.length) L.push(`- **${neverNonProd.length} Non-Product item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) not yet counted — EXPECTED**, not due until tomorrow. Not a gap, not a today action, and not cost-control-focused.`);
+    if (neverNonProd.length) L.push(`- **${neverNonProd.length} Non-Product item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) not yet counted — EXPECTED**, not due until the last day of the month. Not a gap, not a today action, and not cost-control-focused.`);
 
     // Itemized TO-COUNT table — the DUE-TODAY items (Food/Condiment first, then Paper). Non-Product
-    // is intentionally excluded (it's on tomorrow's timeline).
+    // is intentionally excluded (it's due on the last day of the month).
     const toCountRows = [...neverFC, ...neverPaper].slice(0, 40);
     if (toCountRows.length) {
       L.push('', '### 📝 To-count list — due by EOD (Food, Condiment, Paper)', '');
@@ -1558,7 +1567,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   };
   tier('🔴 CRITICAL — immediate ( ≥ $200 )', 200, null);
   tier('🟠 HIGH — within 24h ( $100–$199 )', 100, 200);
-  tier('🟡 MODERATE — within 48–72h ( $50–$99 )', threshold, 100);
+  tier('🟡 MODERATE — within 24–48h ( $50–$99 )', threshold, 100);
 
   if ((result.pending || []).length) L.push('_Checks awaiting data: ' + result.pending.map(p => p.label).join(', ') + '._');
   return L.join('\n');

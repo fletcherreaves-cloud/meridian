@@ -435,13 +435,15 @@ function _priceDailySeriesCached(pmixRows) {
 const AUTO_FIRST_KEY_MAP = {
   oepe: 'oepe', kvst: 'kvst', r2p: 'r2p', parkPct: 'park', dtMixPct: 'dtMixPct',
   sales: 'sales', gc: 'gc',
-  // avgCheck deliberately excluded: its METRIC_SOURCES chain special-cases derive-BEFORE-srcs
-  // (dispatch #182 — sales÷gc is tried ahead of any manual value, unlike every other chain in
-  // this map, which only derives as a last resort). Confirmed live behavior difference, not
-  // theoretical: a fixture with a constant manual avgCheck but a varying gc (csat-signals.test.js)
-  // went from a real zero-variance driver to a computed non-constant one under this swap. That
-  // may well be the MORE correct number, but it's a bigger, different change than "add an
-  // auto-first fallback" — worth its own dispatch, not a silent side effect of this one.
+  // avgCheck adopted 2026-09-28 (owner decision, backlog-open-2026-09-06.md — approved "adopt
+  // it" after the tradeoff below was flagged). Its METRIC_SOURCES chain special-cases derive-
+  // BEFORE-srcs (dispatch #182 — sales÷gc is tried ahead of any manual value, unlike every other
+  // chain in this map, which only derives as a last resort). Real, measured behavior difference,
+  // not theoretical: a fixture with a constant manual avgCheck but a varying gc
+  // (csat-signals.test.js) goes from a real zero-variance driver to a computed non-constant one
+  // under this swap — see that test's own updated comment for the measured before/after. The
+  // owner judged the derived number the more correct one to surface here.
+  avgCheck: 'avgCheck',
   laborPct: 'laborPct', tpph: 'tpph', avgRate: 'avgRate', otHrs: 'otHrs',
   discPct: 'discPct', discAmt: 'discAmt', promoPct: 'promoPct', promoAmt: 'promoAmt',
   cashOSPct: 'cashOSPct', cashOSAmt: 'cashOSAmt', drawerOpens: 'drawerOpens',

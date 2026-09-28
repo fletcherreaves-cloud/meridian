@@ -91,6 +91,10 @@ describe('Count Cycle "🔗 Share" — native OS Share sheet, real button click'
     expect(payload.url).toMatch(/\?share=66666666-6666-6666-6666-666666666666$/);
     expect(payload.title).toMatch(/Count Cycle/);
     expect(payload.title).toMatch(/Ardmore-Broadway/);
+    // 2026-09-28 owner report: same fix as eom-dashboard.js's createShare -- a `text` field here
+    // gets combined with the url by the OS's own native share sheet "Copy" affordance on desktop,
+    // so it must be absent from the payload.
+    expect(payload.text).toBeUndefined();
     expect(writeText).not.toHaveBeenCalled();
     // Status text reads "Shared", not "copied", when the OS sheet was actually used.
     expect(container.textContent).toMatch(/✓ Shared.*Ardmore-Broadway/);

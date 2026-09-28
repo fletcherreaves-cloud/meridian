@@ -565,7 +565,7 @@ function ClassChips({ byClass, uncounted, npDueToday }) {
       const nearDone = !isLate && !done && items.length > 0;
       const stTag = u => u.state === 'never' ? 'NEVER counted' : u.state === 'stale' ? `stale (last ${u.lastCounted || '?'})` : `early (${u.lastCounted || '?'})`;
       const title = isLate
-        ? `${label} (Non-Product): ${b.counted}/${b.total} counted (${pct(b.pct)}) — NOT due until tomorrow, so uncounted here today is expected (not part of today's 100%).`
+        ? `${label} (Non-Product): ${b.counted}/${b.total} counted (${pct(b.pct)}) — NOT due until the last day of the month, so uncounted here today is expected (not part of today's 100%).`
         : nearDone
         ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — due by EOD — items not counted in the final window:\n` +
           items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''} — ${stTag(u)}`).join('\n') +
@@ -575,7 +575,7 @@ function ClassChips({ byClass, uncounted, npDueToday }) {
       return span({
         key: k, title,
         style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, opacity: isLate ? 0.75 : 1, cursor: (nearDone || isLate) ? 'help' : 'default' },
-      }, `${label} ${pct(b.pct)}${isLate ? ' tmrw' : nearDone ? ` ·${items.length}` : ''}`);
+      }, `${label} ${pct(b.pct)}${isLate ? ' EOM' : nearDone ? ` ·${items.length}` : ''}`);
     }));
 }
 
@@ -2668,7 +2668,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       <table><tbody>
       <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
       <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? (d.completion.avgCountPct * 100).toFixed(2) + '%' : '—'} · ${d.completion.storesWithUncountedFC} Location(s) with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Items Total)` : ''}</td></tr>
-      <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
+      <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${m.k === 'nonproduct' ? ' (due last day of month)' : ''}`; }).join(' · ')}</td></tr>
       <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest component opportunity vs target: ${d.analysis.anyOverTarget ? `${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)` : 'all components at/under target'}</td></tr>
       </tbody></table>`;
     const rowsHtml = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9)).map(s =>
@@ -2849,7 +2849,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const { token, error } = await createEomShareLink({ loc, period, storeName: name, title: `EOM FOB ${period}`, fob: components || {}, recapMd, fullMd });
       if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
       const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
-      const shared = await shareOrCopy({ url, title: `EOM FOB ${period} — ${name}`, text: `EOM FOB report for ${name}, period ${period}` });
+      // No `text` field (owner report, 2026-09-28): shareOrCopy() hands {title,text,url} straight
+      // to navigator.share() (share-util.test.js's own test (a) confirms this app never touches
+      // the clipboard itself on that path) -- but on desktops where navigator.share() exists, the
+      // OS's own native share sheet's "Copy" affordance combines `text`+`url` into the clipboard,
+      // dropping `title`. The owner pastes that combined string somewhere and has to manually
+      // strip the extra line before sending just the link. Dropping `text` here (title stays, for
+      // share TARGETS that show it, e.g. Mail/Slack link previews) means there's nothing left for
+      // that OS-level "Copy" to combine with the url.
+      const shared = await shareOrCopy({ url, title: `EOM FOB ${period} — ${name}` });
       if (shared.cancelled) { setShareMsg(''); }
       else if (shared.ok) { setShareMsg(shared.method === 'share' ? `✓ Shared — ${name}` : `✓ Read-only link copied — ${name}`); }
       else { setShareMsg(`✓ Link (copy it): ${url}`); }
@@ -4267,7 +4275,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             span({ style: { textTransform: 'uppercase', letterSpacing: '.04em', fontSize: '10px' } }, 'By class:'),
             ...CLASS_META.map(m => { const p = d.completion.byClass[m.k]; const late = m.k === 'nonproduct';
               return span({ key: m.k, style: { color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', fontWeight: 600, opacity: late ? 0.7 : 1 } },
-                `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${late ? ' (tmrw)' : ''}`); })),
+                `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${late ? ' (due last day of month)' : ''}`); })),
           div({ style: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#f5bc00', fontWeight: 700 } }, `💰 ${$(d.totalOver$)} over target`), ` across ${d.opportunity.length} store${d.opportunity.length === 1 ? '' : 's'}`),
             d.analysis.anyOverTarget

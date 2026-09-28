@@ -165,7 +165,11 @@ export function CountCycleSection({ rows, period }) {
       });
       if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
       const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
-      const result = await shareOrCopy({ url, title: `Count Cycle — ${name}`, text: `Count Cycle report for ${name}` });
+      // No `text` field -- same fix and reasoning as eom-dashboard.js's createShare (owner
+      // report, 2026-09-28): the OS's own native share sheet "Copy" affordance combines
+      // `text`+`url` into the clipboard on desktops where navigator.share() exists, dropping
+      // `title`. Removing `text` leaves nothing for that OS-level "Copy" to combine with the url.
+      const result = await shareOrCopy({ url, title: `Count Cycle — ${name}` });
       if (result.cancelled) { setShareMsg(''); }
       else if (result.ok) { setShareMsg(result.method === 'share' ? `✓ Shared — ${name}` : `✓ Read-only link copied — ${name}`); }
       else { setShareMsg(`✓ Link (copy it): ${url}`); }
