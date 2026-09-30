@@ -75,6 +75,23 @@ Token lifespan: unknown, but observed to last multiple days. The sync only fails
 
 - **GraphQL `GetPdfReportsBusinessOfficeLocations`** — returns office location IDs, NOT schedule IDs. These differ from schedule IDs and cause 404 on the report endpoint.
 - **`schedules` field on `BusinessOfficeLocation` GraphQL type** — does not exist (returns "undefinedField" error)
-- **Playwright from GitHub Actions** — blocked by Cloudflare on both `admin.lifelenz.com` and `idm.lifelenz.com`
+- **Playwright from GitHub Actions** — blocked on both `admin.lifelenz.com` and `idm.lifelenz.com`
 - **OIDC/OAuth2 ROPC against `idm.lifelenz.com`** — attempted, unsuccessful
 - **`page[number]`/`page[size]` pagination** — rejected with 422 by the schedules endpoint; call without params, follow `links.next` if present
+
+---
+
+## ⚠️ OPEN ISSUE (2026-09-30) — `idm.lifelenz.com` blocks GitHub Actions' IP whenever the fallback auth path is needed. Owner knows, deferred, revisit before the next token expiry.
+
+**What's confirmed, measured directly from job logs, not inferred:** every time `LIFELENZ_TOKEN` has expired and the script had to fall through to the real login flow, `idm.lifelenz.com` has returned **HTTP 500 with an empty body** on every endpoint tried — OIDC discovery, `/connect/token` (ROPC, all 4 client_id variants), `/api/auth/login` and 3 other IDM JSON login paths, and finally `/connect/authorize` itself via a real headless Playwright browser (realistic desktop UA, `--disable-blink-features=AutomationControlled`, `navigator.webdriver` patched — none of it mattered, the 500 comes back before any page/JS loads). Confirmed identical on **two separate occasions three weeks apart** (2026-09-09/10 and 2026-09-26–30), with a **manual browser login from the owner's own network succeeding fine in between** (2026-09-30) — so this is not a general LifeLenz outage, it's specific to the source network the request comes from. Response carried real `cloudfront.net` `via` headers (AWS CloudFront), so the request is genuinely reaching LifeLenz's infra, not failing earlier in the path.
+
+**Leading theory (not vendor-confirmed):** a WAF/bot-protection rule on `idm.lifelenz.com` blocking known cloud/datacenter IP ranges (GitHub Actions runners, and probably cloud IPs generally) — consistent with the instant 500-before-any-JS-runs pattern, and with this repo's own prior dead-end note above ("blocked ... on both admin.lifelenz.com and idm.lifelenz.com").
+
+**This is NOT an official API integration** — LifeLenz support is unlikely to help (owner's own assessment, 2026-09-30). Emailing them costs nothing but isn't expected to move it.
+
+**Three real options, none implemented yet — owner is deferring, revisit before the next expiry:**
+1. **Move the pull off GitHub Actions to a residential/business IP** — small always-on device (Raspberry Pi/mini PC) at a store, cron-scheduled. No recurring cost beyond hardware; loses GitHub Actions' logging/retry/secrets unless we build a thin equivalent.
+2. **Residential proxy service for just the `idm.lifelenz.com` calls** — keeps everything on GitHub Actions; new paid dependency, another thing that can break or get expensive.
+3. **Status quo** — keep manually refreshing `LIFELENZ_TOKEN` ~monthly when it expires (this is what's happening today; this incident was resolved 2026-09-30 by a manual token update, took 5 days to notice this time). Cheapest, but the data-staleness window recurs every expiry cycle and depends on someone noticing.
+
+**Trigger for revisiting:** next `LIFELENZ_TOKEN` expiry (roughly monthly — last two expiries were ~Sept 9-11 and ~Sept 26-30, so expect the next one around late October 2026). A reminder is scheduled for 2026-10-21 to bring this back up before that window.
