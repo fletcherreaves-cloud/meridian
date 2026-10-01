@@ -24,11 +24,22 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const d = s => new Date(s + 'T00:00:00');
 const LOC = '3708'; // Ardmore-Broadway, real STORE_NAMES entry
 
-// Two full weeks so every weekday (0-6) has at least one resolved day.
-const DATES = [
-  '2026-08-03','2026-08-04','2026-08-05','2026-08-06','2026-08-07','2026-08-08','2026-08-09',
-  '2026-08-10','2026-08-11','2026-08-12','2026-08-13','2026-08-14','2026-08-15','2026-08-16',
-];
+// Two full weeks so every weekday (0-6) has at least one resolved day. Generated relative to
+// "today" (ending a few days back, safely inside ShiftAnalysisTab's `cut = now - 6wk` window)
+// rather than hardcoded calendar dates -- a fixed 2026-08-03..08-16 range silently aged out of
+// that rolling window and started failing on its own once "today" passed ~2026-09-27, with no
+// code change involved (caught 2026-10-01: cut had rolled to ~Aug 20, past the fixture's last
+// date of Aug 16, so hasSalesData correctly went false for data genuinely outside the lookback).
+function recentDateKeys(n, endOffsetDays = 3) {
+  const end = new Date(); end.setDate(end.getDate() - endOffsetDays);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = new Date(end); dt.setDate(dt.getDate() - i);
+    out.push(dt.toISOString().slice(0, 10));
+  }
+  return out;
+}
+const DATES = recentDateKeys(14);
 
 const qsrActSummaryRows = DATES.map((date, i) => ({
   loc: LOC, date: d(date), sales: 8000 + (i % 7) * 300, gc: 700,
