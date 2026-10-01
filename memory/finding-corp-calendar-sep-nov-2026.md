@@ -86,11 +86,55 @@ single day, `category:'LTO / Promo'`, `event_type:'promo'`, all 27 stores. This 
 from the newsletter with a fully unambiguous date (explicitly "one day only" in the source), so
 it was safe to enter directly, matching the Black Friday-style single-day convention exactly.
 
-**NOT added — real data gap, needs the owner or another source**: Monopoly All Store Sell
-(start 10/6, no end date given), Happy Meal #9 2026 (start 10/20, no end date given — the 2025
-analog, `#9`, ran 2025-10-21→2025-11-03, 14 days, which is suggestive but not a stated fact for
-2026), Beverage All Store Sell/holiday flavors (start 11/3, no end date given). Guessing a
-window for a month-scale national promo and writing it into `org_events` risks biasing the
-event-factor learning for every store if the guess is wrong — these need either the Portal's
-official promo calendar (same place Price Round 3 recommendations come from) or the owner
-confirming the real end dates before they're entered.
+## Resolved (2026-10-01, same day): `data/marketing-calendars/` already had the end dates
+
+The owner pointed out these documents were already uploaded and committed to the repo —
+`data/marketing-calendars/REV_2__2026_OPNAD_Calendar_10.29.25.pdf`, the official 2026 OPNAD
+Marketing Calendar (Rev 2, 10.29.25), previously listed in that directory's own README as "PDF,
+not yet extracted." Extracted it this pass. It gives the full 2026 national marketing calendar
+with explicit start/stop dates — the exact gap the three held-back entries above needed:
+
+| Program | OPNAD window | Newsletter start | Match |
+|---|---|---|---|
+| MONOPOLY | **10/6 – 11/1** | 10/6 | Start dates agree exactly — high confidence |
+| HM #9 | **10/20 – 11/2** | 10/20 | Start dates agree exactly — high confidence |
+| BEVS (Nov) | **11/9 – 11/29** (media window) | 11/3 (retail "All Store Sell") | Retail date precedes media window by 6 days — plausible (product reaches restaurants before the ad campaign), but NOT a confirmed retail end date |
+
+**Added to `org_events`** (ids 6145-6147, same `loc:'*ALL*'`/`scope:'all'`/27-store/`category`/
+`verification` convention as every other entry):
+- **Monopoly All Store Sell**, 2026-10-06 → 2026-11-01, `verification:'Confirmed'` (two
+  independent sources agree on the start; OPNAD gives the end).
+- **Happy Meal: #9**, 2026-10-20 → 2026-11-02, `verification:'Confirmed'`, same label format as
+  the 2025 series so it continues cleanly.
+- **Beverage All Store Sell (New Holiday Flavors)**, 2026-11-03 → 2026-11-29,
+  `verification:'Estimated'` (not `'Confirmed'` like the other two) — start is the newsletter's
+  real retail date, end is OPNAD's adjacent media-window end, not an independently confirmed
+  retail end date. Noted explicitly in the row's own `note` field for anyone auditing it later.
+
+## Full 2026 OPNAD Marketing Calendar (extracted, for future reference — not all entered)
+
+Every window the PDF shows, by funnel tier. Only the FAMILY (Happy Meal) row and the three
+promos above are in `org_events` so far — the rest (Brand Relevance, BEVS ×3, BEEF, BFAST ×2,
+CHICKEN, HOT HONEY, McVALUE ×2, Shamrock Event, $5 Brk Meal & $8 ROD Meal, $5MD+BOAO) are listed
+here for whenever they're wanted, not added this pass (scope control — the ask was specifically
+about the newsletter's dated items).
+
+- **Generalists — Brand Relevance**: 3/31–4/26, 6/9–7/19, 12/1–12/20 (all "Dual Daypart")
+- **Generalists — other**: BEEF 3/9–3/29 · BFAST 7/20–8/9 · BFAST 11/2–11/22
+- **Specialists**: HOT HONEY 2/2–3/1 (Dual Daypart) · CHICKEN 7/27–8/23 · BEVS 5/11–6/14 ·
+  BEVS 8/24–9/13 · BEVS 11/9–11/29
+- **Foundation**: $5 Brk Meal & $8 ROD Meal 1/6–2/2 (Dual Daypart) · $5MD+BOAO 2/17–3/8 (Dual
+  Daypart) · McVALUE 4/28–5/24 (Dual Daypart) · McVALUE 9/8–10/4 (Dual Daypart) · MONOPOLY
+  10/6–11/1 (Dual Daypart)
+- **Other**: SHAMROCK EVENT 2/23–3/22
+- **Family (Happy Meal), full 2026 series**: Clean-Up (pre-1/27) · HM#1 1/27–3/9 · HM#2
+  3/10–3/30 · HM#3 3/31–5/4 · HM#4 5/5–6/8 · HM#5 6/9–7/13 · HM#6 7/14–8/17 · HM#7 8/18–9/14 ·
+  HM#8 9/15–10/19 · HM#9 10/20–11/2 · Clean Up (11/3–11/9) · HM#10 11/10–12/14 · HM#11
+  12/15–1/4/27
+
+This is the complete 2026 Happy Meal series precedent (matching 2025's #1-#11 convention) —
+worth bulk-loading the rest (#1-#8, #10, #11) into `org_events` the same way if/when the full
+2026 series is wanted, not just #9.
+
+`data/marketing-calendars/README.md` should also be updated to mark the OPNAD PDF extracted
+(still says "not yet extracted") — not done as part of this pass, flagged here so it isn't lost.
