@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { priceChangeEvents } from '../engine/price-events.js';
+import { CLOSURE_EVENT_TYPES, computeClosureImpact, summarizeClosureFactor } from '../engine/competitive-closure.js';
 
 // Dispatch20 addendum, 2026-08-18 — forecast models calibrated straight through repricing
 // weeks: computeEventFactors only ever saw hand-entered/org-sourced calendar events, so a
@@ -95,7 +96,45 @@ function computeEventFactors(ds, userEvents) {
       factors[loc][t]=sorted.length%2===0?(sorted[mid-1]+sorted[mid])/2:sorted[mid];
     }
   }
+  _applyClosureFactors(ds, userEvents, factors);
   return factors;
+}
+
+// ── Closure events (comp_closure / own_closure) get the control-group-corrected
+// calc, not the single-store trimmed-DOW-mean one above ── 2026-09-30 dispatch:
+// that naive calc measured Holdenville's Sonic closure at +22.5%, but 7 district
+// control stores with no competitor event ran +11.3% hot over the same window on
+// the identical method — a seasonal artifact the naive calc has no way to net
+// out. src/engine/competitive-closure.js does, via difference-in-differences
+// against a synthetic control group. Scoped to ONLY these two event types —
+// every other type (weather, holidays, sports, etc.) keeps the calc above,
+// which is the right tool for a single-day event that hits every store the same
+// way; a closure is different because it's long-running and easily confounded
+// with whatever the rest of the district was doing in that window.
+// Fails soft by design: any store/type this can't confidently measure (too few
+// same-state controls, a contaminated control pool, thin pre-period data, or a
+// low-confidence fit) is simply left at the naive calc above rather than
+// overridden with a shakier number — never throws out of computeEventFactors.
+function _applyClosureFactors(ds, userEvents, factors) {
+  for (const [loc, evMap] of Object.entries(userEvents || {})) {
+    if (!evMap || !factors[loc]) continue;
+    for (const type of CLOSURE_EVENT_TYPES) {
+      const days = Object.entries(evMap).filter(([, ev]) => {
+        const types = (ev.tags && ev.tags.length) ? ev.tags.map(t => t.type) : [ev.type || 'other'];
+        return types.includes(type);
+      }).map(([dk]) => dk);
+      if (days.length < 7) continue; // a single-day comp_closure tag isn't what this engine is for
+      const sorted = days.sort();
+      try {
+        const result = computeClosureImpact(ds, {
+          loc, startDate: sorted[0], endDate: sorted[sorted.length - 1], userEvents,
+        });
+        if (result.ok && result.summary.confidence !== 'low') {
+          factors[loc][type] = summarizeClosureFactor(result);
+        }
+      } catch { /* leave the naive factor in place */ }
+    }
+  }
 }
 
 export { computeEventFactors, _withPriceEvents };
