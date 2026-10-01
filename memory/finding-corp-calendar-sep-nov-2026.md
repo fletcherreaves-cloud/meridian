@@ -111,30 +111,45 @@ with explicit start/stop dates — the exact gap the three held-back entries abo
   real retail date, end is OPNAD's adjacent media-window end, not an independently confirmed
   retail end date. Noted explicitly in the row's own `note` field for anyone auditing it later.
 
-## Full 2026 OPNAD Marketing Calendar (extracted, for future reference — not all entered)
+## Full 2026 OPNAD Marketing Calendar — ALL windows now loaded (2026-10-01, do not re-load)
 
-Every window the PDF shows, by funnel tier. Only the FAMILY (Happy Meal) row and the three
-promos above are in `org_events` so far — the rest (Brand Relevance, BEVS ×3, BEEF, BFAST ×2,
-CHICKEN, HOT HONEY, McVALUE ×2, Shamrock Event, $5 Brk Meal & $8 ROD Meal, $5MD+BOAO) are listed
-here for whenever they're wanted, not added this pass (scope control — the ask was specifically
-about the newsletter's dated items).
+Every window the PDF shows, by funnel tier. As of this pass **the entire 2026 OPNAD calendar is
+in `org_events`** — the owner asked to load the rest after the three newsletter-dated promos
+above were entered. 26 new rows inserted (ids 6148–6173), on top of the 4 already there
+(6144–6147), for 30 total national 2026 marketing-calendar rows (29 OPNAD windows + the single-day
+Fried Chicken Sandwich Day flash offer, which isn't on the OPNAD calendar itself). One window —
+"Happy Meal: Clean-Up" pre-dating 1/27, whose start falls before the visible calendar and so has
+no real start date — was **not** loaded; there is nothing to measure for it, not a gap to fill.
 
-- **Generalists — Brand Relevance**: 3/31–4/26, 6/9–7/19, 12/1–12/20 (all "Dual Daypart")
-- **Generalists — other**: BEEF 3/9–3/29 · BFAST 7/20–8/9 · BFAST 11/2–11/22
-- **Specialists**: HOT HONEY 2/2–3/1 (Dual Daypart) · CHICKEN 7/27–8/23 · BEVS 5/11–6/14 ·
-  BEVS 8/24–9/13 · BEVS 11/9–11/29
-- **Foundation**: $5 Brk Meal & $8 ROD Meal 1/6–2/2 (Dual Daypart) · $5MD+BOAO 2/17–3/8 (Dual
-  Daypart) · McVALUE 4/28–5/24 (Dual Daypart) · McVALUE 9/8–10/4 (Dual Daypart) · MONOPOLY
-  10/6–11/1 (Dual Daypart)
-- **Other**: SHAMROCK EVENT 2/23–3/22
-- **Family (Happy Meal), full 2026 series**: Clean-Up (pre-1/27) · HM#1 1/27–3/9 · HM#2
-  3/10–3/30 · HM#3 3/31–5/4 · HM#4 5/5–6/8 · HM#5 6/9–7/13 · HM#6 7/14–8/17 · HM#7 8/18–9/14 ·
-  HM#8 9/15–10/19 · HM#9 10/20–11/2 · Clean Up (11/3–11/9) · HM#10 11/10–12/14 · HM#11
-  12/15–1/4/27
+- **Generalists — Brand Relevance**: 3/31–4/26 (id 6153), 6/9–7/19 (id 6156), 12/1–12/20
+  (id 6162) (all "Dual Daypart")
+- **Generalists — other**: BEEF 3/9–3/29 (id 6152) · BFAST 7/20–8/9 (id 6157) · BFAST 11/2–11/22
+  (id 6161)
+- **Specialists**: HOT HONEY 2/2–3/1 (id 6149, Dual Daypart) · CHICKEN 7/27–8/23 (id 6158) ·
+  BEVS 5/11–6/14 (id 6155) · BEVS 8/24–9/13 (id 6159) · BEVS 11/9–11/29 (already represented by
+  id 6147, with the retail dates 11/3–11/29 per the newsletter — see the discrepancy note above,
+  not re-entered as a 30th row)
+- **Foundation**: $5 Brk Meal & $8 ROD Meal 1/6–2/2 (id 6148, Dual Daypart) · $5MD+BOAO 2/17–3/8
+  (id 6150, Dual Daypart) · McVALUE 4/28–5/24 (id 6154, Dual Daypart) · McVALUE 9/8–10/4
+  (id 6160, Dual Daypart) · MONOPOLY 10/6–11/1 (id 6145, Dual Daypart)
+- **Other**: SHAMROCK EVENT 2/23–3/22 (id 6151)
+- **Family (Happy Meal), full 2026 series**: Clean-Up (pre-1/27, **not loaded**, no start date) ·
+  HM#1 1/27–3/9 (id 6163) · HM#2 3/10–3/30 (id 6164) · HM#3 3/31–5/4 (id 6165) · HM#4 5/5–6/8
+  (id 6166) · HM#5 6/9–7/13 (id 6167) · HM#6 7/14–8/17 (id 6168) · HM#7 8/18–9/14 (id 6169) ·
+  HM#8 9/15–10/19 (id 6170) · HM#9 10/20–11/2 (id 6146) · Clean Up 11/3–11/9 (id 6171) · HM#10
+  11/10–12/14 (id 6172) · HM#11 12/15–1/4/27 (id 6173)
 
-This is the complete 2026 Happy Meal series precedent (matching 2025's #1-#11 convention) —
-worth bulk-loading the rest (#1-#8, #10, #11) into `org_events` the same way if/when the full
-2026 series is wanted, not just #9.
+**Non-HM labels disambiguated with a month range** (e.g. "BEVS (May–Jun)", "Brand Relevance
+(Mar–Apr)") since the same program name recurs 2-3×/year on this calendar and a bare repeated
+label would be ambiguous in any UI or query that lists events by name. HM labels keep the plain
+`"Happy Meal: #N"` / `"Happy Meal: Clean Up"` form, matching the 2025 series exactly (confirmed
+live against `org_events` ids 5897-5899 before inserting, same `category:'Happy Meal'`,
+`verification:'Confirmed'`, `tenant_id`). Non-HM rows use `category:'LTO / Promo'` (same as
+Monopoly/Fried-Chicken-Day/BEVS-Nov), with the OPNAD tier (Foundation/Specialists/Generalists/
+Other) and Dual-Daypart flag recorded in each row's `note` instead of a separate column — there
+is no tier column on `org_events`. All rows: `verification:'Confirmed'` (read directly off the
+official calendar PDF, same standard already applied to Monopoly/HM#9's end dates),
+`entered_by:'claude-code-calendar-import'`, `method:'manual'`, `loc:'*ALL*'`, `scope:'all'`,
+27-store `scope_locs`.
 
-`data/marketing-calendars/README.md` should also be updated to mark the OPNAD PDF extracted
-(still says "not yet extracted") — not done as part of this pass, flagged here so it isn't lost.
+`data/marketing-calendars/README.md` updated in the same pass to reflect all windows loaded.
