@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 // @ts-nocheck
-// McDonald's canceled all CFV and RGR graded visits for the remainder of 2026, effective
-// 09/15/26 (owner-notified 2026-09-11). The readiness composite (SPEED/ACCURACY/QUALITY/
-// LEADERSHIP) predicts CFV/RGRV standards specifically -- EcoSure's own criteria are already
-// excluded from it -- so per-store readiness score/band is replaced with a neutral "Suspended"
-// state for the duration, per owner direction. EcoSure / the Waste & variance flag are
-// unaffected either way.
+// McDonald's suspended CFV and RGR graded visits from 09/15/26 through 03/31/27 (official
+// Operations PACE Mid-Cycle Update, dated 2026-09-15 -- see
+// memory/finding-pace-midcycle-update-2026-09-15.md; this superseded the owner's earlier
+// 2026-09-11 verbal "through end of 2026" notice, which is why this window is longer than it
+// first looks). The readiness composite (SPEED/ACCURACY/QUALITY/LEADERSHIP) predicts CFV/RGRV
+// standards specifically -- EcoSure's own criteria are already excluded from it -- so per-store
+// readiness score/band is replaced with a neutral "Suspended" state for the duration, per owner
+// direction. EcoSure / the Waste & variance flag are unaffected either way.
 //
 // Per the standing "would this verification still pass if reverted" rule, the panel test below
 // renders the ACTUAL VisitReadinessPanel consumer (not just activeVisitSuspension() in
@@ -34,11 +36,17 @@ describe('activeVisitSuspension (pure date-window check)', () => {
   it('is active in the middle of the window', () => {
     expect(activeVisitSuspension(new Date('2026-11-01T12:00:00').getTime())).toBeTruthy();
   });
-  it('is active on the last day of the window (2026-12-31)', () => {
-    expect(activeVisitSuspension(new Date('2026-12-31T12:00:00').getTime())).toBeTruthy();
+  // The window extends 3 months past the owner's original 2026-09-11 verbal "through end of
+  // 2026" notice -- this specifically exercises the tail the official 09/15/26 Mid-Cycle Update
+  // PDF added (2027-01-01..2027-03-31), which the old end date never covered at all.
+  it('is still active well into the extended tail (2027-02-15)', () => {
+    expect(activeVisitSuspension(new Date('2027-02-15T12:00:00').getTime())).toBeTruthy();
+  });
+  it('is active on the last day of the window (2027-03-31)', () => {
+    expect(activeVisitSuspension(new Date('2027-03-31T12:00:00').getTime())).toBeTruthy();
   });
   it('is null the day after the window ends', () => {
-    expect(activeVisitSuspension(new Date('2027-01-01T12:00:00').getTime())).toBeNull();
+    expect(activeVisitSuspension(new Date('2027-04-01T12:00:00').getTime())).toBeNull();
   });
   it('does not name EcoSure among the suspended types', () => {
     for (const s of VISIT_SUSPENSIONS) expect(s.types).not.toContain('EcoSure');

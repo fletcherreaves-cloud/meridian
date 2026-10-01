@@ -175,11 +175,31 @@ const FOODSAFETY = [
 
 export const RECENT_DAYS = 45;
 
-// ── Visit-type suspensions (owner-notified 2026-09-11) ─────────────────────────
-// McDonald's canceled all CFV and RGR graded visits for the remainder of 2026,
-// effective 09/15/26 — coinciding with the McDonald's > NEXT reset under new McDonald's
-// USA President Skye Anderson (effective 08/04/26, succeeding Joe Erlinger). EcoSure
-// Food Safety visits are NOT part of this cancellation and continue as normal.
+// ── Visit-type suspensions ───────────────────────────────────────────────────
+// McDonald's suspended RGRV and CFV graded visits from 09/15/26 through 03/31/27 —
+// coinciding with the McDonald's > NEXT reset under new McDonald's USA President Skye
+// Anderson (effective 08/04/26, succeeding Joe Erlinger). EcoSure Food Safety visits are
+// NOT part of this suspension and continue as normal (still 2/yr through 2026 — the 2027
+// split into an unscored coaching visit + one scored visit doesn't start yet).
+//
+// ⚠️ End date CORRECTED 2026-10-01 from the owner's 2026-09-11 verbal notice (which only
+// said "through end of 2026" and was coded here as `end: '2026-12-31'`) against the
+// official, dated "Operations PACE 2026 Mid-Cycle Update" PDF (09/15/26, final version):
+// the real window runs through **2027-03-31**, 3 months longer. Owner/Operators MAY
+// schedule RGRVs starting 2027 but aren't required to until 2027-04-01. See
+// memory/finding-pace-midcycle-update-2026-09-15.md for the full source-quoted digest.
+//
+// During this window the suspended visits are replaced by 3 required (non-scored)
+// Support Visits — Taste & Quality (Oct–Nov), Shift Leadership (Dec), Hospitality
+// (Feb–Mar) — which don't feed this readiness composite and aren't tracked here.
+//
+// ⚠️ NOT modeled: restaurants in Operations Process to Cure as of 09/15/26 (or entering
+// it shortly after from a pre-09/15 qualifying event) are EXEMPT from this suspension —
+// they keep receiving their remaining 2026 CFV/RGRV visits. Meridian has no per-store
+// Process-to-Cure flag anywhere in its data model, so this suspension applies uniformly
+// to every store; if a real store is in Process to Cure right now, its readiness here
+// would incorrectly read "Suspended" instead of a live prediction. Flagged, not fixed —
+// see the memory file's "Open questions" for what a real fix would need.
 //
 // The readiness composite below (SPEED/ACCURACY/QUALITY/LEADERSHIP) predicts CFV/RGRV
 // standards specifically — EcoSure's own criteria are already excluded from it (see
@@ -193,9 +213,9 @@ export const RECENT_DAYS = 45;
 // window) so a future suspension or resumption is one new entry here, never a rewrite
 // of the boundary logic itself.
 export const VISIT_SUSPENSIONS = [
-  { types: ['CFV', 'RGR'], start: '2026-09-15', end: '2026-12-31',
+  { types: ['CFV', 'RGR'], start: '2026-09-15', end: '2027-03-31',
     label: 'CFV & RGR graded visits suspended',
-    reason: 'McDonald\'s canceled all CFV and RGR graded visits for the remainder of 2026 (owner-notified 2026-09-11). EcoSure Food Safety visits are unaffected.' },
+    reason: 'McDonald\'s suspended CFV and RGR graded visits from 2026-09-15 through 2027-03-31 (official Operations PACE Mid-Cycle Update, dated 2026-09-15), replaced by 3 required Support Visits (Taste & Quality, Shift Leadership, Hospitality). EcoSure Food Safety visits are unaffected. Restaurants in Operations Process to Cure are exempt from this suspension (not modeled here — see memory/finding-pace-midcycle-update-2026-09-15.md).' },
 ];
 function _todayISO(nowMs = Date.now()) {
   const d = new Date(nowMs);
