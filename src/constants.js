@@ -388,6 +388,7 @@ const EVENT_TYPES={
   maintenance:  {label:'Store Event — Maintenance', icon:'🔧', col:'#94a3b8'},
   power:        {label:'Power Outage',              icon:'💡', col:'#fbbf24'},
   outage:       {label:'Outage / Issue',            icon:'⚠',  col:'#ef4444'},
+  own_closure:  {label:'Own Store — Closed (Remodel/Construction)', icon:'🚧', col:'#f97316'},
   // ── Community / External ─────────────────────────────────────────────────
   pub_emergency:{label:'Public Emergency',     icon:'🚨',  col:'#ef4444'},
   road_closure: {label:'Road Closure',         icon:'🚧',  col:'#f97316'},
@@ -431,7 +432,7 @@ const EVENT_TYPES={
 // Groups for the tag picker UI
 const EVENT_TYPE_GROUPS=[
   {label:'⛈ Weather',items:['winter_storm','snow','ice','tornado','t_storm','sev_weather','high_winds','flood','hurricane','weather']},
-  {label:'🏪 Store Events',items:['tech','utilities','maintenance','power','outage']},
+  {label:'🏪 Store Events',items:['tech','utilities','maintenance','power','outage','own_closure']},
   {label:'🚨 Community / External',items:['pub_emergency','road_closure','construction','event','sports','comp']},
   {label:'🏪 Competition',items:['comp_new','comp_promo','comp_closure','comp_pricing','comp_media']},
   {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','training','other']},
@@ -455,6 +456,9 @@ const EVENT_TYPE_VISIBILITY={
   sev_weather:'calendar', high_winds:'calendar', flood:'calendar', hurricane:'calendar', weather:'calendar',
   // Store Events / operational incidents — the owner's own "power was out" example.
   tech:'log', utilities:'log', maintenance:'log', power:'log', outage:'log', pub_emergency:'log',
+  // Multi-week remodel/construction closure is planned ahead and directly customer-facing — groups
+  // with road_closure/construction below, not the short operational-incident types above it.
+  own_closure:'calendar',
   // Community / External — customer-facing, calendar-worthy.
   road_closure:'calendar', construction:'calendar', event:'calendar', sports:'calendar',
   comp:'log', // Competition (general) groups with the named comp_* types below.
