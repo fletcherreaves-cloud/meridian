@@ -835,6 +835,54 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
   };
 }
 
+// ── 2027 Self-Assessed RGRV eligibility (org-level) ─────────────────────────────
+// Operations PACE 2026 Mid-Cycle Update (09/15/26, memory/finding-pace-midcycle-update-
+// 2026-09-15.md): an Owner/Operator qualifies for Self-Assessed RGRVs in 2027 only if ALL
+// THREE hold — (1) meets all National Franchising Standards, (2) no restaurant in Operations
+// Process to Cure, (3) >=92% combined CFV + Food Safety organizational pass rate for ACTUAL
+// visits completed in the 2025 and 2026 PACE cycles, computed as
+// (2025+2026 passing CFV+FS)/(2025+2026 total CFV+FS) x 100, explicitly NOT rounded (the
+// official FAQ: 91.5% does not round up to qualify).
+//
+// This function computes ONLY criterion (3) — the one Meridian actually has the visit
+// history to measure. Criteria (1) and (2) are not in Meridian's data model at all (no
+// National-Franchising-Standard tracker, no per-store Process-to-Cure flag — see
+// VISIT_SUSPENSIONS' comment above) and must NOT be inferred from visit scores alone, so the
+// result is named `meetsPassRateThreshold`, never a bare `eligible` — a caller that renders
+// this as "you qualify" without the other two caveats would be overclaiming what was measured.
+export function computeSelfAssessmentEligibility(gradedVisits, opts = {}) {
+  const cycleYears = opts.cycleYears || [2025, 2026];
+  const years = new Set(cycleYears.map(String));
+  const inCycle = v => {
+    const d = _localDay(v.dateISO || v.date);
+    return !isNaN(+d) && years.has(String(d.getFullYear()));
+  };
+  // 'EcoSure' is the exact report_type value graded_visits stores (src/lib/supabase.js's
+  // loadGradedVisits passes report_type straight through) — case-sensitive, do not loosen to
+  // a regex match here the way hasEcoSure above does for a display-only gap check.
+  const visits = (gradedVisits || []).filter(v =>
+    v && v.score != null && inCycle(v) && (v.reportType === 'CFV' || v.reportType === 'EcoSure'));
+  const byType = t => {
+    const vs = visits.filter(v => v.reportType === t);
+    const n = vs.length, pass = vs.filter(v => v.pass).length;
+    return { n, pass, passRate: n ? pass / n : null };
+  };
+  const total = visits.length;
+  const passing = visits.filter(v => v.pass).length;
+  const rate = total ? passing / total * 100 : null;
+  return {
+    cycleYears: [...cycleYears],
+    total, passing,
+    rate, // a raw percentage, e.g. 82.27 — NOT pre-rounded, caller decides display precision
+    meetsPassRateThreshold: rate != null && rate >= 92, // exact >=92, no rounding (per the FAQ)
+    cfv: byType('CFV'),
+    foodSafety: byType('EcoSure'),
+    note: 'This is ONE of three 2027 Self-Assessed RGRV eligibility criteria. The other two — ' +
+      'meeting all National Franchising Standards, and no restaurant currently in Operations ' +
+      'Process to Cure — are not tracked anywhere in Meridian\'s data model and are NOT reflected here.',
+  };
+}
+
 // ── Public: per-store + district readiness ────────────────────────────────────
 export function computeVisitReadiness(ds, opts = {}) {
   const weights = opts.weights || READINESS_WEIGHTS;
@@ -1006,6 +1054,11 @@ export function computeVisitReadiness(ds, opts = {}) {
   const visitTypes = [...new Set(gv.map(v => v && (v.reportType || 'CFV')).filter(Boolean))];
   const hasEcoSure = visitTypes.some(t => /eco|food\s*safety|fs/i.test(String(t)));
 
+  // Org-level, not scoped to opts.locs — the 2027 Self-Assessed RGRV eligibility threshold is
+  // a whole-organization figure per the official FAQ's own formula, not something that varies
+  // by which stores a panel filter happens to be showing.
+  const selfAssessmentEligibility = computeSelfAssessmentEligibility(gv);
+
   // Provenance: exactly which feeds this run resolved, for the report's source index.
   const sourcesUsed = [...new Set(stores.flatMap(s =>
     (s.audit || []).flatMap(a => (a.drivers || []).map(d => d.source))))].sort();
@@ -1015,7 +1068,7 @@ export function computeVisitReadiness(ds, opts = {}) {
     areas: READINESS_AREAS,
     gaps: READINESS_GAPS,
     suspension: activeVisitSuspension(),
-    hasEcoSure, visitTypes, sourcesUsed,
+    hasEcoSure, visitTypes, sourcesUsed, selfAssessmentEligibility,
     method: {
       recentDays: RECENT_DAYS,
       generatedAt: new Date().toISOString(),
