@@ -47,21 +47,23 @@ place in their own sheet.
 
 29 windows, read directly off the calendar grid in `REV_2__2026_OPNAD_Calendar_10.29.25.pdf`
 (Rev 2, 10.29.25) — a visual calendar, not a spreadsheet, so there's no `source_row` the way
-the 2025 extraction has; dates are read off each program's own labeled box. Three of these
-(Monopoly, Happy Meal #9, the November BEVS window) are already loaded into `org_events`
-(ids 6145-6147, see `memory/finding-corp-calendar-sep-nov-2026.md` for the full story,
-including why the BEVS entry is `verification:'Estimated'` rather than `'Confirmed'` — its
-retail start date, from a separate corporate newsletter, precedes this calendar's media window
-by 6 days, so the retail END date isn't independently confirmed by either source). The other
-26 windows (the rest of the Happy Meal series, Brand Relevance, BEVS ×2 more, BEEF, BFAST ×2,
-CHICKEN, HOT HONEY, McVALUE ×2, Shamrock Event, $5 Brk Meal & $8 ROD Meal, $5MD+BOAO) are
-extracted here but not yet loaded into `org_events` — nothing asked for them yet.
+the 2025 extraction has; dates are read off each program's own labeled box.
+
+**ALL loadable windows from this file are now in `org_events` (2026-10-01, do not re-load).**
+Three were loaded in the prior pass (Monopoly, Happy Meal #9, the November BEVS window — ids
+6145-6147, see `memory/finding-corp-calendar-sep-nov-2026.md` for the full story, including why
+the BEVS entry is `verification:'Estimated'` rather than `'Confirmed'` — its retail start date,
+from a separate corporate newsletter, precedes this calendar's media window by 6 days, so the
+retail END date isn't independently confirmed by either source). The remaining 26 (the rest of
+the Happy Meal series, Brand Relevance ×3, BEVS ×2 more, BEEF, BFAST ×2, CHICKEN, HOT HONEY,
+McVALUE ×2, Shamrock Event, $5 Brk Meal & $8 ROD Meal, $5MD+BOAO) were loaded this pass as ids
+6148-6173, `verification:'Confirmed'`, non-HM labels disambiguated with a month range (e.g.
+"BEVS (May–Jun)") since several programs repeat on the calendar. The single exception is the
+"Happy Meal: Clean-Up" window that pre-dates the visible calendar (`start: null`) — it has no
+real start date to load and was left out, not a gap to close later.
 
 ## Not yet done
 
-- Load the remaining 26 windows from `2026-opnad-windows.json` into `org_events`, if wanted —
-  the app's Events & Tags UI already syncs to that table, or go direct via the service-role key
-  matching the existing `loc:'*ALL*'`/`scope:'all'`/27-store-list convention.
 - Parse the 2026 media-mix grids — different shape, GRPs by week-start rather than
   start/stop pairs, so a window has to be inferred from contiguous non-empty weeks. Lower
   priority now that the OPNAD PDF already gives clean start/stop dates for the same programs.
