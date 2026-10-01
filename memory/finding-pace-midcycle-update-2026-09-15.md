@@ -102,21 +102,58 @@ cycle changes — this document is explicitly a mid-cycle *preview*, not the fin
    `2027-04-01`; added a mid-window check at `2027-02-15` (previously outside the old window
    entirely, so never exercised) to confirm the panel still treats the extended tail as suspended.
 
-## Open questions (not implemented — need the owner's input or more data)
+## Follow-up (2026-10-01): Process-to-Cure check + the 92% eligibility tracker
 
-- **Is any of the 27 stores currently in Operations Process to Cure?** If yes, that store's
-  suspension exemption isn't modeled anywhere — `VISIT_SUSPENSIONS` applies uniformly. Would
-  need either a manual per-store flag or a real data source (the PEAK visit-detail API dispatch
-  #230 already pulls bulk visit history — worth checking whether Cure-visit records are
-  identifiable in that data before building a manual toggle).
+**Process to Cure — measured, not guessed.** Pulled real `graded_visits` data (service-role
+Supabase read, 263 CFV/RGR/RGR-HealthSafety/EcoSure visits across all 27 stores, 2025-01-08
+through 2026-09-11) and checked for the actual signal that drives the Cure clock: per the
+standards file (`project-graded-visits-pace.md`), CFV explicitly carries **"No remediation,
+but feeds trend"** — a CFV fail alone does not start the 30/90-day remediation clock or count
+toward Cure. **RGR (and RGR-HealthSafety) is the instrument that does.** Of 43 RGR/
+RGR-HealthSafety visits in 2025-2026, **zero failed** — every one is `status:'A'` (Acceptable),
+`pass:true`. The only Food Safety (EcoSure) fail in the whole window is one visit at loc 06972
+on 2025-09-17 (score 94, failed on a critical despite the high score) — over a year old, a
+single isolated incident, not a pattern, and its mandatory 14-day unannounced re-check would
+already be long resolved. **Conclusion: no store appears to be in Operations Process to Cure
+right now**, based on everything Meridian's own visit records can see.
+
+**Caveat, stated plainly**: this is inferred from visit *scores*, not from an official
+"Process to Cure" status field — Meridian has none. The standard also allows Cure to be
+triggered by things that wouldn't necessarily show up as a failed graded visit at all
+(egregious circumstances, refused access, a health-department closure). This measurement rules
+out the main pathway (repeated RGR failures); it cannot rule out those other triggers.
+`VISIT_SUSPENSIONS`' uniform-suspension gap (no per-store exemption) therefore remains
+real but currently **low-risk** in practice, since there's no visit-record evidence any store
+needs the exemption today.
+
+**92% eligibility tracker — built.** `computeSelfAssessmentEligibility(gradedVisits, opts)`
+(`src/engine/visit-readiness.js`) implements the exact official formula — `(2025+2026 passing
+CFV+EcoSure visits) / (2025+2026 total CFV+EcoSure visits) × 100`, compared `>= 92` with no
+rounding (matches the FAQ's "91.5% does not round up"). Wired into `computeVisitReadiness`'s
+return as `selfAssessmentEligibility`, org-level (not scoped to a panel's location filter, since
+the real eligibility figure is organization-wide per the PDF). Rendered in the Visit Readiness
+panel as a new `SelfAssessmentCard`, right alongside the existing Model-check / Waste-&-variance
+cards. The card is deliberately worded to never say "eligible" or "qualifies" — it names the gap
+to the 92% threshold and explicitly states the other two criteria (all National Franchising
+Standards met, no restaurant in Process to Cure) aren't tracked in Meridian's data model at all.
+
+**Measured result for McDOK/Emerald Arches (2025-2026, as of this pass)**: combined CFV+Food
+Safety pass rate is **82.27%** (181/220 visits) — well short of the 92% threshold. The gap is
+almost entirely CFV: CFV alone is **69.35%** (86/124) while EcoSure alone is **98.96%**
+(95/96). So Food Safety performance is not the blocker — CFV pass rate is.
+
+12 new tests (`src/__tests__/dispatch-self-assessment-eligibility-2026-10-01.test.js`): exact
+formula verification, RGR/RGR-HealthSafety correctly excluded from the denominator, the
+no-rounding boundary at exactly 92% (23/25) vs just under (11/12 = 91.67%), cycle-year
+filtering (default `[2025,2026]`, overridable), per-type (CFV vs Food Safety) breakdown, empty/
+null-safe behavior, the output never carrying a bare `eligible` field, `computeVisitReadiness`
+wiring the result through org-level regardless of the panel's location scope, and two tests
+rendering the real `VisitReadinessPanel` to prove the card actually shows the number and the
+Process-to-Cure/National-Standards caveat (not just that the engine computes it).
+
+## Open questions (still not implemented — need the owner's input or more data)
+
 - **Track the 3 new Support Visits (Taste & Quality / Shift Leadership / Hospitality)?** They
   have real prework and participation requirements, but the document itself says tracking/
   completion details are still forthcoming ("in the coming weeks") — revisit once that's
   published rather than guessing at a tracking shape now.
-- **Surface the 92% self-assessment-eligibility metric per org?** This is computable today from
-  existing CFV/Food-Safety visit history (`src/parsers/graded-visits.js` already parses pass/
-  fail + type) — `(2025+2026 passing CFV+FS)/(2025+2026 total CFV+FS) × 100`. Not built this
-  pass since it's a new feature, not a fix to something already in the code, and the question of
-  where it should live (a new tile? part of Visit Readiness? a standalone panel?) is a product
-  call. Flagging as a real, well-scoped candidate if the owner wants to see where McDOK/Emerald
-  Arches currently stands.

@@ -414,6 +414,29 @@ function FoodSafetyBacktestCard({ bt }) {
     h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginTop: 8 } }, bt.method));
 }
 
+// 2027 Self-Assessed RGRV eligibility (engine/visit-readiness.js's computeSelfAssessmentEligibility,
+// from the 09/15/26 PACE Mid-Cycle Update — memory/finding-pace-midcycle-update-2026-09-15.md).
+// Deliberately never says "eligible" or "qualifies" on its own — the engine measures only the
+// >=92% combined CFV+Food-Safety pass-rate criterion; the other two (all National Franchising
+// Standards met, no restaurant in Process to Cure) aren't in Meridian's data at all, so this
+// card names the gap to the threshold and explicitly flags what it can't see, every time.
+function SelfAssessmentCard({ sae }) {
+  if (!sae || !sae.total) return null;
+  const rateC = sae.rate == null ? 'var(--text3)' : sae.meetsPassRateThreshold ? '#10b981' : sae.rate >= 85 ? '#f59e0b' : '#ef4444';
+  return h('div', { style: { margin: '0 0 12px', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 } },
+      h('span', { style: { fontSize: 11, fontWeight: 800, color: 'var(--text)' } }, '2027 Self-Assessed RGRV eligibility'),
+      h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `combined CFV + Food Safety pass rate, actual visits completed ${sae.cycleYears.join('–')}`)),
+    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 } },
+      h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rateC } }, sae.rate.toFixed(2) + '%'),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `vs 92% threshold (no rounding) — ${sae.passing}/${sae.total} visits`)),
+      h('div', { style: { fontSize: 10, color: 'var(--text2)' } },
+        'CFV ', h('b', null, sae.cfv.n ? (sae.cfv.passRate * 100).toFixed(1) + '%' : '—'), ` (${sae.cfv.pass}/${sae.cfv.n})`, ' · ',
+        'Food Safety ', h('b', null, sae.foodSafety.n ? (sae.foodSafety.passRate * 100).toFixed(1) + '%' : '—'), ` (${sae.foodSafety.pass}/${sae.foodSafety.n})`)),
+    h('div', { style: { fontSize: 8.5, color: 'var(--text3)' } }, sae.note));
+}
+
 // One channel's row across every year -- title + one cell per year, in the engine's own year
 // order (calendar order, since analyzeGradedVisits already sorts `years`).
 function _channelYearRow(channel, cby, pr, prCol) {
@@ -717,6 +740,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
 
       h(CalibrationCard, { cal: res.calibration }),
       h(FoodSafetyBacktestCard, { bt: res.fsBacktest }),
+      h(SelfAssessmentCard, { sae: res.selfAssessmentEligibility }),
 
       h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
         h(StoreListHeader),
