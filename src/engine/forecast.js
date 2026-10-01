@@ -1542,6 +1542,48 @@ function InfoIcon({articleKey, inline}) {
   );
 }
 
+// ── Event-registry weight for the trailing/adaptive models (ae/ewma/simple) ──────────────
+// dow/di forecast off an explicit LY+trend blend, so a tagged event's factor is pure added
+// signal with no risk of double-counting. ae/ewma/simple are different: they fit directly to
+// recent actuals, so once a MULTI-DAY event's own elevated days roll into their trailing
+// windows, those models start reflecting the new reality on their own — applying the full
+// event factor on top of that would double-count it. Measured directly in each model's own
+// code: forecastAdaptiveEnsemble's momentum signal compares the last 14 calendar days against
+// the prior 14 (clamped ±15%), its LY-adjustment signal compares 90-day windows (clamped
+// ±20%), and forecastEWMA's same-weekday window holds the last 14 OCCURRENCES of that weekday
+// (up to ~98 calendar days back). None of them see anything until enough event-period days
+// have actually accumulated in those windows — so the gap is real and worth closing, but it
+// closes itself once the event is old enough that the adaptive signals have caught up.
+// _evEventAgeDays walks backward from `date` counting consecutive prior days carrying the
+// SAME tag type (0 = date itself is the first tagged day) — this naturally gives 0 for a
+// single-day event (holiday, sports, etc.), so this taper never changes behavior for those;
+// it only ramps down a factor that's been active for many consecutive days, which in practice
+// means the long-running comp_closure/own_closure events this was built for.
+function _evEventAgeDays(userEvents, loc, date, type){
+  const evMap = userEvents && userEvents[loc];
+  if(!evMap || !type) return 0;
+  let d = date, age = 0;
+  while(age < 400){
+    const prev = addD(d, -1);
+    const tag = evMap[dKey(prev)];
+    const types = tag ? ((tag.tags&&tag.tags.length) ? tag.tags.map(t=>t.type) : [tag.type||'other']) : [];
+    if(!types.includes(type)) break;
+    d = prev; age++;
+  }
+  return age;
+}
+// Full weight through day 14 (none of the trailing models have turned over their shortest
+// window yet), linearly down to zero by day 90 (AE's LY-adjustment window and EWMA's
+// same-weekday window have both substantially rotated in event-period days by then). A
+// judgment call, not a backtested constant — documented here so it's easy to find and
+// recalibrate against a real backtest later rather than silently drifting.
+function _trailingModelEvWeight(ageDays){
+  const RAMP_FULL=14, RAMP_ZERO=90;
+  if(ageDays<=RAMP_FULL) return 1;
+  if(ageDays>=RAMP_ZERO) return 0;
+  return 1-(ageDays-RAMP_FULL)/(RAMP_ZERO-RAMP_FULL);
+}
+
 function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(!ds)return{date,loc,ly:0,lyAdj:0,t2:0,t4:0,t6:0,forecast:0,actual:0,goal:0,varPct:null,pass:null,isFuture:true,opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:true};
   const t=tgt||ds.targets[loc]||DEFAULT_TARGETS[loc]||{};
@@ -1582,6 +1624,45 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   // the matching loc on every call; using the per-store slice is identical math
   // but ~80× faster (1,539 rows vs 123k rows per call × hundreds of calls).
   const _locLaborRows = locRows(ds.laborByLoc, ds.laborRows, loc);
+  // ── Enhancement 5: Event Registry ────────────────────────────────────────
+  // Hoisted above the ae/ewma/simple short-circuits (was previously only computed in the
+  // dow/di pipeline further below) so every model path can see a tagged event — see
+  // _trailingModelEvWeight's comment for why ae/ewma/simple get a tapered version instead of
+  // the full factor dow/di use unchanged.
+  const _dk = dKey(date);
+  const _evTag = settings._userEvents && settings._userEvents[loc] && settings._userEvents[loc][_dk];
+  const _evFactor = (()=>{
+    if(!_evTag || !settings.useEventRegistry) return 0;
+    // A canceled/postponed event drops its lift entirely (editability, Notes 46).
+    if(_evTag.status==='canceled'||_evTag.status==='postponed') return 0;
+    const types = (_evTag.tags&&_evTag.tags.length)
+      ? _evTag.tags.map(t=>t.type) : [_evTag.type||'other'];
+    // 1) Event Impact Registry (Notes 47) — the MEASURED, curated per-store × event-type value wins.
+    // For sports, pick home vs away from the label; other types use the single home_impact.
+    const reg = _EVENT_IMPACT[String(loc).replace(/^0+/,'')];
+    if(reg){
+      const label=String(_evTag.label||'');
+      const away=/\(away\)/i.test(label), home=/\(home\)/i.test(label);
+      const rv = types.map(t=>{ const e=reg[t]; if(!e)return null;
+        if(t==='sports') return _stIsNum(away?e.away:home?e.home:e.home)?(away?e.away:e.home):null;
+        return _stIsNum(e.home)?e.home:null; }).filter(v=>v!=null);
+      if(rv.length) return Math.max(-0.25, Math.min(0.25, rv.reduce((a,b)=>a+b,0)/rv.length));
+    }
+    // 2) Learned historical impact (data-driven), when present.
+    const factors = (settings._eventFactors && settings._eventFactors[loc]) || {};
+    const learned = types.map(t=>factors[t]??0).filter(v=>v!==0);
+    if(learned.length) return learned.reduce((a,b)=>a+b,0)/learned.length;
+    // 3) Stored expected impact on the event record: manual expectedSalesDelta, else magnitude×daypart weight.
+    const stored = (_stIsNum(_evTag.expectedSalesDelta) && _evTag.expectedSalesDelta!==0)
+      ? _evTag.expectedSalesDelta
+      : (_evTag.impact ? impactWeight(_evTag.impact) : 0);
+    return Math.max(-0.25, Math.min(0.25, stored||0));
+  })();
+  // Age keyed off the first tag type present (realistically there's only ever one tag type
+  // per store-day — see the comment on _evEventAgeDays). Full weight for dow/di (unchanged
+  // behavior); tapered for ae/ewma/simple, applied at each of their own return points below.
+  const _evAgeType = _evTag ? ((_evTag.tags&&_evTag.tags.length) ? _evTag.tags[0].type : (_evTag.type||'other')) : null;
+  const _evTrailingWeight = _evTag ? _trailingModelEvWeight(_evEventAgeDays(settings._userEvents, loc, date, _evAgeType)) : 1;
   // Route new models: Adaptive Ensemble and EWMA short-circuit here
   if(_assignedModel==='ae'){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date,settings&&settings._aeStrictParams);
@@ -1605,15 +1686,20 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       // ~$10k-40k daily forecast × 100 as a "percent" — a 6-7 digit garbage number the owner
       // reported as "xxxxxxx.xx%". Now computed the same way the engineered/dow path does.
       const _aeT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _aeT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _aeT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      // Tagged-event adjustment, tapered — see _trailingModelEvWeight. AE's own trailing
+      // signals (momentum/LY-adjustment) only partially see a just-started event, so a fresh
+      // tag still needs this; an old one is already reflected in _aeFcst on its own.
+      const _aeEvFactor = _evFactor * _evTrailingWeight;
+      const _aeAdjFcst = _aeFcst * (1 + _aeEvFactor);
       // #178 item 4: `pass` was hardcoded null in this branch, and since all 27 real stores
       // are assigned model 'ae', the Forecast Table's Pass Rate was UNCONDITIONALLY 0% for
       // every store, every range — not a legitimate "this store is missing its forecast"
       // reading, a value that could structurally never be anything else. varPct was already
       // computed correctly here; pass just never got derived from it. Same tolerance formula
       // the engineered/dow path already uses below.
-      const _aeVarPct=_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null;
+      const _aeVarPct=_aeAct>0?(_aeAct-Math.round(_aeAdjFcst))/_aeAct:null;
       const _aePass=_aeVarPct!==null?Math.abs(_aeVarPct)<=(settings.tolerance||5)/100:null;
-      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:_aeT2,t4:_aeT4,t6:_aeT6,actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeVarPct,pass:_aePass,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+      return{date,loc,forecast:Math.round(_aeAdjFcst),ly:lyRaw,lyAdj:Math.round(_aeAdjFcst),t2:_aeT2,t4:_aeT4,t6:_aeT6,_evFactor:_aeEvFactor,actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeVarPct,pass:_aePass,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeAdjFcst),m2:Math.round(_aeAdjFcst),
         oepe:_aeIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_aeIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_aeIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
         noLYData:!lyRaw,modelUsed:'ae'};
@@ -1627,10 +1713,13 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _ewmaIsFuture=date>sodOf(new Date());
       // Same fix as the AE branch above — t2/t4/t6 are YOY trend ratios, not dollars.
       const _ewT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _ewT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _ewT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      // Tagged-event adjustment, tapered — see _trailingModelEvWeight / the AE branch above.
+      const _ewEvFactor = _evFactor * _evTrailingWeight;
+      const _ewAdjFcst = _ewmaFcst * (1 + _ewEvFactor);
       // Same Pass Rate fix as the AE branch above — pass derived from the already-correct varPct.
-      const _ewVarPct=_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null;
+      const _ewVarPct=_ewmaAct>0?(_ewmaAct-Math.round(_ewAdjFcst))/_ewmaAct:null;
       const _ewPass=_ewVarPct!==null?Math.abs(_ewVarPct)<=(settings.tolerance||5)/100:null;
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:_ewT2,t4:_ewT4,t6:_ewT6,actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewVarPct,pass:_ewPass,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+      return{date,loc,forecast:Math.round(_ewAdjFcst),ly:lyRaw,lyAdj:Math.round(_ewAdjFcst),t2:_ewT2,t4:_ewT4,t6:_ewT6,_evFactor:_ewEvFactor,actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewVarPct,pass:_ewPass,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewAdjFcst),m2:Math.round(_ewAdjFcst),
         oepe:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
@@ -1642,7 +1731,10 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     // bound cleanly excludes the target day itself.
     const _sf=forecastSimple(_locLaborRows,loc,date,sodOf(date));
     if(_sf&&_sf.sales>0){
-      const _sVal=Math.round(_sf.sales);
+      // Tagged-event adjustment, tapered — see _trailingModelEvWeight / the AE branch above.
+      // Sales only, matching the dow/di path (which doesn't apply _evFactor to forecastGC either).
+      const _spEvFactor = _evFactor * _evTrailingWeight;
+      const _sVal=Math.round(_sf.sales*(1+_spEvFactor));
       const _sFut=date>sodOf(new Date());
       const _sAct=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
       const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
@@ -1651,7 +1743,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       // Same Pass Rate fix as the AE/EWMA branches above — pass derived from the already-correct varPct.
       const _spVarPct=_sAct>0?(_sAct-_sVal)/_sAct:null;
       const _spPass=_spVarPct!==null?Math.abs(_spVarPct)<=(settings.tolerance||5)/100:null;
-      return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_spT2,t4:_spT4,t6:_spT6,
+      return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_spT2,t4:_spT4,t6:_spT6,_evFactor:_spEvFactor,
         actual:_sAct,goal:_goalOf(lyRaw),varPct:_spVarPct,pass:_spPass,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
         oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};
@@ -1719,37 +1811,9 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const trendFactor = settings.useTrendInForecast !== false
     ? Math.max(-0.15, Math.min(0.15, wTrend * _trendAlpha)) // clamped ±15%
     : 0;
-  // ── Enhancement 5: Event Registry ────────────────────────────────────────
-  // If this date has a known tagged event, apply the learned historical impact
-  const _dk = dKey(date);
-  const _evTag = settings._userEvents && settings._userEvents[loc] && settings._userEvents[loc][_dk];
-  const _evFactor = (()=>{
-    if(!_evTag || !settings.useEventRegistry) return 0;
-    // A canceled/postponed event drops its lift entirely (editability, Notes 46).
-    if(_evTag.status==='canceled'||_evTag.status==='postponed') return 0;
-    const types = (_evTag.tags&&_evTag.tags.length)
-      ? _evTag.tags.map(t=>t.type) : [_evTag.type||'other'];
-    // 1) Event Impact Registry (Notes 47) — the MEASURED, curated per-store × event-type value wins.
-    // For sports, pick home vs away from the label; other types use the single home_impact.
-    const reg = _EVENT_IMPACT[String(loc).replace(/^0+/,'')];
-    if(reg){
-      const label=String(_evTag.label||'');
-      const away=/\(away\)/i.test(label), home=/\(home\)/i.test(label);
-      const rv = types.map(t=>{ const e=reg[t]; if(!e)return null;
-        if(t==='sports') return _stIsNum(away?e.away:home?e.home:e.home)?(away?e.away:e.home):null;
-        return _stIsNum(e.home)?e.home:null; }).filter(v=>v!=null);
-      if(rv.length) return Math.max(-0.25, Math.min(0.25, rv.reduce((a,b)=>a+b,0)/rv.length));
-    }
-    // 2) Learned historical impact (data-driven), when present.
-    const factors = (settings._eventFactors && settings._eventFactors[loc]) || {};
-    const learned = types.map(t=>factors[t]??0).filter(v=>v!==0);
-    if(learned.length) return learned.reduce((a,b)=>a+b,0)/learned.length;
-    // 3) Stored expected impact on the event record: manual expectedSalesDelta, else magnitude×daypart weight.
-    const stored = (_stIsNum(_evTag.expectedSalesDelta) && _evTag.expectedSalesDelta!==0)
-      ? _evTag.expectedSalesDelta
-      : (_evTag.impact ? impactWeight(_evTag.impact) : 0);
-    return Math.max(-0.25, Math.min(0.25, stored||0));
-  })();
+  // _evFactor (and _evTag/_dk) is now computed once, above, before the ae/ewma/simple
+  // short-circuits — this dow/di path keeps using the same full (untapered) value it always
+  // has; only ae/ewma/simple get the tapered version, applied at their own return points.
   // ── Enhanced primary forecast (LY model + trend + event adj) ─────────────
   const _plusFrac = effectivePlusUp(loc,settings)/100;
   const forecast = Math.round(lyAdjH * opsFactor * (1+wAdj) * (1+trendFactor) * (1+_evFactor) * (1+_plusFrac));

@@ -109,3 +109,51 @@ different loc codes (real OK store numbers, for the integration test) without ov
 `metric-source.js`'s `_ok(v,'pos')` check discards — so every store had zero resolvable sales
 days and `computeClosureImpact` correctly reported `no_treated_data`. Not a bug in the engine;
 fixed by generating a default `baseDaily` keyed off whatever locs are actually passed in.
+
+## Follow-up (2026-10-01): ae/ewma/simple were structurally blind to the whole Event Registry
+
+Verified against real production data (service-role Supabase reads, not synthetic fixtures)
+while auditing October 2026 projections for Holdenville and Pauls Valley: `forecastDay`'s
+`_evFactor` block — the thing both the closure engine AND the original Event Registry feed —
+lived PAST the `ae`/`ewma`/`simple` short-circuit returns in `src/engine/forecast.js`. Those
+three branches `return` before ever reaching it, so any store whose live model assignment is
+`ae`/`ewma`/`simple` for a given horizon got ZERO event adjustment of any kind — not just
+closures, every tagged event type (holidays, sports, weather, the Event Impact Registry). This
+matters because `ae` is the hard-coded DEFAULT `weekly` assignment for all 27 stores
+(`DEFAULT_MODEL_ASSIGNMENTS` in `constants.js`), and real per-store/per-horizon overrides in
+Supabase `user_settings.model_assignments` frequently pick `ae`/`di` too — e.g. Holdenville's
+live `monthly` assignment is `ae`, Pauls Valley's is `di`. Confirmed directly: the `ae` branch's
+return object didn't even HAVE an `_evFactor` key before this fix.
+
+**Fix, not just "turn it on":** ae/ewma/simple fit directly to recent actuals (AE's momentum
+signal: last-14-calendar-days vs prior-14, clamped ±15%; AE's LY-adjustment signal: 90-day
+windows, clamped ±20%; EWMA's same-weekday window: last 14 OCCURRENCES of that weekday, up to
+~98 calendar days back — all measured directly from each model's own code, not assumed). Once a
+long-running event's own elevated days roll into those trailing windows, the models start
+reflecting the new normal on their own — applying the full learned factor on top from that
+point on would double-count. `_trailingModelEvWeight` (forecast.js) tapers the factor for these
+three models only: full weight through day 14 of the SAME tagged event (none of the windows
+above have turned over yet), linearly down to zero by day 90 (by when even the slowest window
+has substantially rotated in event-period days). `_evEventAgeDays` computes that age by walking
+backward from the forecast date counting consecutive prior days carrying the same tag type — so
+a single-day event (holiday, sports) always has age 0 and is completely unaffected by this
+change; only a multi-day tag (comp_closure/own_closure, or any future multi-day type) ramps
+down. `dow`/`di` are untouched — they forecast off an explicit LY+trend blend and never fit
+directly to raw actuals, so they have no double-counting risk and keep the full factor exactly
+as before.
+
+The 14/90-day boundaries are a documented judgment call tied to the measured window lengths
+above, not a backtested constant — recalibrate against a real backtest if the taper shape ever
+needs sharpening. 15 new tests
+(`src/__tests__/forecast-trailing-model-event-taper.test.js`): dow stays full-weight at any
+age; each of ae/ewma/simple gets full weight at age 0, zero weight at age ≥90, the exact linear
+mid-taper value at age 50, and a real forecast-dollar difference between the two (not just a
+metadata field); a single-day event is never tapered; no tagged event still produces `_evFactor
+=== 0` on every model.
+
+**Re-measured against real production data after the fix**: of the 20 Oklahoma stores, only
+Pauls Valley currently has an active `comp_closure` tag (the Braum's closure) — and its live
+`monthly` assignment is `di`, which was never short-circuited in the first place, so this fix
+has ZERO visible effect on any forecast in the app today. It closes a real, verified gap for
+the NEXT tagged multi-day event on a store whose live assignment is `ae`/`ewma`/`simple` —
+which, given `ae`'s default status, is the likely case far more often than not.
