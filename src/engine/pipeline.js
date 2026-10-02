@@ -666,31 +666,62 @@ function mergeDS(existing, wb, type, filename) {
       applyProjectionsToTargets(pRows,filename||'projections');
       if(!ds.projRows)ds.projRows=[];
       ds.projRows.push(...pRows);
-      const mtTargets=parseMonthlyTargets(wb);
+      // Real-world incident (2026-10-02): the owner's actual October workbook is a
+      // multi-operator "Multi Layout" export whose Restaurant column also carries OTHER
+      // operators' store numbers (e.g. 1291, 2010, 2370 — not any of this org's 27 stores,
+      // and parsed with no real target fields, just stray column drift). Scope to this
+      // org's own stores before merging/saving, same precedent applyProjectionsToTargets
+      // already sets a few lines up (`if(!DEFAULT_TARGETS[r.loc]) return;`) — Meridian is
+      // single-org, and a foreign operator's row has no business in monthly_targets.
+      const mtTargetsRaw=parseMonthlyTargets(wb);
+      const mtTargets={};
+      for(const loc of Object.keys(mtTargetsRaw)) if(DEFAULT_TARGETS[loc]) mtTargets[loc]=mtTargetsRaw[loc];
       Object.assign(ds.monthlyTargets,mtTargets);
-      // Extract year/month from filename — handles various QSRSoft naming patterns:
+      // Extract year/month — handles various QSRSoft naming patterns:
       //   "July 2026 - Restaurant Projections"   month-space-year
       //   "Restaurant_Projections_April_2026"    underscores, month then year
       //   "2026 April Restaurant Projections"    year first
-      //   "Projections-06-2026"                  numeric MM-YYYY
+      //   "Projections-06-2026" / "Projections.06.2026" / "Projections_06_2026"  numeric MM-YYYY
+      // Real-world incident (2026-10-02, owner report): an October upload "acknowledged
+      // success" but silently never reached Supabase because its filename matched none of
+      // these patterns (likely a browser re-download rename like "Restaurant Projections
+      // (1).xlsx", or a plain "Projections.xlsx" with no period in the name at all) — the
+      // ONLY place that failure surfaced was a console.warn nobody was watching. Two fixes:
+      // (1) also try the sheet's own TITLE rows (above the data header) as a fallback, since
+      // these workbooks often print "Restaurant Projections - October 2026" as a title cell
+      // that survives a filename rename; (2) always report the outcome back to the caller
+      // (ds._monthlyTargetsUndetected) so App.js can surface a visible warning instead of a
+      // silent one — see src/__tests__/dispatch-monthly-targets-period-detection-2026-10-02.test.js.
       const MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,
                     july:7,august:8,september:9,october:10,november:11,december:12};
       const MNAMES='january|february|march|april|may|june|july|august|september|october|november|december';
-      const fn2=(filename||'').replace(/_/g,' ');
-      let mtYear=0,mtMonth=0,mtLabel='';
-      let mtM2=fn2.match(new RegExp('('+MNAMES+')[\\s,.-]+(\\d{4})','i'));
-      if(mtM2){mtYear=parseInt(mtM2[2]);mtMonth=MONTHS[mtM2[1].toLowerCase()];mtLabel=mtM2[0];}
-      if(!mtYear){
-        mtM2=fn2.match(new RegExp('(\\d{4})[\\s,.-]+('+MNAMES+')','i'));
-        if(mtM2){mtYear=parseInt(mtM2[1]);mtMonth=MONTHS[mtM2[2].toLowerCase()];mtLabel=mtM2[0];}
+      const _detectPeriod=text=>{
+        const t=(text||'').replace(/_/g,' ');
+        let m=t.match(new RegExp('('+MNAMES+')[\\s,.-]+(\\d{4})','i'));
+        if(m) return {year:parseInt(m[2]),month:MONTHS[m[1].toLowerCase()],label:m[0]};
+        m=t.match(new RegExp('(\\d{4})[\\s,.-]+('+MNAMES+')','i'));
+        if(m) return {year:parseInt(m[1]),month:MONTHS[m[2].toLowerCase()],label:m[0]};
+        // Numeric: MM-YYYY or YYYY-MM (., -, or / as separator)
+        m=t.match(/(\d{2})[-./](\d{4})/);
+        if(m&&+m[1]>=1&&+m[1]<=12) return {year:parseInt(m[2]),month:parseInt(m[1]),label:m[0]};
+        m=t.match(/(\d{4})[-./](\d{2})/);
+        if(m&&+m[2]>=1&&+m[2]<=12) return {year:parseInt(m[1]),month:parseInt(m[2]),label:m[0]};
+        return null;
+      };
+      let mtPeriod=_detectPeriod(filename||'');
+      if(!mtPeriod){
+        // Fallback: scan the sheet's own early rows (a title above the data header,
+        // e.g. "Restaurant Projections - October 2026") rather than giving up the
+        // moment the filename itself carries no date.
+        try{
+          // parseRaw is already imported above (shared with every other parser in this
+          // file) — no new dependency, just reused on the sheet's own first 10 rows.
+          const raw0=parseRaw(wb,wb.SheetNames[0]).slice(0,10);
+          const titleText=raw0.map(r=>(r||[]).map(c=>String(c==null?'':c)).join(' ')).join(' ');
+          mtPeriod=_detectPeriod(titleText);
+        }catch(e){/* best-effort fallback only */}
       }
-      if(!mtYear){
-        // Numeric: MM-YYYY or YYYY-MM
-        mtM2=fn2.match(/(\d{2})[-\/](\d{4})/);
-        if(mtM2&&+mtM2[1]>=1&&+mtM2[1]<=12){mtYear=parseInt(mtM2[2]);mtMonth=parseInt(mtM2[1]);mtLabel=mtM2[0];}
-        if(!mtYear){mtM2=fn2.match(/(\d{4})[-\/](\d{2})/);
-          if(mtM2&&+mtM2[2]>=1&&+mtM2[2]<=12){mtYear=parseInt(mtM2[1]);mtMonth=parseInt(mtM2[2]);mtLabel=mtM2[0];}}
-      }
+      const mtYear=mtPeriod?mtPeriod.year:0, mtMonth=mtPeriod?mtPeriod.month:0, mtLabel=mtPeriod?mtPeriod.label:'';
       if(mtYear&&mtMonth&&Object.keys(mtTargets).length>0){
         // Stamp _year/_month on each parsed entry so Data Manager label is correct
         // without a Supabase round-trip.
@@ -709,8 +740,12 @@ function mergeDS(existing, wb, type, filename) {
         saveMonthlyTargets(mtTargets,mtYear,mtMonth).then(r=>{
           if(r&&r.errors&&r.errors.length) console.error('[pipeline] monthly targets Supabase save failed:',r.errors);
         }).catch(e=>console.error('[pipeline] monthly targets save exception:',e));
-      } else {
-        console.warn('[pipeline] monthly targets: could not detect year/month from filename:',filename,'— targets saved locally only');
+      } else if(Object.keys(mtTargets).length>0){
+        console.warn('[pipeline] monthly targets: could not detect year/month from filename or sheet title:',filename,'— targets saved locally only, NOT persisted to Supabase');
+        // Read by App.js's handleFiles right after mergeDS returns, so the upload summary
+        // shows this as a real warning instead of folding silently into a generic "✓ loaded"
+        // toast — exactly the gap that let the 2026-10-02 incident look like a success.
+        ds._monthlyTargetsUndetected={filename,storeCount:Object.keys(mtTargets).length};
       }
     }
     else if(type==='inventory'){const ir=parseInventoryData(wb,filename||'');if(ir.length)ds.inventoryRows.push(...ir);}
