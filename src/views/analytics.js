@@ -8144,6 +8144,18 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     return s ? s.name.slice(0,22) : '#'+loc;
   };
 
+  // Reconstructed-period flag (owner-requested 2026-10-02 backfill: "flag them clearly") —
+  // any row whose target was reconstructed (not a real approved upload) carries a non-null
+  // _dataSource from loadMonthlyTargets/loadAllMonthlyTargets. Checked per-period (banner) and
+  // per-store (row badge) below so a mixed period (some real, some reconstructed stores) is
+  // never shown as uniformly one or the other.
+  const periodIsReconstructed = useMemo(()=>
+    locs.length>0 && locs.every(l=>mt[l]&&mt[l]._dataSource),
+    [mt, locs]);
+  const periodHasReconstructed = useMemo(()=>
+    locs.some(l=>mt[l]&&mt[l]._dataSource),
+    [mt, locs]);
+
 
   // Show/hide toggles (owner-requested 2026-10-02) — persisted to settings via
   // onUpdateSettings, same pattern projections.js's showScheduledTPPH/showGCAComparison/
@@ -8203,7 +8215,9 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     return h('tr',{key:loc},
       h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
         background:'var(--surf2)',fontWeight:500,borderRight:'1px solid var(--bdr)',minWidth:170}},
-        storeName(loc)+' ('+loc+')'
+        storeName(loc)+' ('+loc+')',
+        t._dataSource&&span({title:'Reconstructed, not a real approved target — see period badge above',
+          style:{marginLeft:5,fontSize:9,color:'#f59e0b'}},'⚠')
       ),
       ...dataCells
     );
@@ -8236,7 +8250,9 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
           h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
             background:'var(--surf2)',fontWeight:500,
             borderRight:'1px solid var(--bdr)',minWidth:170}},
-            storeName(loc)+' ('+loc+')'
+            storeName(loc)+' ('+loc+')',
+            t._dataSource&&span({title:'Reconstructed, not a real approved target — see period badge above',
+              style:{marginLeft:5,fontSize:9,color:'#f59e0b'}},'⚠')
           ),
           ...VISIBLE_FIELDS.map(f=>h('td',{key:f.key,style:{
             ...tdS,textAlign:'right',fontFamily:'var(--mono)',
@@ -8379,6 +8395,14 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             ...periodOpts
           )
         : span({style:{fontSize:12,color:'var(--text2)',fontWeight:600}},periodLabel),
+      periodHasReconstructed&&span({
+        title:'These numbers are a strictly leak-free reconstruction (forecast engine + trailing '+
+          'actuals, computed as if run in advance of the month) built to fill a gap where no real '+
+          'projections were ever uploaded — not real approved targets. Review and edit as needed.',
+        style:{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:4,
+          background:'rgba(245,158,11,.14)',color:'#f59e0b',border:'1px solid rgba(245,158,11,.35)',
+          textTransform:'uppercase',letterSpacing:'.4px',cursor:'help'}},
+        periodIsReconstructed?'⚠ Reconstructed':'⚠ Partially Reconstructed'),
       // Manual period picker toggle — lets user load any month from Supabase
       btn({
         onClick:()=>setManualOpen(v=>!v),

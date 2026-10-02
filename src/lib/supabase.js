@@ -357,11 +357,26 @@ export async function saveMonthlyTargets(targets, year, month) {
     paper_cost_pct:     t.tPaperCost        ?? null,
     op_supply_target:   t.tOpSupply         ?? null,
     fob_bonus_base_pct: t.tFOBBonusBase     ?? null,
+    // A real upload always clears any prior reconstruction flag for this loc/year/month —
+    // see schema-monthly-targets-data-source-flag.sql. Sent explicitly (not omitted) so a real
+    // upload overwriting a previously-reconstructed month un-flags it, rather than leaving a
+    // stale "reconstructed" badge on data that's since become real.
+    data_source: null,
     updated_at: new Date().toISOString(),
   }));
-  const { error } = await supabase
+  let { error } = await supabase
     .from('monthly_targets')
     .upsert(rows, { onConflict: 'loc,year,month' });
+  // Resilient to a not-yet-migrated table: if data_source doesn't exist yet (owner hasn't run
+  // schema-monthly-targets-data-source-flag.sql), retry without it rather than let one missing
+  // column reject the whole batch — the exact "every upload silently failing" shape dispatch
+  // #164's labor_pct/fob_bonus_base_pct migration hit (see
+  // memory/finding-monthly-targets-save-silently-broken-2026-10-02.md). Self-heals once run.
+  if (error && /column .*data_source.* does not exist|'data_source' column|column "data_source"/i.test(error.message || '')) {
+    const rowsNoFlag = rows.map(({ data_source, ...rest }) => rest);
+    ({ error } = await supabase.from('monthly_targets').upsert(rowsNoFlag, { onConflict: 'loc,year,month' }));
+    if (!error) console.warn('[monthly_targets] saved WITHOUT data_source — run schema-monthly-targets-data-source-flag.sql to enable the reconstruction-flag UI');
+  }
   if (error) {
     if (error.message?.includes('relation') || error.code === '42P01') {
       console.error('[monthly_targets] Table does not exist in Supabase. Run the monthly_targets block from schema.sql in your Supabase SQL editor.');
@@ -414,6 +429,7 @@ export async function loadMonthlyTargets(year, month) {
       tFOBBonusBase: r.fob_bonus_base_pct,
       _year: r.year,
       _month: r.month,
+      _dataSource: r.data_source,
     });
   }
   return result;
@@ -454,6 +470,7 @@ export async function loadAllMonthlyTargets() {
       tFOBBonusBase: r.fob_bonus_base_pct,
       _year: r.year,
       _month: r.month,
+      _dataSource: r.data_source,
     });
   }
   return result;

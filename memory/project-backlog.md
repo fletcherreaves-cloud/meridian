@@ -339,3 +339,89 @@ just better controls on the existing bell (delete button, mark-all-read, auto-cl
 resolved)? Does this stay EOM-count-specific or become a general notification framework other
 features (Signals anomalies, forecast accuracy drops, etc.) could plug into later? Both are
 reasonable directions — the owner hasn't said which yet.
+
+## Recount visibility report — which locations recounted, helped/hurt, FOB $/% before vs after (owner request, 2026-10-02, explicitly "for later")
+
+Owner, verbatim: *"I want to be able to go back and determine which locations performed any
+recounts for weekly and eom inventory. Especially EOM. It would be nice to list the items
+recounted along with a simple recounts performed or not. If we want to carry it further
+diagnostically, let's also include whether the recount helped or hurt matters. If possible show
+FOB at time of original count and then after recount occurred and assign a dollar and percent to
+it."* Not implemented this session — logged here per standing rule so it isn't lost.
+
+**Before building: this is likely largely ALREADY SHIPPED, not a from-scratch build — verify
+against current code first (CLAUDE.md's own repeated lesson: a doc/backlog item can go stale
+while the feature ships).** A quick look while logging this (not a full audit) found:
+- `src/engine/eom-recount-detect.js` — detects recount passes vs. the original walkthrough
+  (store-level count-window clustering, 4h+ gap or back-office source = recount) and already
+  carries the exact "helped vs hurt" framing the owner wants (`RECOUNT_MIN_GAP_MS`, confidence
+  tiers CONFIRMED/LIKELY).
+  See `memory/reference-inventory-count-mechanics.md` for the full mechanics writeup.
+- `src/engine/eom-ledger-baseline.js`'s `ledgerBaselineDiff()`/`itemCloseWindowRecount()` — the
+  shared engine behind BOTH the SAGE tool `query_eom_recount_impact` (dispatch #226) and the
+  dedicated report below; grades recounts via `recountVerdictText()` ("helped: corrected a $X
+  undercount" / "hurt: moved further from expected usage" — a food-cost-accuracy statement, not
+  raw dollar direction, matching the owner's own "improved or hurt final result" framing from the
+  original #227 request). Also mentions a weekly-recount cadence/tile ("At A Glance weekly-recount
+  tile," 2026-09-07), so weekly (not just EOM) recount detection may already exist at some level —
+  unverified how complete.
+- `src/views/eom-recount-report.js` — "EOM Recount-Impact Report" (dispatch #227, Report 3), owner
+  request verbatim 2026-08-30: *"a report stating how many and which products were recounted and
+  whether they improved or hurt final result. Sort by class here as well."* Already groups by
+  location then result (helped/hurt), already has location scoping (All→State→Patch→Store), has
+  a Copy/plain-text export and a print path.
+
+**Open questions / likely real gaps, not yet checked:**
+1. Does the existing report (or SAGE tool) express the impact as BOTH a dollar amount AND a
+   percent, or just one? The owner's new ask explicitly wants both.
+2. Does it show the actual FOB figure at time of ORIGINAL count vs. AFTER the recount side by
+   side (two numbers + the delta), or only the delta/verdict? The owner's new ask is specifically
+   for the before/after pair, not just the net effect.
+3. Is there a blunt, one-line-per-location "recount performed: yes/no" summary anywhere, or does
+   every existing surface assume you already know a recount happened and only reports on it when
+   one did? The owner's phrasing ("simple recounts performed or not") suggests a roll-up view
+   that doesn't exist yet even if the underlying detection does.
+4. Weekly-count coverage: confirm whether `eom-recount-detect.js`/`eom-ledger-baseline.js`'s
+   methodology (or the At A Glance weekly-recount tile) actually covers weekly (non-EOM) counts
+   end-to-end with the same helped/hurt grading, or whether that engine is EOM-only despite the
+   "weekly" mentions found in a grep.
+
+**Next step when picked up:** read `eom-recount-report.js` and `eom-ledger-baseline.js` in full,
+run the existing report against real data, and diff what it already shows against the 4 asks
+above (recount yes/no per location, items list, helped/hurt, FOB $ and % before/after) before
+writing any new code — most of this may already be a UI framing change on an existing report
+rather than a new engine.
+
+## Inventory — Excess Cases is almost certainly showing eaches, not cases (owner report, 2026-10-02, "for later")
+
+Owner, with a screenshot of the Overstock section: *"Excess cases can't be correct. value looks
+ok, but cases way high. Maybe that's the eaches being displayed as cases. If so, just needs
+converting to cases."* Screenshot shows rows like `SALT PACKETS` at **5538.62 cs** excess for a
+$16.09 excess value, and `PEPPER PACKETS/BLACK` at **11091.01 cs** for $54.96 — those case counts
+are implausible (tens of thousands of packets' worth, not tens of cases), while the dollar figure
+sits in a believable range.
+
+**This is already a known, explicitly-flagged uncertainty in the code — not a new bug to
+discover, just one that needed a live measurement to resolve, and the owner's screenshot IS that
+measurement.** `src/views/inventory.js`'s row-builder (the `rows.push(...)` block building each
+item's `usageDay`/`eachFmt`) carries this comment verbatim:
+> `⚠️ UNVERIFIED (no live data to confirm): assumes usagePerDay is already in CASES, matching
+> startInv/endInv/purchases. If a live pull shows it's actually in EACHES, flip this to true —
+> it directly changes the Overstock excessCases/excessValue math.`
+and hardcodes `eachFmt:false`. The Overstock calc (`excessCases:+(((r.daysSupply-threshold)*
+r.usageDay)/(r.eachFmt?(r.caseSize||1):1)).toFixed(2)`) divides by `caseSize` ONLY when
+`eachFmt` is true — with it hardcoded false, a `usageDay` that's actually in eaches (not cases)
+flows straight through undivided, inflating `excessCases` by exactly a factor of `caseSize`.
+`excessValue` doesn't divide by `caseSize` at all (`(daysSupply-threshold)*usageDay*cost`), so if
+`cost` is cost-PER-EACH (not cost-per-case) the dollar figure stays correct even while the case
+count is wrong — consistent with the owner's own read ("value looks ok, but cases way high").
+
+**Likely fix, NOT yet verified against a live item (per CLAUDE.md's "measure it, don't reason
+about it" rule — don't just flip the flag on my read of a screenshot):** flip `eachFmt:false` to
+derive from the real per-item data (or hardcode `true` if genuinely always eaches) once confirmed
+against the actual source rows for an item like `SALT PACKETS`/`PEPPER PACKETS/BLACK` — check
+`usagePerDay`'s real unit against `caseSize` (`parseInvUOM(r.uom)`/`r.caseSz`) and `startInv`/
+`endInv`/purchases' own units for at least one item to be certain this isn't a per-item-type split
+(some items might genuinely report in cases, others in eaches, same source feed). Also audit
+whether this is a blanket `usagePerDay` issue (affecting Usage/Day display too, not just excess
+calcs) or isolated to the Overstock excess math.
