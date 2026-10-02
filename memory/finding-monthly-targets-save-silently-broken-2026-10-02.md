@@ -51,9 +51,16 @@ failing outright, for every store, not just October's.** The only place this eve
 generic "✓ ... loaded" toast both reported success with zero connection to whether the write
 actually landed.
 
-September's row in `monthly_targets` corroborates this: the only month=9 rows on file are 7
-junk entries (see below) with `sales_proj: null`, dated 2026-08-30 — there is no real
-27-store September save in the table either.
+⚠️ **Correction (2026-10-02, same day): August and September were NOT affected — checked
+properly and the claim above that September had no real save was wrong.** The first check of
+September only pulled the top 5 rows by `updated_at`, and all 34 of that month's rows (27 real
++ 7 junk, see below) share one identical timestamp — the query just happened to surface junk
+rows first. Re-queried the full month: **both August and September have real, complete
+27-store data** (`sales_proj` etc. populated and sane for every real store, e.g. loc 3708:
+Aug 322,757 → Sep 314,036 → Oct 359,479 — a believable trend, not garbage). Both predate
+dispatch #164's code shipping, so neither upload ever sent the two now-missing columns and
+neither ever hit the broken schema. **October was the only broken month; nothing else needs
+re-uploading.**
 
 ## Fix required (DB-side — needs the owner, no exec_sql RPC or DATABASE_URL available)
 
@@ -111,9 +118,16 @@ entirely on the filename, with no sheet-content fallback, and its failure path w
 2026-10-02.test.js`, covering all three fixes, built directly from the real incident (not
 invented fixtures) wherever practical.
 
-## What is NOT fixed by this pass
+## Resolution (2026-10-02, same day)
 
-- **The schema migration itself** — DB-side, owner action required (above).
-- **Whether September's real 27-store data needs re-saving too** — once the schema is fixed,
-  worth checking whether a real September upload exists to re-run, or whether only October
-  needs to be backfilled from the parsed file already on hand.
+- Owner ran the `ALTER TABLE` above; confirmed live (`select labor_pct` now returns `200`
+  instead of Postgres `42703`).
+- Inserted the real October data directly (the 27-store rows already parsed from the owner's
+  actual uploaded file, filtered to this org's own stores) — confirmed live via a fresh query:
+  27 rows, no re-upload needed from the owner.
+- Checked August and September properly (see the correction above): both already had real,
+  complete 27-store data and needed no action.
+- The 7 junk rows (`1291, 2010, 2370, 2510, 2920, 16392, 17750`) still sit in August's and
+  September's `monthly_targets` rows — harmless (nothing in the app reads those store
+  numbers), left in place pending the owner's call on whether to clean them up. October's
+  insert did not include them (filtered at parse time by the code fix above).
