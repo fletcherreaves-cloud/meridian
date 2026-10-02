@@ -2850,7 +2850,18 @@ function App() {
             _freshPeakSvcRows.push(...(currentDS.peaksSvcRows||[]).slice(_bPS));
             _freshPeakSalesRows.push(...(currentDS.peaksSalesRows||[]).slice(_bPA));
             _freshAuditRows.push(...(currentDS.auditRows||[]).slice(_bA));
-            loaded.push({name:file.name,type});
+            // mergeDS's 'projections' branch sets this when it parsed real monthly-target
+            // rows but couldn't detect a year/month (filename and sheet title both missed) —
+            // the save to Supabase never happened. Surface it as a real upload-summary
+            // warning (saveErr, same field voice-daypart already uses) instead of letting the
+            // generic "✓ loaded" toast below imply full success — the exact gap that let a
+            // real October upload look successful while never reaching the database
+            // (2026-10-02 owner report).
+            const _mtUndetected=currentDS._monthlyTargetsUndetected;
+            if(_mtUndetected){ delete currentDS._monthlyTargetsUndetected; }
+            loaded.push({name:file.name,type,saveErr:_mtUndetected
+              ?`Monthly targets: couldn't detect which month this is for (${_mtUndetected.storeCount} stores parsed, kept in this session only — not saved to the database). Rename the file to include the month, e.g. "October 2026 - Restaurant Projections.xlsx", and re-upload.`
+              :null});
             // Cloud sync — upload raw file so other devices can auto-ingest it
             if(supabase&&!file._pendingId&&!file._manualSyncId&&type.type!=='unknown')
               uploadReportFile(file,type.type).then(rec=>_markSynced(rec?.id)).catch(()=>{});
