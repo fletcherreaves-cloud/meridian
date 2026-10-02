@@ -777,6 +777,7 @@ create table if not exists public.monthly_targets (
   paper_cost_pct    float,                   -- P&L Paper Cost %
   op_supply_target  float,                   -- Op Supply Target ($)
   fob_bonus_base_pct float,                  -- Bonus Food Over Base Target
+  data_source       text,                    -- null = real upload; else a reconstruction tag (see schema-monthly-targets-data-source-flag.sql)
   -- Audit
   updated_at        timestamptz default now(),
   updated_by        uuid references public.profiles(id),
