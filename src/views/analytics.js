@@ -7492,10 +7492,16 @@ function computeMonthActuals(ds, year, month) {
 }
 
 // Rolls up a list of stores' actuals and targets into group-level weighted averages.
+// Every metric's own denominator is the sales of only the stores that actually HAD a value
+// for it — a store with no data for a field drops out of both numerator and denominator,
+// never contributes a silent 0 against a denominator that still counts its sales. Without
+// this, a group where no store yet has a real FOB actual on file reports a literal "0.00%"
+// actual (not "—"), which a reader can't distinguish from a genuinely perfect food-cost month
+// — reproduced live (owner-reported 2026-10-02, Robert Spencer patch sheet, September 2026).
 function rollupGroup(locs, mt, actuals) {
   let tSales=0, aSales=0;
-  let tCrewLaborDol=0, tBonusDol=0, tFobBaseDol=0, tFobTotalDol=0, tTpphNum=0, tTpphDen=0;
-  let aCrewLaborDol=0, aFobBaseDol=0, aFobTotalDol=0, aTpphNum=0, aTpphDen=0;
+  let tCrewLaborN=0, tCrewLaborD=0, tBonusN=0, tBonusD=0, tFobBaseN=0, tFobBaseD=0, tFobTotalN=0, tFobTotalD=0, tTpphNum=0, tTpphDen=0;
+  let aCrewLaborN=0, aCrewLaborD=0, aFobBaseN=0, aFobBaseD=0, aFobTotalN=0, aFobTotalD=0, aTpphNum=0, aTpphDen=0;
 
   locs.forEach(loc => {
     const t = mt[loc]||{};
@@ -7505,30 +7511,30 @@ function rollupGroup(locs, mt, actuals) {
     tSales += ts;
     aSales += as;
     if (ts > 0) {
-      tCrewLaborDol += (t.tCrewLabor||0) * ts;
-      tBonusDol     += (t.tBonusLabor||0) * ts;
-      tFobBaseDol   += (t.tFOBBase||0) * ts;
-      tFobTotalDol  += (t.tFOBTotal||0) * ts;
+      if (t.tCrewLabor!=null)  { tCrewLaborN += t.tCrewLabor*ts;  tCrewLaborD += ts; }
+      if (t.tBonusLabor!=null) { tBonusN     += t.tBonusLabor*ts; tBonusD     += ts; }
+      if (t.tFOBBase!=null)    { tFobBaseN   += t.tFOBBase*ts;    tFobBaseD   += ts; }
+      if (t.tFOBTotal!=null)   { tFobTotalN  += t.tFOBTotal*ts;   tFobTotalD  += ts; }
       if (t.tTpph > 0) { tTpphNum += t.tTpph * ts; tTpphDen += ts; }
     }
     if (as > 0) {
-      aCrewLaborDol += (a.crewLaborPct||0) * as;
-      aFobBaseDol   += (a.fobBasePct||0) * as;
-      aFobTotalDol  += (a.fobTotalPct||0) * as;
+      if (a.crewLaborPct!=null) { aCrewLaborN += a.crewLaborPct*as; aCrewLaborD += as; }
+      if (a.fobBasePct!=null)   { aFobBaseN   += a.fobBasePct*as;   aFobBaseD   += as; }
+      if (a.fobTotalPct!=null)  { aFobTotalN  += a.fobTotalPct*as;  aFobTotalD  += as; }
       if (a.tpph > 0) { aTpphNum += a.tpph * as; aTpphDen += as; }
     }
   });
 
   return {
     tSales, aSales,
-    tCrewLabor:  tSales > 0 ? tCrewLaborDol / tSales : null,
-    tBonusLabor: tSales > 0 ? tBonusDol / tSales : null,
-    tFobBase:    tSales > 0 ? tFobBaseDol / tSales : null,
-    tFobTotal:   tSales > 0 ? tFobTotalDol / tSales : null,
+    tCrewLabor:  tCrewLaborD > 0 ? tCrewLaborN / tCrewLaborD : null,
+    tBonusLabor: tBonusD > 0 ? tBonusN / tBonusD : null,
+    tFobBase:    tFobBaseD > 0 ? tFobBaseN / tFobBaseD : null,
+    tFobTotal:   tFobTotalD > 0 ? tFobTotalN / tFobTotalD : null,
     tTpph:       tTpphDen > 0 ? tTpphNum / tTpphDen : null,
-    aCrewLabor:  aSales > 0 ? aCrewLaborDol / aSales : null,
-    aFobBase:    aSales > 0 ? aFobBaseDol / aSales : null,
-    aFobTotal:   aSales > 0 ? aFobTotalDol / aSales : null,
+    aCrewLabor:  aCrewLaborD > 0 ? aCrewLaborN / aCrewLaborD : null,
+    aFobBase:    aFobBaseD > 0 ? aFobBaseN / aFobBaseD : null,
+    aFobTotal:   aFobTotalD > 0 ? aFobTotalN / aFobTotalD : null,
     aTpph:       aTpphDen > 0 ? aTpphNum / aTpphDen : null,
   };
 }
@@ -7743,18 +7749,26 @@ const PROJ_FIELDS = [
   {g:'Food Cost',     key:'tUnex',        l:'Unex Diff',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Food Cost',     key:'tFOBTarget',   l:'FOB Tgt',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Food Cost',     key:'tFOBTotal',    l:'Total Food', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  // Bonus Food Threshold (fob_bonus_base_pct) -- saved to monthly_targets (dispatch #164) but
+  // never surfaced in this grid until the owner asked for it directly (2026-10-02), specifically
+  // so it could be toggled off again -- see showProjBonusFood below.
+  {g:'Food Cost',     key:'tFOBBonusBase',l:'Bonus Food Thresh', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Other Costs',   key:'tPaperCost',   l:'Paper',      fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Other Costs',   key:'tOpSupply',    l:'Op Supply',  fmt:v=>v!=null?'$'+(v||0).toLocaleString():'—', dollar:true},
 ];
 
 // Sales-weighted rollup of PROJ_FIELDS targets for a group of stores.
-// tProdSales is summed; tOpSupply is summed (dollar, not ratio); all others are
-// weighted by each store's tProdSales so group totals reflect scale correctly.
+// tProdSales is summed; tOpSupply is summed (dollar, not ratio); all others are weighted by
+// each store's tProdSales, with each field's OWN denominator — a store missing a given field
+// drops out of that field's numerator and denominator alike, rather than diluting the group
+// average against a denominator that still counts its sales (same bug class fixed in
+// rollActuals/rollupGroup above, applied here for the same reason even though target rows are
+// usually complete).
 function rollupProj(groupLocs, mt) {
   let tSales = 0;
-  const wt = {};
+  const wt = {}, wd = {};
   let opSupplySum = null;
-  PROJ_FIELDS.forEach(f => { if(f.key!=='tProdSales'&&f.key!=='tOpSupply') wt[f.key]=0; });
+  PROJ_FIELDS.forEach(f => { if(f.key!=='tProdSales'&&f.key!=='tOpSupply'){ wt[f.key]=0; wd[f.key]=0; } });
   groupLocs.forEach(loc => {
     const t = mt[loc]||{};
     const s = t.tProdSales||0;
@@ -7762,13 +7776,13 @@ function rollupProj(groupLocs, mt) {
     if(t.tOpSupply!=null) opSupplySum=(opSupplySum||0)+t.tOpSupply;
     PROJ_FIELDS.forEach(f => {
       if(f.key==='tProdSales'||f.key==='tOpSupply') return;
-      if(s>0&&t[f.key]!=null) wt[f.key]+=t[f.key]*s;
+      if(s>0&&t[f.key]!=null){ wt[f.key]+=t[f.key]*s; wd[f.key]+=s; }
     });
   });
   const result = {tProdSales:tSales, tOpSupply:opSupplySum};
   PROJ_FIELDS.forEach(f => {
     if(f.key==='tProdSales'||f.key==='tOpSupply') return;
-    result[f.key] = tSales>0 ? wt[f.key]/tSales : null;
+    result[f.key] = wd[f.key]>0 ? wt[f.key]/wd[f.key] : null;
   });
   return result;
 }
@@ -7848,18 +7862,25 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
     return opp>0?'#10b981':opp<0?'#ef4444':'#f59e0b';
   };
 
-  // Sales-weighted rollup of actual metrics for a set of locs
+  // Sales-weighted rollup of actual metrics for a set of locs.
+  // Each metric's own denominator is the sales of ONLY the stores that actually reported a
+  // value for it — not total group sales. A store with no FOB upload for the period must
+  // drop out of both the numerator AND denominator for fobBasePct/fobTotalPct, never fall
+  // through as 0*sales in the numerator against a denominator that still counts its sales.
+  // That `||0` pattern is exactly what produced a literal "0.00%" (not "—") for Base Food %
+  // with a group-wide actual of 0, when really no store had any actual on file yet — owner-
+  // reported 2026-10-02, reproduced on the real Robert Spencer patch sheet (September 2026).
   const rollActuals = (locs) => {
-    let s=0,ld=0,tN=0,tD=0,fbd=0,ftd=0;
+    let s=0,ldN=0,ldD=0,tN=0,tD=0,fbdN=0,fbdD=0,ftdN=0,ftdD=0;
     locs.forEach(loc=>{
       const a=actuals?.byLoc?.[String(loc)]||{};
       const as=a.sales||0; s+=as;
-      ld+=(a.crewLaborPct||0)*as;
+      if(a.crewLaborPct!=null){ldN+=a.crewLaborPct*as;ldD+=as;}
       if(a.tpph>0){tN+=a.tpph*as;tD+=as;}
-      fbd+=(a.fobBasePct||0)*as;
-      ftd+=(a.fobTotalPct||0)*as;
+      if(a.fobBasePct!=null){fbdN+=a.fobBasePct*as;fbdD+=as;}
+      if(a.fobTotalPct!=null){ftdN+=a.fobTotalPct*as;ftdD+=as;}
     });
-    return {sales:s, crewLaborPct:s>0?ld/s:null, tpph:tD>0?tN/tD:null, fobBasePct:s>0?fbd/s:null, fobTotalPct:s>0?ftd/s:null};
+    return {sales:s, crewLaborPct:ldD>0?ldN/ldD:null, tpph:tD>0?tN/tD:null, fobBasePct:fbdD>0?fbdN/fbdD:null, fobTotalPct:ftdD>0?ftdN/ftdD:null};
   };
 
   // CSS
@@ -8056,7 +8077,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       h('tbody',null,...withPace.map(r=>rowEl(r,false)),rowEl({label:'District Total',tgt:tgtSum,act:actSum,pace:totPace,vs:totVs},true))));
 }
 
-function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded}) {
+function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded, onUpdateSettings}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
   const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
@@ -8124,9 +8145,23 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   };
 
 
+  // Show/hide toggles (owner-requested 2026-10-02) — persisted to settings via
+  // onUpdateSettings, same pattern projections.js's showScheduledTPPH/showGCAComparison/
+  // showDaypartSupplement already use: `!== false` so an unset/undefined setting defaults to
+  // visible, and only an explicit `false` hides it. Scoped to this grid specifically (not the
+  // printed Patch Sheet / Group Report, which use their own separate METRICS list with no
+  // Service group at all) — these three keys control which PROJ_FIELDS columns render below.
+  const showProjService    = settings?.showProjService    !== false;
+  const showProjBonusLabor = settings?.showProjBonusLabor !== false;
+  const showProjBonusFood  = settings?.showProjBonusFood  !== false;
+  const VISIBLE_FIELDS = PROJ_FIELDS.filter(f =>
+    (f.g!=='Service' || showProjService) &&
+    (f.key!=='tBonusLabor' || showProjBonusLabor) &&
+    (f.key!=='tFOBBonusBase' || showProjBonusFood));
+
   // Build column group spans
   const groups = [];
-  PROJ_FIELDS.forEach(f=>{
+  VISIBLE_FIELDS.forEach(f=>{
     const last = groups[groups.length-1];
     if(last&&last.g===f.g) last.count++;
     else groups.push({g:f.g,count:1});
@@ -8154,12 +8189,12 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     style:{...thS,color:'var(--accent)',borderRight:'1px solid var(--bdr)',position:'sticky',top:0,zIndex:3}}, g.g));
 
   // Build field header cells
-  const fieldCells = PROJ_FIELDS.map(f=>h('th',{key:f.key,style:{...thS,minWidth:64,position:'sticky',top:THEAD_ROW_H,zIndex:3}},f.l));
+  const fieldCells = VISIBLE_FIELDS.map(f=>h('th',{key:f.key,style:{...thS,minWidth:64,position:'sticky',top:THEAD_ROW_H,zIndex:3}},f.l));
 
   // Build store row elements
   const storeRowEls = locs.map(loc=>{
     const t = mt[loc]||{};
-    const dataCells = PROJ_FIELDS.map(f=>{
+    const dataCells = VISIBLE_FIELDS.map(f=>{
       const v = t[f.key];
       const formatted = f.fmt(v);
       return h('td',{key:f.key,style:{...tdS,textAlign:'right',
@@ -8189,7 +8224,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       distLocs.push(...gLocs);
       const rollup = rollupProj(gLocs, mt);
       gRows.push(h('tr',{key:'gh_'+gName},
-        h('td',{colSpan:PROJ_FIELDS.length+1,style:{
+        h('td',{colSpan:VISIBLE_FIELDS.length+1,style:{
           ...tdS,background:'rgba(96,165,250,.06)',fontWeight:700,color:'var(--accent)',
           textTransform:'uppercase',letterSpacing:'.6px',fontSize:10,
           padding:'8px 12px',borderBottom:'2px solid rgba(96,165,250,.18)'
@@ -8203,7 +8238,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             borderRight:'1px solid var(--bdr)',minWidth:170}},
             storeName(loc)+' ('+loc+')'
           ),
-          ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+          ...VISIBLE_FIELDS.map(f=>h('td',{key:f.key,style:{
             ...tdS,textAlign:'right',fontFamily:'var(--mono)',
             color:t[f.key]==null?'var(--text3)':'var(--text)'}},f.fmt(t[f.key])))
         ));
@@ -8212,13 +8247,13 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
           background:'var(--surf)',fontWeight:700,color:'var(--amber)',
           borderRight:'1px solid var(--bdr)',minWidth:170}},'GROUP TOTAL'),
-        ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+        ...VISIBLE_FIELDS.map(f=>h('td',{key:f.key,style:{
           ...tdS,textAlign:'right',fontFamily:'var(--mono)',
           fontWeight:700,color:'var(--amber)',background:'var(--surf)'
         }},f.fmt(rollup[f.key])))
       ));
       gRows.push(h('tr',{key:'sp_'+gName},
-        h('td',{colSpan:PROJ_FIELDS.length+1,style:{height:10,background:'var(--bg)'}})
+        h('td',{colSpan:VISIBLE_FIELDS.length+1,style:{height:10,background:'var(--bg)'}})
       ));
     });
     if(distLocs.length>0){
@@ -8227,7 +8262,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
           background:'#172554',fontWeight:800,color:'#93c5fd',
           borderRight:'1px solid var(--bdr)',minWidth:170,fontSize:12}},'DISTRICT TOTAL'),
-        ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+        ...VISIBLE_FIELDS.map(f=>h('td',{key:f.key,style:{
           ...tdS,textAlign:'right',fontFamily:'var(--mono)',
           fontWeight:800,color:'#93c5fd',background:'#172554'
         }},f.fmt(dr[f.key])))
@@ -8267,12 +8302,19 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     const asOfDate = actuals.maxDate
       ? new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'})
       : 'No actuals loaded';
-    const groupMap = sheetType==='operator'
-      ? (settings?.operators||{})
+    // 'state' — all OK (MCDOK) locations or all Florida (Emerald Arches) locations, same
+    // INV_ORG_COORDS.state split already used for the OK/FL market pills elsewhere in this
+    // file (lines ~397-398, ~2090-2091) — reused rather than re-deriving a third way.
+    const groupMap = sheetType==='operator' ? (settings?.operators||{})
+      : sheetType==='state' ? {
+          OK: locs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),
+          FL: locs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL'),
+        }
       : (settings?.supervisorGroups||{});
     const groupLocs = (groupMap[sheetGroup]||[]).map(String).filter(l=>locs.includes(l));
     const storeMap  = Object.fromEntries((stores||[]).map(s=>[String(s.loc),s.name]));
-    const html = buildGroupSheetHTML(sheetGroup, groupLocs, mt, mt_curr, actuals, sp, prevPeriod, asOfDate, storeMap);
+    const groupLabel = sheetGroup==='OK'?'Oklahoma (All Locations)':sheetGroup==='FL'?'Florida (All Locations)':sheetGroup;
+    const html = buildGroupSheetHTML(groupLabel, groupLocs, mt, mt_curr, actuals, sp, prevPeriod, asOfDate, storeMap);
     printHtml(html, { autoPrint: false });
     setSheetLoading(false);
     setSheetOpen(false);
@@ -8296,6 +8338,27 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             color:groupView===mode?'var(--accent)':'var(--text3)',
             border:groupView===mode?'1px solid rgba(96,165,250,.4)':'1px solid var(--bdr)'}},label)
         ))
+      ),
+      // Column/section toggles (owner-requested 2026-10-02) — each one a simple on/off chip,
+      // ON (accent) = shown, OFF (dim) = hidden, persisted via onUpdateSettings so it survives
+      // a reload. Guard onUpdateSettings in case a future caller embeds this panel without
+      // wiring the callback — the toggle degrades to a no-op rather than throwing.
+      div({style:{display:'flex',gap:3}},
+        ...([
+          ['showProjService',    'Service'],
+          ['showProjBonusLabor', 'Bonus Labor'],
+          ['showProjBonusFood',  'Bonus Food'],
+        ].map(([key,label])=>{
+          const on = settings?.[key] !== false;
+          return btn({key,
+            onClick:()=>onUpdateSettings&&onUpdateSettings({...settings,[key]:!on}),
+            title:(on?'Hide ':'Show ')+label+' column'+(label==='Service'?'s':''),
+            style:{padding:'3px 8px',fontSize:11,borderRadius:4,cursor:'pointer',
+              background:on?'rgba(16,185,129,.12)':'var(--surf)',
+              color:on?'#10b981':'var(--text3)',
+              border:on?'1px solid rgba(16,185,129,.35)':'1px solid var(--bdr)',
+              textDecoration:on?'none':'line-through'}},label);
+        }))
       ),
       btn({onClick:()=>setMyStoresOnly(v=>!v),style:{
         padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
@@ -8365,7 +8428,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         padding:'4px 8px',background:'var(--surf2)',borderRadius:4,
         border:'1px solid var(--bdr)',flexWrap:'wrap'}},
         div({style:{display:'flex',gap:3}},
-          ...([['supervisor','Supervisors'],['operator','Operators']].map(
+          ...([['supervisor','Supervisors'],['operator','Operators'],['state','State']].map(
             ([t,label])=>btn({key:t,onClick:()=>{setSheetType(t);setSheetGroup('');},style:{
               padding:'2px 7px',fontSize:11,borderRadius:3,cursor:'pointer',
               background:sheetType===t?'rgba(16,185,129,.2)':'var(--surf)',
@@ -8379,8 +8442,10 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
           style:{fontSize:11,padding:'2px 6px',background:'var(--surf)',
             border:'1px solid var(--bdr)',borderRadius:3,color:'var(--text)',minWidth:120}},
           h('option',{value:''},'— Pick group —'),
-          ...Object.keys(sheetType==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}))
-            .map(name=>h('option',{key:name,value:name},name))
+          ...Object.keys(sheetType==='operator'?(settings?.operators||{})
+            :sheetType==='state'?{OK:1,FL:1}
+            :(settings?.supervisorGroups||{}))
+            .map(name=>h('option',{key:name,value:name},name==='OK'?'Oklahoma (all)':name==='FL'?'Florida (all)':name))
         ),
         btn({
           onClick:openGroupSheet,
@@ -8439,4 +8504,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages, rollupProj, rollupGroup, buildGroupSheetHTML, computeMonthActuals, PROJ_FIELDS };

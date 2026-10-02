@@ -403,9 +403,9 @@ const PLANNING_TABS = [
   { id: 'yearly',  label: 'Yearly',      icon: '📆' },
   { id: 'smart',   label: 'Smart',       icon: '🧭' },
 ];
-function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onClose }) {
+function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onUpdateSettings, onClose }) {
   const [tab, setTab] = useState(initialTab && PLANNING_TABS.some(t => t.id === initialTab) ? initialTab : 'targets');
-  const common = { ds, stores, settings, onClose, embedded: true };
+  const common = { ds, stores, settings, onUpdateSettings, onClose, embedded: true };
   const active =
     tab === 'targets' ? h(UnifiedTargetsPanel, common) :
     tab === 'monthly' ? h(MonthlyProjectionsPanel, { ...common, customSignalDefs }) :
@@ -3578,7 +3578,7 @@ function App() {
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
       // planning — Dispatch #207: moved to the routePanel gate in the main content area
       // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
-      routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>goRoute(null)}),
+      routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onUpdateSettings:saveSettings,onClose:()=>goRoute(null)}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
         dataReady:cloudStreamsReady,
