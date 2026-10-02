@@ -157,3 +157,58 @@ Process-to-Cure/National-Standards caveat (not just that the engine computes it)
   have real prework and participation requirements, but the document itself says tracking/
   completion details are still forthcoming ("in the coming weeks") — revisit once that's
   published rather than guessing at a tracking shape now.
+
+## Follow-up (2026-10-02): per-store Process-to-Cure tracking — the inferred half, built
+
+This section's own line 41-44 flagged the real gap: "Meridian has no per-store Process-to-Cure
+flag anywhere in the data model... The suspension as coded applies to every store uniformly."
+`computeProcessToCureStatus` (`src/engine/visit-readiness.js`) closes the INFERRED half of that
+gap, wired into `computeVisitReadiness` and the Visit Readiness panel:
+
+- **What it measures.** A "qualifying visit" per `project-graded-visits-pace.md`'s own
+  consequences section: an Unacceptable RGR/RGR-HealthSafety visit (`pass:false` — already
+  folds in the overall<80%/2+components<80%/critical-missed rule via `parseRGR`), or an EcoSure
+  visit with a real cited critical (`criticalFailCount > 0`). A CFV visit never counts,
+  whatever its score ("no remediation, but feeds trend"). 4 qualifying visits, counted
+  cumulatively over all visit history on file (the source document states no reset/expiry
+  window for this threshold — only that the separate 2-visit mandatory-support-visit trigger is
+  scoped to "within 90 days", read here as any two qualifying visits ≤90 days apart) →
+  `inCure:true`.
+- **What it cannot measure, stated explicitly in its own `note` field and never silently
+  assumed away:** the standard's other Cure triggers — egregious circumstances, a refused-access
+  event that never registers as a cited EcoSure critical, an official McDonald's admin
+  determination. No source checked so far (Propel — `finding-ecosure-propel-api-2026-08-22.md`;
+  PEAK — both `finding-peak-*.md` files) exposes an actual "Process to Cure" status field
+  anywhere. This remains the honest ceiling on what Meridian's own data can see.
+- **Wired through:** `store.processToCure` (per store) and `district.inCure` /
+  `district.mandatorySupportVisitDue` (rollup) on `computeVisitReadiness`'s return;
+  `selfAssessmentEligibility.orgInCureCount` surfaces the same figure alongside the 92% tracker
+  without touching that function's own criterion-3-only formula.
+- **The uniform-suspension gap is now actually fixed, not just flagged.** `store.visitsSuspended`
+  is `false` for a store with `processToCure.inCure:true` even while the district-wide
+  `VISIT_SUSPENSIONS` window is active for everyone else, matching the PDF's own stated
+  exception. The panel shows that store's real readiness score and a "Process to Cure
+  (inferred, N qualifying visits)" badge instead of the generic "Suspended" pill, and the
+  suspension banner names how many stores are exempt when any are.
+- **Current measured result, same as the 2026-10-01 one-off check (re-confirmed, not
+  re-measured from scratch this pass): zero stores currently qualify** — this feature has no
+  visible effect on the live panel today. It is infrastructure for if/when that changes, not a
+  response to a current live case.
+- **Deliberately NOT built this pass: a manual override for the non-visit-based triggers.**
+  Two reasons, not an oversight: (1) with zero stores currently qualifying by any pathway,
+  there is nothing today to override; (2) the obvious reuse candidate — `org_events`, which
+  already carries a per-store, date-ranged shape (`own_closure` is the exact precedent) — turns
+  out not to fit cleanly: `orgEventsToDayMap()` (`src/engine/events-import.js:169`) collapses a
+  null `dateEnd` to a single day (`end = e.dateEnd || e.dateStart`), so it cannot represent an
+  open-ended "still in Cure, no exit date yet" status without the owner manually extending an
+  end date on a cadence that has no natural trigger. Building a manual-override mechanism
+  properly needs a real design decision (a dedicated ongoing-status shape, not a forced fit into
+  the day-map), and per the "measure it, don't reason about it" rule, inventing that plumbing
+  for a hypothetical with n=0 live cases is premature. Revisit if a store is ever actually
+  measured crossing the threshold, or if the owner wants it built ahead of that regardless.
+- 22 tests, `src/__tests__/dispatch-process-to-cure-2026-10-02.test.js`: qualifying-visit
+  definition (RGR/RGR-HealthSafety fail, EcoSure critical-only, CFV never), the 2-visit/90-day
+  and 4-visit cumulative thresholds, per-store isolation, the honesty-of-the-note checks,
+  `computeVisitReadiness` wiring (per-store, district, `selfAssessmentEligibility`), and two
+  React-rendering tests on the real `VisitReadinessPanel` proving the per-store suspension
+  exemption and Cure badge actually render (not just that the engine computes them).
