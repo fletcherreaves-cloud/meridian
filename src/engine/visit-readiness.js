@@ -845,11 +845,13 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
 // official FAQ: 91.5% does not round up to qualify).
 //
 // This function computes ONLY criterion (3) — the one Meridian actually has the visit
-// history to measure. Criteria (1) and (2) are not in Meridian's data model at all (no
-// National-Franchising-Standard tracker, no per-store Process-to-Cure flag — see
-// VISIT_SUSPENSIONS' comment above) and must NOT be inferred from visit scores alone, so the
-// result is named `meetsPassRateThreshold`, never a bare `eligible` — a caller that renders
-// this as "you qualify" without the other two caveats would be overclaiming what was measured.
+// history to measure. Criterion (1) (National Franchising Standards) is not in Meridian's
+// data model at all. Criterion (2) (no restaurant in Process to Cure) now has an INFERRED
+// signal — computeProcessToCureStatus below — but that is a measurement from visit scores,
+// not an official status field (none exists anywhere Meridian has looked — see that
+// function's own comment), so this result is still named `meetsPassRateThreshold`, never a
+// bare `eligible` — a caller that renders this as "you qualify" without the other two
+// caveats would be overclaiming what was measured.
 export function computeSelfAssessmentEligibility(gradedVisits, opts = {}) {
   const cycleYears = opts.cycleYears || [2025, 2026];
   const years = new Set(cycleYears.map(String));
@@ -883,6 +885,66 @@ export function computeSelfAssessmentEligibility(gradedVisits, opts = {}) {
   };
 }
 
+// ── Operations Process to Cure — per-store, INFERRED from qualifying visits ─────────────
+// memory/project-graded-visits-pace.md: "4 qualifying visits -> Operations Process to Cure
+// (was 2 in 2025). NEW: mandatory support visit after just 2 qualifying visits (within 90d)."
+// A "qualifying visit" here is an Unacceptable RGR/RGR-HealthSafety visit (overall <80% OR
+// 2+ components <80% OR a critical missed — already folded into that visit's own `pass` field
+// by src/parsers/graded-visits.js's parseRGR) or an EcoSure visit with a real cited critical
+// (criticalFailCount > 0 — "EcoSure critical miss ... Refusing access = automatic fail +
+// Process-to-Cure qualifier"). CFV explicitly carries "No remediation, but feeds trend" — a
+// CFV fail never counts toward Cure, however poorly it scores.
+//
+// Meridian has NO official Process-to-Cure status field from any source checked so far —
+// not Propel (memory/finding-ecosure-propel-api-2026-08-22.md), not PEAK
+// (memory/finding-peak-cfv-api-2026-08-22.md, memory/finding-peak-visit-detail-api-2026-09-05.md).
+// This is the one signal Meridian's own visit records CAN see; it cannot see the standard's
+// other triggers (egregious circumstances, a refused-access event that never registers as a
+// cited EcoSure critical, an official McDonald's admin determination) — this function says so
+// in its own `note` rather than ever claiming certainty either way.
+//
+// The 4-visit Cure threshold has no stated expiry/reset window in the source document — only
+// the 2-visit mandatory-support-visit trigger is explicitly scoped to "within 90 days" (read
+// here as: any two qualifying visits whose dates are <=90 days apart). So qualifying visits
+// are counted CUMULATIVELY over all visit history on file rather than inventing a reset
+// cadence the document never states — flagged explicitly in the returned note, not silently
+// assumed.
+export function computeProcessToCureStatus(gradedVisits) {
+  const NOTE = 'Inferred from RGR/RGR-HealthSafety "Unacceptable" visits and EcoSure visits ' +
+    'with a cited critical only — a CFV fail never counts ("no remediation, but feeds ' +
+    'trend"). Counted cumulatively over all visit history on file: the source document states ' +
+    'no reset/expiry window for the 4-visit Cure threshold, only that the 2-visit mandatory-' +
+    'support-visit trigger is scoped to within 90 days. Meridian has no official Process-to-' +
+    'Cure status field from any source checked (Propel, PEAK) — this cannot see egregious-' +
+    'circumstances, refused-access, or admin-determined triggers that never show up as a ' +
+    'qualifying visit in this data.';
+  const byLoc = {};
+  for (const v of (gradedVisits || [])) {
+    if (!v || v.score == null) continue;
+    const loc = _normLoc(v.store || v.loc); if (!loc) continue;
+    const type = v.reportType || 'CFV';
+    const isQualifyingRGR = (type === 'RGR' || type === 'RGR-HealthSafety') && v.pass === false;
+    const isQualifyingEco = type === 'EcoSure' && (v.modules?.criticalFailCount ?? 0) > 0;
+    if (!isQualifyingRGR && !isQualifyingEco) continue;
+    const ms = _ms(v.dateISO || v.date || 0);
+    if (isNaN(ms)) continue;
+    (byLoc[loc] = byLoc[loc] || []).push({ ms, dateISO: v.dateISO || v.date, type, reason: isQualifyingRGR ? 'RGR Unacceptable' : 'EcoSure critical fail' });
+  }
+  const result = {};
+  for (const loc of Object.keys(byLoc)) {
+    const visits = byLoc[loc].sort((a, b) => a.ms - b.ms);
+    // Sorted ascending, so the minimum pairwise gap is always between adjacent visits —
+    // checking adjacent pairs is sufficient to find ANY pair within the 90-day window.
+    let mandatorySupportVisitDue = false;
+    for (let i = 1; i < visits.length; i++) {
+      if ((visits[i].ms - visits[i - 1].ms) / 864e5 <= 90) { mandatorySupportVisitDue = true; break; }
+    }
+    result[loc] = { qualifyingVisits: visits, count: visits.length, mandatorySupportVisitDue, inCure: visits.length >= 4 };
+  }
+  return { byLoc: result, note: NOTE };
+}
+const _emptyProcessToCure = () => ({ qualifyingVisits: [], count: 0, mandatorySupportVisitDue: false, inCure: false });
+
 // ── Public: per-store + district readiness ────────────────────────────────────
 export function computeVisitReadiness(ds, opts = {}) {
   const weights = opts.weights || READINESS_WEIGHTS;
@@ -895,6 +957,12 @@ export function computeVisitReadiness(ds, opts = {}) {
   }
   const cache = {};
   const gv = ds?.gradedVisits || ds?.graded_visits || [];
+  // Hoisted so the per-store loop below can exempt an inferred-Cure store from the uniform
+  // district-wide suspension (McDonald's exempts Process-to-Cure restaurants from the
+  // CFV/RGR suspension — see VISIT_SUSPENSIONS' comment); `suspension` in the return value
+  // is unchanged, just computed once instead of a second time at the end of the function.
+  const susp = activeVisitSuspension();
+  const ptc = computeProcessToCureStatus(gv);
   const lastVisitByLoc = {};
   // Follow-on to dispatch #231 / memory/finding-ecosure-propel-api-2026-08-22.md (2026-09-12) —
   // the MOST RECENT visit of ANY type (lastVisitByLoc, for the general "last actual visit"
@@ -1010,6 +1078,14 @@ export function computeVisitReadiness(ds, opts = {}) {
       // explicit gap rather than silently narrowing the sub-score's denominator.
       notMeasured: [...speed.missing, ...accuracy.missing, ...quality.missing, ...leadership.missing],
       lastVisit: lastVisitByLoc[loc] || null,
+      // Inferred Process-to-Cure signal (see computeProcessToCureStatus above) — never an
+      // official status, always this store's own qualifying-visit count and its caveats.
+      processToCure: ptc.byLoc[loc] || _emptyProcessToCure(),
+      // Per the exception stated in the suspension's own reason text (and
+      // memory/finding-pace-midcycle-update-2026-09-15.md): a restaurant inferred to be in
+      // Process to Cure keeps receiving its CFV/RGR visits even while the district-wide
+      // suspension is active elsewhere, so it is exempt from the uniform suspension below.
+      visitsSuspended: !!susp && !(ptc.byLoc[loc]?.inCure),
     };
     store.why = buildWhy(store);         // plain-language explanation (explainability & trust)
     store.verdict = buildVerdict(store); // Dispatch28: one-line decision — "so what do I do?"
@@ -1030,6 +1106,10 @@ export function computeVisitReadiness(ds, opts = {}) {
     // Critical fail count, separate from fsFlag (the waste/variance proxy) — a real EcoSure
     // critical, not inferred. See lastVisitByLoc's own comment for why this stays separate.
     criticalFails: stores.filter(s => s.lastVisit?.criticalFailCount > 0).length,
+    // Inferred Process-to-Cure rollup — see computeProcessToCureStatus's own comment for
+    // exactly what "inferred" does and does not cover.
+    inCure: stores.filter(s => s.processToCure.inCure).length,
+    mandatorySupportVisitDue: stores.filter(s => s.processToCure.mandatorySupportVisitDue).length,
     subs: {
       speed: mean(stores.map(s => s.subs.speed.score).filter(x => x != null)),
       accuracy: mean(stores.map(s => s.subs.accuracy.score).filter(x => x != null)),
@@ -1057,7 +1137,14 @@ export function computeVisitReadiness(ds, opts = {}) {
   // Org-level, not scoped to opts.locs — the 2027 Self-Assessed RGRV eligibility threshold is
   // a whole-organization figure per the official FAQ's own formula, not something that varies
   // by which stores a panel filter happens to be showing.
-  const selfAssessmentEligibility = computeSelfAssessmentEligibility(gv);
+  const selfAssessmentEligibility = {
+    ...computeSelfAssessmentEligibility(gv),
+    // ptc was computed from the same unscoped gv above — org-level by construction, matching
+    // this object's own scope. Surfaced here (not folded into meetsPassRateThreshold, which
+    // stays criterion-3-only) so a caller can report criterion (2) alongside it without
+    // re-running the inference itself.
+    orgInCureCount: Object.values(ptc.byLoc).filter(s => s.inCure).length,
+  };
 
   // Provenance: exactly which feeds this run resolved, for the report's source index.
   const sourcesUsed = [...new Set(stores.flatMap(s =>
@@ -1067,8 +1154,9 @@ export function computeVisitReadiness(ds, opts = {}) {
     stores, district, weights, calibration, fsBacktest,
     areas: READINESS_AREAS,
     gaps: READINESS_GAPS,
-    suspension: activeVisitSuspension(),
+    suspension: susp,
     hasEcoSure, visitTypes, sourcesUsed, selfAssessmentEligibility,
+    processToCureNote: ptc.note,
     method: {
       recentDays: RECENT_DAYS,
       generatedAt: new Date().toISOString(),

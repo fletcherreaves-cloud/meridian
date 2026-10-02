@@ -54,7 +54,10 @@ function downloadCsv(text, filename) {
 function storeReportHTML(s) {
   const esc = t => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const b = BAND[s.band], fs = fsBadge(s);
-  const susp = activeVisitSuspension();
+  // Reuse the per-store exemption computeVisitReadiness already derived (inferred Process-to-
+  // Cure stores keep a real score/coaching report even while the district-wide window below
+  // is active for everyone else) rather than re-deriving suspension state from scratch here.
+  const susp = s.visitsSuspended ? activeVisitSuspension() : null;
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   // Score breakdown doubles as the calibration trail: nominal weight, the effective
   // weight after renormalizing over the areas that had data, and the points contributed.
@@ -132,14 +135,15 @@ function printStoreReport(s) {
 // there's no separate CFV-only/RGR-only score to hide instead), so while a suspension is
 // active the whole per-store score/band is replaced with a neutral "Suspended" state —
 // this banner is the one place that explains why, so every row doesn't have to repeat it.
-function SuspensionBanner({ susp }) {
+function SuspensionBanner({ susp, inCureCount }) {
   if (!susp) return null;
   return h('div', { style: { fontSize: 11.5, color: '#111', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: '#fff3cd', border: '.5px solid #e0c060', borderRadius: 8, display: 'flex', gap: 8, alignItems: 'flex-start' } },
     h('span', { style: { fontSize: 15 } }, '⏸'),
     h('div', null,
       h('b', null, susp.label), ` — ${susp.reason} `,
       `Per-store readiness below shows "Suspended" (no CFV/RGR visit expected through ${susp.end}) instead of the usual readiness band. `,
-      'EcoSure Food Safety visits and the Waste & variance flag are unaffected, and the underlying ops metrics keep updating so the program can resume seamlessly.'));
+      'EcoSure Food Safety visits and the Waste & variance flag are unaffected, and the underlying ops metrics keep updating so the program can resume seamlessly.',
+      inCureCount > 0 && h('span', null, ` ${inCureCount} store${inCureCount > 1 ? 's' : ''} inferred to be in Operations Process to Cure ${inCureCount > 1 ? 'are' : 'is'} exempt from this suspension below and keep${inCureCount > 1 ? '' : 's'} a real readiness score — McDonald's own exception for restaurants in Cure.`)));
 }
 
 // Dispatch #77 -- exported so Top/Bottom Performers (top-bottom-performers.js) can reuse the
@@ -215,7 +219,12 @@ function StoreRow({ s, suspended, expanded, onToggle }) {
           s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`),
           // Critical fail count surfaced SEPARATELY from score, per the EcoSure finding's own
           // explicit instruction — a store can rank well on score while holding a critical.
-          s.lastVisit?.criticalFailCount > 0 && h('span', { title: 'Critical fail(s) on the last EcoSure visit — cited regardless of overall score', style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: '#ef4444', background: '#ef444422' } }, `⚠ ${s.lastVisit.criticalFailCount} critical`))),
+          s.lastVisit?.criticalFailCount > 0 && h('span', { title: 'Critical fail(s) on the last EcoSure visit — cited regardless of overall score', style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: '#ef4444', background: '#ef444422' } }, `⚠ ${s.lastVisit.criticalFailCount} critical`),
+          // Inferred, never official — see computeProcessToCureStatus's own comment for exactly
+          // what this can and cannot see. Shown even while suspended=true for this store, since
+          // the whole point is that this store is the exception to the suspension.
+          s.processToCure?.inCure && h('span', { title: s.processToCure.qualifyingVisits.map(v => `${v.dateISO} ${v.reason}`).join(' · '), style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: '#ef4444', background: '#ef444422' } }, `⚠ Process to Cure (inferred, ${s.processToCure.count} qualifying visits)`),
+          !s.processToCure?.inCure && s.processToCure?.mandatorySupportVisitDue && h('span', { title: s.processToCure.qualifyingVisits.map(v => `${v.dateISO} ${v.reason}`).join(' · '), style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: '#f59e0b', background: '#f59e0b22' } }, 'Mandatory support visit due (inferred)'))),
       h('div', { style: { display: 'flex', gap: 8 } },
         ...STATS.map(([key]) => h(StatCol, { key, sc: s.subs[key].score }))),
       h('div', { style: { width: DAYS_SINCE_W, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: 'var(--text2)' } },
@@ -722,7 +731,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
       h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🛡️'),
       'No operational data loaded yet. Readiness reads your speed (OEPE/KVS/park), accuracy (SMG/refunds/T-Reds), waste, and labor metrics — sync or upload data and it fills in.')
     : h('div', null,
-      h(SuspensionBanner, { susp: res.suspension }),
+      h(SuspensionBanner, { susp: res.suspension, inCureCount: d.inCure }),
       h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
         'Readiness (0–100) is a weighted blend — ', h('b', null, 'Speed 35%'), ' · ', h('b', null, 'Accuracy 30%'), ' · ',
         h('b', null, 'Quality 20%'), ' · ', h('b', null, 'Leadership 15%'), ' — each metric scored against that store\'s own target. ',
@@ -735,6 +744,8 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
         !res.suspension && stat('Watch', d.watch, '#f59e0b'),
         stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
         d.criticalFails > 0 && stat('EcoSure criticals', d.criticalFails, '#ef4444'),
+        d.inCure > 0 && stat('Process to Cure (inferred)', d.inCure, '#ef4444'),
+        d.mandatorySupportVisitDue > 0 && stat('Mandatory support visit due', d.mandatorySupportVisitDue, '#f59e0b'),
         stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
         stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
 
@@ -744,7 +755,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
 
       h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
         h(StoreListHeader),
-        res.stores.map(s => h(StoreRow, { key: s.loc, s, suspended: !!res.suspension, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
+        res.stores.map(s => h(StoreRow, { key: s.loc, s, suspended: s.visitsSuspended, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
 
       h(VisitPatterns, { ds, locs }),
 
