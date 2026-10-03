@@ -7405,7 +7405,9 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
 
 // ── Monthly Targets Email Report ──────────────────────────────────────────────
 // Computes per-store actuals from loaded ds for a given year/month.
-// Returns { byLoc, minDate, maxDate, days } where byLoc[loc] = {sales,crewLaborPct,fobBasePct,fobTotalPct,tpph}
+// Returns { byLoc, minDate, maxDate, days } where byLoc[loc] = {sales,crewLaborPct,tpph,
+//   fobBasePct,fobTotalPct,fobTargetPct,discCoupPct,compWastePct,rawWastePct,condimentPct,
+//   empFoodPct,statLossPct,unexDiffPct,paperCostPct,opSupplyActual}
 // Feeds the SCHEDULED EMAILED Monthly Targets report — was manual-upload-only with zero
 // auto fallback (cleanup-backlog.md Class 2, 2026-08-06): labor/sales/TPPH only summed
 // ds.laborRows, gap-filled only from ds.schedRows (LifeLenz auto sync — found unreliable
@@ -7427,13 +7429,21 @@ function computeMonthActuals(ds, year, month) {
   const dates = new Set();
 
   // Manual FOB Report upload — explicit per-(loc,month) coverage wins outright over auto.
+  // Sales-weighted across every FOB breakdown line the Ops Report parser produces directly as
+  // a % column (parsers/index.js) — same dollar-weight-then-divide discipline as baseFoodDol/
+  // totalFoodDol below, extended to the rest of the Patch Sheet's METRICS list (owner-reported
+  // 2026-10-03: most actual columns on the Patch Sheet were blank because computeMonthActuals
+  // only ever computed 4 of the ~13 real fields — this closes that gap for the manual-upload
+  // half; the qsr_fob auto-fallback half is extended symmetrically below via fobSnapshotByStore).
   const manualFob = {};
   (ds && ds.fobRows || []).forEach(r => {
     if (!r.date || !r.loc) return;
     const d = r.date instanceof Date ? r.date : new Date(r.date);
     if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return;
     const k = String(r.loc);
-    if (!manualFob[k]) manualFob[k] = { sales: 0, baseFoodDol: 0, totalFoodDol: 0 };
+    if (!manualFob[k]) manualFob[k] = { sales: 0, baseFoodDol: 0, totalFoodDol: 0, fobDol: 0,
+      discCoupDol: 0, compWasteDol: 0, rawWasteDol: 0, condimentDol: 0, empFoodDol: 0,
+      statLossDol: 0, unexDiffDol: 0, paperCostDol: 0 };
     const s = r.sales || 0;
     manualFob[k].sales += s;
     manualFob[k].baseFoodDol += (r.baseFoodPct || 0) * s;
@@ -7448,6 +7458,15 @@ function computeMonthActuals(ds, year, month) {
     // other manual pLFoodPct reader too, e.g. store-dash.js/labor-tools.js), not a
     // one-line fix bundled into this issue.
     manualFob[k].totalFoodDol += (r.pLFoodPct || 0) * s;
+    manualFob[k].fobDol        += (r.fobPct || 0) * s;
+    manualFob[k].discCoupDol   += (r.discCoupon || 0) * s;
+    manualFob[k].compWasteDol  += (r.compWaste || 0) * s;
+    manualFob[k].rawWasteDol   += (r.rawWaste || 0) * s;
+    manualFob[k].condimentDol  += (r.condiment || 0) * s;
+    manualFob[k].empFoodDol    += (r.empMeal || 0) * s;
+    manualFob[k].statLossDol   += (r.statVar || 0) * s;
+    manualFob[k].unexDiffDol   += (r.unexplained || 0) * s;
+    manualFob[k].paperCostDol  += (r.pLPaperPct || 0) * s;
   });
   // Auto qsr_fob fallback — the same dollar-weighted MTD-snapshot read used everywhere
   // else in the app (EOM Dashboard, One-Pager, AAG FOB tiles). qsr_fob.loc is always
@@ -7457,6 +7476,20 @@ function computeMonthActuals(ds, year, month) {
   // same bug class found + fixed in eom-dashboard.js's allRows and sage.js's FOB ranking).
   const autoFobRaw = fobSnapshotByStore(ds && ds.qsrFobRows || [], period);
   const autoFob = {}; for (const k in autoFobRaw) autoFob[String(parseInt(k, 10))] = autoFobRaw[k];
+
+  // Op Supply $ actual — Σ the month's daily eBOS op-supplies purchases, same auto source
+  // review-engine.js's `opSupplies` KPI already uses (dispatch #99/Notes 32 #4, owner-
+  // confirmed "Op supplies we actually already have through the ebos pull"). No manual-upload
+  // override exists for this field anywhere else in the app; match that established precedent
+  // rather than invent a new one-off override policy here.
+  const ebosSupplyByLoc = {};
+  (ds && ds.ebosRows || []).forEach(r => {
+    if (!r.date || !r.loc) return;
+    const d = r.date instanceof Date ? r.date : new Date(r.date);
+    if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return;
+    const k = String(r.loc);
+    ebosSupplyByLoc[k] = (ebosSupplyByLoc[k] || 0) + (r.opsPurchases || 0);
+  });
 
   const allLocs = new Set([...Object.keys(DEFAULT_TARGETS), ...Object.keys(manualFob), ...Object.keys(autoFob)]);
   const byLoc = {};
@@ -7475,15 +7508,35 @@ function computeMonthActuals(ds, year, month) {
     const aFob = autoFob[loc];
     const fobFromManual = !!(mFob && mFob.sales > 0);
     const fobSales = fobFromManual ? mFob.sales : (aFob ? aFob.sales : 0);
-    const fobBasePct = fobFromManual ? mFob.baseFoodDol / mFob.sales : (aFob ? aFob.baseFoodPct : null);
-    const fobTotalPct = fobFromManual ? mFob.totalFoodDol / mFob.sales : (aFob ? aFob.pLFoodPct : null);
+    // Each FOB breakdown line: manual upload wins outright when it explicitly covers this
+    // (loc, month) — same precedence baseFoodPct/fobTotalPct already used, extended to every
+    // other METRICS row the Patch Sheet shows. A field absent from BOTH sources stays null
+    // (never a false 0) — owner-reported 2026-10-03: most actual columns were blank because
+    // this function only ever computed 4 of the ~13 real fields; the rest fell through to "—"
+    // not because the data didn't exist, but because it was never read.
+    const fobPick = (manualDolKey, autoKey) =>
+      fobFromManual ? (mFob[manualDolKey] != null ? mFob[manualDolKey] / mFob.sales : null)
+                    : (aFob ? (aFob[autoKey] ?? null) : null);
+    const fobBasePct   = fobPick('baseFoodDol',  'baseFoodPct');
+    const fobTotalPct  = fobPick('totalFoodDol', 'pLFoodPct');
+    const fobTargetPct = fobPick('fobDol',       'fobPct');
+    const discCoupPct  = fobPick('discCoupDol',  'discCoupPct');
+    const compWastePct = fobPick('compWasteDol', 'compWastePct');
+    const rawWastePct  = fobPick('rawWasteDol',  'rawWastePct');
+    const condimentPct = fobPick('condimentDol', 'condimentPct');
+    const empFoodPct   = fobPick('empFoodDol',   'empFoodPct');
+    const statLossPct  = fobPick('statLossDol',  'statLossPct');
+    const unexDiffPct  = fobPick('unexDiffDol',  'unexDiffPct');
+    const paperCostPct = fobPick('paperCostDol', 'pLPaperPct');
+    const opSupplyActual = ebosSupplyByLoc[loc] ?? null;
 
     if (!(sales > 0) && !(fobSales > 0)) return;   // nothing for this store this month
     byLoc[loc] = {
       sales: sales || fobSales,
       crewLaborPct: sales > 0 ? laborDol / sales : null,
       tpph: tpphDen > 0 ? tpphNum / tpphDen : null,
-      fobBasePct, fobTotalPct,
+      fobBasePct, fobTotalPct, fobTargetPct, discCoupPct, compWastePct, rawWastePct,
+      condimentPct, empFoodPct, statLossPct, unexDiffPct, paperCostPct, opSupplyActual,
     };
   });
 
@@ -7819,12 +7872,25 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
   ];
 
   // Maps target keys to corresponding keys in the actuals object (from computeMonthActuals)
+  // tBonusLabor has no entry — Bonus Crew Labor % is a business-policy figure with no
+  // directly-measured actual anywhere in the app's data (same conclusion the Jan-Mar 2026
+  // reconstruction's own template-derived tier reached) — "—" there is correct, not a gap.
   const ACTUAL_KEY = {
-    tProdSales: 'sales',
-    tCrewLabor: 'crewLaborPct',
-    tTpph:      'tpph',
-    tFOBBase:   'fobBasePct',
-    tFOBTotal:  'fobTotalPct',
+    tProdSales:   'sales',
+    tCrewLabor:   'crewLaborPct',
+    tTpph:        'tpph',
+    tFOBBase:     'fobBasePct',
+    tDiscCoupPct: 'discCoupPct',
+    tCompWaste:   'compWastePct',
+    tRawWaste:    'rawWastePct',
+    tCondiment:   'condimentPct',
+    tEmpFood:     'empFoodPct',
+    tStatLoss:    'statLossPct',
+    tUnex:        'unexDiffPct',
+    tFOBTarget:   'fobTargetPct',
+    tFOBTotal:    'fobTotalPct',
+    tPaperCost:   'paperCostPct',
+    tOpSupply:    'opSupplyActual',
   };
 
   const f$ = v => v==null?'—':'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -7870,17 +7936,31 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
   // That `||0` pattern is exactly what produced a literal "0.00%" (not "—") for Base Food %
   // with a group-wide actual of 0, when really no store had any actual on file yet — owner-
   // reported 2026-10-02, reproduced on the real Robert Spencer patch sheet (September 2026).
+  // Every actuals field computeMonthActuals can produce, rolled up the same sales-weighted-
+  // average way (matching rollupProj's own convention for the TARGET side, including
+  // opSupplyActual — a $ figure, but rolled the same way its target counterpart tOpSupply
+  // already is, for consistency rather than introducing a second rollup convention here).
+  const ROLL_ACTUAL_FIELDS = ['crewLaborPct','tpph','fobBasePct','fobTotalPct','fobTargetPct',
+    'discCoupPct','compWastePct','rawWastePct','condimentPct','empFoodPct','statLossPct',
+    'unexDiffPct','paperCostPct','opSupplyActual'];
   const rollActuals = (locs) => {
-    let s=0,ldN=0,ldD=0,tN=0,tD=0,fbdN=0,fbdD=0,ftdN=0,ftdD=0;
+    let s = 0;
+    const num = {}, den = {};
+    ROLL_ACTUAL_FIELDS.forEach(f => { num[f] = 0; den[f] = 0; });
     locs.forEach(loc=>{
       const a=actuals?.byLoc?.[String(loc)]||{};
       const as=a.sales||0; s+=as;
-      if(a.crewLaborPct!=null){ldN+=a.crewLaborPct*as;ldD+=as;}
-      if(a.tpph>0){tN+=a.tpph*as;tD+=as;}
-      if(a.fobBasePct!=null){fbdN+=a.fobBasePct*as;fbdD+=as;}
-      if(a.fobTotalPct!=null){ftdN+=a.fobTotalPct*as;ftdD+=as;}
+      ROLL_ACTUAL_FIELDS.forEach(f => {
+        const v = a[f];
+        // tpph===0 is invalid (no real rate), same "not real data" treatment as null —
+        // every other field here takes a genuine 0 at face value, only tpph needs the extra
+        // guard (matches this function's own pre-existing tpph>0 check).
+        if (v != null && (f !== 'tpph' || v > 0)) { num[f] += v * as; den[f] += as; }
+      });
     });
-    return {sales:s, crewLaborPct:ldD>0?ldN/ldD:null, tpph:tD>0?tN/tD:null, fobBasePct:fbdD>0?fbdN/fbdD:null, fobTotalPct:ftdD>0?ftdN/ftdD:null};
+    const result = { sales: s };
+    ROLL_ACTUAL_FIELDS.forEach(f => { result[f] = den[f] > 0 ? num[f] / den[f] : null; });
+    return result;
   };
 
   // CSS
