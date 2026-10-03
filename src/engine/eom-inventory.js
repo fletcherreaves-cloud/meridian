@@ -108,6 +108,16 @@ export function pLFoodCostFromRow(r, sales) {
   return { pLFoodCost, pLFoodPct: sales ? pLFoodCost / sales : null };
 }
 
+// Same Begin+Purchases+Adjustments+Transfers-Promotions-End build-up as pLFoodCostFromRow, for
+// the P&L Paper Cost % line (smart-targets.js's paperCostMonthly already uses this exact formula
+// inline — extracted here as the ONE place so fobSnapshotByStore below can reuse it too, same
+// precedent as pLFoodCostFromRow's own #222 extraction).
+export function pLPaperCostFromRow(r, sales) {
+  const pLPaperCost = (r.pnlPaperCostBegin || 0) + (r.pnlPaperCostPurchases || 0) + (r.pnlPaperCostAdjustments || 0)
+                     + (r.pnlPaperCostTransfers || 0) - (r.pnlPaperCostPromotions || 0) - (r.pnlPaperCostEnd || 0);
+  return { pLPaperCost, pLPaperPct: sales ? pLPaperCost / sales : null };
+}
+
 // A store is treated as "believes they're done" at this overall completion.
 // FOB $/% per store for a period. qsr_fob is a DAILY table, but each daily row is a period-to-date
 // SNAPSHOT (the FOB report is month-keyed — the pull queries one date but the API returns the running
@@ -131,11 +141,20 @@ export function fobSnapshotByStore(fobRows, period) {
     const r = latest[loc].row;
     const comp = r.compWasteAmt || 0, raw = r.rawWasteAmt || 0, cond = r.condimentsAmt || 0;
     const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
+    const discCoup = r.discountCouponsAmt || 0;
     const sales = r.prodSalesAmt || 0;
     const fob = comp + raw + cond + emp + statv + unex;
     const { pLFoodCost, pLFoodPct } = pLFoodCostFromRow(r, sales);
-    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null,
-      pLFoodCost, pLFoodPct, asOf: latest[loc].key };
+    const { pLPaperCost, pLPaperPct } = pLPaperCostFromRow(r, sales);
+    // totalBaseFood is its own reported qsr_fob column, NOT the 6-component `fob` sum above —
+    // genuinely different metrics (owner explicit, dispatch 2026-09-14, smart-targets.js's own
+    // baseFoodMonthly): "Base Food %" and "Food Over Base (FOB) %" / fobPct read differently.
+    const pct = v => sales ? v / sales : null;
+    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: pct(fob),
+      pLFoodCost, pLFoodPct, pLPaperCost, pLPaperPct, asOf: latest[loc].key,
+      baseFoodPct: r.totalBaseFood != null ? pct(r.totalBaseFood) : null,
+      discCoupPct: pct(discCoup), compWastePct: pct(comp), rawWastePct: pct(raw),
+      condimentPct: pct(cond), empFoodPct: pct(emp), statLossPct: pct(statv), unexDiffPct: pct(unex) };
   }
   return acc;
 }
