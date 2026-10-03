@@ -103,10 +103,20 @@ export function cloudRowsToPanelShape(cloudRows, txnsByLocMonth){
       daysSupply:r.daysSupply||0,
       area:classifyInvArea(r.wrin,r.descr),
       inactive:usageDay===0&&(r.daysSupply||0)>0,
-      // ⚠️ UNVERIFIED (no live data to confirm): assumes usagePerDay is already in CASES,
-      // matching startInv/endInv/purchases. If a live pull shows it's actually in EACHES,
-      // flip this to true — it directly changes the Overstock excessCases/excessValue math.
-      eachFmt:false,
+      // ✅ RESOLVED 2026-10-03 (owner report: Excess Cases implausibly high, e.g. "11091.01 cs"
+      // of pepper packets) — measured live against qsr_inventory_summary (1000 real rows): `uom`
+      // is NEVER 'Case' (observed only Each/Container/Bag/Gallon/Packet/Pouch/Box/Pound — the
+      // item's own natural count unit), confirming usagePerDay/startInv/endInv/actualUsage are
+      // the QSRSoft API's raw qty fields in that natural unit, never pre-converted to cases —
+      // case_qty (-> caseSize here) is reported separately precisely because the qty fields
+      // aren't already in cases. Same "Display as Each" shape the manual-upload parser
+      // (parseInventoryData, inventory-parse.js) already detects via filename and divides by
+      // caseSize for — the cloud stream has no filename to sniff, but is unambiguously that
+      // variant. Previously hardcoded false, silently inflating every cloud-sourced
+      // Overstock excessCases by a factor of caseSize (excessValue was unaffected — it
+      // doesn't divide by caseSize at all, which is why the owner saw a plausible $ figure
+      // next to an implausible case count for the same row).
+      eachFmt:true,
       actualUsage:r.actualUsage||0, startingInv:r.startInv||0, endingInv:r.endInv||0,
       source:'cloud',
     });
@@ -674,4 +684,4 @@ ${transfers&&transfers.length?`<div class="section" style="page-break-before:alw
   setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},1000);
 }
 
-export { InventoryIntelligence };
+export { InventoryIntelligence, computeInvSections };
