@@ -2532,10 +2532,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // #226's SAGE tool, `query_eom_recount_impact`, reuses for the identical question) grades each
   // item's close-window session→final move; this flattens every item that was actually RECOUNTED
   // (owner: "which products were recounted") across every store in scope into one sortable list.
+  // Recount-Impact Report window (owner req, 2026-10-03): EOM is the default/primary view (the
+  // last 3 calendar days of the month — the original, narrower scope). "Weekly" reuses the SAME
+  // autoWindowDays clustering already proven live on the At-A-Glance "Items Recounted" tile
+  // (ItemsRecountedTile, at-a-glance.js v3) instead of a new windowing concept: it derives each
+  // item's own recount window from its count-day clustering, so it naturally catches any week's
+  // recount, not just month-end, without a second engine or a guessed new constant.
+  const [recountMode, setRecountMode] = useState('eom');
+
   // Sort: class (DIGEST_CLASS_ORDER), then |Δ (dMag — the variance-magnitude move that determines
   // helped/hurt)| descending within class.
   const recountImpactRows = useMemo(() => {
     const closeStart = closeWindowStartFor(period, 3);
+    const windowOpts = recountMode === 'weekly' ? { autoWindowDays: 3 } : { closeWindowStart: closeStart };
     const out = [];
     for (const r of rows) {
       const items = pickByLoc(rawByLoc, r.loc) || [];
@@ -2543,7 +2552,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const statVar = {};
       for (const v of (pickByLoc(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
       let diff;
-      try { diff = ledgerBaselineDiff(items, { closeWindowStart: closeStart, officialVarByWrin: statVar }); } catch { continue; }
+      try { diff = ledgerBaselineDiff(items, { ...windowOpts, officialVarByWrin: statVar }); } catch { continue; }
+      // Store sales for the period, already loaded (meridianByStore's own source) — lets the
+      // report show each recounted item's FOB impact as a PERCENT of sales, not just a dollar
+      // amount (owner req, 2026-10-02: "assign a dollar and percent to it"), with no new data pull.
+      const sales = r.components?.sales || null;
       for (const it of diff.items) {
         if (!it.recounted) continue;
         out.push({
@@ -2551,12 +2564,37 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
           wrin: it.wrin, descr: it.descr, nRecounts: it.nRecounts,
           baseVar: it.baseVar, curVar: it.curVar, dMag: it.dMag, verdict: it.verdict,
           verdictText: recountVerdictText(it),
+          basePct: sales ? it.baseVar / sales : null, curPct: sales ? it.curVar / sales : null,
+          dPct: sales ? it.dMag / sales : null,
         });
       }
     }
     out.sort((a, b) => (DIGEST_CLASS_ORDER.indexOf(a.cls) - DIGEST_CLASS_ORDER.indexOf(b.cls)) || (Math.abs(b.dMag || 0) - Math.abs(a.dMag || 0)));
     return out;
-  }, [rows, rawByLoc, varByLoc, period]);
+  }, [rows, rawByLoc, varByLoc, period, recountMode]);
+
+  // Per-location recount summary (owner req, 2026-10-02: "determine which locations performed
+  // any recounts... simple recounts performed or not"). Every in-scope store appears, including
+  // ones with ZERO recounted items this period — recountImpactRows only ever lists stores that
+  // HAD a recount, so a store with none was previously invisible in this report, not shown as "no".
+  const recountLocationSummary = useMemo(() => {
+    const byLoc = {};
+    for (const r of rows) byLoc[String(r.loc)] = { loc: r.loc, storeName: r.name, org: r.org,
+      recounted: false, nItems: 0, nHelped: 0, nHurt: 0, helpedDol: 0, hurtDol: 0 };
+    for (const it of recountImpactRows) {
+      const k = String(it.loc);
+      if (!byLoc[k]) byLoc[k] = { loc: it.loc, storeName: it.storeName, org: it.org,
+        recounted: false, nItems: 0, nHelped: 0, nHurt: 0, helpedDol: 0, hurtDol: 0 };
+      const s = byLoc[k];
+      s.recounted = true; s.nItems++;
+      if (it.verdict === 'helping') { s.nHelped++; s.helpedDol += Math.abs(it.dMag || 0); }
+      else if (it.verdict === 'hurting') { s.nHurt++; s.hurtDol += Math.abs(it.dMag || 0); }
+    }
+    const out = Object.values(byLoc).map(s => ({ ...s, netDol: s.helpedDol - s.hurtDol }));
+    // Recounted stores first (most items recounted first), then not-recounted, alphabetically.
+    out.sort((a, b) => (b.recounted - a.recounted) || (b.nItems - a.nItems) || String(a.storeName).localeCompare(String(b.storeName)));
+    return out;
+  }, [rows, recountImpactRows]);
 
   // Report 4 — month's count-swing ledger (owner req, 2026-08-31, verbatim: "take all the items
   // that where lost during the month, which little hope of recovering by a recount at eom... I
@@ -3470,7 +3508,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     mode === 'recount'
       ? (loading || fobPending)
         ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
-        : h(EOMRecountImpactPanel, { rows: recountImpactRows, crossStore: crossStoreConsistency, period, scopeLabel: scopeLabel() })
+        : h(EOMRecountImpactPanel, { rows: recountImpactRows, crossStore: crossStoreConsistency, period, scopeLabel: scopeLabel(), locationSummary: recountLocationSummary, mode: recountMode, onModeChange: setRecountMode })
       : null,
     mode === 'swing'
       ? (loading || fobPending)
