@@ -50,12 +50,26 @@ const FOB = [
   { loc: '3708', date: `${PERIOD}-15`, prodSalesAmt: 100000, compWasteAmt: 800, rawWasteAmt: 400, condimentsAmt: 300, empMgrMealsAmt: 100, statVarianceAmt: 200, unexplainedAmt: 200 },
   { loc: '6178', date: `${PERIOD}-15`, prodSalesAmt: 50000, compWasteAmt: 300, rawWasteAmt: 200, condimentsAmt: 100, empMgrMealsAmt: 50, statVarianceAmt: 100, unexplainedAmt: 50 },
 ];
+// Mid-month (day 10/12) -- a 2-day-apart recount pair OUTSIDE the EOM close window (always
+// the last 3 calendar days of the month, so always well after day 12). Clusters as ONE recount
+// cycle under autoWindowDays:3 (Weekly mode) but is invisible to EOM mode's closeWindowStart
+// filter (2026-10-03, owner-directed: "EOM actually matters, weekly would be nice but needs to
+// begin mattering as well" -- the EOM/Weekly toggle on this report, eom-recount-report.js).
+const MIDMONTH_SESSION = `${PERIOD}-10`;
+const MIDMONTH_RECOUNT = `${PERIOD}-12`;
 const RAW_ITEM_DETAIL = [
   {
     loc: '3708', wrin: 'RJ1', descr: 'Recount Test Item', itemClass: 'Food',
     history: [
       { isCount: true, dt: CLOSE_START, tm: '10:00', difference: -300 },   // session — $300 undercount
       { isCount: true, dt: RECOUNT_DAY, tm: '09:00', difference: -80 },     // recount — corrected to $80
+    ],
+  },
+  {
+    loc: '3708', wrin: 'RJ2', descr: 'Weekly-Only Recount Item', itemClass: 'Condiment',
+    history: [
+      { isCount: true, dt: MIDMONTH_SESSION, tm: '10:00', difference: -150 },
+      { isCount: true, dt: MIDMONTH_RECOUNT, tm: '09:00', difference: -20 },
     ],
   },
 ];
@@ -273,8 +287,66 @@ describe('dispatch #227 — Recount Impact report', () => {
     await clickTab(container, 'Recount Impact');
     // ONHAND has no matching wrin here; the assertion is that the report doesn't crash/blank on
     // a store with raw-item history but confirms only the truly-recounted item surfaced.
-    const rows = [...container.querySelectorAll('tbody tr')];
+    // Excludes the per-location Recounted Y/N summary table (2026-10-03) -- a separate table,
+    // by design, of every in-scope store (recounted or not), not the recounted-ITEMS list this
+    // assertion is about.
+    const rows = [...container.querySelectorAll('tbody tr')]
+      .filter(tr => !tr.closest('.eom-recount-location-summary'));
     expect(rows.length).toBe(1);
+  });
+
+  // 2026-10-03 (owner req, verbatim: "show FOB at time of original count and then after recount
+  // occurred and assign a dollar and percent to it"). RJ1: baseVar=-300/sales=100000=-0.30%,
+  // curVar=-80/100000=-0.08%, dMag=-220/100000=-0.22% (Ardmore-Broadway sales from the FOB
+  // fixture above, same number the Team Snapshot describe block's own FOB% tests already use).
+  it('shows a percent alongside the dollar figure for each recounted item (dollar AND percent, not just dollar)', async () => {
+    await renderPanel(root);
+    await selectPeriod(container);
+    await clickTab(container, 'Recount Impact');
+    const text = container.textContent;
+    expect(text).toMatch(/\$-300 \(-0\.30%\)/);
+    expect(text).toMatch(/\$-80 \(-0\.08%\)/);
+    expect(text).toMatch(/-0\.22%/);
+  });
+
+  // 2026-10-03 (owner req, verbatim: "determine which locations performed any recounts... simple
+  // recounts performed or not"). Ardmore-Broadway (3708) recounted RJ1; Chipley (6178) has no raw
+  // item-detail history at all this period — both must appear in the summary, one Yes one No, so
+  // a store with zero recounts is no longer simply invisible in this report.
+  it('location summary lists every in-scope store, including one with zero recounts, not just the ones with a recount', async () => {
+    await renderPanel(root);
+    await selectPeriod(container);
+    await clickTab(container, 'Recount Impact');
+    const summary = container.querySelector('.eom-recount-location-summary');
+    expect(summary, 'location summary table not found').toBeTruthy();
+    const summaryText = summary.textContent;
+    expect(summaryText).toMatch(/Ardmore-Broadway/);
+    expect(summaryText).toMatch(/✓ Yes/);
+    expect(summaryText).toMatch(/Chipley/);
+    expect(summaryText).toMatch(/— No/);
+    expect(container.textContent).toMatch(/1 of 2 recounted something this period/);
+  });
+
+  // 2026-10-03 (owner: "EOM actually matters, weekly would be nice but needs to begin mattering
+  // as well"). EOM is the default; a mid-month recount pair (outside the close window) must be
+  // invisible in EOM mode and appear once Weekly mode is selected — proving the toggle actually
+  // changes which window is applied (autoWindowDays, the same detection already proven on the
+  // At-A-Glance tile), not just a cosmetic label swap.
+  it('EOM/Weekly toggle: a mid-month recount outside the close window is invisible in EOM mode and appears in Weekly mode', async () => {
+    await renderPanel(root);
+    await selectPeriod(container);
+    await clickTab(container, 'Recount Impact');
+    expect(container.textContent).not.toMatch(/Weekly-Only Recount Item/);
+    expect(container.textContent).toMatch(/EOM close window \(last 3 days\)/);
+
+    const weeklyBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Weekly');
+    expect(weeklyBtn, '"Weekly" toggle button not found').toBeTruthy();
+    await act(async () => { weeklyBtn.click(); await Promise.resolve(); });
+
+    expect(container.textContent).toMatch(/Weekly-Only Recount Item/);
+    expect(container.textContent).toMatch(/Weekly \(any recent recount\)/);
+    // RJ1 (the EOM-window item) must still show up too — Weekly subsumes EOM, nothing is lost.
+    expect(container.textContent).toMatch(/Recount Test Item/);
   });
 
   // 2026-08-31 (owner-reported, real): print on this report reproducibly came back blank —
