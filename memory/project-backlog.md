@@ -392,6 +392,23 @@ above (recount yes/no per location, items list, helped/hurt, FOB $ and % before/
 writing any new code — most of this may already be a UI framing change on an existing report
 rather than a new engine.
 
+## ✅ RESOLVED 2026-10-03 — Inventory Excess Cases eaches-vs-cases bug (was "for later" below)
+
+Fixed same day the owner asked for it. Measured live against `qsr_inventory_summary` (1000 real
+rows): `uom` is NEVER `'Case'` — only Each/Container/Bag/Gallon/Packet/Pouch/Box/Pound, the
+item's own natural count unit, with `case_sz` reported separately — confirming the hypothesis
+below exactly, with no per-item split (every cloud row is the "eaches" shape). `eachFmt` flipped
+from hardcoded `false` to `true` in `cloudRowsToPanelShape` (`src/views/inventory.js`). Verified
+against the exact reported item (PEPPER PACKETS/BLACK, store 3708): excess cases drops from a
+fabricated ~836 (mislabeled packets) to a believable ~0.14 cases. `excessValue` was confirmed
+unaffected either way (it never divided by `caseSize`), matching the owner's own read ("value
+looks ok, but cases way high"). 4 new tests (`dispatch-inventory-eaches-vs-cases-2026-10-03.test.js`),
+including a regression test documenting the old buggy magnitude so it can never silently return.
+The manual-upload path (`parseInventoryData`) was untouched — already correctly filename-detects
+"Display as Each" vs "Display as Case" per workbook, unrelated to this cloud-path-only fix.
+
+**Original finding, kept for context:**
+
 ## Inventory — Excess Cases is almost certainly showing eaches, not cases (owner report, 2026-10-02, "for later")
 
 Owner, with a screenshot of the Overstock section: *"Excess cases can't be correct. value looks
