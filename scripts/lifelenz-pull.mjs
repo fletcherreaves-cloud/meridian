@@ -697,11 +697,36 @@ function parseDate(raw) {
 }
 
 // ── Step 5: Upsert rows to Supabase ──────────────────────────────────────
-// Query DB for the most recent date already stored — used for smart pull range
+// Query DB for the most recent date with a CONFIRMED actual — used for smart pull range.
+//
+// Owner-reported gap (2026-10-06): store 6972 (and, measured, all 27 stores district-wide)
+// had a bad partial-day `sales` value for 2026-09-25 (~20% of the real day, every store,
+// captured mid-morning) and a fully NULL row for 2026-09-26 -- and neither one was ever
+// auto-corrected by a later daily run, even though runs resumed within days. Root cause:
+// this function used to be a bare `MAX(date)` over the WHOLE table -- which also holds the
+// DAYS_FWD (14-day) forward schedule horizon this same script writes on every successful
+// run. That forward horizon date is always ~14 days ahead of "today", so `daysSince` in
+// main() below was always deeply negative and `daysBack` always collapsed to exactly
+// SAFETY_DAYS (3), FOREVER, regardless of how long a real gap in PAST actuals was. Measured
+// live: table's true MAX(date) was 2026-10-20 while "today" was 2026-10-06 -- a permanent
+// -14-day skew that made the "smart" gap detection dead code. Any outage longer than 3 days
+// (this one ran 2026-09-26 → 2026-09-29, a LIFELENZ_TOKEN expiry) permanently strands the
+// days outside that fixed window once the run resumes further out, with nothing to ever
+// re-pull them automatically -- exactly what happened here.
+//
+// Fixed to the latest date STRICTLY BEFORE today with a non-null `sales` -- i.e. the real
+// frontier of confirmed actuals, ignoring both the forward-schedule rows (today's own row is
+// excluded too, since it's always a partial in-progress snapshot while synced during the
+// business day) and any null placeholder. `daysSince` against THIS date correctly grows with
+// outage length, so daysBack scales to cover the real gap (up to DAYS_BACK) the next time the
+// sync succeeds, and the re-pull's upsert (onConflict loc,date) naturally overwrites any
+// stale partial-day row inside that window too.
 async function getLatestDate() {
   const { data, error } = await supabase
     .from('lifelenz_schedule')
     .select('date')
+    .lt('date', toISO(new Date()))
+    .not('sales', 'is', null)
     .order('date', { ascending: false })
     .limit(1)
     .single();
@@ -1248,4 +1273,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
 }
 
-export { buildLeadTimeCaptures };
+export { buildLeadTimeCaptures, getLatestDate };
