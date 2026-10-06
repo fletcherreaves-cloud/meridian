@@ -82,7 +82,19 @@ const identityFp = token => {
 
 const BASE = 'https://api.security.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
-const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit';
+// Live-verified 2026-10-06: the owner's own browser serves the Security Events report at
+// v3.myqsrsoft.com/security/suspicious-activity -- NOT .../reports/mcd/controlsCash/registerAudit,
+// which is Register Audit's page (a different report entirely; this script's REPORT_PAGE was
+// copied from that sibling script's constant during the #83 rebuild and never corrected against
+// the real page). The one historically-successful curl (memory/dispatch-83.md,
+// finding-api-security-transport-fingerprint-2026-08-23.md) used the OLD (wrong-report) value and
+// still got a real 200 -- so this may not be the actual gate (a Referer check, if any, may not be
+// strict about which report page it names) -- but every scheduled run since has 100% failed, and
+// a stale Referer pointing at an unrelated report is a real latent bug regardless of whether it's
+// THE cause. Fixed to the real page. NOT yet live-verified from this session -- no QSRSoft
+// credentials here. Owner: please trigger a workflow_dispatch run (or wait for the next 11:00 UTC
+// daily run) and confirm a real 200 + row count before treating this as resolved.
+const REPORT_PAGE = 'https://v3.myqsrsoft.com/security/suspicious-activity';
 // The exact header set the owner's working curl sent (memory/dispatch-83.md Q1). Send ALL of
 // them until a live run proves a smaller set still works -- do not preemptively trim.
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
