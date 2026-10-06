@@ -96,3 +96,36 @@ automatically the next day once `getLatestDate()` no longer treats "today" as co
 09-25/09-26 pattern was two compounding things: a normal partial-day capture (09-25) PLUS an
 outage that prevented the normal next-day correction from ever happening (09-26 onward) — this fix
 closes the second, which is what made the first permanent.
+
+## Audited every other pull script for the same bug — only LifeLenz had it
+
+Asked whether any other automated stream shares this failure mode. Grepped every script in
+`scripts/` for the `getLatestDate`/`daysSince`/`daysBack` gap-detection shape and checked each hit
+for the one thing that actually causes the bug: **does this script also write rows dated AFTER
+today into the same table/column its own gap detection reads?** That combination — not the
+gap-detection pattern alone — is what makes "latest date" lie about how current the real data is.
+
+8 scripts use this pattern: `lifelenz-pull.mjs` (fixed above) and 7 QSRSoft pull scripts —
+`qsrsoft-dar-pull.mjs`, `qsrsoft-ebos-pull.mjs`, `qsrsoft-pull.mjs` (FOB), `qsrsoft-punch-times-
+pull.mjs`, `qsrsoft-register-audit-pull.mjs`, `qsrsoft-security-events-pull.mjs`, plus
+`scheduled-pull-watchdog.mjs` (a false-positive grep hit — it's the freshness-SLA watcher, not a
+puller, and has no `getLatestDate` at all).
+
+Checked every `addDay(today, N)` call with a positive `N` in all 7 QSRSoft scripts: every one is
+either a bounded backfill-chunk loop increment (`addDay(cur, 1)` stepping through an already-
+bounded range) or explicitly capped at `fmtDate(today)`/an explicit `END_DATE`. **None of them
+ever write a future-dated row.** So for all 7, `getLatestDate()`'s bare `MAX(date)` genuinely does
+mean "the real pull frontier" — an outage correctly grows `daysSince`, correctly grows
+`daysBack`/`daysToFetch` up to that script's own `DAYS_BACK` cap, and the next successful run
+correctly re-pulls the whole real gap. Their gap detection is NOT dead code; it works as designed.
+
+Also checked the other 3 LifeLenz-family scripts (`lifelenz-attendance-pull.mjs`,
+`lifelenz-people-pull.mjs`, `lifelenz-vlh-sync.mjs`) — none of them implement any gap-detection
+logic at all (no `getLatestDate`/`daysSince` anywhere), so they aren't exposed to this failure mode
+either, by a different route (nothing to pollute).
+
+**Conclusion: this was unique to `lifelenz-pull.mjs`, because it's the only pull script that also
+writes a forward SCHEDULE horizon (`DAYS_FWD`, 14 days of future staffing data) into the exact same
+table and date column its own gap detection reads.** No other stream needs this fix. Re-verify this
+conclusion (not just assume it still holds) before relying on it if a NEW automated pull is added
+that writes any future-dated row into a table it also smart-gap-detects against.
