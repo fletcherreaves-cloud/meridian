@@ -10,10 +10,12 @@ import {
   REVIEW_METRIC_TARGET_FIELD, DEFAULT_REVIEW_CONFIG,
 } from '../engine/review-engine.js';
 
-// loc '3708' — OK, patch 'Robert Spencer' (constants.js INV_ORG_COORDS), full DEFAULT_TARGETS.
-describe('scopeIdsForLoc — reads the SAME INV_ORG_COORDS fields LocationSelector groups by', () => {
+// loc '3708' — OK, patch 'Zukarr Eaves' (live whoRan()/DEF_SETTINGS.supervisorGroups, reassigned
+// 2026-10-05 -- INV_ORG_COORDS.sup still says 'Robert Spencer', it's the static fallback only),
+// full DEFAULT_TARGETS.
+describe('scopeIdsForLoc — reads the SAME INV_ORG_COORDS/live-org fields LocationSelector groups by', () => {
   it('resolves state + patch for a known store', () => {
-    expect(scopeIdsForLoc('3708')).toEqual({ state: 'OK', patch: 'Robert Spencer' });
+    expect(scopeIdsForLoc('3708')).toEqual({ state: 'OK', patch: 'Zukarr Eaves' });
   });
   it('returns nulls for an unknown loc rather than throwing', () => {
     expect(scopeIdsForLoc('999999')).toEqual({ state: null, patch: null });
@@ -55,7 +57,8 @@ describe('indexTargetOverrides + resolveOverride — precedence store > patch > 
     const idx = indexTargetOverrides(rows);
     expect(resolveOverrideWithSource(idx, 'tHeadcount', '3708')).toEqual({ value: 60, source: 'store' });
     const idxNoStore = indexTargetOverrides(rows.filter(r => r.scope_type !== 'store'));
-    expect(resolveOverrideWithSource(idxNoStore, 'tHeadcount', '3708')).toEqual({ value: 50, source: 'patch' });
+    // 6972 is also OK / Robert Spencer -- 3708 itself moved to Zukarr Eaves (see top-of-file note).
+    expect(resolveOverrideWithSource(idxNoStore, 'tHeadcount', '6972')).toEqual({ value: 50, source: 'patch' });
   });
   it('rows with a null value or an unrecognized scope_type are dropped when indexing', () => {
     const idx = indexTargetOverrides([
@@ -76,14 +79,16 @@ describe('end-to-end cascade demonstration (dispatch #132 verification bar)', ()
       { scope_type: 'patch', scope_id: 'Robert Spencer', field: 'tHeadcount', value: 55 },
     ];
     const idx = indexTargetOverrides(rows);
-    // '3708' and '6972' are both OK / Robert Spencer (constants.js INV_ORG_COORDS) -- IN the patch.
-    expect(resolveOverride(idx, 'tHeadcount', '3708')).toBe(55);
+    // '13113' and '6972' are both OK / Robert Spencer (live whoRan()/DEF_SETTINGS.supervisorGroups)
+    // -- IN the patch. ('3708' was this patch's example pre-2026-10-05 reassignment; it now
+    // belongs to Zukarr Eaves -- see the scopeIdsForLoc describe block above.)
+    expect(resolveOverride(idx, 'tHeadcount', '13113')).toBe(55);
     expect(resolveOverride(idx, 'tHeadcount', '6972')).toBe(55);
     // '5183' is OK but a DIFFERENT patch (Krystiana Langford) -- outside the override, falls to company.
     expect(resolveOverride(idx, 'tHeadcount', '5183')).toBe(40);
     // Through the real review-engine.js entry point too, not just the pure resolver:
     const ds = { targetOverrides: idx };
-    expect(mergedTargetsForLoc(ds, '3708').tHeadcount).toBe(55);
+    expect(mergedTargetsForLoc(ds, '13113').tHeadcount).toBe(55);
     expect(mergedTargetsForLoc(ds, '5183').tHeadcount).toBe(40);
   });
 });

@@ -295,12 +295,14 @@ describe('scopeMatches() — All -> State -> Patch -> Store hierarchy (dispatch 
 
   // dispatch #120 -- 'org' (state==='FL'?'emerald':'mcdok') is REMOVED: it was 1:1 redundant with
   // 'state' for this business (CLAUDE.md's canonical mapping), never a second independent
-  // dimension. 'patch' (org.sup, the real supervisor field) replaces it with a genuinely finer
-  // grain -- two same-state/same-org stores can have DIFFERENT supervisors, which 'state'/'org'
-  // could never isolate. 3708 and 5183 are both OK/mcdok but have different sup values.
+  // dimension. 'patch' (live whoRan()/supervisorOf(), falling back to org.sup) replaces it with a
+  // genuinely finer grain -- two same-state/same-org stores can have DIFFERENT supervisors, which
+  // 'state'/'org' could never isolate. 13113 and 5183 are both OK/mcdok but have different sup
+  // values. (3708 -- this block's example before the 2026-10-05 supervisor reassignment -- moved
+  // to Zukarr Eaves; 13113 is Robert Spencer's patch now.)
   it('"patch" matches only stores under the same supervisor -- finer than the old org tier, not a renamed copy of it', () => {
-    expect(scopeMatches('3708', { level: 'patch', value: 'Robert Spencer' })).toBe(true);
-    expect(scopeMatches('5183', { level: 'patch', value: 'Robert Spencer' })).toBe(false); // same org/state as 3708, different sup
+    expect(scopeMatches('13113', { level: 'patch', value: 'Robert Spencer' })).toBe(true);
+    expect(scopeMatches('5183', { level: 'patch', value: 'Robert Spencer' })).toBe(false); // same org/state as 13113, different sup
     expect(scopeMatches('5183', { level: 'patch', value: 'Krystiana Langford' })).toBe(true);
   });
 
@@ -1209,16 +1211,18 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
 // selector renders" (standing rule: a test exercising only scopeMatches in isolation can't tell a
 // real fix from one whose selector was never wired up). Real loc numbers from constants.js' own
 // INV_ORG_COORDS, not synthetic '0000001'-style fixture locs, so the state/patch split is checked
-// against the actual live mapping. 3708 and 5183 are both OK -- and were both 'mcdok' under the
+// against the actual live mapping. 13113 and 5183 are both OK -- and were both 'mcdok' under the
 // now-removed Org tier -- but sit under DIFFERENT supervisors (Robert Spencer / Krystiana
-// Langford), which is exactly the finer-grained capability the Patch tier adds.
+// Langford), which is exactly the finer-grained capability the Patch tier adds. (This block used
+// 3708 for the Robert Spencer example before the 2026-10-05 supervisor reassignment moved 3708 to
+// Zukarr Eaves; 13113 is Robert Spencer's patch now -- see scopeMatches' own describe block above.)
 describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -> Patch -> Store) reaches scopeMatches through the real UI', () => {
   let container, root;
   const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' }];
-  // 3708 = Ardmore-Broadway, OK, sup Robert Spencer. 5183 = Chickasha, OK, sup Krystiana Langford.
+  // 13113 = Madill-Hwy 70, OK, sup Robert Spencer. 5183 = Chickasha, OK, sup Krystiana Langford.
   // 6178 = Chipley, FL, sup Brad Denley.
   const FINDINGS = [
-    { empToken: 'tok-ardmore', wrin: null, loc: '3708', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-madill', wrin: null, loc: '13113', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-chickasha', wrin: null, loc: '5183', ruleId: 'CASH-001', pass: true, value: 8, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-chipley', wrin: null, loc: '6178', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
   ];
@@ -1240,26 +1244,26 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   it('before selecting any pill, all three real stores render unfiltered, and there is no flat ~30-pill Org/Store row any more (the mobile-usability bug this dispatch fixes)', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
-    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).toMatch(/Store 6178/);
     // The old Org pills are gone entirely -- not renamed, removed (see scopeMatches' own comment).
     expect(btnByText('MCDOK')).toBeFalsy();
     expect(btnByText('Emerald Arches')).toBeFalsy();
     // Progressive mode: only the State tier (+ "All Locations") shows before any State is picked
-    // -- Patch and Store pills for 3708/5183/6178 are NOT all on screen at once.
+    // -- Patch and Store pills for 13113/5183/6178 are NOT all on screen at once.
     expect(btnByText('All Locations')).toBeTruthy();
     expect(btnByText('OK')).toBeTruthy();
     expect(btnByText('FL')).toBeTruthy();
     expect(btnByText('Robert Spencer')).toBeFalsy();
-    expect(btnByText('3708 — Ardmore-Broadway')).toBeFalsy();
+    expect(btnByText('13113 — Madill-Hwy 70')).toBeFalsy();
   });
 
-  it('picking the OK State pill filters to exactly the OK stores (3708, 5183), excluding the FL store (6178) -- same store set the old MCDOK Org pill reached', async () => {
+  it('picking the OK State pill filters to exactly the OK stores (13113, 5183), excluding the FL store (6178) -- same store set the old MCDOK Org pill reached', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
     await click(btnByText('OK'));
-    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).not.toMatch(/Store 6178/);
     // Picking OK reveals ITS Patch tier -- both supervisors, since both have an OK store present.
@@ -1272,20 +1276,20 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
     await flush(container);
     await click(btnByText('FL'));
     expect(container.textContent).toMatch(/Store 6178/);
-    expect(container.textContent).not.toMatch(/Store 3708/);
+    expect(container.textContent).not.toMatch(/Store 13113/);
     expect(container.textContent).not.toMatch(/Store 5183/);
   });
 
-  it('the Patch tier is a genuinely finer scope than the old Org tier -- Robert Spencer isolates 3708 from 5183, though both are OK/mcdok', async () => {
+  it('the Patch tier is a genuinely finer scope than the old Org tier -- Robert Spencer isolates 13113 from 5183, though both are OK/mcdok', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
     await click(btnByText('OK'));
     await click(btnByText('Robert Spencer'));
-    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).not.toMatch(/Store 5183/); // same state AND same old org -- only Patch can separate these
     expect(container.textContent).not.toMatch(/Store 6178/);
     // Picking the Patch reveals its Store tier.
-    expect(btnByText('3708 — Ardmore-Broadway')).toBeTruthy();
+    expect(btnByText('13113 — Madill-Hwy 70')).toBeTruthy();
   });
 
   it('the other Patch under the same state isolates the sibling store instead', async () => {
@@ -1294,7 +1298,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
     await click(btnByText('OK'));
     await click(btnByText('Krystiana Langford'));
     expect(container.textContent).toMatch(/Store 5183/);
-    expect(container.textContent).not.toMatch(/Store 3708/);
+    expect(container.textContent).not.toMatch(/Store 13113/);
     expect(container.textContent).not.toMatch(/Store 6178/);
   });
 
@@ -1305,10 +1309,10 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
     await click(btnByText('Robert Spencer'));
     // Store pills carry the store name too (matching the shared LocationSelector's own label
     // convention, PanelControls.js's storeLabel) -- click on the real label, not the bare loc.
-    const storeBtn = btnByText('3708 — Ardmore-Broadway');
+    const storeBtn = btnByText('13113 — Madill-Hwy 70');
     expect(storeBtn).toBeTruthy();
     await click(storeBtn);
-    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).not.toMatch(/Store 5183/);
     expect(container.textContent).not.toMatch(/Store 6178/);
   });
@@ -1320,7 +1324,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
     await click(btnByText('Robert Spencer'));
     expect(container.textContent).not.toMatch(/Store 5183/);
     await click(btnByText('All Locations'));
-    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).toMatch(/Store 6178/);
   });

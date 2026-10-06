@@ -1154,7 +1154,10 @@ const STORE_STAFF={
   '33704':{gm:'Candy Barksdale',    gmEmail:'Candy@mcdok.com'},
   '34222':{gm:'Hunter McKee',       gmEmail:'Hunter@mcdok.com'},
   '35064':{gm:'Lynsey Yahola',      gmEmail:'Lynsey@mcdok.com'},
-  '43380':{gm:'Zukarr Eaves',       gmEmail:'Zukarr@mcdok.com'},
+  // Zukarr Eaves promoted to Supervisor (Ardmore-Broadway/NEC Cooper/Tishomingo patch),
+  // effective 2026-10-05 -- see src/constants.js DEF_SETTINGS.supervisorGroups and the live
+  // orgAssignments reassignment of the same date. Sabrina Turner is the new GM here.
+  '43380':{gm:'Sabrina Turner',     gmEmail:'Sabrina@mcdok.com'},
   '6178': {gm:'Janet Jeter',        gmEmail:'Janet@emeraldarches.com'},
   '6838': {gm:'Stephanie Harris',   gmEmail:'Stephanie@emeraldarches.com'},
   '10034':{gm:'Harlee Yates',       gmEmail:'Harlee@emeraldarches.com'},

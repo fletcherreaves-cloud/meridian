@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups } from '../constants.js';
+import { logOrgAssignmentChange } from '../lib/supabase.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 
@@ -231,18 +232,28 @@ function SupervisorAssignmentsEditor({ S, onUpdate }) {
     const name = sup.trim(); if (!name) { alert('Supervisor name required'); return; }
     const locs = stores.split(',').map(s => String(parseInt(s.trim(), 10))).filter(x => x && x !== 'NaN');
     if (!locs.length) { alert('Enter one or more store IDs'); return; }
-    save([...asg, ...locs.map(loc => ({ loc, supervisor: name, start: eff || '' }))]);
+    const added = locs.map(loc => ({ loc, supervisor: name, start: eff || '' }));
+    save([...asg, ...added]);
+    for (const row of added) logOrgAssignmentChange('supervisor', row.loc, 'add', null, row).catch(() => {});
     setSup(''); setStores('');
   };
-  const editStart = (idx, val) => save(asg.map((a, i) => i === idx ? { ...a, start: val } : a));
-  const remove = (idx) => save(asg.filter((_, i) => i !== idx));
+  const editStart = (idx, val) => {
+    const before = asg[idx];
+    save(asg.map((a, i) => i === idx ? { ...a, start: val } : a));
+    logOrgAssignmentChange('supervisor', before.loc, 'edit', before, { ...before, start: val }).catch(() => {});
+  };
+  const remove = (idx) => {
+    const removed = asg[idx];
+    save(asg.filter((_, i) => i !== idx));
+    logOrgAssignmentChange('supervisor', removed.loc, 'remove', removed, null).catch(() => {});
+  };
   const rows = asg.map((a, i) => ({ ...a, _i: i })).sort((a, b) => a.loc.localeCompare(b.loc) || (a.start || '').localeCompare(b.start || ''));
   const supNames = [...new Set(asg.map(a => a.supervisor))].sort();
 
   return div({ className: 'set-sec' },
     div({ className: 'set-sec-t' }, 'Supervisor Assignments (effective-dated)'),
     div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
-      'Attribution follows tenure: a store\'s supervisor on any date = the assignment with the latest effective date on/before it. Reassign by adding a row with the effective date — no need to remove the old one, the newer date wins. Blank date = since always.'),
+      'Attribution follows tenure: a store\'s supervisor on any date = the assignment with the latest effective date on/before it. Reassign by adding a row with the effective date — no need to remove the old one, the newer date wins. Blank date = since always. Every add/edit/removal here is also logged to a separate, permanent audit trail — even a ✕ removal stays recoverable.'),
     div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Current — as of today'),
     Object.keys(current).length
       ? Object.entries(current).sort((a,b)=>a[0].localeCompare(b[0])).map(([name, locs]) => div({ key: name, style: { fontSize: 11.5, marginBottom: 2 } },
