@@ -1,6 +1,6 @@
 ---
 name: finding-failed-pull-email-audit-2026-10-06
-description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause is a known, still-UNRESOLVED issue (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) plus a sibling (Register Audit Pull, same 401-on-everything signature). An account-permission theory built from a stale memory/qsrsoft-report-catalog.md capture was raised, then REFUTED the same day -- the owner checked QSRSoft's own admin UI live and the account has Director of Operations + System Administrators roles with Security Access explicitly toggled on. Real cause still open; next step needs the owner's own live-browser test (does the report load interactively for this confirmed-correct account?). Cadence dropped from every 2 hours to once daily (owner-requested) to cut email volume ~12x while this stays open. Separately found and fixed a real, different, actually-resolved bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
+description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause is a known, long-UNRESOLVED issue (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) plus a sibling (Register Audit Pull, same 401-on-everything signature). An account-permission theory built from a stale memory/qsrsoft-report-catalog.md capture was raised, then REFUTED same day -- owner checked QSRSoft's admin UI live, account fully provisioned. Owner then ran the suggested live-browser test and the report loaded fine -- which also surfaced a real new lead: the pull script's hardcoded Referer header pointed at Register Audit's report URL, not Security Events' own (v3.myqsrsoft.com/security/suspicious-activity, confirmed from the owner's screenshot), since the #83 rebuild. Fixed, but NOT yet live-verified (no QSRSoft credentials in any of these sessions) -- the one historically-successful curl used the same wrong-report Referer and still got 200 once, so this closes a real latent bug without being proven as THE gate; needs the owner's own workflow_dispatch to confirm. Cadence dropped from every 2 hours to once daily (owner-requested) to cut email volume ~12x while this stays open. Separately found and fixed a real, different, actually-resolved bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
 metadata:
   node_type: memory
   type: finding
@@ -101,12 +101,38 @@ surface specifically that an automated Cognito-token or Playwright-session login
 even though the login itself succeeds; or (b) dispatch #81/83's original transport/anti-bot
 fingerprint territory, not actually overturned as cleanly as #83 concluded (that overturn rested
 on ONE successful curl from the owner's own Mac/network, and #91/95 then documented continued
-failures afterward). **Next useful experiment, and it needs the owner's own live browser
-session:** open the Security Events and Register Audit report pages interactively, logged in as
-this same (confirmed-correct) account, and confirm whether they load with real data. If they do,
-that cleanly isolates the problem to the automated/programmatic path specifically, not the
-account — the single most informative next data point, and not something this repo's own
-investigation can produce without it.
+failures afterward).
+
+**Owner then ran the suggested experiment immediately and sent screenshots: the Security Events
+report ("Suspicious Activity") loads fine interactively, with real rows** (3 POS-overring events,
+2026-10-05, stores 5985/6972/13113). This both confirms the entitlement theory is dead (the UI
+itself works for this account) and surfaced a genuinely new, concrete lead: **the live page is
+served at `v3.myqsrsoft.com/security/suspicious-activity`** — not
+`v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit`, the URL
+`scripts/qsrsoft-security-events-pull.mjs`'s `REPORT_PAGE` constant has sent as its `Referer`
+header on every single request since the #83 rebuild. That value is Register Audit's own page
+(a different report), and tracing it back: the #83 rebuild (written in a sandbox with "no
+QSRSoft credentials or network access... NOT live-verified", per its own workflow-file header)
+most likely copied it from the sibling register-audit script's identical-shaped constant and
+never corrected it against the real Security Events page.
+
+**Caveat, so this isn't oversold as solved:** the ONE known-successful curl (2026-08-23, 200 +
+23 real rows — `memory/dispatch-83.md` / `finding-api-security-transport-fingerprint-2026-08-23.md`)
+used this SAME wrong-report Referer and it worked that one time. So either (a) QSRSoft doesn't
+strictly validate the Referer against the specific report page (in which case this fix is
+necessary-but-not-sufficient — fixing a real latent bug, but not THE gate), or (b) the real page
+moved to its current `/security/suspicious-activity` URL sometime between 2026-08-23 and now,
+which would make a once-correct Referer silently stale — consistent with every run failing since.
+Both readings make fixing it the right move either way; neither is proven.
+
+**Fixed `REPORT_PAGE` to the live-verified URL** (`scripts/qsrsoft-security-events-pull.mjs`).
+**NOT live-verified from this session — no QSRSoft credentials here.** This needs the owner to
+trigger `workflow_dispatch` (or just wait for the next 11:00 UTC daily run) and confirm a real
+200 + row count before this is treated as resolved, per dispatch #83's own stated verification
+bar — which, per that file's own header, was never actually met for this rebuild in the ~6 weeks
+since it shipped. If this does NOT fix it, the next move is a controlled single-header-removal
+trace (dispatch #91's own methodology) against the account now confirmed to have real UI access,
+since that removes "is this even the right account" as a variable going forward.
 
 **Cadence reduced 2026-10-06** (owner: "reduce the cadence while I sort out QSRSoft
 permissions") — `qsrsoft-security-events-pull.yml` dropped from every 2 hours (12 emails/day) to
@@ -175,7 +201,7 @@ chunking the store list across more than one scheduled run.
 
 | Stream | Real cause | Fixable from this repo? | Status |
 |---|---|---|---|
-| QSRSoft Security Events Pull | Still unknown (not new, dispatch #81-95) — account permission theory was raised then REFUTED same day (owner confirmed Director of Operations + Security Access are both on) | No — real cause still open; next step needs the owner's live browser test | Cadence cut 12x → 1x/day while open; root cause not found |
+| QSRSoft Security Events Pull | Permission theory REFUTED (account confirmed fully provisioned). New lead: REPORT_PAGE Referer pointed at the wrong report's URL since the #83 rebuild -- fixed to the live-verified URL, not yet confirmed as THE fix | Partial -- code fix shipped, needs owner's live `workflow_dispatch` to confirm | Cadence cut 12x → 1x/day; Referer fix shipped, pending live verification |
 | QSRSoft Register Audit Pull | Same likely cause as above | No — same | Flagged, not fixed |
 | QSRSoft Store Controls Pull | Same report family; 1 sample was a cancellation, not data | No — same, watch once Controls access is restored | Flagged |
 | Sync Failure Watch | Concurrency cancellation, not a real failure | N/A — not a bug | No action needed |
