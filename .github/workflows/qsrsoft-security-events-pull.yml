@@ -33,18 +33,20 @@ name: QSRSoft Security Events Pull
 
 on:
   schedule:
-    # Dispatch #95 (Track B): every 2 hours, not once daily. Evidence this is run-level-
-    # correlated failure, not per-request-random: dispatch-91's run history never shows a MIXED
-    # outcome within one run (every real run this session inspected -- #14 today's scheduled run,
-    # #15's owner-cancelled run -- was ~0% or 100% failed uniformly across all units attempted,
-    # never a partial split), and dispatch-91 part 2's separate 3-trial probe series split
-    # 403/200/200 across THREE SEPARATE PROCESSES minutes apart, not within one. So a whole run
-    # tends to land in a "good" or "bad" window, and the lever that helps is more windows per
-    # day, not retrying inside one -- see dispatch-95.md's Resolution for the full evidence this
-    # schedule change rests on. Deliberately NOT adding per-request retry-on-403 alongside this:
-    # that already caused a Cognito self-throttle once (#616) and dispatch #95 explicitly rules
-    # it out until run-level correlation was confirmed, which is what this comment records.
-    - cron: '0 */2 * * *'
+    # Dropped from every 2 hours back to once daily (2026-10-06) -- the #95 Track B theory this
+    # cadence rested on (a run-level-correlated FLAKE, where more windows/day would eventually
+    # catch a good one) is superseded: re-measured live, every run since has failed 100% of
+    # units with AUTH_FAILED:403, qsr_security_events still has zero rows ever, and
+    # memory/qsrsoft-report-catalog.md's own earlier capture shows WHY -- QSRSoft's
+    # security_access permission is granted only to the "Director of Operations" role, and the
+    # account this script authenticates as carries SAML role "Franchisee Office Staff" (Operator
+    # per-store), which QSRSoft's own RBAC groups never grant it. This reads as an entitlement
+    # the account never had, not a flake -- see memory/finding-failed-pull-email-audit-2026-10-06.md.
+    # 12 runs/day was producing 12 failure emails/day for a owner-side fix, not a code one. Once
+    # the owner confirms the QSRSoft account has Director of Operations (or an equivalent grant
+    # of security_access), re-verify with workflow_dispatch before restoring a tighter cadence --
+    # do not just flip this back to */2 on a guess.
+    - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
       days_back:

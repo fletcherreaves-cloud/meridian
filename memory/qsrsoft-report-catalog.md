@@ -139,6 +139,18 @@ Source: `GET https://api.sso.myqsrsoft.com/user/info?userId={uuid}&orgId={orgId}
 | owner `eID` / `geid` | `eu065119` / `200234453` |
 | SAML `role` | `Franchisee Office Staff` (per-store roles all `Operator`) |
 
+**⚠️ Do not read this `SAML role` as the account's QSRSoft permission level — checked live and
+refuted, 2026-10-06.** A later session reasoned from this row that the automation account lacked
+`security_access` (see "QSRSoft's own RBAC groups" below) and never had access to the Security
+Events / Register Audit reports — a plausible-sounding explanation for `qsr_security_events`
+having zero rows ever. The owner checked QSRSoft's own Users admin screen live and refuted it:
+the account has `Director of Operations` + `System Administrators` (among others) checked, and
+`Security Access` explicitly toggled ON under Permissions. This `SAML role` field is almost
+certainly a McDonald's corporate SSO/SAML identity (used for McD-wide systems), a SEPARATE
+permission system from QSRSoft's own native in-app RBAC the Users screen shows — don't conflate
+the two again. Full correction: `memory/finding-failed-pull-email-audit-2026-10-06.md`. The real
+cause of the Security Events / Register Audit 403s is still open as of that finding.
+
 **`orgStartOfWeek: "Wednesday"` is the vendor's own configuration**, independently confirming the
 week-start convention that `constants.js:103` asserts as "McDonald's standard" and that the
 McValue 14-day block design (`memory/project-mcvalue-2-fbp-document.md`) rests on. It is no

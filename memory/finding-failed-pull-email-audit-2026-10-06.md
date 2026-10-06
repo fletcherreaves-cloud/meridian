@@ -1,6 +1,6 @@
 ---
 name: finding-failed-pull-email-audit-2026-10-06
-description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause is a known, still-unresolved issue (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) plus a newly-found sibling (Register Audit Pull, same 401-on-everything signature) that both look like a lost QSRSoft account entitlement for "Controls" reports specifically -- needs the owner to check QSRSoft portal permissions, not a code fix. Separately found and fixed a real, different bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
+description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause is a known, still-UNRESOLVED issue (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) plus a sibling (Register Audit Pull, same 401-on-everything signature). An account-permission theory built from a stale memory/qsrsoft-report-catalog.md capture was raised, then REFUTED the same day -- the owner checked QSRSoft's own admin UI live and the account has Director of Operations + System Administrators roles with Security Access explicitly toggled on. Real cause still open; next step needs the owner's own live-browser test (does the report load interactively for this confirmed-correct account?). Cadence dropped from every 2 hours to once daily (owner-requested) to cut email volume ~12x while this stays open. Separately found and fixed a real, different, actually-resolved bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
 metadata:
   node_type: memory
   type: finding
@@ -65,21 +65,58 @@ but the report's own API calls inside that authenticated session **also** come b
 So two independent report pulls (Security Events, Register Audit — both live under QSRSoft's
 "Controls" reporting family) are being denied with the exact same "fully authenticated, still
 denied" signature, while reports outside that family (eBOS, DAR, FOB, Menu Items, Employee
-Roster, etc.) mostly succeed. The likely shared cause: **the QSRSoft service account's role lost
-access to the Controls report category specifically**, at some point before 2026-09-22 (the start
-of #1's zero-row history is at least that old) and still as of today. `QSRSoft Store Controls
-Pull`'s one "failure" in this window was actually a concurrency *cancellation* (see #3), not a
-new data point either way, but it's the third stream in this same report family and worth
-checking if/when the Controls permission gets restored.
+Roster, etc.) mostly succeed. `QSRSoft Store Controls Pull`'s one "failure" in this window was
+actually a concurrency *cancellation* (see #3), not a new data point either way, but it's the
+third stream in this same report family and worth checking if/when the Controls permission gets
+restored.
 
-**This needs the owner to check the QSRSoft account's role/permissions for the "Controls" report
-category in the QSRSoft admin portal — nothing further can be diagnosed or fixed from this repo
-without that.** Until then, these two streams will keep failing on every scheduled run and keep
-generating email. Recommend asking the owner whether to (a) leave the cadence as-is while this
-gets sorted on the QSRSoft side, (b) drop Security Events back to a daily cadence to cut the
-email volume ~12x without losing the (currently zero) signal, or (c) pause the workflow's schedule
-entirely until the permission is restored. Did not make this call unilaterally since cadence was a
-deliberate decision in #95 and pausing a scheduled workflow is a real behavior change.
+**The likely shared cause has an exact answer already on file, found instead of re-guessed:**
+`memory/qsrsoft-report-catalog.md`, captured 2026-08-14, records QSRSoft's own RBAC groups —
+`Office Manager` · `Maintenance` · `Operations Manager` · `Owner Operator` ·
+`Director of Operations` · `System Administrators` — and that **`security_access` (the
+permission the Security Events/Controls console requires) is granted only to
+`Director of Operations`** (plus the owner's own separate permission set), not to Owner Operator,
+Operations Manager, or Office Manager. The same capture records the account's SAML role as
+**`Franchisee Office Staff`** (per-store role `Operator`) — none of the roles that carry
+`security_access`. This looked like the answer: it matched the owner's own instinct ("pretty sure
+we have struggled with this from day 1") and explained why `qsr_security_events` has zero rows
+across its entire history.
+
+**❌ WRONG — checked live and refuted same day, 2026-10-06.** Owner opened QSRSoft's own Users
+admin screen for the account (Fletcher Reaves) and sent screenshots: **4 roles checked —
+`Director of Operations`, `Operations Manager`, `Owner Operator`, `System Administrators`** — and
+on the Permissions tab, **`Security Access` is explicitly toggled ON**. The account has full,
+correctly-provisioned access by every measure QSRSoft's own UI exposes. The `qsrsoft-report-
+catalog.md` capture this reasoning rested on is either stale (captured 2026-08-14, access may
+have changed since) or was describing a different identity context — its `SAML role` field is
+almost certainly McDonald's corporate SSO/SAML identity (used for McD-wide systems), a SEPARATE
+permission system from QSRSoft's own native in-app RBAC the Users admin screen shows and that the
+username/password-driven Cognito login this script's auth path actually uses is governed by. The
+two should not have been conflated as the same "role."
+
+**So the account-entitlement theory is RULED OUT, not confirmed — the real cause of the 100%
+AUTH_FAILED:403 is still open.** With permission confirmed correct, the remaining live
+candidates: (a) a session/device-trust or step-up-auth requirement on the Security/Controls API
+surface specifically that an automated Cognito-token or Playwright-session login can't satisfy
+even though the login itself succeeds; or (b) dispatch #81/83's original transport/anti-bot
+fingerprint territory, not actually overturned as cleanly as #83 concluded (that overturn rested
+on ONE successful curl from the owner's own Mac/network, and #91/95 then documented continued
+failures afterward). **Next useful experiment, and it needs the owner's own live browser
+session:** open the Security Events and Register Audit report pages interactively, logged in as
+this same (confirmed-correct) account, and confirm whether they load with real data. If they do,
+that cleanly isolates the problem to the automated/programmatic path specifically, not the
+account — the single most informative next data point, and not something this repo's own
+investigation can produce without it.
+
+**Cadence reduced 2026-10-06** (owner: "reduce the cadence while I sort out QSRSoft
+permissions") — `qsrsoft-security-events-pull.yml` dropped from every 2 hours (12 emails/day) to
+once daily (`0 11 * * *`), cutting volume ~12x. The #95 Track B "run-level-correlated flake"
+theory the 2-hour cadence rested on is now superseded by this finding (a missing entitlement
+fails identically regardless of time-of-day, which is exactly what was re-measured). **Do not
+restore a tighter cadence on a guess** — re-verify via `workflow_dispatch` once the owner
+confirms the QSRSoft role change took effect. Did not go further and pause the schedule entirely
+(still runs once/day) — that stays a real signal for the moment the owner's QSRSoft fix lands,
+without the 12x email cost of the old cadence.
 
 ## 3. "Sync Failure Watch" showing 16 failures — a false alarm, not a bug
 
@@ -138,7 +175,7 @@ chunking the store list across more than one scheduled run.
 
 | Stream | Real cause | Fixable from this repo? | Status |
 |---|---|---|---|
-| QSRSoft Security Events Pull | QSRSoft account lost "Controls" category access (not new, dispatch #81-95) | No — owner must check QSRSoft portal permissions | Flagged, not fixed |
+| QSRSoft Security Events Pull | Still unknown (not new, dispatch #81-95) — account permission theory was raised then REFUTED same day (owner confirmed Director of Operations + Security Access are both on) | No — real cause still open; next step needs the owner's live browser test | Cadence cut 12x → 1x/day while open; root cause not found |
 | QSRSoft Register Audit Pull | Same likely cause as above | No — same | Flagged, not fixed |
 | QSRSoft Store Controls Pull | Same report family; 1 sample was a cancellation, not data | No — same, watch once Controls access is restored | Flagged |
 | Sync Failure Watch | Concurrency cancellation, not a real failure | N/A — not a bug | No action needed |
