@@ -21,7 +21,7 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -8077,17 +8077,62 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
   }, [period.year, period.month, mtIsThisMonth]);
   const effMt = mtIsThisMonth ? mt : (loadedMt||{});
 
+  // Actuals coverage check + on-demand fetch for an out-of-window month (owner-reported
+  // 2026-10-06, Pace to Target showing August as uniformly ~20-25% below target across EVERY
+  // store — verified against a real August Operations Report: true district Product Sales
+  // $8.76M vs this panel's own $6.98M). Root cause: ds.salesLedgerRows/qsrActSummaryRows are
+  // both loaded with a fixed 60-day trailing window from TODAY (App.js's
+  // loadSalesLedger(60)/_stQsrsoftActSummary(60)) — viewing a month further back than that
+  // (stepping ‹ › past ~2 months) silently clips the month's early days out of the merged
+  // aggregate below, while the header still shows "day 31 of 31" (the max date seen ANYWHERE
+  // in the merged set, not per-store coverage) — so the gap read as real underperformance, not
+  // a loading-window artifact. qsr_daily_activity_rollup itself (qsrActSummaryRows' real source)
+  // was confirmed complete and accurate for the reported month (31/31 days, district total
+  // within $626 of the real Operations Report's $8,761,530) — the data was never missing,
+  // only not loaded into this component's fixed window. Mirrors the loadedMt on-demand pattern
+  // just above: trust the already-loaded ds rows when they cover the viewed month's start,
+  // else fetch that month directly.
+  const monthStartIso = `${period.year}-${String(period.month).padStart(2,'0')}-01`;
+  const dsCoversMonthStart = useMemo(()=>{
+    const covers = arr => (arr||[]).some(r=>{ const iso=(r.date instanceof Date?r.date:new Date(r.date)).toISOString().slice(0,10); return iso<=monthStartIso; });
+    return covers(ds&&ds.salesLedgerRows) || covers(ds&&ds.qsrActSummaryRows);
+  }, [monthStartIso, ds&&ds.salesLedgerRows, ds&&ds.qsrActSummaryRows]);
+  const [onDemandSales, setOnDemandSales] = useState(null); // {period:'YYYY-M', ledger, qsrAct} | null
+  const [fetchingSales, setFetchingSales] = useState(false);
+  useEffect(()=>{
+    const ym = period.year+'-'+period.month;
+    if(dsCoversMonthStart || (onDemandSales&&onDemandSales.period===ym)) return;
+    const daysBack = Math.ceil((Date.now() - new Date(monthStartIso+'T00:00:00').getTime())/86400000) + 3;
+    if(!(daysBack>0)) return; // viewed month starts in the future — nothing to fetch yet
+    let live=true; setFetchingSales(true);
+    Promise.all([loadSalesLedger(Math.min(daysBack,400)), loadQsrActSummary(Math.min(daysBack,400))]).then(([ledger,qsrAct])=>{
+      if(live){ setOnDemandSales({period:ym, ledger:ledger||[], qsrAct:qsrAct||[]}); setFetchingSales(false); }
+    }).catch(()=>{ if(live) setFetchingSales(false); });
+    return ()=>{ live=false; };
+  }, [period.year, period.month, dsCoversMonthStart, monthStartIso]);
+
   // MTD actual must be PRODUCT sales (same basis as tProdSales) from the COMPLETE
   // auto/emailed streams — not manual labor, which lags and undercounts. Priority
-  // per (loc,date): emailed sales_ledger (prodSales) > DAR product sales; manual
-  // labor (computeMonthActuals) only fills locs the auto streams don't cover.
+  // per (loc,date): emailed sales_ledger > DAR product sales; manual labor
+  // (computeMonthActuals) only fills locs the auto streams don't cover.
   const actuals = useMemo(()=>{
     const ym = period.year + '-' + String(period.month).padStart(2,'0');
     const inMonth = d => { if(!d) return null; const iso=(d instanceof Date?d:new Date(d)).toISOString().slice(0,10); return iso.slice(0,7)===ym?iso:null; };
     const cell = {}; // loc|iso -> {sales, prio}
     const put = (loc, iso, sales, prio) => { if(iso==null||typeof sales!=='number'||!(sales>0)) return; const k=String(parseInt(loc,10))+'|'+iso; const cur=cell[k]; if(!cur||prio>cur.prio) cell[k]={sales,prio}; };
-    for(const r of (ds&&ds.salesLedgerRows||[])) put(r.loc, inMonth(r.date), r.prodSales, 3);
-    for(const r of (ds&&ds.qsrActSummaryRows||[])) put(r.loc, inMonth(r.date), r.sales, 2); // qsrActSummary.sales = Σ product_sales
+    const onDemand = onDemandSales && onDemandSales.period===(period.year+'-'+period.month) ? onDemandSales : null;
+    const ledgerRows = onDemand ? onDemand.ledger : (ds&&ds.salesLedgerRows||[]);
+    const qsrActRows = onDemand ? onDemand.qsrAct : (ds&&ds.qsrActSummaryRows||[]);
+    // FIX (2026-10-06): this read r.prodSales, a field loadSalesLedger() never actually sets
+    // (it only sets .sales/.allNetSales from the sales_ledger_daily table's all_net_sales
+    // column — there's no separate "product sales" column in that table) — so this entire
+    // priority-3 leg was silently a no-op for every row, every month, always falling through
+    // to qsrActSummaryRows alone. all_net_sales is ~1% above true product sales (confirmed
+    // against the same August data: $318,831 vs $315,035 for one store) — close enough to use
+    // as the fresher-but-slightly-less-precise leg the original "freshest wins" priority intended,
+    // rather than a leg that silently never contributed at all.
+    for(const r of ledgerRows) put(r.loc, inMonth(r.date), r.sales, 3);
+    for(const r of qsrActRows) put(r.loc, inMonth(r.date), r.sales, 2); // qsrActSummary.sales = Σ product_sales
     const byLoc={}; let maxIso=null;
     for(const k of Object.keys(cell)){ const [loc,iso]=k.split('|'); byLoc[loc]=(byLoc[loc]||0)+cell[k].sales; if(!maxIso||iso>maxIso) maxIso=iso; }
     // Last-resort fill for locs with no auto product-sales coverage.
@@ -8095,7 +8140,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     for(const loc of Object.keys(manual.byLoc||{})){ if(!(byLoc[loc]>0) && manual.byLoc[loc].sales>0) byLoc[loc]=manual.byLoc[loc].sales; }
     if(!maxIso && manual.maxDate) maxIso=manual.maxDate;
     return { byLoc: Object.fromEntries(Object.entries(byLoc).map(([l,s])=>[l,{sales:s}])), maxDate: maxIso };
-  }, [period.year, period.month, ds&&ds.salesLedgerRows&&ds.salesLedgerRows.length, ds&&ds.qsrActSummaryRows&&ds.qsrActSummaryRows.length, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length]);
+  }, [period.year, period.month, ds&&ds.salesLedgerRows&&ds.salesLedgerRows.length, ds&&ds.qsrActSummaryRows&&ds.qsrActSummaryRows.length, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length, onDemandSales]);
 
   if(!(locs||[]).length) return null;
   if(!periodProp && !latestActualMonth && !(actuals&&actuals.maxDate)) return null; // nothing to anchor on
@@ -8127,6 +8172,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       span({style:{fontSize:10,fontWeight:700,color:'var(--text2)',minWidth:104,textAlign:'center'}},monthLbl), stepBtn(1,'›')),
     hasActuals&&span({style:{fontSize:9,fontWeight:600,color:'var(--text3)'}},'as of '+new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · day '+dayOfMax+' of '+daysInMonth+' · Pace = MTD ÷ days × month'),
     !mtIsThisMonth&&loadedMt!==null&&tgtSum<=0&&span({style:{fontSize:9,color:'#f59e0b'}},'no targets loaded for this month'),
+    fetchingSales&&span({style:{fontSize:9,color:'#f59e0b'}},'loading '+monthLbl+' actuals…'),
     hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(2)+'% vs target'));
 
   // Default (fillHeight=false): a fixed-height section embedded above a bigger page (Planning →
