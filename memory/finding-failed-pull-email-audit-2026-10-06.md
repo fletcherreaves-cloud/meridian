@@ -1,6 +1,6 @@
 ---
 name: finding-failed-pull-email-audit-2026-10-06
-description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause is a known, long-UNRESOLVED issue (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) plus a sibling (Register Audit Pull, same 401-on-everything signature). An account-permission theory built from a stale memory/qsrsoft-report-catalog.md capture was raised, then REFUTED same day -- owner checked QSRSoft's admin UI live, account fully provisioned. Owner then ran the suggested live-browser test and the report loaded fine -- which also surfaced a real new lead: the pull script's hardcoded Referer header pointed at Register Audit's report URL, not Security Events' own (v3.myqsrsoft.com/security/suspicious-activity, confirmed from the owner's screenshot), since the #83 rebuild. Fixed, but NOT yet live-verified (no QSRSoft credentials in any of these sessions) -- the one historically-successful curl used the same wrong-report Referer and still got 200 once, so this closes a real latent bug without being proven as THE gate; needs the owner's own workflow_dispatch to confirm. Cadence dropped from every 2 hours to once daily (owner-requested) to cut email volume ~12x while this stays open. Separately found and fixed a real, different, actually-resolved bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
+description: Owner reported "a lot of emails" from failed scheduled pulls. Audited the last ~8 days of GitHub Actions failures (100 most recent). Top cause (QSRSoft Security Events Pull, 0 rows ever, dispatches #81/83/91/95) is now RESOLVED to a specific, hard-evidenced root cause after three same-day corrections: an account-permission theory was raised then REFUTED (owner checked QSRSoft's admin UI live, account fully provisioned); a stale-Referer theory was raised, fixed, shipped, then ALSO shown not to be the gate (owner ran workflow_dispatch against the fix immediately and it still failed); the real cause is an AWS IAM explicit deny (AccessDeniedException, "explicit deny in an identity-based policy") on the identity this script's non-interactive Cognito auth maps to -- a layer underneath and separate from QSRSoft's own app-level permission (confirmed correct) that no header or Referer change can route around. Not fixable from this repo; owner has a concrete, specific QSRSoft support ticket to file. Cadence stays reduced (1x/day, down from every 2 hours) while that gets resolved on QSRSoft's side. Separately found and fixed a real, different, actually-resolved bug: YouTube Mentions Pull crashed on every run that found new content because its workflow pinned Node 20, and a bare createClient() throws setting up Supabase's Realtime sub-client on Node 20 (no native WebSocket) -- before the real upsert ever runs, so found content was silently never saved. "Sync Failure Watch" showing up as a top failure source is a false alarm -- those are concurrency cancellations, not errors.
 metadata:
   node_type: memory
   type: finding
@@ -125,14 +125,46 @@ moved to its current `/security/suspicious-activity` URL sometime between 2026-0
 which would make a once-correct Referer silently stale — consistent with every run failing since.
 Both readings make fixing it the right move either way; neither is proven.
 
-**Fixed `REPORT_PAGE` to the live-verified URL** (`scripts/qsrsoft-security-events-pull.mjs`).
-**NOT live-verified from this session — no QSRSoft credentials here.** This needs the owner to
-trigger `workflow_dispatch` (or just wait for the next 11:00 UTC daily run) and confirm a real
-200 + row count before this is treated as resolved, per dispatch #83's own stated verification
-bar — which, per that file's own header, was never actually met for this rebuild in the ~6 weeks
-since it shipped. If this does NOT fix it, the next move is a controlled single-header-removal
-trace (dispatch #91's own methodology) against the account now confirmed to have real UI access,
-since that removes "is this even the right account" as a variable going forward.
+**Fixed `REPORT_PAGE` to the live-verified URL** (`scripts/qsrsoft-security-events-pull.mjs`),
+shipped as #1389.
+
+**❌ Did not fix it — owner ran `workflow_dispatch` against the fix immediately and sent the raw
+log. Real root cause now identified, and it is NOT a header/CSRF issue at all.** The 403 body is
+a specific, named AWS error, not a generic denial:
+```
+403 body: {"Message":"User is not authorized to access this resource with an explicit deny in an
+identity-based policy"}
+403 headers: x-amzn-errortype=AccessDeniedException
+```
+**This is AWS IAM, not QSRSoft's own app-level RBAC.** `event_details` sits behind an AWS API
+Gateway/Cognito-identity-pool authorization layer, and in IAM semantics an **explicit Deny
+always wins over any Allow**, from any policy, at any level — the account's confirmed-correct
+QSRSoft application permission (Director of Operations, Security Access ON) is a completely
+separate system from this gate and has no bearing on it.
+
+**Most likely mechanism:** AWS Cognito Identity Pools commonly map an authenticated identity to
+an IAM role based on claims/attributes carried by the token. The real interactive login almost
+certainly goes through a federated SSO/SAML exchange that attaches claims leading to one IAM role;
+this script's direct `USER_PASSWORD_AUTH` token mint (the only path available to an unattended
+script — there is no browser to drive an interactive SSO redirect) very likely resolves to a
+*different* IAM role, one with an explicit Deny statement on this specific API action. This is
+consistent with every other piece of evidence gathered today: the account is fully permitted in
+QSRSoft's own UI (true, but irrelevant to this layer), and the Referer value was a real but
+unrelated bug (fixed, harmless, not load-bearing for this particular 403).
+
+**This is not fixable from this repo.** No header, Referer, or request-shape change can override
+an IAM explicit deny — it has to change on the AWS/QSRSoft side, specifically how this
+non-interactive auth path's identity gets mapped to an IAM role. **Recommended next step: a
+QSRSoft support ticket**, with the concrete technical detail now in hand: *"Our scheduled API
+integration authenticates via direct username/password (Cognito USER_PASSWORD_AUTH, not the
+interactive SSO login flow) and receives `AccessDeniedException: explicit deny in an identity-
+based policy` on `api.security.myqsrsoft.com`'s Security Events endpoint, even though the account
+has full Security Access permission in the QSRSoft UI. Can you check the IAM role mapping for
+this identity pool/auth flow, or confirm whether a service-account-style API credential with the
+correct role mapping is available?"* This is a materially better, more actionable report than
+"it just 403s" — it names the exact AWS exception and rules out the account/permission angle with
+evidence, which should let QSRSoft's own engineers (who can see their own IAM policies) resolve
+it quickly, where guessing from outside cannot.
 
 **Cadence reduced 2026-10-06** (owner: "reduce the cadence while I sort out QSRSoft
 permissions") — `qsrsoft-security-events-pull.yml` dropped from every 2 hours (12 emails/day) to
@@ -201,7 +233,7 @@ chunking the store list across more than one scheduled run.
 
 | Stream | Real cause | Fixable from this repo? | Status |
 |---|---|---|---|
-| QSRSoft Security Events Pull | Permission theory REFUTED (account confirmed fully provisioned). New lead: REPORT_PAGE Referer pointed at the wrong report's URL since the #83 rebuild -- fixed to the live-verified URL, not yet confirmed as THE fix | Partial -- code fix shipped, needs owner's live `workflow_dispatch` to confirm | Cadence cut 12x → 1x/day; Referer fix shipped, pending live verification |
+| QSRSoft Security Events Pull | **Found.** AWS IAM explicit deny (`AccessDeniedException`) on the identity this script's non-interactive auth maps to — a separate gate from QSRSoft's own app permission (confirmed correct) and unrelated to the Referer bug (real, fixed, but not load-bearing here) | **No** — AWS/QSRSoft-side IAM role mapping, not fixable from this repo | Root cause identified with hard evidence; owner has a concrete QSRSoft support ticket to file; cadence stays at 1x/day |
 | QSRSoft Register Audit Pull | Same likely cause as above | No — same | Flagged, not fixed |
 | QSRSoft Store Controls Pull | Same report family; 1 sample was a cancellation, not data | No — same, watch once Controls access is restored | Flagged |
 | Sync Failure Watch | Concurrency cancellation, not a real failure | N/A — not a bug | No action needed |
