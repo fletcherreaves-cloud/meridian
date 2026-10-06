@@ -235,7 +235,12 @@ describe('Top/Bottom Performers -- FOB % (dispatch #104)', () => {
 // built from that map -- a synthetic loc has no state/patch and would trivially pass.
 describe('Top/Bottom Performers -- location selector progressive reveal (dispatch #104)', () => {
   let container, root;
-  const okLoc1 = '3708', okLoc2 = '5183', flLoc = '6178';
+  // 6972 (Robert Spencer) and 5183 (Krystiana Langford) -- picked because their live-resolved
+  // patch (supervisorOf()/whoRan(), what buildLocationHierarchy actually renders) still matches
+  // their static INV_ORG_COORDS.sup fallback. 3708 was this test's OK example before the
+  // 2026-10-05 supervisor reassignment moved it to Zukarr Eaves, which would now make the two
+  // disagree -- see constants.js DEF_SETTINGS.supervisorGroups.
+  const okLoc1 = '6972', okLoc2 = '5183', flLoc = '6178';
   const REAL_STORES = [{ loc: okLoc1 }, { loc: okLoc2 }, { loc: flLoc }];
 
   beforeEach(() => {

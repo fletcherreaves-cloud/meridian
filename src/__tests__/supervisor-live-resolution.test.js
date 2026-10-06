@@ -60,10 +60,14 @@ describe('#363 pipeline sup/supEmail resolve live via whoRan', () => {
   });
 
   it('a mid-history reassignment changes who whoRan returns, without touching the seed', () => {
+    // Updated 2026-10-06: 3708 (Ardmore-Broadway) moved from Robert Spencer to Zukarr Eaves
+    // in DEF_SETTINGS.supervisorGroups (owner-provided org chart, effective 2026-10-05) --
+    // this test's hardcoded expectation must track the seed it's built on, not the specific
+    // name, so the example below follows the SAME supervisor the current seed assigns.
     const before = whoRan('3708', new Date('2026-01-01'));
-    expect(before).toBe('Robert Spencer');
+    expect(before).toBe('Zukarr Eaves');
     const reassigned = [...orgAssignments(), { loc: '3708', supervisor: 'Ashley Podroza', start: '2026-06-01' }];
-    expect(whoRan('3708', new Date('2026-01-01'), reassigned)).toBe('Robert Spencer');   // before the change: unaffected
+    expect(whoRan('3708', new Date('2026-01-01'), reassigned)).toBe('Zukarr Eaves');     // before the change: unaffected
     expect(whoRan('3708', new Date('2026-08-01'), reassigned)).toBe('Ashley Podroza');   // after: new supervisor
   });
 

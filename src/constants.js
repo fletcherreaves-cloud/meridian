@@ -136,12 +136,20 @@ const DEF_SETTINGS={
     discT1:.04,discT2:.055,discT3:.07,discPts:[6,4,2,0],
   },
   supervisorGroups:{
-    // MCDOK — Oklahoma
-    'Robert Spencer':    ['3708','6972','24471','32525'],
+    // MCDOK — Oklahoma. Reassigned 2026-10-05 (owner-provided org chart): Zukarr Eaves
+    // promoted from GM (Tishomingo) to Supervisor, taking 3708/24471 from Robert Spencer and
+    // 43380 from Ashley Podroza; Robert Spencer also picks up 13113 (from Ashley) and 35064
+    // (from Steven Vaughn). This flat map is only the zero-Supabase-row fallback/seed — the
+    // real effective-dated history lives in settings.orgAssignments (org_config 'app_settings'
+    // in Supabase), which still has Robert Spencer/Ashley Podroza/Steven Vaughn as the prior
+    // supervisor of record for these stores before 2026-10-05 (whoRan()/groupsAt() resolve by
+    // tenure). Updating this seed does not erase or alter that history.
+    'Robert Spencer':    ['6972','13113','32525','35064'],
     'Krystiana Langford':['5183','18213','29760','33222'],
-    'Ashley Podroza':    ['5985','10422','13113','33109','43380'],
-    'Steven Vaughn':     ['10915','33704','34222','35064'],
+    'Ashley Podroza':    ['5985','10422','33109'],
+    'Steven Vaughn':     ['10915','33704','34222'],
     'Amanda Estrada':    ['11657','20475','31357'],
+    'Zukarr Eaves':      ['3708','24471','43380'],
     // Emerald Arches — Florida
     'Brad Denley':       ['6178','6838','10034','35242','37566','38609','43701']
   },

@@ -3470,6 +3470,30 @@ export async function loadOrgConfigs(keys) {
   return out;
 }
 
+// ── Org assignment audit (owner, 2026-10-06) ──────────────────────────────────
+// "I want to ensure the effective dates for changes are retained so if I remove a supervisor
+// from a location assignment, I need to know that we have a stored record somewhere of the
+// time they were responsible for each location." settings.orgAssignments (org_config key
+// 'app_settings') already resolves attribution by tenure (constants.js's whoRan()/groupsAt(),
+// "latest start ≤ date wins") and already preserves history AS LONG AS a row is never
+// deleted -- but SupervisorAssignmentsEditor's remove() (management.js) deletes a row
+// outright, with no trace left anywhere once it's gone. This writes a permanent record of
+// every add/edit/remove to supabase/schema-org-assignment-audit.sql's org_assignment_audit
+// table BEFORE the editor applies the change, so even a corrective deletion stays
+// recoverable. Best-effort: every call site fires this with .catch(()=>{}) same as
+// pushConfigToSupabase — a failed audit write must never block the actual reassignment.
+export async function logOrgAssignmentChange(assignmentType, loc, action, oldValue, newValue) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const row = {
+    assignment_type: assignmentType, loc: String(loc), action,
+    old_value: oldValue ?? null, new_value: newValue ?? null, actor_id: uid || null,
+  };
+  const { error } = await supabase.from('org_assignment_audit').insert(row);
+  if (error) { console.warn('[org_assignment_audit] insert error (non-fatal):', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
 // ── EOM digest schedule config (dispatch #217) ────────────────────────────────
 // App-WIDE (not per-user) setting — which roll-up levels the daily scheduled EOM digest
 // emails, and at what UTC hour — so it lives in org_config, not user_settings, matching how
