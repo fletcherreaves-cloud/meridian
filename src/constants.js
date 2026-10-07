@@ -764,17 +764,29 @@ function orgAssignments() {
   if (_liveAssignments && _liveAssignments.length) return _liveAssignments;
   return seedAssignmentsFromGroups(_liveSupervisorGroups || DEF_SETTINGS.supervisorGroups);
 }
-// Supervisor of a store as-of a date (latest start ≤ date; '' start = always effective).
-function whoRan(loc, date, list) {
+// Generic "latest start ≤ date wins" resolver for one per-loc assignable value -- the single
+// tie-break primitive whoRan() (supervisor) implements below, generalized so another per-store,
+// single-holder role (e.g. GM, src/features/morning-brief.js's gmAssignments()) can reuse the
+// SAME resolution rule without a second copy of this loop. `rows` is any { loc, start, ... }
+// timeline; `valueOf(row)` extracts whatever the caller is resolving (a.supervisor, or a richer
+// shape like {gm:a.gm, gmEmail:a.gmEmail}). Deliberately NOT exported for the person/role/target
+// reports-to GRAPH case (src/engine/assignment-graph.js's currentHolderOfTarget) -- that resolves
+// the identical rule but over a differently-shaped, multi-role graph; this one stays scoped to
+// "one value per loc" so it doesn't grow a second, parallel generalization of the same idea.
+function latestEffective(loc, date, rows, valueOf) {
   const key = _unpadLoc(loc), d = _dstr(date);
   let best = null, bestStart = null;
-  for (const a of (list || orgAssignments())) {
+  for (const a of (rows || [])) {
     if (_unpadLoc(a.loc) !== key) continue;
     const s = a.start || '';
     if (s && d && s > d) continue;                 // not yet effective on `date`
-    if (best === null || s >= (bestStart || '')) { best = a.supervisor; bestStart = s; }
+    if (best === null || s >= (bestStart || '')) { best = valueOf(a); bestStart = s; }
   }
   return best;
+}
+// Supervisor of a store as-of a date (latest start ≤ date; '' start = always effective).
+function whoRan(loc, date, list) {
+  return latestEffective(loc, date, list || orgAssignments(), a => a.supervisor);
 }
 // Derive the { supervisor: [locs] } map as-of a date from the timeline.
 function groupsAt(date, list) {
@@ -852,4 +864,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, latestEffective, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

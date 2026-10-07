@@ -842,6 +842,14 @@ function App() {
     // dispatch #224 Task 2 — operators keep the SAME live-sync as supervisorGroups above: one
     // extra field off the same already-fetched app_settings row, not a new query.
     setLiveOperators(settings?.operators);
+    // GM assignments (2026-10-06 follow-up to the Supervisor timeline) — same live-sync, but
+    // morning-brief.js can't be statically imported here (lazyPanel() target, see the
+    // contact_registry sync below for the same constraint), so it's a dynamic import like that
+    // block already uses. Seeds from STORE_STAFF (morning-brief.js's own flat table) the same
+    // way orgAssignments seeds from supervisorGroups above when nothing's saved yet.
+    if (settings?.gmAssignments && settings.gmAssignments.length) {
+      import('../features/morning-brief.js').then(m => m.setLiveGmAssignments(settings.gmAssignments)).catch(()=>{});
+    }
   },[settings]);
   // Open SAGE on demand (e.g. the EOM diagnosis "Ask SAGE" button seeds window.__MF_SAGE_SEED__).
   useEffect(()=>{ const h=()=>setShowSage(true); window.addEventListener('mf:open-sage',h); return ()=>window.removeEventListener('mf:open-sage',h); },[]);
