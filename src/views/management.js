@@ -545,7 +545,23 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
               )
             )
           ),
-          div({className:'set-note'},'System preference is the default. Override here sticks across sessions.')
+          div({className:'set-note'},'System preference is the default. Override here sticks across sessions.'),
+          // Nav regroup pilot (2026-10-07, owner-approved) — ships active ('v2') by default;
+          // Classic is a one-click revert, same spirit as the Food Cost Focus View toggle.
+          div({style:{display:'flex',alignItems:'center',gap:10,marginTop:14,paddingTop:14,borderTop:'.5px solid var(--bdr)'}},
+            div({style:{fontSize:'10px',color:'var(--text2)',fontWeight:600}},'Navigation'),
+            div({style:{display:'flex',gap:4}},
+              [['v2','✨ Grouped (new)'],['classic','📋 Classic']].map(([id,label])=>
+                btn({key:id,
+                  className:'btn btn-sm'+((S.navStyle==='classic'?'classic':'v2')===id?' btn-a':''),
+                  style:{padding:'3px 12px',fontSize:'10px'},
+                  onClick:()=>set('navStyle',id)},
+                  label
+                )
+              )
+            )
+          ),
+          div({className:'set-note'},'Grouped nav tucks forecasting/backtest/correlation tools under a collapsible "🔷 Deep Dive" section. Switch back to Classic any time — nothing is removed either way.')
         ),
         activeSection==='metrics'&&div({className:'set-sec'},
           div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},

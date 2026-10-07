@@ -116,6 +116,11 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     return ()=>window.removeEventListener('mf:toggleNav',toggle);
   },[]);
   const closeMobile=()=>{if(isMobile)setMobileOpen(false);};
+  // Nav regroup pilot (2026-10-07, owner-approved, ships active by default -- see constants.js
+  // DEF_SETTINGS.navStyle's own comment). Collapse state is session-local UI only, not persisted
+  // -- same "convenience, not data" tier as `collapsed`/`expandedGroup` above.
+  const [deepDiveOpen,setDeepDiveOpen]=React.useState(false);
+  const navStyle = settings?.navStyle==='classic' ? 'classic' : 'v2';
 
   // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
   // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second
@@ -426,15 +431,42 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // now instead of the v1 hand-built list Job A deliberately preserved.
       ...SECTIONS.filter(s => s.id !== 'admin').flatMap(s => renderSection(s.id) || []),
 
-      // ── TEST KITCHEN ───────────────────────────────────────────
+      // ── TEST KITCHEN + Optional panels ───────────────────────────
       // Derived -- see renderTestKitchen() above. A 'proj' duplicate ("Proj Workflow", same
       // 'proj' modal) was pruned from this list at v4.517; the recall note now lives in
       // memory/panel-catalog.md instead of a commented-out line here (dispatch #61).
-      ...(renderTestKitchen() || []),
       // Optional / experimental panels (registry-driven) — hidden by default, toggled back
       // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.
-      ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
-        .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
+      // Nav regroup pilot (2026-10-07) — classic keeps these as two separately-rendered blocks
+      // exactly as before (byte-identical); v2 wraps the SAME items (nothing reclassified in
+      // panel-registry.js) in one collapsible "🔷 Deep Dive" header instead of two blocks, one
+      // of which (Optional) previously had no header/label at all.
+      ...(navStyle==='classic' ? [
+        ...(renderTestKitchen() || []),
+        ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+          .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
+      ] : (() => {
+        const items=[
+          ...(renderTestKitchen() || []),
+          ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+            .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
+        ].filter(Boolean);
+        if(!items.length) return [];
+        return [
+          div({key:'deepdive-hdr',onClick:()=>setDeepDiveOpen(o=>!o),
+            style:{display:'flex',alignItems:'center',justifyContent:collapsed?'center':'space-between',
+              gap:6,padding:collapsed?'8px 0':'8px 10px',marginTop:8,cursor:'pointer',
+              borderRadius:'var(--r)',background:'var(--surf2)'},
+            title:'Deep Dive — models, backtests, correlation analysis'},
+            !collapsed&&span({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.5px',
+              textTransform:'uppercase',color:'var(--text2)',display:'flex',alignItems:'center',gap:6}},
+              '🔷',' Deep Dive'),
+            collapsed&&span({style:{fontSize:14}},'🔷'),
+            !collapsed&&span({style:{fontSize:10,color:'var(--text3)',
+              transform:'rotate('+(deepDiveOpen?180:0)+'deg)',transition:'transform .15s'}},'▾')),
+          deepDiveOpen&&div({key:'deepdive-items',style:{display:'flex',flexDirection:'column',gap:1}},...items),
+        ];
+      })()),
 
       // ── ADMIN (pulled out of the section loop above, see its own comment) ───────
       ...(renderSection('admin') || []),
