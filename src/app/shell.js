@@ -117,6 +117,29 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   },[]);
   const closeMobile=()=>{if(isMobile)setMobileOpen(false);};
 
+  // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
+  // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second
+  // search implementation. Two ways in, same "mf:" custom-event decoupling AppTopbar's hamburger
+  // already uses for mf:toggleNav: a global ⌘K/Ctrl+K (works even with the sidebar collapsed or,
+  // on mobile, closed) and a visible 🔍 button in AppTopbar (mf:openPalette) for touch users with
+  // no keyboard. Escape, the backdrop, or picking a result all close it.
+  const [paletteOpen,setPaletteOpen]=React.useState(false);
+  const paletteInputRef=React.useRef(null);
+  React.useEffect(()=>{
+    const openEvt=()=>setPaletteOpen(true);
+    window.addEventListener('mf:openPalette',openEvt);
+    return ()=>window.removeEventListener('mf:openPalette',openEvt);
+  },[]);
+  React.useEffect(()=>{
+    const onKey=(e)=>{
+      if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); setPaletteOpen(true); }
+      else if(e.key==='Escape'&&paletteOpen){ setPaletteOpen(false); }
+    };
+    window.addEventListener('keydown',onKey);
+    return ()=>window.removeEventListener('keydown',onKey);
+  },[paletteOpen]);
+  React.useEffect(()=>{ if(paletteOpen&&paletteInputRef.current) paletteInputRef.current.focus(); },[paletteOpen]);
+
   const w = isMobile ? 260 : (collapsed ? 48 : 220);
 
   const navItemSub = (label, icon, onClick, active, badge) =>
@@ -290,7 +313,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     return navIndex.filter(p => p.label.toLowerCase().includes(q) || p.groupLabel.toLowerCase().includes(q)).slice(0, 8);
   }, [navIndex, navQuery]);
   const goNavResult = (id) => {
-    onOpenModal(id); setNavQuery(''); setNavSearchOpen(false); closeMobile();
+    onOpenModal(id); setNavQuery(''); setNavSearchOpen(false); setPaletteOpen(false); closeMobile();
   };
   const navSearchBox = collapsed ? null : div({ ref: navSearchRef, style: { position: 'relative', padding: '8px 10px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0 } },
     inp({
@@ -330,7 +353,39 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     :{width:w,minWidth:w,height:'100%',background:'var(--surf)',
       borderRight:'.5px solid var(--bdr)',display:'flex',flexDirection:'column',
       transition:'width .2s ease',flexShrink:0,overflowX:'hidden',zIndex:10};
+  const paletteOverlay = paletteOpen && div({style:{position:'fixed',inset:0,zIndex:500,
+      background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-start',justifyContent:'center',
+      padding:'72px 16px'},onClick:()=>setPaletteOpen(false)},
+    div({style:{width:'100%',maxWidth:560,background:'var(--surf)',border:'.5px solid var(--bdr2)',
+      borderRadius:'var(--r)',boxShadow:'0 20px 60px rgba(0,0,0,.4)',overflow:'hidden'},
+      onClick:e=>e.stopPropagation()},
+      inp({ref:paletteInputRef,type:'text',autoComplete:'off',placeholder:'🔍 Search panels…',value:navQuery,
+        onChange:e=>{setNavQuery(e.target.value);},
+        onKeyDown:e=>{
+          if(e.key==='Enter'&&navResults[0]) goNavResult(navResults[0].id);
+          else if(e.key==='Escape') setPaletteOpen(false);
+        },
+        style:{width:'100%',boxSizing:'border-box',fontSize:14,padding:'14px 16px',border:'none',
+          borderBottom:'.5px solid var(--bdr)',background:'transparent',color:'var(--text)',outline:'none'}}),
+      div({style:{maxHeight:360,overflowY:'auto'}},
+        navQuery.trim()
+          ? (navResults.length
+              ? navResults.map(p=>div({key:p.id,onClick:()=>goNavResult(p.id),
+                  style:{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',cursor:'pointer'},
+                  onMouseEnter:e=>{e.currentTarget.style.background='var(--surf2)';},
+                  onMouseLeave:e=>{e.currentTarget.style.background='transparent';}},
+                  span({style:{fontSize:16,flexShrink:0}},p.icon),
+                  div({style:{flex:1,minWidth:0}},
+                    div({style:{fontSize:13,fontWeight:600,color:'var(--text)'}},p.label),
+                    div({style:{fontSize:10,color:'var(--text3)'}},p.groupLabel))))
+              : div({style:{padding:'16px',fontSize:12,color:'var(--text3)'}},'No matches.'))
+          : div({style:{padding:'16px',fontSize:11,color:'var(--text3)'}},'Type to search, or press Esc to close.')),
+      div({style:{padding:'8px 16px',borderTop:'.5px solid var(--bdr)',fontSize:10,color:'var(--text3)',
+        display:'flex',gap:10}},
+        span(null,'↵ open'),span(null,'Esc close'))));
+
   return h(React.Fragment,null,
+    paletteOverlay,
     isMobile&&mobileOpen&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:299},onClick:()=>setMobileOpen(false)}),
     div({style:sideStyle},
 
@@ -831,6 +886,13 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
     // Right: actions
     div({style:{display:'flex',alignItems:'center',gap:2,flexShrink:0}},
+      // Command palette (2026-10-07) — reaches the SAME search the sidebar already has, from
+      // anywhere, including mobile where the sidebar (and its inline search box) start closed.
+      // Dispatches mf:openPalette rather than holding palette state here, same decoupling
+      // AppTopbar's hamburger already uses for mf:toggleNav (AppSidebar owns both).
+      btn({className:'btn btn-sm',style:{fontSize:'9px',marginRight:4},
+        title:'Search panels (Ctrl/⌘K)',
+        onClick:()=>window.dispatchEvent(new CustomEvent('mf:openPalette'))},isMb?'🔍':'🔍 Search'),
       // SAGE quick-access — persistent so it's always one tap away, regardless of view
       btn({className:'btn btn-sm',
         style:{fontSize:'9px',color:'#a78bfa',borderColor:'rgba(167,139,250,.35)',
