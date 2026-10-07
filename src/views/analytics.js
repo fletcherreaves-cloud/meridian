@@ -224,6 +224,21 @@ const FOB_COMP=[
   {key:'pLFoodPct',  tgt:'tFOBTotal',   label:'Total Food Cost',     icon:'💰', threshold:0.005,  lower:true,  isTotal:true, qsrPage:'fob', qsrField:'P & L Food Cost %'},
 ];
 
+// FOB Focus View (owner-approved reskin pilot, 2026-10-07) — a plain-language first read of the
+// SAME FOB_COMP/rootCauseItems data the Classic table already computes, not a new diagnosis. One
+// generic "what to check next" hint per component, worded as a next step rather than a verdict —
+// this is deliberately NOT "it's portioning, not theft": the real data model has no portion-
+// variance line, so the hint only ever names what IS actually tracked (Variance Stat is a
+// register/cash-control line, not a food-prep one — worded that way on purpose).
+const FOB_ACTION_HINTS = {
+  compWaste:  'check completed-waste logging and prep discipline on this shift',
+  rawWaste:   'spot-check raw/prep waste logging and portioning with the AM',
+  condiment:  'check condiment dispense calibration and portion packet counts',
+  empMeal:    'verify employee/manager meal discounts are being rung correctly',
+  statVar:    'reconcile register stat variance with the GM — a cash-control line, not food prep',
+  unexplained:'cross-check waste-entry discipline and recent inventory counts — the catch-all for untracked loss',
+};
+
 function computeFOBMetrics(fobRows, allTargets, selLoc, selMonth){
   const monthRows=(fobRows||[]).filter(r=>{
     if(r.sales<=0) return false;
@@ -2816,6 +2831,12 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
   // now route to fob-analysis instead of their own page (see App.js's routePanel==='fob-eom'
   // effect and the modal==='fob-eom' dispatch branch).
   const [mode, setMode] = React.useState(initialMode==='eom' ? 'eom' : 'analysis');
+  // Focus View toggle (2026-10-07 reskin pilot) — a per-device UI preference only, same
+  // low-risk pattern as mf_anthropic_key etc. Reverting is flipping this back, never a deploy.
+  const [viewStyle, setViewStyle] = React.useState(()=>{
+    try { return localStorage.getItem('mf_fob_view_style')==='focus' ? 'focus' : 'classic'; } catch { return 'classic'; }
+  });
+  const setViewStylePersist = (v) => { setViewStyle(v); try { localStorage.setItem('mf_fob_view_style', v); } catch {} };
   const allLocs=React.useMemo(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&DEFAULT_TARGETS[s.loc]).map(s=>s.loc),[stores]);
   const okLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
   const flLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL'),[allLocs]);
@@ -2954,6 +2975,23 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
     items.sort((a,b)=>b.dollar-a.dollar);
     return items.slice(0,8);
   },[metrics,selLoc]);
+
+  // Focus View's single headline driver (2026-10-07 reskin pilot). rootCauseItems above only
+  // computes for selLoc==='all' (it ranks across locBreakdown); for a single store or an OK/FL
+  // market roll-up, computeFOBMetrics has ALREADY scoped metrics[c.key] to just that filter, so
+  // the component-level actual/target/diffDollar IS the store's (or market's) own number directly
+  // — no separate per-store derivation needed. Same ranking rule either way: biggest $ over target
+  // among actionable, lower-is-better, non-total components.
+  const topDriver=React.useMemo(()=>{
+    if(!metrics) return null;
+    if(selLoc==='all') return rootCauseItems[0]||null;
+    const candidates=FOB_COMP
+      .filter(c=>c.lower&&c.actionable!==false&&!c.sep&&!c.isTotal&&metrics[c.key]&&metrics[c.key].hasData)
+      .map(c=>({comp:c,diff:metrics[c.key].diffPct,dollar:metrics[c.key].diffDollar,pct:metrics[c.key].actual,tgt:metrics[c.key].target}))
+      .filter(x=>x.diff!=null&&x.diff>x.comp.threshold&&x.dollar>0)
+      .sort((a,b)=>b.dollar-a.dollar);
+    return candidates[0]||null;
+  },[metrics,selLoc,rootCauseItems]);
 
   // Dispatch #129 — same lift as rootCauseItems above, for the Waste-Entry Discipline list.
   const worstDiscipline=React.useMemo(()=>{
@@ -3202,6 +3240,23 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
         color:mode===t.id?'var(--accent)':'var(--text2)'}},
       span(null,t.icon+' '+t.label))));
 
+  // Focus View toggle (2026-10-07 reskin pilot) — same pill shape as modeTabBar above, own
+  // row so it reads as a separate axis (view density) rather than a third mode. Classic/Focus
+  // render the SAME underlying metrics/rootCauseItems/topDriver; nothing here changes what the
+  // panel computes, only how one reading of it is presented.
+  const VIEW_STYLES = [
+    {id:'classic', label:'Classic', icon:'📋'},
+    {id:'focus',   label:'Focus',   icon:'✨'},
+  ];
+  const viewStyleBar = mode==='analysis' ? div({style:{display:'flex',gap:4}},
+    ...VIEW_STYLES.map(v=>btn({key:v.id, onClick:()=>setViewStylePersist(v.id),
+      style:{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:6,cursor:'pointer',
+        fontSize:'11px',fontWeight:viewStyle===v.id?700:400,
+        border:'1px solid '+(viewStyle===v.id?'var(--gold)':'var(--bdr)'),
+        background:viewStyle===v.id?'rgba(245,188,0,.14)':'transparent',
+        color:viewStyle===v.id?'var(--gold)':'var(--text2)'}},
+      span(null,v.icon+' '+v.label)))) : null;
+
   const analysisLoading = !ds||qsrFobRows===null;
   const analysisEmpty = !analysisLoading&&!(fobRowsEff||[]).length;
   // analysisReady gates the header's Period/Location/Export controls (and cloud-status pills) —
@@ -3301,6 +3356,56 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
       )
     ); // ── end scroll region (#116) ──
 
+  // ── Focus View body (2026-10-07 reskin pilot) ───────────────────────────────────────────
+  // Same loading/empty gate as Classic (reuses analysisBody's own computed value for that case
+  // rather than a second copy of the gate markup) — everything below is the SAME metrics/
+  // rootCauseItems/topDriver Classic already computes, just read top-to-bottom instead of as a
+  // dense table. No new data, no new diagnosis, no trend history (that needs a real multi-month
+  // series this panel doesn't compute yet — left for a later pass rather than faked here).
+  const scopeLabel = selLoc==='all'?'All Locations':selLoc==='ok'?'MCDOK — OK':selLoc==='fl'?'Emerald Arches — FL':sNameC(selLoc);
+  const focusBody = (analysisLoading||analysisEmpty) ? analysisBody : (()=>{
+    const fob = metrics && metrics.fobPct;
+    const driver = topDriver;
+    const checklist = FOB_COMP.filter(c=>c.lower&&!c.sep&&!c.isTotal&&metrics[c.key]);
+    return div({style:{flex:1,minHeight:0,overflowY:'auto',padding:'18px 20px 40px',display:'flex',flexDirection:'column',gap:16}},
+
+      // ── The call ──────────────────────────────────────────────────
+      div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
+        borderLeft:'4px solid '+(driver?'var(--crit)':'#10b981'),borderRadius:'var(--r)',padding:'16px 18px'}},
+        div({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.5px',textTransform:'uppercase',
+          color:driver?'var(--crit)':'#10b981',marginBottom:6}},driver?'⚠️ The call':'✓ The call'),
+        div({style:{fontSize:'14px',fontWeight:600,lineHeight:1.5,color:'var(--text)'}},
+          driver
+            ? scopeLabel+"'s "+driver.comp.label+' is '+pFmt(driver.diff)+' over target'+(driver.loc&&selLoc==='all'?' at '+sName(driver.loc):'')+' — '+(FOB_ACTION_HINTS[driver.comp.key]||'worth a look this shift')+'.'
+            : 'Every controllable FOB line is within target for '+scopeLabel+', '+monthLabel(selMonth)+'.'),
+        fob&&fob.actual!=null&&div({style:{display:'flex',alignItems:'baseline',gap:12,marginTop:12,flexWrap:'wrap'}},
+          span({style:{fontFamily:'var(--mono)',fontWeight:700,fontSize:'26px',color:fCol(fob.diffPct,true)}},pFmtA(fob.actual)),
+          span({style:{fontSize:'11px',color:'var(--text3)'}},'vs '+pFmtA(fob.target)+' target · '+monthLabel(selMonth)),
+          driver&&span({style:{fontSize:'11px',fontWeight:600,color:'var(--crit)'}},'· '+dFmt(driver.dollar)+' over'))),
+
+      // ── Why — read top to bottom ─────────────────────────────────
+      div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'16px 18px'}},
+        div({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.5px',textTransform:'uppercase',color:'var(--text3)',marginBottom:10}},'Why — read top to bottom'),
+        div({style:{display:'flex',flexDirection:'column',gap:8}},
+          ...checklist.map(c=>{
+            const m=metrics[c.key];
+            const info=statusInfo(c,metrics);
+            return div({key:c.key,style:{display:'flex',alignItems:'center',gap:10}},
+              statusBadge(c,metrics),
+              div({style:{flex:1,fontSize:'12.5px',color:'var(--text)'}},c.icon+' '+c.label),
+              div({style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--text3)'}},
+                m&&m.actual!=null?pFmtA(m.actual)+' vs '+pFmtA(m.target)+' tgt':'—'));
+          })),
+        driver&&div({style:{marginTop:14,background:'var(--surf3)',borderRadius:'var(--r)',padding:'12px 14px'}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--text)',textTransform:'uppercase',letterSpacing:'.4px'}},'Next step'),
+          div({style:{fontSize:'12.5px',marginTop:4,lineHeight:1.5,color:'var(--text2)'}},
+            'Biggest driver: '+driver.comp.label+' ('+dFmt(driver.dollar)+' over target). '+(FOB_ACTION_HINTS[driver.comp.key]||'')+'.'))),
+
+      div({style:{fontSize:'9.5px',color:'var(--text3)'}},
+        '✨ Focus View is a pilot reading of the same data as Classic — switch back any time with the toggle above. No trend history yet; that needs a bit more work.')
+    );
+  })();
+
   // Dispatch #188 — RoutePanelShell is now the SOLE shell (title/back button/close), replacing
   // the panel's former hand-rolled position:fixed overlay + its own "🥗 FOB Analysis" title bar
   // + its own "✕" close button. Those duplicated the RoutePanelShell App.js already wraps this
@@ -3316,6 +3421,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
     onBack: onClose,
     headerExtra: div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
       modeTabBar,
+      viewStyleBar,
       analysisReady&&fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
         style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
       // Notes 60 bug #1. This indicator already existed but was an 8px pill whose
@@ -3376,7 +3482,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
   },
     mode==='eom'
       ? h(React.Suspense,{fallback:h(_fobEomFallback)}, h(FOBEOMPanelLazy,{stores,ds,settings,embedded:true}))
-      : analysisBody
+      : (viewStyle==='focus' ? focusBody : analysisBody)
   );
 }
 
