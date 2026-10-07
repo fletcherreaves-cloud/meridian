@@ -100,6 +100,12 @@ const DEF_SETTINGS={
   districtName:'McDOK | Emerald Arches',districtNameShort:'McDOK',userName:'',
   theme:'command',     // 'golden'|'command'|'dualbrand'|'refined'
   colorMode:'light',   // 'light'|'dark'
+  // Nav regroup pilot (2026-10-07, owner-approved, ships active by default): 'v2' wraps the
+  // existing Test Kitchen + optional-panel items (already kind:'test-kitchen'/'optional' in
+  // panel-registry.js -- nothing reclassified) in one collapsible "Deep Dive" group instead of
+  // two separately-rendered blocks. 'classic' is the pre-2026-10-07 flat rendering, kept as a
+  // one-setting revert (Settings -> Appearance) if the grouping doesn't land well live.
+  navStyle:'v2',        // 'v2'|'classic'
   weekStartDay:3, // 0=Sun 1=Mon 3=Wed (McDonald's standard)
   lyOutlierThreshold:30, // % deviation from DOW trimmed mean to auto-dampen LY value
   mode:'Projection',cascade:false,plusUp:0,tolerance:5,weeksBack:6,

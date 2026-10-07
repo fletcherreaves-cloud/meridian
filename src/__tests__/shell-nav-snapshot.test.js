@@ -32,7 +32,12 @@ const h = React.createElement;
 function renderNavTexts(permFn) {
   const props = {
     view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
-    settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+    // navStyle:'classic' (2026-10-07 nav regroup pilot) -- this whole file's purpose predates
+    // and is unrelated to the new grouping; it asserts the flat registry-driven render (Test
+    // Kitchen/permission gates/promotion mechanics), which v2's default would collapse behind a
+    // closed "🔷 Deep Dive" toggle and hide from a flat text dump. v2's own behavior has its own
+    // dedicated test file (nav-regroup-v2.test.js).
+    settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
     onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: permFn || (() => true),
     betaMode: false, panelVis: {},
   };
@@ -420,7 +425,7 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // dimensions Part A's own verification bar used, kept for continuity.
     const base = {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
-      settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+      settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
       onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
     };
     const dimensions = {
@@ -468,7 +473,7 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
-      settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+      settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
       onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
       betaMode: true, panelVis: {},
     }));

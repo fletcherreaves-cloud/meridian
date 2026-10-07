@@ -28,7 +28,12 @@ const h = React.createElement;
 function renderSidebar(selStore) {
   const props = {
     view: 'command', setView: () => {}, selStore, stores: [], ds: {},
-    settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+    // navStyle:'classic' (2026-10-07 nav regroup pilot) -- Forecast Audit is a kind:'test-kitchen'
+    // panel; under the new default ('v2') it renders inside a collapsed "🔷 Deep Dive" group, so
+    // its static markup isn't in the flat HTML this test's own navItemTag() scans. This test is
+    // about the disabledWhen->title wiring, not the grouping, so it opts into the flat render
+    // that wiring has always been checked against.
+    settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
     onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
     betaMode: false, panelVis: {},
   };
