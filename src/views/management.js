@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups } from '../constants.js';
+import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups, latestEffective } from '../constants.js';
 import { logOrgAssignmentChange } from '../lib/supabase.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -278,6 +278,85 @@ function SupervisorAssignmentsEditor({ S, onUpdate }) {
         btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
+// ── GM Assignments editor (2026-10-06 follow-up to Supervisor Assignments above) ─────────────
+// Identical effective-dated model and identical audit trail (logOrgAssignmentChange, same
+// org_assignment_audit table, assignment_type:'gm'), one store per row (a GM is 1:1 with a
+// store, unlike a Supervisor's multi-store patch) with an optional email field. Reuses
+// constants.js's shared latestEffective() tie-break primitive directly rather than importing
+// morning-brief.js's whoIsGM() wrapper -- management.js is itself statically imported into
+// App.js (Settings), and morning-brief.js is a lazyPanel() target, so a static import here
+// would pull its whole STORE_STAFF/CONTACTS table into the eager entry chunk (the exact trap
+// App.js's own contact_registry sync comment warns about). The ONE place this component needs
+// morning-brief.js at all -- seeding the very first time, before anyone has saved a real
+// gmAssignments row -- uses a dynamic import instead, same technique App.js's live-sync
+// useEffect and its contact_registry sync already use.
+function GmAssignmentsEditor({ S, onUpdate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [seed, setSeed] = useState(null);
+  useEffect(() => {
+    if (S.gmAssignments && S.gmAssignments.length) return;
+    import('../features/morning-brief.js').then(m => setSeed(m.seedGmAssignmentsFromStaff(m.STORE_STAFF))).catch(() => {});
+  }, [S.gmAssignments]);
+  const asg = (S.gmAssignments && S.gmAssignments.length) ? S.gmAssignments : (seed || []);
+  const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), gmAssignments: next });
+  const current = {};
+  for (const loc of [...new Set(asg.map(a => a.loc))]) {
+    const rec = latestEffective(loc, today, asg, a => ({ gm: a.gm, gmEmail: a.gmEmail || '' }));
+    if (rec) current[loc] = rec;
+  }
+  const [gm, setGm] = useState('');
+  const [gmEmail, setGmEmail] = useState('');
+  const [store, setStore] = useState('');
+  const [eff, setEff] = useState(today);
+
+  const apply = () => {
+    const name = gm.trim(); if (!name) { alert('GM name required'); return; }
+    const loc = String(parseInt(store.trim(), 10)); if (!loc || loc === 'NaN') { alert('Enter a store ID'); return; }
+    const row = { loc, gm: name, gmEmail: gmEmail.trim(), start: eff || '' };
+    save([...asg, row]);
+    logOrgAssignmentChange('gm', loc, 'add', null, row).catch(() => {});
+    setGm(''); setGmEmail(''); setStore('');
+  };
+  const editStart = (idx, val) => {
+    const before = asg[idx];
+    save(asg.map((a, i) => i === idx ? { ...a, start: val } : a));
+    logOrgAssignmentChange('gm', before.loc, 'edit', before, { ...before, start: val }).catch(() => {});
+  };
+  const remove = (idx) => {
+    const removed = asg[idx];
+    save(asg.filter((_, i) => i !== idx));
+    logOrgAssignmentChange('gm', removed.loc, 'remove', removed, null).catch(() => {});
+  };
+  const rows = asg.map((a, i) => ({ ...a, _i: i })).sort((a, b) => a.loc.localeCompare(b.loc) || (a.start || '').localeCompare(b.start || ''));
+
+  return div({ className: 'set-sec' },
+    div({ className: 'set-sec-t' }, 'GM Assignments (effective-dated)'),
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'Same effective-dated model as Supervisor Assignments: a store\'s GM on any date = the assignment with the latest effective date on/before it. Reassign by adding a row with the effective date — no need to remove the old one, the newer date wins. Blank date = since always. Every add/edit/removal here is also logged to the same permanent audit trail — even a ✕ removal stays recoverable.'),
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Current — as of today'),
+    Object.keys(current).length
+      ? Object.entries(current).sort((a, b) => (STORE_NAMES[a[0]] || a[0]).localeCompare(STORE_NAMES[b[0]] || b[0])).map(([loc, rec]) => div({ key: loc, style: { fontSize: 11.5, marginBottom: 2 } },
+          span({ style: { fontWeight: 600 } }, (STORE_NAMES[loc] || loc) + ': '),
+          span({ style: { color: 'var(--text3)' } }, rec.gm + (rec.gmEmail ? ' (' + rec.gmEmail + ')' : ''))))
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, '—'),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assign / reassign a store'),
+    div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      inp({ className: 'set-inp', placeholder: 'Store ID', value: store, onChange: e => setStore(e.target.value), style: { flex: '0 0 110px' } }),
+      inp({ className: 'set-inp', placeholder: 'GM name', value: gm, onChange: e => setGm(e.target.value), style: { flex: '1 1 150px' } }),
+      inp({ className: 'set-inp', placeholder: 'GM email (optional)', value: gmEmail, onChange: e => setGmEmail(e.target.value), style: { flex: '1 1 170px' } }),
+      inp({ className: 'set-inp', type: 'date', value: eff, onChange: e => setEff(e.target.value), title: 'Effective date', style: { flex: '0 0 140px' } }),
+      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assignment history (' + asg.length + ')'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' } },
+      rows.map(r => div({ key: r._i, style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5 } },
+        span({ style: { minWidth: 160, color: 'var(--text3)' } }, r.loc + ' — ' + (STORE_NAMES[r.loc] || r.loc)),
+        span({ style: { minWidth: 140, fontWeight: 600 } }, r.gm),
+        inp({ className: 'set-inp', type: 'date', defaultValue: r.start || '', key: 'd' + r._i + (r.start || ''), onBlur: e => editStart(r._i, e.target.value), title: 'Effective date (blank = since always)', style: { width: 140 } }),
+        btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
+}
+
 // Generic name→store-list group editor — mirrors the 'operators' section's add/rename/remove-row
 // UI + "Sync from defaults" reset exactly (see activeSection==='operators' below), parameterized
 // by settings field so DOs/OMs (and any future tier) reuse the same three UI states instead of a
@@ -332,7 +411,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         div({style:{width:140,flexShrink:0,borderRight:'.5px solid var(--bdr)',
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
-              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['oms','⚙ OMs'],
+              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['gms','👔 GMs'],['oms','⚙ OMs'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
               ...(onOpenAdmin?[['users','👥 Users']]:[]),
               // ⚠️ CORRECTED (RBAC audit, 2026-09-16): 'developer' is not a real profiles.role
@@ -571,6 +650,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         activeSection==='dos'&&h(GroupsEditor,{S,onUpdate,field:'doGroups',title:'District Manager (DO) Groups',
           note:'Edit DOs and their store numbers. A name may also appear in Operators or Patches — dual roles (e.g. a DO who is also a Supervisor for a subset) are expected, not a bug.'}),
         activeSection==='supervisors'&&h(SupervisorAssignmentsEditor,{S,onUpdate}),
+        activeSection==='gms'&&h(GmAssignmentsEditor,{S,onUpdate}),
         activeSection==='oms'&&h(GroupsEditor,{S,onUpdate,field:'omGroups',title:'Operations Manager (OM) Groups',
           note:'Scaffold — empty by default. Add OMs and their store numbers here whenever ready; no code change needed.'}),
         activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),

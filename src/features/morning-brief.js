@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups, getStoreOrg } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups, getStoreOrg, latestEffective } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
@@ -1167,7 +1167,53 @@ const STORE_STAFF={
   '43701':{gm:'Shannon Hardin',     gmEmail:'Shannon@emeraldarches.com'},
 };
 
-
+// ── GM assignments: effective-dated timeline (2026-10-06 follow-up to the Supervisor one) ────
+// STORE_STAFF above is a flat "current" snapshot -- swapping a GM (like Tishomingo's
+// Zukarr Eaves -> Sabrina Turner) just overwrote the name with no record of who held it before
+// or when the change took effect. This mirrors constants.js's orgAssignments()/whoRan() pattern
+// for Supervisor exactly, reusing the SAME "latest start ≤ date wins" primitive
+// (latestEffective(), constants.js) rather than a second copy of that tie-break loop: a row is
+// { loc, gm, gmEmail, start }, '' start = since-always, a later row's start implicitly ends the
+// prior one. The flat STORE_STAFF table is the seed/default (same role DEF_SETTINGS.
+// supervisorGroups plays for orgAssignments); the live timeline lives in app settings
+// (settings.gmAssignments, org_config 'app_settings', same blob orgAssignments already lives
+// in) and management.js's GmAssignmentsEditor writes to it + logs to org_assignment_audit
+// (assignment_type:'gm') exactly like SupervisorAssignmentsEditor does.
+function seedGmAssignmentsFromStaff(staff) {
+  const out = [];
+  for (const [loc, s] of Object.entries(staff || {})) {
+    if (s?.gm) out.push({ loc: String(parseInt(loc, 10)), gm: s.gm, gmEmail: s.gmEmail || '', start: '' });
+  }
+  return out;
+}
+let _liveGmAssignments = null;
+// Sets the live timeline AND mutates STORE_STAFF in place to today's resolved gm/gmEmail per
+// loc -- the SAME "sync a live singleton onto the existing flat table" technique
+// setLiveStoreStaff() above already uses for the (currently unused, future-tenant)
+// contact_registry overlay, so every existing STORE_STAFF[loc].gm/.gmEmail reader (pipeline.js,
+// getReportRecipients above, etc.) sees the current holder with no call-site changes, while
+// whoIsGM()/gmAssignments() stay available for anyone who needs the FULL history or an
+// as-of-a-past-date answer.
+function setLiveGmAssignments(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  _liveGmAssignments = list;
+  const today = new Date().toISOString().slice(0, 10);
+  const current = {};
+  for (const loc of [...new Set(list.map(a => String(parseInt(a.loc, 10))))]) {
+    const rec = whoIsGM(loc, today, list);
+    if (rec) current[loc] = { ...(STORE_STAFF[loc] || {}), gm: rec.gm, gmEmail: rec.gmEmail || '' };
+  }
+  if (Object.keys(current).length) Object.assign(STORE_STAFF, current);
+}
+function gmAssignments() {
+  if (_liveGmAssignments && _liveGmAssignments.length) return _liveGmAssignments;
+  return seedGmAssignmentsFromStaff(STORE_STAFF);
+}
+// GM (+ email) of a store as-of a date -- same precedence rule as constants.js's whoRan(),
+// via the shared latestEffective() primitive. Returns {gm, gmEmail} or null.
+function whoIsGM(loc, date, list) {
+  return latestEffective(loc, date, list || gmAssignments(), a => ({ gm: a.gm, gmEmail: a.gmEmail || '' }));
+}
 
 
 // Store coordinates for live weather forecasts (Open-Meteo API)
@@ -1192,4 +1238,4 @@ function storeDistance(locA, locB) {
 // Fixed 2026-09-03.
 function regionalRadius(loc){return getStoreOrg(loc)==='emerald'?80:150;}
 
-export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts };
+export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM };
