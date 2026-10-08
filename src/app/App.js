@@ -3511,7 +3511,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
+      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,darRows,
         onOpenStore:s=>{goStore(s);},
         onCoachingSaved:refreshCoachingCycles,
         onOpenProjections:()=>goRoute('proj'),
