@@ -7,7 +7,7 @@
 //      overlapping chunks are the fix, same pattern qsrsoft-forms-completion-pull.mjs already
 //      uses for this host family.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { pullWithEscalation, fetchWindow, chunkDays } from '../../scripts/qsrsoft-forms-reviews-pull.mjs';
+import { pullWithEscalation, fetchWindow, chunkDays, fetchResponseContent } from '../../scripts/qsrsoft-forms-reviews-pull.mjs';
 
 describe('chunkDays -- quirk 1: never produce a single-day-wide chunk', () => {
   it('a range longer than one chunk size splits without leaving a 1-day remainder', () => {
@@ -62,6 +62,35 @@ describe('fetchWindow response parsing', () => {
   it('throws AUTH_FAILED on 401/403 so the escalation ladder can catch it', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}), text: async () => '' }));
     await expect(fetchWindow('faketoken', '2026-10-07', '2026-10-09', null)).rejects.toThrow('AUTH_FAILED:401');
+  });
+});
+
+// fetchResponseContent -- the separate, heavier per-occurrence call for score/content. See
+// memory/finding-qsrsoft-review-forms-schedules-endpoint-2026-10-08.md and forms-reviews.js's
+// header for the measurement this is built from.
+describe('fetchResponseContent', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('returns the questions array on success', async () => {
+    const questions = [{ id: 'q1', title: 'Q1', hasOptions: true, options: [{ title: 'Good', points: 1 }], answer: 0, pointsPossible: 1, pointsReceived: 1 }];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ questions }), text: async () => JSON.stringify({ questions }) }));
+    const result = await fetchResponseContent('faketoken', 'form1', 'user1', '2026-10-08T10:00:00Z', null);
+    expect(result).toEqual(questions);
+  });
+
+  // Measured live: Crew Review (and potentially others in the future) returns 403 for a
+  // confidential response this account is not authorized to view. This is an EXPECTED, not
+  // exceptional, outcome -- returns null rather than throwing, so one denied occurrence doesn't
+  // abort the whole pull chunk.
+  it('returns null (not throws) on a 403 confidential-denial', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({ message: 'You are not authorized to view this confidential response' }), text: async () => '{"message":"..."}' }));
+    const result = await fetchResponseContent('faketoken', 'form1', 'user1', '2026-10-08T10:00:00Z', null);
+    expect(result).toBeNull();
+  });
+
+  it('throws AUTH_FAILED on a real 401, distinct from the expected 403', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}), text: async () => '' }));
+    await expect(fetchResponseContent('faketoken', 'form1', 'user1', '2026-10-08T10:00:00Z', null)).rejects.toThrow('AUTH_FAILED:401');
   });
 });
 

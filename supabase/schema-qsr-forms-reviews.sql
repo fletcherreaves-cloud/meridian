@@ -35,6 +35,34 @@
 -- plaintext name per sub-session) is not stored at all; reviewer_user_id
 -- (response.userId, a stable QSRSoft UUID) is the person key this table uses.
 --
+-- ── score_* / content (added same pass, measured live 2026-10-08) ──────────
+-- The dashboard's displayed Score is NOT completion_ratio -- measured side by
+-- side on real responses: two Maintenance Reviews both ~97% answered-by-COUNT
+-- scored 29% and 91% by POINTS. score_pct = Σ pointsReceived / Σ
+-- pointsPossible over a response's scored questions (0-100 scale by the
+-- forms' own design), fetched from a SEPARATE, heavier endpoint
+-- (`forms/responses/questions`) than the one that populates the rest of this
+-- row -- see src/engine/forms-reviews.js's normalizeFormsReviewContent() and
+-- its header for the full capture.
+--
+-- 🔴 PII: content is an ALLOW-LIST, not a denylist, and that is deliberate.
+-- These forms embed at least one free-text question ("Current Wage") whose
+-- answer is the employee's literal hourly pay rate -- the same
+-- pii_payrate/hourlyPayRate CLAUDE.md's standing PII rules already flag as
+-- sensitive, confirmed here reachable through a form response, not just
+-- employeeRoster/storePeoplePunches. normalizeFormsReviewContent() stores
+-- ONLY structured rating/choice questions (hasOptions=true, resolved to the
+-- selected option's label) -- every free-text/date/other question is dropped
+-- unconditionally, regardless of its title. Never widen this to "everything
+-- except known-bad titles" -- a structural allow-list does not need to
+-- anticipate every future PII-risk question wording; a title denylist would.
+--
+-- 🔴 Crew Review's score/content is NOT reachable by the pulling account --
+-- measured 11/11 sampled responses denied (403 "not authorized to view this
+-- confidential response"), while the SAME call succeeded for the other 3
+-- forms. score_pct/content stay null/'[]' for Crew Review rows by design,
+-- not a pull bug -- see CONTENT_ACCESSIBLE_FORM_IDS in forms-reviews.js.
+--
 -- loc is PADDED (matches every other QSRSoft-sourced table in this repo --
 -- see schema-product-mix.sql's header for why this repo standardized on
 -- padded storage).
@@ -62,6 +90,11 @@ create table if not exists public.qsr_forms_reviews (
   is_confidential    boolean     not null default false,
   shared_with        jsonb       not null default '[]',   -- userIds with view access
   is_deleted         boolean     not null default false,
+  score_points_possible numeric,                          -- null until content fetched; null forever for Crew Review, see header
+  score_points_received numeric,
+  score_pct          numeric,                             -- the REAL dashboard Score -- see header; NOT completion_ratio
+  content            jsonb       not null default '[]',   -- allow-listed rating questions only -- see header's PII note
+  content_available  boolean     not null default false,  -- true once a successful content/score fetch has landed for this row
   tenant_id          uuid        not null default '00000000-0000-0000-0000-000000000001',
   updated_at         timestamptz not null default now(),
   primary key (tenant_id, loc, form_id, started_at)

@@ -33,6 +33,20 @@
 // completion_ratio (answered/total) is stored as a raw fact; this script does not compute or
 // store any derived "is this done" boolean.
 //
+// 🎯 SCORE + CONTENT (added same pass, measured live 2026-10-08) -- a SEPARATE, heavier GET per
+// occurrence:
+//   GET https://forms.home.myqsrsoft.com/api/forms/responses/questions
+//       ?orgId=...&formId=...&userId=...&startedAt=...
+// Returns the full per-question answer + pointsReceived for ONE occurrence. The real dashboard
+// Score is points-weighted (Σ pointsReceived / Σ pointsPossible), NOT completion_ratio -- see
+// src/engine/forms-reviews.js's normalizeFormsReviewContent() and its header for the full
+// capture, including the PII allow-list rationale (these forms embed a free-text "Current Wage"
+// question; only structured rating questions are ever stored).
+// 🔴 Crew Review is skipped entirely for this call -- measured 11/11 sampled responses 403
+// "not authorized to view this confidential response" for the pulling account.
+// CONTENT_ACCESSIBLE_FORM_IDS (forms-reviews.js) encodes this so the pull doesn't spend an API
+// call per Crew Review occurrence on a request known to always fail.
+//
 // Auth: getFreshToken()-equivalent (inlined below, same Cognito USER_PASSWORD_AUTH shape as
 // scripts/lib/qsrsoft-auth.mjs) with a Playwright fallback, same two-path pattern every
 // sibling QSRSoft pull uses. QSRSOFT_USERNAME/PASSWORD serve both paths.
@@ -56,7 +70,7 @@ import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
-import { normalizeFormsReviewRows, REVIEW_FORMS } from '../src/engine/forms-reviews.js';
+import { normalizeFormsReviewRows, normalizeFormsReviewContent, REVIEW_FORMS, CONTENT_ACCESSIBLE_FORM_IDS } from '../src/engine/forms-reviews.js';
 
 const BASE = 'https://forms.home.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -126,16 +140,73 @@ export async function fetchWindow(token, startDay, endDay, evalPage) {
   return Array.isArray(parsed) ? parsed : (parsed?.results || parsed?.result || []);
 }
 
-async function upsertRows(rawRows) {
+function responseQuestionsUrl(formId, userId, startedAt) {
+  return `${BASE}/api/forms/responses/questions?orgId=${ORG_ID}&formId=${formId}`
+    + `&userId=${userId}&startedAt=${encodeURIComponent(startedAt)}`;
+}
+
+// Returns null (not throws) on the measured 403 "not authorized to view this confidential
+// response" -- an EXPECTED outcome for some occurrences (see CONTENT_ACCESSIBLE_FORM_IDS's own
+// header), not a transient failure worth retrying or failing the pull over. Throws on anything
+// else (a real network/auth problem), same as fetchWindow.
+export async function fetchResponseContent(token, formId, userId, startedAt, evalPage) {
+  const url = responseQuestionsUrl(formId, userId, startedAt);
+  if (evalPage) {
+    const res = await evalPage.evaluate(async ({ url, token }) => {
+      try {
+        const r = await fetch(url, { method: 'GET', headers: { 'X-Auth-Token': token, 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' } });
+        if (r.status === 403) return { denied: true };
+        if (!r.ok) return { error: `HTTP ${r.status}` };
+        return { body: await r.json() };
+      } catch (e) { return { error: e.message }; }
+    }, { url, token });
+    if (res.denied) return null;
+    if (res.error) throw new Error(res.error);
+    return res.body?.questions || [];
+  }
+  const resp = await fetch(url, { method: 'GET', headers: HDRS(token) });
+  if (resp.status === 403) return null;
+  if (resp.status === 401) throw new Error('AUTH_FAILED:401');
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  const parsed = await resp.json();
+  return parsed?.questions || [];
+}
+
+async function upsertRows(rawRows, token, evalPage) {
   const mapped = normalizeFormsReviewRows(rawRows).map(r => ({
     loc: r.loc, form_id: r.formId, started_at: r.startedAt, form_title: r.formTitle,
     total_questions: r.totalQuestions, answered_questions: r.answeredQuestions,
     completion_ratio: r.completionRatio, reviewer_user_id: r.reviewerUserId,
     reviewed_with: r.reviewedWith, is_confidential: r.isConfidential,
     shared_with: r.sharedWith, is_deleted: r.isDeleted,
+    score_points_possible: null, score_points_received: null, score_pct: null,
+    content: [], content_available: false,
     updated_at: new Date().toISOString(),
   }));
   if (DEBUG) console.log(`[forms-reviews] ${rawRows.length} raw entries -> ${mapped.length} target-form occurrence(s)`);
+
+  // Content/score pass -- one extra GET per occurrence whose form is known-accessible (see
+  // CONTENT_ACCESSIBLE_FORM_IDS's header). Paced with a short delay; a failure on any single
+  // occurrence is logged and leaves that row's content_available=false rather than aborting the
+  // whole chunk -- the metadata half of the row (already mapped above) is still worth saving.
+  for (const row of mapped) {
+    if (!CONTENT_ACCESSIBLE_FORM_IDS.has(row.form_id) || !row.reviewer_user_id) continue;
+    try {
+      const questions = await fetchResponseContent(token, row.form_id, row.reviewer_user_id, row.started_at, evalPage);
+      if (questions) {
+        const c = normalizeFormsReviewContent(questions);
+        row.score_points_possible = c.scorePointsPossible;
+        row.score_points_received = c.scorePointsReceived;
+        row.score_pct = c.scorePct;
+        row.content = c.content;
+        row.content_available = true;
+      }
+      await new Promise(r => setTimeout(r, 150));
+    } catch (e) {
+      if (String(e.message).startsWith('AUTH_FAILED')) throw e; // let the caller's retry/escalation see this
+      if (DEBUG) console.log(`[forms-reviews] content fetch failed for ${row.form_id}/${row.started_at}: ${e.message}`);
+    }
+  }
 
   const CHUNK = 500;
   let saved = 0;
@@ -245,7 +316,7 @@ async function viaPlaywright(chunks, tracker) {
     for (const c of chunks) {
       try {
         const rows = await fetchWindow(token, c.start, c.end, page);
-        const { saved, locs } = await upsertRows(rows);
+        const { saved, locs } = await upsertRows(rows, token, page);
         for (const l of locs) coveredLocs.add(l);
         console.log(`[forms-reviews] ${c.start}..${c.end}: ${rows.length} raw entries -> ${saved} saved`);
         grand += saved;
@@ -274,7 +345,7 @@ async function runDirect(chunks, tracker) {
           rows = await fetchWindow(token, c.start, c.end, null);
         } else throw e;
       }
-      const { saved, locs } = await upsertRows(rows);
+      const { saved, locs } = await upsertRows(rows, token, null);
       for (const l of locs) coveredLocs.add(l);
       console.log(`[forms-reviews] ${c.start}..${c.end}: ${rows.length} raw entries -> ${saved} saved`);
       grand += saved;

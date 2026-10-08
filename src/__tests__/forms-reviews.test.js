@@ -4,7 +4,7 @@
 // memory/finding-qsrsoft-review-forms-schedules-endpoint-2026-10-08.md for the live capture
 // this is built from.
 import { describe, it, expect } from 'vitest';
-import { normalizeFormsReviewRow, normalizeFormsReviewRows, REVIEW_FORMS } from '../engine/forms-reviews.js';
+import { normalizeFormsReviewRow, normalizeFormsReviewRows, normalizeFormsReviewContent, REVIEW_FORMS, CONTENT_ACCESSIBLE_FORM_IDS } from '../engine/forms-reviews.js';
 
 const CREW_REVIEW_ID = '8c430399-a218-4b1f-aa85-89aca8cc441d';
 
@@ -99,5 +99,95 @@ describe('normalizeFormsReviewRows', () => {
     expect(rows).toHaveLength(1);
     expect(normalizeFormsReviewRows(null)).toEqual([]);
     expect(normalizeFormsReviewRows(undefined)).toEqual([]);
+  });
+});
+
+// Real question shapes from a live `forms/responses/questions` capture (2026-10-08) -- see this
+// file's own header comment (and forms-reviews.js's) for the full measurement: `answer` is a
+// 0-based index into `options[]`, NOT the points value directly; the real dashboard Score is
+// points-weighted, not completion_ratio; "Current Wage" is a real PII land mine that must never
+// surface in `content`.
+const ratingQuestion = (over = {}) => ({
+  id: '0dc6b037-7bf6-4c7c-9330-0eb1aed5beb4',
+  title: 'Sets the example by following procedures on all crew stations.',
+  type: 'select', hasOptions: true, pointsPossible: 3,
+  options: [
+    { title: 'Outstanding', points: 3 }, { title: 'Excellent', points: 2 },
+    { title: 'Good', points: 1 }, { title: 'Needs Improvement', points: 0 },
+  ],
+  answer: 1, pointsReceived: 2, // index 1 = "Excellent" (2 points) -- the real live pairing
+  ...over,
+});
+const wageQuestion = (over = {}) => ({
+  id: '0a1dfe93-b585-4a8e-a9c1-2a87c743db21', title: 'Current Wage',
+  type: 'textShort', hasOptions: false, pointsPossible: 0, options: [],
+  answer: '17.00', ...over,
+});
+const tallyQuestion = () => ({
+  id: '1752c1f8-ad33-48c4-b74b-f9ee6350fa49', title: 'TOTAL POINTS',
+  type: 'tally', hasOptions: false, pointsPossible: 0, options: [], answer: null,
+});
+
+describe('normalizeFormsReviewContent -- the real points-weighted score', () => {
+  it('resolves answer (an option INDEX) to its label, and sums points for a scored question', () => {
+    const { content, scorePointsPossible, scorePointsReceived, scorePct } = normalizeFormsReviewContent([ratingQuestion()]);
+    expect(content).toEqual([{
+      questionId: '0dc6b037-7bf6-4c7c-9330-0eb1aed5beb4',
+      title: 'Sets the example by following procedures on all crew stations.',
+      answerLabel: 'Excellent',
+      pointsPossible: 3, pointsReceived: 2,
+    }]);
+    expect(scorePointsPossible).toBe(3);
+    expect(scorePointsReceived).toBe(2);
+    expect(scorePct).toBeCloseTo((2 / 3) * 100, 10);
+  });
+
+  // The exact case that disproved completion_ratio as the real Score: two responses both ~97%
+  // answered-by-count scored 29% and 91% by points. This pins the formula on a clean example.
+  it('sums points across multiple questions, landing on a 0-100 scale (the forms own design)', () => {
+    const q1 = ratingQuestion({ answer: 0, pointsReceived: 3 }); // "Outstanding", full marks
+    const q2 = ratingQuestion({ id: 'q2', pointsPossible: 1, options: [{ title: 'YES', points: 1 }, { title: 'NO', points: 0 }], answer: 1, pointsReceived: 0 }); // "NO", zero marks
+    const { scorePct } = normalizeFormsReviewContent([q1, q2]);
+    expect(scorePct).toBeCloseTo((3 / 4) * 100, 10); // 3 of 4 possible points
+  });
+
+  it('🔴 PII: never stores the free-text "Current Wage" answer, or any free-text question at all', () => {
+    const { content } = normalizeFormsReviewContent([ratingQuestion(), wageQuestion()]);
+    expect(content).toHaveLength(1); // only the rating question survives
+    expect(JSON.stringify(content)).not.toContain('17.00');
+    expect(JSON.stringify(content)).not.toContain('Wage');
+  });
+
+  it('excludes a zero-point tally/summary question from both content and the score sum', () => {
+    const { content, scorePointsPossible } = normalizeFormsReviewContent([ratingQuestion(), tallyQuestion()]);
+    expect(content).toHaveLength(1);
+    expect(scorePointsPossible).toBe(3); // the tally's own pointsPossible:0 contributes nothing
+  });
+
+  it('scorePct is null when nothing on the form carries positive pointsPossible', () => {
+    const { scorePct, scorePointsPossible } = normalizeFormsReviewContent([wageQuestion(), tallyQuestion()]);
+    expect(scorePct).toBeNull();
+    expect(scorePointsPossible).toBe(0);
+  });
+
+  it('tolerates a non-array/empty input', () => {
+    expect(normalizeFormsReviewContent(null)).toEqual({ content: [], scorePointsPossible: 0, scorePointsReceived: 0, scorePct: null });
+    expect(normalizeFormsReviewContent([])).toEqual({ content: [], scorePointsPossible: 0, scorePointsReceived: 0, scorePct: null });
+  });
+
+  it('a missing/out-of-range answer index resolves to a null label, not a thrown error', () => {
+    const { content } = normalizeFormsReviewContent([ratingQuestion({ answer: 99 })]);
+    expect(content[0].answerLabel).toBeNull();
+    const { content: c2 } = normalizeFormsReviewContent([ratingQuestion({ answer: null })]);
+    expect(c2[0].answerLabel).toBeNull();
+  });
+});
+
+describe('CONTENT_ACCESSIBLE_FORM_IDS', () => {
+  it('excludes Crew Review (measured 11/11 denied) and includes the other 3 (measured accessible)', () => {
+    expect(CONTENT_ACCESSIBLE_FORM_IDS.has('8c430399-a218-4b1f-aa85-89aca8cc441d')).toBe(false); // Crew Review
+    expect(CONTENT_ACCESSIBLE_FORM_IDS.has('24409bc6-a228-473b-b070-ed4160f3c93a')).toBe(true); // Shift Manager Review
+    expect(CONTENT_ACCESSIBLE_FORM_IDS.has('2af5d678-329b-4378-945f-d40eddaf17e1')).toBe(true); // Crew Trainer Review
+    expect(CONTENT_ACCESSIBLE_FORM_IDS.has('5c0cc473-c394-4fa7-b76f-e8cf80fb0156')).toBe(true); // Maintenance Review
   });
 });

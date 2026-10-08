@@ -22,6 +22,41 @@
 // plateau a few questions short of total even when genuinely finished (completionByForm's own
 // documented conditional-branching caveat applies here too) -- do not treat ratio < 1 as "still
 // open" without a fresh measurement to justify a threshold.
+//
+// ── The real "Score" (measured 2026-10-08, same session as the endpoint discovery above) ──────
+// `GET forms/responses/questions?orgId=...&formId=...&userId=...&startedAt=...` returns the full
+// question list for one occurrence, each with its real submitted `answer` (a 0-based INDEX into
+// that question's own `options[]`, NOT the points value directly -- confirmed by resolving several
+// indices against their options and matching the paired `pointsReceived`) and `pointsReceived`.
+// completionRatio (answered/total question COUNT) is NOT the dashboard's displayed Score --
+// measured side by side on real responses: two Maintenance Reviews both ~97% answered-by-count
+// scored 29% and 91% respectively by points. The real Score is POINTS-WEIGHTED:
+// Σ pointsReceived / Σ pointsPossible (summed only over questions that carry positive
+// pointsPossible -- free-text/date/tally questions carry 0 and don't participate), landing on a
+// 0-100 scale by the form's own design (every form's `pointsPossible` sum was exactly 100 in the
+// capture). normalizeFormsReviewContent() below computes this; normalizeFormsReviewRow() above
+// does NOT -- it only ever sees the cheap schedules/scheduled list payload, which has no points
+// data at all.
+//
+// 🔴 PII LAND MINE, found inside this SAME content payload: these forms embed at least one
+// free-text question ("Current Wage") whose `answer` is the employee's literal hourly pay rate --
+// exactly the `pii_payrate`/`hourlyPayRate` scope CLAUDE.md's PII rules already name as sensitive,
+// now confirmed to be reachable through a form response, not just employeeRoster/storePeoplePunches.
+// normalizeFormsReviewContent() allow-lists by `hasOptions === true` (a structured rating/choice
+// question, resolved to its option label) and drops every other question type unconditionally --
+// free text is categorically never stored, regardless of title wording, because a title-matching
+// denylist would need to anticipate every future PII-risk question text; an allow-list on
+// structure does not.
+//
+// 🔴 Crew Review's content/score is NOT reachable by the owner's own account -- measured
+// definitively, not a guess: 11 of 11 sampled responses spread across the form's full history
+// returned `403 {"message":"You are not authorized to view this confidential response"}`, while
+// the SAME call succeeded on every sampled response for the other 3 forms (Shift Manager Review,
+// Crew Trainer Review, Maintenance Review). This is a real, form-specific authorization rule on
+// QSRSoft's side (unrelated to this form's `predefinedSharedWith`, which DOES list the owner's
+// userId) -- CONTENT_ACCESSIBLE_FORM_IDS below encodes the measurement so the pull script doesn't
+// burn an API call per occurrence on a call that is known to always fail. Re-measure before
+// changing this if QSRSoft-side permissions are ever adjusted.
 
 export const REVIEW_FORMS = {
   '24409bc6-a228-473b-b070-ed4160f3c93a': 'MCDOK Shift Manager Review',
@@ -29,6 +64,14 @@ export const REVIEW_FORMS = {
   '5c0cc473-c394-4fa7-b76f-e8cf80fb0156': 'MCDOK Maintenance Review',
   '8c430399-a218-4b1f-aa85-89aca8cc441d': 'MCDOK Crew Review',
 };
+
+// See the header's Crew Review note -- measured 2026-10-08, 11/11 sampled responses denied.
+export const CONTENT_ACCESSIBLE_FORM_IDS = new Set([
+  '24409bc6-a228-473b-b070-ed4160f3c93a', // MCDOK Shift Manager Review
+  '2af5d678-329b-4378-945f-d40eddaf17e1', // MCDOK Crew Trainer Review
+  '5c0cc473-c394-4fa7-b76f-e8cf80fb0156', // MCDOK Maintenance Review
+  // '8c430399-a218-4b1f-aa85-89aca8cc441d' (MCDOK Crew Review) deliberately excluded -- see header
+]);
 
 // Same convention as forms-completion.js's normalizeLoc (padded NSN, 'NOLOC' sentinel for an
 // unparseable/missing location) -- kept as its own small copy rather than importing that file's
@@ -87,4 +130,49 @@ export function normalizeFormsReviewRows(rawRows) {
   return (Array.isArray(rawRows) ? rawRows : [])
     .map(normalizeFormsReviewRow)
     .filter(Boolean);
+}
+
+/**
+ * Normalizes the raw `{questions: [...]}` payload from `forms/responses/questions` into the
+ * real points-weighted score plus a PII-safe content list. See this file's header for the full
+ * measurement this is built from (answer-is-an-index confirmation, the wage PII land mine, the
+ * hasOptions allow-list rationale).
+ *
+ * `scorePct` is null when no question on the form carries positive pointsPossible (shouldn't
+ * happen for any of the 4 target forms per the capture, but this function makes no assumption
+ * about which formId it was called for -- that scoping lives in CONTENT_ACCESSIBLE_FORM_IDS and
+ * the caller, not here).
+ */
+export function normalizeFormsReviewContent(rawQuestions) {
+  const questions = Array.isArray(rawQuestions) ? rawQuestions : [];
+  let pointsPossible = 0;
+  let pointsReceived = 0;
+  const content = [];
+
+  for (const q of questions) {
+    if (typeof q?.pointsPossible === 'number' && q.pointsPossible > 0) {
+      pointsPossible += q.pointsPossible;
+      pointsReceived += typeof q.pointsReceived === 'number' ? q.pointsReceived : 0;
+    }
+    // PII allow-list: only a structured rating/choice question (real options, resolved to its
+    // label) is ever stored. Free text -- where the wage field and anything like it lives -- is
+    // dropped unconditionally here, never inspected by title. See this file's header.
+    if (q?.hasOptions !== true || !Array.isArray(q?.options)) continue;
+    const idx = q.answer;
+    const answerLabel = typeof idx === 'number' ? (q.options[idx]?.title ?? null) : null;
+    content.push({
+      questionId: q.id || null,
+      title: typeof q.title === 'string' ? q.title.trim() : null,
+      answerLabel,
+      pointsPossible: typeof q.pointsPossible === 'number' ? q.pointsPossible : null,
+      pointsReceived: typeof q.pointsReceived === 'number' ? q.pointsReceived : null,
+    });
+  }
+
+  return {
+    content,
+    scorePointsPossible: pointsPossible,
+    scorePointsReceived: pointsReceived,
+    scorePct: pointsPossible > 0 ? (pointsReceived / pointsPossible) * 100 : null,
+  };
 }
