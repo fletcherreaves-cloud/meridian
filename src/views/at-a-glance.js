@@ -31,6 +31,8 @@ import { worstStream } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
 import { printHtml } from '../utils/print-html.js';
+import { useAttentionFeed } from './attention-now.js';
+import { acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -276,6 +278,68 @@ function ToleranceRollupTile({ ds, stores, settings }) {
         m.yellow > 0 && h('span', { style: { fontSize: 9.5, fontWeight: 700, color: TOL_STATUS_COLOR.yellow } }, m.yellow + ' yellow')))),
     rollup.storeRows.length > 0 && div({ style: { padding: '8px 14px', fontSize: 9, color: 'var(--text3)', borderTop: '.5px solid var(--bdr)' } },
       'Most out of tolerance: ' + rollup.storeRows.slice(0, 3).map(s => sNameC(s.loc) + ' (' + s.n + ')').join(' · '))
+  );
+}
+
+// Home-screen "front door" widget (Task #16 / redesign Phase 3). Deliberately a thin
+// preview over the SAME engine + ack store the full Needs Attention panel already uses
+// (useAttentionFeed, swing-feed.js's acknowledge/pruneAcks/ATTENTION_ACK_SETTING_KEY) —
+// per the "two panels disagree on one number" rule, sharing the computation is what
+// keeps this tile and the full panel from ever ranking a store differently. Dismissing
+// an item here IS acknowledging it there (same Supabase row), so the two surfaces never
+// show contradictory state either. No separate pin mechanism in this first slice —
+// owner chose "let me see it built, then decide" on widget count/depth; the existing
+// Sections config (☰, moveSec/toggleSec above) already lets this tile be reordered or
+// turned off, which is the "configurable front door" the owner asked for.
+function NeedsYouTodayTile({ ds, stores, dateRange, onNav }) {
+  const feed = useAttentionFeed({ ds, stores, dateRange, max: 20 });
+  const [acks, setAcks] = React.useState({});
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(ATTENTION_ACK_SETTING_KEY).then(v => { if (live && v && typeof v === 'object') setAcks(v); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const feedKeyFn = React.useCallback(item => (item && item.id) || '', []);
+  const { pending } = React.useMemo(() => partitionAcked(feed, acks, feedKeyFn), [feed, acks, feedKeyFn]);
+  const top = pending.slice(0, 5);
+
+  const dismiss = (item) => {
+    (async () => {
+      let who = null;
+      try { who = (await supabase?.auth?.getUser())?.data?.user?.email || null; } catch {}
+      setAcks(prev => {
+        const next = pruneAcks(acknowledge(prev, item, who, feedKeyFn), feed, { keyFn: feedKeyFn });
+        saveUserSetting(ATTENTION_ACK_SETTING_KEY, next).catch(() => {});
+        return next;
+      });
+    })();
+  };
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '🔴'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Needs You Today'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Fused across food cost, sales, speed, visit readiness & more · same list as Needs Attention')));
+
+  if (!pending.length) return card(head, div({ style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Nothing is flagged right now — every store is clear.'));
+
+  const sevColor = s => s === 'crit' ? '#ef4444' : s === 'warn' ? '#f59e0b' : 'var(--text3)';
+  return card(head,
+    div(null, ...top.map(item => div({ key: item.id,
+        style: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', cursor: 'pointer' },
+        onClick: () => onNav && onNav('attention') },
+      h('span', { style: { fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 } }, item.icon || '•'),
+      div({ style: { flex: 1, minWidth: 0 } },
+        div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text,#e8eaed)' } }, item.title),
+        div({ style: { fontSize: 10, color: 'var(--text3,#9aa0aa)', marginTop: 2, lineHeight: 1.4 } }, item.detail)),
+      item.dollars > 0 && h('span', { style: { fontSize: 10.5, fontWeight: 800, fontFamily: 'var(--mono)', color: sevColor(item.severity), flexShrink: 0, whiteSpace: 'nowrap' } }, '$' + Math.round(Math.abs(item.dollars)).toLocaleString()),
+      h('button', { title: 'Dismiss for now', onClick: e => { e.stopPropagation(); dismiss(item); },
+          style: { fontSize: 10, background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, padding: '0 2px' } }, '✕')
+    ))),
+    div({ style: { padding: '8px 14px', textAlign: 'center', cursor: 'pointer', color: 'var(--amber,#f5bc00)', fontSize: 11, fontWeight: 700 },
+        onClick: () => onNav && onNav('attention') },
+      pending.length > top.length ? `+${pending.length - top.length} more — Open Needs Attention →` : 'Open Needs Attention →')
   );
 }
 
@@ -552,6 +616,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Section config ───────────────────────────────────────────
   const DEF_SECS=[
+    // Owner decision (home-screen widgets discussion, 2026-10-08): the front door leads
+    // with "find the store that needs me today" — leads the grid by default, but like
+    // every other section here can be reordered or turned off via Sections ☰ below,
+    // which is the "configurable front door" the owner asked for.
+    {id:'attention',label:'Needs You Today',icon:'🔴',on:true},
     {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
     {id:'tolerance',label:'Tolerance Status',icon:'🎯',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
@@ -2187,6 +2256,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       ),
 
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
+
+        // ── NEEDS YOU TODAY (front door, leads by owner decision) ──
+        secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav}),
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
