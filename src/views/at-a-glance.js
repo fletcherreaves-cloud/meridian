@@ -21,7 +21,7 @@ import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
-import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadGradedVisits } from '../lib/supabase.js';
 import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
@@ -33,6 +33,8 @@ import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-statu
 import { printHtml } from '../utils/print-html.js';
 import { useAttentionFeed } from './attention-now.js';
 import { acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
+import { computeVisitReadiness } from '../engine/visit-readiness.js';
+import { intradayPace, periodPace } from '../engine/tracking-to-plan.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -343,6 +345,92 @@ function NeedsYouTodayTile({ ds, stores, dateRange, onNav }) {
   );
 }
 
+// Visit Readiness home-screen widget (redesign Phase 3, 2026-10-08 — owner: "good, I will
+// want to refine [Visit Readiness scoring] later"). Deliberately a thin preview over
+// computeVisitReadiness()'s OWN output (same engine the Visit Readiness panel and
+// NeedsYouTodayTile's visitRisk() detector already read) — no new scoring here, and none of
+// that scoring is touched by this widget; a future scoring change flows through automatically.
+function VisitReadinessTile({ ds, onNav }) {
+  const [gradedVisits, setGradedVisits] = React.useState(ds?.gradedVisits || null);
+  React.useEffect(() => {
+    let live = true;
+    if (!ds?.gradedVisits) loadGradedVisits().then(v => { if (live) setGradedVisits(v || []); }).catch(() => { if (live) setGradedVisits([]); });
+    return () => { live = false; };
+  }, [ds]);
+
+  const result = React.useMemo(() => {
+    if (!gradedVisits) return null;
+    try { return computeVisitReadiness({ ...ds, gradedVisits }); } catch { return null; }
+  }, [ds, gradedVisits]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '🛡️'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Visit Readiness'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, "This week's weakest store heading into its next graded visit")));
+
+  if (!result) return card(head, div({ style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, gradedVisits === null ? 'Loading…' : 'No graded-visit data on file yet.'));
+  const weakest = (result.stores || [])[0];
+  if (!weakest) return card(head, div({ style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No store has enough data to score yet.'));
+
+  const bandColor = weakest.band === 'at-risk' ? '#ef4444' : weakest.band === 'watch' ? '#d97706' : '#10b981';
+  const segColor = s => s == null ? 'var(--bdr)' : s >= 0.85 ? '#10b981' : s >= 0.7 ? '#d97706' : '#ef4444';
+  const subs = weakest.subs || {};
+  return card(head,
+    div({ style: { padding: '14px 16px' } },
+      div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, (sNameC ? sNameC(weakest.loc) : weakest.loc)),
+      div({ style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 } },
+        h('span', { style: { fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', color: bandColor } }, Math.round(weakest.readiness)),
+        h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, `/100 · ${weakest.band === 'at-risk' ? 'at-risk' : weakest.band === 'watch' ? 'watch' : 'ready'} band`)),
+      div({ style: { display: 'flex', gap: 3, marginTop: 10 } },
+        ...['speed', 'accuracy', 'quality', 'leadership'].map(k => h('div', { key: k, style: { flex: 1, height: 6, borderRadius: 3, background: segColor(subs[k]?.score) } }))),
+      div({ style: { fontSize: 9, color: 'var(--text3)', marginTop: 4 } }, 'Speed · Accuracy · Quality · Leadership'),
+      div({ style: { fontSize: 12, color: 'var(--text2,#cbd5e1)', fontWeight: 600, marginTop: 10, lineHeight: 1.4, cursor: 'pointer' }, onClick: () => onNav && onNav('visit-readiness') },
+        (weakest.verdict || 'Open Visit Readiness →') + ' →')));
+}
+
+// Tracking to Plan home-screen widget (redesign Phase 3, owner-requested 2026-10-08: "I would
+// like to see 4 metrics though, hourly, daily, weekly and monthly...maybe even ytd"). Hourly +
+// Daily reuse the real intraday DAR projection (engine/tracking-to-plan.js's intradayPace, the
+// SAME function Signals' LiveOps tab calls — see that file). Weekly/Monthly/YTD are derived
+// from each store's own official monthly $ target (periodPace, same file) since no separately
+// uploaded weekly/YTD budget exists — `method` names that derivation so it is never read as a
+// real uploaded figure.
+function TrackingToPlanTile({ ds, stores, darRows, onNav }) {
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const todayStr = React.useMemo(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, []);
+  const todayRows = React.useMemo(() => (darRows || []).filter(r => r && r.dt === todayStr), [darRows, todayStr]);
+  const intraday = React.useMemo(() => intradayPace(todayRows), [todayRows]);
+  const period = React.useMemo(() => allLocs.length ? periodPace(ds, allLocs) : null, [ds, allLocs]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '⏱'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Tracking to Plan'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'District $ pacing vs plan — hourly, daily, weekly, monthly, YTD')));
+
+  if (!period && !intraday) return card(head, div({ style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'No sales or projection data loaded yet.'));
+
+  const paceColor = p => p == null ? 'var(--text3)' : p >= 100 ? '#10b981' : p >= 95 ? '#d97706' : '#ef4444';
+  const cell = (label, pct, sub) => div({ key: label, style: { flex: '1 1 0', minWidth: 86, padding: '8px 10px', borderRight: '.5px solid var(--bdr)' } },
+    div({ style: { fontSize: 9, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
+    div({ style: { fontSize: 16, fontWeight: 800, fontFamily: 'var(--mono)', color: paceColor(pct), marginTop: 2 } }, pct == null ? '—' : Math.round(pct) + '%'),
+    sub && div({ style: { fontSize: 8.5, color: 'var(--text3)', marginTop: 1 } }, sub));
+
+  const money = n => '$' + Math.round(n || 0).toLocaleString();
+  return card(head,
+    div({ style: { display: 'flex', flexWrap: 'wrap' } },
+      cell('Hourly', intraday?.pacePct, intraday ? money(intraday.doneActual) + ' so far' : null),
+      cell('Daily', intraday && intraday.fullProj > 0 ? (intraday.projectedEOD / intraday.fullProj * 100) : null, intraday ? 'proj. ' + money(intraday.projectedEOD) + ' EOD' : null),
+      cell('Weekly', period?.weekly?.pacePct, period ? money(period.weekly.actual) + ' of ' + money(period.weekly.plan) : null),
+      cell('Monthly', period?.monthly?.pacePct, period ? money(period.monthly.actual) + ' of ' + money(period.monthly.plan) : null),
+      cell('YTD', period?.ytd?.pacePct, period ? money(period.ytd.actual) + ' of ' + money(period.ytd.plan) : null)),
+    div({ style: { padding: '7px 14px', fontSize: 9, color: 'var(--text3)', borderTop: '.5px solid var(--bdr)' } }, period?.method || ''),
+    div({ style: { padding: '8px 14px', textAlign: 'center', cursor: 'pointer', color: 'var(--amber,#f5bc00)', fontSize: 11, fontWeight: 700, borderTop: '.5px solid var(--bdr)' }, onClick: () => onNav && onNav('signals') }, 'Open Signals →'));
+}
+
 // Opportunity $ headline tile (memory/design-opportunity-dollars.md) — the flagship "every
 // performance gap becomes recoverable dollars" figure, MTD, all stores. Click opens the
 // by-driver / by-store drill-down (opportunity-dollars.js). Computed once per ds/stores
@@ -576,7 +664,7 @@ function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
   return result;
 }
 
-function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
+function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
   // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
@@ -621,6 +709,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // every other section here can be reordered or turned off via Sections ☰ below,
     // which is the "configurable front door" the owner asked for.
     {id:'attention',label:'Needs You Today',icon:'🔴',on:true},
+    {id:'visit-readiness-today',label:'Visit Readiness',icon:'🛡️',on:true},
+    {id:'tracking-to-plan',label:'Tracking to Plan',icon:'⏱',on:true},
     {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
     {id:'tolerance',label:'Tolerance Status',icon:'🎯',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
@@ -2259,6 +2349,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
         // ── NEEDS YOU TODAY (front door, leads by owner decision) ──
         secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav}),
+        secs.find(s=>s.id==='visit-readiness-today'&&s.on)&&h(VisitReadinessTile,{key:'visit-readiness-today',ds,onNav}),
+        secs.find(s=>s.id==='tracking-to-plan'&&s.on)&&h(TrackingToPlanTile,{key:'tracking-to-plan',ds,stores,darRows,onNav}),
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),

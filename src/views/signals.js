@@ -8,6 +8,7 @@ import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { intradayPace } from '../engine/tracking-to-plan.js';
 import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { f$ } from '../utils/fmt.js';
@@ -1039,28 +1040,10 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
   // Pace = actual for completed hours ÷ projection for those same hours. Projected
   // EOD landing = actual so far + projection for the hours not yet run. On a past
   // date every hour is complete, so it reads as "how the day landed vs plan".
-  const planPace = uM(() => {
-    let doneActual = 0, doneProj = 0, remProj = 0, fullProj = 0;
-    let doneGC = 0, doneProjGC = 0, remProjGC = 0, fullProjGC = 0;   // guest-count pace (leading indicator)
-    for (const r of rows) {
-      const proj = r.proj_sales_dollars || 0;
-      const projGC = r.proj_total_transactions || 0;
-      fullProj += proj; fullProjGC += projGC;
-      if ((r.product_sales || 0) > 0) {
-        doneActual += r.product_sales; doneProj += proj;
-        doneGC += r.transactions || 0; doneProjGC += projGC;
-      } else { remProj += proj; remProjGC += projGC; }
-    }
-    if (fullProj <= 0 && fullProjGC <= 0) return null;
-    return {
-      pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
-      projectedEOD: doneActual + remProj,
-      fullProj, doneActual,
-      gcPacePct: doneProjGC > 0 ? doneGC / doneProjGC * 100 : null,
-      projectedEODGC: doneGC + remProjGC,
-      fullProjGC, doneGC, hasGC: fullProjGC > 0,
-    };
-  }, [rows]);
+  // Computed by engine/tracking-to-plan.js's intradayPace — the home screen's Tracking to
+  // Plan widget calls the SAME function, so the two can never disagree (CLAUDE.md: "diff
+  // the two computations" rule, applied before the duplicate ever got written, not after).
+  const planPace = uM(() => intradayPace(rows), [rows]);
   const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
   const num = n => Math.round(n).toLocaleString('en-US');
 
