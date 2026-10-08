@@ -57,6 +57,7 @@ on:
       - QSRSoft Employee Roster Pull
       - QSRSoft FOB Pull
       - QSRSoft Forms Completion Pull
+      - QSRSoft Forms Reviews Pull
       - QSRSoft Inventory Summary Pull
       - QSRSoft KB Analyze
       - QSRSoft KB Pull
