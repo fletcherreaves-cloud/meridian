@@ -1,44 +1,49 @@
 // @ts-nocheck
 // qsrsoft-forms-reviews-pull.mjs -- see memory/finding-qsrsoft-review-forms-schedules-endpoint-
-// 2026-10-08.md for the two live-measured endpoint quirks this script is built around:
-//   1. startDate === endDate (a single calendar day) returns ZERO rows, for every form.
-//   2. A wider date window can silently return FEWER recent rows than a narrower one (measured:
-//      an 8-day window caught 2 of today's occurrences vs a 3-day window's 157) -- short,
-//      overlapping chunks are the fix, same pattern qsrsoft-forms-completion-pull.mjs already
-//      uses for this host family.
+// 2026-10-08.md (correction section) for the live measurement this is built from: the API's
+// `endDate` is EXCLUSIVE. Proved by the first real production run, not just exploratory probes --
+// a 3-day chunk `2026-10-06..2026-10-08` (end = today) saved only 2 rows where a same-width
+// window `2026-10-07..2026-10-09` (end = tomorrow) had found 157. chunkDays() always queries one
+// calendar day past the logical last day wanted; `startDate===endDate` returning zero rows is the
+// same mechanism in its most extreme form, not a separate quirk.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { pullWithEscalation, fetchWindow, chunkDays, fetchResponseContent } from '../../scripts/qsrsoft-forms-reviews-pull.mjs';
 
-describe('chunkDays -- quirk 1: never produce a single-day-wide chunk', () => {
-  it('a range longer than one chunk size splits without leaving a 1-day remainder', () => {
-    const chunks = chunkDays('2026-10-01', '2026-10-08', 3); // 8 days, chunkSize 3 -> naive split leaves a 1-day tail
+describe('chunkDays -- endDate is exclusive, so every chunk queries one day past its logical end', () => {
+  it('a range longer than one chunk size splits into padded chunks covering the whole span', () => {
+    const chunks = chunkDays('2026-10-01', '2026-10-08', 3);
     for (const c of chunks) {
-      expect(c.start).not.toBe(c.end);
+      expect(c.start).not.toBe(c.end); // never a single-day-wide query
     }
-    // every requested day is still covered by at least one chunk
     expect(chunks[0].start).toBe('2026-10-01');
-    expect(chunks[chunks.length - 1].end).toBe('2026-10-08');
+    // the LAST chunk's query end is one day past the logical end (2026-10-08) -- never equal to
+    // it, or that final day would be silently excluded again.
+    expect(chunks[chunks.length - 1].end).toBe('2026-10-09');
   });
 
-  it('a range exactly one day long still widens to a 2-day request, not a 1-day one', () => {
+  it('a single logical day still becomes a 2-day query (start, start+1) -- the extreme case of the same bug', () => {
     const chunks = chunkDays('2026-10-08', '2026-10-08', 3);
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].start).not.toBe(chunks[0].end);
+    expect(chunks).toEqual([{ start: '2026-10-08', end: '2026-10-09' }]);
   });
 
-  it('a range exactly matching the chunk size (3 days) is untouched', () => {
+  it('a range exactly matching the chunk size (3 logical days) still pads its query end by one', () => {
     const chunks = chunkDays('2026-10-01', '2026-10-03', 3);
-    expect(chunks).toEqual([{ start: '2026-10-01', end: '2026-10-03' }]);
+    expect(chunks).toEqual([{ start: '2026-10-01', end: '2026-10-04' }]);
   });
 
-  it('a 4-day range with chunkSize 3 -- the naive 1-day tail is widened forward, not dropped', () => {
+  it('a 4-day range with chunkSize 3 -- each chunk, including the 1-logical-day tail, is padded', () => {
     const chunks = chunkDays('2026-10-01', '2026-10-04', 3);
-    expect(chunks).toHaveLength(2);
-    expect(chunks[0]).toEqual({ start: '2026-10-01', end: '2026-10-03' });
-    // the naive second chunk would be {start: '10-04', end: '10-04'} -- widened one day forward
-    // instead, so every chunk stays >= 2 days wide (quirk 1). Overshooting the nominal end by a
-    // day is harmless; a silent zero-row chunk is not.
-    expect(chunks[1]).toEqual({ start: '2026-10-04', end: '2026-10-05' });
+    expect(chunks).toEqual([
+      { start: '2026-10-01', end: '2026-10-04' }, // logical days 1-3, queried through day 4
+      { start: '2026-10-04', end: '2026-10-05' }, // logical day 4 alone, queried through day 5
+    ]);
+  });
+
+  it('consecutive chunks overlap by exactly the one padding day -- harmless, upsert makes it a no-op', () => {
+    const chunks = chunkDays('2026-10-01', '2026-10-08', 3);
+    for (let i = 1; i < chunks.length; i++) {
+      expect(chunks[i].start).toBe(chunks[i - 1].end);
+    }
   });
 });
 

@@ -226,3 +226,47 @@ this still holds.
 score/content are now in the table, nothing renders them). `checkFreshness` uses wide warn/error
 thresholds (72h/168h) since these forms run per-store, not daily — not a measured threshold,
 flagged the same way this repo flags every unmeasured threshold.
+
+## 🔴 CORRECTION (same day, first real production run) — "Quirk 2" was mis-diagnosed; the real
+## cause is `endDate` being EXCLUSIVE, and it subsumes "Quirk 1" too
+
+The pull shipped, the Supabase table was created by hand (idempotent `create table if not
+exists`, run manually in the SQL editor — same as every other `schema-*.sql` file in this repo,
+confirmed via a live `PGRST205` query before and after), and the workflow was triggered manually
+to backfill. **It saved only 2 rows for the whole 14-day window**, when a same-day manual probe
+earlier in this file had found 157 in-progress occurrences on 2026-10-08 alone. Real job log:
+
+```
+[forms-reviews] pulling 2026-09-24..2026-10-08 in 5 chunk(s) of ~3 day(s)
+[forms-reviews] 2026-09-24..2026-09-26: 787 raw entries -> 0 saved
+[forms-reviews] 2026-09-27..2026-09-29: 796 raw entries -> 0 saved
+[forms-reviews] 2026-09-30..2026-10-02: 788 raw entries -> 0 saved
+[forms-reviews] 2026-10-03..2026-10-05: 782 raw entries -> 0 saved
+[forms-reviews] 2026-10-06..2026-10-08: 787 raw entries -> 2 saved
+```
+
+The first 4 chunks' zero counts are plausibly real (these forms' `lastEditedAt` was 2026-10-08
+for several of them — McGill Molly edited them THAT DAY — consistent with the review program
+genuinely starting around 2026-10-06, not a bug). **The last chunk is the tell.** `2026-10-06
+..2026-10-08` (3 days wide, end = today) saved only 2 rows, but an exploratory probe earlier
+this same file documented found **157** target-form matches in a same-width window,
+`2026-10-07..2026-10-09` (end = **tomorrow**, one day later). Same width. Wildly different
+result. The variable that actually matters is not window WIDTH (this file's original "Quirk 2"
+write-up) — it's **whether the window's end date reaches one day past the day you actually want**.
+`startDate===endDate` returning zero rows ("Quirk 1") is the identical mechanism at its most
+extreme: a range that starts and ends on the one day you want excludes that day entirely.
+
+**One quirk, not two: `endDate` is exclusive.** `chunkDays()` was rewritten so every chunk it
+returns queries one calendar day past its own logical last day — the old single-day special case
+is gone, replaced by unconditional padding that covers both the single-day and the
+wider-but-ending-at-today cases with one mechanism. Re-measure before assuming this still holds
+if QSRSoft ever changes this endpoint's behavior; this file's original "Quirk 2" section above
+is **superseded by this correction**, not deleted, so a future reader can see exactly what was
+believed, what disproved it, and what replaced it.
+
+**Process note:** the original two-probe comparison (1-day / 3-day-ending-tomorrow / 8-day-
+ending-today) never isolated the real variable because no two probes differed in ONLY width or
+ONLY end-date-padding — exactly the trap CLAUDE.md's own "measure it, don't reason about it" rule
+exists to catch. The production run's own log, compared against an EARLIER exploratory probe of
+the same width, is what isolated it. A passing test suite and a clean build did not catch this —
+only checking the actual row count the real pull produced did.
