@@ -35,6 +35,7 @@ import { useAttentionFeed } from './attention-now.js';
 import { acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { intradayPace, periodPace } from '../engine/tracking-to-plan.js';
+import { COACHING_METRICS } from '../engine/coaching-loop.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -431,6 +432,51 @@ function TrackingToPlanTile({ ds, stores, darRows, onNav }) {
     div({ style: { padding: '8px 14px', textAlign: 'center', cursor: 'pointer', color: 'var(--amber,#f5bc00)', fontSize: 11, fontWeight: 700, borderTop: '.5px solid var(--bdr)' }, onClick: () => onNav && onNav('signals') }, 'Open Signals →'));
 }
 
+// "Did It Work?" home-screen widget (redesign Phase 3, the learning-loop candidate the
+// original design notes called the single hardest-to-copy white space -- QSRSoft has no
+// memory of what an operator tried, so it can never answer "did my last move work").
+// Deliberately NOT a new engine: engine/coaching-loop.js's startCoachingCycle/
+// recordCoachingResult/computeVerdict already auto-capture a before/after snapshot and a
+// measured verdict (coaching-modal.js is the existing UI that starts/closes a cycle); this
+// tile is a thin "most recently closed loop" preview over ds.coachingCycles, already loaded
+// app-wide (App.js) exactly like monthlyTargets/targets -- no new fetch. Shows whichever
+// verdict is real (improved/worse/no change), never only the wins -- the whole point is a
+// measured answer, not a reassuring one.
+function CoachingLoopTile({ ds, onNav }) {
+  const latest = React.useMemo(() => {
+    const done = (ds?.coachingCycles || []).filter(c => c && c.result != null && c.verdict != null);
+    if (!done.length) return null;
+    return [...done].sort((a, b) => (b.coachedAt || '').localeCompare(a.coachedAt || ''))[0];
+  }, [ds]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '✓'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Did It Work?'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, "The most recently closed coaching loop — measured, not self-reported")));
+
+  if (!latest) return card(head, div({ style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } },
+    'No coaching loop has closed yet. Start one from a finding in Needs Attention, and its 30-day follow-up lands here automatically.'));
+
+  const spec = COACHING_METRICS[latest.metric] || { label: latest.metric };
+  const pct = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
+  const verdictMeta = latest.verdict === 'improved' ? { word: 'Improved', color: '#10b981' }
+    : latest.verdict === 'worse' ? { word: 'Worse', color: '#ef4444' }
+    : { word: 'No change', color: '#d97706' };
+
+  return card(head,
+    div({ style: { padding: '14px 16px' } },
+      div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, (sNameC ? sNameC(latest.loc) : latest.loc) + ' — ' + spec.label),
+      latest.note && div({ style: { fontSize: 11.5, color: 'var(--text2,#cbd5e1)', marginTop: 4, lineHeight: 1.4 } }, '"' + latest.note + '"'),
+      div({ style: { display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, fontFamily: 'var(--mono)' } },
+        h('span', { style: { fontSize: 14, color: 'var(--text3)' } }, pct(latest.baseline)),
+        h('span', { style: { fontSize: 12, color: 'var(--text3)' } }, '→'),
+        h('span', { style: { fontSize: 18, fontWeight: 800, color: verdictMeta.color } }, pct(latest.result))),
+      div({ style: { fontSize: 11, fontWeight: 700, color: verdictMeta.color, marginTop: 6 } }, verdictMeta.word + ` since ${latest.coachedAt}`),
+      div({ style: { fontSize: 10, color: 'var(--text3)', marginTop: 8, cursor: 'pointer' }, onClick: () => onNav && onNav('attention') }, 'Coaching reviews live in Needs Attention →')));
+}
+
 // Opportunity $ headline tile (memory/design-opportunity-dollars.md) — the flagship "every
 // performance gap becomes recoverable dollars" figure, MTD, all stores. Click opens the
 // by-driver / by-store drill-down (opportunity-dollars.js). Computed once per ds/stores
@@ -711,6 +757,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     {id:'attention',label:'Needs You Today',icon:'🔴',on:true},
     {id:'visit-readiness-today',label:'Visit Readiness',icon:'🛡️',on:true},
     {id:'tracking-to-plan',label:'Tracking to Plan',icon:'⏱',on:true},
+    {id:'coaching-loop',label:'Did It Work?',icon:'✓',on:true},
     {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
     {id:'tolerance',label:'Tolerance Status',icon:'🎯',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
@@ -2351,6 +2398,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav}),
         secs.find(s=>s.id==='visit-readiness-today'&&s.on)&&h(VisitReadinessTile,{key:'visit-readiness-today',ds,onNav}),
         secs.find(s=>s.id==='tracking-to-plan'&&s.on)&&h(TrackingToPlanTile,{key:'tracking-to-plan',ds,stores,darRows,onNav}),
+        secs.find(s=>s.id==='coaching-loop'&&s.on)&&h(CoachingLoopTile,{key:'coaching-loop',ds,onNav}),
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
