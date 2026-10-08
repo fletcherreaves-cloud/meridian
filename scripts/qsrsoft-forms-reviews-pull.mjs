@@ -15,19 +15,26 @@
 // has been STARTED (no response = not yet started, not a "missed" the way completionDetail
 // means it -- this endpoint has no missed/open concept at all).
 //
-// 🔴 TWO MEASURED ENDPOINT QUIRKS THIS SCRIPT IS BUILT AROUND (both from the finding file --
-// do not "simplify" either away without re-measuring):
-//   1. startDate === endDate (a single calendar day) returns ZERO rows, for every form, not
-//      just these four. CHUNK_DAYS must never produce a 1-day-wide request; MIN_CHUNK_DAYS=2
-//      enforces a floor under any future tuning of the env var.
-//   2. A WIDER window can silently return FEWER of today's rows than a narrower one -- a 7-day
-//      probe returned MORE total rows (2,748) than a 3-day probe (937) but caught only 2 of the
-//      3-day probe's 157 target-form matches for the current day. This is the same class of
-//      silent-truncation risk qsrsoft-forms-completion-pull.mjs's own header already documents
-//      for this host family ("a naive year-long backfill could silently truncate"); the fix is
-//      the same -- short, overlapping CHUNK_DAYS windows, never one wide call. Default 3 days,
-//      matching that sibling's own measured-safe size. Chunks may overlap in date range; upsert
-//      on (loc, form_id, started_at) makes a re-fetched occurrence a no-op, not a duplicate.
+// 🔴 CORRECTED 2026-10-08 (same day, after the FIRST live production run) -- `endDate` is
+// EXCLUSIVE, and that single fact explains what this header used to describe as two separate
+// quirks. The original "wider window loses rows" theory was built from two exploratory probes
+// that confounded WIDTH with whether the window's end reached past "today" -- it never isolated
+// the real variable. The first real production run did: a 3-day chunk `2026-10-06..2026-10-08`
+// (end = today) saved only 2 rows where a same-width manual probe of `2026-10-07..2026-10-09`
+// (end = tomorrow) had found 157. Same width, different outcome -- the width theory is wrong.
+// The single-day case (`startDate===endDate` returning zero) is the same mechanism in its most
+// extreme form: requesting a range that both starts and ends ON the one day you want excludes
+// that day entirely, leaving nothing.
+//
+// Fix: `chunkDays()` always queries one calendar day PAST the last day actually wanted. A
+// caller asking for logical range [start, end] (both inclusive) gets chunks whose `end` field is
+// always `somePoint + 1 day` -- this is what's sent to the API, not the logical boundary. This
+// subsumes the old single-day special case entirely (no separate branch needed) and fixes every
+// chunk, not just the one touching "today" -- a defensive choice: one extra day of overlap per
+// chunk is free (upsert on (loc, form_id, started_at) makes a re-fetched occurrence a no-op), so
+// padding unconditionally is safer than trying to prove whether the exclusivity is specific to
+// "today" or applies to every range end. See memory/finding-qsrsoft-review-forms-schedules-
+// endpoint-2026-10-08.md's correction section for the full before/after.
 //
 // 🔴 NO "submitted" FLAG EXISTS ON THE SOURCE -- see src/engine/forms-reviews.js's header.
 // completion_ratio (answered/total) is stored as a raw fact; this script does not compute or
@@ -63,7 +70,7 @@
 //   QSRSOFT_FORMS_REVIEWS_DAYS_RECENT  -- rolling re-pull window (default: 4)
 //   QSRSOFT_FORMS_REVIEWS_START_DATE   -- explicit backfill start (YYYY-MM-DD)
 //   QSRSOFT_FORMS_REVIEWS_END_DATE     -- explicit backfill end (YYYY-MM-DD, default: today)
-//   QSRSOFT_FORMS_REVIEWS_CHUNK_DAYS   -- days per API call (default: 3, floor 2 -- see quirk 1 above)
+//   QSRSOFT_FORMS_REVIEWS_CHUNK_DAYS   -- days per API call (default: 3, floor 2 -- defensive only; chunkDays() pads every query's end regardless, see header)
 //   QSRSOFT_FORMS_REVIEWS_DEBUG=1
 
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
@@ -219,20 +226,20 @@ async function upsertRows(rawRows, token, evalPage) {
   return { saved, locs: new Set(mapped.map(r => r.loc)) };
 }
 
+// `start`/`end` are the LOGICAL range wanted, both inclusive. Every returned chunk's `end` is
+// deliberately one calendar day PAST its own logical last day -- the API's `endDate` is
+// exclusive (see this file's header for the production measurement that proved it), so the
+// value in `chunks[].end` is what to send the API, not the logical boundary. `chunks[].start`
+// stays unpadded.
 export function chunkDays(start, end, chunkSize) {
   const chunks = [];
   let cur = new Date(`${start}T00:00:00.000Z`);
-  const endD = new Date(`${end}T00:00:00.000Z`);
+  const endD = new Date(`${end}T00:00:00.000Z`); // the last day actually wanted, inclusive
   while (cur <= endD) {
-    let chunkEnd = new Date(Math.min(addDay(cur, chunkSize - 1).getTime(), endD.getTime()));
-    // quirk 1 -- a single-day-wide request (start === end) returns ZERO rows, for every form.
-    // Extend the end forward by one day whenever that would otherwise happen -- whether the
-    // WHOLE requested range is one day, or this is just a trailing remainder chunk. Overshooting
-    // the nominal end by a day is harmless (upsert on (loc, form_id, started_at) makes the
-    // overlap with the next pull a no-op); returning zero rows for a real day is not.
-    if (fmtDate(chunkEnd) === fmtDate(cur)) chunkEnd = addDay(chunkEnd, 1);
-    chunks.push({ start: fmtDate(cur), end: fmtDate(chunkEnd) });
-    cur = addDay(chunkEnd, 1);
+    const logicalEnd = new Date(Math.min(addDay(cur, chunkSize - 1).getTime(), endD.getTime()));
+    const queryEnd = addDay(logicalEnd, 1); // exclusivity padding -- see header
+    chunks.push({ start: fmtDate(cur), end: fmtDate(queryEnd) });
+    cur = addDay(logicalEnd, 1);
   }
   return chunks;
 }
