@@ -1,0 +1,65 @@
+name: QSRSoft Forms Reviews Pull
+
+on:
+  schedule:
+    # US Central-anchored (GitHub cron is fixed UTC, no DST). These review forms get filed
+    # throughout the shift, often started well before being finished -- the afternoon/evening
+    # runs exist to pick up same-day occurrences started after the morning run, same cadence
+    # rationale as the Forms Completion Pull.
+    - cron: '30 10 * * *'  # ~5:30 AM CDT — previous day(s) fully settled
+    - cron: '30 19 * * *'  # ~2:30 PM CDT — current-day refresh
+    - cron: '30 1 * * *'   # ~8:30 PM CDT — catches reviews started/finished later in the day
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 14)'
+        required: false
+        default: '14'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 4)'
+        required: false
+        default: '4'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      chunk_days:
+        description: 'Days per API call — floor of 2 is enforced in-script (a 1-day window returns zero rows, measured). Default: 3'
+        required: false
+        default: '3'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Forms review data
+        run: node scripts/qsrsoft-forms-reviews-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_FORMS_REVIEWS_DAYS_BACK:   ${{ github.event.inputs.days_back   || '14' }}
+          QSRSOFT_FORMS_REVIEWS_DAYS_RECENT: ${{ github.event.inputs.days_recent || '4'  }}
+          QSRSOFT_FORMS_REVIEWS_START_DATE:  ${{ github.event.inputs.start_date  || ''   }}
+          QSRSOFT_FORMS_REVIEWS_END_DATE:    ${{ github.event.inputs.end_date    || ''   }}
+          QSRSOFT_FORMS_REVIEWS_CHUNK_DAYS:  ${{ github.event.inputs.chunk_days  || '3'  }}
+          QSRSOFT_FORMS_REVIEWS_DEBUG:       ${{ github.event.inputs.debug       || '0'  }}
