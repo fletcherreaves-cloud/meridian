@@ -2666,7 +2666,8 @@ export async function loadShiftManagerMonthly() {
     numShifts: r.num_shifts, actualHours: r.actual_hours,
     actualVsScheduled: r.actual_vs_scheduled, actualVsNeeded: r.actual_vs_needed,
     netSales: r.net_sales, transactions: r.transactions, avgCheck: r.avg_check, tpph: r.tpph,
-    oepe: r.oepe, r2p: r.r2p, ctp: r.ctp, dtTtl: r.dt_ttl, kvs: r.kvs, laborPct: r.labor_pct,
+    oepe: r.oepe, oepeNoPark: r.oepe_no_park, r2p: r.r2p, ctp: r.ctp, dtTtl: r.dt_ttl, kvs: r.kvs,
+    healthyUsePct: r.healthy_use_pct, laborPct: r.labor_pct,
   }));
 }
 

@@ -25,7 +25,7 @@ function blankMonths() {
 }
 const shiftManagerRow = (overrides) => ({
   loc: '3708', month: '2026-06', geid: 555,
-  oepe: 90, r2p: 30, kvs: 4.2, laborPct: 0.24,
+  oepe: 90, r2p: 30, kvs: 4.2, laborPct: 0.24, healthyUsePct: 0.87,
   ...overrides,
 });
 
@@ -41,6 +41,10 @@ describe('DM/shift-role review scoring attribution (autoPopulateKPIs, notes-33-q
     expect(mo.r2p).toBe(30);
     expect(mo.kvs).toBe(4.2);
     expect(mo.labor).toBe(0.24);
+    // 2026-10-09 -- secondSide (2nd Side Healthy Usage) now attributes the same way; this
+    // only changes WHICH actual a shift-attributed review displays (secondSide itself stays
+    // scored:false in the catalog), same pattern as oepe/r2p/kvs/labor above.
+    expect(mo.secondSide).toBe(0.87);
   });
 
   it('every SHIFT_ATTRIBUTABLE_ROLES entry attributes -- exhaustive over the real list, not a hardcoded single case', () => {
@@ -97,6 +101,16 @@ describe('DM/shift-role review scoring attribution (autoPopulateKPIs, notes-33-q
     const mo = autoPopulateKPIs(review, ds).kpis.months[6];
     expect(mo.oepe).toBe(90); // rate metric: attributed
     expect(mo.salesVsTgt).toBeGreaterThan(0); // volume metric: store-total, not overridden to null/absent
+  });
+
+  it('a smg row with no healthyUsePct (e.g. an older pull, before the field existed) leaves secondSide at whatever the store-total fill already set, rather than nulling it', () => {
+    const review = {
+      loc: '3708', year: 2026, role: 'DM', geid: 555, kpis: { months: blankMonths() },
+    };
+    const ds = { loaded: true, shiftManagerRows: [shiftManagerRow({ healthyUsePct: undefined })] };
+    const mo = autoPopulateKPIs(review, ds).kpis.months[6];
+    expect(mo.oepe).toBe(90); // other attributed fields still override normally
+    expect(mo.secondSide).toBeUndefined(); // no store-total source in this fixture either, so stays unset -- not forced to a wrong value
   });
 
   it('padding-agnostic loc match: shiftManagerRows.loc unpadded still matches a review.loc the same way qsr_daily_activity zero-pads elsewhere', () => {
