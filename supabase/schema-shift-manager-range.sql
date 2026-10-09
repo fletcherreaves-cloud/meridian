@@ -37,15 +37,22 @@ create table if not exists public.shift_manager_range (
   avg_check            numeric,
   tpph                 numeric,                 -- transactions per punched hour
   oepe                 numeric,                 -- sec (transaction-weighted)
+  oepe_no_park         numeric,                 -- sec, transaction-weighted
   r2p                  numeric,                 -- sec
   ctp                  numeric,                 -- sec
   dt_ttl               numeric,                 -- sec
   kvs                  numeric,                 -- sec
+  healthy_use_pct      numeric,                 -- transaction-weighted
   labor_pct            numeric,                 -- punched labor % (hour-weighted)
   tenant_id            uuid not null default '00000000-0000-0000-0000-000000000001',
   updated_at           timestamptz default now(),
   primary key (loc, geid, period_start, period_end)
 );
+
+-- Added 2026-10-09, same as shift_manager_monthly's companion migration -- this
+-- table may already exist live from an earlier investigative pull.
+alter table public.shift_manager_range add column if not exists oepe_no_park numeric;
+alter table public.shift_manager_range add column if not exists healthy_use_pct numeric;
 
 alter table public.shift_manager_range enable row level security;
 drop policy if exists "shift_manager_range: auth all" on public.shift_manager_range;

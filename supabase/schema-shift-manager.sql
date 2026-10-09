@@ -20,14 +20,24 @@ create table if not exists public.shift_manager_monthly (
   avg_check            numeric,
   tpph                 numeric,                 -- transactions per punched hour
   oepe                 numeric,                 -- sec (transaction-weighted)
+  oepe_no_park         numeric,                 -- sec, transaction-weighted
   r2p                  numeric,                 -- sec
   ctp                  numeric,                 -- sec
   dt_ttl               numeric,                 -- sec
   kvs                  numeric,                 -- sec
+  healthy_use_pct      numeric,                 -- transaction-weighted
   labor_pct            numeric,                 -- punched labor % (hour-weighted)
   updated_at           timestamptz default now(),
   primary key (loc, period_month, geid)
 );
+
+-- Added 2026-10-09: the two metrics the MCDOK Hourly Manager Review workbook also
+-- needs (OEPE W/O Parked, KVS Healthy Usage) -- both already in the raw API
+-- response (OEPENoPark, healthyUsePct) but not previously captured. See
+-- src/engine/people-reports.js's parseShiftManagerSummary and memory/reference-
+-- shift-manager-summary.md.
+alter table public.shift_manager_monthly add column if not exists oepe_no_park numeric;     -- sec, transaction-weighted
+alter table public.shift_manager_monthly add column if not exists healthy_use_pct numeric;  -- transaction-weighted
 
 alter table public.shift_manager_monthly enable row level security;
 drop policy if exists "shift_manager_monthly: auth all" on public.shift_manager_monthly;
