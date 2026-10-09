@@ -1,0 +1,49 @@
+name: QSRSoft Crew Review Confidential-Access Probe
+
+# Read-only, workflow_dispatch-only. Investigates the owner's question (2026-10-09): Crew Review
+# is the one of the 4 MCDOK People review forms whose content/score 403s ("You are not authorized
+# to view this confidential response") for the pulling account, while the other 3 (Shift Manager
+# Review, Crew Trainer Review, Maintenance Review) succeed -- see
+# memory/finding-qsrsoft-review-forms-schedules-endpoint-2026-10-08.md's "Crew Review's
+# content/score is NOT reachable" section. The owner's point: all 4 forms are (or should be)
+# marked confidential the same way, so "it's confidential" alone doesn't explain why only one of
+# the four is denied. This probe (scripts/probe-crew-review-confidential-access.mjs) checks the
+# two concrete explanations that would: (1) a bare X-Auth-Token fetch vs the SAME call made inside
+# a real logged-in browser session (cookies) -- the same cookie-vs-token-only split CLAUDE.md
+# already documents for api.reports.myqsrsoft.com; (2) whether the owner's own userId is actually
+# present in `sharedWith` on real Crew Review responses as often as it is on the other 3 forms'
+# responses. No writes anywhere; only reads + one Playwright login.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sample_size:
+        description: 'Occurrences sampled per form (default: 5)'
+        required: false
+        default: ''
+      days_back:
+        description: 'Schedule window to sample from, in days (default: 45)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Probe Crew Review confidential-access denial
+        run: node scripts/probe-crew-review-confidential-access.mjs
+        env:
+          QSRSOFT_USERNAME:   ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:   ${{ secrets.QSRSOFT_PASSWORD }}
+          PROBE_SAMPLE_SIZE:  ${{ github.event.inputs.sample_size || '' }}
+          PROBE_DAYS_BACK:    ${{ github.event.inputs.days_back   || '' }}
