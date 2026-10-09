@@ -474,14 +474,12 @@ function DistrictLensPanel({stores, ds, settings, onClose}) {
   },[allCorrs,outcome,okLocs,flLocs]);
 
   const generateNarrative = async()=>{
-    const key=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-    if(!key){setNarrative('No API key set. Add one in Settings → AI & Integrations.');return;}
     setNarLoading(true); setNarrative('');
     try{
       const outL=outcome==='sales'?'daily sales':outcome==='gc'?'guest count':'average check size';
       const fmtTop=arr=>arr.slice(0,3).map(m=>`${m.shortL} (avg r=${m.avgR.toFixed(2)})`).join(', ')||'insufficient data';
       const fmtOpp=oppRanking.slice(0,3).map(o=>`${STORE_NAMES[o.loc]||o.loc}: lever is ${o.metric.shortL} (r=${o.metric.r.toFixed(2)}, ${Math.round(o.gap*100)}% gap)`).join('; ')||'insufficient data';
-      const prompt=`You are a McDonald's district performance analyst. Correlation analysis for a 27-store district:
+      const prompt=`Correlation analysis for a 27-store district:
 
 Oklahoma (MCDOK, ${okLocs.length} stores) — top metrics linked to ${outL}: ${fmtTop(orgSummary.ok)}
 Florida Panhandle (Emerald Arches, ${flLocs.length} stores) — top metrics linked to ${outL}: ${fmtTop(orgSummary.fl)}
@@ -495,14 +493,11 @@ Write a 3-paragraph executive summary (no headers, no bullets):
 3. The top 3 specific coaching actions — name each store and lever
 
 Tone: practical, direct, written for a district manager presenting to a field consultant.`;
-      const res=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:650,messages:[{role:'user',content:prompt}]})
-      });
-      if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||'HTTP '+res.status);}
-      const data=await res.json();
-      setNarrative((data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join(''));
+      const text = await callSageOnce(
+        [{role:'user', content:prompt}],
+        'You are a McDonald\'s district performance analyst.',
+      );
+      setNarrative(text||'No narrative generated.');
     }catch(e){setNarrative('Error: '+e.message);}
     finally{setNarLoading(false);}
   };
@@ -688,7 +683,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
     div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--rl)',padding:'16px'}},
       div({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',marginBottom:4}},'📖 District Story'),
       div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:12,lineHeight:1.7}},
-        'AI-generated executive summary based on the correlation data above. Great for field consultant visits or team meetings. Requires API key in Settings → AI & Integrations.'),
+        'AI-generated executive summary based on the correlation data above. Great for field consultant visits or team meetings.'),
       narLoading&&div({style:{color:'var(--text3)',fontSize:'11px',padding:'20px',textAlign:'center'}},'Analyzing district data...'),
       narrative&&!narLoading&&div({style:{fontSize:'11px',color:'var(--text2)',lineHeight:1.8,marginBottom:12,
         whiteSpace:'pre-wrap',borderLeft:'2px solid rgba(245,158,11,.35)',paddingLeft:14}},narrative),
