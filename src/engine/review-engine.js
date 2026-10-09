@@ -1900,6 +1900,13 @@ export function autoPopulateKPIs(review, ds) {
       if (smg.r2p != null) mo.r2p = smg.r2p;
       if (smg.kvs != null) mo.kvs = smg.kvs;
       if (smg.laborPct != null) mo.labor = smg.laborPct;
+      // 2026-10-09 — same manager-attribution override as oepe/r2p/kvs/labor above, now that
+      // the Shift Manager Summary pull also captures healthyUsePct (previously only the
+      // store-total 'kvsHealthy' chain fed mo.secondSide, via metricAvg a few hundred lines
+      // up — never this manager's own rate). secondSide stays scored:false in the catalog
+      // (owner's own prior call, pending a real threshold band) — this only fixes WHICH
+      // actual a shift-attributed review displays, not whether it's scored.
+      if (smg.healthyUsePct != null) mo.secondSide = smg.healthyUsePct;
     }
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)

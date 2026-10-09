@@ -208,6 +208,34 @@ per Crew Review occurrence (there were already 106+ and climbing) on a request k
 fail. If QSRSoft-side permissions for this account are ever changed, re-measure before assuming
 this still holds.
 
+## ✅ RE-MEASURED 2026-10-09 (`scripts/probe-crew-review-confidential-access.mjs`, dispatch #1411) —
+## confirms the denial, and rules out both plausible client-side explanations
+
+Owner's question: all 4 forms look equally "confidential," so why does only Crew Review deny? Two
+concrete hypotheses, each independently testable without guessing:
+
+1. **Cookie vs bare-token fetch** — the exact mechanism CLAUDE.md already documents for
+   `api.reports.myqsrsoft.com` (token alone 401s; a real browser session succeeds). Tested: a real
+   Playwright SPA login (cookies `cwr_u`/`cwr_s` held), then the identical `responses/questions`
+   call made from inside that authenticated browser context. **Still 403, all 5 sampled — byte-
+   identical to the bare-token result.** Not a cookie-gated endpoint; ruled out.
+2. **`sharedWith` membership** — does the owner's userId actually appear in `sharedWith` on real
+   Crew Review responses, as often as on the other 3 forms? Measured on 5 fresh samples per form:
+   **Crew Review 5/5 include the owner in `sharedWith` — same as (in fact higher than) the other 3
+   forms (0/15 in this sample, though the original finding's `predefinedSharedWith` check already
+   showed those forms list him too).** `isConfidential` is `true` on literally all 20 sampled
+   occurrences across all 4 forms — confirming the owner's own observation that "confidential"
+   alone explains nothing, since it's identically `true` everywhere. Ruled out.
+
+**Neither client-side explanation holds.** The owner's own account is listed in `sharedWith` on
+real Crew Review responses, a real logged-in browser session changes nothing, and `isConfidential`
+is uniform across all 4 forms. This leaves only a genuine QSRSoft-side, form-specific account
+entitlement gap — the same shape as dispatch #63's `api.security` finding (credential accepted,
+principal denied, nothing wrong with this app's request). **Not fixable with a code change in this
+repo.** The remedy, if the owner wants to pursue it, is a QSRSoft support ticket or an account-admin
+permission change scoped to the Crew Review form specifically — re-measure with this same probe
+after any such change before assuming it resolved.
+
 ## What this produced
 
 - `src/engine/forms-reviews.js` — pure normalizers: `normalizeFormsReviewRow` (schedule-list
