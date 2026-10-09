@@ -15,7 +15,7 @@ import {
   // selector (QUARTER_MONTHS/H1_MONTHS/H2_MONTHS + calendarMonthRange) and segmented-scoring
   // display (computeSegmentedReview, the Phase 5a engine dispatch #154 shipped with no UI yet).
   QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
-  bonusEligibilityForPeriod,
+  bonusEligibilityForPeriod, mergedTargetsForLocMonth,
   // backlog-open-2026-09-06.md §7 "Missing-targets UI in ReviewEditor" -- missingReviewTargets()
   // already existed (engine-tested, review-target-autofill.test.js) but had no consumer anywhere
   // in this file until now.
@@ -2121,6 +2121,262 @@ function printReview(review, cfg, orgLabel, orgLogo, period='year') {
   printHtml(html);
 }
 
+// ── Shift Manager Store Report (owner, 2026-10-09) ──────────────────────────────
+// A standalone printable report, deliberately NOT shaped like printReview() above:
+// every manager with attributed shift data at a store, side by side, for an
+// arbitrary date range -- reads straight from ds.shiftManagerRows (the same source
+// NewReviewForm's manager dropdown already uses), with no dependency on a formal
+// Review record existing for any of them. This is what replaces the owner's manual
+// Excel workbook (one tab per patch, one block per store, one row per manager) --
+// same 4 scored metrics (OEPE W/O Parked, KVS, R2P, Healthy Usage), but computed
+// live and per-store instead of hand-assembled from a QSRSoft export.
+
+function monthsInRange(startMonth, endMonth) {
+  const out = [];
+  let [y, m] = startMonth.split('-').map(Number);
+  const [ey, em] = endMonth.split('-').map(Number);
+  if (!y || !m || !ey || !em) return out;
+  let guard = 0;
+  while ((y < ey || (y === ey && m <= em)) && guard++ < 240) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+// Transaction-weighted average over a manager's monthly rows -- same weighting
+// basis the Shift Manager pull itself uses (qsrsoft-shift-manager-pull.mjs's
+// aggregate()) to combine OEPE/KVS/R2P/Healthy-Usage across days into one month;
+// this just extends the same idea across MONTHS to cover an arbitrary report window.
+function wavg(items, key, weightKey = 'transactions') {
+  let num = 0, den = 0;
+  for (const it of items) {
+    const v = it[key], w = it[weightKey] || 0;
+    if (v == null || !w) continue;
+    num += v * w; den += w;
+  }
+  return den ? num / den : null;
+}
+
+// Builds the full printable HTML document for one or more stores' shift managers
+// over [startMonth, endMonth] (both 'YYYY-MM'). `locs` null/empty = every store
+// that has shift-manager data in the window. One page per store (page-break-
+// after, skipped on the last), each listing every manager as its own card.
+export function buildShiftManagerStoreReportHtml(ds, stores, { locs, geid, startMonth, endMonth, orgLabel }) {
+  const months = monthsInRange(startMonth, endMonth);
+  const rows = ds?.shiftManagerRows || [];
+  const normLoc = v => String(v == null ? '' : v).replace(/^0+/, '') || String(v == null ? '' : v);
+  const wantLocs = (locs && locs.length) ? new Set(locs.map(normLoc)) : null;
+  const wantGeid = geid != null && geid !== '' ? String(geid) : null;
+
+  const byStore = new Map(); // normLoc -> geid -> rows[]
+  for (const r of rows) {
+    if (!months.includes(r.month)) continue;
+    const nl = normLoc(r.loc);
+    if (wantLocs && !wantLocs.has(nl)) continue;
+    if (!r.geid) continue;
+    if (wantGeid && String(r.geid) !== wantGeid) continue;
+    if (!byStore.has(nl)) byStore.set(nl, new Map());
+    const byMgr = byStore.get(nl);
+    if (!byMgr.has(r.geid)) byMgr.set(r.geid, []);
+    byMgr.get(r.geid).push(r);
+  }
+
+  // Every EXPLICITLY requested store gets a page even with zero matching rows (an
+  // empty-state page, not a silently missing one) -- only the "all stores with
+  // data" case (wantLocs null) skips stores that have nothing in range.
+  const allLocs = new Set(byStore.keys());
+  if (wantLocs) for (const l of wantLocs) allLocs.add(l);
+  const storeOrderIdx = new Map((stores || []).map((s, i) => [normLoc(s.loc), i]));
+  const storeLocs = [...allLocs].sort((a, b) => {
+    const ia = storeOrderIdx.has(a) ? storeOrderIdx.get(a) : Infinity;
+    const ib = storeOrderIdx.has(b) ? storeOrderIdx.get(b) : Infinity;
+    return ia !== ib ? ia - ib : a.localeCompare(b);
+  });
+
+  const targetAvg = (loc, field) => {
+    let sum = 0, n = 0;
+    for (const pm of months) {
+      const [y, m] = pm.split('-');
+      const v = mergedTargetsForLocMonth(ds, loc, Number(y), m)?.[field];
+      if (v != null) { sum += v; n++; }
+    }
+    return n ? sum / n : null;
+  };
+
+  const fmtSec = v => v == null ? '—' : `${Math.round(v)}s`;
+  const fmtPct = v => v == null ? '—' : `${(v * 100).toFixed(0)}%`;
+  // Met/Missed only -- no 1-4 scoring band invented for a descriptive report;
+  // secondSide (Healthy Usage) stays reference-only, matching its scored:false
+  // status in the review catalog (owner's own prior call, no threshold band set).
+  const statusPill = (actual, target, lowerIsBetter) => {
+    if (actual == null || target == null) return '<span style="color:#9ca3af;font-size:10px">no target</span>';
+    const met = lowerIsBetter ? actual <= target : actual >= target;
+    return `<span style="font-size:10px;font-weight:700;color:${met ? '#10b981' : '#dc2626'}">${met ? '✓ Met' : '✗ Missed'}</span>`;
+  };
+
+  const metricRow = (label, actualFmt, actual, target, targetFmt, lowerIsBetter) => `
+    <div class="metric-row">
+      <span class="metric-label">${esc(label)}</span>
+      <span class="metric-val">${actualFmt(actual)}</span>
+      <span class="metric-tgt">${target != null ? `Tgt ${targetFmt(target)}` : 'no target'}</span>
+      ${statusPill(actual, target, lowerIsBetter)}
+    </div>`;
+
+  const periodLabel = months.length
+    ? `${MONTH_NAMES[parseInt(months[0].slice(5)) - 1]} ${months[0].slice(0, 4)} – ${MONTH_NAMES[parseInt(months[months.length - 1].slice(5)) - 1]} ${months[months.length - 1].slice(0, 4)}`
+    : '—';
+
+  const pages = storeLocs.map((loc, pageIdx) => {
+    const byMgr = byStore.get(loc) || new Map();
+    const oepeT = targetAvg(loc, 'tOepe'), r2pT = targetAvg(loc, 'tR2p'), kvsT = targetAvg(loc, 'tKvst');
+    const managers = [...byMgr.entries()].map(([geid, items]) => ({
+      geid,
+      name: items.find(i => i.name)?.name || String(geid),
+      oepe: wavg(items, 'oepe'),
+      oepeNoPark: wavg(items, 'oepeNoPark'),
+      kvs: wavg(items, 'kvs'),
+      r2p: wavg(items, 'r2p'),
+      healthyUsePct: wavg(items, 'healthyUsePct'),
+    })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    const storeLabel = sName(loc);
+    const last = pageIdx === storeLocs.length - 1;
+
+    return `
+    <section class="store-page" style="${last ? '' : 'page-break-after:always;'}">
+      <div class="store-head">
+        <div class="store-name">${esc(storeLabel)}</div>
+        <div class="store-period">${esc(periodLabel)} · ${managers.length} manager${managers.length === 1 ? '' : 's'}</div>
+      </div>
+      ${managers.length === 0
+        ? `<div class="empty">No shift-manager data for this store in this period.</div>`
+        : `<div class="manager-grid">
+            ${managers.map(m => `
+              <div class="manager-card">
+                <div class="manager-name">${esc(m.name)}</div>
+                ${metricRow('OEPE (Peaks)', fmtSec, m.oepe, oepeT, fmtSec, true)}
+                ${metricRow('OEPE W/O Parked', fmtSec, m.oepeNoPark, oepeT, fmtSec, true)}
+                ${metricRow('KVS Time', fmtSec, m.kvs, kvsT, fmtSec, true)}
+                ${metricRow('R2P', fmtSec, m.r2p, r2pT, fmtSec, true)}
+                <div class="metric-row">
+                  <span class="metric-label">2nd Side Healthy Usage</span>
+                  <span class="metric-val">${fmtPct(m.healthyUsePct)}</span>
+                  <span class="metric-tgt" style="grid-column:3/5;color:#9ca3af;font-size:10px">reference only — not scored</span>
+                </div>
+              </div>`).join('')}
+          </div>`}
+    </section>`;
+  });
+
+  // Zero stores matched at all (no explicit store requested, and nothing in
+  // ds.shiftManagerRows for the whole window) -- a real case, not hypothetical:
+  // found live by actually generating a report with no data loaded. Say so
+  // instead of silently printing a blank page with no explanation.
+  const body = pages.length ? pages.join('') : `
+    <section class="store-page">
+      <div class="store-head">
+        <div class="store-name">Shift Manager Report</div>
+        <div class="store-period">${esc(periodLabel)}</div>
+      </div>
+      <div class="empty">No shift-manager data found for any store in this period. Check the date
+        range, or confirm the Shift Manager pull has run for these months.</div>
+    </section>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Shift Manager Report — ${esc(periodLabel)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;color:#111;padding:24px;background:#fff}
+    .store-page{max-width:960px;margin:0 auto 24px}
+    .store-head{display:flex;justify-content:space-between;align-items:baseline;
+      border-bottom:3px solid #0f172a;padding-bottom:8px;margin-bottom:16px}
+    .store-name{font-size:20px;font-weight:800;color:#0f172a}
+    .store-period{font-size:12px;color:#6b7280;font-weight:600}
+    .manager-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    .manager-card{border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;background:#fafafa}
+    .manager-name{font-size:13px;font-weight:700;color:#0f172a;margin-bottom:8px;
+      padding-bottom:6px;border-bottom:1px solid #e5e7eb}
+    .metric-row{display:grid;grid-template-columns:1.3fr .7fr .8fr .6fr;align-items:center;
+      gap:6px;padding:3px 0;font-size:11px}
+    .metric-label{color:#374151;font-weight:600}
+    .metric-val{font-weight:700;color:#0f172a;text-align:right}
+    .metric-tgt{color:#6b7280;text-align:right}
+    .empty{color:#9ca3af;font-size:12px;padding:24px 0}
+    @media print{body{padding:10px}.store-page{margin-bottom:0}@page{margin:.4in}}
+  </style></head><body>
+  ${body}
+  </body></html>`;
+}
+
+// Inline picker (toggled from ReviewList's toolbar) -- store + date-range inputs,
+// "Generate Report" opens the print overlay immediately via printHtml(). No
+// separate panel/nav entry: this is an export action, not a navigable view.
+export function ShiftManagerReportForm({stores, ds, onClose}) {
+  const [loc, setLoc] = useState('');   // '' = all stores with data in range
+  const [geid, setGeid] = useState(''); // '' = every manager (optional narrow-to-one-person)
+  const today = new Date();
+  const defaultStart = `${today.getFullYear()}-01`;
+  const defaultEnd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const [startMonth, setStartMonth] = useState(defaultStart);
+  const [endMonth, setEndMonth] = useState(defaultEnd);
+
+  // Manager picker, populated from the SAME live shift-manager pull data NewReviewForm's own
+  // manager dropdown already reads (ds.shiftManagerRows -- no separate roster upload, no
+  // hand-typed name to mismatch against anything). Narrowed to the selected store when one is
+  // chosen, same padding-agnostic loc match used throughout this file.
+  const normLoc = v => String(v == null ? '' : v).replace(/^0+/, '') || String(v == null ? '' : v);
+  const managers = useMemo(() => {
+    const want = loc ? normLoc(loc) : null;
+    const m = {};
+    for (const r of (ds?.shiftManagerRows || [])) {
+      if (!r.geid) continue;
+      if (want && normLoc(r.loc) !== want) continue;
+      if (!m[r.geid] || (r.name && !m[r.geid].name)) m[r.geid] = { geid: r.geid, name: r.name || String(r.geid) };
+    }
+    return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [ds, loc]);
+
+  const generate = () => {
+    const html = buildShiftManagerStoreReportHtml(ds, stores, {
+      locs: loc ? [loc] : null, geid: geid || null, startMonth, endMonth,
+    });
+    printHtml(html);
+  };
+
+  const fieldStyle = {padding:'5px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+    borderRadius:4,color:TEXT,fontSize:12};
+
+  return div({style:{padding:'14px 16px',background:`${AMBER}10`,
+    borderBottom:`1px solid ${AMBER}30`,display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}},
+    div(null,
+      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Store'),
+      sel({value:loc,onChange:e=>{setLoc(e.target.value);setGeid('');},style:{...fieldStyle,minWidth:180}},
+        opt({value:''},'All Stores (one page each)'),
+        ...(stores||[]).map(s=>opt({value:s.loc,key:s.loc},sName(s.loc))))
+    ),
+    div(null,
+      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Manager (optional)'),
+      managers.length > 0
+        ? sel({value:geid,onChange:e=>setGeid(e.target.value),style:{...fieldStyle,minWidth:170}},
+            opt({value:''},'— everyone —'),
+            ...managers.map(m=>opt({value:String(m.geid),key:m.geid},m.name)))
+        : sel({value:'',disabled:true,style:{...fieldStyle,minWidth:170,opacity:.6}},
+            opt({value:''},'— no shift-manager data —'))
+    ),
+    div(null,
+      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'From'),
+      inp({type:'month',value:startMonth,onChange:e=>setStartMonth(e.target.value),style:fieldStyle})
+    ),
+    div(null,
+      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Through'),
+      inp({type:'month',value:endMonth,onChange:e=>setEndMonth(e.target.value),style:fieldStyle})
+    ),
+    PrimaryBtn({onClick:generate,style:{alignSelf:'flex-end'}},'📄 Generate Report'),
+    GhostBtn({onClick:onClose,style:{alignSelf:'flex-end'}},'Cancel')
+  );
+}
+
 // ── Summary Tab ────────────────────────────────────────────────────────────────
 // ── Score Breakdown Panel ──────────────────────────────────────────────────────
 // Dispatch #157 — `period` selects which of computeScoreBreakdown's real {q1,q2,q3,q4,h1,h2,year}
@@ -2728,13 +2984,14 @@ const SCORE_BANDS = [
   { id: 'unscored', label: 'Not Yet Scored',  test: s => s == null },
 ];
 
-function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDelete}) {
+function ReviewList({reviews, cfg, stores, ds, shiftManagerRows, onOpen, onNew, onDelete}) {
   const [filterRole, setFilterRole]     = useState('all');
   const [filterYear, setFilterYear]     = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterScoreBand, setFilterScoreBand] = useState('all');
   const [search, setSearch]             = useState('');
   const [showNew, setShowNew]           = useState(false);
+  const [showSmReport, setShowSmReport] = useState(false);
 
   const loadDemos = () => {
     fetch('/populate-demo-reviews.js')
@@ -2810,8 +3067,15 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
           borderRadius:R,color:TEXT,fontSize:12,width:150}}),
       div({style:{flex:1}}),
       GhostBtn({onClick:loadDemos,style:{fontSize:11,opacity:.75}},'📚 Demo Reviews'),
+      // Store Shift Manager Report (owner, 2026-10-09): a standalone, printable report —
+      // every shift-attributed manager at a store, side by side, for an arbitrary date
+      // range — pulled straight from ds.shiftManagerRows, independent of whether a formal
+      // Review record exists for any of them yet. Mirrors the owner's manual Excel review
+      // workbook, but live and per-store rather than hand-assembled per patch.
+      GhostBtn({onClick:()=>setShowSmReport(s=>!s),style:{fontSize:11}},'📄 Shift Manager Report'),
       PrimaryBtn({onClick:()=>setShowNew(true)},'+ New Review')
     ),
+    showSmReport&&h(ShiftManagerReportForm,{stores,ds,onClose:()=>setShowSmReport(false)}),
     // YoY trend strip — appears once the name search narrows to one person with 2+ scored
     // years on file. Never a claim of causation, just the year overalls side by side.
     trend.length>=2 ? div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
@@ -3063,7 +3327,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
             userRole, orgRoles, dataReady,
             onTransition:handleTransition,
             onGoToTargets: canCustomize ? (()=>{setCustomizeEntrySection('targets');setTab('customize');}) : null})
-        : h(ReviewList,{reviews, cfg, stores,
+        : h(ReviewList,{reviews, cfg, stores, ds,
             shiftManagerRows: ds?.shiftManagerRows || [],
             onOpen:setEditing,
             onNew:refresh,
