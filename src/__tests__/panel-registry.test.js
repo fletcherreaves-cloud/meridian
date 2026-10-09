@@ -15,13 +15,17 @@ const SHELL = readFileSync(new URL('../app/shell.js', import.meta.url), 'utf8');
 
 const dispatchIds = () => {
   const i = APP.indexOf('onOpenModal: (modal) => {');
-  // Window bumped 14000 -> 16000 (dispatch #206, 2026-08-28): the dispatcher body itself was
-  // already at 13,961 chars to its last branch before this dispatch's own edits, 39 chars under
-  // the old ceiling -- one more line-comment anywhere in the block would have silently dropped
-  // 'forms-library'/'metric-lineage' out of this scan and failed the "every registered panel has
-  // a dispatch handler" test below with a misleading "unopenable" message. Real headroom now,
-  // not a re-measured exact fit.
-  const seg = APP.slice(i, i + 16000);
+  // Window bumped 16000 -> 20000 (2026-10-08, adding 'forms-reviews'): the prior "real headroom"
+  // comment was wrong about being real -- a single new one-line dispatch branch
+  // (`if(modal==='forms-reviews') ...`) pushed 'forms-library' (offset 16056) and
+  // 'metric-lineage' (offset 15989, but its own match pattern ran past the 16000 cutoff mid-
+  // string) both out of the 16000-char window, failing this test with exactly the misleading
+  // "unopenable" message the PRIOR bump's comment warned about. Measured this time: the
+  // dispatcher's last real branch now ends at offset 18,396 -- 20000 leaves ~1,600 chars of
+  // actual headroom, not a re-measured exact fit either. Re-measure (see the node snippet this
+  // comment summarizes: slice from `onOpenModal: (modal) => {`, matchAll `modal\s*===\s*'...'`,
+  // check the last match's end offset) before assuming this headroom still holds.
+  const seg = APP.slice(i, i + 20000);
   return new Set([...seg.matchAll(/modal\s*===\s*'([a-z0-9:_-]+)'/g)].map(m => m[1]));
 };
 // Dispatch #54 Job A moved most nav items from literal onOpenModal('id') call sites to

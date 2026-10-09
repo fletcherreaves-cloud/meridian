@@ -295,6 +295,7 @@ const StoreAssessmentsPanel = lazyPanel(() => import('../views/store-assessments
 const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })));
 const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })));
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
+const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -1105,6 +1106,7 @@ function App() {
   // showGradedVisits — dispatch #205: replaced by routePanel==='graded-visits' (see routePanel above).
   // showSecurity — dispatch #192: replaced by routePanel==='security' (see routePanel above).
   const [showFormsCompletion, setShowFormsCompletion] = useState(false);
+  const [showFormsReviews, setShowFormsReviews] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
   const [uploadReport, setUploadReport]= useState(null); // per-batch content summary
@@ -3152,7 +3154,7 @@ function App() {
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showFormsReviews||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -3176,7 +3178,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);
-      setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
+      setShowFormsCompletion(false);setShowFormsReviews(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowKB(false);setShowEmailDigests(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);
       setShowModelAssign(false);
@@ -3347,6 +3349,7 @@ function App() {
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
+        if(modal==='forms-reviews') perm('analytics.store')&&setShowFormsReviews(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
@@ -3788,6 +3791,12 @@ function App() {
       onClose:()=>setShowFormsCompletion(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
     },
       h(FormsCompletionPanel,{stores,userRole,onClose:()=>setShowFormsCompletion(false)})
+    ),
+    showFormsReviews&&h(ModalShell,{
+      title:'⭐ Review Forms',
+      onClose:()=>setShowFormsReviews(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
+    },
+      h(FormsReviewsPanel,{stores,onClose:()=>setShowFormsReviews(false)})
     ),
     // SAGE stays MOUNTED while minimized (DrawerShell toggles display, never unmounts) so the
     // session keeps running in the background and you can look at other Meridian data at the

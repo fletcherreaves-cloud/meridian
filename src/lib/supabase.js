@@ -4173,6 +4173,35 @@ export async function loadQsrFormsCompletion({ start, end, locs } = {}) {
   }));
 }
 
+// ── MCDOK People confidential review forms (qsr_forms_reviews) ───────────────────────────────
+// Crew Review / Crew Trainer Review / Maintenance Review / Shift Manager Review. See
+// supabase/schema-qsr-forms-reviews.sql's header and src/engine/forms-reviews.js for the full
+// capture this is built from -- a SEPARATE source/table from qsr_forms_completion above, not an
+// extension of it. `start`/`end` filter on `started_at` (the occurrence key, no
+// scheduled_at/completed_on fallback needed here -- unlike Forms Completion, every row in this
+// table has a real startedAt by construction, since normalizeFormsReviewRow drops anything that
+// doesn't). `locs`, if given, are unpadded NSNs (padded here, matching every other loc-scoped
+// QSRSoft loader in this file).
+export async function loadQsrFormsReviews({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_forms_reviews').select('*').range(from, to);
+    if (start) q = q.gte('started_at', start);
+    if (end) q = q.lte('started_at', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'qsr_forms_reviews');
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), formId: r.form_id, formTitle: r.form_title,
+    startedAt: r.started_at, totalQuestions: r.total_questions, answeredQuestions: r.answered_questions,
+    completionRatio: r.completion_ratio, reviewerUserId: r.reviewer_user_id,
+    reviewedWith: r.reviewed_with || [], isConfidential: r.is_confidential,
+    sharedWith: r.shared_with || [], isDeleted: r.is_deleted,
+    scorePointsPossible: r.score_points_possible, scorePointsReceived: r.score_points_received,
+    scorePct: r.score_pct, content: r.content || [], contentAvailable: r.content_available,
+  }));
+}
+
 // ── Digital Checklists (qsr_checklist_submissions) ────────────────────────────
 // Fillable, cloud-saved submissions against the public/forms/*.json templates
 // (src/views/checklist-fill.js). One row per (loc, formId, businessDate) — see

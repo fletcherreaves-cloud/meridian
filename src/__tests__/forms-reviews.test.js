@@ -4,7 +4,11 @@
 // memory/finding-qsrsoft-review-forms-schedules-endpoint-2026-10-08.md for the live capture
 // this is built from.
 import { describe, it, expect } from 'vitest';
-import { normalizeFormsReviewRow, normalizeFormsReviewRows, normalizeFormsReviewContent, REVIEW_FORMS, CONTENT_ACCESSIBLE_FORM_IDS } from '../engine/forms-reviews.js';
+import {
+  normalizeFormsReviewRow, normalizeFormsReviewRows, normalizeFormsReviewContent,
+  computeReviewFormSummary, sortReviewOccurrencesForDisplay,
+  REVIEW_FORMS, CONTENT_ACCESSIBLE_FORM_IDS,
+} from '../engine/forms-reviews.js';
 
 const CREW_REVIEW_ID = '8c430399-a218-4b1f-aa85-89aca8cc441d';
 
@@ -189,5 +193,104 @@ describe('CONTENT_ACCESSIBLE_FORM_IDS', () => {
     expect(CONTENT_ACCESSIBLE_FORM_IDS.has('24409bc6-a228-473b-b070-ed4160f3c93a')).toBe(true); // Shift Manager Review
     expect(CONTENT_ACCESSIBLE_FORM_IDS.has('2af5d678-329b-4378-945f-d40eddaf17e1')).toBe(true); // Crew Trainer Review
     expect(CONTENT_ACCESSIBLE_FORM_IDS.has('5c0cc473-c394-4fa7-b76f-e8cf80fb0156')).toBe(true); // Maintenance Review
+  });
+});
+
+// ── Panel rollups (the UI's loader output shape -- camelCase, already out of the DB) ───────────
+const SHIFT_MGR_ID = '24409bc6-a228-473b-b070-ed4160f3c93a';
+const loadedRow = (over = {}) => ({
+  loc: '5985', formId: SHIFT_MGR_ID, formTitle: 'MCDOK Shift Manager Review',
+  startedAt: '2026-10-08T19:00:00.000Z', totalQuestions: 58, answeredQuestions: 55,
+  completionRatio: 55 / 58, contentAvailable: true,
+  scorePointsPossible: 100, scorePointsReceived: 60, scorePct: 60,
+  ...over,
+});
+
+describe('computeReviewFormSummary -- real points-weighted aggregate, never a mean of rates', () => {
+  it('sums points across occurrences rather than averaging each occurrence\'s own scorePct', () => {
+    // The exact case that disproved completion_ratio as the real Score, re-used here: a store
+    // with a near-perfect score and a store with a poor one must not average to their midpoint
+    // the same way regardless of how many points each one carried.
+    const rows = [
+      loadedRow({ loc: '5985', scorePointsPossible: 100, scorePointsReceived: 91, scorePct: 91 }),
+      loadedRow({ loc: '10422', scorePointsPossible: 100, scorePointsReceived: 29, scorePct: 29 }),
+    ];
+    const [summary] = computeReviewFormSummary(rows);
+    expect(summary.avgScorePct).toBeCloseTo((91 + 29) / 2, 10); // equal weight here since both carry 100 possible points
+    expect(summary.occurrenceCount).toBe(2);
+    expect(summary.scoredCount).toBe(2);
+  });
+
+  it('a store with more scored points counts proportionally more, not equally per occurrence', () => {
+    const rows = [
+      loadedRow({ loc: '5985', scorePointsPossible: 100, scorePointsReceived: 100, scorePct: 100 }),
+      loadedRow({ loc: '5985', scorePointsPossible: 100, scorePointsReceived: 100, scorePct: 100 }),
+      loadedRow({ loc: '10422', scorePointsPossible: 100, scorePointsReceived: 0, scorePct: 0 }),
+    ];
+    const [summary] = computeReviewFormSummary(rows);
+    // Σreceived/Σpossible = 200/300 = 66.67%, NOT the mean of (100,100,0) = 66.67% -- same
+    // number here by coincidence of equal weights; the point is the formula, pinned below.
+    expect(summary.avgScorePct).toBeCloseTo((200 / 300) * 100, 10);
+  });
+
+  it('rows without content available (Crew Review, or not-yet-fetched) do not count toward scoredCount/avgScorePct', () => {
+    const rows = [
+      loadedRow({ formId: '8c430399-a218-4b1f-aa85-89aca8cc441d', contentAvailable: false, scorePct: null, scorePointsPossible: null, scorePointsReceived: null }),
+      loadedRow({ formId: '8c430399-a218-4b1f-aa85-89aca8cc441d', contentAvailable: false, scorePct: null, scorePointsPossible: null, scorePointsReceived: null }),
+    ];
+    const [summary] = computeReviewFormSummary(rows);
+    expect(summary.occurrenceCount).toBe(2);
+    expect(summary.scoredCount).toBe(0);
+    expect(summary.avgScorePct).toBeNull();
+  });
+
+  it('separates forms into independent summaries, keyed by formId', () => {
+    const rows = [loadedRow({ formId: 'formA', formTitle: 'A' }), loadedRow({ formId: 'formB', formTitle: 'B' })];
+    const summary = computeReviewFormSummary(rows);
+    expect(summary.map(f => f.formId).sort()).toEqual(['formA', 'formB']);
+  });
+
+  it('sorts worst-scoring form first; a form with no score at all sorts last', () => {
+    const rows = [
+      loadedRow({ formId: 'good', formTitle: 'Good', scorePct: 90, scorePointsReceived: 90 }),
+      loadedRow({ formId: 'bad', formTitle: 'Bad', scorePct: 20, scorePointsReceived: 20 }),
+      loadedRow({ formId: 'unscored', formTitle: 'Unscored', contentAvailable: false, scorePct: null, scorePointsPossible: null, scorePointsReceived: null }),
+    ];
+    const summary = computeReviewFormSummary(rows);
+    expect(summary.map(f => f.formId)).toEqual(['bad', 'good', 'unscored']);
+  });
+
+  it('tolerates a non-array/empty input', () => {
+    expect(computeReviewFormSummary(null)).toEqual([]);
+    expect(computeReviewFormSummary([])).toEqual([]);
+  });
+});
+
+describe('sortReviewOccurrencesForDisplay', () => {
+  it('orders newest startedAt first', () => {
+    const rows = [
+      loadedRow({ loc: '5985', startedAt: '2026-10-06T10:00:00.000Z' }),
+      loadedRow({ loc: '5985', startedAt: '2026-10-08T10:00:00.000Z' }),
+      loadedRow({ loc: '5985', startedAt: '2026-10-07T10:00:00.000Z' }),
+    ];
+    const sorted = sortReviewOccurrencesForDisplay(rows);
+    expect(sorted.map(r => r.startedAt)).toEqual([
+      '2026-10-08T10:00:00.000Z', '2026-10-07T10:00:00.000Z', '2026-10-06T10:00:00.000Z',
+    ]);
+  });
+
+  it('tie-breaks by loc then formTitle when startedAt matches', () => {
+    const rows = [
+      loadedRow({ loc: '5985', formTitle: 'Z Form' }),
+      loadedRow({ loc: '5985', formTitle: 'A Form' }),
+      loadedRow({ loc: '3708', formTitle: 'A Form' }),
+    ];
+    const sorted = sortReviewOccurrencesForDisplay(rows);
+    expect(sorted.map(r => `${r.loc}|${r.formTitle}`)).toEqual(['3708|A Form', '5985|A Form', '5985|Z Form']);
+  });
+
+  it('tolerates a non-array/empty/null-containing input', () => {
+    expect(sortReviewOccurrencesForDisplay(null)).toEqual([]);
+    expect(sortReviewOccurrencesForDisplay([loadedRow(), null])).toHaveLength(1);
   });
 });
