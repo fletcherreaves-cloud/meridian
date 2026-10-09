@@ -445,6 +445,13 @@ export function parseMcDelivery3POApi(payload) {
 // "No FL Manager" = unassigned/float (skipped). Isolates a DM/shift-manager's OWN
 // performance for reviews (GMs keep store-total). Speed metrics (OEPE/R2P/CTP/dtTTL/
 // KVS) are already in SECONDS. Default returns only the "Manager Total" rows.
+//
+// oepeNoPark (raw `OEPENoPark`) and healthyUsePct (raw `healthyUsePct`) added
+// 2026-10-09 to match the 4 metrics the MCDOK Hourly Manager Review workbook scores
+// a shift manager on (OEPE W/O Parked, KVS Time Per GC, KVS Healthy Usage, R2P) --
+// both fields were already in the raw API response (see memory/reference-shift-
+// manager-summary.md's field list) but weren't being captured here. `oepe` (plain,
+// WITH parked cars) is kept alongside for whatever already reads it.
 export function parseShiftManagerSummary(payload, { onlyTotals = true } = {}) {
   const arr = Array.isArray(payload) ? payload
     : Array.isArray(payload?.resp) ? payload.resp
@@ -473,10 +480,12 @@ export function parseShiftManagerSummary(payload, { onlyTotals = true } = {}) {
       avgCheck: num(r.avgCheck),
       tpph: num(r.transPerPunchedHour),                    // transactions per punched hour
       oepe: num(r.OEPE),
+      oepeNoPark: num(r.OEPENoPark),
       r2p: num(r.R2P),
       ctp: num(r.CTP),
       dtTtl: num(r.dtTTL),
       kvs: num(r.KVSTimePerTran),
+      healthyUsePct: num(r.healthyUsePct),
       laborPct: num(r.punchedLaborPct),
     });
   }

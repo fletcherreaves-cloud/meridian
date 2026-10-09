@@ -148,7 +148,8 @@ function aggregate(records, window) {
       loc: r.loc, geid: r.geid, name: r.name,
       numShifts: 0, actualHours: 0, actualVsScheduled: 0, actualVsNeeded: 0,
       netSales: 0, transactions: 0,
-      _spW: 0, _oepe: 0, _r2p: 0, _ctp: 0, _dtTtl: 0, _kvs: 0, _acW: 0, _ac: 0, _lbW: 0, _lb: 0,
+      _spW: 0, _oepe: 0, _oepeNoPark: 0, _r2p: 0, _ctp: 0, _dtTtl: 0, _kvs: 0,
+      _hu: 0, _acW: 0, _ac: 0, _lbW: 0, _lb: 0,
     });
     if (r.name) a.name = r.name;
     a.numShifts += r.numShifts || 0;
@@ -157,11 +158,17 @@ function aggregate(records, window) {
     a.actualVsNeeded += r.actualVsNeeded || 0;
     a.netSales += r.netSales || 0;
     a.transactions += r.transactions || 0;
+    // Transaction-weighted, same basis as every other per-manager speed/rate metric
+    // below (oepe/r2p/ctp/dtTtl/kvs) -- healthyUsePct has no documented weighting
+    // basis of its own, so it follows this pull's existing convention rather than
+    // inventing a new one.
     const tw = r.transactions || 0;          // transaction weight for speed + avg check
     if (tw > 0) {
       a._spW += tw;
       a._oepe += (r.oepe || 0) * tw; a._r2p += (r.r2p || 0) * tw; a._ctp += (r.ctp || 0) * tw;
       a._dtTtl += (r.dtTtl || 0) * tw; a._kvs += (r.kvs || 0) * tw;
+      if (r.oepeNoPark != null) a._oepeNoPark += r.oepeNoPark * tw;
+      if (r.healthyUsePct != null) a._hu += r.healthyUsePct * tw;
       if (r.avgCheck != null) { a._acW += tw; a._ac += r.avgCheck * tw; }
     }
     const hw = r.actualHours || 0;           // hour weight for labor %
@@ -177,9 +184,13 @@ function aggregate(records, window) {
     net_sales: a.netSales || null, transactions: a.transactions || null,
     avg_check: a._acW ? a._ac / a._acW : (a.transactions ? a.netSales / a.transactions : null),
     tpph: a.actualHours ? a.transactions / a.actualHours : null,
-    oepe: a._spW ? a._oepe / a._spW : null, r2p: a._spW ? a._r2p / a._spW : null,
+    oepe: a._spW ? a._oepe / a._spW : null,
+    oepe_no_park: a._spW ? a._oepeNoPark / a._spW : null,
+    r2p: a._spW ? a._r2p / a._spW : null,
     ctp: a._spW ? a._ctp / a._spW : null, dt_ttl: a._spW ? a._dtTtl / a._spW : null,
-    kvs: a._spW ? a._kvs / a._spW : null, labor_pct: a._lbW ? a._lb / a._lbW : null,
+    kvs: a._spW ? a._kvs / a._spW : null,
+    healthy_use_pct: a._spW ? a._hu / a._spW : null,
+    labor_pct: a._lbW ? a._lb / a._lbW : null,
     updated_at: new Date().toISOString(),
   }));
 }

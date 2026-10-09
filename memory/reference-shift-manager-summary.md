@@ -38,6 +38,15 @@ manager-attributed metrics (OEPE/R2P/CTP/KVS/labor%/avgCheck/sales); **GMs keep 
 Not built yet — queued behind Notes 33 order (wiring+provenance → One-Pager bugs → this). Owner sent the
 dev capture 2026-07-28. See [[notes-33-queue]], [[session-handoff-2026-07-28]].
 
+**Two more fields captured (2026-10-09):** `OEPENoPark` → `oepe_no_park` and `healthyUsePct` →
+`healthy_use_pct`, both transaction-weighted same as `oepe`/`r2p`/etc. These were always in the
+raw API response (see the field list above) but not previously parsed/stored — added so
+`shift_manager_monthly`/`shift_manager_range` carry the same 4 scoring metrics (OEPE W/O Parked,
+KVS Time Per GC ≈ `kvs`, KVS Healthy Usage, R2P) the MCDOK Hourly Manager Review workbook scores
+shift managers on, enabling that review to be wired into the app directly off this live pull
+instead of a manually-exported QSRSoft report. See `src/engine/people-reports.js`'s
+`parseShiftManagerSummary` and `scripts/qsrsoft-shift-manager-pull.mjs`'s `aggregate()`.
+
 **Explicit-range pulls (#266, added 2026-08-14):** `scripts/qsrsoft-shift-manager-pull.mjs` accepts
 `SHIFTMGR_START`/`SHIFTMGR_END` overrides for investigative pulls narrower than a calendar month —
 a single day: set only `SHIFTMGR_START`. Because the endpoint already takes an arbitrary
