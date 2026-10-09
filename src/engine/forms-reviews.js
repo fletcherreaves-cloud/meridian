@@ -176,3 +176,59 @@ export function normalizeFormsReviewContent(rawQuestions) {
     scorePct: pointsPossible > 0 ? (pointsReceived / pointsPossible) * 100 : null,
   };
 }
+
+// ── Panel rollups (Slice 2 — the UI, reads loadQsrFormsReviews()'s ALREADY-NORMALIZED rows) ────
+// Same discipline as forms-completion.js's own Slice 2 helpers: pure, no Supabase, no wall-clock
+// read, operates on the loader's output shape (camelCase, already out of the DB), not the raw API
+// payload normalizeFormsReviewRow consumes.
+
+/**
+ * Per-form summary across a set of loaded rows. `avgScorePct` is Σ scorePointsReceived / Σ
+ * scorePointsPossible across every row that HAS a score -- never the mean of each row's own
+ * scorePct (CLAUDE.md's standing "never average averages" rule: a store with 1 scored occurrence
+ * and one with 40 must not count equally). `scoredCount` can be less than `occurrenceCount` for
+ * two reasons that look identical from this function alone: the row's form is Crew Review
+ * (CONTENT_ACCESSIBLE_FORM_IDS excludes it, see header) or its content/score simply hasn't been
+ * fetched yet for that occurrence (`contentAvailable: false` on an otherwise-eligible form) --
+ * the panel distinguishes those by checking the formId against CONTENT_ACCESSIBLE_FORM_IDS itself,
+ * not by anything returned here.
+ */
+export function computeReviewFormSummary(rows) {
+  const byForm = new Map();
+  for (const r of (rows || [])) {
+    if (!r) continue;
+    if (!byForm.has(r.formId)) {
+      byForm.set(r.formId, {
+        formId: r.formId, formTitle: r.formTitle,
+        occurrenceCount: 0, scoredCount: 0, pointsPossible: 0, pointsReceived: 0,
+      });
+    }
+    const f = byForm.get(r.formId);
+    f.occurrenceCount++;
+    if (r.contentAvailable && typeof r.scorePct === 'number') {
+      f.scoredCount++;
+      f.pointsPossible += r.scorePointsPossible || 0;
+      f.pointsReceived += r.scorePointsReceived || 0;
+    }
+  }
+  return [...byForm.values()].map(f => ({
+    ...f,
+    avgScorePct: f.pointsPossible > 0 ? (f.pointsReceived / f.pointsPossible) * 100 : null,
+    // worst-scoring form surfaces first -- names a decision (which review type needs attention),
+    // same ordering rationale as forms-completion.js's computeFormSummary. Forms with no score at
+    // all (Crew Review) sort last, not first -- there's nothing actionable to read from "no score".
+  })).sort((a, b) => (a.avgScorePct ?? 101) - (b.avgScorePct ?? 101));
+}
+
+/**
+ * Loaded rows ordered for the occurrence list: newest first (startedAt), then store, then form
+ * title -- same tie-break shape as forms-completion.js's sortOccurrencesForDisplay. A pure
+ * passthrough (sorting only), kept here per this file's own standing rule that panels don't
+ * reimplement ordering the engine already owns.
+ */
+export function sortReviewOccurrencesForDisplay(rows) {
+  return [...(rows || [])].filter(Boolean).sort((a, b) =>
+    (b.startedAt || '').localeCompare(a.startedAt || '') ||
+    (a.loc || '').localeCompare(b.loc || '') ||
+    (a.formTitle || '').localeCompare(b.formTitle || ''));
+}

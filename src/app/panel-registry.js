@@ -214,6 +214,11 @@ export const PANELS = [
   // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
   // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.
   { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:9 },
+  // MCDOK People confidential review forms (Crew/Crew Trainer/Maintenance/Shift Manager Review)
+  // -- a SEPARATE source from forms-completion above (qsr_forms_reviews, not qsr_forms_completion;
+  // see src/engine/forms-reviews.js's header). kind:'test-kitchen' for the same reason
+  // forms-completion started there: new, unproven panel against a real pull, not fake data.
+  { id:'forms-reviews', label:'Review Forms', icon:'⭐', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:16 },
   { id:'forms-library', label:'Forms Library', icon:'🗂', perm:null, kind:'nav', section:'forms' },
   { id:'forms-print', label:'Printable Forms', icon:'🖨', perm:null, kind:'nav', section:'forms' },
   // Owner request 2026-09-01: fillable, cloud-saved version of every published form pulled by
