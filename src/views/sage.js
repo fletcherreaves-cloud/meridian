@@ -542,7 +542,7 @@ which business day that hour falls in rather than assuming a midnight cutover.
 ${viewingLine ? `${viewingLine} — a question phrased without naming a store or panel ("what's driving this," "explain this number," "why is this red") likely refers to this. Confirm rather than guess if it's genuinely ambiguous.\n` : ''}
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have eleven tools — seven query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, and two search reference material:
+You have twelve tools — seven query live Supabase data (updated daily via automation), one queries SMG VOICE survey data (manually uploaded, not yet automated), one checks whether the automated data streams themselves are current, two search reference material, and one searches the live web:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -601,6 +601,11 @@ You have eleven tools — seven query live Supabase data (updated daily via auto
    Returns: QSRSoft Forms completion (shift checklists / travel-path forms — Opening, Pre-Shift, Closing, etc.) for the requested date range — per-store resolved/completed/missed counts + pass rate, and per-form totals district-wide (worst-performing form first). Same store-day rollup logic (completed÷resolved vs. each form's own threshold, 80% default) the in-app Forms dashboard uses.
    USE FOR: form/checklist compliance, which stores are missing shift forms, which specific form is being skipped, form completion/pass rate by store or estate-wide.
    CAVEAT: "resolved" excludes occurrences still open (not yet due) — those are neither a pass nor a miss. Manager/person attribution is NOT possible from this data (see the tool's own note) — never attribute a missed form to an individual.
+
+12. web_search — server-side, no arguments you construct; you decide on your own when to use it.
+   USE FOR: anything that needs CURRENT information outside Meridian's own data — local news/weather/road closures/events explaining a sales anomaly on a specific date, a school district's calendar, a community event or festival near a store, or any general-knowledge question you're not confident about from training data alone.
+   NOT FOR: anything tools 1–11 already answer (store sales, labor, forecasts, SMG, forms, QSRSoft how-tos, this project's own memory) — reach for the specific tool first; web_search is for information that genuinely lives outside Meridian.
+   CAVEAT: cite what you find in plain language (e.g. "a local news search turned up...") so the owner can tell a web-sourced claim apart from a number pulled from Meridian's own data.
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date

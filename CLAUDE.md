@@ -252,9 +252,23 @@ monthly FullScale upload, response-count-weighted district totals), `search_qsr_
 notes — why a metric/panel works the way it does). **New in v5.457, Task #74:**
 `query_data_health` — checks whether the ~21 automated data streams themselves are current, same
 thresholds as `stream-freshness.js`'s STREAMS/At-A-Glance checklist, never returns store-level
-figures. System prompt (`src/views/sage.js`'s `buildSystemPrompt`) documents all 10 explicitly so
-SAGE calls them proactively — that file had also drifted (claimed "nine tools" but only wrote up
-8, missing `search_project_memory` entirely), fixed in the same pass.
+figures. **This list itself had gone stale again by 2026-10-10 (re-measured against `index.ts`'s
+actual `TOOLS` array) — missing `query_forms`** (shipped v5.474, #1309: QSRSoft Forms/checklist
+completion, same rollup logic the in-app Forms dashboard uses) **and, as of this same pass,
+`web_search`** — Anthropic's server-side `web_search_20260209` tool, added so SAGE can ground
+answers needing live information (local news/weather/events, school calendars) outside
+Meridian's own data, same capability `why.js`'s AI Lookup / `calendar.js`'s proactive event
+search / `analytics.js`'s Anomaly Scanner already use their own personal-API-key copies of (see
+`memory/finding-remaining-ai-sites-sage-migration-2026-10-10.md`) — those 3 call sites are not
+yet migrated onto this. Web search is a server-side tool: it resolves within the same streamed
+response (never a client-round-tripped `tool_use`), and can itself return `stop_reason:
+'pause_turn'` if its own internal search loop runs long — `sage-chat/index.ts`'s round loop
+resumes it by resending the conversation with the paused assistant turn appended, per
+Anthropic's documented resume pattern. **12 tools total now.** System prompt
+(`src/views/sage.js`'s `buildSystemPrompt`) documents all 12 explicitly so SAGE calls them
+proactively — that file had also drifted before (claimed "nine tools" but only wrote up 8,
+missing `search_project_memory` entirely); re-verify both lists against the real code before
+trusting either, same standing warning as the top of this paragraph.
 
 **Self-instrumenting + prompt library (v4.487):** every SAGE answer has a **🐞 Log** action → opens a modal that turns the response into a **Task Queue** ticket (data-pull failures) or **Feature Request** (capability gaps) — auto-suggested by failure-language + data-source detection (`query_daily_activity`/`query_lifelenz_labor`/`query_forecast_snapshots`), pre-filled with the Q+A context AND a ready-to-paste **troubleshooting prompt** for Claude Code. Header **📚 Prompts** = saved-prompt library (`sage_prompts` table): save the current input, Use/Run/Delete saved prompts, and **⏰ Schedule** each to auto-run (daily/weekly at a UTC hour). **Phase 2 shipped (v4.488):** `scripts/sage-run.mjs` (hourly GitHub Action `.github/workflows/sage-run.yml`) signs in the `SAGE_RUNNER` service account → mints a user JWT → calls `sage-chat` for each due prompt → writes `sage_prompt_runs`, surfaced by the **first At-A-Glance tile "SAGE Scheduled Runs"** (`SageRunsTile` in analytics.js; added as `DEF_SECS[0]` + first grid child). `send`→`sendMessage(text)` refactor enables the headless call.
 
