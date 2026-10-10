@@ -52,10 +52,8 @@ function AIInsightsTab({store, ds, settings}) {
   const [insights, setInsights] = React.useState(null);
   const [loading,  setLoading]  = React.useState(false);
   const [error,    setError]    = React.useState(null);
-  const apiKey = (()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
 
   const generateInsights = async () => {
-    if(!apiKey){ setError('No API key — add it in Settings → AI & Integrations.'); return; }
     setLoading(true); setError(null);
 
     const ctx = {
@@ -100,13 +98,7 @@ Based on this data, provide:
 Be specific, quantitative, and direct. This is for a district manager who knows their business.`;
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1200,
-          messages:[{role:'user',content:prompt}]})});
-      if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||'HTTP '+res.status);}
-      const data = await res.json();
-      const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n\n');
+      const text = await callSageOnce([{role:'user', content:prompt}]);
       setInsights(text);
     } catch(e){ setError('AI call failed: '+e.message); }
     setLoading(false);
@@ -140,13 +132,9 @@ Be specific, quantitative, and direct. This is for a district manager who knows 
           'Claude analyzes this store\'s metrics and returns prioritized, specific recommendations.')
       ),
       btn({className:'btn btn-a',style:{marginLeft:'auto',padding:'6px 16px'},
-        onClick:generateInsights, disabled:loading||!apiKey},
+        onClick:generateInsights, disabled:loading},
         loading ? '⏳ Analyzing…' : insights ? '↻ Refresh' : '⚡ Generate Insights')
     ),
-
-    !apiKey&&div({style:{background:'rgba(245,158,11,.08)',border:'.5px solid rgba(245,158,11,.3)',
-      borderRadius:'var(--r)',padding:'10px 14px',fontSize:'10px',color:'#f59e0b',marginBottom:10}},
-      '⚠ Add your Anthropic API key in Settings → AI & Integrations to enable this feature.'),
 
     error&&div({style:{background:'rgba(239,68,68,.08)',border:'.5px solid rgba(239,68,68,.3)',
       borderRadius:'var(--r)',padding:'10px 14px',fontSize:'10px',color:'var(--crit)',marginBottom:10}},error),
@@ -2381,15 +2369,9 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
                 (topWatches.length?'WATCH FLAGS:\n'+topWatches.join('\n')+'\n\n':'')+
                 (strengths.length?'BRIGHT SPOTS: '+strengths.join(', ')+'\n\n':'')+
                 'Write 3 paragraphs: (1) Overall performance summary with key headline numbers, (2) Priority actions needed this week with specific stores and issues, (3) Positive recognition and forward-looking focus. Use direct, professional McDonald\'s operations language. No bullet points — flowing prose only. Maximum 250 words.';
-              const _nKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||settings?.anthropicKey||'';}catch{return settings?.anthropicKey||'';}})();
-              if(!_nKey){setNarrative('No API key — add it in Settings → AI & Integrations.');setNarrativeLoading(false);return;}
               try{
-                const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-                  headers:{'x-api-key':_nKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-                  body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,messages:[{role:'user',content:prompt}]})});
-                const j=await res.json();
-                if(j.error) throw new Error(j.error.message||'API error');
-                setNarrative(j.content&&j.content[0]&&j.content[0].text||'Unable to generate narrative.');
+                const text=await callSageOnce([{role:'user', content:prompt}]);
+                setNarrative(text||'Unable to generate narrative.');
               }catch(e){setNarrative('Error: '+e.message);}
               setNarrativeLoading(false);
             }
@@ -5362,7 +5344,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         results&&btn({className:'btn btn-sm',onClick:exportCSV},'⬇ CSV'),
         results&&btn({className:'btn btn-sm',style:{color:'#60a5fa',borderColor:'rgba(96,165,250,.3)'},onClick:exportHTMLReport},'📊 Report'),
         results&&btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
-          onClick:()=>{const _aK=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();const _ue=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();const loc=selLoc&&selLoc!=='all'?selLoc:stores&&stores[0]&&stores[0].loc;if(!loc){alert('Select a location first.');return;}generateReviewPack(loc,ds,settings,_ue,_aK);}},'📤 Pack'),
+          onClick:()=>{const _ue=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();const loc=selLoc&&selLoc!=='all'?selLoc:stores&&stores[0]&&stores[0].loc;if(!loc){alert('Select a location first.');return;}generateReviewPack(loc,ds,settings,_ue);}},'📤 Pack'),
         results&&btn({className:'btn btn-sm',style:{color:'#34d399',borderColor:'rgba(52,211,153,.3)'},
           onClick:()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=e=>{if(e.target.files[0])importReview(e.target.files[0],onTagEvent,(n,name)=>{alert('✅ Imported '+n+(n!==1?' responses':' response')+' from '+name+'.');});};inp.click();}},'📥 Import'),
         results&&!batchScanning&&btn({className:'btn btn-sm',disabled:!apiKey,
