@@ -7,6 +7,7 @@ import { RoutePanelShell } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
 import { loadStoreDemographics, saveStoreDemographics, getAuthToken } from '../lib/supabase.js';
 import { fetchAllStoreDemographics } from '../engine/census-demographics.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -355,14 +356,13 @@ async function liGenerateAI(stats,roadmap,onUpdate){
     laborCoverageImpact:stats.labor?{pctDaysUnderstaffed:stats.labor.pctUnder,salesImpactPct:stats.labor.impact}:null,
     annualizedOppCost:stats.opp?stats.opp.annualized:null,
     topOpportunities:roadmap.slice(0,3).map(function(o){return{category:o.cat,dollarOpp:Math.round(o.dollarOpp),action:o.action};})};
-  var prompt="You are a senior McDonald's operations consultant with 30+ years of experience, advising a district manager. Write a Location Intelligence Report for "+stats.name+" in natural, conversational language.\n\nDATA:\n"+JSON.stringify(truncStats,null,2)+"\n\nFORMAT:\n**Executive Summary** (2-3 sentences: where this location stands, one key strength, one key opportunity)\n\n**What's Driving Performance** (3-4 bullets, each tied to a specific number from the data, lead with positives)\n\n**Top Growth Opportunities** (rank top 3 by dollar impact; for each: what the data shows, why it matters, specific action, estimated annual opportunity in dollars)\n\n**90-Day Focus** (single most impactful action, what to measure weekly, what success looks like)\n\nRequirements: Sound like a knowledgeable colleague briefing a peer. Every claim must reference a specific number. Frame opportunities positively. Use dollar amounts not just percentages.";
+  var prompt="Write a Location Intelligence Report for "+stats.name+" in natural, conversational language.\n\nDATA:\n"+JSON.stringify(truncStats,null,2)+"\n\nFORMAT:\n**Executive Summary** (2-3 sentences: where this location stands, one key strength, one key opportunity)\n\n**What's Driving Performance** (3-4 bullets, each tied to a specific number from the data, lead with positives)\n\n**Top Growth Opportunities** (rank top 3 by dollar impact; for each: what the data shows, why it matters, specific action, estimated annual opportunity in dollars)\n\n**90-Day Focus** (single most impactful action, what to measure weekly, what success looks like)\n\nRequirements: Sound like a knowledgeable colleague briefing a peer. Every claim must reference a specific number. Frame opportunities positively. Use dollar amounts not just percentages.";
   try{
-    var resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
-    var d=await resp.json();
-    var text=(d.content&&d.content.map(function(c){return c.text||'';}).join(''))||'';
-    onUpdate(text);
+    var text=await callSageOnce(
+      [{role:'user', content:prompt}],
+      "You are a senior McDonald's operations consultant with 30+ years of experience, advising a district manager.",
+    );
+    onUpdate(text||'No narrative generated.');
   }catch(e){onUpdate('Error generating AI narrative: '+e.message);}
 }
 // ── Demographics mode — per-store Census-tract trade-area snapshot ───────────────

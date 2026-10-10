@@ -11,6 +11,7 @@ import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -254,7 +255,6 @@ function LockHistoryPanel({stores, onClose}) {
 function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lockedProjections,onRun,onClose}){
   const [aiSummary,  setAiSummary]  = React.useState('');
   const [generating, setGenerating] = React.useState(false);
-  const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
   const t=React.useMemo(()=>{
     const r={};(stores||[]).forEach(s=>{r[s.loc]=(settings.targets&&settings.targets[s.loc])||DEFAULT_TARGETS[s.loc]||{};});return r;
   },[stores,settings]);
@@ -334,7 +334,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
   },[ds,stores,settings,weekStart]);
 
   const generateSummary=async()=>{
-    if(!apiKey||!brief) return;
+    if(!brief) return;
     setGenerating(true);
     const{avgVsLY,trendDir,calEvents,lyRisks,avgOEPE,distMAPE,weekFcEst,calibrated,totalLocs}=brief;
     const prompt='You are a QSR district intelligence analyst for McDonald\'s. Write a 4-sentence executive briefing for the upcoming week\'s projections.\n\n'+
@@ -349,11 +349,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
       '- Estimated weekly total: '+(weekFcEst>0?'$'+Math.round(weekFcEst/1000)+'K':'Pending')+'\n\n'+
       'Write 4 clear, direct, management-ready sentences. No bullet points. Lead with the trend signal, mention any calendar factors, note model confidence, close with an action note.';
     try{
-      const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:300,messages:[{role:'user',content:prompt}]})});
-      const data=await resp.json();
-      const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+      const txt=await callSageOnce([{role:'user', content:prompt}]);
       setAiSummary(txt);
     }catch{setAiSummary('Unable to generate summary — check API key in Settings.');}
     setGenerating(false);
@@ -469,13 +465,13 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
           div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#60a5fa'}},'🤖 AI Executive Summary'),
           btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#60a5fa',borderColor:'rgba(96,165,250,.3)'},
-            disabled:generating||!apiKey,onClick:generateSummary},
+            disabled:generating,onClick:generateSummary},
             generating?'⏳ Generating…':'Generate Summary')
         ),
         aiSummary
           ?div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.7}},aiSummary)
           :div({style:{fontSize:'9px',color:'var(--text3)',fontStyle:'italic'}},
-              apiKey?'Click "Generate Summary" for an AI-powered executive brief of this projection period.':'Add API key in Settings to enable AI summary.')
+              'Click "Generate Summary" for an AI-powered executive brief of this projection period.')
       )
   );
 }
