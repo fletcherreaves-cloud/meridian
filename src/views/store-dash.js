@@ -22,6 +22,7 @@ import { printHtml } from '../utils/print-html.js';
 // into one panel with three modes, so this file pulls in the other two's content components.
 import { RecordDayTab } from './record-day.js';
 import { TopBottomTab } from './top-bottom-performers.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -1282,23 +1283,12 @@ function AITabInsight({buildPrompt, label}) {
   const [insight, setInsight] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [err,     setErr]     = React.useState(null);
-  const apiKey = (()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-
-  if(!apiKey) return null; // silently hide if no key
 
   const run = async () => {
     setLoading(true); setErr(null); setInsight(null);
     try {
       const prompt = buildPrompt();
-      const resp = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':apiKey,
-          'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,
-          messages:[{role:'user',content:prompt}]})
-      });
-      const data = await resp.json();
-      const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+      const text = await callSageOnce([{role:'user', content:prompt}]);
       setInsight(text||'No insights generated.');
       // Store AI plan globally for printPlan to access
       if(label&&label.includes('Priority')) window._lastAIPriorityPlan=text;

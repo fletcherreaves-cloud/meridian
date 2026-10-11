@@ -36,6 +36,7 @@ import { acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } fro
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { intradayPace, periodPace } from '../engine/tracking-to-plan.js';
 import { COACHING_METRICS } from '../engine/coaching-loop.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -1342,23 +1343,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   }),[dataAge,worstAuto,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
 
   const fetchAIComment=async()=>{
-    const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-    if(!apiKey){
-      setAiComment('No API key configured. Go to Settings → AI & Integrations and add your Anthropic API key.');
-      return;
-    }
     setAiLoading(true);
     try{
       const summary={dataAge,healthGreen:hlth.green,healthYellow:hlth.yellow,healthRed:hlth.red,
         totalStores:allLocs.length,lockedStores:allLocs.filter(l=>(lockedProjections||{})[l+'_'+dKey(new Date())]).length,
         ruleComment:ruleComment.text};
-      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':apiKey,
-          'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,
-          messages:[{role:'user',content:'You are an assistant for a McDonald\'s district operations tool. Write ONE short paragraph (2-3 sentences, plain English, warm but professional tone) summarizing the state of the district for the operator\'s morning dashboard. Data: '+JSON.stringify(summary)+'. Keep it concise and actionable.'}]})});
-      const d=await res.json();
-      setAiComment((d.content||[]).map(b=>b.text||'').join(''));
+      const text = await callSageOnce(
+        [{role:'user', content:'Data: '+JSON.stringify(summary)+'. Keep it concise and actionable.'}],
+        'You are an assistant for a McDonald\'s district operations tool. Write ONE short paragraph (2-3 sentences, plain English, warm but professional tone) summarizing the state of the district for the operator\'s morning dashboard.',
+      );
+      setAiComment(text||'No narrative generated.');
     }catch(e){setAiComment('AI narrative unavailable: '+e.message);}
     setAiLoading(false);
   };

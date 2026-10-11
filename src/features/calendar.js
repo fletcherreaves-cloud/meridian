@@ -10,6 +10,7 @@ import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatin
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent, saveUserSetting } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
 import { LocationSelector } from '../components/PanelControls.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -1327,7 +1328,7 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
 // GM REVIEW PACK — Phase 3
 // Generates a shareable HTML survey for any location/patch/operator.
 // GM opens file, fills it out, submits → downloads JSON → you import.
-async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
+async function generateReviewPack(loc, ds, settings, userEvents) {
   // ── Load fresh state from localStorage (never trust stale component state) ──
   const allAnoms=(()=>{try{const s=localStorage.getItem('mf_backtest_results');return s?JSON.parse(s):{};} catch{return {};}})();
   const uev=JSON.parse(JSON.stringify((()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})()));
@@ -1375,17 +1376,12 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
 
   // Optional AI pre-populate (batch, 3 at a time)
   const suggestions={};
-  if(apiKey&&rows.length>0){
+  if(rows.length>0){
     for(let i=0;i<Math.min(rows.length,30);i+=3){
       const batch=rows.slice(i,Math.min(i+3,rows.length));
       await Promise.all(batch.map(async r=>{
         try{
-          const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-            headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-            body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:120,
-              messages:[{role:'user',content:'In 1-2 sentences, what likely caused a McDonald\'s in '+storeName+' to have '+(r.varPct>0?'+':'')+r.varPct.toFixed(1)+'% sales on '+r.dateStr+' ('+r.dow+')? Answer concisely with possible reasons. No intro.'}]})});
-          const d=await resp.json();
-          const txt=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+          const txt=await callSageOnce([{role:'user', content:'In 1-2 sentences, what likely caused a McDonald\'s in '+storeName+' to have '+(r.varPct>0?'+':'')+r.varPct.toFixed(1)+'% sales on '+r.dateStr+' ('+r.dow+')? Answer concisely with possible reasons. No intro.'}]);
           suggestions[r.dKeyStr||r.dateStr]=txt;
         }catch{}
       }));

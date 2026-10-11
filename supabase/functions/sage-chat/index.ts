@@ -334,6 +334,15 @@ Not a source of live store data -- use the query_* tools for that.`,
       required: ['query'],
     },
   },
+  // Server-side tool -- runs on Anthropic's infrastructure, not through runTool(). Claude
+  // decides on its own when a question needs live web information (local news/weather/events
+  // explaining a sales anomaly, school-calendar/community-event lookups, anything outside
+  // Meridian's own data) rather than this being wired to one specific feature. Dynamic-filtering
+  // variant (claude-opus-5 supports it); see streamAnthropicCall's content_block handling and the
+  // round loop's `pause_turn` branch for why this needed two small fixes alongside it -- a
+  // server tool returns results WITHIN the same streamed turn (never a `tool_use` stop_reason
+  // the client has to round-trip), and can itself pause if its internal search loop runs long.
+  { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
 ];
 
 // ── RBAC scoping ─────────────────────────────────────────────────────────────
@@ -1026,7 +1035,7 @@ async function streamAnthropicCall(
 
   let stopReason = 'end_turn';
   const contentByIdx = new Map<number, Record<string, unknown>>();
-  const toolUses: Array<{ id: string; name: string; inputJson: string }> = [];
+  const toolUses: Array<{ id: string; name: string }> = [];
 
   while (true) {
     const { done, value } = await reader.read();
@@ -1049,12 +1058,19 @@ async function streamAnthropicCall(
           const block: Record<string, unknown> = { type: cb.type };
           if (cb.type === 'text')     { block.text = ''; }
           if (cb.type === 'thinking') { block.thinking = ''; }
-          if (cb.type === 'tool_use') {
+          // tool_use (client-run, round-tripped through runTool) AND server_tool_use (web_search
+          // -- runs on Anthropic's infrastructure, resolves within this same streamed response)
+          // both stream their input as input_json_delta events. Accumulate each on ITS OWN
+          // content-block object, keyed by ev.index -- not a single shared "last tool_use
+          // pushed" array, which silently corrupted one tool's input with another's partial_json
+          // bytes the moment a server tool and a client tool streamed in parallel in one turn.
+          if (cb.type === 'tool_use' || cb.type === 'server_tool_use') {
             block.id   = cb.id;
             block.name = cb.name;
             block.input = {};
-            toolUses.push({ id: cb.id, name: cb.name, inputJson: '' });
+            block._inputJson = '';
           }
+          if (cb.type === 'tool_use') toolUses.push({ id: cb.id, name: cb.name });
           contentByIdx.set(ev.index, block);
         }
 
@@ -1069,16 +1085,16 @@ async function streamAnthropicCall(
           if (delta.type === 'thinking_delta' && block) {
             block.thinking = ((block.thinking as string) || '') + (delta.thinking || '');
           }
-          if (delta.type === 'input_json_delta' && toolUses.length) {
-            toolUses[toolUses.length - 1].inputJson += delta.partial_json || '';
+          if (delta.type === 'input_json_delta' && block) {
+            block._inputJson = ((block._inputJson as string) || '') + (delta.partial_json || '');
           }
         }
 
         else if (ev.type === 'content_block_stop') {
           const block = contentByIdx.get(ev.index);
-          if (block?.type === 'tool_use' && toolUses.length) {
-            const tu = toolUses[toolUses.length - 1];
-            try { block.input = JSON.parse(tu.inputJson); } catch { block.input = {}; }
+          if ((block?.type === 'tool_use' || block?.type === 'server_tool_use') && block._inputJson != null) {
+            try { block.input = JSON.parse(block._inputJson as string); } catch { block.input = {}; }
+            delete block._inputJson;
           }
         }
 
@@ -1181,6 +1197,19 @@ Deno.serve(async (req: Request) => {
             encoder,
             !isLastRound, // no tools on last round to force a text answer
           );
+
+          // web_search (server-side tool) runs its own search loop on Anthropic's infrastructure;
+          // if THAT loop hits its internal iteration cap mid-answer, the response comes back with
+          // stop_reason 'pause_turn' instead of finishing. Per Anthropic's docs: resume by
+          // resending the conversation with the paused assistant turn appended -- no tool_result,
+          // no synthetic "Continue" message -- the API detects the trailing server_tool_use block
+          // and resumes automatically. Thinking blocks still can't be replayed without their
+          // signature, same as the tool_use branch below.
+          if (stopReason === 'pause_turn') {
+            const replayContent = assistantContent.filter((b: any) => b.type !== 'thinking');
+            conversationMessages = [...conversationMessages, { role: 'assistant', content: replayContent }];
+            continue;
+          }
 
           if (stopReason !== 'tool_use' || !toolUses.length) break;
 
