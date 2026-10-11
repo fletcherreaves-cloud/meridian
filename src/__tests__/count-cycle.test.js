@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
-         mergeWeeklyCountDay, formatWeeklyComplianceReport, weeklyRecountWindows,
+         mergeWeeklyCountDay, countDayDrift, formatWeeklyComplianceReport, weeklyRecountWindows,
          sessionsFromLog, cycleComplianceFromLog, weeklyRecountWindowsFromLog,
          buildCycleVerdict } from '../engine/count-cycle.js';
 import { WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
@@ -54,8 +54,10 @@ describe('session classification', () => {
 
   it('a Paper count OUTSIDE the close window satisfies mid-month paper', () => {
     // Paper is only counted mid-month and at close, so this is how the floating
-    // mid-month count identifies itself — there is no fixed date to key on.
-    const { sessions } = detectSessions(store('5985', [{ date: '2026-08-14', counts: { Paper: 90 } }]));
+    // mid-month count identifies itself — there is no fixed date to key on. Full 92/92 to
+    // clear the near-100% COVER_FRAC (raised from 0.95, owner-directed 2026-10-11) — the
+    // point of this test is the mid-paper-vs-weekly independence, not this percentage.
+    const { sessions } = detectSessions(store('5985', [{ date: '2026-08-14', counts: { Paper: 92 } }]));
     const s = sessions['5985'][0];
     expect(s.satisfiesMidPaper).toBe(true);
     expect(s.satisfiesWeekly).toBe(false);
@@ -377,10 +379,11 @@ describe('robustness and rollup', () => {
   });
 
   it('thresholds are the owner-directed values', () => {
-    // Raised 0.75 -> 0.95, owner-directed 2026-09-07 (see COVER_FRAC's own comment in
-    // count-cycle.js for the live-measured before/after: 0.98 flipped 21/27 stores to
-    // overdue for a single period, 0.95 flips a real, actionable 7/27).
-    expect(COVER_FRAC).toBe(0.95);
+    // Raised 0.75 -> 0.95 (2026-09-07), then 0.95 -> 1 (2026-10-11, owner-directed: "close to
+    // 100% with the only exception being a new wrin" -- see COVER_FRAC's own comment in
+    // count-cycle.js). The slack 0.95 used to absorb is now handled narrowly by
+    // diffNewWrins()/newWrinsByLoc instead of a blanket percentage buffer.
+    expect(COVER_FRAC).toBe(1);
     expect(WEEKLY_DUE_DAYS).toBe(9);
   });
 });
@@ -543,8 +546,10 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
     expect(classTotals['33704'].Food).toBe(117); // other classes' universes are untouched
   });
 
-  it('a real Food+Condiment count satisfies weekly coverage on a genuine percentage basis, ' +
-     'not via the zero-universe vacuous bypass', () => {
+  it('a real Food+Condiment count is graded on a genuine percentage basis, not via the ' +
+     'zero-universe vacuous bypass -- and at the near-100% bar, one dead phantom row now ' +
+     'genuinely blocks it (a real, known consequence of the 2026-10-11 near-100% raise, ' +
+     'not a test bug -- see the describe-block header comment)', () => {
     const rows = tecumsehLike([
       { date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }, // the 38 real items
     ]);
@@ -552,19 +557,30 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
     // Two sessions exist: the phantom row's own stale 2026-07-31 date, and the real 08-21
     // count -- find the real one by date rather than assuming index 0 (sessions sort by date).
     const s = sessions['33704'].find(x => x.date === '2026-08-21');
-    // 38 of 39 = 97.4%, well over COVER_FRAC (0.75) -- a real percentage, not a trivial pass.
-    expect(s.covered).toContain('Condiment');
-    expect(s.satisfiesWeekly).toBe(true);
-    expect(s.kind).toContain('Weekly');
+    // 38 of 39 = 97.4% -- cleared the OLD COVER_FRAC=0.95 bar (proving genuine percentage
+    // math, not a vacuous always-pass), but the near-100% bar (owner-directed 2026-10-11)
+    // requires literally all 39, phantom included. This is the SAME shape of bug dispatch
+    // #96 fixed (a stale, uncountable row making a class permanently uncoverable) --
+    // reintroduced by the near-100% bar for any store carrying one of these known dead rows,
+    // until that stale on-hand data itself gets cleaned up. Not something to quietly fix in
+    // this test; flagged back to the owner as a real open question (stale pre-period rows
+    // vs. the new-WRIN exception are two different things).
+    expect(s.covered).not.toContain('Condiment');
+    expect(s.satisfiesWeekly).toBe(false);
   });
 
-  it('cycleCompliance no longer reads Overdue for this mechanism -- Tecumseh\'s 08-21 count ' +
-     'clears weekly-overdue', () => {
+  it('cycleCompliance reads this store Overdue under the near-100% bar, for the same reason', () => {
     const rows = tecumsehLike([{ date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }]);
     const c = cycleCompliance(rows, { asOf: '2026-08-24' });
-    expect(c[0].overdue).toBe(false);
-    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy();
-    expect(c[0].lastWeekly.date).toBe('2026-08-21');
+    expect(c[0].overdue).toBe(true);
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeTruthy();
+    // Touching the phantom row too (an honest 39/39) clears it -- confirms this is the
+    // known dead-row edge case, not a broken percentage calculation.
+    const rowsFull = tecumsehLike([{ date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }])
+      .map(r => (r.wrin === 'phantom-1' ? { ...r, last_counted: '2026-08-21' } : r));
+    const cFull = cycleCompliance(rowsFull, { asOf: '2026-08-24' });
+    expect(cFull[0].overdue).toBe(false);
+    expect(cFull[0].lastWeekly.date).toBe('2026-08-21');
   });
 
   it('a store with an all-false Condiment population (the 17-store vacuous-bypass case) now ' +
@@ -757,6 +773,54 @@ describe('mergeWeeklyCountDay', () => {
   it('respects a custom confidenceFloor', () => {
     const out = mergeWeeklyCountDay({ F: derived(3, 0.6) }, { F: fallback(1) }, { confidenceFloor: 0.9 });
     expect(out['F']).toMatchObject({ weekday: 1, source: 'fallback' });
+  });
+});
+
+// Owner ask (2026-10-11): "cross reference each location's count day of week with what we
+// have in settings... if it is obvious it is not a one off, let's... visualize that." --
+// countDayDrift() compares detectWeeklyCountDay()'s derived signal against
+// loadWeeklyCountDayOverrides()'s configured full-weekday-name map.
+describe('countDayDrift', () => {
+  const derived = (weekday, confidence, sampleSize = 4) =>
+    ({ weekday, weekdayName: WEEKDAY_NAMES[weekday], sampleSize, agreeCount: Math.round(confidence * sampleSize), confidence, lastSeenDate: '2026-10-05' });
+
+  it('flags a confident, sustained change away from the configured day', () => {
+    const out = countDayDrift({ A: derived(4, 0.9) }, { A: 'Tuesday' });   // configured Tue(2), derived Thu(4)
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ loc: 'A', configuredWeekdayName: 'Tuesday', derivedWeekdayName: 'Thursday' });
+  });
+
+  it('does NOT flag when the derived signal agrees with the configured day', () => {
+    const out = countDayDrift({ A: derived(2, 0.9) }, { A: 'Tuesday' });
+    expect(out).toHaveLength(0);
+  });
+
+  it('does NOT flag a one-off blip -- low confidence is not sustained', () => {
+    const out = countDayDrift({ A: derived(4, 0.4) }, { A: 'Tuesday' });
+    expect(out).toHaveLength(0);
+  });
+
+  it('does NOT flag a thin sample even at high confidence -- not enough history to call it a pattern', () => {
+    const out = countDayDrift({ A: derived(4, 1, 2) }, { A: 'Tuesday' }, { minSample: 3 });
+    expect(out).toHaveLength(0);
+  });
+
+  it('skips a store with nothing configured on file -- unconfigured, not conflicting', () => {
+    const out = countDayDrift({ A: derived(4, 0.9) }, {});
+    expect(out).toHaveLength(0);
+  });
+
+  it('skips a store with no derived signal at all (never counted, or too new)', () => {
+    const out = countDayDrift({ A: null }, { A: 'Tuesday' });
+    expect(out).toHaveLength(0);
+  });
+
+  it('sorts multiple drifted stores most-confident first', () => {
+    const out = countDayDrift(
+      { LO: derived(4, 0.75), HI: derived(4, 0.95) },
+      { LO: 'Tuesday', HI: 'Tuesday' },
+    );
+    expect(out.map(r => r.loc)).toEqual(['HI', 'LO']);
   });
 });
 

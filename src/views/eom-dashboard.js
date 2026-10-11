@@ -45,7 +45,7 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand, COVER_FRAC, diffNewWrins } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
@@ -274,49 +274,48 @@ function weeklyByClassFor(cadence) {
 //
 // Scope addition (owner, 2026-08-24, after this fix was already in progress) — grade weekly
 // completion the same way EOM already grades count completion, not at count-cycle.js's own
-// COVER_FRAC=0.75 (that constant is Count Cycle's — this function does NOT call cycleCompliance()
-// or import COVER_FRAC, so the Count Cycle panel's own 0.75 threshold is untouched). Uses
-// detectSessions()'s RAW per-session item counts + per-store active-item classTotals — neither is
-// COVER_FRAC-derived, both are plain tallies — and grades "covered" itself at eom-inventory.js's
-// own CLASS_DONE_PCT (0.98), the same bar a store's EOM count is held to. A class with a zero
-// active universe is vacuously covered (nothing to count), same rule dispatch #96 already applies
-// to Count Cycle's own compliance check.
+// COVER_FRAC (that constant is Count Cycle's). Uses detectSessions()'s RAW per-session item
+// counts + per-store active-item classTotals.
+//
+// ✅ UNIFIED (owner-directed 2026-10-11) — this used to grade "covered" itself at a SECOND,
+// independent threshold (eom-inventory.js's CLASS_DONE_PCT=0.98), deliberately different from
+// Count Cycle's own COVER_FRAC=0.95 (dispatch #97's own scoped decision, preserved in this
+// comment's prior wording for history). The owner has now asked for ONE shared near-100% bar
+// (with a narrow new-WRIN exception) wherever "did they complete the required weekly count" is
+// asked, so this no longer recomputes its own threshold at all — it reads `s.covered` straight
+// off detectSessions(), the exact same array Count Cycle's own satisfiesWeekly uses, so the two
+// panels can never grade the same store/week differently again. eom-inventory.js's
+// CLASS_DONE_PCT itself is UNTOUCHED — it still independently grades Paper/Non-Product's
+// monthly EOM-close completion (ClassChips), a different, deliberately-kept-lenient job.
 //
 // itemVarianceWindows (the click-to-expand FOB variance-trace drill-down, just below in this file)
 // is UNCHANGED — it stays on rawByLoc/qsr_raw_item_detail, the right source for "when did this
 // item's variance happen," a genuinely different question from "did they complete the count."
-const _classDoneAt98 = (counts, totals, cls) => {
-  const total = totals[cls] || 0;
-  if (total === 0) return true;   // nothing to count for this class — vacuously covered (dispatch #96)
-  return (counts[cls] || 0) >= total * CLASS_DONE_PCT;
-};
-export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
+export function cadenceFromOnHand(onHandRows, { asOf = new Date(), newWrinsByLoc = {} } = {}) {
   const rows = onHandRows || [];
   let sessionsByLoc = {}, classTotalsByLoc = {};
-  try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows)); } catch { /* leave empty */ }
+  try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows, { newWrinsByLoc })); } catch { /* leave empty */ }
   const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
   const curPeriod = periodKey(asOf);
 
   // Dispatch #112 — reuse count-cycle.js's own cycleCompliance() for real, tested mid-month-
   // Paper tracking (paperMissing) and per-class counted/active tallies (perClass), rather than
-  // reimplementing either. It calls detectSessions(rows) again internally (same `rows`, so the
-  // same session grouping as sessionsByLoc/classTotalsByLoc above) — a small duplicated
-  // computation, not a duplicated ALGORITHM. Its own weekly-completion bar (COVER_FRAC=0.75)
-  // never leaks into anything below: the fields pulled from it here (paperMissing, perClass) are
-  // independent of that bar, and this function's own weeklyDone/lastWeekly/status grading
-  // (CLASS_DONE_PCT=0.98) is untouched — dispatch #97's deliberate, owner-scoped decision.
+  // reimplementing either. It calls detectSessions(rows) again internally (same `rows`/
+  // `newWrinsByLoc`, so the same session grouping as sessionsByLoc/classTotalsByLoc above) — a
+  // small duplicated computation, not a duplicated ALGORITHM.
   let complianceByLoc = {};
-  try { for (const c of cycleCompliance(rows, { asOf })) complianceByLoc[c.loc] = c; } catch { /* leave empty */ }
+  try { for (const c of cycleCompliance(rows, { asOf, newWrinsByLoc })) complianceByLoc[c.loc] = c; } catch { /* leave empty */ }
 
   const m = {};
   for (const loc of Object.keys(sessionsByLoc)) {
     const totals = classTotalsByLoc[loc] || {};
-    // detectSessions returns sessions oldest→newest already. Grade each one against
-    // CLASS_DONE_PCT ourselves — `s.counts`/`totals` are raw tallies, untouched by COVER_FRAC.
+    // detectSessions returns sessions oldest→newest already, already graded `covered` per
+    // class at the SAME unified COVER_FRAC bar Count Cycle's own satisfiesWeekly uses (see
+    // this function's header comment) — read it straight off, don't re-derive a second time.
     const graded = sessionsByLoc[loc].map(s => ({
       date: s.date, counts: s.counts,
-      weeklyDone: _classDoneAt98(s.counts, totals, 'Food') && _classDoneAt98(s.counts, totals, 'Condiment'),
+      weeklyDone: s.covered.includes('Food') && s.covered.includes('Condiment'),
       touchedWeekly: (s.counts.Food || 0) > 0 || (s.counts.Condiment || 0) > 0,
     }));
     const lastWeekly = [...graded].reverse().find(s => s.weeklyDone) || null;
@@ -460,6 +459,11 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
         day: lastWeekly.date,
         counts: { food: lastWeekly.counts.Food || 0, condiment: lastWeekly.counts.Condiment || 0 },
       }] : [],
+      // New-this-period WRINs (owner-directed 2026-10-11) — excluded from the coverage math
+      // above, surfaced here so CadenceMonitor can show "new item -- still needs counting"
+      // instead of making it silently invisible. Same cycleCompliance() row count-cycle.js's
+      // own Count Cycle panel already reads this field from, so the two panels agree.
+      newItems: (complianceByLoc[loc] && complianceByLoc[loc].newItems) || [],
     };
     // Item 3 Food/Condiment uncounted counts — dispatch #98's own cycleClassCoverage() (below in
     // this file) already derives {total,counted} per class off exactly this record shape
@@ -532,7 +536,10 @@ export function cycleSummaryFor(rows, cadenceByLoc) {
       const cc = cov[cls];
       if (!cc.total) continue;
       classAgg[cls].total += cc.total; classAgg[cls].counted += cc.counted; classAgg[cls].n++;
-      if (cc.counted >= cc.total * CLASS_DONE_PCT) classAgg[cls].doneStores++;
+      // Unified (2026-10-11) onto the SAME near-100% bar cadenceFromOnHand's own weeklyDone
+      // uses (COVER_FRAC, count-cycle.js) — this used to re-derive at CLASS_DONE_PCT (0.98),
+      // a second, different threshold for the identical Food/Condiment weekly question.
+      if (cc.counted >= cc.total * COVER_FRAC) classAgg[cls].doneStores++;
       cnt += cc.counted; tot += cc.total;
     }
   }
@@ -1578,7 +1585,7 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // accessible_locs (Settings/user management) to grant broader access, no new toggle needed.
 const SINGLE_STORE_ROLES = new Set(['gm', 'sm_am_dm', 'manager']);
 
-export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs }) {
+export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs, onOpenModal }) {
   // The signed-in GM/SM-AM-DM's own store, resolved from their profile's accessible_locs (the
   // established RBAC scoping field, per CLAUDE.md — this is the first client-side reader of it;
   // see App.js's profile fetch). Only resolves for a SINGLE-STORE role scoped to EXACTLY one
@@ -1624,6 +1631,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   }, [fetchedPeriods, period]);
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
+  // Prior period's on-hand rows — ONLY used to detect which WRINs are new to a store's active
+  // universe this period (diffNewWrins(), count-cycle.js), so a brand-new product isn't held
+  // against this period's weekly-count completeness (owner-directed 2026-10-11). Not used for
+  // anything else; keep it out of byLoc/the rest of this panel's state.
+  const [prevOnHand, setPrevOnHand] = useState([]);
   // #211 free perf win: was its own loadQsrFob() re-fetch of the full unscoped ~13k-row table
   // on EVERY period change (not just on panel open), duplicating what App.js already loads
   // once at startup into ds.qsrFobRows (same pattern above-store-onepager.js already uses,
@@ -1890,7 +1902,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     setLoading(true);
     try {
       const prevP = lastPeriods(p, 2)[0];   // previous month → "vs Last EOM" baseline
-      const [oh, st, vr, wa, tr, rd, pvr] = await Promise.all([
+      const [oh, st, vr, wa, tr, rd, pvr, poh] = await Promise.all([
         loadQsrOnHand({ period: p }),
         loadEomCountStatus({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: p }).catch(() => []),
@@ -1898,8 +1910,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         loadQsrTransfers({ period: p }).catch(() => []),
         loadQsrRawItemDetail({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: prevP }).catch(() => []),
+        loadQsrOnHand({ period: prevP }).catch(() => []),
       ]);
       setOnHand(oh || []);
+      setPrevOnHand(poh || []);
       setVariance(vr || []);
       setPrevVariance(pvr || []);
       setWaste(wa || []);
@@ -1972,12 +1986,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     return m;
   }, [rawByLoc]);
 
+  // New-this-period WRINs (owner-directed 2026-10-11) — diffed against the PRIOR period's
+  // active item set so a brand-new product isn't held against this period's weekly-count
+  // completeness (see count-cycle.js's diffNewWrins()/COVER_FRAC comments). `prevOnHand`
+  // empty (e.g. the very first tracked period) means every current active item reads as new
+  // for that store — correct, not a gap, per diffNewWrins()'s own doc comment.
+  const newWrinsByLoc = useMemo(() => diffNewWrins(onHand, prevOnHand), [onHand, prevOnHand]);
+
   // Weekly-count cadence per store (Notes 40 #1) — is each store doing its weekly full Food/Condiment
   // count? Detected weekly day, last full count + days-since, weekly vs daily-spot sessions. Overdue
   // ≥ 8 days. Powers the Count Cycle view's cadence monitor. Dispatch #97 — sourced from `onHand`
   // (qsr_onhand, already loaded above for EOM completion) via cadenceFromOnHand(), not rawByLoc/
   // qsr_raw_item_detail — see cadenceFromOnHand's own header comment for why.
-  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date() }), [onHand]);
+  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date(), newWrinsByLoc }), [onHand, newWrinsByLoc]);
 
   // Change Monitor v2 (Notes 41): per-store item variance progressions read straight from the raw ledger
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
@@ -3450,7 +3471,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     mode === 'compliance'
       ? (loading || fobPending)
         ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
-        : h(CountCycleSection, { rows: complianceOnHand, period })
+        : h(CountCycleSection, { rows: complianceOnHand, period, newWrinsByLoc, onOpenModal })
       : null,
 
     // Supervisor Rollup (mode==='supervisor', dispatch #202) — self-contained, same shape as
