@@ -4,6 +4,7 @@ import { addD, dKey } from '../utils/date.js';
 import { fetchWx, getForecastWeather, forecastDay } from '../engine/forecast.js';
 import { metricDaily, metricSeries } from '../engine/metric-source.js';
 import { DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS, DOW_BASE } from '../constants.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 const h = React.createElement;
 const a = (p, ...c) => h('a', p, ...c);
@@ -48,10 +49,9 @@ function crossStoreCheck(loc, ds, missDate, missDir) {
 }
 
 // ── AI-powered event lookup ──────────────────
-// Calls Anthropic API to search for what might have happened on a specific date
-// in Oklahoma that could explain a district-wide sales anomaly
+// Routed through sage-chat (web_search_20260209 server-side) to search for what
+// might have happened on a specific date that could explain a district-wide sales anomaly
 async function lookupMissEvent(date, affectedStores, wRow, setResult, affectedLocs) {
-  const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
   const dateStr=date.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const wxNote=wRow?'Weather: '+Math.round(wRow.tmax||0)+'F hi, rain '+((wRow.rain||0).toFixed(2))+'in, wind '+(wRow.wmax||0)+'mph':'No weather data.'
   // Dispatch #72 C1 -- `loc` was read at three spots below without ever being a parameter of
@@ -75,29 +75,14 @@ async function lookupMissEvent(date, affectedStores, wRow, setResult, affectedLo
   const searchCity=affectedCities[0];
   const searchUrl='https://www.google.com/search?q='+encodeURIComponent('"'+date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+' '+searchCity+' '+stateStr+' weather OR event OR closed OR news')
   // Build prompt
-  const prompt='You are a McDonald\'s district analytics assistant. A sales anomaly was detected in '+cityList+' on '+dateStr+'.\n\n'+wxNote+'\n'+regionNote+'\n\nSearch for local news, severe weather, events, road closures, or disruptions on '+dateStr+' in '+stateStr+'. Provide 2-3 sentence summary. If nothing relevant found, say so.'
-  if(!apiKey){
-    window.open(searchUrl,'_blank');
-    setResult({loading:false,text:'',searchUrl,error:'No Anthropic API key — opened Google search instead.\n\nTo enable AI Lookup:\n1. Settings \u2192 AI & Integrations\n2. Paste your Anthropic API key\n3. Get one free at console.anthropic.com'});
-    return;
-  }
+  const prompt='A sales anomaly was detected in '+cityList+' on '+dateStr+'.\n\n'+wxNote+'\n'+regionNote+'\n\nSearch for local news, severe weather, events, road closures, or disruptions on '+dateStr+' in '+stateStr+'. Provide 2-3 sentence summary. If nothing relevant found, say so.'
   try{
     setResult({loading:true,text:'',error:null,searchUrl});
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:1024,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        messages:[{role:'user',content:prompt}]
-      })});
-    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error((err.error&&err.error.message)||'HTTP '+res.status);}
-    const data=await res.json();
-    const text=(data.content||[])
-      .filter(b=>b.type==='text'&&b.text&&b.text.trim())
-      .map(b=>b.text.trim()).join('\n\n')||
-      ((data.content||[]).some(b=>b.type==='tool_use')?'Web search ran but no summary was generated. Try again.':'No analysis generated.');
-    setResult({loading:false,text,error:null,searchUrl});
+    const text=await callSageOnce(
+      [{role:'user', content:prompt}],
+      'You are a McDonald\'s district analytics assistant. Use web search to find out what happened.',
+    );
+    setResult({loading:false,text:text||'No analysis generated.',error:null,searchUrl});
   }catch(e){
     setResult({loading:false,text:'',error:'AI lookup failed: '+e.message,searchUrl});
   }

@@ -14,15 +14,27 @@
 // same nonexistent `loc`). The fix computes that value once, at the top, from `affectedStores`
 // -- not by adding a new parameter no caller would populate.
 //
-// lookupMissEvent is exported and already async; this calls it directly (no React) with a
-// realistic affectedStores loc, matching the real call site's shape, and confirms the returned
-// promise resolves rather than rejecting on the ReferenceError.
-import { describe, it, expect, vi } from 'vitest';
-import { lookupMissEvent } from '../engine/why.js';
+// UPDATED 2026-10-11 (SAGE web-search migration): this test used to assert the old
+// no-personal-API-key fallback (window.open + "No Anthropic API key" error) -- that path no
+// longer exists now that lookupMissEvent routes through sage-chat's callSageOnce instead of a
+// direct api.anthropic.com call. Re-pointed at the real current behavior (mocking only the
+// network boundary, per this repo's "would this verification still pass if reverted" rule) so
+// it still proves the same thing dispatch #72 C1 cared about: the promise resolves rather than
+// rejecting on a free `loc` reference.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../lib/sage-client.js', () => ({
+  callSageOnce: vi.fn(),
+}));
 
 describe('lookupMissEvent resolves without a free `loc` reference (dispatch #72 C1)', () => {
-  it('does not reject, and falls back to the no-API-key search path', async () => {
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {});
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('does not reject, and calls callSageOnce (not a free `loc` reference crashing it)', async () => {
+    const { callSageOnce } = await import('../lib/sage-client.js');
+    callSageOnce.mockResolvedValue('Nothing notable found near this store on that date.');
+    const { lookupMissEvent } = await import('../engine/why.js');
+
     let result = null;
     const setResult = r => { result = r; };
 
@@ -30,9 +42,9 @@ describe('lookupMissEvent resolves without a free `loc` reference (dispatch #72 
       lookupMissEvent(new Date('2026-03-10T12:00:00'), '10422', null, setResult, [])
     ).resolves.toBeUndefined();
 
-    expect(openSpy).toHaveBeenCalled();
+    expect(callSageOnce).toHaveBeenCalledTimes(1);
     expect(result).toBeTruthy();
-    expect(result.error).toContain('No Anthropic API key');
-    openSpy.mockRestore();
+    expect(result.error).toBeNull();
+    expect(result.text).toBe('Nothing notable found near this store on that date.');
   });
 });
