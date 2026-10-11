@@ -58,22 +58,27 @@ it was **already stale before this change** — missing `query_forms` (shipped v
 Fixed both gaps (`query_forms` + `web_search`) in the same edit rather than leaving one found-stale
 claim half-corrected.
 
-## ⚠️ NOT DEPLOYED — needs the owner to run the deploy command
+## ✅ RESOLVED (verified live, 2026-10-11 — do not re-raise)
 
-This session has no Supabase CLI access token. Confirmed directly: `npx supabase functions
-deploy sage-chat --no-verify-jwt` fails with `AccessTokenRequiredError` (no `SUPABASE_ACCESS_TOKEN`
-set, and `supabase login` isn't possible from here). The code is correct and committed, but
-**SAGE will not actually have web search until someone runs**:
+Merged to `main` as part of PR #1415 (merge commit `afb1799a`, 2026-10-11) — independently
+verified before merge: local worktree merge of the branch into fresh `origin/main`, full suite
+(5387 tests, one confirmed-flaky unrelated test re-run clean in isolation), and `npm run build`
+all clean. Confirmed `web_search_20260209` present in `origin/main`'s
+`supabase/functions/sage-chat/index.ts` after merge.
 
-```
-supabase functions deploy sage-chat --no-verify-jwt
-```
-
-Per CLAUDE.md's SAGE deploy convention. Do not report this as live before that command has
-actually been run and the function version has been confirmed to have bumped (same pattern as
-the past "SAGE RBAC redeploy" / "SAGE auto-scheduling" pending-action entries in CLAUDE.md's Top
-Priorities section — verify via `supabase functions list`, don't assume a push to `main` alone
-redeploys an Edge Function).
+**Deploy had one false start, corrected same day.** The owner first ran `supabase functions
+deploy census-proxy` (wrong function name) from a local checkout that was still on pre-PR
+`main`, then corrected to `supabase functions deploy sage-chat --no-verify-jwt`. The in-between
+measurement caught the gap cleanly: asked SAGE "What is this weekend's weather in Duncan?" and
+got *"I don't have weather data — SAGE is wired into QSRSoft, LifeLenz, SMG and Meridian's own
+tables only. No forecast feed, and I won't guess at one"* — proof the deployed function at that
+moment genuinely lacked the tool (the tool's presence in the `TOOLS` array controls this
+independent of system-prompt wording, so this wasn't a prompting issue). After the PR merged to
+`main` and the owner re-pulled + redeployed `sage-chat` from the now-correct `main`, the
+identical question returned a real, current multi-day forecast with real caveats (how stale the
+10-day run was, where its window ran out) and pivoted to Duncan-specific ops data (OEPE, labor
+%) when the forecast didn't reach far enough — the exact behavior the system-prompt CAVEAT in
+`buildSystemPrompt` was written to produce. **Confirmed live. Do not re-raise.**
 
 ## Not independently verified end-to-end
 
