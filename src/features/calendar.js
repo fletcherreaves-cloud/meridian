@@ -1799,35 +1799,24 @@ function getRecurringInstancesNeedingConfirm(rules, userEvents, monthsAhead=14){
 // review queue in CalendarManagerPanel.
 // ─────────────────────────────────────────────────────────────────────────────
 async function searchUpcomingEvents(loc){
-  const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-  if(!apiKey) throw new Error('No Anthropic API key set. Add one in Settings → AI & Integrations.');
-
   const coord=STORE_COORDS[loc]||{};
   const city=coord.city||'';
   const state=coord.state||'OK';
   const stateFull = state==='FL'?'Florida':'Oklahoma';
   const storeName=STORE_NAMES[loc]||loc;
 
-  const prompt='You are a McDonald\'s district analytics assistant building a proactive events calendar.\n\n'+
-'Store: '+storeName+', '+city+', '+stateFull+'\n\n'+
+  const prompt='Store: '+storeName+', '+city+', '+stateFull+'\n\n'+
 'Search for information that could affect this restaurant\'s sales over the next 4 months:\n'+
-'1. The academic calendar for the public school district serving '+city+', '+stateFull+' — find early-release days, no-school/teacher in-service days, and the start/end dates of any school breaks (Thanksgiving, winter break, spring break) for the current school year.\n'+
+'1. The academic calendar for the public school district serving '+city+', '+stateFull+' -- find early-release days, no-school/teacher in-service days, and the start/end dates of any school breaks (Thanksgiving, winter break, spring break) for the current school year.\n'+
 '2. Any major local events, festivals, concerts, or sports tournaments scheduled in or near '+city+' in the next 120 days that could meaningfully draw or divert foot traffic.\n\n'+
 'Return ONLY a JSON array, no other text, no markdown code fences, no explanation. Each item must follow this exact shape:\n'+
 '{"date":"YYYY-MM-DD","endDate":"YYYY-MM-DD or null","type":"school_early_release|school_no_school|school_break|school_start|school_end|event","label":"short label","confidence":"high|medium|low","sourceNote":"one short sentence on where this came from"}\n\n'+
 'If you find nothing reliable, return an empty array: []';
 
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({
-      model:'claude-haiku-4-5-20251001',
-      max_tokens:2048,
-      tools:[{type:'web_search_20250305',name:'web_search'}],
-      messages:[{role:'user',content:prompt}]
-    })});
-  if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error((err.error&&err.error.message)||'HTTP '+res.status);}
-  const data=await res.json();
-  const text=(data.content||[]).filter(b=>b.type==='text'&&b.text).map(b=>b.text).join('\n');
+  const text=await callSageOnce(
+    [{role:'user', content:prompt}],
+    'You are a McDonald\'s district analytics assistant building a proactive events calendar. Use web search. Respond with ONLY the requested JSON, no other tool calls, no other text.',
+  );
 
   // Defensive JSON extraction — model may wrap in prose or code fences despite instructions
   const first=text.indexOf('['), last=text.lastIndexOf(']');

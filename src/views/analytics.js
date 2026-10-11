@@ -4368,59 +4368,18 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   const DOW_FULL   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   // Reset tag selections when a new row is opened for tagging
   React.useEffect(()=>{setTagSelected([]);setTagCustomNote('');},[tagPick]);
-  const apiKey = (()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
-  // ── Shared web-search API helper ─────────────────────────────────────────
-  // web_search_20250305 is Anthropic-hosted: the API executes searches
-  // server-side and returns a final end_turn response with text blocks.
-  // We still need the anthropic-beta header and must handle the multi-turn
-  // loop in case the model issues a tool_use before the final text response.
+  // ── Shared web-search helper ──────────────────────────────────────────────
+  // Routed through sage-chat (callSageOnce) -- its TOOLS array carries
+  // web_search_20260209 server-side, so the multi-turn tool_use/tool_result
+  // loop this used to hand-roll against api.anthropic.com directly is now
+  // sage-chat's own concern, not this component's. No personal Anthropic key.
   const callClaudeWithSearch = async (prompt, maxTokens=1000) => {
-    const HEADERS = {
-      'Content-Type':'application/json',
-      'x-api-key':apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-beta':'web-search-2025-03-05',
-      'anthropic-dangerous-direct-browser-access':'true',
-    };
-    const TOOLS = [{type:'web_search_20250305',name:'web_search'}];
-    let messages = [{role:'user',content:prompt}];
-
-    for(let turn=0;turn<4;turn++){
-      const resp = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:HEADERS,
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:maxTokens,
-          tools:TOOLS,messages}),
-      });
-      if(!resp.ok){
-        const err=await resp.json().catch(()=>({}));
-        throw new Error((err.error&&err.error.message)||'HTTP '+resp.status);
-      }
-      const data = await resp.json();
-      const textBlocks = (data.content||[]).filter(b=>b.type==='text');
-      // If we got text, return it (end of loop)
-      if(textBlocks.length) return textBlocks.map(b=>b.text).join('').trim();
-      // tool_use: build tool_result messages and continue
-      if(data.stop_reason==='tool_use'){
-        const toolUseBlocks = (data.content||[]).filter(b=>b.type==='tool_use');
-        if(!toolUseBlocks.length) break;
-        messages = [
-          ...messages,
-          {role:'assistant',content:data.content},
-          {role:'user',content:toolUseBlocks.map(tu=>({
-            type:'tool_result',tool_use_id:tu.id,content:'[web search results retrieved]'
-          }))},
-        ];
-        continue;
-      }
-      break;
-    }
-    return null;
+    return await callSageOnce([{role:'user', content:prompt}]);
   };
 
   // ── Batch AI auto-scan ────────────────────────────────────────────────────
   const lookupAnomalyForBatch = async (row) => {
-    if(!apiKey||cancelBatchRef.current) return null;
+    if(cancelBatchRef.current) return null;
     const key=row.loc+'_'+(nDK(row.dKeyStr)||row.dateStr);
     const coords=STORE_COORDS[row.loc];
     const stateStr=coords&&coords.state==='FL'?'Florida':'Oklahoma';
@@ -4466,7 +4425,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   };
 
   const runBatchAIScan = async () => {
-    if(!apiKey||!results){alert(!apiKey?'Add API key in Settings first.':'Run scan first to detect anomalies.');return;}
+    if(!results){alert('Run scan first to detect anomalies.');return;}
     cancelBatchRef.current=false;
     const _uev=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
     const isT=(loc,dk)=>!!(_uev[loc]&&_uev[loc][dk]);
@@ -4475,8 +4434,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     const msg='Run AI scan on '+untagged.length+' untagged anomalies?\n\n'+
       '• Already-tagged rows are skipped\n'+
       '• Processing in groups of 3 (~'+Math.ceil(untagged.length/3*1.5/60)+' min estimated)\n'+
-      '• Regional events will be queued for your review\n\n'+
-      'This uses your Anthropic API key.';
+      '• Regional events will be queued for your review';
     if(!window.confirm(msg)) return;
     setBatchScanning(true);
     setBatchProg({done:0,total:untagged.length,tagged:0,found:0});
@@ -4581,7 +4539,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     a.click();URL.revokeObjectURL(url);
   };
 
-  const lookupAnomaly = async (row) => {    if(!apiKey) return;
+  const lookupAnomaly = async (row) => {
     const key = row.loc+'_'+(nDK(row.dKeyStr)||row.dateStr);
     setAiLoading(prev=>({...prev,[key]:true}));
     try {
@@ -5032,7 +4990,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
               background:tagPick===key?'rgba(165,180,252,.08)':'transparent'},
               onClick:e=>{e.stopPropagation();setTagPick(tagPick===key?null:key);}},
               tagPick===key?'✕':isT?'✏ Edit':'📌 Tag'),
-            apiKey&&!isT&&btn({className:'btn btn-sm',disabled:!!aiLoading[key],
+            !isT&&btn({className:'btn btn-sm',disabled:!!aiLoading[key],
               style:{fontSize:'8px',padding:'2px 7px',opacity:aiLoading[key]?.5:1},
               onClick:e=>{e.stopPropagation();lookupAnomaly(row);}},
               aiLoading[key]?'…':'🔍 AI'),
@@ -5347,9 +5305,9 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           onClick:()=>{const _ue=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();const loc=selLoc&&selLoc!=='all'?selLoc:stores&&stores[0]&&stores[0].loc;if(!loc){alert('Select a location first.');return;}generateReviewPack(loc,ds,settings,_ue);}},'📤 Pack'),
         results&&btn({className:'btn btn-sm',style:{color:'#34d399',borderColor:'rgba(52,211,153,.3)'},
           onClick:()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=e=>{if(e.target.files[0])importReview(e.target.files[0],onTagEvent,(n,name)=>{alert('✅ Imported '+n+(n!==1?' responses':' response')+' from '+name+'.');});};inp.click();}},'📥 Import'),
-        results&&!batchScanning&&btn({className:'btn btn-sm',disabled:!apiKey,
-          style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)',opacity:apiKey?1:.45},
-          title:apiKey?'AI scan all untagged anomalies (skips already-tagged rows)':'Add API key in Settings',
+        results&&!batchScanning&&btn({className:'btn btn-sm',
+          style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
+          title:'AI scan all untagged anomalies (skips already-tagged rows)',
           onClick:runBatchAIScan},'🤖 AI Batch'),
         results&&batchScanning&&div({style:{display:'flex',alignItems:'center',gap:6}},
           span({style:{fontSize:'8.5px',color:'#a5b4fc',fontFamily:'var(--mono)'}},'🤖 '+batchProg.done+'/'+batchProg.total+' · '+batchProg.tagged+'✓'),
