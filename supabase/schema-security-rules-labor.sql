@@ -13,20 +13,35 @@
 -- computeLaborEmployeeFindingsForRule/computeManagerEditFindingsForRule). Panel wiring:
 -- src/views/security-panel.js's 'labor' domain tab.
 --
--- ⚠️ ALL THREE SHIP ACTIVE=FALSE. There is no live Supabase credential in this sandbox to run the
--- equivalent of INV-004's own pre-ship dry-run measurement (its migration's own header shows what
--- that looks like: real percentiles from a live join, checked before choosing a threshold). These
--- thresholds are first guesses in the same declared sense schema-security-rules.sql's own
--- CASH-001/CASH-002 fixtures are ("to be tuned against this org's actual data") -- not a
--- Phase-1-quality delivery yet. Before flipping any of these active=true:
---   1. Run scripts/security-rules-run.mjs once against real data and read its own
---      `[security-rules-run] LABOR-00N: N row(s) ... -> N finding(s)` log line per rule.
---   2. For LABOR-001 specifically, measure the LifeLenz-geid-vs-QSRSoft-geid join hit rate first
---      (see that script's own header comment on this exact open question) -- a near-zero hit rate
---      means the two vendors' geids are NOT the same identifier space for this org, and LABOR-001
---      would need a name-based join instead before it means anything.
---   3. Re-tune threshold/min_denominator/min_value against whatever that real run shows, the same
---      way INV-004's own migration documents its measured percentiles before picking 2.5σ.
+-- ✅ MEASURED LIVE 2026-10-12 (service-role credential, direct PostgREST reads + the real shipped
+-- functions run against the actual fetched rows -- not reasoned about). Window actually available:
+-- 2026-10-08..2026-10-12 (5 days) across 25 of 27 stores -- lifelenz_punch_edits is brand new, so
+-- this is a COLD-START snapshot, well short of the rules' own 28-day design window. Results below
+-- are real for what they measured; re-measure again once ~28 days of real history exist (no sooner
+-- than ~2026-11-09) before leaning on them as a steady-state baseline.
+--
+--   LABOR-001 (ghost employee): 321 edit rows, 129 distinct (loc,geid) subjects. Cross-vendor
+--   geid join (lifelenz_punch_edits.geid -> qsr_employee_tenure.geid) hit 121/129 = 93.8% -- the
+--   open assumption HOLDS; LifeLenz and QSRSoft geids ARE the same identifier space for this org,
+--   for the large majority of subjects. 0/121 joined subjects carry a termination_entry_date at
+--   all -- a clean, decided "no ghosts found" (everyone currently getting punch edits is, as
+--   expected, an active employee), not a sign the mechanism is broken. 0/129 flagged. ✅ ACTIVATED.
+--
+--   LABOR-002 (self-approval): same 321/129. 0/129 flagged -- no employee self-approved their own
+--   edit in this window. A believable clean result for a rare, deliberate event; mechanism runs
+--   without error. ✅ ACTIVATED.
+--
+--   LABOR-003 (per-manager outlier edit rate): ❌ NOT ACTIVATED -- the `min_denominator: 500` this
+--   migration originally shipped was an unmeasured guess, and the real numbers prove it unusable:
+--   every one of 60 real (loc,manager) subjects' own summed punch-volume denominator fell in
+--   [1, 193] (sorted, n=60: min 1, p10 3, median 46, p90 108, max 193) -- NOT ONE could ever clear
+--   500, so the rule would sit at pass:null forever, exactly the "degenerate, not working" state a
+--   pre-ship measurement exists to catch. Lowered to `min_denominator: 20` below (clears the
+--   measured near-zero tail -- 9/60 subjects at <=4 -- without being aggressive), but this is
+--   STILL a cold-start-window number, not a real 28-day one, and the store-baseline population
+--   itself is dominated by the same thin-denominator noise (peer stdev ~200 against a mean ~110 --
+--   wildly noisy, not a usable baseline yet). Re-measure this ONE rule's thresholds for real once
+--   the window has matured; do not activate off this pass's numbers alone.
 
 -- ── LABOR-001 — Ghost employee: punch-edit activity after the employee's own termination date ──
 -- Subject: the edited employee (empToken from employee_name). Numerator is a precomputed 0/1 flag
@@ -46,9 +61,15 @@ insert into public.security_rules (
   '{}', '{}',
   '["a late correction to a punch from the employee''s final days, properly backdated to a date before their last worked day", "a termination date entered into QSRSoft after the fact, placing a legitimate final-week edit after the recorded (but inaccurate) termination date", "LifeLenz geid and QSRSoft geid not actually being the same identifier space for this org -- see this migration''s own pre-flight step 2"]',
   'Confirm the termination date in QSRSoft and the edited punch''s own date/time directly against LifeLenz''s change-log entry for this employee before escalating; verify the edit is not a late-entered correction for days legitimately worked before termination.',
-  'owner question 2026-10-12 ("...ghost employees on payroll or potential for fraudulent time clock entries..."); memory/plan-security-loss-prevention.md §2.4/§2.4a', 1, false
+  'owner question 2026-10-12 ("...ghost employees on payroll or potential for fraudulent time clock entries..."); memory/plan-security-loss-prevention.md §2.4/§2.4a', 1, true
 )
 on conflict (tenant_id, rule_id) do nothing;
+
+-- ACTIVATED 2026-10-12 after a live measurement (93.8% join hit rate, 0 false positives) --
+-- see this file's own header. A no-op if the row already exists with active already set; this
+-- UPDATE is what actually flips a row inserted earlier in an unactivated state (the INSERT's own
+-- `on conflict do nothing` cannot, since it skips the whole row on conflict, updates included).
+update public.security_rules set active = true, updated_at = now() where rule_id = 'LABOR-001';
 
 -- ── LABOR-002 — Self-approval: the edited employee IS the editing manager ──────────────────────
 -- Subject: the edited employee (empToken from employee_name) -- same subject grain as LABOR-001,
@@ -68,9 +89,13 @@ insert into public.security_rules (
   '{"LABOR-003"}', '{}',
   '["a shift lead or manager with this store''s own documented policy permitting self-edit", "a name-matching artifact -- two different employees sharing an identical name string at the same store"]',
   'Confirm this store''s own policy on who may approve their own punch edits; if self-approval is not permitted here, pull the LifeLenz change-log entry for the exact edit and this employee''s manager chain.',
-  'owner question 2026-10-12 ("...fraudulent time clock entries being manually applied in any type of pattern..."); memory/plan-security-loss-prevention.md §2.4/§2.4a', 1, false
+  'owner question 2026-10-12 ("...fraudulent time clock entries being manually applied in any type of pattern..."); memory/plan-security-loss-prevention.md §2.4/§2.4a', 1, true
 )
 on conflict (tenant_id, rule_id) do nothing;
+
+-- ACTIVATED 2026-10-12 after a live measurement (0/129 subjects flagged, a clean decided result,
+-- mechanism runs without error) -- see this file's own header. Same idempotency note as LABOR-001.
+update public.security_rules set active = true, updated_at = now() where rule_id = 'LABOR-002';
 
 -- ── LABOR-003 — Per-manager outlier edit rate, vs. other stores ────────────────────────────────
 -- Subject: the EDITING MANAGER (empToken column reused for a manager subject, from
@@ -87,11 +112,22 @@ insert into public.security_rules (
   'LABOR-003', 'labor', 'manual-edit-rate', 'Punch-edit rate per editing manager, vs. other stores',
   'How often a manager edits/adds punches, normalized per 1,000 punches at their own store that window, compared against other stores'' own rate for the same window -- unusual against other stores'' managers, not against a fixed number.',
   '["lifelenz_punch_edits", "qsr_punch_times"]', 'z-score',
-  '{"numerator": {"field": "editCount", "agg": "sum"}, "denominator": {"field": "storePunchVolume", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_denominator": 500}',
+  '{"numerator": {"field": "editCount", "agg": "sum"}, "denominator": {"field": "storePunchVolume", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_denominator": 20}',
   28, 'store', '{"default": 2.5}', 3, 1, 'medium', true,
   '{"LABOR-002"}', '{}',
-  '["a store going through a POS/time-clock hardware issue that week, needing more corrections than usual", "a new-hire training week with more punch mistakes needing correction", "a manager newly assigned to this store absorbing a backlog of the PRIOR manager''s unedited punches"]',
+  '["a store going through a POS/time-clock hardware issue that week, needing more corrections than usual", "a new-hire training week with more punch mistakes needing correction", "a manager newly assigned to this store absorbing a backlog of the PRIOR manager''s unedited punches", "a cold-start measurement window (<28 days of real lifelenz_punch_edits history) producing an unreliable baseline -- see this file''s own header"]',
   'Compare this manager''s edit volume against their own store''s punch volume for the window, and check whether the edits cluster on one employee (a possible LABOR-002 overlap) or are spread evenly across the crew (more consistent with a system/training issue than a targeted pattern).',
   'owner question 2026-10-12 ("...in any type of pattern?"); memory/plan-security-loss-prevention.md §2.4/§2.4a', 1, false
 )
 on conflict (tenant_id, rule_id) do nothing;
+
+-- STILL INACTIVE 2026-10-12 after measurement -- min_denominator corrected from the original,
+-- unmeasured 500 (which 0/60 real subjects could ever clear) down to 20 (measured: real per-
+-- subject denominator sums ranged 1-193, median 46, over a 5-day cold-start window). This UPDATE
+-- exists so a row inserted earlier under the old broken value gets corrected even though the
+-- INSERT above's `on conflict do nothing` would otherwise leave it stuck at 500 forever. Does NOT
+-- set active=true -- re-measure this rule specifically once ~28 days of real history exist (no
+-- sooner than ~2026-11-09) before activating it.
+update public.security_rules
+set logic_expression = jsonb_set(logic_expression, '{min_denominator}', '20'), updated_at = now()
+where rule_id = 'LABOR-003' and (logic_expression->>'min_denominator')::numeric = 500;
