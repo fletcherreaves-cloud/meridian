@@ -1,13 +1,13 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_COFFEE } from '../constants.js';
 import { forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
-import { saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { saveUserSetting, loadUserSetting, loadVlhStoreConfigs } from '../lib/supabase.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
@@ -1182,11 +1182,59 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
   );
 }
 
+// Restaurant Profiles — Store Format options (owner req 2026-10-12). 'Dessert Kiosk' removed
+// (not a real format in this org's footprint); 'Gas Alliance' (co-branded gas-station location),
+// 'Special Point of Distribution (SPOD)' (compact/limited-menu format), and 'Walmart'
+// (in-store/embedded) added as real non-traditional formats. No auto-pull source for this field
+// -- it's a business-model distinction, not a physical-layout one, so Store VLH Config has
+// nothing to offer here; manual-select only, same as Market Type/Volume Tier/Primary Daypart.
+const STORE_FORMAT_OPTIONS = ['Traditional','Drive-Thru Only','Walk-Up / Mall','Dual DT','Gas Alliance','Special Point of Distribution (SPOD)','Walmart'];
+
+// The four new Profile sections (owner req 2026-10-12) -- each one modeled directly off
+// store_vlh_config (Data Manager -> ⚙ Store VLH Config), since that table already carries this
+// exact physical-layout detail per store (memory/project-vlh-config.md). Reusing VLH_DT_TYPES/
+// VLH_IN_STORE/VLH_KITCHEN's own LABELS verbatim as this panel's own option list keeps the two
+// screens' vocabulary identical by construction -- a label typed once in constants.js, not
+// duplicated and liable to drift. VLH_COFFEE's own labels ("BDAP Only", "McCafé Only") are NOT
+// reused as-is here -- the owner's own wording for this field was "BDAP, McCafe, BDAP + McCafe",
+// so SERVICE_AREA_LAYOUT_OPTIONS restates VLH_COFFEE's same 4 real values (none/bdap/mccafe/both)
+// under that shorter phrasing; 'None' is kept (not in the owner's literal list) because a real
+// store can and does have coffee:'none' on file -- dropping it would leave nothing for the
+// auto-pull to map to on a store with neither station, which would silently show blank instead
+// of the real "we checked, there's neither" answer.
+const DT_LAYOUT_OPTIONS = VLH_DT_TYPES.map(o => o.label);
+const BEVERAGE_OPTIONS = VLH_IN_STORE.map(o => o.label);
+const PRODUCTION_AREA_LAYOUT_OPTIONS = VLH_KITCHEN.map(o => o.label);
+const SERVICE_AREA_LAYOUT_OPTIONS = ['None', 'BDAP', 'McCafe', 'BDAP + McCafe'];
+
+// raw store_vlh_config value -> this panel's own display label, for auto-pull only (never
+// stored under these raw codes -- every PROFILE_FIELD, old or new, stores the plain label
+// string directly, matching Store Format/Market Type's own existing convention).
+const VLH_DT_TYPE_LABEL = Object.fromEntries(VLH_DT_TYPES.map(o => [o.value, o.label]));
+const VLH_IN_STORE_LABEL = Object.fromEntries(VLH_IN_STORE.map(o => [o.value, o.label]));
+const VLH_KITCHEN_LABEL = Object.fromEntries(VLH_KITCHEN.map(o => [o.value, o.label]));
+const VLH_COFFEE_TO_SERVICE_AREA_LABEL = Object.fromEntries(
+  VLH_COFFEE.map(o => [o.value, { none: 'None', bdap: 'BDAP', mccafe: 'McCafe', both: 'BDAP + McCafe' }[o.value]])
+);
+
+const DEFAULT_PROFILE = {
+  storeType:'', market:'', volumeTier:'', primaryDaypart:'',
+  dtLayout:'', serviceAreaLayout:'', beverage:'', productionAreaLayout:'',
+  characteristics:'',
+};
+
 function StoreKBEditor({onClose, ds}) {
   const [edits,      setEdits]      = React.useState(getKBEdits);
   const [selLoc,     setSelLoc]     = React.useState(Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))[0]);
   const [draft,      setDraft]      = React.useState(null);
   const [saved,      setSaved]      = React.useState(false);
+  // Store VLH Config auto-pull (owner req 2026-10-12) -- loaded once per panel open, keyed by
+  // UNPADDED loc (loadVlhStoreConfigs' own convention, measured live: store_vlh_config.loc is
+  // stored unpadded, e.g. '3708' not '0003708' -- confirmed against the real table before writing
+  // this, not assumed from the column's own name). Load failure/no-session degrades to {} (empty),
+  // same "never guess, just leave it for manual selection" fallback every field below already has.
+  const [vlhConfigs, setVlhConfigs] = React.useState({});
+  React.useEffect(() => { loadVlhStoreConfigs().then(setVlhConfigs).catch(() => {}); }, []);
   const [search,     setSearch]     = React.useState('');
   const [activeTab,  setActiveTab]  = React.useState('notes');
   const [newInsight, setNewInsight] = React.useState('');
@@ -1197,21 +1245,51 @@ function StoreKBEditor({onClose, ds}) {
     setDraft({
       notes:  kb.notes||'',
       tags:   (kb.tags||[]).join(', '),
-      profile: kb.profile||{storeType:'',market:'',volumeTier:'',primaryDaypart:'',characteristics:''},
+      profile: {...DEFAULT_PROFILE, ...(kb.profile||{})},
       intelligenceNotes: kb.intelligenceNotes||[],
     });
     setSaved(false);
   },[selLoc]);
 
+  // The real store_vlh_config row for the selected store, if one exists -- normLoc() matches
+  // loadVlhStoreConfigs' own unpadded-loc keying (both already measured/confirmed above).
+  const vlhCfg = vlhConfigs[normLoc(selLoc)] || null;
+  // Auto-pull values for the 4 new VLH-backed fields, translated to THIS panel's own display
+  // labels (see the lookup tables above) -- undefined (not '') for any field the config row
+  // doesn't have a real value for, so PROFILE_FIELD's own `manual || autoValue` fallback never
+  // mistakes "nothing to pull" for a real empty-string answer.
+  const vlhAuto = vlhCfg ? {
+    dtLayout: VLH_DT_TYPE_LABEL[vlhCfg.dt_type] || undefined,
+    serviceAreaLayout: VLH_COFFEE_TO_SERVICE_AREA_LABEL[vlhCfg.coffee] || undefined,
+    beverage: VLH_IN_STORE_LABEL[vlhCfg.in_store] || undefined,
+    productionAreaLayout: VLH_KITCHEN_LABEL[vlhCfg.kitchen] || undefined,
+  } : {};
+
   const saveDraft = () => {
+    // Persist whichever value is actually ON SCREEN -- a VLH-backed field the user never
+    // touched is still showing (and meant) its auto-pulled default (see PROFILE_FIELD's own
+    // `manual || autoValue` display logic); Save should write that real, visible value, not an
+    // empty string that would silently discard the auto-pull the moment this store is reopened
+    // from a device/session where store_vlh_config hasn't loaded yet.
+    const resolvedProfile = {...draft.profile};
+    for (const key of ['dtLayout','serviceAreaLayout','beverage','productionAreaLayout']) {
+      if (!resolvedProfile[key] && vlhAuto[key]) resolvedProfile[key] = vlhAuto[key];
+    }
     const newEdits = {...edits, [selLoc]:{
       notes:  draft.notes,
       tags:   draft.tags.split(',').map(t=>t.trim()).filter(Boolean),
-      profile: draft.profile,
+      profile: resolvedProfile,
       intelligenceNotes: draft.intelligenceNotes,
     }};
     setEdits(newEdits);
     saveKBEdits(newEdits);
+    // Mirror the resolved profile back into `draft` itself -- without this, a field the user
+    // never touched keeps showing the "📡 Store VLH Config" not-yet-confirmed badge even right
+    // after a successful Save, because `draft.profile[key]` was still '' the whole time (only
+    // the DISPLAYED `effective` value, computed in PROFILE_FIELD, ever reflected the auto-pull).
+    // The value just got explicitly saved -- it's a real, confirmed choice now, same as if the
+    // user had picked it by hand, so the badge should clear.
+    setDraft(d => ({...d, profile: resolvedProfile}));
     setSaved(true);
     setTimeout(()=>setSaved(false),2000);
   };
@@ -1221,7 +1299,7 @@ function StoreKBEditor({onClose, ds}) {
     setEdits(newEdits); saveKBEdits(newEdits);
     const kb = STORE_KB[selLoc]||{notes:'',tags:[]};
     setDraft({notes:kb.notes||'',tags:(kb.tags||[]).join(', '),
-      profile:{storeType:'',market:'',volumeTier:'',primaryDaypart:'',characteristics:''},
+      profile:{...DEFAULT_PROFILE},
       intelligenceNotes:[]});
     setSaved(false);
   };
@@ -1264,21 +1342,37 @@ function StoreKBEditor({onClose, ds}) {
     background:'transparent',color:active?'var(--amber)':'var(--text3)',letterSpacing:'.3px',
   });
 
-  const PROFILE_FIELD = (label, key, options) => div({style:{marginBottom:10}},
-    div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},label),
-    options
-      ? h('select',{value:draft.profile[key]||'',
-          onChange:e=>setDraft(d=>({...d,profile:{...d.profile,[key]:e.target.value}})),
-          style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text)',fontSize:'10px',padding:'5px 8px'}},
-          h('option',{value:''},'— select —'),
-          ...options.map(o=>h('option',{key:o,value:o},o))
-        )
-      : h('input',{type:'text',value:draft.profile[key]||'',
-          onChange:e=>setDraft(d=>({...d,profile:{...d.profile,[key]:e.target.value}})),
-          style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text)',fontSize:'10px',padding:'5px 8px',boxSizing:'border-box'}})
-  );
+  // `autoValue` (owner req 2026-10-12) -- optional. When the field has no manual selection yet
+  // AND a real Store VLH Config value exists, the dropdown DISPLAYS that auto-pulled value
+  // (shown via `effective` below) and a small badge names where it came from -- but
+  // `draft.profile[key]` itself stays untouched until the user actually picks something OR
+  // Save resolves it (saveDraft's own fallback, same value this renders). A field with no
+  // `autoValue` (every pre-existing field, plus a VLH-backed one with no config row/value yet)
+  // behaves exactly as before.
+  const PROFILE_FIELD = (label, key, options, autoValue) => {
+    const manual = draft.profile[key] || '';
+    const effective = manual || autoValue || '';
+    const isAuto = !manual && !!autoValue;
+    return div({style:{marginBottom:10}},
+      div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4,display:'flex',alignItems:'center',gap:5}},
+        label,
+        isAuto && span({style:{fontSize:'7px',fontWeight:700,color:'#60a5fa',textTransform:'none',letterSpacing:0,padding:'1px 5px',borderRadius:99,background:'rgba(96,165,250,.15)'}},
+          '📡 Store VLH Config'),
+      ),
+      options
+        ? h('select',{value:effective,
+            onChange:e=>setDraft(d=>({...d,profile:{...d.profile,[key]:e.target.value}})),
+            style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+              color:'var(--text)',fontSize:'10px',padding:'5px 8px'}},
+            h('option',{value:''},'— select —'),
+            ...options.map(o=>h('option',{key:o,value:o},o))
+          )
+        : h('input',{type:'text',value:effective,
+            onChange:e=>setDraft(d=>({...d,profile:{...d.profile,[key]:e.target.value}})),
+            style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+              color:'var(--text)',fontSize:'10px',padding:'5px 8px',boxSizing:'border-box'}})
+    );
+  };
 
   const sigStrColor = r => Math.abs(r)>=.7?'var(--crit)':Math.abs(r)>=.5?'var(--warn)':'#10b981';
 
@@ -1468,10 +1562,29 @@ function StoreKBEditor({onClose, ds}) {
                 div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:12,lineHeight:1.6}},
                   'Structured profile for this location. Used as context in SAGE, Forecast Brief, and future coaching tools.'),
                 div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 16px'}},
-                  PROFILE_FIELD('Store Format',    'storeType',     ['Traditional','Drive-Thru Only','Walk-Up / Mall','Dessert Kiosk','Dual DT']),
+                  PROFILE_FIELD('Store Format',    'storeType',     STORE_FORMAT_OPTIONS),
                   PROFILE_FIELD('Market Type',     'market',        ['Rural','Small Town','Suburban','Urban','Interstate/Highway','Tourist/Seasonal']),
                   PROFILE_FIELD('Volume Tier',     'volumeTier',    ['Low (<$1.2M/yr)','Mid ($1.2–2M)','High ($2–3M)','Very High (>$3M)']),
                   PROFILE_FIELD('Primary Daypart', 'primaryDaypart',['Breakfast','Lunch','Dinner','Late Night','Balanced'])
+                ),
+                // Layout & Equipment (owner req 2026-10-12) -- the 4 new sections, modeled off
+                // Store VLH Config (Data Manager -> ⚙ Store VLH Config) and auto-pulled from it
+                // wherever that table has a real value for this store (📡 badge on the field
+                // label); anything it doesn't cover stays a plain manual pick, same as every
+                // other field on this tab.
+                div({style:{marginTop:14,paddingTop:12,borderTop:'.5px dashed var(--bdr)'}},
+                  div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:2}},
+                    'Layout & Equipment'),
+                  div({style:{fontSize:'7.5px',color:'var(--text3)',marginBottom:10,lineHeight:1.5,fontStyle:'italic'}},
+                    vlhCfg
+                      ? 'Pre-filled from this store\'s Store VLH Config where available — pick a different option anytime to override.'
+                      : 'No Store VLH Config on file for this store yet — set it in Data Manager → ⚙ Store VLH Config, or just pick below.'),
+                  div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 16px'}},
+                    PROFILE_FIELD('DT Layout',               'dtLayout',             DT_LAYOUT_OPTIONS,             vlhAuto.dtLayout),
+                    PROFILE_FIELD('Service Area Layout',     'serviceAreaLayout',    SERVICE_AREA_LAYOUT_OPTIONS,   vlhAuto.serviceAreaLayout),
+                    PROFILE_FIELD('Beverage',                'beverage',             BEVERAGE_OPTIONS,              vlhAuto.beverage),
+                    PROFILE_FIELD('Production Area Layout',  'productionAreaLayout',PRODUCTION_AREA_LAYOUT_OPTIONS,vlhAuto.productionAreaLayout),
+                  ),
                 ),
                 div({style:{marginTop:4}},
                   div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},
