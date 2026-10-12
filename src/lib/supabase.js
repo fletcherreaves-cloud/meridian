@@ -5516,8 +5516,28 @@ export async function loadPmixRows(daysBack = 40) {
 // split out of qtr_slot once here so record-hour.js never has to re-parse the raw
 // "HH:MM" string (hours can run past 24 for the wrapped 00:00-04:00 end of the 4am
 // business day — see labor-standard.js's DAYPARTS header comment).
+// A table-not-yet-migrated 404 (PGRST205) used to fall straight into _pagedParallel's generic
+// failed-page path, which fires _recordDataError and surfaces the scary "DATA INCOMPLETE ...
+// figures UNDERSTATED" banner -- correct for THAT helper's other 10 callers (an existing table
+// genuinely failing a read), wrong here: no table at all isn't a partial/stale read, it's the
+// owner not having run schema-qsr-sales-quarter-hour.sql yet. Measured live 2026-10-12 right
+// after PR #1440 merged: real PGRST205 ("Could not find the table 'public.qsr_sales_quarter_hour'
+// in the schema cache"), same shape probed for security_findings_latest/qsr_hourly_sales_records
+// elsewhere in this file. Probed once per session and cached, same pattern.
+let _qsrSalesQuarterHourMissing = null;
 export async function loadQsrSalesQuarterHour(daysBack = 90) {
   if (!supabase) return [];
+  if (_qsrSalesQuarterHourMissing === null) {
+    const probe = await supabase.from('qsr_sales_quarter_hour').select('loc').limit(1);
+    _qsrSalesQuarterHourMissing = !!(probe.error && _isMissingTable(probe.error));
+    if (probe.error && !_qsrSalesQuarterHourMissing) {
+      console.warn('[loadQsrSalesQuarterHour] probe failed:', probe.error.message);
+    }
+  }
+  if (_qsrSalesQuarterHourMissing) {
+    console.warn('[qsr_sales_quarter_hour] Table does not exist in Supabase. Run supabase/schema-qsr-sales-quarter-hour.sql in your Supabase SQL editor.');
+    return [];
+  }
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
   const _cutStr = _cut.toISOString().slice(0, 10);
   const data = await _pagedParallel({ table: 'qsr_sales_quarter_hour', select: '*', gteCol: 'dt', gteVal: _cutStr, orderCol: 'dt', ascending: false, label: 'qsr_sales_quarter_hour' });
