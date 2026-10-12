@@ -497,35 +497,41 @@ standing rule:
   editor identity (who made the edit), edit timestamp (when), and the original pre-edit value
   (what it changed from). Those three are what a self-approval check, a per-manager edit-rate
   outlier check, or a rounding-direction check actually need — `inModified`/`outModified` alone
-  only answers "yes/no, this punch was touched," not by whom or by how much. **Next concrete
-  step, not yet done:** a live DevTools capture of `/wfm/audit/punch_audit_report` ("Time Punches
-  (audit)" in QSRSoft's own public nav tree, `qsrsoft-report-catalog.md`) — the strongest
-  name-match candidate for carrying all three missing fields — with `/reports/mcd/people/
-  overtimeAudit`, `/reports/mcd/people/timeAttendance`, and `/reports/mcd/people/laborExceptions`
-  as fallbacks if it doesn't. None of the four have been probed; only their names are known. This
-  requires a QSRSoft login (`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`) — **not present in every agent
-  session's environment** (none were in this session's), so it may need the owner's own capture
-  via DevTools the same way the existing punch-times/employee-roster findings were captured,
-  redacting the same way (this endpoint family has already leaked SSNs when over-selected).
+  only answers "yes/no, this punch was touched," not by whom or by how much.
   - **No payroll dollar data is pulled anywhere in this repo** (duplicate-bank-account/no-
     withholding checks from the ghost-employee research need payroll fields Meridian has never
     touched — a materially bigger, more sensitive data-access ask than anything else in this
     file, likely out of scope unless the owner specifically wants to go there).
+- **✅ RESOLVED within the same day — the three missing fields exist, in LifeLenz, not QSRSoft.**
+  The owner captured a live, working LifeLenz admin report,
+  `time_punch_change_approvals_report` (same host/auth shape as `scripts/lifelenz-pull.mjs`'s
+  already-confirmed `labor_analysis_actuals_report` pull, same already-discovered per-store
+  `scheduleId`s — no new discovery step needed). Its CSV carries `Manager Modified` (editor
+  identity), `Modified Date/Time` (edit timestamp), and `Original Punch Date/Time` vs.
+  `Adjusted Punch Date/Time` (the old-vs-new value) — exactly the three fields this section spent
+  the morning saying QSRSoft didn't have. **This also means the "QSRSoft, not LifeLenz" vendor
+  conclusion two paragraphs above (and in `finding-qsrsoft-time-punches-endpoint-2026-08-21.md`'s
+  own follow-up research) was wrong** — neither had actually probed LifeLenz's admin report
+  catalog for a punch-edit-specific report; absence in the pull this repo happened to have built
+  was mistaken for absence in the vendor's API. Full field-by-field writeup, the exact endpoint
+  shape, and what's still not built (pull script, Supabase table, security-rules row,
+  `assembleLaborDrilldown()`) in `finding-lifelenz-punch-edit-audit-report-2026-10-12.md` — **no
+  sample employee data from the live capture is recorded in either file**, per this repo's
+  standing PII-handling rule (names/GEIDs/manager names aren't SSN/DOB-tier, but a memory doc
+  still describes fields, not real rows).
 - **Architecture note:** `security-panel.js`'s `SubjectDrilldown` special-cases exactly two
   `domain` values today (`'cash'`, `'inventory'`) — a third `'labor'` domain needs its own
   drill-down assembly function (an `assembleLaborDrilldown()`, matching `assembleCashDrilldown()`/
   `assembleInventoryDrilldown()`'s existing precedent) before any Labor finding can render in the
   panel at all, not just a new rule row in the registry.
 
-**Net assessment (corrected 2026-10-12):** the termination-date cross-reference (ghost employee)
-is buildable TODAY with zero new data pulls — the roster and punch tables already join cleanly on
-`geid`. A coarse "was this punch edited at all" signal (`inModified`/`outModified`) is ALSO
-buildable today, zero new pull — correcting this file's own prior "no edit field exists" claim.
-But every pattern-level manual-edit check (self-approval, per-manager outlier rate, rounding-
-direction skew) still needs editor identity + timestamp + old-value, none of which are confirmed
-to exist in QSRSoft's API — a live capture of `/wfm/audit/punch_audit_report` (or its three named
-fallbacks) is the next concrete step, not yet done, and may require the owner's own DevTools
-session rather than an agent's (no QSRSoft credentials in this session's environment).
+**Net assessment (corrected again, same day, 2026-10-12):** the termination-date cross-reference
+(ghost employee) is buildable TODAY with zero new data pulls. Every pattern-level manual-edit
+check (self-approval, per-manager outlier rate, rounding-direction skew) is now ALSO buildable —
+not blocked on more research, blocked only on a real pull script + table for LifeLenz's
+`time_punch_change_approvals_report` (see the finding file above for exactly what's missing).
+The QSRSoft `inModified`/`outModified` coarse flag is still real but now redundant for this
+purpose — LifeLenz's report carries everything it does, plus editor+timestamp+old-value.
 
 New research sources (2026-10-12, supplementing the original three-engine pass — these lean
 vendor-blog/practitioner rather than ACFE-primary, flagged accordingly above):
@@ -844,13 +850,16 @@ piece is small and sharp:
   "was this punch edited" flag, from `qsr_punch_times`'s existing `in_modified`/`out_modified`
   columns — see §2.4a's correction. Not a full manual-edit-pattern rule (no editor/timestamp/
   old-value), but enough for a simple "edited punch rate by store/employee" signal today.
-- **Blocked on a live capture, not a code question:** every PATTERN-level manual-edit check
-  (self-approval, per-manager outlier rate, rounding-direction skew) needs editor identity +
-  edit timestamp + the original value, none of which `qsr_punch_times` carries. §2.4a names the
-  candidate endpoint (`/wfm/audit/punch_audit_report`, three fallbacks) — check THIS first if this
-  phase gets dispatched, via a live DevTools capture (likely the owner's, since QSRSoft
-  credentials aren't in every agent session's environment), before designing rule logic against
-  fields that haven't been confirmed to exist.
+- **✅ UNBLOCKED same day — not just a coarser flag, the full pattern-level data exists.** The
+  owner's live capture of LifeLenz's `time_punch_change_approvals_report` (§2.4a,
+  `finding-lifelenz-punch-edit-audit-report-2026-10-12.md`) carries editor identity
+  (`Manager Modified`), edit timestamp (`Modified Date/Time`), and the original-vs-adjusted value
+  — every PATTERN-level manual-edit check (self-approval, per-manager outlier rate,
+  rounding-direction skew) is buildable from this, pending a pull script + table, not pending
+  more research. QSRSoft was the wrong vendor to chase this in — see the correction in §2.4a.
+  **Before building:** confirm the report's `scheduleId` parameter accepts the SAME per-store ids
+  `getStoreSchedules()` already discovers for every store (the live capture used one specific id)
+  before assuming full-district coverage is automatic.
 - **New architecture work, not just new rule rows:** a `'labor'` domain needs its own
   `assembleLaborDrilldown()` in `security-panel.js`, following `assembleCashDrilldown()`/
   `assembleInventoryDrilldown()`'s existing precedent (§2.4a).
