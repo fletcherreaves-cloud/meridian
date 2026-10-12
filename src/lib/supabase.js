@@ -2403,74 +2403,6 @@ export async function loadDailyActivityRangeForStore(loc, startDate, endDate) {
     .range(lo, hi));
 }
 
-// ── Record Hour (2026-10-12) — per-store all-time best single clock-hour by sales ──────────
-// Fast approximation (owner-chosen over a true quarter-hour pull, same conversation): hour_slot
-// is a FIXED CLOCK-HOUR bucket (e.g. "06:00" = 5am-6am), not a sliding 60-minute window -- no
-// 15-minute sales data exists anywhere in the currently-pulled tables. Prefers
-// qsr_hourly_sales_records (supabase/schema-qsr-hourly-sales-records-view.sql, one row per
-// (loc, hour_slot) -- true all-time, server-aggregated to ~650 rows). qsr_daily_activity itself
-// is ~631,000 rows (measured 2026-10-12) -- an unbounded client-side scan for a max would be the
-// single heaviest load in the app, so this falls back to a BOUNDED recent-window scan (client-side
-// max per loc+hour_slot) when the view hasn't been created yet, same "ships safely ahead of the
-// migration" shape as loadSecurityFindings' security_findings_latest probe. `allTime` on the
-// result tells the caller which mode it got, so the UI can label a fallback read honestly instead
-// of presenting a recent-window max as a true all-time record.
-// ⚠️ The view alone is NOT enough -- same lesson as security_findings_latest (schema-security-
-// findings-latest-index.sql). Measured live right after the view was first applied (2026-10-12):
-// the exact query shape below (order by loc, hour_slot through the view) hit a real `57014`
-// statement timeout -- an unindexed DISTINCT ON still forces Postgres to Sort the full base table
-// on every request. schema-qsr-hourly-sales-records-index.sql (companion index, run AFTER the
-// view) fixes this the same way the security_findings_latest index did. Until both are applied,
-// this loader still degrades safely to the 60-day fallback below (fetchAll's own retry-then-give-
-// up path), just slower and noisier (a spurious _recordDataError/DATA INCOMPLETE firing) than it
-// needs to be.
-// fallbackDays default (60) matches this file's own established precedent for an all-store
-// hourly-table scan (loadQsrActSummary's documented "~40 paginated requests" for a 60-day
-// window) -- a wider default here would be the same mistake that loader's own header describes
-// fixing.
-let _hourlySalesRecordsViewMissing = null;
-export async function loadHourlySalesRecords({ fallbackDays = 60 } = {}) {
-  if (!supabase) return { rows: [], allTime: false };
-  if (_hourlySalesRecordsViewMissing === null) {
-    const probe = await supabase.from('qsr_hourly_sales_records').select('loc').limit(1);
-    _hourlySalesRecordsViewMissing = !!(probe.error && probe.error.code === 'PGRST205');
-    if (probe.error && !_hourlySalesRecordsViewMissing) {
-      console.warn('[loadHourlySalesRecords] view probe failed, using fallback scan:', probe.error.message);
-    }
-  }
-  if (!_hourlySalesRecordsViewMissing) {
-    const data = await fetchAll((from, to) => supabase
-      .from('qsr_hourly_sales_records')
-      .select('loc,hour_slot,dt,product_sales')
-      .order('loc').order('hour_slot')
-      .range(from, to), 1000, 'hourly sales records (view)');
-    if (data.length) {
-      return {
-        rows: data.map(r => ({ loc: String(parseInt(r.loc, 10)), hourSlot: r.hour_slot, dt: r.dt, sales: r.product_sales || 0 })),
-        allTime: true,
-      };
-    }
-  }
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - fallbackDays);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const raw = await fetchAll((from, to) => supabase
-    .from('qsr_daily_activity')
-    .select('loc,hour_slot,dt,product_sales')
-    .gte('dt', cutoffStr)
-    .order('dt').order('loc').order('hour_slot')
-    .range(from, to), 1000, `hourly sales records (fallback, ${fallbackDays}d)`);
-  const best = {};
-  for (const r of raw) {
-    if (!r.product_sales || r.product_sales <= 0) continue;
-    const loc = String(parseInt(r.loc, 10));
-    const key = loc + '|' + r.hour_slot;
-    const cur = best[key];
-    if (!cur || r.product_sales > cur.sales) best[key] = { loc, hourSlot: r.hour_slot, dt: r.dt, sales: r.product_sales };
-  }
-  return { rows: Object.values(best), allTime: false };
-}
-
 // ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
 // Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
 // scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
@@ -5568,6 +5500,42 @@ export async function loadPmixRows(daysBack = 40) {
     unitFoodCost:   r.unit_food_cost,
     unitPaperCost:  r.unit_paper_cost,
   }));
+}
+
+// ── Quarter-Hour Sales (Record Hour) ────────────────────────────────────────────────
+// `qsr_sales_quarter_hour` (schema-qsr-sales-quarter-hour.sql) — true 15-minute sales
+// buckets from scripts/qsrsoft-sales-quarter-hour-pull.mjs, built for src/engine/
+// record-hour.js's real rolling-60-minute "Record Hour" computation. Same two-speed
+// shape as loadPmixRows just above it: a bounded default for the common case, an
+// explicit wider `daysBack` for the "since 2022" wide-fill tier (App.js's
+// `wideLoaders.qsrSalesQtrHourRows`), both through this one function.
+//
+// loc is UNPADDED on return ("0035064" → "35064") — matches ds.storeIds/STORE_NAMES,
+// NOT qsr_product_mix's padded convention (see the schema file's header for why this
+// table's one consumer gets to pick the simpler side of that split). hour/minute are
+// split out of qtr_slot once here so record-hour.js never has to re-parse the raw
+// "HH:MM" string (hours can run past 24 for the wrapped 00:00-04:00 end of the 4am
+// business day — see labor-standard.js's DAYPARTS header comment).
+export async function loadQsrSalesQuarterHour(daysBack = 90) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ table: 'qsr_sales_quarter_hour', select: '*', gteCol: 'dt', gteVal: _cutStr, orderCol: 'dt', ascending: false, label: 'qsr_sales_quarter_hour' });
+  if (!data.length) return [];
+  return data.map(r => {
+    const [h, m] = String(r.qtr_slot).split(':').map(Number);
+    return {
+      loc:            String(parseInt(r.loc, 10)),
+      date:           new Date(r.dt + 'T00:00:00'),
+      qtrSlot:        r.qtr_slot,
+      slotMinutes:    (h || 0) * 60 + (m || 0),
+      transactions:   r.transactions,
+      productSales:   r.product_sales,
+      netSales:       r.net_sales,
+      dtTransactions: r.dt_transactions,
+      dtSales:        r.dt_sales,
+    };
+  });
 }
 
 // ── Menu Item Activity (waste/comp/promo) — dispatch #220 ──────────────────────────
