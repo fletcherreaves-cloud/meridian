@@ -107,20 +107,44 @@ The owner asked to build this now rather than hold. Shipped:
   names/GEIDs/manager names), covering the carry-forward behavior, the Add-vs-Edit distinction,
   the Adjustment-Type filter, and null-vs-empty-string field hygiene.
 
-**None of this has run against the live LifeLenz API.** No `LIFELENZ_TOKEN`/credentials exist in
-any agent session's environment this session had access to, so `fetchPunchEditReportChunk()`'s
-URL shape, the CSV parser's column-name matching (`fc()`'s substring match against the real
-header row), and the `scheduleId`-reuse assumption are all built from the owner's one live
-capture + this repo's existing confirmed pattern for the sibling report — not independently
-re-verified against a second live call. **First real test is the next scheduled GitHub Action
-run** (`.github/workflows/lifelenz-pull.yml`, already watches this script via
-`sync-failure-watch.yml` — no new entry needed, this is a new step inside the SAME watched
-workflow) or an owner-run manual pull with `LIFELENZ_SKIP_PUNCH_AUDIT` unset. If the real column
-headers differ even slightly from the live capture's (e.g. a header the capture didn't show, or
-different capitalization `fc()`'s substring-and-lowercase match doesn't account for), the pull
-will silently return zero rows rather than error — best-effort by design, but worth explicitly
-checking the first run's log line (`[punch-audit] ✓ N/M edit-event(s) saved`) rather than
-assuming success from a clean exit code.
+## ✅ VERIFIED LIVE, same day (2026-10-12) — ran for real, found and fixed one real bug
+
+Owner ran `supabase/schema-lifelenz-punch-edits.sql` in the Supabase SQL editor, then a manual
+`workflow_dispatch` of `.github/workflows/lifelenz-pull.yml` was triggered. Real result, read
+from the job's own log (`gh api .../actions/jobs/<id>/logs`), not inferred from a green exit
+code:
+
+- **The URL shape, auth, and `scheduleId`-reuse assumption are all CONFIRMED correct.**
+  `fetchPunchEditReportChunk()`'s endpoint returned `200` for every one of the 27 stores'
+  already-discovered `scheduleId`s — no new discovery step was needed, exactly as predicted.
+- **`parsePunchEditCSV()`'s field mapping is CONFIRMED correct against real data.** 317 real
+  edit-events were parsed from the live CSV responses across 26 active stores (e.g. real
+  Add/Edit rows at Marietta OK: 18, Bonifay: 31, Duncan: 17, Holdenville: 15 — store names only,
+  no employee-level detail recorded here).
+- **❌ Found a real bug, same run: 133 of 317 edit-events were LOST.** 7 of 26 stores (Cottondale,
+  Mossy Head, Durant, Ardmore-Broadway, Seminole, Ponce de Leon FL, Ada) saved **0** rows despite
+  their CSV responses parsing successfully, each logging `[punch-audit] upsert error (non-fatal):
+  null value in column "adjusted_punch_at" of relation "lifelenz_punch_edits" violates not-null
+  constraint`. Root cause: `adjusted_punch_at` was part of the table's PRIMARY KEY, and a
+  primary-key column is implicitly `NOT NULL` in Postgres — but real LifeLenz data has rows
+  where that field is legitimately blank (an `Add`/`Edit` whose adjusted value isn't the punch
+  time itself, or isn't captured by this report for that case — not yet root-caused further).
+  Because the script upserts one batch per store, a single bad row poisoned that WHOLE store's
+  batch for the run, not just the bad row.
+  - **Fixed same day:** dropped `adjusted_punch_at` from the primary key (`supabase/schema-
+    lifelenz-punch-edits.sql` now `primary key (loc, geid, punch_type, modified_at)`, plus an
+    idempotent `alter table ... drop constraint / add primary key` migration for the table that
+    already exists live under the old key) and the matching `onConflict` string in
+    `upsertPunchEditRows()`. **This migration still needs to be re-run in Supabase** — editing
+    the file doesn't retroactively fix the already-created table.
+  - This is exactly the kind of gap the "best-effort, never-fatal" design was built to survive
+    without breaking the daily sync — but it's also exactly why "check the first run's log line
+    rather than assume success from a clean exit code" mattered: the job's overall `conclusion`
+    was `success` the whole time, with 42% of real edit-events silently dropped.
+
+**Not yet re-verified:** whether the fix actually resolves it on a second live run (the fix
+landed after this run, in the same commit/PR) — re-check `[punch-audit] ✓ N/M` after the next
+run and confirm the 7 previously-failing stores now save real rows.
 
 **Still not built:** a `security_rules` registry row or `assembleLaborDrilldown()` in
 `security-panel.js` — the data now lands in Supabase, but nothing in the Security panel reads it

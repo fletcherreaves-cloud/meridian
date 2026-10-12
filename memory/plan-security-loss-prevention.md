@@ -850,17 +850,21 @@ piece is small and sharp:
   "was this punch edited" flag, from `qsr_punch_times`'s existing `in_modified`/`out_modified`
   columns — see §2.4a's correction. Not a full manual-edit-pattern rule (no editor/timestamp/
   old-value), but enough for a simple "edited punch rate by store/employee" signal today.
-- **✅ PULL + TABLE SHIPPED same day (2026-10-12), UNTESTED against the live API.** The owner's
-  live capture of LifeLenz's `time_punch_change_approvals_report` (§2.4a,
-  `finding-lifelenz-punch-edit-audit-report-2026-10-12.md`) carries editor identity
-  (`Manager Modified`), edit timestamp (`Modified Date/Time`), and the original-vs-adjusted value.
-  `scripts/lifelenz-pull.mjs` now pulls it as step 6 (`pullPunchEditAudit`, escape hatch
-  `LIFELENZ_SKIP_PUNCH_AUDIT=1`) into new table `lifelenz_punch_edits`
-  (`supabase/schema-lifelenz-punch-edits.sql`), reusing the same per-store `scheduleId`s
-  `getStoreSchedules()` already discovers. 15 tests cover the pure CSV parser against synthetic
-  fixtures. **No agent session had live LifeLenz credentials, so none of this ran against the
-  real API** — the finding file's own "Built, same session" note has the full caveat; check the
-  first real GitHub Action run's `[punch-audit]` log line before trusting it.
+- **✅ PULL + TABLE SHIPPED AND VERIFIED LIVE, same day (2026-10-12).** LifeLenz's
+  `time_punch_change_approvals_report` (§2.4a, `finding-lifelenz-punch-edit-audit-report-
+  2026-10-12.md`) carries editor identity (`Manager Modified`), edit timestamp (`Modified
+  Date/Time`), and the original-vs-adjusted value. `scripts/lifelenz-pull.mjs` pulls it as step
+  6 (`pullPunchEditAudit`, escape hatch `LIFELENZ_SKIP_PUNCH_AUDIT=1`) into table
+  `lifelenz_punch_edits` (`supabase/schema-lifelenz-punch-edits.sql`), reusing the same per-store
+  `scheduleId`s `getStoreSchedules()` already discovers. A manual `workflow_dispatch` run
+  confirmed the URL/auth/`scheduleId`-reuse all work against the real API (317 real edit-events
+  parsed across 26 stores) — **and found a real bug the same run**: `adjusted_punch_at` was
+  wrongly part of the table's primary key (implicitly `NOT NULL` in Postgres), and real data has
+  it legitimately blank on some rows, so 7 of 26 stores' whole batches failed silently (133/317
+  events lost) while the job's own `conclusion` still read `success`. Fixed same day — see the
+  finding file's own "VERIFIED LIVE" section for the exact numbers and the fix. **The Supabase
+  migration for the fix still needs to be re-run** (editing the schema file doesn't retroactively
+  alter the already-created table) and the fix itself hasn't been re-verified on a second run yet.
 - **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
   `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
   existing precedent — the data now lands in Supabase, but no `security_rules` row or UI reads it
