@@ -340,6 +340,27 @@ resolved)? Does this stay EOM-count-specific or become a general notification fr
 features (Signals anomalies, forecast accuracy drops, etc.) could plug into later? Both are
 reasonable directions — the owner hasn't said which yet.
 
+## ✅ RESOLVED 2026-10-03 (v5.494, PR #1377) — Recount visibility report (was "for later" below)
+
+Shipped the very next day, closing all 4 of this entry's own "likely real gaps, not yet checked"
+questions — re-verified live 2026-10-12: `EOMRecountImpactPanel` (`src/views/eom-recount-report.js`)
+is wired into `EOMDashboardPanel` (`src/views/eom-dashboard.js:3644`) with every prop populated.
+1. **Dollar AND percent** — `moneyPct()` renders `"$-300 (-0.30%)"` in both the Baseline and
+   Post-Recount columns (`basePct`/`curPct`, computed from the store's already-loaded period sales).
+2. **Before/after FOB side by side** — "Baseline ($ / %)" and "Post-Recount ($ / %)" columns plus a
+   Δ column, not just a net verdict.
+3. **Per-location recounted-or-not roll-up** — the `locationSummary` table lists every in-scope
+   store, including ones with ZERO recounts this period (Store / Recounted? / Items / Helped / Hurt
+   / Net), which the item list alone can never show.
+4. **Weekly coverage** — an EOM/Weekly mode toggle; Weekly reuses the exact recount-detection
+   already proven live on the At-A-Glance "Items Recounted" tile, not a separate/narrower method.
+
+3 tests in `dispatch-227-eom-reports.test.js` cover items 1/3/4 directly; re-ran them 2026-10-12,
+still 13/13 passing on current `main`. **Do not re-build this — the backlog text below is what
+triggered the 2026-10-02 audit and is kept only for the original ask's context.**
+
+**Original "for later" entry, kept for context:**
+
 ## Recount visibility report — which locations recounted, helped/hurt, FOB $/% before vs after (owner request, 2026-10-02, explicitly "for later")
 
 Owner, verbatim: *"I want to be able to go back and determine which locations performed any
