@@ -2917,6 +2917,11 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   `completedBy='--'`); `hasPunched` is a `"Yes"`/`"No"` string meaning "in the window", not ever;
   **`nextReviewDate` is widely stale** and unusable as a schedule (though overdue-from-`lastReviewDate`
   is a real candidate metric); `payrollID` is null — `geid` is the key.
+- **⭐⭐⭐ [LifeLenz ↔ QSRSoft roster field mapping](finding-lifelenz-qsrsoft-roster-field-mapping-2026-10-12.md)** —
+  Owner-provided CSV/xlsx pair compared field-by-field (no PII values recorded, field names only).
+  Confirms `orgStartDate`↔Hire Date / `storeStartDate`↔Restaurant Start Date from the finding above.
+  Store numbering schemes don't match (NSN vs Loc) and **no shared join key exists** across the two
+  systems besides name (fuzzy) or SSN (never to be used) — an open gap, not solved here.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
   **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
   `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;
