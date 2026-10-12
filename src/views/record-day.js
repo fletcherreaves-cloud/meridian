@@ -6,8 +6,6 @@ import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { computeHourRecords, scopeHourRecords, windowLabel } from '../engine/record-hour.js';
 import { printHtml } from '../utils/print-html.js';
-import { loadHourlySalesRecords } from '../lib/supabase.js';
-import { daypartOf } from '../engine/labor-standard.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
 // at all before this dispatch.
@@ -81,24 +79,6 @@ function f$2(v) { return '$' + (v||0).toLocaleString(undefined,{minimumFractionD
 // builder in this codebase repeats locally (analytics.js, eom-dashboard.js, skills-matrix.js,
 // etc.) rather than a shared import, since it's a two-line function, not a module.
 function esc(s) { return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-
-// ── Record Hour (dispatch 2026-10-12) ──────────────────────────────────────────
-// hour_slot is a FIXED CLOCK-HOUR bucket (e.g. "06:00" = the 5am-6am hour -- CLAUDE.md's own
-// "4am business day" section, hour_slot runs 05:00 through 28:00). This formats that bucket as
-// a human time range; 24+ wraps into the next calendar day (28:00 -> 3AM-4AM), matching the ABC
-// business-day cutover the rest of the app already uses.
-function fHourRange(hourSlot) {
-  if (!hourSlot) return '—';
-  const endH = parseInt(String(hourSlot).slice(0,2), 10);
-  if (!Number.isFinite(endH)) return '—';
-  const fmt = (h) => {
-    const h24 = ((h % 24) + 24) % 24;
-    const ampm = h24 < 12 ? 'AM' : 'PM';
-    let h12 = h24 % 12; if (h12 === 0) h12 = 12;
-    return `${h12}${ampm}`;
-  };
-  return `${fmt(endH - 1)}–${fmt(endH)}`;
-}
 
 // ── LocalStorage persistence ──────────────────────────────────────────────────
 
@@ -845,101 +825,6 @@ function SpeedTab({ data, breakIndex }) {
   );
 }
 
-// ── Record Hour tab (dispatch 2026-10-12) ───────────────────────────────────────
-// Owner ask: "show the record hour in sales... just that it is :60 minutes consecutively.
-// Bonus to show record hour overall and record breakfast hour and regular menu hour." No true
-// 15-minute sales data exists anywhere in the currently-pulled tables (confirmed before building
-// this), so per the owner's own choice ("ship fast approximation now") this uses the existing
-// hourly qsr_daily_activity data -- a fixed CLOCK-HOUR bucket, not a true sliding 60-minute
-// window. Labeled as such everywhere it renders, never presented as the real thing.
-//
-// `rows` come from loadHourlySalesRecords() (src/lib/supabase.js) -- already ONE row per
-// (loc, hour_slot) (the view's own DISTINCT ON, or the fallback's client-side max), so this is
-// just a second, cheap reduction down to overall/breakfast/regular-menu per store. Breakfast
-// split reuses daypartOf() (engine/labor-standard.js) verbatim -- the SAME hour_slot 06-11
-// boundary every other breakfast/daypart cut in this app already uses, not re-derived.
-export function computeHourRecords(rows) {
-  const stores = {};
-  for (const r of (rows || [])) {
-    if (!r || !r.loc || !r.hourSlot || !(r.sales > 0)) continue;
-    const bucket = stores[r.loc] || (stores[r.loc] = { overall:null, breakfast:null, regular:null });
-    if (!bucket.overall || r.sales > bucket.overall.sales) bucket.overall = r;
-    const key = daypartOf(r.hourSlot) === 'Breakfast' ? 'breakfast' : 'regular';
-    if (!bucket[key] || r.sales > bucket[key].sales) bucket[key] = r;
-  }
-  return stores;
-}
-
-function RecordHourCell({ rec }) {
-  if (!rec) return td({ style:S.tdR }, '—');
-  return td({ style:{...S.tdR,fontWeight:600} },
-    div({}, f$2(rec.sales)),
-    div({ style:{fontSize:10,color:'var(--txt3)',fontWeight:400} }, fHourRange(rec.hourSlot) + ' · ' + fDateShort(rec.dt)),
-  );
-}
-
-function RecordHourTab({ stores, scopedLocs }) {
-  const [state, setState] = useState({ loading:true, error:null, byLoc:null, allTime:true });
-  const [sortKey, setSortKey] = useState('overall');
-
-  useEffect(() => {
-    let live = true;
-    loadHourlySalesRecords().then(({ rows, allTime }) => {
-      if (!live) return;
-      setState({ loading:false, error:null, byLoc:computeHourRecords(rows), allTime });
-    }).catch(err => {
-      if (!live) return;
-      setState({ loading:false, error:err?.message || 'Failed to load', byLoc:null, allTime:true });
-    });
-    return () => { live = false; };
-  }, []);
-
-  if (state.loading) return div({ style:{padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13} }, 'Loading hourly sales records…');
-  if (state.error)   return div({ style:{padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13} }, `Couldn't load hourly sales records: ${state.error}`);
-
-  const byLoc = state.byLoc || {};
-  let locs = Object.keys(byLoc);
-  if (scopedLocs) { const set = new Set(scopedLocs.map(String)); locs = locs.filter(l => set.has(String(l))); }
-  const sorted = [...locs].sort((a,b) => (byLoc[b]?.[sortKey]?.sales || 0) - (byLoc[a]?.[sortKey]?.sales || 0));
-
-  const S2 = (sk,lbl) => h(SortTH,{label:lbl,sk,sortKey,onSort:setSortKey,right:true});
-
-  return div({ style:{ display:'flex',flexDirection:'column',gap:16 } },
-    div({ style:S.sLbl }, 'Record Hour by Store'),
-    div({ style:{ fontSize:12, color:'var(--txt3)', marginBottom:4, lineHeight:1.5 } },
-      '⚠ Approximation: this is the best FIXED CLOCK-HOUR on record (e.g. the 11AM–12PM hour), ' +
-      'from hourly sales data -- not a true rolling 60-minute window. ',
-      !state.allTime && span({ style:{color:'var(--amber)'} },
-        'Also showing only the last ~60 days (the all-time view hasn\'t been set up in Supabase yet) -- see the owner-facing note.'),
-    ),
-    locs.length === 0
-      ? div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } }, 'No hourly sales data found.')
-      : div({ style:S.tblWrap },
-          table({ style:S.tbl },
-            thead({},
-              tr({},
-                TH({style:S.th},'Store'),
-                S2('overall','Best Hour Overall'),
-                S2('breakfast','Best Breakfast Hour'),
-                S2('regular','Best Regular-Menu Hour'),
-              ),
-            ),
-            tbody({},
-              ...sorted.map((loc,i) => {
-                const r = byLoc[loc];
-                return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
-                  td({style:{...S.td,fontWeight:500}}, sName(loc)),
-                  h(RecordHourCell,{rec:r.overall}),
-                  h(RecordHourCell,{rec:r.breakfast}),
-                  h(RecordHourCell,{rec:r.regular}),
-                );
-              }),
-            ),
-          ),
-        ),
-  );
-}
-
 // ── Day of Week tab ───────────────────────────────────────────────────────────
 
 function DOWTab({ data, breakIndex }) {
@@ -1405,7 +1290,6 @@ const TABS = [
   { key:'sales',     label:'Sales & Volume' },
   { key:'hour',      label:'🕐 Record Hour' },
   { key:'speed',     label:'Speed of Service' },
-  { key:'hour',      label:'Record Hour' },
   { key:'dow',       label:'Day of Week' },
   { key:'topdays',   label:'Top Days' },
 ];
@@ -1519,14 +1403,13 @@ export function RecordDayTab({ stores, ds }) {
         onClick: handleLoadFullHistory,
         title: 'Sales records only go back as far as the app has loaded -- this pulls the full history already saved in the cloud, back to 2022.',
       }, deepHistoryState === 'loading' ? 'Loading history since 2022…' : deepHistoryState === 'error' ? '⚠ Retry: full history since 2022' : '🕰 Load full history (since 2022)'),
-      // Export/Print read from `viewData` (tabExportSpec/buildFullReportHtml), which Record Hour
-      // doesn't belong to (its own data is independently fetched -- see RecordHourTab's header
-      // comment) -- hidden on that tab rather than exporting/printing the wrong table. CSV export
-      // for Record Hour is a reasonable follow-on, not done here (kept this a focused first slice).
-      viewData && tab!=='hour' && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
+      // Record Hour DOES export/print -- tabExportSpec/buildFullReportHtml both take hourViewData
+      // explicitly (see their own call sites below), unlike viewData's other tabs this isn't a
+      // gap to route around.
+      viewData && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
         h(LazyExportDropdown, { btnClassName:undefined, rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
       ),
-      viewData && tab!=='hour' && h('button',{ style:S.ghostBtn, onClick:handlePrintReport }, '🖨 Print Report'),
+      viewData && h('button',{ style:S.ghostBtn, onClick:handlePrintReport }, '🖨 Print Report'),
       confirmReset
         ? div({ style:{ display:'flex',alignItems:'center',gap:8,fontSize:12 } },
             span({ style:{color:'var(--txt3)'} }, 'Reset all saved records?'),
@@ -1547,7 +1430,7 @@ export function RecordDayTab({ stores, ds }) {
     ),
     // Was ModalShell's bodyStyle-driven wrapper -- same padding/layout, applied locally now.
     // `tab==='hour'` is excluded from the !viewData/empty-state branches below -- Record Hour
-    // pulls its own data independently of `viewData` (see RecordHourTab's header comment), so it
+    // pulls its own data independently of `viewData` (see HourRecordTab's header comment), so it
     // must render -- and must NOT collide with the "No sales data loaded" message -- even when no
     // daily `ds` data has loaded at all.
     div({ style: (viewData || tab==='hour')
@@ -1569,12 +1452,6 @@ export function RecordDayTab({ stores, ds }) {
         fullHistoryState: qtrHourHistoryState,
       }),
       viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
-      // Record Hour is independently fetched (hourly data, a different table/loader than the
-      // rest of this panel's daily `ds`-sourced records), not derived from `viewData` -- see
-      // RecordHourTab's own header comment. Only `stores.length>0` (the panel-level guard above
-      // this switch) gates it, not `viewData`/`viewData.totalStores`, which it genuinely does not
-      // depend on.
-      stores && stores.length > 0 && tab==='hour'            && h(RecordHourTab,       { stores, scopedLocs }),
       viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
       viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),
     ),

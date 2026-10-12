@@ -2403,65 +2403,6 @@ export async function loadDailyActivityRangeForStore(loc, startDate, endDate) {
     .range(lo, hi));
 }
 
-// ── Record Hour (2026-10-12) — per-store all-time best single clock-hour by sales ──────────
-// Fast approximation (owner-chosen over a true quarter-hour pull, same conversation): hour_slot
-// is a FIXED CLOCK-HOUR bucket (e.g. "06:00" = 5am-6am), not a sliding 60-minute window -- no
-// 15-minute sales data exists anywhere in the currently-pulled tables. Prefers
-// qsr_hourly_sales_records (supabase/schema-qsr-hourly-sales-records-view.sql, one row per
-// (loc, hour_slot) -- true all-time, server-aggregated to ~650 rows). qsr_daily_activity itself
-// is ~631,000 rows (measured 2026-10-12) -- an unbounded client-side scan for a max would be the
-// single heaviest load in the app, so this falls back to a BOUNDED recent-window scan (client-side
-// max per loc+hour_slot) when the view hasn't been created yet, same "ships safely ahead of the
-// migration" shape as loadSecurityFindings' security_findings_latest probe. `allTime` on the
-// result tells the caller which mode it got, so the UI can label a fallback read honestly instead
-// of presenting a recent-window max as a true all-time record.
-// fallbackDays default (60) matches this file's own established precedent for an all-store
-// hourly-table scan (loadQsrActSummary's documented "~40 paginated requests" for a 60-day
-// window) -- a wider default here would be the same mistake that loader's own header describes
-// fixing.
-let _hourlySalesRecordsViewMissing = null;
-export async function loadHourlySalesRecords({ fallbackDays = 60 } = {}) {
-  if (!supabase) return { rows: [], allTime: false };
-  if (_hourlySalesRecordsViewMissing === null) {
-    const probe = await supabase.from('qsr_hourly_sales_records').select('loc').limit(1);
-    _hourlySalesRecordsViewMissing = !!(probe.error && probe.error.code === 'PGRST205');
-    if (probe.error && !_hourlySalesRecordsViewMissing) {
-      console.warn('[loadHourlySalesRecords] view probe failed, using fallback scan:', probe.error.message);
-    }
-  }
-  if (!_hourlySalesRecordsViewMissing) {
-    const data = await fetchAll((from, to) => supabase
-      .from('qsr_hourly_sales_records')
-      .select('loc,hour_slot,dt,product_sales')
-      .order('loc').order('hour_slot')
-      .range(from, to), 1000, 'hourly sales records (view)');
-    if (data.length) {
-      return {
-        rows: data.map(r => ({ loc: String(parseInt(r.loc, 10)), hourSlot: r.hour_slot, dt: r.dt, sales: r.product_sales || 0 })),
-        allTime: true,
-      };
-    }
-  }
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - fallbackDays);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const raw = await fetchAll((from, to) => supabase
-    .from('qsr_daily_activity')
-    .select('loc,hour_slot,dt,product_sales')
-    .gte('dt', cutoffStr)
-    .order('dt').order('loc').order('hour_slot')
-    .range(from, to), 1000, `hourly sales records (fallback, ${fallbackDays}d)`);
-  const best = {};
-  for (const r of raw) {
-    if (!r.product_sales || r.product_sales <= 0) continue;
-    const loc = String(parseInt(r.loc, 10));
-    const key = loc + '|' + r.hour_slot;
-    const cur = best[key];
-    if (!cur || r.product_sales > cur.sales) best[key] = { loc, hourSlot: r.hour_slot, dt: r.dt, sales: r.product_sales };
-  }
-  return { rows: Object.values(best), allTime: false };
-}
-
 // ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
 // Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
 // scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
