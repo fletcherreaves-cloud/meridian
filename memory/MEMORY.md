@@ -3541,13 +3541,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   sources describe (edits clustering on one manager, edits to an already-approved record, a
   skewed rounding direction). New §2.4a maps both to Meridian's real data: the ghost-employee
   termination-date check is **buildable today with zero new pulls** (roster `employmentStatus`/
-  `terminationEntryDate` already joins `qsr_punch_times` on `geid`); everything else is **blocked
-  on confirming QSRSoft exposes a punch EDIT AUDIT TRAIL at all** — checked the pull script
-  directly, found no edit/manual/adjust/override field. Added as new Phase 1b (never add Labor
-  rules without first resolving that blocker). New research sources cited inline — vendor-blog/
-  practitioner-heavy for this topic, flagged as weaker than the ACFE-primary sourcing Cash/
-  Inventory got, with a note to check ACFE's own Report to the Nations before quoting scheme-
-  duration figures anywhere owner-facing.
+  `terminationEntryDate` already joins `qsr_punch_times` on `geid`); everything else was marked
+  **blocked on confirming QSRSoft exposes a punch EDIT AUDIT TRAIL at all** — checked the pull
+  script directly, found no edit/manual/adjust/override field. Added as new Phase 1b (never add
+  Labor rules without first resolving that blocker). New research sources cited inline —
+  vendor-blog/practitioner-heavy for this topic, flagged as weaker than the ACFE-primary sourcing
+  Cash/Inventory got, with a note to check ACFE's own Report to the Nations before quoting
+  scheme-duration figures anywhere owner-facing.
+  **⚠️ CORRECTED same day (2026-10-12, follow-up research pass):** the "no edit field" claim above
+  missed `inModified`/`outModified` — real booleans already in `qsr_punch_times`
+  (`scripts/qsrsoft-punch-times-pull.mjs`'s `SELECT_COLS`, confirmed live 2026-08-21 with a
+  sampled `outModified:1` row). A coarse "was this punch edited" signal is buildable today, zero
+  new pull. Still genuinely missing: editor identity, edit timestamp, original value — needed for
+  every PATTERN-level check (self-approval, per-manager outlier rate, rounding skew). Next step
+  is a live capture of `/wfm/audit/punch_audit_report` (QSRSoft's own public nav tree, strongest
+  name match) or its three named fallbacks — not yet probed, and likely needs the owner's own
+  DevTools session since this session's environment carries no QSRSoft credentials. See §2.4a's
+  own correction in `plan-security-loss-prevention.md` for the full writeup.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
   **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
   **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide

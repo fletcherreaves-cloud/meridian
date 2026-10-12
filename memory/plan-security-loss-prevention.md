@@ -484,13 +484,29 @@ standing rule:
   endpoint-2026-08-21.md`) already carries `geid`, `employmentStatus`, `terminationEntryDate`,
   `orgStartDate`/`storeStartDate` — everything the **ghost-employee termination-date check**
   (the sharpest row above) needs already exists as a join on `geid`, no new pull required.
-- **❌ Missing, would need a new pull before anything else in this section can fire:**
-  - **No punch EDIT AUDIT TRAIL is pulled.** `qsr_punch_times` appears to carry only the final
-    punch time, not an original-vs-edited pair, an editing-manager field, or an edit timestamp —
-    checked the pull script directly, found no edit/manual/adjust/override field anywhere in it.
-    Every "manual time-edit pattern" row above is **unbuildable until this is confirmed to exist
-    in QSRSoft's API at all and, if so, pulled** — this is the single blocking open question for
-    that whole row, not a detail to fill in later.
+- **⚠️ CORRECTED 2026-10-12 — this bullet used to read "no edit/manual/adjust/override field
+  anywhere in it," which missed a real one.** `scripts/qsrsoft-punch-times-pull.mjs`'s
+  `SELECT_COLS` (checked directly) already requests **`inModified`/`outModified`**, stored to
+  `qsr_punch_times` as `in_modified`/`out_modified` — real booleans, confirmed non-synthetic by a
+  live 2026-08-21 capture with one sampled meal-punch row carrying `outModified: 1`
+  (`finding-qsrsoft-time-punches-endpoint-2026-08-21.md`, which already flagged this as "a
+  loss-prevention signal... Meridian has no visibility into it today" — a flag this file never
+  picked up until now). So **whether a punch was edited is buildable today, zero new pull** —
+  this partially unblocks the manual-edit-pattern row, one step short of a full rule.
+  **Still missing, confirmed not present in `SELECT_COLS` or anywhere else in this repo:**
+  editor identity (who made the edit), edit timestamp (when), and the original pre-edit value
+  (what it changed from). Those three are what a self-approval check, a per-manager edit-rate
+  outlier check, or a rounding-direction check actually need — `inModified`/`outModified` alone
+  only answers "yes/no, this punch was touched," not by whom or by how much. **Next concrete
+  step, not yet done:** a live DevTools capture of `/wfm/audit/punch_audit_report` ("Time Punches
+  (audit)" in QSRSoft's own public nav tree, `qsrsoft-report-catalog.md`) — the strongest
+  name-match candidate for carrying all three missing fields — with `/reports/mcd/people/
+  overtimeAudit`, `/reports/mcd/people/timeAttendance`, and `/reports/mcd/people/laborExceptions`
+  as fallbacks if it doesn't. None of the four have been probed; only their names are known. This
+  requires a QSRSoft login (`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`) — **not present in every agent
+  session's environment** (none were in this session's), so it may need the owner's own capture
+  via DevTools the same way the existing punch-times/employee-roster findings were captured,
+  redacting the same way (this endpoint family has already leaked SSNs when over-selected).
   - **No payroll dollar data is pulled anywhere in this repo** (duplicate-bank-account/no-
     withholding checks from the ghost-employee research need payroll fields Meridian has never
     touched — a materially bigger, more sensitive data-access ask than anything else in this
@@ -501,12 +517,15 @@ standing rule:
   `assembleInventoryDrilldown()`'s existing precedent) before any Labor finding can render in the
   panel at all, not just a new rule row in the registry.
 
-**Net assessment:** the termination-date cross-reference (ghost employee) is buildable TODAY with
-zero new data pulls — the roster and punch tables already join cleanly on `geid`. Everything else
-in this expanded section (buddy punching's POS-activity cross-reference, every manual-edit
-pattern) is blocked on a QSRSoft edit-audit-trail field this repo has not yet confirmed exists,
-which should be the first thing checked if this section gets scoped into a dispatch, before
-designing any rule logic against it.
+**Net assessment (corrected 2026-10-12):** the termination-date cross-reference (ghost employee)
+is buildable TODAY with zero new data pulls — the roster and punch tables already join cleanly on
+`geid`. A coarse "was this punch edited at all" signal (`inModified`/`outModified`) is ALSO
+buildable today, zero new pull — correcting this file's own prior "no edit field exists" claim.
+But every pattern-level manual-edit check (self-approval, per-manager outlier rate, rounding-
+direction skew) still needs editor identity + timestamp + old-value, none of which are confirmed
+to exist in QSRSoft's API — a live capture of `/wfm/audit/punch_audit_report` (or its three named
+fallbacks) is the next concrete step, not yet done, and may require the owner's own DevTools
+session rather than an agent's (no QSRSoft credentials in this session's environment).
 
 New research sources (2026-10-12, supplementing the original three-engine pass — these lean
 vendor-blog/practitioner rather than ACFE-primary, flagged accordingly above):
@@ -821,10 +840,17 @@ needs are genuinely different (roster + punch data, not `audit_rows`) and its bu
 piece is small and sharp:
 - **Buildable now, no new pull:** ghost-employee termination-date cross-reference (§2.4's new
   first row) — roster `employmentStatus`/`terminationEntryDate` join `qsr_punch_times` on `geid`,
-  both already live.
-- **Blocked on confirming a QSRSoft edit-audit-trail field exists:** buddy-punching's POS-activity
-  cross-reference and every manual-edit-pattern check (§2.4a) — check this FIRST if this phase
-  gets dispatched, before designing rule logic against a field that may not be pullable at all.
+  both already live. **Also buildable now, no new pull (corrected 2026-10-12):** a coarse
+  "was this punch edited" flag, from `qsr_punch_times`'s existing `in_modified`/`out_modified`
+  columns — see §2.4a's correction. Not a full manual-edit-pattern rule (no editor/timestamp/
+  old-value), but enough for a simple "edited punch rate by store/employee" signal today.
+- **Blocked on a live capture, not a code question:** every PATTERN-level manual-edit check
+  (self-approval, per-manager outlier rate, rounding-direction skew) needs editor identity +
+  edit timestamp + the original value, none of which `qsr_punch_times` carries. §2.4a names the
+  candidate endpoint (`/wfm/audit/punch_audit_report`, three fallbacks) — check THIS first if this
+  phase gets dispatched, via a live DevTools capture (likely the owner's, since QSRSoft
+  credentials aren't in every agent session's environment), before designing rule logic against
+  fields that haven't been confirmed to exist.
 - **New architecture work, not just new rule rows:** a `'labor'` domain needs its own
   `assembleLaborDrilldown()` in `security-panel.js`, following `assembleCashDrilldown()`/
   `assembleInventoryDrilldown()`'s existing precedent (§2.4a).
