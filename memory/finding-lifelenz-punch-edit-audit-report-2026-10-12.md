@@ -82,28 +82,55 @@ buildable, pending a real pull script and table, not pending more research. The 
 report is pulled — LifeLenz's version carries everything the QSRSoft flag does, plus the three
 fields QSRSoft doesn't have.
 
-## Not yet done (as of this finding)
+## Built, same session (2026-10-12) — pull script + table shipped, UNTESTED against the live API
 
-- **No pull script exists for this report.** `scripts/lifelenz-pull.mjs` would need a new
-  function mirroring `fetchReportChunk()`/`pollForReport()` against this report name, looped over
-  every store's already-discovered `scheduleId` (same pattern `pullJobHours()`/
-  `pullShiftAssignments()` already use for their own per-store report pulls).
-  - **Scope note on `scheduleId` validity:** the live capture used a specific `scheduleId`
-    (presumably one store, from a specific past date window) — confirm this report accepts the
-    same per-store `scheduleId`s the existing pull already discovers for every one of the ~27
-    stores, not a different id namespace, before assuming full-district coverage is a drop-in.
-- **No Supabase table.** Would need `tenant_id` + RLS like every other stream (standing rule).
-  Names are fine to store here per dispatch #125's existing owner directive ("no reason to hide
-  names for scheduling and punch times — everyone can see this data as-is") — this is squarely
-  that same domain, not a new PII question. No SSN/DOB/address field appears anywhere in this
-  report's column list.
-- **No security-rules registry row, no `assembleLaborDrilldown()`.** Per §2.4a's existing
-  architecture note — a `'labor'` domain in `security-panel.js`'s `SubjectDrilldown` is still
-  net-new, whichever data source ends up feeding it.
-- **The curl the owner pasted to share this finding carried a live `x-auth-token` in plaintext
-  in the chat.** Not retained, used, or written anywhere by this session. Recommended the owner
-  rotate that LifeLenz admin session once done testing today, same posture as every other
-  DevTools-captured token in this repo's standing PII/credential rules.
+The owner asked to build this now rather than hold. Shipped:
+
+- **`scripts/lifelenz-pull.mjs`**: new `fetchPunchEditReportChunk()` (same URL/header shape as
+  `fetchReportChunk()`, different report name, reuses `pollForReport()` as-is — it was already
+  report-name-agnostic), `parsePunchEditCSV()` (pure, exported, handles the report's sparse
+  per-employee-block shape — Employee Name/GEID/Payroll ID carry forward across blank rows,
+  only rows with a non-blank `Adjustment Type` are kept), `parsePunchDateTime()` (parses
+  `MM/DD/YYYY HH:MM`, strips an observed trailing `(EI)`-style annotation rather than guessing
+  at its meaning), `upsertPunchEditRows()`, and `pullPunchEditAudit()` — wired into `main()` as
+  step 6, same best-effort/never-fatal posture as `pullJobHours`/`pullShiftAssignments` (steps
+  4-5), escape hatch `LIFELENZ_SKIP_PUNCH_AUDIT=1`. Reuses the SAME per-store `scheduleId`s
+  `getStoreSchedules()` already discovers — no new discovery step.
+- **`supabase/schema-lifelenz-punch-edits.sql`**: new `lifelenz_punch_edits` table, same
+  tenant+`accessible_locs` RLS pattern as `lifelenz_shift_assignments` (names stored directly,
+  not tokenized, per dispatch #125). Primary key `(loc, geid, punch_type, modified_at,
+  adjusted_punch_at)` — no stable row id exists in the source CSV, but a given employee's punch
+  of a given type can only be modified once at a given instant, so this is idempotent across
+  re-pulls of the same safety-window range.
+- **15 new tests** (`lifelenz-punch-edit-audit-2026-10-12.test.js`) against
+  `parsePunchEditCSV`/`parsePunchDateTime` directly, 100% synthetic fixtures (no real
+  names/GEIDs/manager names), covering the carry-forward behavior, the Add-vs-Edit distinction,
+  the Adjustment-Type filter, and null-vs-empty-string field hygiene.
+
+**None of this has run against the live LifeLenz API.** No `LIFELENZ_TOKEN`/credentials exist in
+any agent session's environment this session had access to, so `fetchPunchEditReportChunk()`'s
+URL shape, the CSV parser's column-name matching (`fc()`'s substring match against the real
+header row), and the `scheduleId`-reuse assumption are all built from the owner's one live
+capture + this repo's existing confirmed pattern for the sibling report — not independently
+re-verified against a second live call. **First real test is the next scheduled GitHub Action
+run** (`.github/workflows/lifelenz-pull.yml`, already watches this script via
+`sync-failure-watch.yml` — no new entry needed, this is a new step inside the SAME watched
+workflow) or an owner-run manual pull with `LIFELENZ_SKIP_PUNCH_AUDIT` unset. If the real column
+headers differ even slightly from the live capture's (e.g. a header the capture didn't show, or
+different capitalization `fc()`'s substring-and-lowercase match doesn't account for), the pull
+will silently return zero rows rather than error — best-effort by design, but worth explicitly
+checking the first run's log line (`[punch-audit] ✓ N/M edit-event(s) saved`) rather than
+assuming success from a clean exit code.
+
+**Still not built:** a `security_rules` registry row or `assembleLaborDrilldown()` in
+`security-panel.js` — the data now lands in Supabase, but nothing in the Security panel reads it
+yet. That's the next piece, scoped separately (a `'labor'` domain is net-new UI/rule work, not
+just a data pull).
+
+**The curl the owner pasted to share this finding carried a live `x-auth-token` in plaintext
+in the chat.** Not retained, used, or written anywhere by this session. Recommended the owner
+rotate that LifeLenz admin session once done testing today, same posture as every other
+DevTools-captured token in this repo's standing PII/credential rules.
 
 ## Correction record (so the wrong conclusion doesn't get re-cited)
 

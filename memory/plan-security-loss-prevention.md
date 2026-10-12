@@ -850,19 +850,22 @@ piece is small and sharp:
   "was this punch edited" flag, from `qsr_punch_times`'s existing `in_modified`/`out_modified`
   columns — see §2.4a's correction. Not a full manual-edit-pattern rule (no editor/timestamp/
   old-value), but enough for a simple "edited punch rate by store/employee" signal today.
-- **✅ UNBLOCKED same day — not just a coarser flag, the full pattern-level data exists.** The
-  owner's live capture of LifeLenz's `time_punch_change_approvals_report` (§2.4a,
+- **✅ PULL + TABLE SHIPPED same day (2026-10-12), UNTESTED against the live API.** The owner's
+  live capture of LifeLenz's `time_punch_change_approvals_report` (§2.4a,
   `finding-lifelenz-punch-edit-audit-report-2026-10-12.md`) carries editor identity
-  (`Manager Modified`), edit timestamp (`Modified Date/Time`), and the original-vs-adjusted value
-  — every PATTERN-level manual-edit check (self-approval, per-manager outlier rate,
-  rounding-direction skew) is buildable from this, pending a pull script + table, not pending
-  more research. QSRSoft was the wrong vendor to chase this in — see the correction in §2.4a.
-  **Before building:** confirm the report's `scheduleId` parameter accepts the SAME per-store ids
-  `getStoreSchedules()` already discovers for every store (the live capture used one specific id)
-  before assuming full-district coverage is automatic.
-- **New architecture work, not just new rule rows:** a `'labor'` domain needs its own
-  `assembleLaborDrilldown()` in `security-panel.js`, following `assembleCashDrilldown()`/
-  `assembleInventoryDrilldown()`'s existing precedent (§2.4a).
+  (`Manager Modified`), edit timestamp (`Modified Date/Time`), and the original-vs-adjusted value.
+  `scripts/lifelenz-pull.mjs` now pulls it as step 6 (`pullPunchEditAudit`, escape hatch
+  `LIFELENZ_SKIP_PUNCH_AUDIT=1`) into new table `lifelenz_punch_edits`
+  (`supabase/schema-lifelenz-punch-edits.sql`), reusing the same per-store `scheduleId`s
+  `getStoreSchedules()` already discovers. 15 tests cover the pure CSV parser against synthetic
+  fixtures. **No agent session had live LifeLenz credentials, so none of this ran against the
+  real API** — the finding file's own "Built, same session" note has the full caveat; check the
+  first real GitHub Action run's `[punch-audit]` log line before trusting it.
+- **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
+  `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
+  existing precedent — the data now lands in Supabase, but no `security_rules` row or UI reads it
+  yet. Every PATTERN-level manual-edit check (self-approval, per-manager outlier rate,
+  rounding-direction skew) is buildable from `lifelenz_punch_edits` whenever this gets scoped.
 
 ### Phase 2 — composite scoring
 - Composite risk score combining Phase-1 rules with decay (§3 recurrence scoring).
