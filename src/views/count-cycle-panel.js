@@ -115,6 +115,15 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
         style: { fontSize: 10.5, color: '#38bdf8', margin: '6px 0 2px', padding: '5px 8px', background: '#38bdf812', borderRadius: 6 },
         title: c.newItems.map(it => it.descr || it.wrin).join(', '),
       }, `🆕 ${c.newItems.length} new item${c.newItems.length === 1 ? '' : 's'} this period — not required yet, but still needs counting`) : null,
+      // Stale pre-period dead rows (owner-directed 2026-10-12) — same awareness treatment as
+      // newItems above, but worded for cleanup rather than "still needs counting": these are
+      // $0 rows that predate the period and were never touched (dispatch #96's Condiment
+      // phantom-row case), excluded from the coverage math so they can't permanently block
+      // compliance, but flagged so the dead row actually gets removed from qsr_onhand.
+      c.staleItems && c.staleItems.length ? div({
+        style: { fontSize: 10.5, color: '#f59e0b', margin: '6px 0 2px', padding: '5px 8px', background: '#f59e0b12', borderRadius: 6 },
+        title: c.staleItems.map(it => it.descr || it.wrin).join(', '),
+      }, `🧹 ${c.staleItems.length} stale item${c.staleItems.length === 1 ? '' : 's'} — dead pre-period row${c.staleItems.length === 1 ? '' : 's'}, needs cleanup not counting`) : null,
       div({ style: { fontSize: 9.5, color: 'var(--text3,#6b7280)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 } },
         `Active item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
         'A class counts as fully counted only when every active item is counted — new items excepted.'),

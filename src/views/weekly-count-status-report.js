@@ -80,6 +80,8 @@ function buildRows(locs, { complianceByLoc, mergedDayByLoc, driftByLoc }) {
       status,
       newItemsCount: comp && comp.newItems ? comp.newItems.length : 0,
       newItems: comp ? comp.newItems : [],
+      staleItemsCount: comp && comp.staleItems ? comp.staleItems.length : 0,
+      staleItems: comp ? comp.staleItems : [],
     };
   });
 }
@@ -94,6 +96,7 @@ function reportHTML(rows, { scopeLabel, asOf }) {
     <td>${esc(r.lastFullCount || '—')}${r.daysSinceWeekly != null ? ` (${r.daysSinceWeekly}d ago)` : ''}</td>
     <td style="color:${STATUS_COLOR[r.status]};font-weight:700">${esc(STATUS_LABEL[r.status])}</td>
     <td>${r.newItemsCount ? `🆕 ${r.newItemsCount}` : '—'}</td>
+    <td>${r.staleItemsCount ? `🧹 ${r.staleItemsCount}` : '—'}</td>
   </tr>`).join('');
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Weekly Count Status — ${esc(scopeLabel)}</title>
   <style>
@@ -106,18 +109,18 @@ function reportHTML(rows, { scopeLabel, asOf }) {
     @media print{button{display:none}}
   </style></head><body>
   <h1>🗓 Weekly Count Status — ${esc(scopeLabel)}</h1>
-  <div class="sub">As of ${esc(asOf)} · every weekly count requires a full Food and Condiment count · new items are excepted their first period but still need counting</div>
-  <table><thead><tr><th>Store</th><th>Regular count day</th><th>Last full count</th><th>This week</th><th>New items</th></tr></thead>
+  <div class="sub">As of ${esc(asOf)} · every weekly count requires a full Food and Condiment count · new items are excepted their first period but still need counting · stale pre-period rows are excepted too but need cleanup, not counting</div>
+  <table><thead><tr><th>Store</th><th>Regular count day</th><th>Last full count</th><th>This week</th><th>New items</th><th>Stale items</th></tr></thead>
   <tbody>${trs}</tbody></table>
   </body></html>`;
 }
 
 function reportCSV(rows) {
-  const cols = ['Store', 'Loc', 'Regular count day', 'Day drift (configured)', 'Last full count', 'Days since', 'Status', 'New items pending'];
+  const cols = ['Store', 'Loc', 'Regular count day', 'Day drift (configured)', 'Last full count', 'Days since', 'Status', 'New items pending', 'Stale items (needs cleanup)'];
   const lines = [cols.map(c => `"${c}"`).join(',')];
   for (const r of rows) {
     lines.push([r.name, r.loc, r.regularDay || '', r.drift ? r.drift.configuredWeekdayName : '',
-      r.lastFullCount || '', r.daysSinceWeekly ?? '', STATUS_LABEL[r.status].replace(/^[^\w]+/, ''), r.newItemsCount]
+      r.lastFullCount || '', r.daysSinceWeekly ?? '', STATUS_LABEL[r.status].replace(/^[^\w]+/, ''), r.newItemsCount, r.staleItemsCount]
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
   }
   return lines.join('\n');
@@ -261,7 +264,7 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
           div({ style: { overflowX: 'auto' } },
             h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
               h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
-                ['Store', 'Regular count day', 'Last full count', 'This week', 'New items'].map(t =>
+                ['Store', 'Regular count day', 'Last full count', 'This week', 'New items', 'Stale items'].map(t =>
                   h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t)))),
               h('tbody', null, rows.map(r => h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
                 h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, r.name,
@@ -282,6 +285,13 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
                         style: { fontSize: 10.5, color: '#38bdf8', fontWeight: 700, cursor: 'help' },
                         title: r.newItems.map(it => it.descr || it.wrin).join(', '),
                       }, `🆕 ${r.newItemsCount} pending`)
+                    : span({ style: { color: 'var(--text3)' } }, '—')),
+                h('td', { style: { padding: '6px 10px' } },
+                  r.staleItemsCount
+                    ? span({
+                        style: { fontSize: 10.5, color: '#f59e0b', fontWeight: 700, cursor: 'help' },
+                        title: r.staleItems.map(it => it.descr || it.wrin).join(', '),
+                      }, `🧹 ${r.staleItemsCount} needs cleanup`)
                     : span({ style: { color: 'var(--text3)' } }, '—')),
               )))))));
 }
