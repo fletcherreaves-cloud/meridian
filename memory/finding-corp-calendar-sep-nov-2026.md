@@ -8,6 +8,21 @@ metadata:
 
 # Corporate calendar — Sept/Oct/Nov 2026 ("What You Need to Know" newsletter, sent to kathy.lopez-thorley@partners.mcd.com)
 
+## 2026-10-12 update: Rev 5 national calendar supersedes the Rev 2 PDF this file's 2026-10-01
+## pass was built from — see `data/marketing-calendars/README.md` for the full detail
+
+The owner uploaded Rev 5 of the 2026 national marketing calendar (xlsx + a one-page visual PDF),
+which gives explicit **All-store Start/End** (retail) vs **Paid Media Start/End** (advertising)
+dates per program — the Rev 2 PDF below only had one date range per program box, and turned out
+to have mostly captured the paid-media window, not the retail one. `org_events` was corrected
+live: 12 rows updated (date and/or label fixes, several non-trivial — e.g. "Beverage Launch"
+grew from a 35-day paid window to its true 103-day all-store window), 12 rows inserted (5 OPNAD
+programs the Rev 2 extraction had missed, the pre-calendar Happy Meal Clean-Up window, and the
+entire 6-program Local Pantry tier, loaded for the first time). 42 total 2026 national-calendar
+rows now live, up from 30. Full per-program before/after table, source-file provenance, and the
+exact ids touched: `data/marketing-calendars/README.md`'s own "Rev 5" section. Do not re-run
+this pass — re-measure against `org_events` directly if revisiting.
+
 Screenshotted by the owner from the McDonald's corporate newsletter email. Raw dated items
 below, grouped by whether they're candidates for `org_events` (feed the forecast event-factor
 system via `promo`/`other` event types) or purely informational.

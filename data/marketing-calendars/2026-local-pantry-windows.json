@@ -1,0 +1,50 @@
+[
+ {
+  "program": "Strawberries & Cr\u00e8me Pie",
+  "soft_sell_week_of": "2025-12-29",
+  "all_store_sell": null,
+  "start": "2026-01-09",
+  "end": "2026-06-14",
+  "phase_out": "6/15 - 6/25"
+ },
+ {
+  "program": "Double Filet O Fish",
+  "soft_sell_week_of": "2026-02-03",
+  "all_store_sell": "2026-02-10",
+  "start": "2026-02-17",
+  "end": "2026-04-05",
+  "phase_out": "4/6 - 5/3"
+ },
+ {
+  "program": "Blueberries & Cr\u00e8me Pie",
+  "soft_sell_week_of": "2026-06-15",
+  "all_store_sell": null,
+  "start": "2026-06-26",
+  "end": "2026-08-16",
+  "phase_out": "8/17 - 8/27"
+ },
+ {
+  "program": "Pumpkin & Cr\u00e8me Pie",
+  "soft_sell_week_of": "2026-08-17",
+  "all_store_sell": null,
+  "start": "2026-08-28",
+  "end": "2026-11-01",
+  "phase_out": "11/2 - 11/12"
+ },
+ {
+  "program": "Local McRib",
+  "soft_sell_week_of": "2026-10-20",
+  "all_store_sell": "2026-10-26",
+  "start": "2026-11-02",
+  "end": "2026-11-29",
+  "phase_out": "11/30 - 12/27"
+ },
+ {
+  "program": "Holiday Pie",
+  "soft_sell_week_of": "2026-11-02",
+  "all_store_sell": null,
+  "start": "2026-11-13",
+  "end": "2026-12-27",
+  "phase_out": "12/28 - 1/7"
+ }
+]
