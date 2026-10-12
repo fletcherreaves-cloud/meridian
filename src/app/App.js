@@ -804,6 +804,13 @@ function App() {
     }
   }, []);
   const [selStore, setSelStore]   = useState(null);
+  // storeDashInitialTab (2026-10-12) — same lifted-tab pattern as schedTab/planningTab/crewTab/
+  // signalsTab above: set right before navigating, read once by StoreDash's own useState
+  // initializer on mount, never force-reset after. First real use: FOBAnalysisPanel's Emp/Mgr
+  // Meals row cross-referencing into that store's Register Audit tab (owner-scoped 2026-10-12 --
+  // "cross-reference only, keep named data out of food-cost reports... a clickable link to go to
+  // actionable data where names could then be seen if desired").
+  const [storeDashInitialTab, setStoreDashInitialTab] = useState('overview');
   const [locScope,   setLocScope]   = useState('all');
   const [dateRange, setDateRange] = useState(()=>thisWeek());
   const [settings, setSettings]   = useState(()=>{
@@ -2525,7 +2532,7 @@ function App() {
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
-  const goStore=(s)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');};
+  const goStore=(s,tab)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');setStoreDashInitialTab(tab||'overview');};
 
   // #208 — re-fetch coaching_cycles after a coaching modal saves (start OR record-follow-up),
   // so a just-recorded verdict clears its Needs Attention item immediately instead of waiting
@@ -3540,7 +3547,7 @@ function App() {
           else if(modal==='forecast-reports')goRoute('forecast-reports');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab}),
       view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
       view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations
@@ -3636,7 +3643,13 @@ function App() {
       // 'fob-analysis' again with fobAnalysisInitialMode==='eom'.
       routePanel==='fob-analysis'&&h(FOBAnalysisPanel,{stores,ds,settings,
         initialMode:fobAnalysisInitialMode,
-        onClose:()=>{setFobAnalysisInitialMode(null);goRoute(null);}}),
+        onClose:()=>{setFobAnalysisInitialMode(null);goRoute(null);},
+        // onNav (2026-10-12) -- the Emp/Mgr Meals cross-reference into Register Audit (owner-
+        // scoped: "cross-reference only... a clickable link to go to actionable data where
+        // names could then be seen if desired"). StoreDash only renders when routePanel is
+        // clear (see its own !routePanel gate below), so this closes the route FIRST, then
+        // navigates -- goStore alone would leave FOBAnalysisPanel's route open on top of it.
+        onNav:(loc,tab)=>{goRoute(null);goStore(loc,tab);}}),
       // fcst-ref — Dispatch #121: converted from a small ModalShell+iframe (maxWidth:1100) to a
       // real route, per memory/panel-contract.md's standing "convert while you're in here"
       // rule + the owner's explicit ask. Underlying content stays the static iframed HTML file

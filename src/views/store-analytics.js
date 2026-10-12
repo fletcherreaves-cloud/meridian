@@ -1952,11 +1952,15 @@ function TabDigestRow({store, ds, settings, setTab}) {
 }
 
 // STORE DASHBOARD (SECTION 13)
-function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings}) {
+function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings, initialTab}) {
   // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('StoreDash', 'render+commit', performance.now() - _rt0); });
-  const [tab, setTab]             = useState('overview');
+  // initialTab (2026-10-12) -- same "read once on mount, never force-reset after" lifted-tab
+  // pattern App.js's schedTab/planningTab/crewTab/signalsTab already use for their own hub
+  // panels. First real use: FOBAnalysisPanel's Register Audit cross-reference landing directly
+  // on this store's 'register' tab instead of always 'overview'.
+  const [tab, setTab]             = useState(initialTab || 'overview');
   const [wk, setWk]               = useState([]);
   const [wkLoading, setWkLoading] = useState(false);
   const [wkProgress, setWkProgress]= useState(0);

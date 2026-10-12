@@ -3530,6 +3530,34 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   written down instead of buried in a plan nobody re-reads. (Its own commit also added Part D —
   visual analysis — to `dispatch-46.md`; the fuller #46 "implemented" entry above predates that
   addition and does not yet cover Part D, which is unbuilt.)
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Ghost-employee / time-clock-fraud coverage — researched but never scheduled, now is](plan-security-loss-prevention.md)** —
+  Owner asked whether ghost employees on payroll or manually-applied time-clock fraud patterns
+  are scanned for. Neither is — same gap pattern as the 2026-08-20 scheme-coverage finding above,
+  but for §2.4 (Labor), which was researched 2026-08-19 alongside Cash/Inventory and then, unlike
+  those two, never assigned to a Phase at all. Expanded §2.4 with a new ghost-employee row
+  (distinct from buddy-punching/ghost-shifts — a fictitious or kept-active-post-termination
+  payroll record, not a real employee's shift punched fraudulently) and broadened the manual-
+  time-edit row from "self-approval only" to the fuller pattern set restaurant practitioner
+  sources describe (edits clustering on one manager, edits to an already-approved record, a
+  skewed rounding direction). New §2.4a maps both to Meridian's real data: the ghost-employee
+  termination-date check is **buildable today with zero new pulls** (roster `employmentStatus`/
+  `terminationEntryDate` already joins `qsr_punch_times` on `geid`); everything else was marked
+  **blocked on confirming QSRSoft exposes a punch EDIT AUDIT TRAIL at all** — checked the pull
+  script directly, found no edit/manual/adjust/override field. Added as new Phase 1b (never add
+  Labor rules without first resolving that blocker). New research sources cited inline —
+  vendor-blog/practitioner-heavy for this topic, flagged as weaker than the ACFE-primary sourcing
+  Cash/Inventory got, with a note to check ACFE's own Report to the Nations before quoting
+  scheme-duration figures anywhere owner-facing.
+  **⚠️ CORRECTED same day (2026-10-12, follow-up research pass):** the "no edit field" claim above
+  missed `inModified`/`outModified` — real booleans already in `qsr_punch_times`
+  (`scripts/qsrsoft-punch-times-pull.mjs`'s `SELECT_COLS`, confirmed live 2026-08-21 with a
+  sampled `outModified:1` row). A coarse "was this punch edited" signal is buildable today, zero
+  new pull. Still genuinely missing: editor identity, edit timestamp, original value — needed for
+  every PATTERN-level check (self-approval, per-manager outlier rate, rounding skew). Next step
+  is a live capture of `/wfm/audit/punch_audit_report` (QSRSoft's own public nav tree, strongest
+  name match) or its three named fallbacks — not yet probed, and likely needs the owner's own
+  DevTools session since this session's environment carries no QSRSoft credentials. See §2.4a's
+  own correction in `plan-security-loss-prevention.md` for the full writeup.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
   **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
   **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide
