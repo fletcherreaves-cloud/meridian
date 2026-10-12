@@ -4,7 +4,8 @@ import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
-import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead, upsertPushSubscription, deletePushSubscription } from '../lib/supabase.js';
+import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead, dismissEomCountNotification, loadAppNotifications, countUnreadAppNotifications, markAppNotificationRead, dismissAppNotification, upsertPushSubscription, deletePushSubscription } from '../lib/supabase.js';
+import { SEVERITY_COLOR } from '../engine/app-notifications.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
@@ -523,7 +524,20 @@ export function timeAgoShort(iso) {
   return Math.floor(hr / 24) + 'd ago';
 }
 
-function NotificationRow({ row, onClick }) {
+// Shared "✕ delete" button — same affordance/behavior whichever source a row came from (the
+// owner's "ability to delete notifications" ask, 2026-10-12, covers EOM rows too, not just the
+// new generic ones). stopPropagation so clicking delete never also triggers the row's own
+// mark-read-and-deep-link onClick.
+function DismissBtn({ onDismiss }) {
+  return h('button', {
+    title: 'Delete this notification',
+    onClick: e => { e.stopPropagation(); onDismiss(); },
+    style: { fontSize: '11px', background: 'none', border: 'none', color: 'var(--text3)',
+      cursor: 'pointer', flexShrink: 0, padding: '0 2px', lineHeight: 1 },
+  }, '✕');
+}
+
+function NotificationRow({ row, onClick, onDismiss }) {
   const unread = !row.read_at;
   const cs = row.class_statuses || {};
   const ui = row.uncounted_items || {};
@@ -541,7 +555,8 @@ function NotificationRow({ row, onClick }) {
     div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 } },
       unread && span({ title: 'Unread', style: { width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 } }),
       span({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)' } }, sNameC(row.loc)),
-      span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto', whiteSpace: 'nowrap' } }, timeAgoShort(row.created_at))
+      span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto', whiteSpace: 'nowrap' } }, timeAgoShort(row.created_at)),
+      h(DismissBtn, { onDismiss: () => onDismiss(row) })
     ),
     div({ style: { fontSize: '9px', color: 'var(--gold)', fontWeight: 700, marginBottom: 5 } }, triggerLabel + ' complete'),
     // Rule 3: EVERY relevant class's current status, not just the trigger class(es).
@@ -665,6 +680,31 @@ function DeviceAlertsToggle() {
   );
 }
 
+// General notification row (2026-10-12) — any row from the new, type-agnostic app_notifications
+// table (src/engine/app-notifications.js). Deliberately plain: title/detail/severity dot/time,
+// nothing EOM-specific — a future producer's `payload` is carried on the row but not rendered
+// here yet (a later pass can special-case a `type` it recognizes without touching this default).
+function GenericNotificationRow({ row, onClick, onDismiss }) {
+  const unread = !row.read_at;
+  return div({
+    onClick: () => onClick(row),
+    'data-notif-row': row.id,
+    style: { padding: '9px 12px', borderBottom: '.5px solid var(--bdr)', cursor: row.link ? 'pointer' : 'default',
+      background: unread ? 'rgba(245,188,0,.07)' : 'transparent' },
+    onMouseEnter: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.13)' : 'var(--surf2)'; },
+    onMouseLeave: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.07)' : 'transparent'; },
+  },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: row.detail ? 3 : 0 } },
+      unread && span({ title: 'Unread', style: { width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 } }),
+      span({ title: row.severity, style: { width: 6, height: 6, borderRadius: '50%', background: SEVERITY_COLOR[row.severity] || SEVERITY_COLOR.info, flexShrink: 0 } }),
+      span({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)' } }, row.loc ? `${sNameC(row.loc)} — ${row.title}` : row.title),
+      span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto', whiteSpace: 'nowrap' } }, timeAgoShort(row.created_at)),
+      h(DismissBtn, { onDismiss: () => onDismiss(row) })
+    ),
+    row.detail && div({ style: { fontSize: '10px', color: 'var(--text3)', lineHeight: 1.4 } }, row.detail)
+  );
+}
+
 function NotificationBell({ onOpenModal, perm }) {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -674,10 +714,12 @@ function NotificationBell({ onOpenModal, perm }) {
 
   // Simple periodic poll for the unread count while the app is open (dispatch's own bar: "not a
   // real-time push system, just needs to feel current within a minute during an active count
-  // day") — not wired to any live-subscription infra.
+  // day") — not wired to any live-subscription infra. Sums BOTH sources (2026-10-12, general
+  // notification framework) so the badge is never silently missing one of them.
   useEffect(() => {
     let live = true;
-    const refresh = () => countUnreadEomCountNotifications().then(n => { if (live) setUnread(n); }).catch(() => {});
+    const refresh = () => Promise.all([countUnreadEomCountNotifications(), countUnreadAppNotifications()])
+      .then(([a, b]) => { if (live) setUnread(a + b); }).catch(() => {});
     refresh();
     const id = setInterval(refresh, NOTIF_POLL_MS);
     return () => { live = false; clearInterval(id); };
@@ -687,27 +729,50 @@ function NotificationBell({ onOpenModal, perm }) {
     if (!open) return;
     let live = true;
     setLoading(true);
-    loadEomCountNotifications({ limit: 20 }).then(rows => { if (live) { setItems(rows); setLoading(false); setLoadedOnce(true); } })
-      .catch(() => { if (live) setLoading(false); });
+    // Two independent sources merged client-side (2026-10-12) — the pre-existing, EOM-specific
+    // eom_count_notifications table (untouched, own rich rendering) alongside the new general
+    // app_notifications table (src/engine/app-notifications.js) any future feature can post into.
+    // `_source` tags each row so onRowClick/onDismiss below route to the right backing table.
+    Promise.all([
+      loadEomCountNotifications({ limit: 20 }).then(rows => rows.map(r => ({ ...r, _source: 'eom' }))),
+      loadAppNotifications({ limit: 20 }).then(rows => rows.map(r => ({ ...r, _source: 'generic' }))),
+    ]).then(([eom, generic]) => {
+      if (!live) return;
+      const merged = [...eom, ...generic].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setItems(merged); setLoading(false); setLoadedOnce(true);
+    }).catch(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [open]);
 
   const onRowClick = (row) => {
     if (!row.read_at) {
-      markEomCountNotificationRead(row.id).catch(() => {});
+      const markRead = row._source === 'eom' ? markEomCountNotificationRead : markAppNotificationRead;
+      markRead(row.id).catch(() => {});
       setItems(prev => prev.map(r => (r.id === row.id ? { ...r, read_at: new Date().toISOString() } : r)));
       setUnread(u => Math.max(0, u - 1));
     }
     setOpen(false);
-    // Deep-link into that store's EOM Dashboard Scoreboard entry (rule: reuse the existing view,
-    // don't build a second detail surface). 'eom-dashboard:<loc>' matches App.js's 'ranking:'
-    // colon-arg convention.
+    // Deep-link: an EOM row always targets that store's EOM Dashboard Scoreboard entry (rule:
+    // reuse the existing view, don't build a second detail surface); a generic row carries its
+    // own `link` (or none, for a notification with nowhere to go). 'eom-dashboard:<loc>' matches
+    // App.js's 'ranking:' colon-arg convention.
     // Template literal, not string concat with a literal 'eom-dashboard:' prefix -- deliberately
     // avoids panel-registry.test.js's navIds() regex (which scans for onOpenModal('...') call
     // sites), since this is a per-row DYNAMIC id (row.loc), not a fixed nav entry the registry
     // should know about -- same reasoning src/views/at-a-glance.js's 'ranking:t2w' etc. don't
     // apply here (those are a small enumerable set of literal suffixes, this is 27 stores).
-    onOpenModal && onOpenModal(`eom-dashboard:${row.loc}`);
+    const target = row._source === 'eom' ? `eom-dashboard:${row.loc}` : row.link;
+    if (target) onOpenModal && onOpenModal(target);
+  };
+
+  // Soft-delete (2026-10-12, owner's "ability to delete notifications" ask) — routes to whichever
+  // table the row actually came from; both dismiss functions are the same shape (stamp
+  // dismissed_at, exclude from future loads), so this is a one-line dispatch, not two code paths.
+  const onDismiss = (row) => {
+    const dismiss = row._source === 'eom' ? dismissEomCountNotification : dismissAppNotification;
+    dismiss(row.id).catch(() => {});
+    setItems(prev => prev.filter(r => r.id !== row.id));
+    if (!row.read_at) setUnread(u => Math.max(0, u - 1));
   };
 
   // Same perm as the panel it deep-links into (eom-dashboard widened to 'analytics.store'
@@ -717,7 +782,7 @@ function NotificationBell({ onOpenModal, perm }) {
   if (perm && !perm('analytics.store')) return null;
 
   return div({ style: { position: 'relative', flexShrink: 0 } },
-    btn({ onClick: () => setOpen(o => !o), title: 'EOM count notifications',
+    btn({ onClick: () => setOpen(o => !o), title: 'Notifications',
       style: { position: 'relative', width: 26, height: 26, borderRadius: '50%',
         border: '.5px solid var(--bdr)', background: 'var(--surf2)', color: 'var(--text2)',
         fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
@@ -732,11 +797,11 @@ function NotificationBell({ onOpenModal, perm }) {
         overflowY: 'auto', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8,
         boxShadow: '0 8px 32px rgba(0,0,0,.4)' } },
         div({ style: { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', fontWeight: 700,
-          color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'EOM Count Notifications'),
+          color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'Notifications'),
         h(DeviceAlertsToggle, null),
         loading && !loadedOnce && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'Loading…'),
         !loading && !items.length && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'No notifications yet'),
-        items.map(row => h(NotificationRow, { key: row.id, row, onClick: onRowClick }))
+        items.map(row => h(row._source === 'eom' ? NotificationRow : GenericNotificationRow, { key: row.id, row, onClick: onRowClick, onDismiss }))
       )
     )
   );
