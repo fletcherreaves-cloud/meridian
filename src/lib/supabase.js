@@ -5365,8 +5365,26 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     }
   }
   const table = _securityFindingsLatestViewMissing ? 'security_findings' : 'security_findings_latest';
+  // dispatch 2026-10-12 -- was `.order('computed_at', {ascending:false})` ALONE. Measured live
+  // (owner report: "DATA INCOMPLETE ... security findings (security_findings_latest)"): that
+  // single-column order is NOT covered by security_findings_latest_support_idx
+  // (schema-security-findings-latest-index.sql's own index is on
+  // `(tenant_id, loc, subject_key, rule_id, window_end desc, computed_at desc)`), so every
+  // request forces Postgres to re-sort the full ~20k-row result by computed_at alone with no
+  // index to skip it -- reproduced directly against the live table: the SAME paginated query
+  // ordered this way took 0.85-1.95s on a good run and hit a real `57014` statement-timeout
+  // mid-run on another, while the index's own order (or no order at all) stayed consistently
+  // under 1s. Reordering to the index's exact column list fixes the root cause -- a stable,
+  // deterministic, INDEXED order PostgREST's own cursor-pagination can rely on -- rather than
+  // just retrying the slow query harder. groupFindingsBySubject() (security-panel.js) does not
+  // care what order `findings` arrives in (it re-sorts each rule's own window history by
+  // windowEnd/computedAt internally), so this is a performance-only change, not a behavior one.
   const data = await fetchAll((from, to) => {
-    let q = supabase.from(table).select(SECURITY_FINDINGS_COLS).order('computed_at', { ascending: false }).range(from, to);
+    let q = supabase.from(table).select(SECURITY_FINDINGS_COLS)
+      .order('tenant_id', { ascending: true }).order('loc', { ascending: true })
+      .order('subject_key', { ascending: true }).order('rule_id', { ascending: true })
+      .order('window_end', { ascending: false }).order('computed_at', { ascending: false })
+      .range(from, to);
     if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
     return q;
   }, 1000, `security findings (${table})`);
