@@ -4488,8 +4488,10 @@ export async function loadEomPeriods() {
 // These three are the read side, consumed by shell.js's NotificationBell.
 export async function loadEomCountNotifications({ limit = 20 } = {}) {
   if (!supabase) return [];
+  // dismissed_at (2026-10-12, owner's "ability to delete notifications" ask) -- a soft-delete,
+  // excluded here rather than hard-deleted so the row stays auditable in the SQL editor.
   const { data, error } = await supabase.from('eom_count_notifications')
-    .select('*').order('created_at', { ascending: false }).limit(limit);
+    .select('*').is('dismissed_at', null).order('created_at', { ascending: false }).limit(limit);
   if (error) { console.warn('[eom_count_notifications] load error:', error.message); return []; }
   // loc arrives zero-padded ("0003708", matching qsr_onhand/eom_count_status) -- unpad it to the
   // short form every other loader in this file normalizes to (String(parseInt(r.loc,10))), the
@@ -4503,7 +4505,7 @@ export async function loadEomCountNotifications({ limit = 20 } = {}) {
 export async function countUnreadEomCountNotifications() {
   if (!supabase) return 0;
   const { count, error } = await supabase.from('eom_count_notifications')
-    .select('id', { count: 'exact', head: true }).is('read_at', null);
+    .select('id', { count: 'exact', head: true }).is('read_at', null).is('dismissed_at', null);
   if (error) { console.warn('[eom_count_notifications] unread-count error:', error.message); return 0; }
   return count || 0;
 }
@@ -4514,6 +4516,81 @@ export async function markEomCountNotificationRead(id) {
     .update({ read_at: new Date().toISOString() }).eq('id', id);
   if (error) { console.warn('[eom_count_notifications] mark-read error:', error.message); return { saved: 0, error: error.message }; }
   return { saved: 1 };
+}
+
+// Soft-delete (2026-10-12) — see loadEomCountNotifications' own comment on why dismissed_at over
+// a hard DELETE. Mirrors dismissAppNotification below so the bell's delete button works the same
+// way regardless of which table a row actually came from.
+export async function dismissEomCountNotification(id) {
+  if (!supabase || !id) return { saved: 0 };
+  const { error } = await supabase.from('eom_count_notifications')
+    .update({ dismissed_at: new Date().toISOString() }).eq('id', id);
+  if (error) { console.warn('[eom_count_notifications] dismiss error:', error.message); return { saved: 0, error: error.message }; }
+  return { saved: 1 };
+}
+
+// ── General in-app notification framework (2026-10-12) ───────────────────────────────────────
+// src/engine/app-notifications.js owns the pure shape/validation; this is the IO half, against
+// supabase/schema-app-notifications.sql's `app_notifications` table. Deliberately NOT EOM-count-
+// specific — `type` is any producer's own string. shell.js's NotificationBell merges this source
+// alongside the pre-existing eom_count_notifications rows above, which this does not replace.
+export async function loadAppNotifications({ limit = 20 } = {}) {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('app_notifications')
+    .select('*').is('dismissed_at', null).is('cleared_at', null)
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) { console.warn('[app_notifications] load error:', error.message); return []; }
+  return data || [];
+}
+
+export async function countUnreadAppNotifications() {
+  if (!supabase) return 0;
+  const { count, error } = await supabase.from('app_notifications')
+    .select('id', { count: 'exact', head: true })
+    .is('read_at', null).is('dismissed_at', null).is('cleared_at', null);
+  if (error) { console.warn('[app_notifications] unread-count error:', error.message); return 0; }
+  return count || 0;
+}
+
+// Plain insert, not upsert — each row is a distinct fired event, matching
+// eom_count_notifications' own convention (a producer's own fire-once/dedup logic, if any, is
+// its job, not this table's).
+export async function insertAppNotifications(rows) {
+  if (!supabase || !rows?.length) return { saved: 0 };
+  const { error } = await supabase.from('app_notifications').insert(rows);
+  if (error) { console.warn('[app_notifications] insert error (table may not exist yet — run supabase/schema-app-notifications.sql):', error.message); return { saved: 0, error: error.message }; }
+  return { saved: rows.length };
+}
+
+export async function markAppNotificationRead(id) {
+  if (!supabase || !id) return { saved: 0 };
+  const { error } = await supabase.from('app_notifications')
+    .update({ read_at: new Date().toISOString() }).eq('id', id);
+  if (error) { console.warn('[app_notifications] mark-read error:', error.message); return { saved: 0, error: error.message }; }
+  return { saved: 1 };
+}
+
+export async function dismissAppNotification(id) {
+  if (!supabase || !id) return { saved: 0 };
+  const { error } = await supabase.from('app_notifications')
+    .update({ dismissed_at: new Date().toISOString() }).eq('id', id);
+  if (error) { console.warn('[app_notifications] dismiss error:', error.message); return { saved: 0, error: error.message }; }
+  return { saved: 1 };
+}
+
+// Auto-clear (the "falls off if no longer relevant" half of the owner's ask) — a producer calls
+// this with its OWN freshly-recomputed list of resolve_keys still genuinely open; every unread,
+// non-dismissed row of this `type` whose resolve_key is NOT in that list gets cleared_at stamped.
+// The row-selection logic itself (which keys that implies) is resolvedKeys() in
+// src/engine/app-notifications.js — pure and unit-tested — this is just the UPDATE.
+export async function autoClearAppNotifications({ type, stillOpenResolveKeys = [] } = {}) {
+  if (!supabase || !type) return { cleared: 0 };
+  let q = supabase.from('app_notifications').update({ cleared_at: new Date().toISOString() })
+    .eq('type', type).not('resolve_key', 'is', null).is('cleared_at', null).is('dismissed_at', null);
+  if (stillOpenResolveKeys.length) q = q.not('resolve_key', 'in', `(${stillOpenResolveKeys.map(k => `"${k}"`).join(',')})`);
+  const { error, count } = await q.select('id', { count: 'exact' });
+  if (error) { console.warn('[app_notifications] auto-clear error:', error.message); return { cleared: 0, error: error.message }; }
+  return { cleared: count || 0 };
 }
 
 // ── EOM snapshots (baseline lock + day-2 change monitor) ─────────────────────────

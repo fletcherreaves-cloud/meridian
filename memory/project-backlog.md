@@ -290,6 +290,32 @@ scoped:
 Not scoped or built yet — needs the owner to say which metrics, which report(s), and whether (2)
 is wanted at all before any implementation starts.
 
+## ✅ RESOLVED 2026-10-12 (v5.520) — Alerts/Notifications customization + expiry (was "for later" below)
+
+Scoped with the owner before building (2026-10-12): in-app bell kept simple (no settings page);
+a GENERAL notification framework other features can plug into, not another EOM-specific table;
+auto-clear wanted; and — after an initial "bell only" answer was revised mid-build — push/email
+delivery too, "where appropriate and valuable."
+
+Shipped: `supabase/schema-app-notifications.sql`'s type-agnostic `app_notifications` table +
+`src/engine/app-notifications.js` (pure shape/validation, severity-based push/email delivery
+defaults, the `resolvedKeys()` auto-clear primitive) + `src/lib/supabase.js`'s IO half +
+`scripts/lib/app-notification-delivery.mjs` (reuses the EXISTING `sendWebPush`/`postResend`
+primitives, no second integration). `shell.js`'s `NotificationBell` now merges this generic
+source with the pre-existing `eom_count_notifications` rows (untouched rich rendering) into one
+dropdown/badge; every row — EOM included, via a new `dismissed_at` column on that table too — gets
+a real delete button. 37 new tests; full suite + build both pass clean.
+
+**Deliberately NOT done, and said so in the changelog rather than implied:** no live producer
+writes to `app_notifications` yet (EOM keeps its own table/delivery exactly as before — this is
+additive, not a migration) and auto-clear/push/email are proven generic with synthetic test data,
+not exercised by a real feature. This is the substrate the next notification-producing feature
+(a Signals anomaly, a stale-stream alert, a forecast-accuracy drop) plugs into — do not read "no
+live producer" as unfinished; it's the intended shape of a framework pass, matching how this
+backlog file's own earlier EOM-count work shipped its table before every panel adopted it.
+
+**Original "for later" entry, kept for context:**
+
 ## Idea logged for later (2026-09-05, owner) — Alerts/Notifications customization + expiry
 
 Owner, verbatim: *"Work on Alerts Notifications in app — I would like to see some customization
