@@ -72,6 +72,7 @@ on:
       - QSRSoft Product Mix Pull
       - QSRSoft Product Outage Pull
       - QSRSoft Punch Times Pull
+      - QSRSoft Quarter-Hour Sales Pull
       - QSRSoft Register Audit Pull
       - QSRSoft Roster Statistics Pull
       - QSRSoft Security Events Pull

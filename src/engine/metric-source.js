@@ -708,7 +708,14 @@ export const MANUAL_ONLY_METRICS = {
 // (loc,date,item,price) is raw item-level price/mix rows for price-change detection and
 // mix-shift analysis, not a per-day scalar metric, so it's a consumer-triggered
 // ensureLazyFill('pmixRows') call, not a METRIC_SOURCES chain entry.
-export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows']);
+// qsrSalesQtrHourRows added for Record Hour (src/engine/record-hour.js) — true
+// 15-minute sales buckets (loc, date, qtr_slot) for a real rolling-60-minute sliding
+// window, same "raw rows, consumer-triggered, not a per-day scalar" shape as pmixRows.
+// Not added to stream-freshness.js's STREAMS array, matching the existing precedent
+// that none of this LAZY_FILL_SOURCES trio is there either — ds[src] reading empty
+// means "nobody opened the tab yet," not "the pull failed," so a freshness check would
+// misread every user who hasn't opened Record Hour as a stale/broken stream.
+export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows', 'qsrSalesQtrHourRows']);
 
 let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }
 const _lazyState = {};                    // src -> 'pending' | 'loaded' | 'error'

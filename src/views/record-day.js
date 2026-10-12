@@ -3,7 +3,8 @@ import * as React from 'react';
 import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
-import { metricSeries, dailyDataFreshness, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
+import { metricSeries, dailyDataFreshness, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
+import { computeHourRecords, scopeHourRecords, windowLabel } from '../engine/record-hour.js';
 import { printHtml } from '../utils/print-html.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
@@ -919,6 +920,84 @@ function TopDaysTab({ data, breakIndex }) {
   );
 }
 
+// ── Record Hour tab ───────────────────────────────────────────────────────────
+// The real sliding-window fix — see src/engine/record-hour.js's header for the full
+// "why". `ds.qsrSalesQtrHourRows` is a metric-source.js LAZY_FILL_SOURCES entry
+// (consumer-triggered, same shape as pmixRows/auditRows), so this tab has to demand
+// it on mount itself (RegisterAuditTab in store-analytics.js is the reference
+// implementation this mirrors) rather than assume it's already loaded the way
+// laborRows/opsRows are.
+function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory, fullHistoryState }) {
+  const [pending, setPending] = useState(true);
+  const [failed,  setFailed]  = useState(false);
+  React.useEffect(() => {
+    const stillPending = ensureLazyFill('qsrSalesQtrHourRows');
+    setPending(stillPending);
+    if (!stillPending) { setFailed(isLazyFillError('qsrSalesQtrHourRows')); return; }
+    const id = setInterval(() => {
+      if (!isLazyFillPending('qsrSalesQtrHourRows')) {
+        setPending(false);
+        setFailed(isLazyFillError('qsrSalesQtrHourRows'));
+        clearInterval(id);
+      }
+    }, 300);
+    return () => clearInterval(id);
+  }, []);
+
+  if (pending) return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } }, 'Loading quarter-hour sales data…');
+  if (failed)  return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } }, '⚠ Could not load quarter-hour sales data. Try reopening this tab.');
+  if (!data || data.totalStores === 0) {
+    return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } },
+      'No quarter-hour sales data yet. The automated pull runs daily — check back after the next run, or ',
+      h('button',{ style:{ ...S.ghostBtn, display:'inline', padding:'2px 8px' }, onClick:onLoadFullHistory, disabled:fullHistoryState==='loading' },
+        fullHistoryState==='loading' ? 'loading full history…' : 'load full history since 2022'),
+      '.');
+  }
+
+  const locs = Object.keys(data.stores).sort((a,b) => data.stores[b].best.sales - data.stores[a].best.sales);
+
+  return div({ style:{ display:'flex',flexDirection:'column',gap:16 } },
+    div({ style:S.sLbl }, 'Best 60-Minute Sales Window — All Time'),
+    div({ style:{ fontSize:12, color:'var(--txt3)', marginBottom:4 } },
+      'Any 15-minute-aligned start counts (7:15am–8:15am is as valid as 7:00am–8:00am) — a true ' +
+      'rolling window over real 15-minute sales buckets, not a fixed clock-hour reading. ',
+      !fullHistoryLoaded && h('button',{
+        style:{ ...S.ghostBtn, display:'inline', padding:'2px 8px', fontSize:11, marginLeft:4 },
+        onClick:onLoadFullHistory, disabled:fullHistoryState==='loading',
+      }, fullHistoryState==='loading' ? 'Loading full history…' : '🕰 Load full history (since 2022)')),
+    data.distBest && div({ style:S.heroCard },
+      div({ style:S.heroLbl }, '🏆 District Best 60-Min Sales'),
+      div({ style:S.heroVal }, f$2(data.distBest.sales), h(RecentBreakChip,{ show:isRecentBreak(breakIndex, data.distBest.loc, 'Hour Sales', data.distBest.dk) })),
+      div({ style:S.heroSub }, `${sName(data.distBest.loc)} · ${windowLabel(data.distBest.startMinutes, data.distBest.endMinutes)} · ${fDate(data.distBest.dk)} · ${data.distBest.daypart}${data.distBest.isProvisional ? ' · ⏳ provisional' : ''}`),
+    ),
+    div({ style:S.tblWrap },
+      table({ style:S.tbl },
+        thead({},
+          tr({},
+            TH({style:S.th},'Store'), TH({style:S.thR},'Best 60-Min Sales'),
+            TH({style:S.th},'Window'), TH({style:S.th},'Date'), TH({style:S.th},'Daypart'), TH({style:S.th},'Status'),
+          ),
+        ),
+        tbody({},
+          ...locs.map((loc,i) => {
+            const b = data.stores[loc].best;
+            return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
+              td({style:{...S.td,fontWeight:500}}, sName(loc)),
+              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$2(b.sales), h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Hour Sales',b.dk)})),
+              td({style:S.td}, windowLabel(b.startMinutes, b.endMinutes)),
+              td({style:S.tdM}, fDateShort(b.dk)),
+              td({style:S.td}, b.daypart),
+              td({style:S.td}, b.isProvisional
+                ? span({ style:BADGE_PROVISIONAL(), title:'Today\'s business day is still in progress — this window can still change once the day closes.' }, '⏳ Provisional')
+                : span({ style:S.badge('#10b981','rgba(16,185,129,.08)') }, '✓ Confirmed')),
+            );
+          }),
+        ),
+      ),
+    ),
+  );
+}
+
 // ── CSV/Excel export (per current tab) ─────────────────────────────────────────
 //
 // Design call (dispatch #130): reuse the shared ExportDropdown for a TAB-SCOPED CSV/JSON
@@ -931,8 +1010,21 @@ function TopDaysTab({ data, breakIndex }) {
 // tab's FULL underlying dataset, a superset of whatever the on-screen sort/filter happens to be,
 // which keeps this presentation-only change from having to lift four separate pieces of local
 // UI state out of their tab components.
-function tabExportSpec(tab, data, windowDays) {
+function tabExportSpec(tab, data, windowDays, hourData) {
   const today = new Date().toISOString().slice(0,10);
+  if (tab === 'hour') {
+    if (!hourData) return { rows:[], columns:[], title:'Record Hour in Sales', filename:`record-hour-${today}` };
+    const locs = Object.keys(hourData.stores).sort((a,b) => hourData.stores[b].best.sales - hourData.stores[a].best.sales);
+    const rows = locs.map(loc => {
+      const b = hourData.stores[loc].best;
+      return {
+        Store: sName(loc), 'Best 60-Min Sales': f$2(b.sales), Window: windowLabel(b.startMinutes, b.endMinutes),
+        Date: fDateShort(b.dk), Daypart: b.daypart, Status: b.isProvisional ? 'Provisional' : 'Confirmed',
+      };
+    });
+    return { rows, columns:['Store','Best 60-Min Sales','Window','Date','Daypart','Status'].map(k=>({key:k,label:k})),
+      title:'Record Hour in Sales — Best 60-Minute Window by Store', filename:`record-hour-${today}` };
+  }
   if (!data) return { rows:[], columns:[], title:'Record Day Intelligence', filename:`record-day-${today}` };
 
   if (tab === 'recent') {
@@ -1050,7 +1142,7 @@ function reportSection(title, bodyHtml) {
   </div>`;
 }
 
-function buildFullReportHtml(data, windowDays) {
+function buildFullReportHtml(data, windowDays, hourData) {
   const now = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const through = fDate(dKey(data.dataEnd));
   // Dispatch #136 Part 2 item 3 -- the SAME recent-break lookup the on-screen tabs use (see
@@ -1161,6 +1253,12 @@ function buildFullReportHtml(data, windowDays) {
   ${reportSection('District All-Time Champions', heroSection)}
   ${reportSection(`Record Breaks — Last ${windowDays} Days`, reportTable(['Store','Date','Record Type','Status','New Record','Previous Best','Change %'], recentRows))}
   ${reportSection('Sales Records by Store', reportTable(['Store','Best Day','Date','Best Week','Week Of','Best Month','Month'], salesRows))}
+  ${reportSection('Best 60-Minute Sales Window by Store — All Time', reportTable(
+    ['Store','Best 60-Min Sales','Window','Date','Daypart','Status'],
+    hourData ? Object.keys(hourData.stores).sort((a,b)=>hourData.stores[b].best.sales-hourData.stores[a].best.sales).map(loc => {
+      const b = hourData.stores[loc].best;
+      return [esc(sName(loc)), `<b>${f$2(b.sales)}</b>`, esc(windowLabel(b.startMinutes,b.endMinutes)), fDateShort(b.dk), esc(b.daypart), b.isProvisional?'⏳ Provisional':'✓ Confirmed'];
+    }) : []))}
   ${reportSection('Guest Count Records by Store', reportTable(['Store','Best GC Day','Date','Best GC Week','Week Of','Best GC Month','Month'], gcRows))}
   ${reportSection('Speed of Service Records by Store', reportTable(['Store','Best OEPE','Date','Best KVS','Date','Best R2P','Date'], speedRows))}
   ${reportSection('Day-of-Week Sales Leaders — Best Store per Day', reportTable(['Day','Store','Best Sales','Date'], dowRows))}
@@ -1190,6 +1288,7 @@ const TABS = [
   { key:'overview',  label:'Overview' },
   { key:'recent',    label:'Recent Breaks' },
   { key:'sales',     label:'Sales & Volume' },
+  { key:'hour',      label:'🕐 Record Hour' },
   { key:'speed',     label:'Speed of Service' },
   { key:'dow',       label:'Day of Week' },
   { key:'topdays',   label:'Top Days' },
@@ -1225,6 +1324,14 @@ export function RecordDayTab({ stores, ds }) {
   // (RecentBreakersTab excluded -- every row there already IS a recent break).
   const breakIndex = useMemo(() => buildBreakIndex(viewData?.recentBreakers), [viewData]);
 
+  // Record Hour -- a wholly separate data source (ds.qsrSalesQtrHourRows, a metric-source.js
+  // LAZY_FILL_SOURCES entry) from the day-level `data`/`viewData` above, so it's computed and
+  // scoped independently rather than folded into computeRecords(). windowDays is still shared
+  // with Recent Breaks (one control, same meaning: "how far back counts as recent").
+  const hourData = useMemo(() => computeHourRecords(ds, { windowDays }), [ds, windowDays]);
+  const hourViewData = useMemo(() => scopeHourRecords(hourData, scopedLocs), [hourData, scopedLocs]);
+  const hourBreakIndex = useMemo(() => buildBreakIndex(hourViewData?.recentBreakers?.map(b => ({ ...b, type:'Hour Sales' }))), [hourViewData]);
+
   const handleReset = useCallback(() => {
     clearSaved();
     setConfirmReset(false);
@@ -1255,16 +1362,32 @@ export function RecordDayTab({ stores, ds }) {
     else if (isLazyFillWideError('laborRows')) setDeepHistoryState('error');
   }, [ds, deepHistoryState]);
 
+  // Same "since 2022" wide-tier pattern, independently, for Record Hour's own stream
+  // (qsrSalesQtrHourRows) -- separate state because the two sources load on separate
+  // triggers (laborRows' button lives in this component's header; qsrSalesQtrHourRows'
+  // lives inside HourRecordTab, only shown once that tab is open) and can finish at
+  // different times.
+  const [qtrHourHistoryState, setQtrHourHistoryState] = useState(() => (isLazyFillWideLoaded('qsrSalesQtrHourRows') ? 'loaded' : 'idle'));
+  const handleLoadQtrHourHistory = useCallback(() => {
+    ensureLazyFillWide('qsrSalesQtrHourRows');
+    setQtrHourHistoryState('loading');
+  }, []);
+  useEffect(() => {
+    if (qtrHourHistoryState !== 'loading') return;
+    if (isLazyFillWideLoaded('qsrSalesQtrHourRows')) setQtrHourHistoryState('loaded');
+    else if (isLazyFillWideError('qsrSalesQtrHourRows')) setQtrHourHistoryState('error');
+  }, [ds, qtrHourHistoryState]);
+
   // Per-tab CSV/Excel export spec -- recomputed whenever the active tab, the underlying
   // (now scope-filtered) records, or the Recent Breaks window changes, so an export triggered
   // right after switching tabs, scope, or the window always reflects what's actually on screen,
   // never a stale or unscoped one.
-  const exportSpec = useMemo(() => tabExportSpec(tab, viewData, windowDays), [tab, viewData, windowDays]);
+  const exportSpec = useMemo(() => tabExportSpec(tab, viewData, windowDays, hourViewData), [tab, viewData, windowDays, hourViewData]);
 
   const handlePrintReport = useCallback(() => {
-    const html = buildFullReportHtml(viewData, windowDays);
+    const html = buildFullReportHtml(viewData, windowDays, hourViewData);
     printHtml(html, { autoPrint: false });
-  }, [viewData, windowDays]);
+  }, [viewData, windowDays, hourViewData]);
 
   return div({},
     // Was ModalShell's headerExtra (title/subtitle row + Export/Print/Reset actions) --
@@ -1313,6 +1436,14 @@ export function RecordDayTab({ stores, ds }) {
       viewData && viewData.totalStores>0 && tab==='overview' && h(HeroGrid, { data:viewData, breakIndex }),
       viewData && viewData.totalStores>0 && tab==='recent'   && h(RecentBreakersTab, { data:viewData, windowDays, onWindowChange:setWindowDays }),
       viewData && viewData.totalStores>0 && tab==='sales'    && h(SalesVolumeTab,     { data:viewData, breakIndex }),
+      // Record Hour -- independent of viewData's day-level gate above (separate stream,
+      // loads on its own demand inside HourRecordTab).
+      tab==='hour' && h(HourRecordTab, {
+        data:hourViewData, breakIndex:hourBreakIndex,
+        fullHistoryLoaded: isLazyFillWideLoaded('qsrSalesQtrHourRows'),
+        onLoadFullHistory: handleLoadQtrHourHistory,
+        fullHistoryState: qtrHourHistoryState,
+      }),
       viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
       viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
       viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),

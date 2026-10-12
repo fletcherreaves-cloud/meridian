@@ -5502,6 +5502,42 @@ export async function loadPmixRows(daysBack = 40) {
   }));
 }
 
+// ── Quarter-Hour Sales (Record Hour) ────────────────────────────────────────────────
+// `qsr_sales_quarter_hour` (schema-qsr-sales-quarter-hour.sql) — true 15-minute sales
+// buckets from scripts/qsrsoft-sales-quarter-hour-pull.mjs, built for src/engine/
+// record-hour.js's real rolling-60-minute "Record Hour" computation. Same two-speed
+// shape as loadPmixRows just above it: a bounded default for the common case, an
+// explicit wider `daysBack` for the "since 2022" wide-fill tier (App.js's
+// `wideLoaders.qsrSalesQtrHourRows`), both through this one function.
+//
+// loc is UNPADDED on return ("0035064" → "35064") — matches ds.storeIds/STORE_NAMES,
+// NOT qsr_product_mix's padded convention (see the schema file's header for why this
+// table's one consumer gets to pick the simpler side of that split). hour/minute are
+// split out of qtr_slot once here so record-hour.js never has to re-parse the raw
+// "HH:MM" string (hours can run past 24 for the wrapped 00:00-04:00 end of the 4am
+// business day — see labor-standard.js's DAYPARTS header comment).
+export async function loadQsrSalesQuarterHour(daysBack = 90) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ table: 'qsr_sales_quarter_hour', select: '*', gteCol: 'dt', gteVal: _cutStr, orderCol: 'dt', ascending: false, label: 'qsr_sales_quarter_hour' });
+  if (!data.length) return [];
+  return data.map(r => {
+    const [h, m] = String(r.qtr_slot).split(':').map(Number);
+    return {
+      loc:            String(parseInt(r.loc, 10)),
+      date:           new Date(r.dt + 'T00:00:00'),
+      qtrSlot:        r.qtr_slot,
+      slotMinutes:    (h || 0) * 60 + (m || 0),
+      transactions:   r.transactions,
+      productSales:   r.product_sales,
+      netSales:       r.net_sales,
+      dtTransactions: r.dt_transactions,
+      dtSales:        r.dt_sales,
+    };
+  });
+}
+
 // ── Menu Item Activity (waste/comp/promo) — dispatch #220 ──────────────────────────
 // `qsr_menu_item_activity` (schema-qsr-menu-item-activity.sql, dispatch #193) — one row
 // per (loc, store_menuitem_id, date), item_number denormalized for filtering without a
