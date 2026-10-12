@@ -206,10 +206,33 @@ of the first two migrations.
 **Fix:** added `alter table ... alter column adjusted_punch_at drop not null;` as its own
 explicit step in the migration.
 
-**Not yet re-verified:** whether this THIRD fix actually resolves it — re-run the migration in
-Supabase, then re-trigger the sync and check `[punch-audit] ✓ N/M` confirms all 26 active stores
-(the 7 originally-failing ones, plus confirmation the Role Rate Operation duplicate pair at store
-13113 now saves as 2 distinct rows, not 1 overwritten or 1 dropped).
+## ✅ CONFIRMED RESOLVED, same day — all three fixes together, verified by a clean live run
+
+Owner applied the `DROP NOT NULL` migration and re-triggered the sync. Real result, read from
+the job's own log, not inferred from exit code:
+
+```
+[punch-audit] ✓ 321/321 edit-event(s) saved
+```
+
+**Zero `upsert error` lines anywhere in the log.** Every one of the 27 stores saved real rows,
+including every previously-failing store: Cottondale 0→56, Mossy Head 0→4, Durant 0→14,
+Ardmore-Broadway 0→32, Seminole 0→11, Ponce de Leon FL 0→5, Ada 0→15 (counts differ from the
+first run's per-store figures because the pull window itself shifted forward — gap-detection
+pulled 2026-10-08→2026-10-26 this time vs. the first run's different window — not because these
+are the identical events re-saved). Store 13113 (Madill) — the exact store/employee/minute the
+`seq` fix was built for — saved 13 edit-events cleanly, no duplicate-key error.
+
+**This closes the loop on all three bugs found today** in this one new table, each one real,
+each one caught by an actual live run rather than assumed fixed from reasoning about the schema:
+1. `adjusted_punch_at` in the primary key → implicit `NOT NULL` → crashed on real blank values.
+2. The replacement 4-column key wasn't unique → crashed on a real same-minute duplicate.
+3. Dropping the `PRIMARY KEY` constraint didn't drop the `NOT NULL` it had set as a side effect
+   → the first bug's symptom persisted even after fix #1 appeared to address it.
+Three separate PRs (#1429, #1430, #1431), three separate live-run verifications, not one single
+"ship and hope." A textbook case for this repo's own "measure it, don't reason about it"
+standing rule — and for why "the exit code was green" is never sufficient evidence that a
+best-effort, non-fatal pull actually saved what it claims to.
 
 **Still not built:** a `security_rules` registry row or `assembleLaborDrilldown()` in
 `security-panel.js` — the data now lands in Supabase, but nothing in the Security panel reads it
