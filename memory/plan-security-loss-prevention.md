@@ -890,12 +890,22 @@ piece is small and sharp:
   `window-function` logic types are explicitly stubbed in `security-rules.js`); that's new engine
   work, not a new rule row, and was stated as out of scope for this pass rather than forced into
   an ill-fitting shape.
-  **All three rules ship `active=false`** — no live Supabase credential was available in this
-  sandbox to run the equivalent of INV-004's own pre-ship dry-run measurement, so the thresholds
-  are first guesses in the same declared sense `CASH-001`/`CASH-002`'s own fixtures are. LABOR-001
-  additionally depends on an **unverified cross-vendor assumption** (LifeLenz `geid` and QSRSoft
-  `geid` being the same identifier space) — measure the real join hit rate before trusting its
-  output or flipping it `active=true`; see that schema file's own pre-flight checklist.
+  ✅ **MEASURED LIVE AND ACTIVATED, SAME DAY (2026-10-12) — LABOR-001 and LABOR-002 are now
+  `active=true` in production.** A live session with `SUPABASE_SERVICE_ROLE_KEY` ran the real
+  shipped functions against real data (321 real `lifelenz_punch_edits` rows, 1716
+  `qsr_employee_tenure` rows): the previously-unverified cross-vendor assumption (LifeLenz `geid`
+  == QSRSoft `geid`) **holds at 93.8%** (121/129 subjects), and both rules ran clean with 0 false
+  positives (129/129 "clear," a believable real result for a 5-day cold-start window). The rule
+  rows themselves had to be inserted live first — the PR that built them never got its own
+  migration applied. **LABOR-003 is the one still `active=false`:** its shipped `min_denominator:
+  500` was an unmeasured guess that turned out to be wrong by roughly 10x — real per-manager
+  denominators measured 1-193 (median 46), so literally 0/60 real subjects could ever clear it.
+  Fixed to `min_denominator: 20` but held back from activation — the window measured is only 5
+  days old (well short of the rule's own 28-day design), and the store-baseline population is
+  still dominated by thin-denominator noise. Re-measure LABOR-003 specifically no sooner than
+  ~2026-11-09 (once ~28 real days exist) before activating it. Full numbers, the exact measurement
+  method, and what changed live vs. in the repo:
+  `memory/finding-labor-rules-live-measurement-2026-10-12.md`.
   **Also deliberately not built this pass:** `assembleLaborDrilldown()` / the per-subject
   "Investigate further" drill-down for Labor subjects — `domainRuleIds` is explicitly nulled at
   that call site for `domain==='labor'` so the panel never silently runs the wrong (cash-shaped)
