@@ -453,10 +453,75 @@ deposit-specific controls all three sources converged on:
 
 ### 2.4 Labor / Time-and-Attendance
 
+**Expanded 2026-10-12** (owner request: *"do we currently scan or look for the possibility of
+ghost employees on payroll or potential for fraudulent time clock entries being manually applied
+in any type of pattern?"*) — **answer at the time of asking: no, neither existed.** Grepped
+`security-events.js`/`security-rules.js`/every `schema-security-rules*.sql` migration: the only
+real rule rows in the registry are `CASH-001..004` and `INV-001..005` (Phase 1, cash + inventory
+only). This section was researched back on 2026-08-19 but — unlike Cash/Inventory — **was never
+assigned to a Phase at all** in §7 below; it sat researched-but-unscheduled, not "thin," until this
+pass. The two rows below are the original 2026-08-19 research; the rows and sub-section after them
+are new, grounded in a fresh external check (ACFE-adjacent payroll-fraud literature + restaurant
+time-theft practitioner sources — both genuinely thinner, vendor-blog-heavy fields than the ACFE's
+own Report to the Nations for cash/inventory, flagged below rather than overstated) and in this
+session's own direct read of what Meridian can actually pull today.
+
 | Method | What it represents | Detection logic |
 |---|---|---|
+| **Ghost employee (fictitious or kept-active-post-termination person on payroll)** — *new row, 2026-10-12* | A DIFFERENT fraud from the row below it: not a real employee's shift being punched fraudulently, but a payroll record for someone who either never really worked there or was terminated and never deactivated, continuing to draw pay. ACFE's Fraud Examiners Manual defines this as a person on payroll who does not actually work for the company; industry sources put the median scheme duration around 30–36 months before discovery (ACFE-sourced figures vary by source — worth confirming against ACFE's own current Report to the Nations before citing a specific number in anything owner-facing). | Cross-reference the employee roster's `employmentStatus`/`terminationEntryDate` against any `qsr_punch_times` or payroll activity dated AFTER the termination date (**the sharpest, highest-confidence version of this check — a terminated person should generate zero activity, full stop**). Secondary, noisier checks the research surfaced: duplicate SSN/bank-routing/address across "different" employee records (ghost identities are often self-referential), employees with no tax/benefit withholding, employees whose address or direct-deposit account matches another employee's. |
 | **Buddy punching / ghost shifts** | One employee clocks in/out for another, or logs hours never worked. | Cross-reference `clock_in_timestamp` against `first_POS_activity_timestamp` (or badge/biometric/back-door access log where available). Flag when the gap exceeds ~15–30 minutes consistently across multiple shifts, not as a one-off. |
-| **Manual time-edit self-approval** | A manager edits their own timecard, or approves an edit for an employee where the manager is also the beneficiary. | Flag `manual_time_adjustment` where `approving_manager == beneficiary_employee`. |
+| **Manual time-edit patterns** — *broadened 2026-10-12, was "self-approval" only* | The owner's ask ("any type of pattern") is broader than the original row's one special case. Self-approval (a manager editing/approving their own card, or a beneficiary's) is still the sharpest single check, but restaurant-specific practitioner sources converge on several more: edits clustering heavily around ONE manager across many employees' cards; edits made to an already-approved record; a consistent ROUNDING direction (e.g. always rounds down by a fixed 10–15 min increment — the "shave a few minutes off everyone, every shift" scheme, which compounds across a 20-person crew into real weekly hours); edits concentrated on one device; a missed-punch-then-manager-fix pattern repeating for the same employee. | `approving_manager == beneficiary_employee` (self-approval, unchanged from the original row). New: group edits by `editing_manager`, flag an outlier EDIT RATE vs. peers (same baseline-comparison principle as every other rule in this file, §1 principle 2); flag a skewed rounding distribution (most edits move the SAME direction by a near-constant amount) vs. an expected roughly-symmetric correction distribution; flag edits touching an already-approved record. |
+
+#### 2.4a — Meridian data-source mapping (checked against this repo's actual code, 2026-10-12)
+
+Before any Labor rule can be a real `security_rules` row (not just a researched method), it needs
+a real column to read — checked directly rather than assumed, per this repo's own "measure it"
+standing rule:
+
+- **✅ Have it now:** `qsr_punch_times` (`scripts/qsrsoft-punch-times-pull.mjs`) — keyed on
+  `(tenant_id, loc, geid, punch_type, start_date_time)`, already live and pulled. The employee
+  roster pull (`scripts/qsrsoft-employee-roster-pull.mjs`, `finding-qsrsoft-employee-roster-
+  endpoint-2026-08-21.md`) already carries `geid`, `employmentStatus`, `terminationEntryDate`,
+  `orgStartDate`/`storeStartDate` — everything the **ghost-employee termination-date check**
+  (the sharpest row above) needs already exists as a join on `geid`, no new pull required.
+- **❌ Missing, would need a new pull before anything else in this section can fire:**
+  - **No punch EDIT AUDIT TRAIL is pulled.** `qsr_punch_times` appears to carry only the final
+    punch time, not an original-vs-edited pair, an editing-manager field, or an edit timestamp —
+    checked the pull script directly, found no edit/manual/adjust/override field anywhere in it.
+    Every "manual time-edit pattern" row above is **unbuildable until this is confirmed to exist
+    in QSRSoft's API at all and, if so, pulled** — this is the single blocking open question for
+    that whole row, not a detail to fill in later.
+  - **No payroll dollar data is pulled anywhere in this repo** (duplicate-bank-account/no-
+    withholding checks from the ghost-employee research need payroll fields Meridian has never
+    touched — a materially bigger, more sensitive data-access ask than anything else in this
+    file, likely out of scope unless the owner specifically wants to go there).
+- **Architecture note:** `security-panel.js`'s `SubjectDrilldown` special-cases exactly two
+  `domain` values today (`'cash'`, `'inventory'`) — a third `'labor'` domain needs its own
+  drill-down assembly function (an `assembleLaborDrilldown()`, matching `assembleCashDrilldown()`/
+  `assembleInventoryDrilldown()`'s existing precedent) before any Labor finding can render in the
+  panel at all, not just a new rule row in the registry.
+
+**Net assessment:** the termination-date cross-reference (ghost employee) is buildable TODAY with
+zero new data pulls — the roster and punch tables already join cleanly on `geid`. Everything else
+in this expanded section (buddy punching's POS-activity cross-reference, every manual-edit
+pattern) is blocked on a QSRSoft edit-audit-trail field this repo has not yet confirmed exists,
+which should be the first thing checked if this section gets scoped into a dispatch, before
+designing any rule logic against it.
+
+New research sources (2026-10-12, supplementing the original three-engine pass — these lean
+vendor-blog/practitioner rather than ACFE-primary, flagged accordingly above):
+[SHRM — ghost employees](https://www.shrm.org/mena/topics-tools/news/ghost-employees-may-haunting-workplace),
+[Bonadio — ACFE Fraud Examiners Manual definition](https://www.bonadio.com/?p=4824),
+[Journal of Accountancy — Fraud IQ duplicate/deduction checks](https://www.journalofaccountancy.com/issues/2014/aug/fraud-iq-20149743/),
+[Open Exam Prep — payroll fraud detection & forensic auditing](https://open-exam-prep.com/study-guides/cpp/internal-controls-fraud-operational-audits/payroll-fraud-detection-prevention),
+[Safeguard Global — ghost employee detection](https://www.safeguardglobal.com/resources/how-to-detect-ghost-employees/),
+[Synerion — buddy punching prevention](https://www.synerion.com/blog/buddy-punching-101-how-businesses-can-prevent-manage),
+[Clockspot — preventing buddy punching](https://www.clockspot.com/articles/prevent-buddy-punching-without-micromanaging),
+[ShiftFlow — restaurant timecard manipulation](https://www.shiftflow.app/blog/restaurant-timecard-manipulation),
+[ShiftFlow — restaurant buddy punching cost](https://www.shiftflow.app/blog/restaurant-buddy-punching).
+**Caveat carried over from the search itself:** several of these are vendor blogs/study guides,
+not ACFE's own publications, and cited scheme-duration figures vary by source — worth checking
+ACFE's current Report to the Nations directly before quoting a specific number anywhere owner-facing.
 
 ### 2.5 Segregation-of-duties / control-circumvention (cross-cutting, not domain-specific)
 
@@ -746,6 +811,23 @@ not yet decided.
 - Basic employee exception ranking (unweighted, single-domain).
 - Explanation surfacing (§4's breakdown format) — build this from day one, not as a later
   polish pass; retrofitting explainability onto opaque scores is much harder than starting with it.
+
+### Phase 1b — Labor / Time-and-Attendance (§2.4) — *added 2026-10-12, never previously scheduled*
+
+Researched 2026-08-19 alongside Cash/Inventory but — unlike those two — was never assigned to a
+Phase; found unscheduled while answering the owner's 2026-10-12 question about ghost-employee/
+time-clock-fraud coverage. Proposed as its own phase, not folded into Phase 2, because its data
+needs are genuinely different (roster + punch data, not `audit_rows`) and its buildable-today
+piece is small and sharp:
+- **Buildable now, no new pull:** ghost-employee termination-date cross-reference (§2.4's new
+  first row) — roster `employmentStatus`/`terminationEntryDate` join `qsr_punch_times` on `geid`,
+  both already live.
+- **Blocked on confirming a QSRSoft edit-audit-trail field exists:** buddy-punching's POS-activity
+  cross-reference and every manual-edit-pattern check (§2.4a) — check this FIRST if this phase
+  gets dispatched, before designing rule logic against a field that may not be pullable at all.
+- **New architecture work, not just new rule rows:** a `'labor'` domain needs its own
+  `assembleLaborDrilldown()` in `security-panel.js`, following `assembleCashDrilldown()`/
+  `assembleInventoryDrilldown()`'s existing precedent (§2.4a).
 
 ### Phase 2 — composite scoring
 - Composite risk score combining Phase-1 rules with decay (§3 recurrence scoring).
