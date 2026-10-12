@@ -35,6 +35,12 @@ export const REPORTS = [
   // control that doesn't actually change what's shown.
   { key: 'smg-voice', label: 'SMG VOICE', icon: '🗣️', periods: false, panels: false,
     desc: 'Guest satisfaction: OSAT/Accuracy B2B scorecard + comment feed, for a scope.' },
+  // Owner req (2026-10-11) -- a printable/exportable district roster modeled off Count Cycle's
+  // own data: last full count, regular count day (+ a drift flag against settings), this-week
+  // complete/incomplete, and pending new items. No period picker -- like visit-readiness/
+  // smg-voice above, this reads the current on-hand snapshot, not a chosen window.
+  { key: 'weekly-count-status', label: 'Weekly Count Status', icon: '🗓', periods: false, panels: false,
+    desc: 'Per-store weekly count roster: last full count, regular count day, this-week status, new items pending.' },
 ];
 const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month']];
 

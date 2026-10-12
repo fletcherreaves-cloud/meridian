@@ -45,8 +45,8 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
-import { dowOf } from '../utils/date.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand, COVER_FRAC, diffNewWrins, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
+import { dowOf, weekStartOf, dKey } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
@@ -274,49 +274,48 @@ function weeklyByClassFor(cadence) {
 //
 // Scope addition (owner, 2026-08-24, after this fix was already in progress) — grade weekly
 // completion the same way EOM already grades count completion, not at count-cycle.js's own
-// COVER_FRAC=0.75 (that constant is Count Cycle's — this function does NOT call cycleCompliance()
-// or import COVER_FRAC, so the Count Cycle panel's own 0.75 threshold is untouched). Uses
-// detectSessions()'s RAW per-session item counts + per-store active-item classTotals — neither is
-// COVER_FRAC-derived, both are plain tallies — and grades "covered" itself at eom-inventory.js's
-// own CLASS_DONE_PCT (0.98), the same bar a store's EOM count is held to. A class with a zero
-// active universe is vacuously covered (nothing to count), same rule dispatch #96 already applies
-// to Count Cycle's own compliance check.
+// COVER_FRAC (that constant is Count Cycle's). Uses detectSessions()'s RAW per-session item
+// counts + per-store active-item classTotals.
+//
+// ✅ UNIFIED (owner-directed 2026-10-11) — this used to grade "covered" itself at a SECOND,
+// independent threshold (eom-inventory.js's CLASS_DONE_PCT=0.98), deliberately different from
+// Count Cycle's own COVER_FRAC=0.95 (dispatch #97's own scoped decision, preserved in this
+// comment's prior wording for history). The owner has now asked for ONE shared near-100% bar
+// (with a narrow new-WRIN exception) wherever "did they complete the required weekly count" is
+// asked, so this no longer recomputes its own threshold at all — it reads `s.covered` straight
+// off detectSessions(), the exact same array Count Cycle's own satisfiesWeekly uses, so the two
+// panels can never grade the same store/week differently again. eom-inventory.js's
+// CLASS_DONE_PCT itself is UNTOUCHED — it still independently grades Paper/Non-Product's
+// monthly EOM-close completion (ClassChips), a different, deliberately-kept-lenient job.
 //
 // itemVarianceWindows (the click-to-expand FOB variance-trace drill-down, just below in this file)
 // is UNCHANGED — it stays on rawByLoc/qsr_raw_item_detail, the right source for "when did this
 // item's variance happen," a genuinely different question from "did they complete the count."
-const _classDoneAt98 = (counts, totals, cls) => {
-  const total = totals[cls] || 0;
-  if (total === 0) return true;   // nothing to count for this class — vacuously covered (dispatch #96)
-  return (counts[cls] || 0) >= total * CLASS_DONE_PCT;
-};
-export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
+export function cadenceFromOnHand(onHandRows, { asOf = new Date(), newWrinsByLoc = {} } = {}) {
   const rows = onHandRows || [];
   let sessionsByLoc = {}, classTotalsByLoc = {};
-  try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows)); } catch { /* leave empty */ }
+  try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows, { newWrinsByLoc })); } catch { /* leave empty */ }
   const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
   const curPeriod = periodKey(asOf);
 
   // Dispatch #112 — reuse count-cycle.js's own cycleCompliance() for real, tested mid-month-
   // Paper tracking (paperMissing) and per-class counted/active tallies (perClass), rather than
-  // reimplementing either. It calls detectSessions(rows) again internally (same `rows`, so the
-  // same session grouping as sessionsByLoc/classTotalsByLoc above) — a small duplicated
-  // computation, not a duplicated ALGORITHM. Its own weekly-completion bar (COVER_FRAC=0.75)
-  // never leaks into anything below: the fields pulled from it here (paperMissing, perClass) are
-  // independent of that bar, and this function's own weeklyDone/lastWeekly/status grading
-  // (CLASS_DONE_PCT=0.98) is untouched — dispatch #97's deliberate, owner-scoped decision.
+  // reimplementing either. It calls detectSessions(rows) again internally (same `rows`/
+  // `newWrinsByLoc`, so the same session grouping as sessionsByLoc/classTotalsByLoc above) — a
+  // small duplicated computation, not a duplicated ALGORITHM.
   let complianceByLoc = {};
-  try { for (const c of cycleCompliance(rows, { asOf })) complianceByLoc[c.loc] = c; } catch { /* leave empty */ }
+  try { for (const c of cycleCompliance(rows, { asOf, newWrinsByLoc })) complianceByLoc[c.loc] = c; } catch { /* leave empty */ }
 
   const m = {};
   for (const loc of Object.keys(sessionsByLoc)) {
     const totals = classTotalsByLoc[loc] || {};
-    // detectSessions returns sessions oldest→newest already. Grade each one against
-    // CLASS_DONE_PCT ourselves — `s.counts`/`totals` are raw tallies, untouched by COVER_FRAC.
+    // detectSessions returns sessions oldest→newest already, already graded `covered` per
+    // class at the SAME unified COVER_FRAC bar Count Cycle's own satisfiesWeekly uses (see
+    // this function's header comment) — read it straight off, don't re-derive a second time.
     const graded = sessionsByLoc[loc].map(s => ({
       date: s.date, counts: s.counts,
-      weeklyDone: _classDoneAt98(s.counts, totals, 'Food') && _classDoneAt98(s.counts, totals, 'Condiment'),
+      weeklyDone: s.covered.includes('Food') && s.covered.includes('Condiment'),
       touchedWeekly: (s.counts.Food || 0) > 0 || (s.counts.Condiment || 0) > 0,
     }));
     const lastWeekly = [...graded].reverse().find(s => s.weeklyDone) || null;
@@ -460,6 +459,11 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
         day: lastWeekly.date,
         counts: { food: lastWeekly.counts.Food || 0, condiment: lastWeekly.counts.Condiment || 0 },
       }] : [],
+      // New-this-period WRINs (owner-directed 2026-10-11) — excluded from the coverage math
+      // above, surfaced here so CadenceMonitor can show "new item -- still needs counting"
+      // instead of making it silently invisible. Same cycleCompliance() row count-cycle.js's
+      // own Count Cycle panel already reads this field from, so the two panels agree.
+      newItems: (complianceByLoc[loc] && complianceByLoc[loc].newItems) || [],
     };
     // Item 3 Food/Condiment uncounted counts — dispatch #98's own cycleClassCoverage() (below in
     // this file) already derives {total,counted} per class off exactly this record shape
@@ -532,7 +536,10 @@ export function cycleSummaryFor(rows, cadenceByLoc) {
       const cc = cov[cls];
       if (!cc.total) continue;
       classAgg[cls].total += cc.total; classAgg[cls].counted += cc.counted; classAgg[cls].n++;
-      if (cc.counted >= cc.total * CLASS_DONE_PCT) classAgg[cls].doneStores++;
+      // Unified (2026-10-11) onto the SAME near-100% bar cadenceFromOnHand's own weeklyDone
+      // uses (COVER_FRAC, count-cycle.js) — this used to re-derive at CLASS_DONE_PCT (0.98),
+      // a second, different threshold for the identical Food/Condiment weekly question.
+      if (cc.counted >= cc.total * COVER_FRAC) classAgg[cls].doneStores++;
       cnt += cc.counted; tot += cc.total;
     }
   }
@@ -814,6 +821,95 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
                       ` between ${w.from} and ${w.to}`)))
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
+      })))));
+}
+
+// Weekly/Daily Scoreboard view (owner req, 2026-10-12) — a SEPARATE, simpler sibling of the
+// Scoreboard tab's existing monthly review/comms-sent checklist (left untouched above this
+// function — see sbGran's own comment in EOMDashboardPanel). Per store: a compact FOB%
+// sparkline (fobDailyTrace, engine/variance-trace.js — the SAME engine CadenceMonitor's own
+// drill-down trace uses) at the chosen grain, and a plain counted-satisfactorily-or-not read —
+// weekly reuses weeklyStatusByLoc (cycleCompliance, the Weekly Count Status report's own basis,
+// so the two can never disagree); daily just reads whether today has a session at all, and
+// what kind, off cadenceByLoc's own `sessions` array (cadenceFromOnHand) — no invented "daily
+// requirement" exists in the owner's actual rules, so this never grades daily activity as
+// overdue, only present/absent.
+const SB_GRAN_DAYS = { daily: 14, weekly: 70 };   // 14 days / 10 weeks of trailing history to chart
+function sparkPoints(trace, granularity) {
+  if (!trace.length) return [];
+  if (granularity === 'daily') {
+    return trace.map(t => ({ date: t.date, value: t.delta.sales > 0 ? t.delta.fob / t.delta.sales : null }))
+      .filter(p => p.value != null);
+  }
+  // weekly — bucket by the app's configured week start (R3 ratchet: never re-derive week-start
+  // arithmetic inline — weekStartOf(), src/utils/date.js, same helper every other panel's week
+  // boundary goes through), sum $ across the week, THEN ratio (never average a ratio of ratios
+  // — same rule DEFAULT_TARGETS/dollar-weighting already follows elsewhere).
+  const byWeek = {};
+  for (const t of trace) {
+    const wk = dKey(weekStartOf(t.date));
+    const b = (byWeek[wk] || (byWeek[wk] = { fob: 0, sales: 0 }));
+    b.fob += t.delta.fob; b.sales += t.delta.sales;
+  }
+  return Object.keys(byWeek).sort().map(wk => ({ date: wk, value: byWeek[wk].sales > 0 ? byWeek[wk].fob / byWeek[wk].sales : null }))
+    .filter(p => p.value != null);
+}
+function GranScoreSparkline({ points }) {
+  if (!points.length) return span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'No FOB data yet');
+  const pts = points.slice(-12);
+  const W = 120, H = 28, pad = 3;
+  const vals = pts.map(p => p.value);
+  const minY = Math.min(...vals), maxY = Math.max(...vals);
+  const range = maxY - minY || 0.01;
+  const xStep = pts.length > 1 ? (W - pad * 2) / (pts.length - 1) : 0;
+  const xs = pts.map((_, i) => pad + i * xStep);
+  const yCoord = v => H - pad - ((v - minY) / range) * (H - pad * 2);
+  const poly = pts.map((p, i) => `${xs[i].toFixed(1)},${yCoord(p.value).toFixed(1)}`).join(' ');
+  // Lower FOB% is better — same "better:'lower'" sense trends.js's own sparkline uses.
+  const lastDown = pts.length > 1 && vals[vals.length - 1] < vals[vals.length - 2];
+  const col = pts.length < 2 ? 'var(--amber)' : lastDown ? '#4ade80' : '#f59e0b';
+  return h('svg', { width: W, height: H, style: { display: 'block' }, title: `FOB% trend, last ${pts.length} points · ${(vals[vals.length - 1] * 100).toFixed(1)}% most recent` },
+    h('polyline', { points: poly, fill: 'none', stroke: col, strokeWidth: 1.5, strokeLinejoin: 'round' }),
+    h('circle', { cx: xs[xs.length - 1], cy: yCoord(vals[vals.length - 1]), r: 2.5, fill: col }));
+}
+const GRAN_COUNT_LABEL = {
+  weekly: { complete: '✅ Complete', overdue: '⚠ Overdue', never: '— No full weekly yet' },
+  daily: { weekly: '✅ Weekly count today', spot: '〜 Spot count today', none: '— No count today' },
+};
+const GRAN_COUNT_COLOR = { complete: '#4ade80', overdue: '#f59e0b', never: 'var(--text3)', weekly: '#4ade80', spot: '#f5bc00', none: 'var(--text3)' };
+function GranularityScoreboard({ rows, fobRows, cadenceByLoc, weeklyStatusByLoc, granularity, period }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const since = (() => { const d = new Date(); d.setDate(d.getDate() - SB_GRAN_DAYS[granularity]); return d.toISOString().slice(0, 10); })();
+  return div(null,
+    div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
+      granularity === 'daily'
+        ? `FOB% day-over-day (last ${SB_GRAN_DAYS.daily} days) and whether each store counted today.`
+        : `FOB% week-over-week (last ${Math.round(SB_GRAN_DAYS.weekly / 7)} weeks) and this week's count status.`),
+    div({ style: { overflowX: 'auto' } },
+    h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
+      h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
+        ['Store', 'FOB% trend', `${granularity === 'daily' ? 'Today' : 'This week'}`].map(t =>
+          h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t)))),
+      h('tbody', null, rows.map(r => {
+        const trace = fobDailyTrace(fobRows, { loc: r.loc, period: null, since });
+        const pts = sparkPoints(trace, granularity);
+        let countKey, countVal;
+        if (granularity === 'weekly') {
+          countKey = 'weekly';
+          countVal = (weeklyStatusByLoc[r.loc] || {}).status || 'never';
+        } else {
+          countKey = 'daily';
+          const c = cadenceByLoc[r.loc] || {};
+          const todaySession = (c.sessions || []).find(s => s.day === todayStr);
+          countVal = todaySession ? todaySession.kind : 'none';
+        }
+        const label = GRAN_COUNT_LABEL[countKey][countVal];
+        const col = GRAN_COUNT_COLOR[countVal];
+        return h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+          h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, r.name,
+            span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
+          h('td', { style: { padding: '6px 10px' } }, h(GranScoreSparkline, { points: pts })),
+          h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' } }, label)));
       })))));
 }
 
@@ -1578,7 +1674,7 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // accessible_locs (Settings/user management) to grant broader access, no new toggle needed.
 const SINGLE_STORE_ROLES = new Set(['gm', 'sm_am_dm', 'manager']);
 
-export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs }) {
+export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore, userRole, accessibleLocs, onOpenModal }) {
   // The signed-in GM/SM-AM-DM's own store, resolved from their profile's accessible_locs (the
   // established RBAC scoping field, per CLAUDE.md — this is the first client-side reader of it;
   // see App.js's profile fetch). Only resolves for a SINGLE-STORE role scoped to EXACTLY one
@@ -1624,6 +1720,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   }, [fetchedPeriods, period]);
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
+  // Prior period's on-hand rows — ONLY used to detect which WRINs are new to a store's active
+  // universe this period (diffNewWrins(), count-cycle.js), so a brand-new product isn't held
+  // against this period's weekly-count completeness (owner-directed 2026-10-11). Not used for
+  // anything else; keep it out of byLoc/the rest of this panel's state.
+  const [prevOnHand, setPrevOnHand] = useState([]);
   // #211 free perf win: was its own loadQsrFob() re-fetch of the full unscoped ~13k-row table
   // on EVERY period change (not just on panel open), duplicating what App.js already loads
   // once at startup into ds.qsrFobRows (same pattern above-store-onepager.js already uses,
@@ -1744,6 +1845,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // perm (same pass). Every other role's existing initialMode-first / defaultModeFor() behavior
   // is unchanged.
   const [mode, setMode] = useState(() => singleStoreLoc ? 'mystore' : (initialMode || defaultModeFor(defaultPeriod()))); // 'scoreboard' | 'eom' | 'progress' | 'compliance' | 'mystore'
+  // Scoreboard granularity (owner req, 2026-10-12) -- 'monthly' is the existing EOM review/
+  // comms-sent checklist, UNCHANGED (that workflow is inherently once-a-month, per the owner's
+  // own "your points are valid on the EOM routine" -- it does not toggle). 'weekly'/'daily' swap
+  // in a separate, simpler view (GranularityScoreboard below): FOB%/count% trend + a plain
+  // counted-satisfactorily-or-not read, nothing EOM-workflow-shaped.
+  const [sbGran, setSbGran] = useState('monthly');
   // Re-default the mode when the period changes (manual toggle still overrides after) — but
   // never override a legacy-redirect initialMode on the very first render (that useEffect
   // would fire immediately after mount since `period` is already set, undoing the redirect
@@ -1890,7 +1997,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     setLoading(true);
     try {
       const prevP = lastPeriods(p, 2)[0];   // previous month → "vs Last EOM" baseline
-      const [oh, st, vr, wa, tr, rd, pvr] = await Promise.all([
+      const [oh, st, vr, wa, tr, rd, pvr, poh] = await Promise.all([
         loadQsrOnHand({ period: p }),
         loadEomCountStatus({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: p }).catch(() => []),
@@ -1898,8 +2005,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         loadQsrTransfers({ period: p }).catch(() => []),
         loadQsrRawItemDetail({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: prevP }).catch(() => []),
+        loadQsrOnHand({ period: prevP }).catch(() => []),
       ]);
       setOnHand(oh || []);
+      setPrevOnHand(poh || []);
       setVariance(vr || []);
       setPrevVariance(pvr || []);
       setWaste(wa || []);
@@ -1972,12 +2081,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     return m;
   }, [rawByLoc]);
 
+  // New-this-period WRINs (owner-directed 2026-10-11) — diffed against the PRIOR period's
+  // active item set so a brand-new product isn't held against this period's weekly-count
+  // completeness (see count-cycle.js's diffNewWrins()/COVER_FRAC comments). `prevOnHand`
+  // empty (e.g. the very first tracked period) means every current active item reads as new
+  // for that store — correct, not a gap, per diffNewWrins()'s own doc comment.
+  const newWrinsByLoc = useMemo(() => diffNewWrins(onHand, prevOnHand), [onHand, prevOnHand]);
+
   // Weekly-count cadence per store (Notes 40 #1) — is each store doing its weekly full Food/Condiment
   // count? Detected weekly day, last full count + days-since, weekly vs daily-spot sessions. Overdue
   // ≥ 8 days. Powers the Count Cycle view's cadence monitor. Dispatch #97 — sourced from `onHand`
   // (qsr_onhand, already loaded above for EOM completion) via cadenceFromOnHand(), not rawByLoc/
   // qsr_raw_item_detail — see cadenceFromOnHand's own header comment for why.
-  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date() }), [onHand]);
+  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date(), newWrinsByLoc }), [onHand, newWrinsByLoc]);
+
+  // Weekly Scoreboard view (owner req, 2026-10-12: "keep the checklist monthly, add a separate
+  // weekly view -- FOB%/count% trend and simple count completed satisfactorily or not"). A small
+  // duplicated computation (cycleCompliance), not a duplicated algorithm -- cadenceFromOnHand
+  // already calls this internally too (see its own header comment on that tradeoff). Kept as its
+  // own map (not read off cadenceByLoc) so the status language matches the Weekly Count Status
+  // report's own complete/overdue/never exactly, off the SAME WEEKLY_DUE_DAYS bar.
+  const weeklyStatusByLoc = useMemo(() => {
+    const m = {};
+    try {
+      for (const c of cycleCompliance(onHand, { asOf: new Date().toISOString().slice(0, 10), newWrinsByLoc })) {
+        m[c.loc] = { status: c.daysSinceWeekly == null ? 'never' : c.daysSinceWeekly > WEEKLY_DUE_DAYS ? 'overdue' : 'complete',
+          lastWeekly: c.lastWeekly ? c.lastWeekly.date : null, daysSinceWeekly: c.daysSinceWeekly };
+      }
+    } catch { /* leave empty */ }
+    return m;
+  }, [onHand, newWrinsByLoc]);
 
   // Change Monitor v2 (Notes 41): per-store item variance progressions read straight from the raw ledger
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
@@ -3450,7 +3583,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     mode === 'compliance'
       ? (loading || fobPending)
         ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
-        : h(CountCycleSection, { rows: complianceOnHand, period })
+        : h(CountCycleSection, { rows: complianceOnHand, period, newWrinsByLoc, onOpenModal })
       : null,
 
     // Supervisor Rollup (mode==='supervisor', dispatch #202) — self-contained, same shape as
@@ -3527,6 +3660,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
             : 'No stores match this filter — try All.')
       : mode === 'scoreboard' ? div(null,
+          // Granularity toggle (owner req, 2026-10-12) — 'monthly' is the existing EOM checklist
+          // below, completely unchanged; 'weekly'/'daily' swap in GranularityScoreboard instead.
+          div({ style: { display: 'flex', gap: '6px', marginBottom: '10px' } },
+            [['monthly', 'Monthly'], ['weekly', 'Weekly'], ['daily', 'Daily']].map(([k, label]) =>
+              h('button', {
+                key: k, onClick: () => setSbGran(k),
+                style: {
+                  background: sbGran === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)',
+                  color: sbGran === k ? '#1a1a1a' : 'var(--text2)',
+                  border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 11px',
+                  fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                },
+              }, label))),
+          sbGran !== 'monthly'
+            ? h(GranularityScoreboard, { rows, fobRows, cadenceByLoc, weeklyStatusByLoc, granularity: sbGran, period })
+            : div(null,
           // freshness — when the count data was last imported (on-hand pull writes eom_count_status)
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '8px' } },
             eomImportedAt
@@ -3566,7 +3715,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                   }, '📋 Report'),
                   chk(reviewed, 'Reviewed', () => updateStatus(r.loc, { diagnosisStatus: reviewed ? 'pending' : 'reviewed' })),
                   chk(commsSent, 'Comms', () => updateStatus(r.loc, { commsStatus: commsSent ? 'none' : 'sent' }))));
-            })))
+            }))))
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
           [['Store'], ['Count progress'], ['By class'], ['Last count'],

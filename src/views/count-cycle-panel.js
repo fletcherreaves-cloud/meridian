@@ -23,7 +23,7 @@
 // regardless of which EOM period is selected — this tab does the same, not a new tradeoff.
 
 import * as React from 'react';
-import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES, formatWeeklyComplianceReport } from '../engine/count-cycle.js';
+import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES, formatWeeklyComplianceReport, COVER_FRAC } from '../engine/count-cycle.js';
 import { sName } from '../constants.js';
 import { createEomShareLink } from '../lib/supabase.js';
 import { shareOrCopy } from '../utils/share.js';
@@ -104,16 +104,20 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
       c.perClass ? div({ style: { display: 'flex', gap: 10, flexWrap: 'wrap', margin: '6px 0 4px' } },
         CLASSES.filter(cls => c.perClass[cls] && c.perClass[cls].active > 0).map(cls => {
           const pc = c.perClass[cls];
-          const full = pc.active > 0 && pc.counted >= pc.active * 0.75;
+          const full = pc.active > 0 && pc.counted >= pc.active * COVER_FRAC;
           return span({ key: cls, style: {
             fontSize: 10, fontFamily: 'var(--mono)',
             color: full ? CLS_COL[cls] || 'var(--text2)' : 'var(--text3,#6b7280)',
           }, title: pc.date ? `Last touched ${pc.date}` : 'Not yet counted this period' },
             `${cls} ${pc.counted}/${pc.active}`);
         })) : null,
+      c.newItems && c.newItems.length ? div({
+        style: { fontSize: 10.5, color: '#38bdf8', margin: '6px 0 2px', padding: '5px 8px', background: '#38bdf812', borderRadius: 6 },
+        title: c.newItems.map(it => it.descr || it.wrin).join(', '),
+      }, `🆕 ${c.newItems.length} new item${c.newItems.length === 1 ? '' : 's'} this period — not required yet, but still needs counting`) : null,
       div({ style: { fontSize: 9.5, color: 'var(--text3,#6b7280)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 } },
         `Active item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
-        'A class counts as fully counted at 75% coverage or above.'),
+        'A class counts as fully counted only when every active item is counted — new items excepted.'),
       onShare ? h('button', {
         onClick: (e) => { e.stopPropagation(); onShare(c); },
         disabled: shareBusyLoc === c.loc,
@@ -133,13 +137,16 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
  * No fetch, no RoutePanelShell — the caller owns loading/chrome, same contract as
  * CadenceMonitor (the sibling "Cadence" tab) already has.
  */
-export function CountCycleSection({ rows, period }) {
+export function CountCycleSection({ rows, period, newWrinsByLoc = {}, onOpenModal }) {
   const [open, setOpen] = React.useState({});
   const [showClean, setShowClean] = React.useState(false);
   const [shareBusyLoc, setShareBusyLoc] = React.useState(null);
   const [shareMsg, setShareMsg] = React.useState('');
 
-  const comp = React.useMemo(() => (rows ? cycleCompliance(rows) : []), [rows]);
+  // newWrinsByLoc (owner-directed 2026-10-11) — items new to a store's active universe this
+  // period are excluded from the coverage math and surfaced separately (c.newItems) rather
+  // than held against compliance; see count-cycle.js's diffNewWrins()/COVER_FRAC comments.
+  const comp = React.useMemo(() => (rows ? cycleCompliance(rows, { newWrinsByLoc }) : []), [rows, newWrinsByLoc]);
   const sum = React.useMemo(() => cycleSummary(comp), [comp]);
   const flagged = comp.filter(c => c.exceptions.length);
   const clean = comp.filter(c => !c.exceptions.length);
@@ -182,6 +189,17 @@ export function CountCycleSection({ rows, period }) {
       div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } },
         comp.length ? `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle` : ''),
       shareMsg ? span({ style: { fontSize: 11, color: 'var(--text2,#9aa4b2)' } }, shareMsg) : null,
+      // Standalone, printable district roster (owner req, 2026-10-11) — the per-store exceptions
+      // view above is for chasing problems; this links to the full roster meant for team
+      // distribution (last full count, regular count day + drift, this-week status, new items).
+      onOpenModal ? h('button', {
+        onClick: () => onOpenModal('weekly-count-status'),
+        title: 'Open the full Weekly Count Status report — printable/exportable, for sharing with the team',
+        style: {
+          background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
+          color: 'var(--text2,#9aa4b2)', padding: '5px 10px', fontSize: 11, cursor: 'pointer',
+        },
+      }, '🗓 Weekly Count Status report') : null,
     ),
     !comp.length
       ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } },

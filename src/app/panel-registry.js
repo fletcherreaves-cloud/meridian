@@ -441,6 +441,12 @@ export const PANELS = [
   { id:'trends', label:'Trend Explorer', icon:'📈', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
+  // 'weekly-count-status' (owner req, 2026-10-11) -- the standalone, printable/exportable sibling
+  // of Count Cycle's own "hub-tab" compliance view (count-cycle, inventory-food-cost section,
+  // above): same underlying engine (count-cycle.js), but a flat district roster meant for team
+  // distribution rather than an exceptions-first troubleshooting screen. Linked from Count
+  // Cycle's own "🗓 Weekly Count Status report" button and from My Reports.
+  { id:'weekly-count-status', label:'Weekly Count Status', icon:'🗓', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'analysis' },
   { id:'yearly-proj', label:'Yearly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
 ];

@@ -81,8 +81,61 @@ export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 // signal. 0.95 flips only 7/27 (26%) — a real, actionable list of genuinely-partial
 // counters rather than nearly the whole district. Chosen deliberately over 0.98 for that
 // reason; if real counting practice tightens up, 0.98 is worth re-measuring later, not
-// assumed to already be achievable.
-export const COVER_FRAC = 0.95;
+// assumed to already be achievable. [SUPERSEDED below, 2026-10-11 — kept for history.]
+//
+// RAISED 0.95 → 1.0, owner-directed 2026-10-11: "I would like to change that [the coverage
+// bar] throughout to be more close to 100% with the only exception being a new wrin (new
+// product). The reality is there is no reason to miss any other items at all." The 0.95
+// bar's whole job was absorbing exactly the kind of slack a newly-introduced item creates
+// (nobody's told the crew to count it yet) — now that slack is handled explicitly and
+// narrowly by `diffNewWrins()`/`newWrinsByLoc` below (a brand-new WRIN is excluded from the
+// universe entirely for its first period, not given a percentage cushion that also covered
+// real misses), a blanket percentage buffer on top of that is no longer doing honest work —
+// it would just mask a genuinely missed item. So the bar is full coverage of the
+// (active minus brand-new) universe, no residual tolerance. Unified (owner-confirmed,
+// 2026-10-11) with eom-dashboard.js's own Cadence Monitor, which used to grade the identical
+// Food+Condiment weekly question at a second, different number (CLASS_DONE_PCT=0.98) — see
+// that file's cadenceFromOnHand(), which now reads this module's own `covered` array instead
+// of re-deriving a second threshold check. eom-inventory.js's CLASS_DONE_PCT itself is
+// UNTOUCHED — it also grades Paper/Non-Product's monthly EOM-close completion, a separate,
+// deliberately-kept-lenient decision (ClassChips' "Paper/Non-Product keep the 98% done
+// threshold" comment, eom-dashboard.js) that this change does not touch.
+export const COVER_FRAC = 1;
+
+// A WRIN newly added to a store's ACTIVE item universe this period — i.e. absent from the
+// prior period's active set for that same store/class — gets a pass on COVER_FRAC for this
+// one period only: nobody can be faulted for not counting a product that didn't exist in
+// the system last month. `diffNewWrins()` below detects it; `detectSessions()` excludes it
+// from BOTH the numerator and denominator (so it neither helps nor hurts coverage) while
+// still surfacing it as a `newItems` entry so the UI/report can say "new item -- still needs
+// counting" rather than silently making it invisible. Starting the FOLLOWING period, an item
+// is no longer new and is held to the same full-coverage bar as everything else, whether or
+// not anyone has counted it yet.
+//
+// `currentRows`/`priorRows`: raw qsr_onhand rows for the SAME store(s), one period apart
+// (e.g. this month's and last month's loadQsrOnHand() results). Returns `{ [loc]: Set<wrin> }`
+// -- the wrins active now that were NOT active in the prior period for that loc. A loc with
+// no prior-period data at all (a store whose pull just started, or the very first tracked
+// period) has every one of its current active items treated as new -- correct, since there
+// is genuinely nothing to compare against, not a data gap to paper over with a guess.
+export function diffNewWrins(currentRows = [], priorRows = []) {
+  const priorActive = {};   // loc -> Set(wrin) active in the prior period
+  for (const r of (priorRows || [])) {
+    if (!r || !r.wrin || !isActive(r)) continue;
+    const loc = unpad(r.loc);
+    (priorActive[loc] || (priorActive[loc] = new Set())).add(String(r.wrin));
+  }
+  const out = {};
+  for (const r of (currentRows || [])) {
+    if (!r || !r.wrin || !isActive(r)) continue;
+    const loc = unpad(r.loc);
+    const prior = priorActive[loc];
+    if (!prior || !prior.has(String(r.wrin))) {
+      (out[loc] || (out[loc] = new Set())).add(String(r.wrin));
+    }
+  }
+  return out;
+}
 // Days after which a store with no qualifying weekly count is overdue. 7 + grace,
 // because the count day floats.
 export const WEEKLY_DUE_DAYS = 9;
@@ -166,14 +219,30 @@ export const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== fals
  * per-class item count and the store's ACTIVE class universe for comparison.
  * `rows`: [{ loc, cls, wrin, last_counted, last_submitted, active }]
  */
-export function detectSessions(rows = []) {
-  const totals = {};      // loc → cls → ACTIVE universe size
+export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
+  const totals = {};      // loc → cls → ACTIVE universe size (new WRINs excluded, see below)
   const byDate = {};      // loc → date → cls → n (counted ACTIVE items)
+  const newItems = {};    // loc → [{ wrin, descr, cls }] -- new this period, excluded above
   for (const r of (rows || [])) {
     if (!r || !r.cls || !isActive(r)) continue;
     const loc = unpad(r.loc);
-    (totals[loc] || (totals[loc] = {}));
-    totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
+    const isNew = !!(newWrinsByLoc[loc] || newWrinsByLoc[String(loc)])?.has(String(r.wrin));
+    if (isNew) {
+      const list = (newItems[loc] || (newItems[loc] = []));
+      if (!list.some(it => it.wrin === String(r.wrin))) {
+        list.push({ wrin: String(r.wrin), descr: r.descr || '', cls: r.cls });
+      }
+      // Excluded from the DENOMINATOR only (below) -- but if it genuinely got touched this
+      // period, it still belongs in the numerator/session-size math just below. Skipping
+      // byDate too would make a session built ENTIRELY of new items (e.g. a store's very
+      // first tracked period) invisible rather than merely ungraded -- a real count that
+      // happened would read as "no complete weekly count on record," the opposite of the
+      // owner's intent. Denominator=0 for an all-new class is already handled correctly by
+      // the "universe===0 -> vacuously covered" rule below.
+    } else {
+      (totals[loc] || (totals[loc] = {}));
+      totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
+    }
     const d = countedOf(r);
     if (!d) continue;
     ((byDate[loc] || (byDate[loc] = {}))[d] || (byDate[loc][d] = {}));
@@ -198,7 +267,11 @@ export function detectSessions(rows = []) {
       // Food+Condiment weekly requirement was mathematically impossible to satisfy no
       // matter how well they counted. Full writeup: memory/count-cycle-condiment-bug-2026-08-18.md.
       const covered = CLASSES.filter(c => {
-        const universe = totals[loc][c] || 0;
+        // totals[loc] can be undefined here (not just missing a given class) when EVERY
+        // active row for this loc/class was excluded as a new WRIN (see the main loop above)
+        // -- a real case (a store's very first tracked period can be all-new), not a stale
+        // feed artifact, so this guards rather than assumes totals[loc] always exists.
+        const universe = (totals[loc] || {})[c] || 0;
         if (universe === 0) return true;
         return (counts[c] || 0) > 0 && (counts[c] || 0) >= universe * COVER_FRAC;
       });
@@ -212,7 +285,7 @@ export function detectSessions(rows = []) {
         ...q, kind: sessionLabel(q) };
     });
   }
-  return { sessions: out, classTotals: totals };
+  return { sessions: out, classTotals: totals, newItems };
 }
 
 /** date ('YYYY-MM-DD') -> 0=Sun..6=Sat, or null for an unparseable string. Same 'Txx:00:00'
@@ -356,6 +429,52 @@ export function mergeWeeklyCountDay(derivedByLoc = {}, fallbackByLoc = {}, { con
   return out;
 }
 
+// weekly_count_day_overrides stores full weekday names ('Tuesday'), while this module's own
+// WEEKDAY_NAMES (weekly-cadence.js, reused up top) is abbreviated ('Tue') — so comparing by
+// NAME would never match even when the two sides agree. Compare by the numeric `weekday`
+// (0=Sun..6=Sat, consistent on both sides) and use this full-name table only for display.
+const WD_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Owner ask (2026-10-11): "cross reference each locations count day of week with what we
+ * have in settings. If a store has changed their count day of the week and it is obvious it
+ * is not a one off, let's come up with a way to visualize that so that we can change the
+ * settings to reflect. I need to know though because I have to make a change in QSRSoft as
+ * well to reflect it to be accurate."
+ *
+ * Compares `detectWeeklyCountDay()`'s derived signal against the configured override on file
+ * (`loadWeeklyCountDayOverrides()` — `{ [loc]: 'Tuesday' }`, full weekday names) and returns
+ * ONLY the stores where a real, SUSTAINED change is evident — never a one-off. "Sustained"
+ * is enforced two ways at once, both required:
+ *   - `confidenceFloor` — most of the store's recent qualifying sessions agree on the SAME
+ *     new day (a single late count can't move a majority of several).
+ *   - `minSample` — there have to be enough qualifying sessions to call it a pattern at all
+ *     (a brand-new store with one lucky count isn't a confirmed drift).
+ * A store with nothing configured on file isn't drift — there's nothing to compare against,
+ * so it's silently skipped (unconfigured, not conflicting).
+ *
+ * `derivedByLoc`: detectWeeklyCountDay()'s own output. `overridesByLoc`: loadWeeklyCountDayOverrides()'s
+ * `{ [loc]: weekdayName }`. Returns one row per genuinely drifted store, most-confident first,
+ * so the UI can lead with the clearest cases.
+ */
+export function countDayDrift(derivedByLoc = {}, overridesByLoc = {}, { confidenceFloor = 0.7, minSample = 3 } = {}) {
+  const out = [];
+  for (const loc of Object.keys(derivedByLoc)) {
+    const d = derivedByLoc[loc];
+    if (!d || d.sampleSize < minSample || d.confidence < confidenceFloor) continue;
+    const configuredName = overridesByLoc[loc];
+    if (!configuredName) continue;
+    const configuredWeekday = WD_FULL.indexOf(String(configuredName).trim());
+    if (configuredWeekday < 0 || configuredWeekday === d.weekday) continue;
+    out.push({
+      loc, configuredWeekday, configuredWeekdayName: WD_FULL[configuredWeekday],
+      derivedWeekday: d.weekday, derivedWeekdayName: WD_FULL[d.weekday],
+      confidence: d.confidence, sampleSize: d.sampleSize, agreeCount: d.agreeCount, lastSeenDate: d.lastSeenDate,
+    });
+  }
+  return out.sort((a, b) => b.confidence - a.confidence);
+}
+
 /**
  * #357-A — a session has INDEPENDENT qualities, not one mutually-exclusive `kind`. The
  * original if/else chain returned on the first match, so a session that satisfied BOTH
@@ -402,9 +521,9 @@ export function sessionLabel(q) {
  * Per-store compliance against the owner's rules, as of `asOf` (YYYY-MM-DD).
  * Returns one row per store with the specific exceptions to act on.
  */
-export function cycleCompliance(rows = [], { asOf = null } = {}) {
-  const { sessions, classTotals } = detectSessions(rows);
-  return complianceFromSessions(sessions, classTotals, { asOf });
+export function cycleCompliance(rows = [], { asOf = null, newWrinsByLoc = {} } = {}) {
+  const { sessions, classTotals, newItems } = detectSessions(rows, { newWrinsByLoc });
+  return complianceFromSessions(sessions, classTotals, { asOf, newItemsByLoc: newItems });
 }
 
 // Convert inv_count_sessions log rows (append-only, one row per store/count-date/class —
@@ -480,7 +599,7 @@ export function buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }) 
   return verdict;
 }
 
-function complianceFromSessions(sessions, classTotals, { asOf = null } = {}) {
+function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsByLoc = {} } = {}) {
   const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
 
@@ -538,6 +657,11 @@ function complianceFromSessions(sessions, classTotals, { asOf = null } = {}) {
       perClass: perClassCounted(all, classTotals[loc] || {}),
       lastWeekly, lastAny, lastPartial, daysSinceWeekly,
       paperThisMonth, paperMissing, overdue,
+      // New-this-period WRINs (owner-directed 2026-10-11) — excluded from the coverage math
+      // above entirely (see COVER_FRAC/diffNewWrins' own comments), but surfaced here so the
+      // UI/report can say "new item, not required yet, but still needs counting" instead of
+      // making it silently invisible.
+      newItems: newItemsByLoc[loc] || [],
       exceptions, verdict: buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }),
       status: exceptions.some(e => e.severity === 'crit') ? 'crit'
             : exceptions.length ? 'warn' : 'ok',
@@ -607,9 +731,9 @@ export function cycleSummary(compliance = []) {
 //
 // Returns { [loc]: { closeWindowStart, closeWindowEnd } }, ready to spread into ledgerScopeDiff's
 // perLoc — only for stores that have a qualifying weekly count at all this period.
-export function weeklyRecountWindows(onHandRows, { asOf = new Date(), windowDays = 3 } = {}) {
+export function weeklyRecountWindows(onHandRows, { asOf = new Date(), windowDays = 3, newWrinsByLoc = {} } = {}) {
   const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
-  return windowsFromCompliance(cycleCompliance(onHandRows || [], { asOf: asOfStr }), windowDays);
+  return windowsFromCompliance(cycleCompliance(onHandRows || [], { asOf: asOfStr, newWrinsByLoc }), windowDays);
 }
 
 // weeklyRecountWindows(), sourced from the durable inv_count_sessions log instead of the
@@ -691,7 +815,14 @@ export function formatWeeklyComplianceReport(c, { storeName = '' } = {}) {
       const pc = c.perClass[cls];
       L.push(`| ${cls} | ${pc.counted}/${pc.active} | ${pc.date || '—'} |`);
     }
-    L.push('', '_A class counts as fully counted at 75% coverage or above._', '');
+    L.push('', '_A class counts as fully counted only when every active item is counted — new items (see below) excepted._', '');
+  }
+
+  if (c.newItems && c.newItems.length) {
+    L.push('## New items — not required yet, but still need counting', '');
+    L.push('| Item | Class |', '|---|---|');
+    for (const it of c.newItems) L.push(`| ${it.descr || it.wrin} | ${it.cls} |`);
+    L.push('', `_New to this store's active list this period, so ${c.newItems.length === 1 ? "it isn't" : "they aren't"} held against this period's compliance — but ${c.newItems.length === 1 ? 'it' : 'they'} should still get counted._`, '');
   }
 
   L.push(`_Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day._`);

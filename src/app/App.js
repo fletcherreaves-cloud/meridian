@@ -280,6 +280,7 @@ const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projectio
 // this fully removes the module from the entry chunk, unlike morning-brief.js below).
 const PromoRoiPanel = lazyPanel(() => import('../views/promo-roi.js').then(m => ({ default: m.PromoRoiPanel })));
 const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
+const WeeklyCountStatusPanel = lazyPanel(() => import('../views/weekly-count-status-report.js').then(m => ({ default: m.WeeklyCountStatusPanel })));
 const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.js').then(m => ({ default: m.LaborAllocationPanel })));
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
@@ -1010,6 +1011,7 @@ function App() {
   // above). visitReadyInit stays local state (still passed through as initialScope).
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [smgVoiceInit,setSmgVoiceInit]=useState(null);       // scope from a saved report (My Reports) -- SMG VOICE report-subscriptions slice
+  const [weeklyCountStatusInit,setWeeklyCountStatusInit]=useState(null); // scope from a saved report (My Reports) -- Weekly Count Status
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
   const [showWorkflow,     setShowWorkflow]    = useState(false);
@@ -3319,6 +3321,7 @@ function App() {
         if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),goRoute('planning'));
         if(modal==='promo-roi')      perm('analytics.store')&&goRoute('promo-roi');
         if(modal==='visit-readiness')perm('analytics.store')&&goRoute('visit-readiness');
+        if(modal==='weekly-count-status')perm('analytics.store')&&goRoute('weekly-count-status');
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
         // 'sched-retention' — dispatch #140 item 1: no longer its own route; opens the
         // Scheduling & Labor hub and lands on the Training Retention tab, same "select a tab,
@@ -3596,6 +3599,10 @@ function App() {
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,initialMode:eomInitialMode,
         initialStore:eomInitialStore,userRole,accessibleLocs,
+        // Count Cycle's own "🗓 Weekly Count Status report" link (count-cycle-panel.js) —
+        // a small, dedicated callback rather than reusing AppSidebar's own onOpenModal (which
+        // is an inline literal, not a named binding this scope can reach without a wider edit).
+        onOpenModal:(modal)=>{ if(modal==='weekly-count-status') perm('analytics.store')&&goRoute('weekly-count-status'); },
         onClose:()=>{setEomInitialMode(null);setEomInitialStore(null);goRoute(null);}}),
       // above-store — Dispatch #160 (panel-contract pass): RoutePanelShell now lives inside
       // AboveStoreOnePager itself, same "shell inside the component" pattern as sched-hub/
@@ -3689,6 +3696,7 @@ function App() {
         onClose:()=>goRoute(null)
       })),
       routePanel==='visit-readiness'&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{goRoute(null);setVisitReadyInit(null);}}),
+      routePanel==='weekly-count-status'&&h(WeeklyCountStatusPanel,{stores,ds,settings,initialScope:weeklyCountStatusInit,onClose:()=>{goRoute(null);setWeeklyCountStatusInit(null);}}),
       routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='customer-complaints'&&h(CustomerComplaintsPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='store-assessments'&&h(StoreAssessmentsPanel,{stores,onClose:()=>goRoute(null)}),
@@ -3712,6 +3720,7 @@ function App() {
           if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsView('calendar'); goRoute('events'); }
           else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
           else if(sub.report==='smg-voice'){ setSmgVoiceInit(sub.scope||'all'); goRoute('smg-voice'); }
+          else if(sub.report==='weekly-count-status'){ setWeeklyCountStatusInit(sub.scope||'all'); goRoute('weekly-count-status'); }
           else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
         }}),
       routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,initialScope:smgVoiceInit,onClose:()=>{goRoute(null);setSmgVoiceInit(null);}}),

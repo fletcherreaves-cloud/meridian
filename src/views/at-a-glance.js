@@ -21,7 +21,9 @@ import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
-import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadGradedVisits } from '../lib/supabase.js';
+import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadGradedVisits, loadQsrOnHand } from '../lib/supabase.js';
+import { cycleCompliance, diffNewWrins, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
+import { fobDailyTrace } from '../engine/variance-trace.js';
 import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
@@ -551,6 +553,116 @@ function EOMScoreboardTile({ onOpenModal }) {
     ...['ready', 'counting', 'reviewed', 'comms', 'notstarted'].map(k => h('div', { key: k, style: { flex: '1 1 70px', border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: '3px solid ' + PILL[k][1], borderRadius: 8, padding: '6px 8px' } },
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px' } }, PILL[k][0]),
       h('div', { style: { fontSize: 18, fontWeight: 800, color: k === 'ready' && tally[k] > 0 ? '#f5bc00' : 'var(--text,#e8eaed)' } }, String(tally[k]))))));
+}
+
+// Count & FOB Pulse tile (owner req, 2026-10-12: "a new tile on AAG for Daily Weekly (toggle on
+// tile) would be sweet") — a SEPARATE tile from EOMScoreboardTile above (which stays exactly as-
+// is, monthly-only, EOM-close-window-gated). This one is always-on (not month-end-gated) and has
+// its own Daily/Weekly toggle, mirroring the same toggle just added to the EOM Dashboard's
+// Scoreboard mode (GranularityScoreboard, eom-dashboard.js) — same two engines (cycleCompliance
+// for count status, fobDailyTrace for FOB%), same "no invented daily requirement" rule: Daily
+// only ever reports counted-today/not, never an overdue grade, since the owner's actual rules
+// (Food+Condiment weekly, Paper mid-month) have no daily cadence to grade against.
+//
+// Last `n` period keys up to and including `period` (oldest→newest) — same tiny copy
+// eom-dashboard.js/weekly-count-status-report.js/store-cockpit.js each already carry (not worth
+// a shared export for a 10-line date-math utility — see those files' own comments).
+function _lastPeriods(period, n = 2) {
+  const m = /^(\d{4})-(\d{2})$/.exec(period || '');
+  if (!m) return period ? [period] : [];
+  let y = +m[1], mo = +m[2] - 1;
+  const out = [];
+  for (let i = 0; i < n; i++) { const d = new Date(y, mo - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  return out.reverse();
+}
+function CountFobPulseTile({ ds, onOpenModal }) {
+  const [gran, setGran] = React.useState('weekly');
+  const [onHand, setOnHand] = React.useState(null);     // null = loading
+  const [prevOnHand, setPrevOnHand] = React.useState([]);
+  React.useEffect(() => {
+    let live = true;
+    const period = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const prevP = _lastPeriods(period, 2)[0];
+    Promise.all([loadQsrOnHand({ period }).catch(() => []), loadQsrOnHand({ period: prevP }).catch(() => [])])
+      .then(([oh, poh]) => { if (live) { setOnHand(oh || []); setPrevOnHand(poh || []); } });
+    return () => { live = false; };
+  }, []);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const newWrinsByLoc = React.useMemo(() => diffNewWrins(onHand || [], prevOnHand), [onHand, prevOnHand]);
+  const locs = React.useMemo(() => [...new Set((onHand || []).map(r => String(r.loc)))], [onHand]);
+
+  // Weekly: reuse cycleCompliance directly — the SAME basis the Weekly Count Status report and
+  // the Scoreboard's own Weekly view use, so this tile can never disagree with either.
+  const weeklyTally = React.useMemo(() => {
+    const t = { complete: 0, overdue: 0, never: 0 };
+    if (!onHand) return t;
+    try {
+      for (const c of cycleCompliance(onHand, { asOf: todayStr, newWrinsByLoc })) {
+        t[c.daysSinceWeekly == null ? 'never' : c.daysSinceWeekly > WEEKLY_DUE_DAYS ? 'overdue' : 'complete']++;
+      }
+    } catch { /* leave zeroed */ }
+    return t;
+  }, [onHand, newWrinsByLoc, todayStr]);
+
+  // Daily: no grading, just presence — did a (non-trivial) count touch happen today at all.
+  const dailyTally = React.useMemo(() => {
+    if (!onHand) return { counted: 0, notCounted: locs.length };
+    const touchedToday = new Set((onHand || []).filter(r => {
+      const d = r.last_counted != null ? r.last_counted : r.lastCounted;
+      const ds2 = d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10);
+      return ds2 === todayStr;
+    }).map(r => String(r.loc)));
+    return { counted: touchedToday.size, notCounted: Math.max(0, locs.length - touchedToday.size) };
+  }, [onHand, locs, todayStr]);
+
+  // District FOB% for the window, dollar-weighted (never average a ratio of ratios — same rule
+  // DEFAULT_TARGETS/every other aggregate in this app already follows).
+  const fobPct = React.useMemo(() => {
+    if (!locs.length || !ds?.qsrFobRows?.length) return null;
+    const sinceD = new Date(); sinceD.setDate(sinceD.getDate() - (gran === 'daily' ? 1 : 7));
+    const since = sinceD.toISOString().slice(0, 10);
+    let fob = 0, sales = 0;
+    for (const loc of locs) {
+      for (const t of fobDailyTrace(ds.qsrFobRows, { loc, period: null, since })) {
+        fob += t.delta.fob; sales += t.delta.sales;
+      }
+    }
+    return sales > 0 ? fob / sales : null;
+  }, [locs, ds?.qsrFobRows, gran]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const toggle = h('div', { style: { display: 'flex', gap: 4 } },
+    ...['daily', 'weekly'].map(k => h('button', {
+      key: k, onClick: (e) => { e.stopPropagation(); setGran(k); },
+      style: {
+        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em',
+        padding: '2px 8px', borderRadius: 8, border: 'none', cursor: 'pointer',
+        background: gran === k ? 'var(--accent,#f5bc00)' : 'var(--surf3,#1c2029)',
+        color: gran === k ? '#1a1a1a' : 'var(--text3,#6b7280)',
+      },
+    }, k === 'daily' ? 'Day' : 'Week')));
+  const head = h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)', cursor: 'pointer' }, title: 'Open the EOM Dashboard scoreboard' },
+    h('span', { style: { fontSize: 15 } }, '📈'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Count & FOB Pulse'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, gran === 'daily' ? 'Today' : 'This week')),
+    toggle);
+  if (onHand === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  const fobLbl = fobPct == null ? '—' : (fobPct * 100).toFixed(1) + '%';
+  return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 10, flexWrap: 'wrap' } },
+    h('div', { style: { flex: '1 1 90px' } },
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px' } }, 'FOB%'),
+      h('div', { style: { fontSize: 20, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, fobLbl)),
+    gran === 'daily'
+      ? h('div', { style: { flex: '1 1 140px' } },
+          h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px' } }, 'Counted today'),
+          h('div', { style: { fontSize: 20, fontWeight: 800, color: dailyTally.counted > 0 ? '#4ade80' : 'var(--text,#e8eaed)' } }, `${dailyTally.counted}/${locs.length}`))
+      : h('div', { style: { flex: '1 1 200px', display: 'flex', gap: 6 } },
+          ...[['complete', 'Complete', '#4ade80'], ['overdue', 'Overdue', '#f59e0b'], ['never', 'No full weekly', 'var(--text3,#6b7280)']].map(([k, label, col]) =>
+            h('div', { key: k, style: { flex: '1 1 60px', border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: `3px solid ${col}`, borderRadius: 8, padding: '5px 7px' } },
+              h('div', { style: { fontSize: 8.5, color: 'var(--text3,#6b7280)' } }, label),
+              h('div', { style: { fontSize: 15, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, String(weeklyTally[k])))))));
 }
 
 // Items Recounted tile (Notes 45 #81) — district-wide recount rollup on the main dashboard: how
@@ -2398,6 +2510,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
         h(OpportunityTile,{key:'opportunity',ds,stores,onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
+        h(CountFobPulseTile,{key:'count-fob-pulse',ds,onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
         secs.find(s=>s.id==='tolerance'&&s.on)&&h(ToleranceRollupTile,{key:'tolerance',ds,stores,settings}),
 
