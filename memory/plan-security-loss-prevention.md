@@ -869,9 +869,14 @@ piece is small and sharp:
      employee had two distinct edits to the same punch type in the same minute (a multi-segment
      role/rate split). Caught live when the owner's own migration attempt hit a real
      `23505 duplicate key` error.
-  Fixed same day with a `seq` disambiguator column — see the finding file's own two bug sections
-  for the exact numbers and fixes. **The Supabase migration still needs to be (re-)run** and
-  neither fix has been re-verified on a live run yet.
+  3. Fixing #2 with a `seq` disambiguator column STILL didn't resolve #1 on the next live
+     re-verification run — same 7 stores, same `adjusted_punch_at` error. Root cause: dropping a
+     `PRIMARY KEY` constraint does NOT revert the column-level `NOT NULL` Postgres sets as a side
+     effect of a column being part of that key — that flag is independent and needs its own
+     explicit `DROP NOT NULL`, which the first fix never issued.
+  All three fixed same day — see the finding file's own three bug sections for the exact numbers.
+  **The Supabase migration still needs to be (re-)run a third time** and not yet re-verified on a
+  live run.
 - **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
   `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
   existing precedent — the data now lands in Supabase, but no `security_rules` row or UI reads it
