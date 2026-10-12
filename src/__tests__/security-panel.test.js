@@ -43,7 +43,7 @@ vi.mock('../lib/supabase.js', () => ({
 import {
   securityPanelAccess, verdictState, groupFindingsBySubject, buildHistoryByRule, scopeMatches, SecurityPanel,
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
-  scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay,
+  scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay, minSignalsLabel,
 } from '../views/security-panel.js';
 // dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
 // anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
@@ -1728,5 +1728,82 @@ describe('SecurityPanel — labor domain wiring (dispatch 2026-10-12): tab rende
     expect(container.textContent).toMatch(/Post-termination punch-edit activity/);
     const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
     expect(investigateBtn).toBeFalsy();
+  });
+});
+
+describe('minSignalsLabel()', () => {
+  it('0 reads as "All (incl. clear)", not the nonsensical "0+"', () => {
+    expect(minSignalsLabel(0)).toBe('All (incl. clear)');
+  });
+  it('1/2/3 read as the plain N+ the pill row always showed', () => {
+    expect(minSignalsLabel(1)).toBe('1+');
+    expect(minSignalsLabel(2)).toBe('2+');
+    expect(minSignalsLabel(3)).toBe('3+');
+  });
+});
+
+// dispatch 2026-10-12 -- the real scenario that surfaced this gap: LABOR-001/LABOR-002 went
+// live with 0/129 subjects flagged on EITHER rule (a clean, real, decided result -- not a
+// loading failure). Every pre-existing Min Signals floor (1+/2+/3+) requires at least one
+// FLAGGED verdict, so a domain that is 100% clear rendered an empty table indistinguishable
+// from "nothing loaded" -- exactly what prompted "none of them are pulling any data." Renders
+// through the REAL panel (standing rule from #366): a test that only imports
+// groupFindingsBySubject's own flaggedCount math can't tell "the UI has no way to show a clear
+// subject" from "the UI correctly shows nothing."
+describe('SecurityPanel — "All" min-signals pill (dispatch 2026-10-12): the only way to see a 100%-clear domain is actually populated', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch-edit activity', description: 'desc', baselineType: null, logicType: 'threshold', active: true, investigationAction: 'act' },
+    { ruleId: 'LABOR-002', domain: 'labor', method: 'Employee self-approved punch edit', description: 'desc', baselineType: null, logicType: 'threshold', active: true, investigationAction: 'act' },
+  ];
+  // Every subject clear on every rule -- the real LABOR-001/002 launch-day shape (0/129 flagged
+  // on either rule), not a contrived edge case.
+  const ALL_CLEAR_FINDINGS = [
+    { empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'LABOR-001', pass: false, value: 0, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T19:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'LABOR-002', pass: false, value: 0, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T19:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(ALL_CLEAR_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    rpcMock.mockReset();
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('under the default 1+ filter, a 100%-clear domain shows the same empty state as no data at all', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/No findings match the current filters/);
+    expect(container.textContent).not.toMatch(/Store 0000001/);
+  });
+
+  it('clicking "All" reveals the real, clear subject -- proving the data loaded all along', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // Two "All" pills render in this row -- the pre-existing Rule-filter one (first) and the
+    // new Min-Signals one (last, after the rule chips and the 1+/2+/3+ pills it sits beside) --
+    // take the LAST match, not the first, so this doesn't silently click the wrong control.
+    const allPills = [...container.querySelectorAll('button')].filter(b => b.textContent === 'All');
+    expect(allPills.length).toBe(2);
+    const minSignalsAllPill = allPills[allPills.length - 1];
+    await act(async () => { minSignalsAllPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).not.toMatch(/No findings match the current filters/);
+    expect([...container.querySelectorAll('span')].some(s => s.textContent === 'Store 0000001')).toBe(true);
+    // Both rules render as Clear (green), not Flagged -- the honest verdict, not a fabricated one.
+    expect(container.textContent).toMatch(/Clear/);
   });
 });

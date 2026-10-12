@@ -275,6 +275,11 @@ export function windowEndInRange(windowEnd, range) {
 // -- rather than re-deriving that tie-break here, so the table's default view renders identically
 // to the pre-table card list's order. Any other key/direction combination re-sorts on a single
 // comparable value per group.
+// dispatch 2026-10-12 -- shared label for the minSignals filter, now that 0 ("All") is a real
+// value alongside 1+/2+/3+. 0 reads as "All (incl. clear)" rather than the nonsensical "0+".
+export function minSignalsLabel(n) {
+  return n === 0 ? 'All (incl. clear)' : `${n}+`;
+}
 export function latestWindowEnd(group) {
   const ends = (group.verdicts || []).map(v => v.windowEnd).filter(Boolean);
   return ends.length ? ends.reduce((a, b) => (b > a ? b : a)) : '';
@@ -913,7 +918,7 @@ function findingsExportSpec({ groups, domain, rulesById, revealed, itemInfoFor, 
     rows,
     columns: ['Signals', 'Subject', 'Store', 'Rules', 'Window End'].map(k => ({ key: k, label: k })),
     title: `Security Findings — ${RULE_DOMAIN_LABEL[domain] || domain} — ${scopeStr}` +
-      (ruleFilter ? ` — ${ruleFilter}` : '') + (minSignals > 1 ? ` — ${minSignals}+ signals` : '') + ` — ${rangeStr}`,
+      (ruleFilter ? ` — ${ruleFilter}` : '') + (minSignals !== 1 ? ` — ${minSignalsLabel(minSignals)} signals` : '') + ` — ${rangeStr}`,
     filename: `security-findings-${domain}-${today}`,
   };
 }
@@ -968,7 +973,7 @@ function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoF
     </div>`;
 
   const filterLine = `Domain: ${RULE_DOMAIN_LABEL[domain] || domain} &nbsp;·&nbsp; Scope: ${esc(scopeStr)} &nbsp;·&nbsp; ` +
-    `Rule filter: ${esc(ruleFilter || 'All')} &nbsp;·&nbsp; Min signals: ${minSignals}+ &nbsp;·&nbsp; Window ending: ${esc(rangeStr)}`;
+    `Rule filter: ${esc(ruleFilter || 'All')} &nbsp;·&nbsp; Min signals: ${esc(minSignalsLabel(minSignals))} &nbsp;·&nbsp; Window ending: ${esc(rangeStr)}`;
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Security Findings — Report</title>
@@ -1320,7 +1325,16 @@ export function SecurityPanel({ userRole, onClose }) {
           return pill(label, ruleFilter === r.ruleId, () => setRuleFilter(r.ruleId));
         }),
         span({ style: { color: 'var(--text3)', marginLeft: 12 } }, 'Min signals:'),
-        [1, 2, 3].map(n => pill(String(n) + '+', minSignals === n, () => setMinSignals(n))),
+        // dispatch 2026-10-12 -- 'All' (minSignals=0) alongside 1+/2+/3+. flaggedCount is always
+        // >= 0, so `g.flaggedCount >= 0` keeps every subject that has at least one verdict in
+        // scope -- the ONLY way to see a "Clear" subject at all, previously impossible: the
+        // table's own grouping already drops anything with zero verdicts, and every signals
+        // floor from 1+ up additionally required at least one FLAGGED verdict, so a domain that
+        // is 100% clear (every rule evaluated, nothing ever flagged -- LABOR-001/002's own real
+        // result the first day they went live, 0/129 flagged each) rendered an empty table
+        // indistinguishable from "nothing loaded," with no way to confirm the data was actually
+        // there short of trusting the batch job's own log output.
+        [0, 1, 2, 3].map(n => pill(n === 0 ? 'All' : String(n) + '+', minSignals === n, () => setMinSignals(n))),
       ),
       // dispatch #100 -- date-range control, filtering on windowEnd (the rule's own evaluation-
       // window end date -- see windowEndInRange's own comment for why that basis, not computedAt).
