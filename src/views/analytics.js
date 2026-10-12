@@ -2801,7 +2801,7 @@ function fobAudit(metrics){
 const FOBEOMPanelLazy = React.lazy(() => import('./fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
 const _fobEomFallback = () => div({style:{padding:24,fontSize:'11px',color:'var(--text3)'}},'Loading End of Month…');
 
-function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
+function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode, onNav}){
   // mode (dispatch #188) -- 'analysis' (the original Food Cost content, default) or 'eom'
   // (the harvested End-of-Month troubleshooter). initialMode lets App.js land here directly on
   // 'eom' for the old ?panel=fob-eom redirect and the "End of Month" nav click, both of which
@@ -3053,7 +3053,19 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
         borderTop:c.sep?'1px solid var(--bdr)':'none',cursor:'pointer'},
         onClick:()=>setExpandedRow(isExpanded?null:c.key)},
         td({style:{padding:'5px 8px',textAlign:'left',fontWeight:c.isTotal?700:500,color:c.isTotal?'#a5b4fc':'var(--text)',fontSize:'9px'},title:fieldTip||undefined},
-          span({style:{marginRight:5}},c.icon),c.label),
+          span({style:{marginRight:5}},c.icon),c.label,
+          // Cash-controls cross-reference (owner-scoped 2026-10-12: "cross-reference only, keep
+          // named data out of food-cost reports... a clickable link to go to actionable data
+          // where names could then be seen if desired") -- Emp/Mgr Meals is the one FOB
+          // component that's also a Controls/cash-handling metric (comp meals = a register
+          // override, same family Register Audit already tracks per-named-employee). Single-
+          // store view only (a market/district roll-up has no one store's Register Audit to
+          // land on) -- the 'all' case gets the same link per-store in the breakdown below.
+          c.key==='empMeal'&&onNav&&selLoc!=='all'&&selLoc!=='ok'&&selLoc!=='fl'&&span({
+            onClick:e=>{e.stopPropagation();onNav(selLoc,'register');},
+            title:'Open this store\'s Register Audit tab (named cashier/manager cash-variance detail)',
+            style:{marginLeft:8,fontSize:'8px',fontWeight:700,color:'var(--gold)',cursor:'pointer',whiteSpace:'nowrap'},
+          },'→ Register Audit')),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:'var(--text2)'}},pFmtA(m.target)),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:c.isTotal?700:500,color:c.isTotal?'#a5b4fc':'var(--text)'}},pFmtA(m.actual)),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:'var(--text3)'}},dFmt(m.actualDollar)),
@@ -3073,7 +3085,15 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
               const dc2=fCol(l.diff,c.lower);
               return div({key:l.loc,style:{fontSize:'8.5px',background:'var(--surf3)',border:'.5px solid '+dc2+'44',
                 borderRadius:4,padding:'4px 8px',minWidth:140}},
-                div({style:{fontWeight:600,color:'var(--gold)',marginBottom:1}},sName(l.loc)),
+                div({style:{display:'flex',alignItems:'center',gap:6,marginBottom:1}},
+                  div({style:{fontWeight:600,color:'var(--gold)'}},sName(l.loc)),
+                  // Per-store cross-reference (same ask as the single-store inline link above) --
+                  // only on the Emp/Mgr Meals component's own breakdown chips.
+                  c.key==='empMeal'&&onNav&&span({
+                    onClick:e=>{e.stopPropagation();onNav(l.loc,'register');},
+                    title:'Open '+sName(l.loc)+'\'s Register Audit tab',
+                    style:{fontSize:'7px',fontWeight:700,color:'var(--gold)',cursor:'pointer',whiteSpace:'nowrap'},
+                  },'→ Register Audit')),
                 div({style:{fontFamily:'var(--mono)',color:dc2,fontWeight:700}},pFmtA(l.pct),' ',
                   span({style:{fontSize:'7px',color:'var(--text3)'}},'(tgt '+pFmtA(l.tgt)+')'))
               );
