@@ -1,14 +1,17 @@
 // @ts-nocheck
-export default {version:'5.533', date:'2026-10-12', changes:[
-  '⚠ SUPERSEDES v5.532\'s "Record Hour" clock-hour approximation (merged minutes before this ' +
-  'landed, a parallel session) -- that PR\'s own commit message tracked a real quarter-hour pull ' +
-  '"as a separate follow-on," which is exactly this. Replaces it in place (same "🕐 Record Hour" ' +
-  'tab, same slot in RecordDayTab\'s TABS): removes computeHourRecords(rows)/RecordHourTab/' +
-  'RecordHourCell/fHourRange/loadHourlySalesRecords() and the qsr_hourly_sales_records view ' +
-  '(5.532\'s clock-hour-bucket approximation + its 7 tests), since a real 15-minute rolling ' +
-  'window makes the approximation it stood in for obsolete -- not kept alongside it as a second ' +
-  'tab. Owner call, asked explicitly given it meant removing another session\'s just-shipped, ' +
-  'tested code.',
+export default {version:'5.534', date:'2026-10-12', changes:[
+  '⚠ SUPERSEDES v5.532/v5.533\'s "Record Hour" clock-hour approximation and its same-day index ' +
+  'follow-on (both merged while this branch was in flight, a parallel session) -- v5.532\'s own ' +
+  'commit message tracked a real quarter-hour pull "as a separate follow-on," which is exactly ' +
+  'this. Replaces it in place (same "🕐 Record Hour" tab, same slot in RecordDayTab\'s TABS): ' +
+  'removes computeHourRecords(rows)/RecordHourTab/RecordHourCell/fHourRange/' +
+  'loadHourlySalesRecords(), the qsr_hourly_sales_records view, and its companion index + both ' +
+  'approximation PRs\' 7 tests, since a real 15-minute rolling window makes the clock-hour ' +
+  'approximation it stood in for obsolete -- not kept alongside it as a second tab. Owner call, ' +
+  'asked explicitly given it meant removing another session\'s just-shipped, owner-verified-live ' +
+  'code. This repo\'s own version counter collided twice in under 15 minutes from two sessions ' +
+  'building the same feature in parallel -- renumbered 5.532 -> 5.533 -> 5.534 as each collision ' +
+  'surfaced on push, not a sign of anything wrong with either session\'s work.',
   'Record Hour in Sales: the real sliding-window fix. A prior pass found NO 15-minute-' +
   'granularity sales data anywhere in Meridian (confirmed via a whole-repo grep) -- ' +
   'qsr_daily_activity is genuinely hourly despite its endQtrHourTime field name. This closes ' +
