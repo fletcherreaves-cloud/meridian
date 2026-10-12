@@ -890,6 +890,15 @@ function parsePunchEditCSV(text) {
 
   const rows = [];
   let curName = null, curGeid = null, curPayrollId = null;
+  // seq (2026-10-12, second same-day correction): LifeLenz's own Modified Date/Time is only
+  // minute-granular, not actually unique per (loc,geid,punch_type) -- a live migration attempt
+  // hit a real duplicate (same employee, same 'Role Rate Operation', same Modified Date/Time
+  // minute), almost certainly a multi-segment role/rate split saved in one action. 0-based
+  // counter per (geid,punch_type,modifiedAt) group, in CSV row order -- see
+  // supabase/schema-lifelenz-punch-edits.sql's own comment for the full story and the
+  // idempotency caveat (depends on LifeLenz returning a stable row order for a given group
+  // across repeat calls of the same window, unverified beyond one capture).
+  const seqCounts = new Map();
   for (let i = 2; i < lines.length; i++) {
     const r = parseCsvLine(lines[i]);
     const name = C.name >= 0 ? r[C.name] : '';
@@ -906,6 +915,9 @@ function parsePunchEditCSV(text) {
     if (!punchType || !modifiedAt) continue; // required fields for the composite key
 
     const adjustedAt = parsePunchDateTime(C.adjPunch >= 0 ? r[C.adjPunch] : '');
+    const seqKey = curGeid.trim() + '|' + punchType + '|' + modifiedAt;
+    const seq = seqCounts.get(seqKey) || 0;
+    seqCounts.set(seqKey, seq + 1);
     rows.push({
       loc, geid: curGeid.trim(),
       employee_name:  curName ? curName.trim() : null,
@@ -919,6 +931,7 @@ function parsePunchEditCSV(text) {
       manager_modified: (C.manager >= 0 ? r[C.manager] : '').trim() || null,
       employee_action_at: parsePunchDateTime(C.empActionAt >= 0 ? r[C.empActionAt] : ''),
       employee_action_status: (C.empStatus >= 0 ? r[C.empStatus] : '').trim() || null,
+      seq,
       updated_at: new Date().toISOString(),
     });
   }
@@ -927,13 +940,15 @@ function parsePunchEditCSV(text) {
 
 async function upsertPunchEditRows(rows) {
   if (!rows.length) return 0;
-  // onConflict corrected 2026-10-12 (same day as the first live run) -- adjusted_punch_at used
-  // to be part of this key, matching the table's original primary key, but a primary-key column
-  // is implicitly NOT NULL and the real API returned real rows where it's legitimately blank.
-  // See supabase/schema-lifelenz-punch-edits.sql's own migration note for the full story.
+  // onConflict corrected 2026-10-12, TWICE the same day -- first adjusted_punch_at was dropped
+  // (it's legitimately blank on real rows, but was implicitly NOT NULL as part of the original
+  // primary key); then (loc,geid,punch_type,modified_at) alone turned out not to be unique on
+  // real data either (minute-granular timestamps, a real multi-segment duplicate found live).
+  // seq disambiguates. See supabase/schema-lifelenz-punch-edits.sql's own migration note for the
+  // full story.
   const { error } = await supabase
     .from('lifelenz_punch_edits')
-    .upsert(rows, { onConflict: 'loc,geid,punch_type,modified_at' });
+    .upsert(rows, { onConflict: 'loc,geid,punch_type,modified_at,seq' });
   if (error) { console.warn('[punch-audit] upsert error (non-fatal):', error.message); return 0; }
   return rows.length;
 }

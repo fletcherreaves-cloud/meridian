@@ -142,9 +142,51 @@ code:
     rather than assume success from a clean exit code" mattered: the job's overall `conclusion`
     was `success` the whole time, with 42% of real edit-events silently dropped.
 
-**Not yet re-verified:** whether the fix actually resolves it on a second live run (the fix
-landed after this run, in the same commit/PR) — re-check `[punch-audit] ✓ N/M` after the next
-run and confirm the 7 previously-failing stores now save real rows.
+## ❌→✅ SECOND bug, same day: the 4-column key wasn't unique either — fixed with `seq`
+
+The owner tried to apply the fix migration directly (`drop constraint ... / add primary key
+(loc, geid, punch_type, modified_at)`) and it failed with a real, measured error, not a
+hypothetical one:
+
+```
+ERROR: 23505: could not create unique index "lifelenz_punch_edits_pkey"
+DETAIL: Key (loc, geid, punch_type, modified_at)=(0013113, 200668686, Role Rate Operation,
+2026-10-09 15:29:00) is duplicated.
+```
+
+Root cause: LifeLenz's `Modified Date/Time` is **minute-granular**, not actually unique per
+`(loc, geid, punch_type)` — at store 13113, that employee had TWO real edit events to the same
+`Role Rate Operation` punch type logged in the same minute (almost certainly a multi-segment
+role/rate split saved in one action, each segment its own row with a different
+`original_punch_at`/`adjusted_punch_at` but the identical `modified_at`). No other CSV field
+reliably disambiguates — `original_punch_at` and `adjusted_punch_at` can each independently be
+blank, so neither is safe as a PK column either.
+
+**Also important:** because `drop constraint` and `add primary key` ran as separate statements
+and the second one failed, **the table was left with NO primary key at all** between the two
+migration attempts. Not a data-loss event (the pull's upserts just keep erroring, caught
+non-fatal) but worth knowing if debugging this window later.
+
+**Fix:** added a `seq` column (0-based counter per `(loc,geid,punch_type,modified_at)` group,
+assigned by `parsePunchEditCSV()` in CSV row order — always present, always an integer, so it's
+safe as a PK column regardless of which other fields are blank) and a NEW primary key
+`(loc, geid, punch_type, modified_at, seq)`. The schema migration now also backfills `seq`
+correctly for the 184 rows already saved under the earlier key (a blanket default of 0 would
+leave the one known duplicate pair BOTH at `seq=0`, failing the `ADD PRIMARY KEY` a third time) —
+a window-function `UPDATE` ranks existing rows within each duplicate group before the key is
+re-added.
+
+**Honest open question, not yet verified:** `seq`'s idempotency (a re-pull of the same window
+landing on the SAME seq per real event, so the upsert overwrites rather than duplicates) depends
+on LifeLenz returning rows in a stable order for a given `(geid,punch_type,modified_at)` group
+across repeat calls. This is an assumption, not a measurement — unverified beyond this one
+capture. If it ever doesn't hold, the worst case is the same real events landing under swapped
+`seq` slots on a re-pull (a cosmetic reshuffle), not data loss or a crash.
+
+**Not yet re-verified:** whether this second fix actually resolves it — re-run the migration in
+Supabase, then re-trigger the sync and check `[punch-audit] ✓ N/M` confirms all 26 active stores
+(the 7 originally-failing ones, plus confirmation the Role Rate Operation duplicate pair at store
+13113 now saves as 2 distinct rows, not 1 overwritten or 1 dropped).
 
 **Still not built:** a `security_rules` registry row or `assembleLaborDrilldown()` in
 `security-panel.js` — the data now lands in Supabase, but nothing in the Security panel reads it
