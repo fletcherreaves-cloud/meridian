@@ -183,7 +183,30 @@ across repeat calls. This is an assumption, not a measurement — unverified bey
 capture. If it ever doesn't hold, the worst case is the same real events landing under swapped
 `seq` slots on a re-pull (a cosmetic reshuffle), not data loss or a crash.
 
-**Not yet re-verified:** whether this second fix actually resolves it — re-run the migration in
+## ❌→✅ THIRD bug, same day: dropping the PK constraint didn't drop the NOT NULL it caused
+
+The owner applied the `seq` migration and re-triggered the sync — and the live run hit the
+**exact same error as the first bug**, on the **exact same 7 stores**, 184/319 saved:
+
+```
+[punch-audit] upsert error (non-fatal): null value in column "adjusted_punch_at" of relation
+"lifelenz_punch_edits" violates not-null constraint
+```
+
+Root cause, measured against real Postgres behavior rather than assumed: when a column is made
+part of a `PRIMARY KEY`, Postgres sets that column's `NOT NULL` attribute as a side effect — a
+real `ALTER TABLE ... ALTER COLUMN ... SET NOT NULL` under the hood, not a property of the
+constraint itself. The first bug's fix (`DROP CONSTRAINT lifelenz_punch_edits_pkey`) removed the
+*constraint* that originally caused `adjusted_punch_at` to become `NOT NULL`, but **dropping a
+constraint does not revert a column-level `NOT NULL` that was already set** — that flag is
+independent of whatever caused it and stays until explicitly dropped. The `seq` fix built on top
+of that wrong assumption, so the underlying `NOT NULL` was never actually cleared across either
+of the first two migrations.
+
+**Fix:** added `alter table ... alter column adjusted_punch_at drop not null;` as its own
+explicit step in the migration.
+
+**Not yet re-verified:** whether this THIRD fix actually resolves it — re-run the migration in
 Supabase, then re-trigger the sync and check `[punch-audit] ✓ N/M` confirms all 26 active stores
 (the 7 originally-failing ones, plus confirmation the Role Rate Operation duplicate pair at store
 13113 now saves as 2 distinct rows, not 1 overwritten or 1 dropped).

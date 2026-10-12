@@ -50,6 +50,16 @@ create table if not exists public.lifelenz_punch_edits (
 -- table (already has it from the create table block above).
 alter table public.lifelenz_punch_edits add column if not exists seq integer not null default 0;
 
+-- THIRD same-day correction: a live re-verification run after the seq fix STILL hit the exact
+-- same "null value in column adjusted_punch_at ... violates not-null constraint" error on the
+-- same 7 stores -- the earlier `DROP CONSTRAINT lifelenz_punch_edits_pkey` (first migration)
+-- removed the PRIMARY KEY constraint but, measured live, did NOT revert the column-level NOT
+-- NULL that Postgres applies as a side effect of making a column part of a primary key. That
+-- NOT NULL is a separate, independent column attribute -- dropping the constraint that first
+-- caused it does not undo it; it needs its own explicit DROP NOT NULL. Safe to re-run
+-- (ALTER COLUMN ... DROP NOT NULL is idempotent -- a no-op if the column is already nullable).
+alter table public.lifelenz_punch_edits alter column adjusted_punch_at drop not null;
+
 -- Backfill seq for rows already saved under an EARLIER key (the original run saved 184 real
 -- rows under the first, 5-column key, before either bug was found) -- a blanket default of 0
 -- leaves every row in a duplicate group at seq=0, which would make the ADD PRIMARY KEY below
