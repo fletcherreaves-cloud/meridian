@@ -45,8 +45,8 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions, cycleCompliance, isActive as isActiveOnHand, COVER_FRAC, diffNewWrins } from '../engine/count-cycle.js';
-import { dowOf } from '../utils/date.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand, COVER_FRAC, diffNewWrins, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
+import { dowOf, weekStartOf, dKey } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
@@ -821,6 +821,95 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
                       ` between ${w.from} and ${w.to}`)))
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
+      })))));
+}
+
+// Weekly/Daily Scoreboard view (owner req, 2026-10-12) — a SEPARATE, simpler sibling of the
+// Scoreboard tab's existing monthly review/comms-sent checklist (left untouched above this
+// function — see sbGran's own comment in EOMDashboardPanel). Per store: a compact FOB%
+// sparkline (fobDailyTrace, engine/variance-trace.js — the SAME engine CadenceMonitor's own
+// drill-down trace uses) at the chosen grain, and a plain counted-satisfactorily-or-not read —
+// weekly reuses weeklyStatusByLoc (cycleCompliance, the Weekly Count Status report's own basis,
+// so the two can never disagree); daily just reads whether today has a session at all, and
+// what kind, off cadenceByLoc's own `sessions` array (cadenceFromOnHand) — no invented "daily
+// requirement" exists in the owner's actual rules, so this never grades daily activity as
+// overdue, only present/absent.
+const SB_GRAN_DAYS = { daily: 14, weekly: 70 };   // 14 days / 10 weeks of trailing history to chart
+function sparkPoints(trace, granularity) {
+  if (!trace.length) return [];
+  if (granularity === 'daily') {
+    return trace.map(t => ({ date: t.date, value: t.delta.sales > 0 ? t.delta.fob / t.delta.sales : null }))
+      .filter(p => p.value != null);
+  }
+  // weekly — bucket by the app's configured week start (R3 ratchet: never re-derive week-start
+  // arithmetic inline — weekStartOf(), src/utils/date.js, same helper every other panel's week
+  // boundary goes through), sum $ across the week, THEN ratio (never average a ratio of ratios
+  // — same rule DEFAULT_TARGETS/dollar-weighting already follows elsewhere).
+  const byWeek = {};
+  for (const t of trace) {
+    const wk = dKey(weekStartOf(t.date));
+    const b = (byWeek[wk] || (byWeek[wk] = { fob: 0, sales: 0 }));
+    b.fob += t.delta.fob; b.sales += t.delta.sales;
+  }
+  return Object.keys(byWeek).sort().map(wk => ({ date: wk, value: byWeek[wk].sales > 0 ? byWeek[wk].fob / byWeek[wk].sales : null }))
+    .filter(p => p.value != null);
+}
+function GranScoreSparkline({ points }) {
+  if (!points.length) return span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'No FOB data yet');
+  const pts = points.slice(-12);
+  const W = 120, H = 28, pad = 3;
+  const vals = pts.map(p => p.value);
+  const minY = Math.min(...vals), maxY = Math.max(...vals);
+  const range = maxY - minY || 0.01;
+  const xStep = pts.length > 1 ? (W - pad * 2) / (pts.length - 1) : 0;
+  const xs = pts.map((_, i) => pad + i * xStep);
+  const yCoord = v => H - pad - ((v - minY) / range) * (H - pad * 2);
+  const poly = pts.map((p, i) => `${xs[i].toFixed(1)},${yCoord(p.value).toFixed(1)}`).join(' ');
+  // Lower FOB% is better — same "better:'lower'" sense trends.js's own sparkline uses.
+  const lastDown = pts.length > 1 && vals[vals.length - 1] < vals[vals.length - 2];
+  const col = pts.length < 2 ? 'var(--amber)' : lastDown ? '#4ade80' : '#f59e0b';
+  return h('svg', { width: W, height: H, style: { display: 'block' }, title: `FOB% trend, last ${pts.length} points · ${(vals[vals.length - 1] * 100).toFixed(1)}% most recent` },
+    h('polyline', { points: poly, fill: 'none', stroke: col, strokeWidth: 1.5, strokeLinejoin: 'round' }),
+    h('circle', { cx: xs[xs.length - 1], cy: yCoord(vals[vals.length - 1]), r: 2.5, fill: col }));
+}
+const GRAN_COUNT_LABEL = {
+  weekly: { complete: '✅ Complete', overdue: '⚠ Overdue', never: '— No full weekly yet' },
+  daily: { weekly: '✅ Weekly count today', spot: '〜 Spot count today', none: '— No count today' },
+};
+const GRAN_COUNT_COLOR = { complete: '#4ade80', overdue: '#f59e0b', never: 'var(--text3)', weekly: '#4ade80', spot: '#f5bc00', none: 'var(--text3)' };
+function GranularityScoreboard({ rows, fobRows, cadenceByLoc, weeklyStatusByLoc, granularity, period }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const since = (() => { const d = new Date(); d.setDate(d.getDate() - SB_GRAN_DAYS[granularity]); return d.toISOString().slice(0, 10); })();
+  return div(null,
+    div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
+      granularity === 'daily'
+        ? `FOB% day-over-day (last ${SB_GRAN_DAYS.daily} days) and whether each store counted today.`
+        : `FOB% week-over-week (last ${Math.round(SB_GRAN_DAYS.weekly / 7)} weeks) and this week's count status.`),
+    div({ style: { overflowX: 'auto' } },
+    h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
+      h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
+        ['Store', 'FOB% trend', `${granularity === 'daily' ? 'Today' : 'This week'}`].map(t =>
+          h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t)))),
+      h('tbody', null, rows.map(r => {
+        const trace = fobDailyTrace(fobRows, { loc: r.loc, period: null, since });
+        const pts = sparkPoints(trace, granularity);
+        let countKey, countVal;
+        if (granularity === 'weekly') {
+          countKey = 'weekly';
+          countVal = (weeklyStatusByLoc[r.loc] || {}).status || 'never';
+        } else {
+          countKey = 'daily';
+          const c = cadenceByLoc[r.loc] || {};
+          const todaySession = (c.sessions || []).find(s => s.day === todayStr);
+          countVal = todaySession ? todaySession.kind : 'none';
+        }
+        const label = GRAN_COUNT_LABEL[countKey][countVal];
+        const col = GRAN_COUNT_COLOR[countVal];
+        return h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+          h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, r.name,
+            span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
+          h('td', { style: { padding: '6px 10px' } }, h(GranScoreSparkline, { points: pts })),
+          h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' } }, label)));
       })))));
 }
 
@@ -1756,6 +1845,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // perm (same pass). Every other role's existing initialMode-first / defaultModeFor() behavior
   // is unchanged.
   const [mode, setMode] = useState(() => singleStoreLoc ? 'mystore' : (initialMode || defaultModeFor(defaultPeriod()))); // 'scoreboard' | 'eom' | 'progress' | 'compliance' | 'mystore'
+  // Scoreboard granularity (owner req, 2026-10-12) -- 'monthly' is the existing EOM review/
+  // comms-sent checklist, UNCHANGED (that workflow is inherently once-a-month, per the owner's
+  // own "your points are valid on the EOM routine" -- it does not toggle). 'weekly'/'daily' swap
+  // in a separate, simpler view (GranularityScoreboard below): FOB%/count% trend + a plain
+  // counted-satisfactorily-or-not read, nothing EOM-workflow-shaped.
+  const [sbGran, setSbGran] = useState('monthly');
   // Re-default the mode when the period changes (manual toggle still overrides after) — but
   // never override a legacy-redirect initialMode on the very first render (that useEffect
   // would fire immediately after mount since `period` is already set, undoing the redirect
@@ -1999,6 +2094,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // (qsr_onhand, already loaded above for EOM completion) via cadenceFromOnHand(), not rawByLoc/
   // qsr_raw_item_detail — see cadenceFromOnHand's own header comment for why.
   const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date(), newWrinsByLoc }), [onHand, newWrinsByLoc]);
+
+  // Weekly Scoreboard view (owner req, 2026-10-12: "keep the checklist monthly, add a separate
+  // weekly view -- FOB%/count% trend and simple count completed satisfactorily or not"). A small
+  // duplicated computation (cycleCompliance), not a duplicated algorithm -- cadenceFromOnHand
+  // already calls this internally too (see its own header comment on that tradeoff). Kept as its
+  // own map (not read off cadenceByLoc) so the status language matches the Weekly Count Status
+  // report's own complete/overdue/never exactly, off the SAME WEEKLY_DUE_DAYS bar.
+  const weeklyStatusByLoc = useMemo(() => {
+    const m = {};
+    try {
+      for (const c of cycleCompliance(onHand, { asOf: new Date().toISOString().slice(0, 10), newWrinsByLoc })) {
+        m[c.loc] = { status: c.daysSinceWeekly == null ? 'never' : c.daysSinceWeekly > WEEKLY_DUE_DAYS ? 'overdue' : 'complete',
+          lastWeekly: c.lastWeekly ? c.lastWeekly.date : null, daysSinceWeekly: c.daysSinceWeekly };
+      }
+    } catch { /* leave empty */ }
+    return m;
+  }, [onHand, newWrinsByLoc]);
 
   // Change Monitor v2 (Notes 41): per-store item variance progressions read straight from the raw ledger
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
@@ -3548,6 +3660,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
             : 'No stores match this filter — try All.')
       : mode === 'scoreboard' ? div(null,
+          // Granularity toggle (owner req, 2026-10-12) — 'monthly' is the existing EOM checklist
+          // below, completely unchanged; 'weekly'/'daily' swap in GranularityScoreboard instead.
+          div({ style: { display: 'flex', gap: '6px', marginBottom: '10px' } },
+            [['monthly', 'Monthly'], ['weekly', 'Weekly'], ['daily', 'Daily']].map(([k, label]) =>
+              h('button', {
+                key: k, onClick: () => setSbGran(k),
+                style: {
+                  background: sbGran === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)',
+                  color: sbGran === k ? '#1a1a1a' : 'var(--text2)',
+                  border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 11px',
+                  fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                },
+              }, label))),
+          sbGran !== 'monthly'
+            ? h(GranularityScoreboard, { rows, fobRows, cadenceByLoc, weeklyStatusByLoc, granularity: sbGran, period })
+            : div(null,
           // freshness — when the count data was last imported (on-hand pull writes eom_count_status)
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '8px' } },
             eomImportedAt
@@ -3587,7 +3715,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                   }, '📋 Report'),
                   chk(reviewed, 'Reviewed', () => updateStatus(r.loc, { diagnosisStatus: reviewed ? 'pending' : 'reviewed' })),
                   chk(commsSent, 'Comms', () => updateStatus(r.loc, { commsStatus: commsSent ? 'none' : 'sent' }))));
-            })))
+            }))))
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
           [['Store'], ['Count progress'], ['By class'], ['Last count'],
