@@ -3552,12 +3552,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   missed `inModified`/`outModified` — real booleans already in `qsr_punch_times`
   (`scripts/qsrsoft-punch-times-pull.mjs`'s `SELECT_COLS`, confirmed live 2026-08-21 with a
   sampled `outModified:1` row). A coarse "was this punch edited" signal is buildable today, zero
-  new pull. Still genuinely missing: editor identity, edit timestamp, original value — needed for
-  every PATTERN-level check (self-approval, per-manager outlier rate, rounding skew). Next step
-  is a live capture of `/wfm/audit/punch_audit_report` (QSRSoft's own public nav tree, strongest
-  name match) or its three named fallbacks — not yet probed, and likely needs the owner's own
-  DevTools session since this session's environment carries no QSRSoft credentials. See §2.4a's
-  own correction in `plan-security-loss-prevention.md` for the full writeup.
+  new pull. Still genuinely missing at that point: editor identity, edit timestamp, original
+  value — needed for every PATTERN-level check (self-approval, per-manager outlier rate,
+  rounding skew).
+  **✅ FULLY UNBLOCKED, same day, third pass — the missing three fields exist, in LifeLenz, not
+  QSRSoft.** The owner captured a live, working LifeLenz admin report,
+  `time_punch_change_approvals_report` (same host/auth/scheduleId shape as the existing
+  `labor_analysis_actuals_report` pull in `scripts/lifelenz-pull.mjs` — no new discovery step
+  needed), carrying `Manager Modified` (editor), `Modified Date/Time` (when), and
+  `Original Punch Date/Time` vs. `Adjusted Punch Date/Time` (old vs. new) — exactly what was
+  missing. **This also means the "QSRSoft, not LifeLenz" vendor call two passes ago was itself
+  wrong** — neither pass had actually probed LifeLenz's admin report catalog for a punch-edit
+  report; absence in the pull this repo happened to have built was mistaken for absence in the
+  vendor's API. Full writeup, endpoint shape, and what's still unbuilt (pull script, Supabase
+  table, security-rules row, `assembleLaborDrilldown()`) in
+  `finding-lifelenz-punch-edit-audit-report-2026-10-12.md` and §2.4a's own correction in
+  `plan-security-loss-prevention.md` — no sample employee data from the capture is recorded in
+  either file, per standing PII-handling practice for memory docs.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
   **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
   **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide

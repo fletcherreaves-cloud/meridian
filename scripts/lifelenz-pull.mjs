@@ -19,6 +19,9 @@
 //   LIFELENZ_SKIP_JOBS   — set to '1' to skip the per-station (lifelenz_job_hours) pull
 //   LIFELENZ_SKIP_SHIFT_ASSIGNMENTS — set to '1' to skip the per-employee shift pull
 //                          (lifelenz_shift_assignments — Crew Schedule Lookup, dispatch #123)
+//   LIFELENZ_SKIP_PUNCH_AUDIT — set to '1' to skip the punch-edit-audit pull
+//                          (lifelenz_punch_edits — manual-edit-pattern security rules,
+//                          memory/finding-lifelenz-punch-edit-audit-report-2026-10-12.md)
 
 import { chromium } from 'playwright';
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
@@ -40,6 +43,7 @@ const BASE         = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
 const SKIP_JOBS    = process.env.LIFELENZ_SKIP_JOBS === '1'; // escape hatch for the per-job pull
 const SKIP_SHIFT_ASSIGNMENTS = process.env.LIFELENZ_SKIP_SHIFT_ASSIGNMENTS === '1'; // escape hatch, dispatch #123
+const SKIP_PUNCH_AUDIT = process.env.LIFELENZ_SKIP_PUNCH_AUDIT === '1'; // escape hatch, punch-edit-audit pull
 const DAYS_BACK    = parseInt(process.env.LIFELENZ_DAYS_BACK    || '30', 10);
 const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
@@ -785,6 +789,177 @@ async function captureForecastLeadTime(rows) {
   return captures.length;
 }
 
+// ── Punch-edit audit — time_punch_change_approvals_report (2026-10-12) ─────
+// Same REST report family as the main CSV pull above (fetchReportChunk/pollForReport) -- just a
+// different report name in the same /api/admin/report/businesses/{id}/schedules/{scheduleId}/
+// {reportName} URL, confirmed live by the owner's own capture
+// (memory/finding-lifelenz-punch-edit-audit-report-2026-10-12.md). Unblocks
+// plan-security-loss-prevention.md's manual-edit-pattern rules (self-approval, per-manager
+// outlier rate, rounding-direction skew) -- editor identity (Manager Modified) + edit timestamp
+// (Modified Date/Time) + original-vs-adjusted value, none of which exist in the QSRSoft punch
+// data this repo pulls elsewhere.
+//
+// Fully best-effort (same posture as pullJobHours/pullShiftAssignments): any failure logs and
+// moves on, never costs the already-committed CSV/per-job/shift pulls that ran before it.
+// Escape hatch: LIFELENZ_SKIP_PUNCH_AUDIT=1.
+async function fetchPunchEditReportChunk(token, scheduleId, startDate, endDate) {
+  const url = `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules/${scheduleId}/time_punch_change_approvals_report?start_date=${toISO(startDate)}&end_date=${toISO(endDate)}&type=csv`;
+
+  const resp = await fetch(url, {
+    headers: {
+      ...apiHeaders(token, scheduleId),
+      'X-Page-Module': 'reports-pdf',
+      'Accept': 'text/csv, */*',
+    },
+  });
+  console.log('[punch-audit] report endpoint →', resp.status, scheduleId);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+  let csvText;
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('json')) {
+    const job = await resp.json();
+    csvText = await pollForReport(token, job, scheduleId, startDate, endDate);
+  } else {
+    csvText = await resp.text();
+  }
+
+  return csvText && csvText.length > 50 ? parsePunchEditCSV(csvText) : [];
+}
+
+// Parses "MM/DD/YYYY HH:MM" (24-hour), optionally followed by a parenthetical annotation the
+// live capture showed at least once (e.g. "10/03/2026 16:45 (EI)") -- the annotation is stripped
+// rather than guessed at (not enough samples yet to know what it means for certain), so the
+// timestamp itself still parses correctly. Naive/local -- no timezone is asserted, matching the
+// uncertainty noted in the finding file. Returns an ISO-ish 'YYYY-MM-DDTHH:MM:00' string for a
+// `timestamp` (not `timestamptz`) column, or null if unparseable/blank.
+function parsePunchDateTime(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().replace(/\s*\([^)]*\)\s*$/, '');
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const [, mo, da, yr, hh, mm] = m;
+  return `${yr}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}T${hh.padStart(2, '0')}:${mm}:00`;
+}
+
+// Pure -- no I/O -- so it's directly unit-testable without mocking Supabase or the network,
+// same reasoning qsrsoft-punch-times-pull.mjs's mapRow()/extractRows() are tested that way.
+//
+// CSV shape (owner capture, 2026-10-12): row 0 is "Store" metadata (same generic finder as
+// parseCSV above); row 1 is headers; each data row belongs to the MOST RECENT row above it that
+// had a non-blank Employee Name -- LifeLenz leaves Employee Name/GEID/Payroll ID blank on every
+// row after an employee's first for that CSV, carrying them forward implicitly. Only rows with a
+// non-blank Adjustment Type (Add|Edit) are real edit events and get returned -- a plain
+// Clock In/Break/etc. row with no adjustment is just that employee's ordinary punch, already
+// covered by QSRSoft's qsr_punch_times, and is dropped here rather than duplicated.
+function parsePunchEditCSV(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 3) return [];
+
+  const r0 = parseCsvLine(lines[0]);
+  let loc = '';
+  for (let i = 0; i < r0.length; i++) {
+    if (r0[i].toLowerCase() === 'store' && i + 1 < r0.length) { loc = String(r0[i + 1]).trim(); break; }
+  }
+  if (!loc) loc = r0.find(v => /^\d{4,7}$/.test(v.trim())) || '';
+  if (!loc) return [];
+  loc = loc.padStart(7, '0');
+
+  const headers = parseCsvLine(lines[1]).map(h => h.trim().toLowerCase());
+  const fc = (...names) => {
+    for (const n of names) {
+      const i = headers.findIndex(h => h.includes(n.toLowerCase()));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const C = {
+    name:       fc('employee name'),
+    geid:       fc('geid'),
+    payrollId:  fc('payroll id'),
+    origPunch:  fc('original punch'),
+    punchType:  fc('punch type'),
+    punchMethod:fc('punch method'),
+    adjType:    fc('adjustment type'),
+    adjPunch:   fc('adjusted punch'),
+    modifiedAt: fc('modified date'),
+    manager:    fc('manager modified'),
+    empActionAt:fc('employee action date'),
+    empStatus:  fc('employee action status'),
+  };
+
+  const rows = [];
+  let curName = null, curGeid = null, curPayrollId = null;
+  for (let i = 2; i < lines.length; i++) {
+    const r = parseCsvLine(lines[i]);
+    const name = C.name >= 0 ? r[C.name] : '';
+    const geid = C.geid >= 0 ? r[C.geid] : '';
+    if (name) curName = name;
+    if (geid) { curGeid = geid; curPayrollId = C.payrollId >= 0 ? r[C.payrollId] : ''; }
+    if (!curGeid) continue; // no employee context established yet -- malformed/leading row
+
+    const adjType = (C.adjType >= 0 ? r[C.adjType] : '').trim();
+    if (!adjType) continue; // not an edit event -- an ordinary punch row, skip
+
+    const punchType = (C.punchType >= 0 ? r[C.punchType] : '').trim();
+    const modifiedAt = parsePunchDateTime(C.modifiedAt >= 0 ? r[C.modifiedAt] : '');
+    if (!punchType || !modifiedAt) continue; // required fields for the composite key
+
+    const adjustedAt = parsePunchDateTime(C.adjPunch >= 0 ? r[C.adjPunch] : '');
+    rows.push({
+      loc, geid: curGeid.trim(),
+      employee_name:  curName ? curName.trim() : null,
+      payroll_id:     curPayrollId ? curPayrollId.trim() : null,
+      punch_type:     punchType,
+      punch_method:   (C.punchMethod >= 0 ? r[C.punchMethod] : '').trim() || null,
+      adjustment_type: adjType,
+      original_punch_at: parsePunchDateTime(C.origPunch >= 0 ? r[C.origPunch] : ''),
+      adjusted_punch_at: adjustedAt,
+      modified_at:    modifiedAt,
+      manager_modified: (C.manager >= 0 ? r[C.manager] : '').trim() || null,
+      employee_action_at: parsePunchDateTime(C.empActionAt >= 0 ? r[C.empActionAt] : ''),
+      employee_action_status: (C.empStatus >= 0 ? r[C.empStatus] : '').trim() || null,
+      updated_at: new Date().toISOString(),
+    });
+  }
+  return rows;
+}
+
+async function upsertPunchEditRows(rows) {
+  if (!rows.length) return 0;
+  const { error } = await supabase
+    .from('lifelenz_punch_edits')
+    .upsert(rows, { onConflict: 'loc,geid,punch_type,modified_at,adjusted_punch_at' });
+  if (error) { console.warn('[punch-audit] upsert error (non-fatal):', error.message); return 0; }
+  return rows.length;
+}
+
+async function pullPunchEditAudit(token, schedules, start, end) {
+  const chunks = chunkDateRange(start, end, 21);
+  console.log(`[punch-audit] pulling ${chunks.length} chunk(s) × ${schedules.length} store(s)…`);
+  let total = 0, saved = 0, fetchFailed = false;
+  for (const schedule of schedules) {
+    const scheduleId = schedule.id || schedule.scheduleId;
+    const name = schedule.name || schedule.scheduleName || scheduleId;
+    let storeRows = [];
+    for (const chunk of chunks) {
+      try {
+        const rows = await fetchPunchEditReportChunk(token, scheduleId, chunk.start, chunk.end);
+        storeRows.push(...rows);
+      } catch (e) {
+        if (!fetchFailed) { console.warn(`[punch-audit] fetch failed (${name} ${toISO(chunk.start)}–${toISO(chunk.end)}): ${e.message}`); fetchFailed = true; }
+      }
+    }
+    if (storeRows.length) {
+      const n = await upsertPunchEditRows(storeRows);
+      total += storeRows.length; saved += n;
+      console.log(`  [punch-audit] ${name}: ${n} edit-event(s) saved`);
+    }
+  }
+  console.log(`[punch-audit] ✓ ${saved}/${total} edit-event(s) saved${fetchFailed ? ' (some fetches failed — see first warning)' : ''}`);
+  return saved;
+}
+
 // ── Per-job (business-role / station) hours+cost — ShiftsForSchedulePeriod ──
 // Separate GraphQL endpoint from the CSV report. Fully best-effort: any failure
 // logs and returns [] so it can NEVER break the (already-committed) CSV pull.
@@ -1262,6 +1437,20 @@ async function main() {
       console.warn('[shift-assignments] pull failed (non-fatal):', e.message);
     }
   }
+
+  // 6. Punch-edit audit (time_punch_change_approvals_report, 2026-10-12) -- additive,
+  //    best-effort, never fatal. Runs LAST, same reasoning as steps 4-5: a failure here can
+  //    never cost anything that already committed. See memory/finding-lifelenz-punch-edit-
+  //    audit-report-2026-10-12.md for why this exists.
+  if (SKIP_PUNCH_AUDIT) {
+    console.log('[punch-audit] skipped (LIFELENZ_SKIP_PUNCH_AUDIT=1)');
+  } else {
+    try {
+      await pullPunchEditAudit(token, schedules, start, end);
+    } catch (e) {
+      console.warn('[punch-audit] pull failed (non-fatal):', e.message);
+    }
+  }
 }
 
 // Guarded (2026-09-11, matching lifelenz-attendance-pull.mjs's own pattern) so a test can
@@ -1273,4 +1462,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
 }
 
-export { buildLeadTimeCaptures, getLatestDate };
+export { buildLeadTimeCaptures, getLatestDate, parsePunchEditCSV, parsePunchDateTime };
