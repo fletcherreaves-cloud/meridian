@@ -63,6 +63,7 @@ describe('parsePunchEditCSV() — field mapping', () => {
       manager_modified: 'Test Manager A',
       employee_action_at: '2026-10-08T08:00:00',
       employee_action_status: 'Acknowledged',
+      seq: 0,
       updated_at: rows[0].updated_at,
     }]);
   });
@@ -136,6 +137,43 @@ describe('parsePunchEditCSV() — field mapping', () => {
   it('returns [] for an empty or near-empty input', () => {
     expect(parsePunchEditCSV('')).toEqual([]);
     expect(parsePunchEditCSV('one line only')).toEqual([]);
+  });
+
+  it('seq: two rows sharing the SAME geid/punch_type/modified_at (minute-granular, a real duplicate found live -- a multi-segment "Role Rate Operation" split saved in one action) get distinct seq 0/1, not a collision', () => {
+    const rows = parsePunchEditCSV(csv([
+      // Same modified_at (the save action's own minute), different adjusted_punch_at (each
+      // row is a different time-segment of the same multi-segment edit) -- exactly the real
+      // shape that broke the old (loc,geid,punch_type,modified_at) key live.
+      'Test Employee G,500000007,,,Role Rate Operation,Manual,Edit,10/09/2026 15:00,10/09/2026 15:20,Test Manager G,,',
+      ',,,,Role Rate Operation,Manual,Edit,10/09/2026 15:10,10/09/2026 15:20,Test Manager G,,',
+    ]));
+    expect(rows).toHaveLength(2);
+    // Both rows share the exact same geid/punch_type/modified_at -- only adjusted_punch_at differs.
+    expect(rows[0].geid).toBe(rows[1].geid);
+    expect(rows[0].punch_type).toBe(rows[1].punch_type);
+    expect(rows[0].modified_at).toBe(rows[1].modified_at);
+    expect(rows[0].adjusted_punch_at).not.toBe(rows[1].adjusted_punch_at);
+    expect(rows[0].seq).toBe(0);
+    expect(rows[1].seq).toBe(1);
+  });
+
+  it('seq starts over at 0 for a DIFFERENT group (different punch_type), not a running total across the whole CSV', () => {
+    const rows = parsePunchEditCSV(csv([
+      'Test Employee H,500000008,,,Role Rate Operation,Manual,Edit,10/09/2026 15:00,10/09/2026 15:20,Test Manager H,,',
+      ',,,,Role Rate Operation,Manual,Edit,10/09/2026 15:10,10/09/2026 15:20,Test Manager H,,',
+      ',,,,Clock Out,Manual,Edit,10/09/2026 16:00,10/09/2026 15:20,Test Manager H,,', // same modified_at, different punch_type
+    ]));
+    expect(rows).toHaveLength(3);
+    expect(rows[0].seq).toBe(0);
+    expect(rows[1].seq).toBe(1);
+    expect(rows[2].seq).toBe(0); // new group (punch_type differs) -- not seq 2
+  });
+
+  it('seq is 0 for the ordinary, non-colliding case (the overwhelming majority of real rows)', () => {
+    const rows = parsePunchEditCSV(csv([
+      'Test Employee I,500000009,,,Clock In,Manual,Add,10/01/2026 06:00,10/01/2026 06:05,Test Manager I,,',
+    ]));
+    expect(rows[0].seq).toBe(0);
   });
 
   it('never fabricates a name/geid/manager field beyond what the CSV actually carries', () => {

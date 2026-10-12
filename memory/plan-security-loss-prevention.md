@@ -858,13 +858,20 @@ piece is small and sharp:
   `lifelenz_punch_edits` (`supabase/schema-lifelenz-punch-edits.sql`), reusing the same per-store
   `scheduleId`s `getStoreSchedules()` already discovers. A manual `workflow_dispatch` run
   confirmed the URL/auth/`scheduleId`-reuse all work against the real API (317 real edit-events
-  parsed across 26 stores) — **and found a real bug the same run**: `adjusted_punch_at` was
-  wrongly part of the table's primary key (implicitly `NOT NULL` in Postgres), and real data has
-  it legitimately blank on some rows, so 7 of 26 stores' whole batches failed silently (133/317
-  events lost) while the job's own `conclusion` still read `success`. Fixed same day — see the
-  finding file's own "VERIFIED LIVE" section for the exact numbers and the fix. **The Supabase
-  migration for the fix still needs to be re-run** (editing the schema file doesn't retroactively
-  alter the already-created table) and the fix itself hasn't been re-verified on a second run yet.
+  parsed across 26 stores) — **and found TWO real bugs, both same day, both from the owner
+  actually trying to apply the fix, not from more research:**
+  1. `adjusted_punch_at` was wrongly part of the table's primary key (implicitly `NOT NULL` in
+     Postgres), and real data has it legitimately blank on some rows — 7 of 26 stores' whole
+     batches failed silently (133/317 events lost) while the job's own `conclusion` still read
+     `success`.
+  2. The first fix's replacement key, `(loc, geid, punch_type, modified_at)`, turned out NOT to
+     be unique either — LifeLenz's `Modified Date/Time` is only minute-granular, and a real
+     employee had two distinct edits to the same punch type in the same minute (a multi-segment
+     role/rate split). Caught live when the owner's own migration attempt hit a real
+     `23505 duplicate key` error.
+  Fixed same day with a `seq` disambiguator column — see the finding file's own two bug sections
+  for the exact numbers and fixes. **The Supabase migration still needs to be (re-)run** and
+  neither fix has been re-verified on a live run yet.
 - **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
   `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
   existing precedent — the data now lands in Supabase, but no `security_rules` row or UI reads it

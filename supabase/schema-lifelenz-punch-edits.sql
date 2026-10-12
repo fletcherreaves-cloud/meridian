@@ -29,29 +29,55 @@ create table if not exists public.lifelenz_punch_edits (
   employee_action_at    timestamp,               -- when the employee acknowledged/responded, if at all
   employee_action_status text,                   -- e.g. 'Acknowledged' -- null if the employee hasn't acted
   updated_at            timestamptz not null default now(),
-  -- Natural composite key: no stable row id exists in the CSV, but a given employee's punch of
-  -- a given type can only be modified once at a given instant. Idempotent across re-pulls of the
-  -- same safety-window range (same source row -> same modified_at -> same upsert target).
-  --
-  -- adjusted_punch_at is deliberately NOT part of this key (corrected 2026-10-12, same day as
-  -- the first live run) -- a primary-key column is implicitly NOT NULL in Postgres, and the
-  -- first live pull against the real API proved adjusted_punch_at IS legitimately blank on some
-  -- real Add/Edit rows (manual run, 2026-10-12: 7 of 26 active stores had their entire batch
-  -- upsert fail with `null value in column "adjusted_punch_at" ... violates not-null
-  -- constraint`, losing 133 of 317 real edit-events). The four remaining key columns are already
-  -- guaranteed non-null by parsePunchEditCSV()'s own row-building filter (scripts/lifelenz-
-  -- pull.mjs skips any row missing punch_type or modified_at before it's ever returned).
-  primary key (loc, geid, punch_type, modified_at)
+  seq                   integer     not null default 0,
+  -- seq (added 2026-10-12, SECOND same-day correction): LifeLenz's own Modified Date/Time is
+  -- MINUTE granularity, not actually unique per (loc,geid,punch_type) -- the owner's second live
+  -- attempt at a migration (loc,geid,punch_type,modified_at) alone hit a real duplicate:
+  -- (0013113, 200668686, 'Role Rate Operation', 2026-10-09 15:29:00) appeared on more than one
+  -- row, almost certainly a multi-segment role/rate split saved in one action. No other CSV
+  -- field reliably disambiguates (original_punch_at/adjusted_punch_at can each legitimately be
+  -- null). seq is assigned by parsePunchEditCSV() as a 0-based counter per
+  -- (loc,geid,punch_type,modified_at) group, in the order rows are encountered in that single
+  -- CSV parse -- always present, always an integer, never null, so it's safe as a PK column
+  -- regardless of which other fields are blank. Idempotency across re-pulls of the same
+  -- safety-window range depends on LifeLenz returning rows in a stable order for a given group
+  -- across repeat calls -- unverified beyond this one capture; if it ever doesn't hold, the
+  -- worst case is the SAME real events land under swapped seq slots, not data loss or a crash.
+  primary key (loc, geid, punch_type, modified_at, seq)
 );
 
--- Migration for a table already created under the ORIGINAL (buggy) 5-column key, before this
--- was caught by the first live run -- `create table if not exists` above is a no-op against an
--- existing table, so the fix needs an explicit ALTER. Safe to re-run: on a table that already
--- has the correct 4-column key (either a fresh deploy of this file, or one already migrated),
--- the constraint name is unchanged, so this drops and immediately recreates the SAME key --
--- a harmless no-op, not a second migration.
+-- seq column, for a table that predates it (added 2026-10-12). A no-op on a genuinely fresh
+-- table (already has it from the create table block above).
+alter table public.lifelenz_punch_edits add column if not exists seq integer not null default 0;
+
+-- Backfill seq for rows already saved under an EARLIER key (the original run saved 184 real
+-- rows under the first, 5-column key, before either bug was found) -- a blanket default of 0
+-- leaves every row in a duplicate group at seq=0, which would make the ADD PRIMARY KEY below
+-- fail AGAIN on the pre-existing duplicate pair, not just future inserts. Assigns a stable
+-- 0-based rank within each (loc,geid,punch_type,modified_at) group, ordered by adjusted_punch_at
+-- (nulls first) then ctid as the final tiebreaker for true ties -- a no-op (zero rows touched)
+-- on a fresh table with no pre-existing data.
+with ranked as (
+  select ctid, row_number() over (
+    partition by loc, geid, punch_type, modified_at
+    order by adjusted_punch_at nulls first, ctid
+  ) - 1 as rn
+  from public.lifelenz_punch_edits
+)
+update public.lifelenz_punch_edits t
+set seq = ranked.rn
+from ranked
+where t.ctid = ranked.ctid and t.seq is distinct from ranked.rn;
+
+-- Migration for a table already created under an earlier (buggy) key -- first the original
+-- 5-column key (included adjusted_punch_at, implicitly NOT NULL, crashed on real blank values),
+-- then a 4-column key (loc,geid,punch_type,modified_at) that turned out not to be unique on real
+-- data either (see the seq comment above). `create table if not exists` above is a no-op against
+-- an existing table, so the fix needs an explicit ALTER every time. Safe to re-run: on a table
+-- that already has the correct 5-column key, the constraint name is unchanged, so this drops and
+-- immediately recreates the SAME key -- a harmless no-op, not a further migration.
 alter table public.lifelenz_punch_edits drop constraint if exists lifelenz_punch_edits_pkey;
-alter table public.lifelenz_punch_edits add primary key (loc, geid, punch_type, modified_at);
+alter table public.lifelenz_punch_edits add primary key (loc, geid, punch_type, modified_at, seq);
 
 create index if not exists lifelenz_punch_edits_loc_modified_idx
   on public.lifelenz_punch_edits (loc, modified_at desc);
