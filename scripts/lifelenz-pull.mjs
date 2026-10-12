@@ -927,9 +927,13 @@ function parsePunchEditCSV(text) {
 
 async function upsertPunchEditRows(rows) {
   if (!rows.length) return 0;
+  // onConflict corrected 2026-10-12 (same day as the first live run) -- adjusted_punch_at used
+  // to be part of this key, matching the table's original primary key, but a primary-key column
+  // is implicitly NOT NULL and the real API returned real rows where it's legitimately blank.
+  // See supabase/schema-lifelenz-punch-edits.sql's own migration note for the full story.
   const { error } = await supabase
     .from('lifelenz_punch_edits')
-    .upsert(rows, { onConflict: 'loc,geid,punch_type,modified_at,adjusted_punch_at' });
+    .upsert(rows, { onConflict: 'loc,geid,punch_type,modified_at' });
   if (error) { console.warn('[punch-audit] upsert error (non-fatal):', error.message); return 0; }
   return rows.length;
 }

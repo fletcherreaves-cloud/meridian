@@ -32,8 +32,26 @@ create table if not exists public.lifelenz_punch_edits (
   -- Natural composite key: no stable row id exists in the CSV, but a given employee's punch of
   -- a given type can only be modified once at a given instant. Idempotent across re-pulls of the
   -- same safety-window range (same source row -> same modified_at -> same upsert target).
-  primary key (loc, geid, punch_type, modified_at, adjusted_punch_at)
+  --
+  -- adjusted_punch_at is deliberately NOT part of this key (corrected 2026-10-12, same day as
+  -- the first live run) -- a primary-key column is implicitly NOT NULL in Postgres, and the
+  -- first live pull against the real API proved adjusted_punch_at IS legitimately blank on some
+  -- real Add/Edit rows (manual run, 2026-10-12: 7 of 26 active stores had their entire batch
+  -- upsert fail with `null value in column "adjusted_punch_at" ... violates not-null
+  -- constraint`, losing 133 of 317 real edit-events). The four remaining key columns are already
+  -- guaranteed non-null by parsePunchEditCSV()'s own row-building filter (scripts/lifelenz-
+  -- pull.mjs skips any row missing punch_type or modified_at before it's ever returned).
+  primary key (loc, geid, punch_type, modified_at)
 );
+
+-- Migration for a table already created under the ORIGINAL (buggy) 5-column key, before this
+-- was caught by the first live run -- `create table if not exists` above is a no-op against an
+-- existing table, so the fix needs an explicit ALTER. Safe to re-run: on a table that already
+-- has the correct 4-column key (either a fresh deploy of this file, or one already migrated),
+-- the constraint name is unchanged, so this drops and immediately recreates the SAME key --
+-- a harmless no-op, not a second migration.
+alter table public.lifelenz_punch_edits drop constraint if exists lifelenz_punch_edits_pkey;
+alter table public.lifelenz_punch_edits add primary key (loc, geid, punch_type, modified_at);
 
 create index if not exists lifelenz_punch_edits_loc_modified_idx
   on public.lifelenz_punch_edits (loc, modified_at desc);
