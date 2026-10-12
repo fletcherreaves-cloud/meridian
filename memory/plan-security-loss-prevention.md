@@ -874,14 +874,17 @@ piece is small and sharp:
      `PRIMARY KEY` constraint does NOT revert the column-level `NOT NULL` Postgres sets as a side
      effect of a column being part of that key — that flag is independent and needs its own
      explicit `DROP NOT NULL`, which the first fix never issued.
-  All three fixed same day — see the finding file's own three bug sections for the exact numbers.
-  **The Supabase migration still needs to be (re-)run a third time** and not yet re-verified on a
-  live run.
+  All three fixed same day and **CONFIRMED RESOLVED by a clean live run**: `[punch-audit] ✓
+  321/321 edit-event(s) saved`, zero upsert errors, every one of the 27 stores saving real rows
+  including every previously-failing one. Three separate PRs (#1429/#1430/#1431), three separate
+  live-run verifications — see the finding file's own "CONFIRMED RESOLVED" section for the full
+  numbers. `lifelenz_punch_edits` is live, correct, and feeding real data today.
 - **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
   `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
-  existing precedent — the data now lands in Supabase, but no `security_rules` row or UI reads it
-  yet. Every PATTERN-level manual-edit check (self-approval, per-manager outlier rate,
-  rounding-direction skew) is buildable from `lifelenz_punch_edits` whenever this gets scoped.
+  existing precedent — the data lands in Supabase correctly now, but no `security_rules` row or
+  UI reads it yet. Every PATTERN-level manual-edit check (self-approval, per-manager outlier
+  rate, rounding-direction skew) is buildable from `lifelenz_punch_edits` whenever this gets
+  scoped — that data is now there to build on.
 
 ### Phase 2 — composite scoring
 - Composite risk score combining Phase-1 rules with decay (§3 recurrence scoring).
