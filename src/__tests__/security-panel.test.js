@@ -1661,3 +1661,72 @@ describe('SecurityPanel — dispatch #120: full 27-store dataset at a mobile vie
     expect(storeLabelBtns.length).toBeLessThan(10); // one supervisor's patch, nowhere near all 27
   });
 });
+
+// dispatch 2026-10-12 -- the 'labor' domain (LABOR-001/002/003, schema-security-rules-labor.sql).
+// Renders through the REAL panel (standing rule from #366): a test that only imports
+// groupFindingsBySubject can't tell "the domain renders" from "the domain was only added to a
+// pure helper and never reached the tab/filter wiring."
+describe('SecurityPanel — labor domain wiring (dispatch 2026-10-12): tab renders, subjects group by empToken same as Cash, drill-down is a stated scope decision, not offered yet', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' },
+    { ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch-edit activity', description: 'desc', baselineType: null, logicType: 'threshold', active: false, investigationAction: 'act' },
+  ];
+  const FINDINGS = [
+    { empToken: 'tok-cash', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'LABOR-001', pass: true, value: 1, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    rpcMock.mockReset(); // admin's bulk-reveal effect fires; an unmocked call just resolves undefined, handled gracefully.
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('a third "🕐 Labor" tab exists alongside Cash/Inventory', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const tabs = [...container.querySelectorAll('button')].map(b => b.textContent);
+    expect(tabs).toContain('🕐 Labor');
+  });
+
+  it('switching to Labor shows the LABOR-001 subject (empToken-keyed, same grouping as Cash) and hides the Cash subject', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/LABOR-001/);
+    expect(container.textContent).not.toMatch(/CASH-001/);
+    // Sanity on the bySubjectType fix: before it, domain==='labor' fell into the old two-way
+    // ternary's ELSE branch (wrin-based) and this empToken-only subject (no wrin at all) would
+    // have been filtered out of every group entirely -- "Store 0000001" would never render.
+    expect([...container.querySelectorAll('span')].some(s => s.textContent === 'Store 0000001')).toBe(true);
+  });
+
+  it('expanding the Labor subject does NOT offer "Investigate further" -- a stated scope decision (no assembleLaborDrilldown yet), not a silent gap', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const subjectSpan = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const clickable = subjectSpan?.parentElement;
+    expect(clickable).toBeTruthy();
+    await act(async () => { clickable.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // The row DID expand (its per-rule detail, e.g. the rule's own method name, is now visible) --
+    // this is not a false negative from the row never opening.
+    expect(container.textContent).toMatch(/Post-termination punch-edit activity/);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    expect(investigateBtn).toBeFalsy();
+  });
+});

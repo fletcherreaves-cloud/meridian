@@ -312,6 +312,11 @@ const RULE_UNITS = {
   'CASH-004': 'per $1,000 drawer sales',
   'INV-001':  '% variance vs. expected usage',
   'INV-002':  'per $1,000 store sales',
+  // LABOR-001/002 (schema-security-rules-labor.sql) are plain threshold COUNTS, not rates -- the
+  // unit names what's being counted, same as every other RULE_UNITS entry naming its own metric.
+  'LABOR-001': 'post-termination edit(s)',
+  'LABOR-002': 'self-approved edit(s)',
+  'LABOR-003': 'per 1,000 punches',
 };
 
 // dispatch #100 follow-up (owner, same-day) -- "a small brief descriptor to the pill... Cash +/-,
@@ -732,7 +737,12 @@ function Legend({ onDismiss, rules }) {
   );
 }
 
-const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory' };
+const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory', labor: 'Labor' };
+
+// dispatch 2026-10-12 -- the domain tab's own icon+label, read by both the tab row and (via
+// RULE_DOMAIN_LABEL above) the rule directory/print-report/export titles. Was a two-way ternary
+// (`d === 'cash' ? ... : ...`) that had no room for a third domain.
+const DOMAIN_TAB_LABEL = { cash: '💵 Cash', inventory: '📦 Inventory', labor: '🕐 Labor' };
 
 // dispatch #56 Part A -- owner: "let's add directory of what each policy covers." Renders
 // ENTIRELY from the live `rules` array (loadSecurityRules()'s own security_rules read) -- never a
@@ -1130,7 +1140,11 @@ export function SecurityPanel({ userRole, onClose }) {
     new Set(rules.filter(r => r.domain === domain).map(r => r.ruleId)), [rules, domain]);
 
   const groups = React.useMemo(() => {
-    const bySubjectType = domain === 'cash' ? 'emp' : 'wrin';
+    // 'labor' subjects are empToken-based too (an employee for LABOR-001/002, a manager --
+    // resolved into the same emp_token column -- for LABOR-003), same identity shape as 'cash'.
+    // Only 'inventory' subjects are wrin-based, so this reads as an explicit exclusion rather
+    // than a three-way list that silently needs a fourth branch for the next emp-keyed domain.
+    const bySubjectType = domain === 'inventory' ? 'wrin' : 'emp';
     return groupFindingsBySubject(findings)
       .filter(g => g.subjectType === bySubjectType)
       .filter(g => scopeMatches(g.loc, scope))
@@ -1247,13 +1261,13 @@ export function SecurityPanel({ userRole, onClose }) {
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     // ── Domain tabs + Legend ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
-      ['cash', 'inventory'].map(d => btn({
+      ['cash', 'inventory', 'labor'].map(d => btn({
         key: d, onClick: () => { setDomain(d); setRuleFilter(null); },
         style: {
           padding: '5px 12px', borderRadius: 'var(--r)', border: '1px solid ' + (domain === d ? 'var(--accent)' : 'var(--bdr)'),
           background: domain === d ? 'rgba(245,188,0,.12)' : 'transparent', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         },
-      }, d === 'cash' ? '💵 Cash' : '📦 Inventory')),
+      }, DOMAIN_TAB_LABEL[d] || d)),
       btn({
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
@@ -1368,7 +1382,17 @@ export function SecurityPanel({ userRole, onClose }) {
             return h(SubjectRow, {
               key: g.key, group, rulesById, revealed, onReveal, ruleFilter,
               expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
-              domain, findings, domainRuleIds, item,
+              domain, findings,
+              // dispatch 2026-10-12 -- 'labor' has no assembleLaborDrilldown() yet (stated scope
+              // decision, not an oversight: see scripts/security-rules-run.mjs's own LABOR header
+              // for what's shipped this pass). domainRuleIds stays a real Set above for the
+              // verdict-chip/group filtering this memo also feeds -- only THIS render prop is
+              // nulled, which is what SubjectDetail/SubjectRow check before offering "Investigate
+              // further" at all. Falling through to SubjectDrilldown's existing cash/inventory
+              // branches for a domain neither one actually sources would silently run the WRONG
+              // query (audit_rows) and render a misleading empty result, worse than offering
+              // nothing.
+              domainRuleIds: domain === 'labor' ? null : domainRuleIds, item,
             });
           })),
         ),
