@@ -136,6 +136,26 @@ export function diffNewWrins(currentRows = [], priorRows = []) {
   }
   return out;
 }
+// A stale/dead row — the exact Tecumseh "phantom" pattern dispatch #96 found: $0 on-hand,
+// never touched THIS period (last_counted is null or predates the period start), so there is
+// nothing a crew member could physically go count. Owner-directed 2026-10-12, extending the
+// new-WRIN exception's own "same comments for awareness" treatment to this case too: excluded
+// from the coverage math (it was never real inventory to begin with), but surfaced as a
+// `staleItems` entry rather than silently masked, so the underlying dead row still gets
+// flagged for cleanup instead of quietly papering over a genuinely missed item.
+//
+// Deliberately NOT gated by class (Condiment was where this was found, but a $0 pre-period
+// phantom is the same non-issue in any class) and deliberately requires `r.period` to compute
+// the boundary — a row with no period field is left ungated rather than guessed at.
+export function isStaleDeadRow(r) {
+  if (!r || !r.period) return false;
+  const amt = Number(r.on_hand_amt != null ? r.on_hand_amt : r.onHandAmt);
+  if (amt !== 0) return false;
+  const d = countedOf(r);
+  const periodStart = `${r.period}-01`;
+  return !d || d < periodStart;
+}
+
 // Days after which a store with no qualifying weekly count is overdue. 7 + grace,
 // because the count day floats.
 export const WEEKLY_DUE_DAYS = 9;
@@ -223,12 +243,15 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
   const totals = {};      // loc → cls → ACTIVE universe size (new WRINs excluded, see below)
   const byDate = {};      // loc → date → cls → n (counted ACTIVE items)
   const newItems = {};    // loc → [{ wrin, descr, cls }] -- new this period, excluded above
+  const staleItems = {};  // loc → [{ wrin, descr, cls }] -- dead pre-period rows, excluded above
   for (const r of (rows || [])) {
     if (!r || !r.cls || !isActive(r)) continue;
     const loc = unpad(r.loc);
     const isNew = !!(newWrinsByLoc[loc] || newWrinsByLoc[String(loc)])?.has(String(r.wrin));
-    if (isNew) {
-      const list = (newItems[loc] || (newItems[loc] = []));
+    const isStale = !isNew && isStaleDeadRow(r);
+    if (isNew || isStale) {
+      const bucket = isNew ? newItems : staleItems;
+      const list = (bucket[loc] || (bucket[loc] = []));
       if (!list.some(it => it.wrin === String(r.wrin))) {
         list.push({ wrin: String(r.wrin), descr: r.descr || '', cls: r.cls });
       }
@@ -238,7 +261,9 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
       // first tracked period) invisible rather than merely ungraded -- a real count that
       // happened would read as "no complete weekly count on record," the opposite of the
       // owner's intent. Denominator=0 for an all-new class is already handled correctly by
-      // the "universe===0 -> vacuously covered" rule below.
+      // the "universe===0 -> vacuously covered" rule below. A stale dead row never carries a
+      // last_counted inside this period in the first place (that's the definition), so it
+      // never actually reaches byDate below -- excluding it from totals is what matters.
     } else {
       (totals[loc] || (totals[loc] = {}));
       totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
@@ -285,7 +310,7 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
         ...q, kind: sessionLabel(q) };
     });
   }
-  return { sessions: out, classTotals: totals, newItems };
+  return { sessions: out, classTotals: totals, newItems, staleItems };
 }
 
 /** date ('YYYY-MM-DD') -> 0=Sun..6=Sat, or null for an unparseable string. Same 'Txx:00:00'
@@ -522,8 +547,8 @@ export function sessionLabel(q) {
  * Returns one row per store with the specific exceptions to act on.
  */
 export function cycleCompliance(rows = [], { asOf = null, newWrinsByLoc = {} } = {}) {
-  const { sessions, classTotals, newItems } = detectSessions(rows, { newWrinsByLoc });
-  return complianceFromSessions(sessions, classTotals, { asOf, newItemsByLoc: newItems });
+  const { sessions, classTotals, newItems, staleItems } = detectSessions(rows, { newWrinsByLoc });
+  return complianceFromSessions(sessions, classTotals, { asOf, newItemsByLoc: newItems, staleItemsByLoc: staleItems });
 }
 
 // Convert inv_count_sessions log rows (append-only, one row per store/count-date/class —
@@ -599,7 +624,7 @@ export function buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }) 
   return verdict;
 }
 
-function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsByLoc = {} } = {}) {
+function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsByLoc = {}, staleItemsByLoc = {} } = {}) {
   const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
 
@@ -662,6 +687,13 @@ function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsBy
       // UI/report can say "new item, not required yet, but still needs counting" instead of
       // making it silently invisible.
       newItems: newItemsByLoc[loc] || [],
+      // Stale pre-period dead rows (owner-directed 2026-10-12, same "same comments for
+      // awareness" treatment as newItems above) — excluded from the coverage math by
+      // detectSessions(), surfaced here so the UI/report can flag the dead row for cleanup
+      // instead of letting it silently block compliance forever (dispatch #96's Condiment
+      // phantom-row case, reintroduced by raising COVER_FRAC to 1 — see that function's and
+      // isStaleDeadRow()'s own comments).
+      staleItems: staleItemsByLoc[loc] || [],
       exceptions, verdict: buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }),
       status: exceptions.some(e => e.severity === 'crit') ? 'crit'
             : exceptions.length ? 'warn' : 'ok',
@@ -823,6 +855,13 @@ export function formatWeeklyComplianceReport(c, { storeName = '' } = {}) {
     L.push('| Item | Class |', '|---|---|');
     for (const it of c.newItems) L.push(`| ${it.descr || it.wrin} | ${it.cls} |`);
     L.push('', `_New to this store's active list this period, so ${c.newItems.length === 1 ? "it isn't" : "they aren't"} held against this period's compliance — but ${c.newItems.length === 1 ? 'it' : 'they'} should still get counted._`, '');
+  }
+
+  if (c.staleItems && c.staleItems.length) {
+    L.push('## Stale items — needs cleanup, not counting', '');
+    L.push('| Item | Class |', '|---|---|');
+    for (const it of c.staleItems) L.push(`| ${it.descr || it.wrin} | ${it.cls} |`);
+    L.push('', `_Dead pre-period row${c.staleItems.length === 1 ? '' : 's'} at $0 with no count this period, so ${c.staleItems.length === 1 ? "it isn't" : "they aren't"} held against this period's compliance — ${c.staleItems.length === 1 ? 'it' : 'they'} should get removed from qsr_onhand rather than counted._`, '');
   }
 
   L.push(`_Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day._`);

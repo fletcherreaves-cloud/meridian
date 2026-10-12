@@ -3,7 +3,7 @@ import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleS
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
          mergeWeeklyCountDay, countDayDrift, formatWeeklyComplianceReport, weeklyRecountWindows,
          sessionsFromLog, cycleComplianceFromLog, weeklyRecountWindowsFromLog,
-         buildCycleVerdict } from '../engine/count-cycle.js';
+         buildCycleVerdict, isStaleDeadRow } from '../engine/count-cycle.js';
 import { WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
@@ -515,6 +515,13 @@ describe('zero-active-item class cannot permanently block compliance', () => {
 // stale active:null phantom row, then a real 2026-08-21 session counting the 38 non-phantom
 // items -- run through the actual cycleCompliance()/detectSessions() consumer, per this repo's
 // "would this verification still pass if reverted" standing rule.
+//
+// UPDATED 2026-10-12 (owner-directed) — raising COVER_FRAC to near-100% (2026-10-11)
+// reintroduced this exact bug for the phantom row, and the owner's call on the tradeoff flagged
+// in PR #1420 was "yes, exempt it, with the same comments for awareness" -- the same treatment
+// diffNewWrins()/isStaleDeadRow() gives a new WRIN. So the phantom row now needs a `period`
+// field (real qsr_onhand rows always carry one; these fixtures previously didn't bother) so
+// isStaleDeadRow() can compare its last_counted against the period start and exclude it.
 describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (structural, not a data gap)', () => {
   const tecumsehLike = (sessions = []) => {
     const rows = [
@@ -524,10 +531,10 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
       // 38 real Condiment items, all active:false (matches the measured 986-row population --
       // McDonald's condiments are never recipe-bound, so this flag is never true for this class).
       ...mk('33704', 'Condiment', 38, null).map(r => ({ ...r, active: false, recipeItem: false })),
-      // The one stray phantom row that, pre-fix, WAS the entire universe: active:null,
-      // last_counted before the current count period even opened.
+      // The one stray phantom row: active:null, $0, last_counted before the current count
+      // period even opened -- isStaleDeadRow() now excludes exactly this shape.
       { loc: '33704', cls: 'Condiment', wrin: 'phantom-1', active: null, recipeItem: null,
-        last_counted: '2026-07-31', on_hand_amt: 0 },
+        last_counted: '2026-07-31', on_hand_amt: 0, period: '2026-08' },
     ];
     for (const s of sessions) {
       for (const [cls, n] of Object.entries(s.counts)) {
@@ -540,47 +547,34 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
     return rows;
   };
 
-  it('the Condiment universe is the real ~39-item count, not the 1 stale phantom row', () => {
-    const { classTotals } = detectSessions(tecumsehLike());
-    expect(classTotals['33704'].Condiment).toBe(39); // 38 real + 1 phantom, both count now
+  it('the Condiment universe is the real 38-item count, the stale phantom row excluded', () => {
+    const { classTotals, staleItems } = detectSessions(tecumsehLike());
+    expect(classTotals['33704'].Condiment).toBe(38); // phantom excluded from the denominator
     expect(classTotals['33704'].Food).toBe(117); // other classes' universes are untouched
+    expect(staleItems['33704']).toEqual([{ wrin: 'phantom-1', descr: '', cls: 'Condiment' }]);
   });
 
-  it('a real Food+Condiment count is graded on a genuine percentage basis, not via the ' +
-     'zero-universe vacuous bypass -- and at the near-100% bar, one dead phantom row now ' +
-     'genuinely blocks it (a real, known consequence of the 2026-10-11 near-100% raise, ' +
-     'not a test bug -- see the describe-block header comment)', () => {
+  it('a real Food+Condiment count satisfies weekly compliance -- the phantom row no longer ' +
+     'permanently blocks it (dispatch #96\'s own fix, extended 2026-10-12 to this stale-row ' +
+     'case the near-100% COVER_FRAC raise had reintroduced)', () => {
     const rows = tecumsehLike([
       { date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }, // the 38 real items
     ]);
     const { sessions } = detectSessions(rows);
-    // Two sessions exist: the phantom row's own stale 2026-07-31 date, and the real 08-21
-    // count -- find the real one by date rather than assuming index 0 (sessions sort by date).
     const s = sessions['33704'].find(x => x.date === '2026-08-21');
-    // 38 of 39 = 97.4% -- cleared the OLD COVER_FRAC=0.95 bar (proving genuine percentage
-    // math, not a vacuous always-pass), but the near-100% bar (owner-directed 2026-10-11)
-    // requires literally all 39, phantom included. This is the SAME shape of bug dispatch
-    // #96 fixed (a stale, uncountable row making a class permanently uncoverable) --
-    // reintroduced by the near-100% bar for any store carrying one of these known dead rows,
-    // until that stale on-hand data itself gets cleaned up. Not something to quietly fix in
-    // this test; flagged back to the owner as a real open question (stale pre-period rows
-    // vs. the new-WRIN exception are two different things).
-    expect(s.covered).not.toContain('Condiment');
-    expect(s.satisfiesWeekly).toBe(false);
+    // 38 of 38 real items = 100% -- the phantom row is excluded from both sides, so it can
+    // never be the one item standing between a store and full compliance.
+    expect(s.covered).toContain('Condiment');
+    expect(s.satisfiesWeekly).toBe(true);
   });
 
-  it('cycleCompliance reads this store Overdue under the near-100% bar, for the same reason', () => {
+  it('cycleCompliance reads this store on-cycle, and surfaces the phantom row as staleItems ' +
+     'for cleanup rather than silently masking it', () => {
     const rows = tecumsehLike([{ date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }]);
     const c = cycleCompliance(rows, { asOf: '2026-08-24' });
-    expect(c[0].overdue).toBe(true);
-    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeTruthy();
-    // Touching the phantom row too (an honest 39/39) clears it -- confirms this is the
-    // known dead-row edge case, not a broken percentage calculation.
-    const rowsFull = tecumsehLike([{ date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }])
-      .map(r => (r.wrin === 'phantom-1' ? { ...r, last_counted: '2026-08-21' } : r));
-    const cFull = cycleCompliance(rowsFull, { asOf: '2026-08-24' });
-    expect(cFull[0].overdue).toBe(false);
-    expect(cFull[0].lastWeekly.date).toBe('2026-08-21');
+    expect(c[0].overdue).toBe(false);
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy();
+    expect(c[0].staleItems).toEqual([{ wrin: 'phantom-1', descr: '', cls: 'Condiment' }]);
   });
 
   it('a store with an all-false Condiment population (the 17-store vacuous-bypass case) now ' +
@@ -613,6 +607,43 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
     const { classTotals } = detectSessions(rows);
     expect(classTotals['Z'].Food).toBe(100); // the 5 inactive Food items are NOT rescued
     expect(classTotals['Z'].Paper).toBeUndefined(); // Paper still hits the zero-universe path, unrelated to this fix
+  });
+});
+
+// isStaleDeadRow (2026-10-12, owner-directed) -- a $0 row that predates the period it's filed
+// under and was never touched this period. Deliberately narrow: amt must be exactly 0 AND the
+// counted date (if any) must be before the period start. A row missing `period` is left ungated
+// rather than guessed at, since a caller that forgot to pass it through should see every row as
+// a real candidate, not have them silently vanish from the universe.
+describe('isStaleDeadRow', () => {
+  it('is true for a $0 row whose last_counted predates the period', () => {
+    expect(isStaleDeadRow({ period: '2026-08', on_hand_amt: 0, last_counted: '2026-07-31' })).toBe(true);
+  });
+
+  it('is true for a $0 row with no last_counted at all', () => {
+    expect(isStaleDeadRow({ period: '2026-08', on_hand_amt: 0, last_counted: null })).toBe(true);
+  });
+
+  it('is false once the row is actually counted inside the period, even at $0', () => {
+    expect(isStaleDeadRow({ period: '2026-08', on_hand_amt: 0, last_counted: '2026-08-01' })).toBe(false);
+    expect(isStaleDeadRow({ period: '2026-08', on_hand_amt: 0, last_counted: '2026-08-21' })).toBe(false);
+  });
+
+  it('is false for any nonzero amount, however stale the date', () => {
+    expect(isStaleDeadRow({ period: '2026-08', on_hand_amt: 4.5, last_counted: '2026-07-31' })).toBe(false);
+  });
+
+  it('accepts the app-shape field names (onHandAmt/lastCounted) too', () => {
+    expect(isStaleDeadRow({ period: '2026-08', onHandAmt: 0, lastCounted: '2026-07-31' })).toBe(true);
+  });
+
+  it('is false without a period -- left ungated rather than guessed at', () => {
+    expect(isStaleDeadRow({ on_hand_amt: 0, last_counted: '2020-01-01' })).toBe(false);
+  });
+
+  it('is false for a null/undefined row', () => {
+    expect(isStaleDeadRow(null)).toBe(false);
+    expect(isStaleDeadRow(undefined)).toBe(false);
   });
 });
 
@@ -863,6 +894,20 @@ describe('formatWeeklyComplianceReport', () => {
     const md = formatWeeklyComplianceReport(c, { storeName: 'New Store' });
     expect(md).toMatch(/no complete weekly count on record/);
     expect(md).not.toMatch(/undefined|NaN/);
+  });
+
+  it('a store carrying a stale pre-period dead row gets a cleanup note, worded differently ' +
+     'from the new-items section (owner-directed 2026-10-12)', () => {
+    const rows = [
+      ...mk('W4', 'Food', 118, '2026-08-06'),
+      ...mk('W4', 'Condiment', 35, '2026-08-06'),
+      { loc: 'W4', cls: 'Condiment', wrin: 'dead-1', on_hand_amt: 0, last_counted: '2026-07-20', period: '2026-08' },
+    ];
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    const md = formatWeeklyComplianceReport(c, { storeName: 'Tecumseh' });
+    expect(md).toMatch(/Stale items — needs cleanup, not counting/);
+    expect(md).toMatch(/should get removed from qsr_onhand/);
+    expect(md).not.toMatch(/New items/); // no new WRINs here -- only the stale-row section should fire
   });
 });
 
