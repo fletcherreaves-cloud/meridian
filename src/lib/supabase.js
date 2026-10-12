@@ -2415,6 +2415,15 @@ export async function loadDailyActivityRangeForStore(loc, startDate, endDate) {
 // migration" shape as loadSecurityFindings' security_findings_latest probe. `allTime` on the
 // result tells the caller which mode it got, so the UI can label a fallback read honestly instead
 // of presenting a recent-window max as a true all-time record.
+// ⚠️ The view alone is NOT enough -- same lesson as security_findings_latest (schema-security-
+// findings-latest-index.sql). Measured live right after the view was first applied (2026-10-12):
+// the exact query shape below (order by loc, hour_slot through the view) hit a real `57014`
+// statement timeout -- an unindexed DISTINCT ON still forces Postgres to Sort the full base table
+// on every request. schema-qsr-hourly-sales-records-index.sql (companion index, run AFTER the
+// view) fixes this the same way the security_findings_latest index did. Until both are applied,
+// this loader still degrades safely to the 60-day fallback below (fetchAll's own retry-then-give-
+// up path), just slower and noisier (a spurious _recordDataError/DATA INCOMPLETE firing) than it
+// needs to be.
 // fallbackDays default (60) matches this file's own established precedent for an all-store
 // hourly-table scan (loadQsrActSummary's documented "~40 paginated requests" for a 60-day
 // window) -- a wider default here would be the same mistake that loader's own header describes

@@ -16,6 +16,15 @@
 -- documents fixing for a similar table (schema-qsr-daily-summary.sql). DISTINCT ON collapses it
 -- server-side to at most (#stores x 24 hour_slots) rows -- ~650 for this district.
 --
+-- ⚠️ THIS VIEW ALONE IS NOT ENOUGH -- run schema-qsr-hourly-sales-records-index.sql right after
+-- this file. Measured live 2026-10-12, immediately after first applying this view: the exact
+-- query the app runs through it (order by loc, hour_slot) hit a real `57014` statement timeout,
+-- not the "costs almost nothing" this file originally claimed before being measured -- an
+-- unindexed DISTINCT ON still forces Postgres to Sort the full 631k-row base table on every
+-- request, the identical symptom schema-security-findings-latest-index.sql already documents and
+-- fixes for a different view. Without that companion index, the app still works (it falls back to
+-- a 60-day scan after a slow timeout-and-retry), just slower and noisier than it should be.
+--
 -- security_invoker = true (Postgres 15+) re-runs qsr_daily_activity's own RLS (multitenant +
 -- per-loc scoping, schema-multitenant-phase2-rls.sql + schema-rls-phase2-loc.sql) AS THE QUERYING
 -- ROLE -- same pattern as schema-security-findings-latest-view.sql, no policy duplication needed.
