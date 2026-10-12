@@ -36,6 +36,7 @@ import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { evaluateRule } from '../src/engine/security-rules.js';
 import { personalBaseline, peerBaseline, storeBaseline, networkBaseline } from '../src/engine/security-baselines.js';
 import { daypartOf } from '../src/engine/labor-standard.js';
+import { tokenizeRows } from '../src/engine/identity-vault.js';
 
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const DEFAULT_WINDOW_DAYS = 28;
@@ -487,6 +488,228 @@ export function computeManagerDaypartFindingsForRule(rule, rows, { windowStart, 
   return findings;
 }
 
+// ── LABOR -- lifelenz_punch_edits x qsr_employee_tenure / qsr_punch_times ───────────────────────
+// Scoped 2026-10-12 off the owner's own question ("ghost employees on payroll or ... fraudulent
+// time clock entries ... in any type of pattern") and memory/plan-security-loss-prevention.md
+// §2.4a/§5's resulting net assessment, now that lifelenz_punch_edits is live, correct, and
+// verified (v5.521-v5.526, memory/finding-lifelenz-punch-edit-audit-report-2026-10-12.md).
+//
+// Three rule-shapes, same source table, same two subject grains CASH/INV already use elsewhere
+// in this file -- no new engine capability, no new security_findings column:
+//   LABOR-001 ghost employee:    subject = employee (empToken from employee_name). A punch-edit
+//     event dated AFTER that employee's own qsr_employee_tenure.termination_entry_date.
+//   LABOR-002 self-approval:     subject = employee (empToken from employee_name). The editing
+//     manager (manager_modified) IS the employee whose own punch was edited.
+//   LABOR-003 per-manager rate:  subject = MANAGER (empToken from manager_modified, same column
+//     security_findings already uses for a manager subject -- see INV-004's own precedent
+//     immediately above). Edit count per editing manager, normalized against that STORE's total
+//     punch volume (qsr_punch_times) for the window, z-scored against other stores' own rate --
+//     the exact same manager x store / 'store'-baseline shape INV-004 already established.
+//
+// lifelenz_punch_edits stores employee_name/manager_modified directly, NOT tokenized (dispatch
+// #125's own directive for this data domain: "no reason to hide names for scheduling and punch
+// times"). So identity resolution happens HERE, at compute time, via the SAME
+// getOrCreateToken()/tokenizeRows() identity vault every other domain in this file already uses
+// (scripts/qsrsoft-register-audit-pull.mjs's own precedent) -- not a new mechanism.
+//
+// ⚠️ UNVERIFIED CROSS-VENDOR ASSUMPTION, stated plainly rather than silently relied on (same
+// discipline as this file's INV-004 section, which states its own busn_dt assumption rather than
+// hiding it): LABOR-001 joins lifelenz_punch_edits.geid (LifeLenz's own GEID) against
+// qsr_employee_tenure.geid (QSRSoft's). Both vendors integrate against the same McDonald's
+// corporate employee master and QSRSoft's own geid is independently confirmed (qsr_punch_times.sql's
+// header) to occupy the same identifier space as audit_rows.emp_id -- but LifeLenz's geid has
+// never been live-cross-checked against QSRSoft's for the SAME person. Measure the real join hit
+// rate (how many lifelenz_punch_edits.geid values find a qsr_employee_tenure row at all) before
+// trusting LABOR-001's output, per CLAUDE.md's "measure it, don't reason about it."
+//
+// All three rules ship ACTIVE=FALSE (schema-security-rules-labor.sql) -- same posture
+// schema-security-rules.sql's own CASH-001/CASH-002 fixtures take when their thresholds are a
+// first guess, not yet measured against this org's real data (no live Supabase credential is
+// available in this sandbox to run the equivalent of INV-004's own pre-ship dry run).
+
+export function mapPunchEditRow(r) {
+  const employeeName = r.employee_name, managerModified = r.manager_modified;
+  const empKey = normalizeNameForMatch(employeeName), mgrKey = normalizeNameForMatch(managerModified);
+  return {
+    loc: r.loc, geid: r.geid, employeeName, managerModified,
+    adjustmentType: r.adjustment_type,
+    originalPunchAt: r.original_punch_at, adjustedPunchAt: r.adjusted_punch_at,
+    modifiedAt: r.modified_at,
+    date: String(r.modified_at || '').slice(0, 10),
+    // LABOR-002's own numerator, computed inline (no join needed, unlike LABOR-001's
+    // termination-date check below) -- 1 when the same person both IS the edited employee and
+    // IS the editor of record, 0 otherwise/either name missing.
+    selfApprovalFlag: (empKey && mgrKey && empKey === mgrKey) ? 1 : 0,
+  };
+}
+
+function normalizeNameForMatch(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function mapTenureRow(r) {
+  return { loc: r.loc, geid: r.geid, employmentStatus: r.employment_status, terminationEntryDate: r.termination_entry_date };
+}
+
+export function mapPunchTimeDateRow(r) {
+  return { loc: r.loc, date: String(r.start_date_time || '').slice(0, 10) };
+}
+
+// LABOR-001 needs BOTH tables; LABOR-003 needs punch_edits + qsr_punch_times; LABOR-002 needs
+// punch_edits ALONE -- the explicit exclusions below are what keep the three mutually exclusive,
+// same disambiguation-by-DATA_REQUIRED-combination shape as supportsWasteDaypart's own AND check.
+export function supportsLaborGhost(rule) {
+  const req = dataRequiredList(rule);
+  return req.includes('lifelenz_punch_edits') && req.includes('qsr_employee_tenure');
+}
+export function supportsLaborSelfApproval(rule) {
+  const req = dataRequiredList(rule);
+  return req.includes('lifelenz_punch_edits') && !req.includes('qsr_employee_tenure') && !req.includes('qsr_punch_times');
+}
+export function supportsLaborManagerRate(rule) {
+  const req = dataRequiredList(rule);
+  return req.includes('lifelenz_punch_edits') && req.includes('qsr_punch_times');
+}
+
+// LABOR-001's own join -- attaches each edit row's subject's termination_entry_date (if any) and
+// derives postTerminationFlag: 1 when the EFFECTIVE punch date (the corrected/added time if one
+// exists, else the original) falls strictly after the termination date on file, 0 otherwise.
+// Deliberately reads ONLY terminationEntryDate, never employmentStatus's own string value -- a
+// termination date being on file at all is a simpler, more reliable signal than guessing at every
+// string QSRSoft's employmentStatus field might carry.
+export function joinPunchEditsWithTenure(editRows, tenureRows) {
+  const tenureByKey = new Map();
+  for (const t of (tenureRows || [])) tenureByKey.set(`${t.loc}::${t.geid}`, t);
+  return (editRows || []).map(r => {
+    const t = tenureByKey.get(`${r.loc}::${r.geid}`);
+    const terminationEntryDate = t?.terminationEntryDate || null;
+    const effectivePunchDate = String(r.adjustedPunchAt || r.originalPunchAt || '').slice(0, 10) || null;
+    const postTerminationFlag = (terminationEntryDate && effectivePunchDate && effectivePunchDate > terminationEntryDate) ? 1 : 0;
+    return { ...r, employmentStatus: t?.employmentStatus || null, terminationEntryDate, postTerminationFlag };
+  });
+}
+
+// Resolves employee_name -> empToken for LABOR-001/LABOR-002 (subject = the edited employee).
+// `emp`/`empToken` land in the same field names computeFindingsForRule's own rows already use
+// (CASH's audit_rows), so personalBaseline/peerBaseline/networkBaseline (which all filter on
+// r.emp, not r.empToken) work unchanged if a future LABOR rule ever needs one of them.
+async function tokenizeEmployeeRows(rows) {
+  const tokenMap = await tokenizeRows(supabase, rows, 'employeeName');
+  return rows.map(r => ({ ...r, emp: r.employeeName, empToken: tokenMap.get((r.employeeName || '').trim()) || null }));
+}
+// Resolves manager_modified -> empToken for LABOR-003 (subject = the editing manager) -- the
+// SAME identity vault, just keyed off the other name column on the same row.
+async function tokenizeManagerRows(rows) {
+  const tokenMap = await tokenizeRows(supabase, rows, 'managerModified');
+  return rows.map(r => ({ ...r, managerToken: tokenMap.get((r.managerModified || '').trim()) || null }));
+}
+
+// LABOR-001/LABOR-002 compute -- structurally computeFindingsForRule's own (loc,empToken)
+// threshold loop, with ONE real difference: the dataContext key passed to evaluateRule() is the
+// rule's own DATA_REQUIRED[0] (dynamic), not a hardcoded 'audit_rows' -- computeFindingsForRule
+// itself can't be reused verbatim for exactly that reason (it hardcodes the CASH source name).
+// computeItemFindingsForRule/computeManagerDaypartFindingsForRule above already use this same
+// dynamic-primary-key pattern for their own non-CASH sources.
+export function computeLaborEmployeeFindingsForRule(rule, rows, { windowStart, windowEnd }) {
+  const { numField, denField, scale, abs } = fieldsFromExpr(rule);
+  const primary = dataRequiredList(rule)[0];
+
+  const pairs = new Map();
+  for (const r of rows) {
+    if (!r.empToken || !r.loc) continue;
+    const key = r.loc + '::' + r.empToken;
+    if (!pairs.has(key)) pairs.set(key, { loc: r.loc, empToken: r.empToken, emp: r.emp });
+  }
+
+  const findings = [];
+  for (const { loc, empToken, emp } of pairs.values()) {
+    const subjectRows = rows.filter(r => r.loc === loc && r.empToken === empToken);
+
+    const baselineOpts = { emp, loc, numField, denField, scale, abs, start: windowStart, end: windowEnd };
+    let baseline = null;
+    if (rule.baseline_type === 'personal') baseline = personalBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'peer') baseline = peerBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'store') baseline = storeBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'network') baseline = networkBaseline(rows, baselineOpts);
+
+    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
+
+    findings.push({
+      empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
+      value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
+      baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+    });
+  }
+  return findings;
+}
+
+// LABOR-003's own denominator index -- total qsr_punch_times rows per (loc, date), the store's
+// whole punch volume that day, independent of which manager edited anything. Built ONCE per
+// window and reused for every manager, same "shared, not recomputed" discipline
+// buildDaypartSalesIndex uses for INV-004's own denominator.
+export function buildLocDatePunchIndex(punchRows) {
+  const idx = new Map();
+  for (const r of (punchRows || [])) {
+    if (!r.loc || !r.date) continue;
+    const key = `${r.loc}::${r.date}`;
+    idx.set(key, (idx.get(key) || 0) + 1);
+  }
+  return idx;
+}
+
+// Pre-aggregates raw edit rows into ONE row per (loc, date, managerToken), summing editCount,
+// THEN attaches that (loc,date)'s own punch volume once per bucket -- the exact same
+// double-counting prevention joinWasteDaypartSales's own comment explains for INV-004. Rows with
+// no matching punch-volume bucket (no qsr_punch_times rows for that store/date in the pulled
+// window) are dropped, same honest-exclusion as that function's own no-sales-bucket case.
+export function joinManagerEditsWithPunchVolume(editRows, punchIndex) {
+  const buckets = new Map();
+  for (const r of (editRows || [])) {
+    if (!r.loc || !r.date || !r.managerToken) continue;
+    const salesKey = `${r.loc}::${r.date}`;
+    const vol = punchIndex.get(salesKey);
+    if (vol == null) continue;
+    const key = `${salesKey}::${r.managerToken}`;
+    const cur = buckets.get(key) || { loc: r.loc, date: r.date, managerToken: r.managerToken, editCount: 0, storePunchVolume: vol };
+    cur.editCount += 1;
+    buckets.set(key, cur);
+  }
+  return [...buckets.values()];
+}
+
+// LABOR-003 compute -- the manager x store grain, same shape as computeManagerDaypartFindingsForRule
+// immediately above (pre-aggregated rows in, 'store' baseline pooling ALL other-store rows
+// unfiltered by subject, since there is no further stratification dimension here the way INV-004
+// has day-part).
+export function computeManagerEditFindingsForRule(rule, rows, { windowStart, windowEnd }) {
+  const { numField, denField, scale, abs } = fieldsFromExpr(rule);
+  const primary = dataRequiredList(rule)[0];
+
+  const pairs = new Map();
+  for (const r of rows) {
+    if (!r.loc || !r.managerToken) continue;
+    const key = r.loc + '::' + r.managerToken;
+    if (!pairs.has(key)) pairs.set(key, { loc: r.loc, managerToken: r.managerToken });
+  }
+
+  const findings = [];
+  for (const { loc, managerToken } of pairs.values()) {
+    const subjectRows = rows.filter(r => r.loc === loc && r.managerToken === managerToken);
+    const baseline = rule.baseline_type === 'store'
+      ? storeBaseline(rows, { loc, numField, denField, scale, abs, start: windowStart, end: windowEnd })
+      : null;
+
+    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
+
+    findings.push({
+      empToken: managerToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
+      value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
+      baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+    });
+  }
+  return findings;
+}
+
 // ── I/O layer ──────────────────────────────────────────────────────────────────────────────────
 async function loadActiveRules() {
   const { data, error } = await supabase.from('security_rules').select('*').eq('active', true).eq('tenant_id', TENANT);
@@ -577,6 +800,58 @@ async function loadDailyActivityWindow(startDate, endDate) {
   return rows;
 }
 
+// LABOR's three loaders -- lifelenz_punch_edits/qsr_punch_times are filtered on a TIMESTAMP
+// column (modified_at / start_date_time), not a date column like busn_dt -- a bare `.lte(endDate)`
+// would mean midnight of that day and silently drop every edit/punch with a later time-of-day.
+// `endExclusive` is the day AFTER windowEnd, and both loaders use `.lt()` against it instead.
+async function loadPunchEditsWindow(startDate, endExclusive) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('lifelenz_punch_edits').select('*')
+      .gte('modified_at', startDate).lt('modified_at', endExclusive).range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadPunchEditsWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapPunchEditRow));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
+// qsr_employee_tenure is NOT date-windowed (termination_entry_date is the only date on the row,
+// and it needs to be checked regardless of when it falls relative to this run's window) -- loaded
+// in full, once per run, not re-filtered per rule.
+async function loadTenureAll() {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_employee_tenure')
+      .select('loc,geid,employment_status,termination_entry_date').range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadTenureAll failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapTenureRow));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
+async function loadPunchTimesDateWindow(startDate, endExclusive) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_punch_times').select('loc,start_date_time')
+      .gte('start_date_time', startDate).lt('start_date_time', endExclusive).range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadPunchTimesDateWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapPunchTimeDateRow));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 async function upsertFindings(findings) {
   if (!findings.length) return { saved: 0, errors: [] };
   const now = new Date().toISOString();
@@ -621,6 +896,9 @@ async function main() {
   const fobRowCache = new Map();      // 'YYYY-MM..YYYY-MM' -> raw qsr_fob rows
   const wasteRowCache = new Map();        // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_waste rows
   const dailyActivityCache = new Map();   // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_daily_activity rows
+  const punchEditCache = new Map();       // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped lifelenz_punch_edits rows
+  const punchTimeDateCache = new Map();   // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_punch_times {loc,date} rows
+  let tenureAllCache = null;              // qsr_employee_tenure, loaded once, not windowed
   let totalFindings = 0, totalErrors = 0, skipped = 0;
 
   for (const rule of rules) {
@@ -664,6 +942,40 @@ async function main() {
       const salesIndex = buildDaypartSalesIndex(dailyActivityCache.get(cacheKey));
       rows = joinWasteDaypartSales(wasteRowCache.get(cacheKey), salesIndex);
       findings = computeManagerDaypartFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsLaborGhost(rule)) {
+      // Daily grain, CASH-*'s own date-range convention -- same windowDays shape every other
+      // daily-grain branch above uses, not qsr_variance_stat's monthly shape.
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      const endExclusive = fmtDate(addDay(today, 1));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!punchEditCache.has(cacheKey)) punchEditCache.set(cacheKey, await loadPunchEditsWindow(windowStart, endExclusive));
+      if (!tenureAllCache) tenureAllCache = await loadTenureAll();
+      rows = joinPunchEditsWithTenure(punchEditCache.get(cacheKey), tenureAllCache);
+      rows = await tokenizeEmployeeRows(rows);
+      findings = computeLaborEmployeeFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsLaborSelfApproval(rule)) {
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      const endExclusive = fmtDate(addDay(today, 1));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!punchEditCache.has(cacheKey)) punchEditCache.set(cacheKey, await loadPunchEditsWindow(windowStart, endExclusive));
+      rows = await tokenizeEmployeeRows(punchEditCache.get(cacheKey));
+      findings = computeLaborEmployeeFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsLaborManagerRate(rule)) {
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      const endExclusive = fmtDate(addDay(today, 1));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!punchEditCache.has(cacheKey)) punchEditCache.set(cacheKey, await loadPunchEditsWindow(windowStart, endExclusive));
+      if (!punchTimeDateCache.has(cacheKey)) punchTimeDateCache.set(cacheKey, await loadPunchTimesDateWindow(windowStart, endExclusive));
+      const punchIndex = buildLocDatePunchIndex(punchTimeDateCache.get(cacheKey));
+      const managerRows = await tokenizeManagerRows(punchEditCache.get(cacheKey));
+      rows = joinManagerEditsWithPunchVolume(managerRows, punchIndex);
+      findings = computeManagerEditFindingsForRule(rule, rows, { windowStart, windowEnd });
     } else {
       console.warn(`[security-rules-run] ${rule.rule_id}: DATA_REQUIRED not yet supported by this job — skipping`);
       skipped++; continue;

@@ -879,12 +879,29 @@ piece is small and sharp:
   including every previously-failing one. Three separate PRs (#1429/#1430/#1431), three separate
   live-run verifications — see the finding file's own "CONFIRMED RESOLVED" section for the full
   numbers. `lifelenz_punch_edits` is live, correct, and feeding real data today.
-- **Still net-new, not yet built:** a `'labor'` domain in `security-panel.js` needs its own
-  `assembleLaborDrilldown()`, following `assembleCashDrilldown()`/`assembleInventoryDrilldown()`'s
-  existing precedent — the data lands in Supabase correctly now, but no `security_rules` row or
-  UI reads it yet. Every PATTERN-level manual-edit check (self-approval, per-manager outlier
-  rate, rounding-direction skew) is buildable from `lifelenz_punch_edits` whenever this gets
-  scoped — that data is now there to build on.
+- ✅ **BUILT (2026-10-12, same day) — the `'labor'` domain now exists.** LABOR-001 (ghost
+  employee, post-termination punch-edit activity), LABOR-002 (self-approval, the edited employee
+  IS the editing manager), LABOR-003 (per-manager outlier edit rate vs. other stores, z-score,
+  store baseline — the same manager x store shape INV-004 already established) —
+  `schema-security-rules-labor.sql`, compute logic in `scripts/security-rules-run.mjs`'s own
+  "── LABOR ──" section, panel wiring (new "🕐 Labor" tab, the `bySubjectType` fix) in
+  `security-panel.js`. **Rounding-direction skew is still the one deferred pattern** — it needs a
+  real distribution-skew statistic the rule engine doesn't support yet (`sequence`/
+  `window-function` logic types are explicitly stubbed in `security-rules.js`); that's new engine
+  work, not a new rule row, and was stated as out of scope for this pass rather than forced into
+  an ill-fitting shape.
+  **All three rules ship `active=false`** — no live Supabase credential was available in this
+  sandbox to run the equivalent of INV-004's own pre-ship dry-run measurement, so the thresholds
+  are first guesses in the same declared sense `CASH-001`/`CASH-002`'s own fixtures are. LABOR-001
+  additionally depends on an **unverified cross-vendor assumption** (LifeLenz `geid` and QSRSoft
+  `geid` being the same identifier space) — measure the real join hit rate before trusting its
+  output or flipping it `active=true`; see that schema file's own pre-flight checklist.
+  **Also deliberately not built this pass:** `assembleLaborDrilldown()` / the per-subject
+  "Investigate further" drill-down for Labor subjects — `domainRuleIds` is explicitly nulled at
+  that call site for `domain==='labor'` so the panel never silently runs the wrong (cash-shaped)
+  query against the wrong table. The main findings list/grouping/verdict chips/decision sentences/
+  legend/rule directory/print+export all work today; the five-measurement drill-down is a
+  follow-on, not a gap in what shipped.
 
 ### Phase 2 — composite scoring
 - Composite risk score combining Phase-1 rules with decay (§3 recurrence scoring).
