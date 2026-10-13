@@ -72,7 +72,15 @@ const STORE_NSNS = (process.env.ROSTER_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Conditional construction, not called unconditionally at module load — same pattern
+// qsrsoft-forms-completion-pull.mjs/qsrsoft-security-events-pull.mjs already use (their own
+// comment: "keeps this module importable ... under vitest, where neither env var is set").
+// Missed here originally: CI has neither env var set, so importing aggregate() for the new
+// weight-isolation test (2026-10-13) threw "supabaseUrl is required" at import time, before the
+// test itself ever ran — caught live by CI, not locally (this sandbox DOES have both set).
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const pad2 = n => String(n).padStart(2, '0');
 function currentPeriod() {
@@ -140,7 +148,22 @@ function extractRows(body) {
 // Sums volume; transaction-weights speed + avg check; hour-weights labor%. `window` decides
 // whether the row is tagged period_month (monthly table) or period_start/period_end (range
 // table) — see resolveWindow() and the file header.
-function aggregate(records, window) {
+//
+// oepeNoPark and healthyUsePct each carry their OWN transaction-weight sum (_onpW/_huW),
+// separate from the shared _spW that oepe/r2p/ctp/dtTtl/kvs use -- mirroring avgCheck's
+// existing _acW. Found live (dispatch: owner's MCDOK Hourly Manager Review workbook
+// comparison, period 2026-04 to 2026-09): reusing _spW as healthyUsePct's denominator silently
+// diluted it toward a FALSE exact-0 whenever a manager's weighted records included any whose
+// raw API row had healthyUsePct null (oepe/kvs still populated on those same records, so _spW
+// kept accruing while _hu did not) -- 249 of 691 live shift_manager_monthly rows measured with
+// healthy_use_pct === 0 despite real transactions/oepe/kvs, concentrated almost entirely in a
+// subset of stores (18213 100%, 33109 97%, 10422/10915/20475/29760/5183/5985/6972 0%), the exact
+// signature of a denominator-includes-null-contributing-records bug rather than a real 0%. Same
+// bug CLASS as #172 (cashOS) and this PR's own parseDailyGlimpse fix, one level up the pipeline
+// (aggregation across records, not field parsing). oepeNoPark showed zero live dilution cases
+// (always co-present with oepe on every record observed) but gets the same isolated-weight
+// treatment preemptively, since nothing guarantees that holds for every store/period.
+export function aggregate(records, window) {
   const acc = {};
   for (const r of records) {
     const key = r.loc + '|' + r.geid;
@@ -148,8 +171,8 @@ function aggregate(records, window) {
       loc: r.loc, geid: r.geid, name: r.name,
       numShifts: 0, actualHours: 0, actualVsScheduled: 0, actualVsNeeded: 0,
       netSales: 0, transactions: 0,
-      _spW: 0, _oepe: 0, _oepeNoPark: 0, _r2p: 0, _ctp: 0, _dtTtl: 0, _kvs: 0,
-      _hu: 0, _acW: 0, _ac: 0, _lbW: 0, _lb: 0,
+      _spW: 0, _oepe: 0, _r2p: 0, _ctp: 0, _dtTtl: 0, _kvs: 0,
+      _onpW: 0, _oepeNoPark: 0, _huW: 0, _hu: 0, _acW: 0, _ac: 0, _lbW: 0, _lb: 0,
     });
     if (r.name) a.name = r.name;
     a.numShifts += r.numShifts || 0;
@@ -167,8 +190,8 @@ function aggregate(records, window) {
       a._spW += tw;
       a._oepe += (r.oepe || 0) * tw; a._r2p += (r.r2p || 0) * tw; a._ctp += (r.ctp || 0) * tw;
       a._dtTtl += (r.dtTtl || 0) * tw; a._kvs += (r.kvs || 0) * tw;
-      if (r.oepeNoPark != null) a._oepeNoPark += r.oepeNoPark * tw;
-      if (r.healthyUsePct != null) a._hu += r.healthyUsePct * tw;
+      if (r.oepeNoPark != null) { a._onpW += tw; a._oepeNoPark += r.oepeNoPark * tw; }
+      if (r.healthyUsePct != null) { a._huW += tw; a._hu += r.healthyUsePct * tw; }
       if (r.avgCheck != null) { a._acW += tw; a._ac += r.avgCheck * tw; }
     }
     const hw = r.actualHours || 0;           // hour weight for labor %
@@ -185,11 +208,11 @@ function aggregate(records, window) {
     avg_check: a._acW ? a._ac / a._acW : (a.transactions ? a.netSales / a.transactions : null),
     tpph: a.actualHours ? a.transactions / a.actualHours : null,
     oepe: a._spW ? a._oepe / a._spW : null,
-    oepe_no_park: a._spW ? a._oepeNoPark / a._spW : null,
+    oepe_no_park: a._onpW ? a._oepeNoPark / a._onpW : null,
     r2p: a._spW ? a._r2p / a._spW : null,
     ctp: a._spW ? a._ctp / a._spW : null, dt_ttl: a._spW ? a._dtTtl / a._spW : null,
     kvs: a._spW ? a._kvs / a._spW : null,
-    healthy_use_pct: a._spW ? a._hu / a._spW : null,
+    healthy_use_pct: a._huW ? a._hu / a._huW : null,
     labor_pct: a._lbW ? a._lb / a._lbW : null,
     updated_at: new Date().toISOString(),
   }));
@@ -351,4 +374,9 @@ async function main() {
   if (!saved) process.exit(1);
 }
 
-main().catch(err => { console.error('[shift-mgr] FATAL:', err); process.exit(1); });
+// Only run main() when executed directly -- without this guard, importing aggregate() (or any
+// other export) for a unit test ran the whole pull, including process.exit(), as a side effect
+// of the import. Same guard qsrsoft-forms-completion-pull.mjs already uses.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => { console.error('[shift-mgr] FATAL:', err); process.exit(1); });
+}
