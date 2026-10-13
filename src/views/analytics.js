@@ -6139,8 +6139,19 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
 
   const buildReport = async () => {
     setRunning(true);
-    const s = new Date(startDate+'T00:00:00'), e = new Date(endDate+'T23:59:59');
-    const range = {s,e};
+    // ✅ FIXED (owner-reported live, mass-review notes 70, 2026-10-13) — "Days" read 2 for a
+    // single picked date. Root cause: `new Date(startDate+'T00:00:00')`/`new
+    // Date(endDate+'T23:59:59')` parse in the BROWSER's LOCAL time (no 'Z' suffix), but
+    // metric-source.js's `_dk()` re-derives each boundary's date-KEY via `.toISOString()`,
+    // which is always UTC. In any negative-UTC-offset zone (every US timezone, i.e. every
+    // Meridian user) local 23:59:59 on day D is UTC early-morning on day D+1, so `_dk(e)`
+    // came out as the NEXT calendar day — widening a single-day pick to a 2-day-wide range
+    // for metricSeries's rs<=dk<=re comparison. Plain date-only strings sidestep this
+    // entirely: `new Date('2025-11-27')` (no time component) parses as UTC midnight per spec,
+    // which is exactly what `_dk()` derives too, so rs===re for a single picked day on either
+    // side of the comparison. Same {s,e}-as-plain-strings convention DateRangeControl
+    // (components/PanelControls.js) already uses everywhere else in this app.
+    const range = {s:startDate, e:endDate};
     const targetLocs = selLocs.includes('all') ? (ds.storeIds||[]) : selLocs;
     const results = [];
     for(const loc of targetLocs){
