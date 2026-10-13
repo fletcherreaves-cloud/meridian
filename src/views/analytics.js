@@ -778,8 +778,12 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     const laborSeries   = metricSeries(ds, selLoc, range, 'laborPct');
     const tpphSeries    = metricSeries(ds, selLoc, range, 'tpph');
     const lySalesSeries = metricSeries(ds, selLoc, lyRange, 'sales');
-    // FOB has no auto/emailed chain in metric-source.js yet — stays manual (Controls upload).
-    const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
+    // ✅ FIXED (mass-review notes 70, 2026-10-13) — this comment used to say "FOB has no auto/
+    // emailed chain in metric-source.js yet", which went stale when dispatch #104 added the
+    // fobPct derive chain (qsrFobRows-backed) without updating this call site. Routed through
+    // the same metricSeries pattern as every other field above, instead of a raw ctrlRows read
+    // that only ever saw manual Controls uploads.
+    const fobSeries = metricSeries(ds, selLoc, range, 'fobPct');
 
     const dateKeys = Object.keys(salesSeries).sort();
     const lR = dateKeys.map(dk=>({date:new Date(dk+'T12:00:00'), sales:salesSeries[dk],
@@ -814,7 +818,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     const laborPct=avg(lR,'laborPct');
     const tpph=avg(lR,'tpph');
     const oepe=avg(oR,'oepe');
-    const fob=avg(cR,'fobPct');
+    const fobVals=Object.values(fobSeries).filter(v=>v!=null&&v>0);
+    const fob=fobVals.length?fobVals.reduce((a,b)=>a+b,0)/fobVals.length:null;
     if(vsLY!=null){obs.push(vsLY>=0
       ?`Sales trending ${(vsLY*100).toFixed(2)}% above last year — positive trajectory`
       :`Sales ${Math.abs(vsLY*100).toFixed(2)}% below last year — review traffic patterns`);}
@@ -831,7 +836,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
       ?`FOB ${(fob*100).toFixed(2)}% — ${gap.toFixed(1)}pp above ${(tgt.tFOBBase*100).toFixed(2)}% target`
       :`FOB on track at ${(fob*100).toFixed(2)}%`);}
 
-    return {lR,oR,cR,n,tgt,kb,assign,org,byDOW,vsLY,lyAvgSales,
+    return {lR,oR,n,tgt,kb,assign,org,byDOW,vsLY,lyAvgSales,
       sales:curAvgSales,gc:avg(lR,'gc'),check:avg(lR,'avgCheck'),
       laborPct,tpph,oepe,park:avg(oR,'park'),fob,obs:obs.slice(0,5)};
   },[selLoc,period,ds,settings]);
@@ -954,7 +959,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
         <tbody>
           ${kpiRow('Daily Sales ($)',d.sales,null,fmt$,false)}
           ${kpiRow('Guest Count',d.gc,null,v=>''+Math.round(v),false)}
-          ${kpiRow('Avg Check',d.check,null,v=>'$'+v.toFixed(2),false)}
+          ${kpiRow('Avg Check',d.check,tgt.tAvgCheck,v=>'$'+v.toFixed(2),false)}
           ${kpiRow('Labor %',d.laborPct,resolveLaborTarget(tgt),fmtP,true)}
           ${kpiRow('TPPH',d.tpph,tgt.tTpph,fmtN,false)}
           ${kpiRow('OEPE (seconds)',d.oepe,tgt.tOepe,v=>Math.round(v)+'s',true)}
@@ -8626,7 +8631,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         style:{padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
           background:'rgba(96,165,250,.12)',color:'#60a5fa',
           border:'1px solid rgba(96,165,250,.3)'}},
-        '📧 Group Report'),
+        '📧 Operator Report'),
       // ── Patch Sheet button + inline group selector ─────────────────────────
       locs.length>0&&btn({
         onClick:()=>setSheetOpen(v=>!v),

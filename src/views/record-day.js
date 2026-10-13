@@ -979,7 +979,7 @@ function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory,
     return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } },
       'No quarter-hour sales data yet. The automated pull runs daily — check back after the next run, or ',
       h('button',{ style:{ ...S.ghostBtn, display:'inline', padding:'2px 8px' }, onClick:onLoadFullHistory, disabled:fullHistoryState==='loading' },
-        fullHistoryState==='loading' ? 'loading full history…' : 'load full history since 2022'),
+        fullHistoryState==='loading' ? 'loading Record Hour history…' : 'load full Record Hour history since 2022'),
       '.');
   }
 
@@ -1011,10 +1011,16 @@ function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory,
     div({ style:{ fontSize:12, color:'var(--txt3)', marginBottom:4 } },
       'Any 15-minute-aligned start counts (7:15am–8:15am is as valid as 7:00am–8:00am) — a true ' +
       'rolling window over real 15-minute buckets, not a fixed clock-hour reading. ',
+      // Distinctly labeled "Record Hour history" (mass-review notes 70, 2026-10-13) -- this
+      // button and the day-records one above it (RecordDayTab's own top bar, or
+      // StoreRecordsTab's loadHistoryBtn) both render "Load full history (since 2022)" and were
+      // simultaneously visible with IDENTICAL text whenever this tab is open (RecordDayTab's top
+      // bar persists across every tab) -- a real, pre-existing ambiguity this reuse surfaced via
+      // a test, not introduced by it. Each button now names which stream it backfills.
       !fullHistoryLoaded && h('button',{
         style:{ ...S.ghostBtn, display:'inline', padding:'2px 8px', fontSize:11, marginLeft:4 },
         onClick:onLoadFullHistory, disabled:fullHistoryState==='loading',
-      }, fullHistoryState==='loading' ? 'Loading full history…' : '🕰 Load full history (since 2022)')),
+      }, fullHistoryState==='loading' ? 'Loading Record Hour history…' : '🕰 Load full Record Hour history (since 2022)')),
 
     // Category / metric / view filters -- the SAME dropdown (S.select) + pill-button
     // (S.ghostBtn) conventions every other tab in this file already uses.
@@ -1543,4 +1549,8 @@ export function RecordDayTab({ stores, ds }) {
 // SalesVolumeTab, etc., all built around a cross-store sortable TABLE, the wrong shape for a
 // single-store drill-down tab) or its `S` style object. Per this dispatch's own scope note,
 // this panel's own cross-store UI/behavior is otherwise unchanged.
-export { computeRecords, scopeRecordData, fDate, fDateShort, fWeekLabel, fMonthLabel, fSec, fGC, f$2, DOW_SHORT, DOW_NAMES };
+// HourRecordTab/buildBreakIndex (mass-review notes 70, 2026-10-13) — reused directly by
+// StoreRecordsTab (store-analytics.js) to give the per-store Records tab the same Record Hour
+// section (sort, Current Record/Top 5 All-Time toggle, previous-record column, date) this
+// district-wide panel already has, scoped to scopedLocs:[loc] instead of rebuilding it.
+export { computeRecords, scopeRecordData, fDate, fDateShort, fWeekLabel, fMonthLabel, fSec, fGC, f$2, DOW_SHORT, DOW_NAMES, HourRecordTab, buildBreakIndex };

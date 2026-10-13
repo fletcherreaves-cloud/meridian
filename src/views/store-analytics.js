@@ -23,7 +23,8 @@ import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
 // main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
 // day-of-week depth. See StoreRecordsTab's own header comment for why only the computation +
 // formatters are imported, never record-day.js's own React components.
-import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT } from './record-day.js';
+import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT, HourRecordTab, buildBreakIndex } from './record-day.js';
+import { computeHourRecords, scopeHourRecords } from '../engine/record-hour.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -90,15 +91,11 @@ async function fetchHistoricalWeather(locs, startDate, endDate) {
 
 
 // SHIFT ANALYSIS TAB
-// Safe date helper — r.date may be a Date object OR an ISO string after IDB round-trip
-const _toD = d => d instanceof Date ? d : new Date((d||'')+'T12:00:00Z');
-
 function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const {p, t, loc} = store;
   const wb = settings.weeksBack||6;
   const cut = new Date(Date.now()-wb*7*86400000);
   const locStr = String(loc||'').trim();
-  const opsRows   = ds&&ds.opsRows   ? ds.opsRows.filter(r=>r.loc===loc&&r.date>=cut)   : [];
   // #178 item 2 (extended 2026-09-07, backlog `labor_rows` sweep): tpph/labor/ot were already
   // routed through metricSeries (auto-first across every stream) instead of a raw filter over
   // the manual Labor Excel upload's rows; sales + the 5 channel-mix percentages below them were
@@ -109,8 +106,14 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   // dtMixPct/bfMixPct/mopMixPct/kioskMixPct/delivMixPct (metric-source.js) resolve manual Labor
   // first, then the emailed Sales Ledger — same fallback order the raw manual-first read implied,
   // just with a real auto backstop now.
+  // ✅ FIXED (mass-review notes 70, 2026-10-13) — oepe/kvst/park/r2p/kvsu were the one group
+  // this #178 item 2 pass missed: still a raw ds.opsRows filter + oAvg() straight off the
+  // manual Ops upload (same manual-only antipattern the comment above describes for the OTHER
+  // fields, just never migrated for these five). Bucketed through metricSeries below like
+  // everything else in this table now.
   const range = {s:cut, e:lastClosedBusinessDay()};
-  const dowMetric = {sales:{},tpph:{},labor:{},ot:{},dtPct:{},bfPct:{},mopPct:{},kioskPct:{},delivPct:{}};
+  const dowMetric = {sales:{},tpph:{},labor:{},ot:{},dtPct:{},bfPct:{},mopPct:{},kioskPct:{},delivPct:{},
+    oepe:{},kvst:{},park:{},r2p:{},kvsu:{}};
   {
     const bucket=(series,key)=>{for(const dk in series) (dowMetric[key][new Date(dk+'T00:00:00').getDay()] ??= []).push(series[dk]);};
     bucket(metricSeries(ds,loc,range,'sales'),       'sales');
@@ -122,6 +125,11 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     bucket(metricSeries(ds,loc,range,'mopMixPct'),   'mopPct');
     bucket(metricSeries(ds,loc,range,'kioskMixPct'), 'kioskPct');
     bucket(metricSeries(ds,loc,range,'delivMixPct'), 'delivPct');
+    bucket(metricSeries(ds,loc,range,'oepe'),        'oepe');
+    bucket(metricSeries(ds,loc,range,'kvst'),        'kvst');
+    bucket(metricSeries(ds,loc,range,'park'),        'park');
+    bucket(metricSeries(ds,loc,range,'r2p'),         'r2p');
+    bucket(metricSeries(ds,loc,range,'kvsHealthy'),  'kvsu');
   }
   const dowMean=(bucket,d)=>{const v=bucket[d];return v&&v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
   const dowN   =(bucket,d)=>(bucket[d]?bucket[d].length:0);
@@ -134,11 +142,9 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const hasSalesData = Object.values(dowMetric.sales).some(v=>v&&v.length);
 
   const dowData = [0,1,2,3,4,5,6].map(d=>{
-    const oR=opsRows.filter(r=>_toD(r.date).getDay()===d);
-    const oAvg=(f)=>oR.length?oR.reduce((a,r)=>a+(r[f]||0),0)/oR.length:0;
     return{dow:DOW_BASE[d],n:dowN(dowMetric.sales,d),sales:dowMean(dowMetric.sales,d),
-      oepe:oAvg('oepe'),kvst:oAvg('kvst'),park:oAvg('park'),r2p:oAvg('r2p'),
-      tpph:dowMean(dowMetric.tpph,d),kvsu:oAvg('kvsu'),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
+      oepe:dowMean(dowMetric.oepe,d),kvst:dowMean(dowMetric.kvst,d),park:dowMean(dowMetric.park,d),r2p:dowMean(dowMetric.r2p,d),
+      tpph:dowMean(dowMetric.tpph,d),kvsu:dowMean(dowMetric.kvsu,d),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
       dtPct:dowMean(dowMetric.dtPct,d),bfPct:dowMean(dowMetric.bfPct,d),mopPct:dowMean(dowMetric.mopPct,d),
       kioskPct:dowMean(dowMetric.kioskPct,d),delivPct:dowMean(dowMetric.delivPct,d),
     };
@@ -2669,7 +2675,39 @@ function StoreRecordsTab({ds, loc, name}) {
     title: 'Records only cover data already loaded into the app — this pulls the full sales history already saved in the cloud, back to 2022.',
   }, deepHistoryState === 'loading' ? 'Loading history since 2022…' : deepHistoryState === 'error' ? '⚠ Retry: full history since 2022' : '🕰 Load full history (since 2022)');
 
+  // Record Hour (mass-review notes 70, 2026-10-13) — same HourRecordTab the district-wide
+  // Records panel (record-day.js's RecordDayTab) already ships, reused here scoped to this one
+  // store (scopedLocs:[loc]) rather than rebuilt. Independent of the day-level `recs`/`liveRec`
+  // empty-state gate below — HourRecordTab has its own loading/empty states for its own stream
+  // (ds.qsrSalesQtrHourRows), same as RecordDayTab's own `tab==='hour'` branch.
+  const scopedLocs = loc ? [loc] : null;
+  const hourData     = React.useMemo(() => computeHourRecords(ds, { windowDays: liveWindow }), [ds, liveWindow]);
+  const hourViewData = React.useMemo(() => scopeHourRecords(hourData, scopedLocs), [hourData, scopedLocs]);
+  const hourBreakIndex = React.useMemo(
+    () => buildBreakIndex(hourViewData?.recentBreakers?.map(b => ({ ...b, type:'Hour Sales' }))),
+    [hourViewData]);
+  const [qtrHourHistoryState, setQtrHourHistoryState] = React.useState(
+    () => (isLazyFillWideLoaded('qsrSalesQtrHourRows') ? 'loaded' : 'idle'));
+  const handleLoadQtrHourHistory = React.useCallback(() => {
+    ensureLazyFillWide('qsrSalesQtrHourRows');
+    setQtrHourHistoryState('loading');
+  }, []);
+  React.useEffect(() => {
+    if (qtrHourHistoryState !== 'loading') return;
+    if (isLazyFillWideLoaded('qsrSalesQtrHourRows')) setQtrHourHistoryState('loaded');
+    else if (isLazyFillWideError('qsrSalesQtrHourRows')) setQtrHourHistoryState('error');
+  }, [ds, qtrHourHistoryState]);
+  const hourSection = div({style:{marginTop:20,paddingTop:16,borderTop:'.5px solid var(--bdr)'}},
+    h(HourRecordTab, {
+      data: hourViewData, breakIndex: hourBreakIndex,
+      fullHistoryLoaded: isLazyFillWideLoaded('qsrSalesQtrHourRows'),
+      onLoadFullHistory: handleLoadQtrHourHistory,
+      fullHistoryState: qtrHourHistoryState,
+      ds, scopedLocs, windowDays: liveWindow,
+    }));
+
   if(!recs && !liveRec) return div({style:{padding:20}},
+    hourSection,
     div({className:'empty-st'},
       div({className:'empty-st-t'},'No Records Data'),
       div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file, or load daily sales/ops data, to see store records.'),
@@ -2734,6 +2772,7 @@ function StoreRecordsTab({ds, loc, name}) {
     textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text2)',textAlign:align,borderBottom:'.5px solid var(--bdr)'}},l);
 
   return div({style:{padding:2}},
+    hourSection,
     recs && div(null,
       div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
         div({style:{fontSize:'13px',fontWeight:700}},'🏆 All-Time Store Records'),

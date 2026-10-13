@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { addD, addDR, dKey, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart } from '../utils/date.js';
+import { addD, addDR, dKey, dowOf, sodOf, setWeekStartDay, mwStart, nwStart } from '../utils/date.js';
 import { lastClosedBusinessDay } from './swing-feed.js';
 
 const h    = React.createElement;
@@ -1062,24 +1062,18 @@ function compute6wk(loc,ds,wb){
     add(opsL, ['oepe','r2p','kvst','park','kvsu']);
     return c;
   })();
-  // Ends on the last CLOSED business day, not literal "now" (signature #4) — also gained an
-  // explicit upper bound (row.date>_lastClosed6wk), which this filter never had before.
-  // #150/#178 item 6: `!row.kvsu` excluded a genuine 0 (never used the 2nd-side KVS window)
-  // the same way METRIC_SOURCES' old mode:'pos' did — fixed to a real presence check. The
-  // no-coverage default was also `0`, indistinguishable from a confirmed zero; now `null`, so
-  // computeOpsScore's presence check (p.kvsu!=null) can actually tell the two apart — without
-  // this, that check would be a no-op (kvsu was never null before, always a number).
-  // eodOf(), not the raw _lastClosed6wk (midnight): rows are stored at NOON (same convention
-  // documented in labor-tools.js's PERIODS sodOf() comment), so a raw midnight upper bound
-  // excludes every row on the last closed business day itself whenever "now" falls in
-  // businessDate()'s own 4-hour offset window (roughly 00:00-04:00 local) — the offset that
-  // decides what "the last closed day" even is can, on that narrow window, compute a boundary
-  // EARLIER in the day than a real noon-stamped row for that same calendar day. Found live via
-  // a test that pins its fixture dates to real wall-clock "now" (forecast.test.js) failing only
-  // during that window — reproduced with node -e against the actual clock, not assumed.
-  let kvsuS=0,kvsuC=0;const cut=_range.s;
-  for(const row of opsL){if(row.date<cut||row.date>eodOf(_lastClosed6wk)||row.kvsu==null)continue;kvsuS+=row.kvsu;kvsuC++;}
-  r.kvsu=kvsuC?kvsuS/kvsuC:null;
+  // ✅ FIXED (mass-review notes 70, 2026-10-13) — kvsu used to be the one metric in this
+  // function still read straight off raw opsL (manual Ops upload only), bypassing
+  // metric-source.js's auto-first 'kvsHealthy' chain (glimpseRows→opsServiceRows→
+  // qsrActSummaryRows→opsRows.kvsu) that every sibling metric above already uses via M().
+  // Routed through metricAvg directly (not the shared M() helper, which does `?? 0`) so the
+  // null-vs-zero distinction below is preserved: metricAvg already returns null on zero
+  // resolved days, exactly matching the old raw loop's kvsuC?sum/count:null contract that
+  // computeOpsScore's p.kvsu!=null presence check (#150/#178 item 6) depends on. The old
+  // loop's own eodOf()/noon-row upper-bound concern doesn't apply here — metricSeries buckets
+  // by calendar date, same as every other M()-routed metric already sharing this _range.
+  r.kvsu=metricAvg(ds,[loc],_range,'kvsHealthy');
+  const cut=_range.s;
   r.floorCompliance=r.floorMgmtNeeded>0?r.floorHrsSched/r.floorMgmtNeeded:null;
   r.r2pSuspect=r.r2p>0&&r.r2p<60;
   r.hasPettyCash=ctrlL.some(row=>row.date>=cut&&row.date<=_lastClosed6wk&&row.hasPettyCash);

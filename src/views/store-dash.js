@@ -17,6 +17,7 @@ import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engi
 import { lastPriceChangeByStore } from '../engine/price-events.js';
 import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
 // Dispatch #203 -- LeaderboardPanel (below) merges Rankings/Record Days/Top-Bottom Performers
 // into one panel with three modes, so this file pulls in the other two's content components.
@@ -168,16 +169,28 @@ const PEAK_SLICES = {
 };
 function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase().replace(/\s/g,'');}
 
-function analyzePeaks(peakSvcRows, peakSalesRows, loc, wb) {
+// `explicitRange` (mass-review notes 70, 2026-10-13) — {s,e} Date/ISO-string pair from the
+// 3 Peaks tab's own DateRangeControl. When given, it's used verbatim (inclusive both ends,
+// no "need ≥3 rows or fall back to all" relaxation — an explicit pick is intentional, unlike
+// the wb-trailing-window default below) instead of the wb-based trailing cutoff.
+function analyzePeaks(peakSvcRows, peakSalesRows, loc, wb, explicitRange) {
   // Use all available data for this location — no arbitrary date cutoff
   // so loaded historical files are always visible
   const locStr = String(loc||'').trim();
   const svcRows  = peakSvcRows.filter(r=>String(r.loc||'').trim()===locStr);
   const salesRows= peakSalesRows.filter(r=>String(r.loc||'').trim()===locStr);
-  // Prefer recent wb weeks if we have enough data, otherwise use all
-  const cut = new Date(Date.now()-(wb||6)*7*86400000);
-  const svcR  = svcRows.filter(r=>r.date>=cut).length  >= 3 ? svcRows.filter(r=>r.date>=cut)  : svcRows;
-  const salesR= salesRows.filter(r=>r.date>=cut).length>= 3 ? salesRows.filter(r=>r.date>=cut): salesRows;
+  let svcR, salesR;
+  if (explicitRange && explicitRange.s && explicitRange.e) {
+    const s = new Date(explicitRange.s), e = new Date(explicitRange.e);
+    e.setHours(23,59,59,999);
+    svcR   = svcRows.filter(r=>r.date>=s&&r.date<=e);
+    salesR = salesRows.filter(r=>r.date>=s&&r.date<=e);
+  } else {
+    // Prefer recent wb weeks if we have enough data, otherwise use all
+    const cut = new Date(Date.now()-(wb||6)*7*86400000);
+    svcR  = svcRows.filter(r=>r.date>=cut).length  >= 3 ? svcRows.filter(r=>r.date>=cut)  : svcRows;
+    salesR= salesRows.filter(r=>r.date>=cut).length>= 3 ? salesRows.filter(r=>r.date>=cut): salesRows;
+  }
   const slices=['breakfast','lunch','dinner'];
   const result={};
   for(const sl of slices){
@@ -1310,6 +1323,13 @@ function AITabInsight({buildPrompt, label}) {
   );
 }
 
+// mass-review notes 70 (2026-10-13) — a dedicated date-range filter for 3 Peaks, independent of
+// the global weeksBack setting every other store-dash tab shares. null = the existing wb-
+// trailing-window default (unchanged behavior); a real {id,s,e} picks an explicit window via
+// analyzePeaks's new explicitRange param. Same DateRangeControl every other panel-contract-
+// compliant panel uses (panel-contract.md), not a hand-rolled picker.
+const PEAKS_DATE_PRESETS = DATE_RANGE_PRESETS.filter(p => ['28d','60d','90d','180d'].includes(p.id));
+
 function PeaksTab({ds, loc, tgt, settings}) {
   const locStr = String(loc||'').trim();
   // Debug: check what locs are in peaks data
@@ -1318,7 +1338,8 @@ function PeaksTab({ds, loc, tgt, settings}) {
     (ds&&ds.peaksSalesRows&&ds.peaksSalesRows.some(r=>String(r.loc||'').trim()===locStr));
   const record = ds&&ds.records&&ds.records[loc];
   const wb = settings.weeksBack||6;
-  const peaks = hasPeaks ? analyzePeaks(ds.peaksSvcRows||[],ds.peaksSalesRows||[],loc,wb) : null;
+  const [dateRange, setDateRange] = useState(null);
+  const peaks = hasPeaks ? analyzePeaks(ds.peaksSvcRows||[],ds.peaksSalesRows||[],loc,wb,dateRange) : null;
   const sliceInfo = {
     breakfast:{label:'Breakfast',time:'7:00 AM – 9:00 AM',color:'#f59e0b',bg:'rgba(245,158,11,.08)',bdr:'rgba(245,158,11,.25)'},
     lunch:    {label:'Lunch',    time:'11:00 AM – 2:00 PM',color:'#10b981',bg:'rgba(16,185,129,.08)',bdr:'rgba(16,185,129,.25)'},
@@ -1345,9 +1366,15 @@ function PeaksTab({ds, loc, tgt, settings}) {
     )
   );
   return div(null,
-    div({style:{marginBottom:12,padding:'8px 0',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div({style:{fontSize:'11px',fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.5px'}},'Peak Hour Performance — '+wb+'-Week Avg'),
-      div({style:{fontSize:'10px',color:'var(--text3)'}},loc+' · '+STORE_NAMES[loc])
+    div({style:{marginBottom:12,padding:'8px 0',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
+      div({style:{fontSize:'11px',fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.5px'}},
+        'Peak Hour Performance — '+(dateRange?dateRange.s+' to '+dateRange.e:wb+'-Week Avg')),
+      div({style:{fontSize:'10px',color:'var(--text3)'}},loc+' · '+STORE_NAMES[loc]),
+      div({style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:6}},
+        dateRange&&btn({onClick:()=>setDateRange(null),title:'Back to the default '+wb+'-week trailing average',
+          style:{padding:'3px 9px',fontSize:9,borderRadius:'var(--r)',border:'.5px solid var(--bdr)',
+            background:'transparent',color:'var(--text3)',cursor:'pointer'}},'↺ Default'),
+        h(DateRangeControl,{presets:PEAKS_DATE_PRESETS,value:dateRange,onChange:setDateRange}))
     ),
     ['breakfast','lunch','dinner'].map(sl => {
       const info = sliceInfo[sl];
@@ -3185,6 +3212,17 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
   const [editNote, setEditNote] = useState('');
   const [editLoc, setEditLoc] = useState('');
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
+  // Date-range creation (mass-review notes 70, 2026-10-13, owner-requested) — null means
+  // "single day" (every existing behavior: edit one day, add one day, unchanged). Only
+  // offered for a brand-new event (editKey==='new'); editing an existing day via startEdit()
+  // still edits just that one day, even if it's part of a multi-day range someone else
+  // created — matching how the list already treats a multi-day event as N separate per-day
+  // entries sharing a rangeId, not one editable object. Reuses the exact same rangeId/
+  // rangeDayNum/rangeTotalDays/"(Day N of M)" label convention events-import.js's
+  // orgEventsToDayMap() already established for org-sourced multi-day spans, so a manually-
+  // created range is structurally identical to an imported one to every downstream consumer
+  // (dupe detection's normLabel() already strips the "(Day N of M)" suffix).
+  const [editEndDate, setEditEndDate] = useState(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   // Dispatch #122: "which holiday" sub-filter, only meaningful when typeFilter==='holiday' —
@@ -3311,29 +3349,51 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
-    const existing = next[editLoc] && next[editLoc][editDate];
+    // Date range (mass-review notes 70) — only live for a brand-new event with a real end
+    // date past the start; editing an existing single day (startEdit) never sets editEndDate,
+    // so that path is byte-for-byte the single-day behavior this always had.
+    const days=[];
+    if(editEndDate && editEndDate>editDate){
+      let d=new Date(editDate+'T12:00:00'); const last=new Date(editEndDate+'T12:00:00');
+      for(let guard=0; d<=last && guard<92; guard++){ days.push(dKey(d)); d=addDR(d,1); }
+    } else {
+      days.push(editDate);
+    }
+    const multi=days.length>1;
+    const baseLabel=EVENT_TYPES[editType]?.label||'Other';
     // issue #142: mf_events is structurally one entry per (loc,date) — a write to an occupied slot
     // used to silently overwrite whatever was there, no warning. Warn before clobbering a DIFFERENT
     // event than the one actually being edited; editing the same slot in place (this modal was
     // opened via startEdit on it) still saves silently — that's just editing, not an overwrite.
+    // For a range, one confirm covers every day that would be overwritten, named individually so
+    // nobody blind-replaces a week of unrelated tags with a single click.
     const targetKey = editLoc+'_'+editDate;
-    if(existing && editKey!==targetKey){
+    const collisions = days.filter(dk => next[editLoc] && next[editLoc][dk] && (dk!==editDate || editKey!==targetKey));
+    if(collisions.length){
+      const names = collisions.map(dk => dk+' ("'+(next[editLoc][dk].label||next[editLoc][dk].note||'an event')+'")');
       const ok=window.confirm(
-        (STORE_NAMES[editLoc]||editLoc)+' already has "'+(existing.label||existing.note||'an event')+'" tagged on '+editDate+'.\n\n'+
-        'Saving will replace it with "'+(EVENT_TYPES[editType]?.label||'Other')+'". Continue?'
+        (STORE_NAMES[editLoc]||editLoc)+' already has '+(collisions.length>1?collisions.length+' days':'a day')+' tagged in this range:\n'+
+        names.join('\n')+'\n\nSaving will replace '+(collisions.length>1?'them':'it')+' with "'+baseLabel+'". Continue?'
       );
       if(!ok) return;
     }
     if(!next[editLoc])next[editLoc]={};
-    next[editLoc][editDate]={type:editType,note:editNote,icon:EVENT_TYPES[editType]?.icon||'📌',label:EVENT_TYPES[editType]?.label||'Other'};
-    onUpdate(next);setEditKey(null);
+    const rangeId = multi ? `manual_${editLoc}_${editDate}_${editEndDate}_${Date.now()}` : null;
+    days.forEach((dk,i)=>{
+      next[editLoc][dk]={
+        type:editType, note:editNote, icon:EVENT_TYPES[editType]?.icon||'📌',
+        label: multi ? `${baseLabel} (Day ${i+1} of ${days.length})` : baseLabel,
+        ...(multi ? { rangeId, rangeDayNum:i+1, rangeTotalDays:days.length } : {}),
+      };
+    });
+    onUpdate(next);setEditKey(null);setEditEndDate(null);
   };
   const remove=(loc,dk)=>{
     const next=JSON.parse(JSON.stringify(userEvents));
     if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
     onUpdate(next);
   };
-  const startEdit=(ev)=>{setEditKey(ev.loc+'_'+ev.dk);setEditLoc(ev.loc);setEditDate(ev.dk);setEditType(ev.type||'other');setEditNote(ev.note||'');};
+  const startEdit=(ev)=>{setEditKey(ev.loc+'_'+ev.dk);setEditLoc(ev.loc);setEditDate(ev.dk);setEditType(ev.type||'other');setEditNote(ev.note||'');setEditEndDate(null);};
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
@@ -3342,7 +3402,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
           allEventsGrouped.length+' event'+(allEventsGrouped.length===1?'':'s')+
           (allEvents.length!==allEventsGrouped.length?' ('+allEvents.length+' store-tags)':'')+
           (groupedFiltered.length!==allEventsGrouped.length?' · '+groupedFiltered.length+' shown':''))),
-        btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
+        btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');setEditEndDate(null);}},'+Add Event'),
         // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: the "🗓 Auto-Tag
         // Holidays" button used to live here — one click wrote ~1,539 org_events rows (19
         // holidays x 27 stores x 3 years) purely to materialize a fact isHoliday()/buildHolidays()
@@ -3437,8 +3497,13 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
         )
       ),
       (editKey!=null)&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
-        div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
+        div({style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:6}},
           inp({type:'date',value:editDate,onChange:e=>setEditDate(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
+          // Date-range creation (mass-review notes 70) — only offered when adding a brand-new
+          // event; editing an existing day (startEdit) keeps editEndDate null, same single-day
+          // UI this always had.
+          editKey==='new'&&span({style:{fontSize:'10px',color:'var(--text3)'}},'through'),
+          editKey==='new'&&inp({type:'date',value:editEndDate||'',min:editDate,placeholder:'(same day)',onChange:e=>setEditEndDate(e.target.value||null),title:'Optional — tag the same event across a range of days (e.g. a multi-day promotion or closure)',style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
           sel({value:editLoc,onChange:e=>setEditLoc(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}},
             stores.map(s=>opt({key:s.loc,value:s.loc},s.name))),
           sel({value:editType,onChange:e=>setEditType(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}},

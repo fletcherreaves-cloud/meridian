@@ -1506,10 +1506,29 @@ function parseDailyGlimpse(wb, dateHint){
       tRedDeletedCnt:parseNum(r[C.tRedDeletedCnt]),
       oepe:parseNum(r[C.oepe]),
       oepeFull:parseNum(r[C.oepeFull]),
-      parkedPct:parsePct(r[C.parkedPct]),
-      kvst:parseNum(r[C.kvst]),
-      kvsItems:parseNum(r[C.kvsItems]),
-      kvsHealthy:parsePct(r[C.kvsHealthy]),
+      // ✅ FIXED (mass-review notes 70, 2026-10-13) — parkedPct/kvst/kvsItems/kvsHealthy used
+      // to call parsePct(r[C.x])/parseNum(r[C.x]) unconditionally, same as every other field
+      // here. But unlike those fields, these four feed mode:'any' metric-source.js chains
+      // (park, kvsHealthy) whose _ok() check accepts a literal 0 as a real value — so on a
+      // Daily Glimpse file where this column's header never matches any fc() candidate
+      // (C.x === -1, the exact dispatch #172 cashOS/cashOSPct failure mode), parsePct/parseNum's
+      // own null→0 collapse silently produced a false 0 EVERY row, which the chain then can't
+      // tell apart from a genuine 0% — permanently masking whatever opsServiceRows/opsRows/
+      // qsrActSummaryRows might carry for this store/day. Live-measured 2026-10-13 (service-role
+      // Supabase query): daily_glimpse_daily's parked_pct and kvs_healthy are BOTH 0 for every
+      // one of 783 rows in the last 30 days (and all-time), while sibling oepe/cashOSPct (not
+      // mode:'any', or already fixed by #172) show real nonzero spreads on the same rows — this
+      // is the Scoreboard/Shift Analysis/Leaderboards/One-Pager "Park %"/"KVS Healthy %"
+      // un-populated report. Guarding on the column actually being found (C.x>=0) preserves a
+      // real 0 for the common case (column present, cell blank that day) while letting a
+      // genuinely-absent column read as null instead of a poisoning 0 — kvst/kvsItems get the
+      // same guard for consistency even though their metric chains use mode:'pos' (which
+      // already discards a 0 on its own) since nothing downstream should ever trust a
+      // column-not-found 0 as real data.
+      parkedPct: C.parkedPct>=0 ? parsePct(r[C.parkedPct]) : null,
+      kvst: C.kvst>=0 ? parseNum(r[C.kvst]) : null,
+      kvsItems: C.kvsItems>=0 ? parseNum(r[C.kvsItems]) : null,
+      kvsHealthy: C.kvsHealthy>=0 ? parsePct(r[C.kvsHealthy]) : null,
       brkCarCnt:parseNum(r[C.brkCarCnt]),
       luCarCnt:parseNum(r[C.luCarCnt]),
       dnCarCnt:parseNum(r[C.dnCarCnt]),

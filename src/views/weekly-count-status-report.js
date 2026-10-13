@@ -28,6 +28,7 @@ import { cycleCompliance, diffNewWrins, detectWeeklyCountDay,
          mergeWeeklyCountDay, countDayDrift } from '../engine/count-cycle.js';
 import { periodKey } from '../engine/eom-inventory.js';
 import { printHtml } from '../utils/print-html.js';
+import { weekStartOf, addD, dKey, fmtRng } from '../utils/date.js';
 
 const { useState, useEffect, useMemo } = React;
 const h = React.createElement;
@@ -89,7 +90,7 @@ function buildRows(locs, { complianceByLoc, mergedDayByLoc, driftByLoc }) {
 const STATUS_LABEL = { complete: '✅ Complete', overdue: '⚠ Overdue', never: '— No full weekly yet' };
 const STATUS_COLOR = { complete: '#4ade80', overdue: '#f59e0b', never: 'var(--text3)' };
 
-function reportHTML(rows, { scopeLabel, asOf }) {
+function reportHTML(rows, { scopeLabel, weekLabel, asOf }) {
   const trs = rows.map(r => `<tr>
     <td>${esc(r.name)} <span style="color:#888;font-family:monospace;font-size:10px">#${esc(r.loc)}</span></td>
     <td>${esc(r.regularDay || '—')}${r.drift ? ` <span style="color:#0ea5e9;font-weight:700">⚠ was ${esc(r.drift.configuredWeekdayName)}</span>` : ''}</td>
@@ -109,7 +110,7 @@ function reportHTML(rows, { scopeLabel, asOf }) {
     @media print{button{display:none}}
   </style></head><body>
   <h1>🗓 Weekly Count Status — ${esc(scopeLabel)}</h1>
-  <div class="sub">As of ${esc(asOf)} · every weekly count requires a full Food and Condiment count · new items are excepted their first period but still need counting · stale pre-period rows are excepted too but need cleanup, not counting</div>
+  <div class="sub">Week of ${esc(weekLabel)} (as of ${esc(asOf)}) · every weekly count requires a full Food and Condiment count · new items are excepted their first period but still need counting · stale pre-period rows are excepted too but need cleanup, not counting</div>
   <table><thead><tr><th>Store</th><th>Regular count day</th><th>Last full count</th><th>This week</th><th>New items</th><th>Stale items</th></tr></thead>
   <tbody>${trs}</tbody></table>
   </body></html>`;
@@ -156,9 +157,25 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   // period-anchored control per panel-contract.md, not a day-count DateRangeControl, since the
   // underlying data is a monthly snapshot, not a trailing-window query.
   const [period, setPeriod] = useState(() => periodKey(new Date()));
-  // asOf — the date "days since last count"/overdue math is measured against. Defaults to
-  // today; lets a store manager check what the roster would have said on an earlier date.
-  const [asOf, setAsOf] = useState(() => new Date().toISOString().slice(0, 10));
+  // asOf (mass-review notes 70, 2026-10-13) — "whatever date is selected, it resolves to the
+  // data for that calendar week." Picking any single day used to drive "days since last
+  // count"/overdue math directly off that EXACT date, so two managers clicking different days
+  // in the SAME week (e.g. Monday vs. Friday) could see different overdue counts for the
+  // identical week — confusing for a report whose whole point is "did this week's count
+  // happen," not "what did the roster say at this precise instant." `pickedDate` is the raw
+  // <input type="date"> value (so the control itself still shows what was clicked); `asOf` —
+  // what every downstream computation and the report actually use — resolves it to that date's
+  // containing calendar week via the one shared weekStartOf() helper (never hand-rolled day
+  // arithmetic, per this codebase's own ratcheted standing rule), anchored to the week's LAST
+  // day so every day within the same week agrees. Clamped to today for the current, still-
+  // in-progress week — using a future week-end would make an in-progress week read as
+  // "overdue" for days that haven't happened yet.
+  const [pickedDate, setPickedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const weekStart = useMemo(() => weekStartOf(pickedDate, settings?.weekStartDay), [pickedDate, settings?.weekStartDay]);
+  const weekEndKey = useMemo(() => dKey(addD(weekStart, 6)), [weekStart]);
+  const asOf = weekEndKey > todayKey ? todayKey : weekEndKey;
+  const weekLabel = useMemo(() => fmtRng(weekStart, addD(weekStart, 6)), [weekStart]);
 
   // Trailing periods to load — current + 3 prior (oldest→newest). The new-WRIN diff only
   // needs the immediately-prior one, but detectWeeklyCountDay()'s drift sample needs several
@@ -227,12 +244,48 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   }, [locs, complianceByLoc, mergedDayByLoc, driftByLoc]);
 
   const driftCount = Object.keys(driftByLoc).length;
+  // Drill-down (owner-requested, mass-review notes 70) — the New/Stale item badges used to
+  // only reveal their item list via a browser-native `title` hover tooltip, which this repo's
+  // own panel-contract conventions treat as a findings-visibility gap on a printable/shareable
+  // report (a tooltip doesn't survive print or a screenshot, and isn't discoverable on touch).
+  // Click toggles a real inline detail row instead, same loc+kind pair closes it again.
+  const [expanded, setExpanded] = useState(null); // { loc, kind: 'new' | 'stale' } | null
+  const toggleExpand = (loc, kind) => setExpanded(prev => (prev && prev.loc === loc && prev.kind === kind) ? null : { loc, kind });
+
   const nComplete = rows.filter(r => r.status === 'complete').length;
   const nOverdue = rows.filter(r => r.status === 'overdue').length;
   const nNever = rows.filter(r => r.status === 'never').length;
 
-  const doPrint = () => openPrint(reportHTML(rows, { scopeLabel, asOf }));
-  const doCsv = () => downloadCsv(reportCSV(rows), `weekly-count-status-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-${asOf}.csv`);
+  const doPrint = () => openPrint(reportHTML(rows, { scopeLabel, weekLabel, asOf }));
+  const doCsv = () => downloadCsv(reportCSV(rows), `weekly-count-status-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-week-of-${dKey(weekStart)}.csv`);
+
+  const headerRow = div({ style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full' }),
+    h('input', {
+      type: 'date', value: pickedDate, onChange: e => setPickedDate(e.target.value),
+      title: 'Pick any day — the roster resolves to that day\'s whole calendar week',
+      style: { fontSize: 11, padding: '4px 6px', border: '.5px solid var(--bdr)', borderRadius: 6, background: 'var(--surf2)', color: 'var(--text)' },
+    }),
+    span({ style: { fontSize: 10.5, color: 'var(--accent)', fontWeight: 600 } }, `Week of ${weekLabel}`),
+    span({ style: { fontSize: 9.5, color: 'var(--text3)' } }, `${scopeLabel} · ${rows.length} stores`),
+    span({ style: { flex: 1 } }));
+
+  const statsRow = div({ style: { display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--text3)' } },
+    span(null, `✅ ${nComplete} complete`), span(null, '·'),
+    span(null, `⚠ ${nOverdue} overdue`), span(null, '·'),
+    span(null, `— ${nNever} no full weekly yet`),
+    driftCount ? span({ style: { color: '#0ea5e9', fontWeight: 700 } }, `· ⚠ ${driftCount} store${driftCount === 1 ? '' : 's'} may have changed their count day — update settings + QSRSoft`) : null);
+
+  const theadEl = h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
+    ['Store', 'Regular count day', 'Last full count', 'This week', 'New items', 'Stale items'].map(t =>
+      h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t))));
+  const tbodyEl = h('tbody', null, rows.map(r => renderCountRow(r, expanded, toggleExpand)));
+  const tableEl = h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, theadEl, tbodyEl);
+  const tableWrap = div({ style: { overflowX: 'auto' } }, tableEl);
+
+  const bodyContent = loading
+    ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+    : div(null, statsRow, tableWrap);
 
   return h(RoutePanelShell, {
     icon: '🗓',
@@ -242,56 +295,56 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
       h('button', { className: 'btn btn-sm', style: { fontSize: 10 }, onClick: doPrint }, '🖨 Print'),
       h('button', { className: 'btn btn-sm', style: { fontSize: 10 }, onClick: doCsv }, '⬇ CSV')),
-  },
-    div({ style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-      h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full' }),
-      h('input', {
-        type: 'date', value: asOf, onChange: e => setAsOf(e.target.value),
-        title: 'Check this roster as of an earlier date',
-        style: { fontSize: 11, padding: '4px 6px', border: '.5px solid var(--bdr)', borderRadius: 6, background: 'var(--surf2)', color: 'var(--text)' },
-      }),
-      span({ style: { fontSize: 9.5, color: 'var(--text3)' } }, `${scopeLabel} · ${rows.length} stores`),
-      span({ style: { flex: 1 } })),
+  }, headerRow, bodyContent);
+}
 
-    loading
-      ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
-      : div(null,
-          div({ style: { display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--text3)' } },
-            span(null, `✅ ${nComplete} complete`), span(null, '·'),
-            span(null, `⚠ ${nOverdue} overdue`), span(null, '·'),
-            span(null, `— ${nNever} no full weekly yet`),
-            driftCount ? span({ style: { color: '#0ea5e9', fontWeight: 700 } }, `· ⚠ ${driftCount} store${driftCount === 1 ? '' : 's'} may have changed their count day — update settings + QSRSoft`) : null),
-          div({ style: { overflowX: 'auto' } },
-            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
-              h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
-                ['Store', 'Regular count day', 'Last full count', 'This week', 'New items', 'Stale items'].map(t =>
-                  h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t)))),
-              h('tbody', null, rows.map(r => h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
-                h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, r.name,
-                  span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${r.loc}`)),
-                h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } },
-                  r.regularDay ? `${r.regularDay}s` : '—',
-                  r.drift ? span({
-                    style: { marginLeft: 6, fontSize: 10, color: '#0ea5e9', fontWeight: 700, cursor: 'help' },
-                    title: `Settings/QSRSoft say ${r.drift.configuredWeekdayName}, but the last ${r.drift.sampleSize} qualifying counts mostly landed on ${r.drift.derivedWeekdayName} (${Math.round(r.drift.confidence * 100)}% agreement, last ${r.drift.lastSeenDate}). Looks like a real change, not a one-off — update the setting and QSRSoft to match.`,
-                  }, '⚠ changed?') : null),
-                h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } },
-                  r.lastFullCount ? `${r.lastFullCount}${r.daysSinceWeekly != null ? ` · ${r.daysSinceWeekly}d ago` : ''}` : '—'),
-                h('td', { style: { padding: '6px 10px' } },
-                  span({ style: { color: STATUS_COLOR[r.status], fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' } }, STATUS_LABEL[r.status])),
-                h('td', { style: { padding: '6px 10px' } },
-                  r.newItemsCount
-                    ? span({
-                        style: { fontSize: 10.5, color: '#38bdf8', fontWeight: 700, cursor: 'help' },
-                        title: r.newItems.map(it => it.descr || it.wrin).join(', '),
-                      }, `🆕 ${r.newItemsCount} pending`)
-                    : span({ style: { color: 'var(--text3)' } }, '—')),
-                h('td', { style: { padding: '6px 10px' } },
-                  r.staleItemsCount
-                    ? span({
-                        style: { fontSize: 10.5, color: '#f59e0b', fontWeight: 700, cursor: 'help' },
-                        title: r.staleItems.map(it => it.descr || it.wrin).join(', '),
-                      }, `🧹 ${r.staleItemsCount} needs cleanup`)
-                    : span({ style: { color: 'var(--text3)' } }, '—')),
-              )))))));
+// One store's main row, plus (when expanded) a second detail row listing the full New/Stale
+// item list — extracted from the inline tbody.map() above so the deep JSX nesting of two
+// conditional <tr>s per store stays readable and its paren-matching stays checkable.
+function renderCountRow(r, expanded, toggleExpand) {
+  const isNewOpen = expanded && expanded.loc === r.loc && expanded.kind === 'new';
+  const isStaleOpen = expanded && expanded.loc === r.loc && expanded.kind === 'stale';
+  const mainRow = h('tr', { key: r.loc + '-main', style: { borderBottom: (isNewOpen || isStaleOpen) ? 'none' : '1px solid var(--bdr)' } },
+    h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, r.name,
+      span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${r.loc}`)),
+    h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } },
+      r.regularDay ? `${r.regularDay}s` : '—',
+      r.drift ? span({
+        style: { marginLeft: 6, fontSize: 10, color: '#0ea5e9', fontWeight: 700, cursor: 'help' },
+        title: `Settings/QSRSoft say ${r.drift.configuredWeekdayName}, but the last ${r.drift.sampleSize} qualifying counts mostly landed on ${r.drift.derivedWeekdayName} (${Math.round(r.drift.confidence * 100)}% agreement, last ${r.drift.lastSeenDate}). Looks like a real change, not a one-off — update the setting and QSRSoft to match.`,
+      }, '⚠ changed?') : null),
+    h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } },
+      r.lastFullCount ? `${r.lastFullCount}${r.daysSinceWeekly != null ? ` · ${r.daysSinceWeekly}d ago` : ''}` : '—'),
+    h('td', { style: { padding: '6px 10px' } },
+      span({ style: { color: STATUS_COLOR[r.status], fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' } }, STATUS_LABEL[r.status])),
+    h('td', { style: { padding: '6px 10px' } },
+      r.newItemsCount
+        ? h('button', {
+            onClick: () => toggleExpand(r.loc, 'new'),
+            title: 'Click to show/hide the full item list',
+            style: { fontSize: 10.5, color: '#38bdf8', fontWeight: 700, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textDecoration: isNewOpen ? 'underline' : 'none' },
+          }, `🆕 ${r.newItemsCount} pending ${isNewOpen ? '▲' : '▼'}`)
+        : span({ style: { color: 'var(--text3)' } }, '—')),
+    h('td', { style: { padding: '6px 10px' } },
+      r.staleItemsCount
+        ? h('button', {
+            onClick: () => toggleExpand(r.loc, 'stale'),
+            title: 'Click to show/hide the full item list',
+            style: { fontSize: 10.5, color: '#f59e0b', fontWeight: 700, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textDecoration: isStaleOpen ? 'underline' : 'none' },
+          }, `🧹 ${r.staleItemsCount} needs cleanup ${isStaleOpen ? '▲' : '▼'}`)
+        : span({ style: { color: 'var(--text3)' } }, '—')),
+  );
+  if (!isNewOpen && !isStaleOpen) return h(React.Fragment, { key: r.loc }, mainRow);
+  const items = isNewOpen ? r.newItems : r.staleItems;
+  const detailLabel = isNewOpen
+    ? 'New items — first period, excepted from the count but still need counting'
+    : 'Stale items — excepted, need cleanup not counting';
+  const detailColor = isNewOpen ? '#38bdf8' : '#f59e0b';
+  const chips = items.map((it, i) => span({ key: i, style: { fontSize: 10.5, padding: '2px 7px', background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 4, color: 'var(--text2)' } },
+    it.descr || `WRIN ${it.wrin}`, it.descr ? span({ style: { color: 'var(--text3)', marginLeft: 4 } }, `#${it.wrin}`) : null));
+  const detailRow = h('tr', { key: r.loc + '-detail', style: { borderBottom: '1px solid var(--bdr)' } },
+    h('td', { colSpan: 6, style: { padding: '2px 10px 10px 10px', background: 'var(--surf2)' } },
+      div({ style: { fontSize: 10, fontWeight: 700, color: detailColor, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 4 } }, detailLabel),
+      div({ style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, chips)));
+  return h(React.Fragment, { key: r.loc }, mainRow, detailRow);
 }

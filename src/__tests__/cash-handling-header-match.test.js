@@ -57,6 +57,59 @@ describe('parseDailyGlimpse — Over/Short header (dispatch #172)', () => {
   });
 });
 
+// Mass-review notes 70 (2026-10-13) — "DT Parked %"/"KVS Healthy %" un-populated across the
+// Scoreboard/Shift Analysis/Leaderboards/One-Pager. Live-measured (service-role Supabase query)
+// that daily_glimpse_daily's parked_pct and kvs_healthy are 0 for literally every row ever
+// ingested (783/783 in a 30-day sample, all-time max also 0), while sibling oepe/cashOSPct on
+// the SAME rows carry real nonzero spreads — i.e. this specific header never matches any fc()
+// candidate on the real report (same failure class as dispatch #172's cashOS bug just above),
+// and the resulting parsePct(undefined)->0/parseNum(undefined)->0 default poisons metric-
+// source.js's mode:'any' park/kvsHealthy chains, which accept a literal 0 as a real answer and
+// so never fall through to opsServiceRows' real, auto-pulled, nonzero qsr_service_stats data
+// (also live-confirmed: dt_cars_held/healthy_cnt/unhealthy_cnt are real and nonzero in the same
+// window). Fixed by having parseDailyGlimpse emit null (not 0) when the column itself is absent
+// (C.x === -1), while still parsing a real but blank cell as a genuine 0 when the column exists.
+describe('parseDailyGlimpse — parkedPct/kvst/kvsItems/kvsHealthy null when column absent (mass-review notes 70, 2026-10-13)', () => {
+  // This header carries NONE of parkedPct/kvst/kvsItems/kvsHealthy — reproduces the live,
+  // measured shape (every one of these four columns absent from the real report for this tenant).
+  const HEADER = ['Loc', 'All Net Sales', 'STW GC', 'DT Sales', 'DT GC', 'Punch Labor %',
+    'Over/Short $', 'Over/Short %', 'OEPE W/O Parked'];
+  const ROW = [3708, '$10,394.52', 1040, '$7,463.14', 799, '23.01%', '-$2,889.99', '-27.80%', 110];
+  const aoa = [['section'], HEADER, ROW];
+  const rows = parseDailyGlimpse(wbFromAOA(aoa, 'Glimpse'), new Date('2026-10-11T12:00:00Z'));
+
+  it('parkedPct is null, not 0, when "Parked %"/"DT Parked %" is absent from the header', () => {
+    expect(rows[0].parkedPct).toBeNull();
+  });
+  it('kvst is null, not 0, when the KVS Time column is absent', () => {
+    expect(rows[0].kvst).toBeNull();
+  });
+  it('kvsItems is null, not 0, when the KVS Items column is absent', () => {
+    expect(rows[0].kvsItems).toBeNull();
+  });
+  it('kvsHealthy is null, not 0, when the KVS Healthy Usage column is absent', () => {
+    expect(rows[0].kvsHealthy).toBeNull();
+  });
+  it('a present, matched field (oepe) is unaffected by the guard', () => {
+    expect(rows[0].oepe).toBeCloseTo(110, 2);
+  });
+
+  const HEADER2 = [...HEADER, 'Parked %', 'KVS Healthy Usage'];
+  const ROW2 = [...ROW, '12.50%', '88.00%'];
+  const rows2 = parseDailyGlimpse(wbFromAOA([['section'], HEADER2, ROW2], 'Glimpse'), new Date('2026-10-11T12:00:00Z'));
+  it('a present column still parses its real value (guard does not break the matching case)', () => {
+    expect(rows2[0].parkedPct).toBeCloseTo(0.125, 3);
+    expect(rows2[0].kvsHealthy).toBeCloseTo(0.88, 3);
+  });
+
+  const HEADER3 = [...HEADER, 'Parked %'];
+  const ROW3 = [...ROW, ''];
+  const rows3 = parseDailyGlimpse(wbFromAOA([['section'], HEADER3, ROW3], 'Glimpse'), new Date('2026-10-11T12:00:00Z'));
+  it('a present column with a genuinely blank cell still parses as a real 0, not null', () => {
+    expect(rows3[0].parkedPct).toBe(0);
+  });
+});
+
 describe('parseCashSheet — plural Refunds/Qty headers (dispatch #172)', () => {
   // Trimmed real header row from a live cash_sheet_extract_daily_2026-08-19.csv.
   const HEADER = [

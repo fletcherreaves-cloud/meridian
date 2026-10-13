@@ -462,7 +462,17 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         .lte('dt', endDate)
         // Full PK order (loc, dt, hour_slot) -- required for offset paging, see paginate.js.
         .order('dt').order('loc').order('hour_slot');
-      if (locs?.length && !allowed) q = q.in('loc', locs); // restricted users always query all → scoped below
+      // Owner-reported, live-diagnosed 2026-10-13: the model's own `locs` input (typically an
+      // unpadded store number like "3708", exactly how a store is referred to in conversation)
+      // was being filtered against this table's zero-padded 7-char loc column verbatim --
+      // `.in('loc', ['3708'])` against rows stored as "0003708" matches nothing, returning an
+      // empty/"odd" result for every query this way. The model had to spend several tool-call
+      // rounds self-diagnosing this exact padding mismatch before it could retry correctly
+      // (confirmed live: a multi-round SAGE answer narrated "the filter needed the zero-padded
+      // NSN. Let me re-pull." and then ran out of its tool-call budget before it could). Same
+      // fix as qsr_raw_item_detail/qsr_forms_completion below, which already padded correctly
+      // -- propagated here and to every other unpadded `.in('loc', locs)` site in this file.
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0'))); // restricted users always query all → scoped below
       return q;
     });
     if (error) return `Database error: ${error.message}`;
@@ -534,7 +544,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         .lte('date', endDate)
         // Full PK order (loc, date) -- required for offset paging, see paginate.js.
         .order('date').order('loc');
-      if (locs?.length && !allowed) q = q.in('loc', locs);
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
       return q;
     });
     if (error) return `Database error: ${error.message}`;
@@ -569,7 +579,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
           .lte('dt', endDate)
           // Full PK order (loc, dt) -- required for offset paging, see paginate.js.
           .order('dt').order('loc');
-        if (locs?.length && !allowed) q = q.in('loc', locs);
+        if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
         return q;
       }),
       fetchAllRows(() => {
@@ -579,7 +589,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
           .gte('dt', startDate)
           .lte('dt', endDate)
           .order('dt').order('loc');
-        if (locs?.length && !allowed) q = q.in('loc', locs);
+        if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
         return q;
       }),
     ]);
@@ -619,7 +629,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         // PK order (id) -- (loc, dt, source) is not declared unique here, so page on the key
         // that is. Required for offset paging, see paginate.js.
         .order('id');
-      if (locs?.length && !allowed) q = q.in('loc', locs);
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
       if (source)        q = q.eq('source', source);
       return q;
     });
@@ -844,7 +854,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         // Full PK order (loc, year, month) -- year/month are already pinned by eq() above, so loc
         // alone gives a deterministic total order over the filtered set.
         .order('loc');
-      if (locs?.length && !allowed) q = q.in('loc', locs);
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
       return q;
     });
     if (error) return `Database error: ${error.message}`;
@@ -1069,6 +1079,23 @@ async function streamAnthropicCall(
             block.name = cb.name;
             block.input = {};
             block._inputJson = '';
+          }
+          // web_search_tool_result (mass-review notes 70, 2026-10-13) -- the RESULT block
+          // Anthropic emits right after a server_tool_use web_search call, carrying the actual
+          // search hits (or an error). Unlike tool_use/server_tool_use above, this block arrives
+          // WHOLE in this one content_block_start event (cb.tool_use_id/cb.content), never
+          // streamed via input_json_delta -- so it was falling through to the generic `{type:
+          // cb.type}` default and losing both required fields. Harmless on a normal turn (this
+          // block is never replayed), but fatal on a pause_turn resume: the branch below replays
+          // `assistantContent` verbatim as the next request's conversation history, and Anthropic
+          // rejects a web_search_tool_result missing tool_use_id/content with HTTP 400
+          // invalid_request_error ("messages.N.content.M.web_search_tool_result... Field
+          // required") -- exactly the error a multi-search query (pause_turn is web_search's own
+          // internal search-loop continuing) was hitting. Captured directly from cb since there's
+          // no delta/accumulation step for this block type.
+          if (cb.type === 'web_search_tool_result') {
+            block.tool_use_id = cb.tool_use_id;
+            block.content = cb.content;
           }
           if (cb.type === 'tool_use') toolUses.push({ id: cb.id, name: cb.name });
           contentByIdx.set(ev.index, block);
