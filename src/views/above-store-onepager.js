@@ -98,7 +98,7 @@ const selectorValueToScope = (v) => {
   return 'all';
 };
 
-export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels, initialView }) {
+export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels, initialView, initialCustomRange }) {
   const { useState, useMemo, useEffect } = React;
   // Dispatch #190's scope selector — NOT the same axis as the location `scope` below. This is
   // WHO the one-pager is being built for: the quantified, read-only district/patch/store ROLLUP
@@ -121,6 +121,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   // rangeMode==='custom' seeds with, so switching into Custom starts from a sane window
   // instead of an empty/invalid one.
   const [customRange, setCustomRange] = useState(() => {
+    if (initialCustomRange && initialCustomRange.s && initialCustomRange.e) return initialCustomRange;
     const e = lastClosedBusinessDay(); const s = new Date(e); s.setDate(s.getDate() - 6);
     return { s: iso(s), e: iso(e) };
   });

@@ -98,3 +98,45 @@ describe('dispatch #158 item 1 — AboveStoreOnePager custom date range', () => 
     expect(container.textContent).toMatch(/Above-Store One-Pager/);
   });
 });
+
+// My Reports (report-subscriptions.js) added its own Custom period option 2026-10-13
+// (owner-requested) that launches this panel with initialPeriod='custom' +
+// initialCustomRange:{s,e} -- these two props previously didn't exist together (initialPeriod
+// alone can't select Custom mode usefully, since customRange's own default state ignores it).
+describe('dispatch 2026-10-13 — AboveStoreOnePager seeded from a My Reports Custom subscription', () => {
+  let container, root;
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); });
+
+  it('initialPeriod="custom" + initialCustomRange seeds the Custom pill as active and the real picked range, not the trailing-7-day default', async () => {
+    await act(async () => {
+      root.render(React.createElement(AboveStoreOnePager, {
+        ds: {}, settings: {}, userEvents: {}, eventImpact: {}, onClose: () => {},
+        initialPeriod: 'custom', initialCustomRange: { s: '2026-09-01', e: '2026-09-15' },
+      }));
+    });
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+    expect(dateInputs.length).toBe(2);
+    expect(dateInputs[0].value).toBe('2026-09-01');
+    expect(dateInputs[1].value).toBe('2026-09-15');
+    expect(container.textContent).toMatch(/2026-09-01 → 2026-09-15/);
+  });
+
+  it('with no initialCustomRange, Custom still falls back to the trailing-7-day default (unchanged behavior)', async () => {
+    await act(async () => {
+      root.render(React.createElement(AboveStoreOnePager, {
+        ds: {}, settings: {}, userEvents: {}, eventImpact: {}, onClose: () => {},
+        initialPeriod: 'custom',
+      }));
+    });
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+    expect(dateInputs.length).toBe(2);
+    // Not the owner-picked dates from the test above -- proves this is the ordinary default,
+    // not a stale value leaking between tests.
+    expect(dateInputs[0].value).not.toBe('2026-09-01');
+  });
+});
