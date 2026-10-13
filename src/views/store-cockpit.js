@@ -287,7 +287,10 @@ export function FoodCostCockpitTab({ store, ds }) {
     div(gridStyle('1fr 1fr'),
       Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod },
         trace.length ? h(VarianceTrace, { trace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
-        jump && div({ style: { display: 'flex', gap: 10, marginTop: 12, padding: '9px 11px', background: tint('--crit', 8), border: '1px solid ' + tint('--crit', 30), borderRadius: 8 } },
+        // Gated at >=$25, same threshold eom-dashboard.js's VarianceTraceChart callout uses
+        // (line ~664) -- without it, a quiet-period trivial swing gets flagged with the same
+        // critical red styling as a real jump (mass-review notes 70, 2026-10-13).
+        jump && Math.abs(jump.delta) >= 25 && div({ style: { display: 'flex', gap: 10, marginTop: 12, padding: '9px 11px', background: tint('--crit', 8), border: '1px solid ' + tint('--crit', 30), borderRadius: 8 } },
           span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--crit)', flexShrink: 0 } }, 'Biggest jump'),
           span({ style: { fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.5 } },
             h('b', { style: { color: 'var(--text)' } }, jump.date + ' · ' + (jump.delta >= 0 ? '+' : '') + f$(Math.round(jump.delta))),

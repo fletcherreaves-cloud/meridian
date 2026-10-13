@@ -83,7 +83,18 @@ const ROOT = 'src/views';
 // entirely from already-computed p./t./store. fields. Genuinely dead code (confirmed via a
 // search of the function's full body, not an unused-import guess), not an auto-first violation
 // needing a metricSeries conversion -- deleted outright.
-const CEILING = 143;
+// 2026-10-13 (mass-review notes 70): -2 -- store-analytics.js's ShiftAnalysisTab still had a
+// raw ds.opsRows.filter() feeding oAvg() (oepe/kvst/park/r2p/kvsu), left over from the
+// 2026-09-07 sweep above which converted sales/labor/ot/channel-mix in the same table but
+// missed this group. Bucketed through metricSeries (park/oepe/kvst/r2p/kvsHealthy) like every
+// other field in the DOW table now, so the raw opsRows filter was removed entirely. Live-
+// measured root cause (not just a style fix): daily_glimpse_daily's parked_pct/kvs_healthy are
+// 0 for every row ever ingested (a parser null-vs-0 bug, fixed the same pass in parsers/
+// index.js), and metric-source.js's park/kvsHealthy chains are mode:'any' (accepts a literal 0
+// as real), so that false 0 permanently masked opsServiceRows' real, auto-pulled, nonzero data
+// -- this conversion is what lets the fixed chain actually reach it. See
+// src/__tests__/cash-handling-header-match.test.js.
+const CEILING = 141;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 

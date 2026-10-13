@@ -57,7 +57,13 @@ const ROOTS = ['src/views', 'src/features'];
 // metricSeries, a single shared getDay() call per metric instead of one per consumer). The
 // remaining -2 predates this change and was not chased down; per this ratchet's own remediation
 // instructions, only the ceiling itself needs correcting, not a hunt for who converted it.
-const CEILING = 56;
+// 2026-10-13 (mass-review notes 70): -1 — store-analytics.js's ShiftAnalysisTab dowData builder
+// had one straggler: _toD(r.date).getDay() inside oAvg's raw opsRows.filter(), left behind by
+// the 2026-09-07 pass above (it converted sales/labor but not oepe/kvst/park/r2p/kvsu, which
+// were still reading raw ds.opsRows — the same bug the R1 ratchet above tracks). Now bucketed
+// through metricSeries like every sibling field, so _toD/the raw opsRows filter were removed
+// entirely rather than just losing one caller.
+const CEILING = 55;
 
 const PATTERN = /\.getDay\(\)/g;
 

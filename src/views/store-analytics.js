@@ -90,15 +90,11 @@ async function fetchHistoricalWeather(locs, startDate, endDate) {
 
 
 // SHIFT ANALYSIS TAB
-// Safe date helper — r.date may be a Date object OR an ISO string after IDB round-trip
-const _toD = d => d instanceof Date ? d : new Date((d||'')+'T12:00:00Z');
-
 function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const {p, t, loc} = store;
   const wb = settings.weeksBack||6;
   const cut = new Date(Date.now()-wb*7*86400000);
   const locStr = String(loc||'').trim();
-  const opsRows   = ds&&ds.opsRows   ? ds.opsRows.filter(r=>r.loc===loc&&r.date>=cut)   : [];
   // #178 item 2 (extended 2026-09-07, backlog `labor_rows` sweep): tpph/labor/ot were already
   // routed through metricSeries (auto-first across every stream) instead of a raw filter over
   // the manual Labor Excel upload's rows; sales + the 5 channel-mix percentages below them were
@@ -109,8 +105,14 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   // dtMixPct/bfMixPct/mopMixPct/kioskMixPct/delivMixPct (metric-source.js) resolve manual Labor
   // first, then the emailed Sales Ledger — same fallback order the raw manual-first read implied,
   // just with a real auto backstop now.
+  // ✅ FIXED (mass-review notes 70, 2026-10-13) — oepe/kvst/park/r2p/kvsu were the one group
+  // this #178 item 2 pass missed: still a raw ds.opsRows filter + oAvg() straight off the
+  // manual Ops upload (same manual-only antipattern the comment above describes for the OTHER
+  // fields, just never migrated for these five). Bucketed through metricSeries below like
+  // everything else in this table now.
   const range = {s:cut, e:lastClosedBusinessDay()};
-  const dowMetric = {sales:{},tpph:{},labor:{},ot:{},dtPct:{},bfPct:{},mopPct:{},kioskPct:{},delivPct:{}};
+  const dowMetric = {sales:{},tpph:{},labor:{},ot:{},dtPct:{},bfPct:{},mopPct:{},kioskPct:{},delivPct:{},
+    oepe:{},kvst:{},park:{},r2p:{},kvsu:{}};
   {
     const bucket=(series,key)=>{for(const dk in series) (dowMetric[key][new Date(dk+'T00:00:00').getDay()] ??= []).push(series[dk]);};
     bucket(metricSeries(ds,loc,range,'sales'),       'sales');
@@ -122,6 +124,11 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     bucket(metricSeries(ds,loc,range,'mopMixPct'),   'mopPct');
     bucket(metricSeries(ds,loc,range,'kioskMixPct'), 'kioskPct');
     bucket(metricSeries(ds,loc,range,'delivMixPct'), 'delivPct');
+    bucket(metricSeries(ds,loc,range,'oepe'),        'oepe');
+    bucket(metricSeries(ds,loc,range,'kvst'),        'kvst');
+    bucket(metricSeries(ds,loc,range,'park'),        'park');
+    bucket(metricSeries(ds,loc,range,'r2p'),         'r2p');
+    bucket(metricSeries(ds,loc,range,'kvsHealthy'),  'kvsu');
   }
   const dowMean=(bucket,d)=>{const v=bucket[d];return v&&v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
   const dowN   =(bucket,d)=>(bucket[d]?bucket[d].length:0);
@@ -134,11 +141,9 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const hasSalesData = Object.values(dowMetric.sales).some(v=>v&&v.length);
 
   const dowData = [0,1,2,3,4,5,6].map(d=>{
-    const oR=opsRows.filter(r=>_toD(r.date).getDay()===d);
-    const oAvg=(f)=>oR.length?oR.reduce((a,r)=>a+(r[f]||0),0)/oR.length:0;
     return{dow:DOW_BASE[d],n:dowN(dowMetric.sales,d),sales:dowMean(dowMetric.sales,d),
-      oepe:oAvg('oepe'),kvst:oAvg('kvst'),park:oAvg('park'),r2p:oAvg('r2p'),
-      tpph:dowMean(dowMetric.tpph,d),kvsu:oAvg('kvsu'),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
+      oepe:dowMean(dowMetric.oepe,d),kvst:dowMean(dowMetric.kvst,d),park:dowMean(dowMetric.park,d),r2p:dowMean(dowMetric.r2p,d),
+      tpph:dowMean(dowMetric.tpph,d),kvsu:dowMean(dowMetric.kvsu,d),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
       dtPct:dowMean(dowMetric.dtPct,d),bfPct:dowMean(dowMetric.bfPct,d),mopPct:dowMean(dowMetric.mopPct,d),
       kioskPct:dowMean(dowMetric.kioskPct,d),delivPct:dowMean(dowMetric.delivPct,d),
     };
