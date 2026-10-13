@@ -105,14 +105,42 @@ shape.
   rows/day — same order of magnitude DAR's hourly table was navigating *before* that became
   a problem — so a rollup is premature; revisit if `qsr_sales_quarter_hour` itself becomes
   the slow read.
-- **Not added to `stream-freshness.js`'s `STREAMS` array.** `ds.qsrSalesQtrHourRows` is a
-  `metric-source.js` `LAZY_FILL_SOURCES` entry (consumer-triggered, same shape as
-  `pmixRows`/`auditRows`/`wasteRows`) — `ds[field]` reading empty means "nobody opened the
-  Record Hour tab yet," not "the pull failed." None of the other three `LAZY_FILL_SOURCES`
-  entries are in `STREAMS` either, for the identical reason; adding this one would misread
-  every user who hasn't opened the tab as a stale/broken stream. CLAUDE.md's "Adding a new
-  automated pull" checklist item 2 is a correct default for an eagerly-loaded stream, not for
-  this shape — same precedent already established, not a new deviation.
+- **Not added to `stream-freshness.js`'s `STREAMS` array** *(superseded 2026-10-13 — see
+  below; left here for the history)*. `ds.qsrSalesQtrHourRows` is a `metric-source.js`
+  `LAZY_FILL_SOURCES` entry (consumer-triggered, same shape as `pmixRows`/`auditRows`/
+  `wasteRows`) — `ds[field]` reading empty means "nobody opened the Record Hour tab yet,"
+  not "the pull failed." None of the other three `LAZY_FILL_SOURCES` entries are in
+  `STREAMS` either, for the identical reason; adding this one would misread every user who
+  hasn't opened the tab as a stale/broken stream. CLAUDE.md's "Adding a new automated pull"
+  checklist item 2 is a correct default for an eagerly-loaded stream, not for this shape —
+  same precedent already established, not a new deviation.
+
+## ✅ CORRECTED 2026-10-13 — added to STREAMS after all, for the watchdog's sake
+
+The claim directly above turned out to be an unverified extrapolation from the pmixRows
+precedent, not a measurement of what `streamFreshness()`'s guard actually does. Traced it
+directly: `metric-source.js`'s `_triggerLazyFill` never sets `ds[src]` to `[]`; it stays
+`undefined` until the loader resolves, and `streamFreshness()`'s own `Array.isArray(rows)`
+guard already treats "not yet loaded this session" as "no verdict," not "stale" — the exact
+protection the original note assumed didn't exist. So adding this key to `STREAMS` was
+always safe for the client checklist.
+
+It had to be added anyway, for a real reason: on 2026-10-13, this workflow's very first
+scheduled cron opportunity (10:00 UTC) silently never fired — confirmed live via the GitHub
+Actions API (zero `event:"schedule"` runs in its entire history, while several other
+workflows with off-the-hour schedules fired fine the same morning; its sibling
+`qsrsoft-dar-pull.yml`, sharing the identical `0 10 * * *` cron, missed its own 08:00 and
+10:00 UTC slots too). This is the exact "should have run by now, silently didn't" failure
+mode `scripts/scheduled-pull-watchdog.mjs` exists to catch — but `checkStream()` requires a
+`STREAMS` entry to find a stream's `label`/`cadenceDays` at all, so without one this stream
+had zero retrigger safety net despite the watchdog already running every 30 minutes.
+
+Added `{ key:'qsrSalesQtrHour', ... }` to `STREAMS` and a matching
+`scripts/lib/scheduled-pull-registry.mjs` entry (`table:'qsr_sales_quarter_hour'`,
+`dateCol:'dt'`, `workflowFile:'qsrsoft-sales-quarter-hour-pull.yml'`, no `clampToToday` —
+unlike `lifelenz`, this table never carries a future-dated row). The existing lockstep test
+(`scheduled-pull-registry.test.js`) required both sides to match, so this was the only way
+to close the gap within the current architecture.
 
 ## ✅ Full history backfilled + daypart/metric leaderboard shipped (2026-10-13)
 

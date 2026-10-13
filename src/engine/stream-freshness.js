@@ -26,6 +26,19 @@
 // incident (see streamFreshness()'s Array.isArray guard below), which is the correct
 // reading for a source that's lazy by design, not a gap to close here.
 //
+// qsrSalesQtrHourRows (Record Hour's quarter-hour stream) IS the exception -- added
+// 2026-10-13 specifically so scheduled-pull-watchdog.mjs can retrigger its cron (checkStream
+// requires a STREAMS entry; see scheduled-pull-registry.mjs's own comment on why the two
+// stay in lockstep). This is SAFE for the client checklist too, not just tolerated: traced
+// metric-source.js's lazy-fill setter directly -- ds[src] is never initialized to `[]`, it
+// stays `undefined` until the loader resolves, so streamFreshness()'s own Array.isArray
+// guard already skips this stream with "no verdict" for every session that hasn't opened
+// Record Hour, exactly like pmixRows/auditRows/wasteRows would if they were added. The
+// original note on THIS entry (pre-2026-10-13) claimed adding it "would misread every user
+// who hasn't opened Record Hour as a stale/broken stream" -- that was never actually true of
+// the guard above; it was an unverified extrapolation from the pmixRows precedent, not a
+// measurement. Corrected here rather than left to mislead the next read.
+//
 // Manual `laborRows` is deliberately EXCLUDED — under the auto-first rule (CLAUDE.md)
 // and #362, a stale device-local upload making the app look healthy is exactly
 // backwards. A manual upload can mask staleness; it must never mask it FOR ITS OWN sake.
@@ -97,6 +110,11 @@ export const STREAMS = [
   { key: 'digitalApp', label: 'Digital App', dsField: 'digitalAppRows', dateField: 'month', cadenceDays: 31 },
   { key: 'mcdelivery', label: 'McDelivery', dsField: 'mcdeliveryRows', dateField: 'month', cadenceDays: 31 },
   { key: 'shiftManager', label: 'Shift Manager', dsField: 'shiftManagerRows', dateField: 'month', cadenceDays: 31 },
+  // Added 2026-10-13 so scheduled-pull-watchdog.mjs can cover this cron -- see this file's
+  // own comment above (near the pmixRows/auditRows/wasteRows exclusion note) for why this
+  // is safe for the client checklist too. dateField defaults to 'date', which already
+  // matches loadQsrSalesQuarterHour's row shape (src/lib/supabase.js) -- no override needed.
+  { key: 'qsrSalesQtrHour', label: 'Record Hour (Quarter-Hour Sales)', dsField: 'qsrSalesQtrHourRows', cadenceDays: 1 },
 ];
 
 const _toMs = d => {
