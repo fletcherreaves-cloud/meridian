@@ -711,10 +711,14 @@ export const MANUAL_ONLY_METRICS = {
 // qsrSalesQtrHourRows added for Record Hour (src/engine/record-hour.js) — true
 // 15-minute sales buckets (loc, date, qtr_slot) for a real rolling-60-minute sliding
 // window, same "raw rows, consumer-triggered, not a per-day scalar" shape as pmixRows.
-// Not added to stream-freshness.js's STREAMS array, matching the existing precedent
-// that none of this LAZY_FILL_SOURCES trio is there either — ds[src] reading empty
-// means "nobody opened the tab yet," not "the pull failed," so a freshness check would
-// misread every user who hasn't opened Record Hour as a stale/broken stream.
+// ⚠️ CORRECTED 2026-10-13: unlike auditRows/wasteRows/pmixRows, this one WAS added to
+// stream-freshness.js's STREAMS array (so scheduled-pull-watchdog.mjs can retrigger a
+// dropped cron — a real incident, not hypothetical). The ORIGINAL note here claimed doing
+// so "would misread every user who hasn't opened Record Hour as a stale/broken stream" —
+// that was never actually true: `_triggerLazyFill` above never sets ds[src] to `[]`, only
+// to the real resolved rows once the loader finishes, so streamFreshness()'s own
+// Array.isArray guard already treats "not yet loaded" as "no verdict," not "stale." See
+// stream-freshness.js's own comment on this key for the full correction.
 export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows', 'qsrSalesQtrHourRows']);
 
 let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }

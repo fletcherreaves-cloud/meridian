@@ -49,4 +49,10 @@ export const PULL_REGISTRY = {
   digitalApp:        { table: 'digital_app_monthly',  dateCol: 'period_month', workflowFile: 'qsrsoft-digital-app-pull.yml' },
   mcdelivery:        { table: 'mcdelivery_monthly',   dateCol: 'period_month', workflowFile: 'qsrsoft-mcdelivery-pull.yml' },
   shiftManager:      { table: 'shift_manager_monthly',dateCol: 'period_month', workflowFile: 'qsrsoft-shift-manager-pull.yml' },
+  // Added 2026-10-13 after a real measured incident: this workflow's very first scheduled
+  // cron opportunity (10:00 UTC, 2026-10-13) silently never fired -- confirmed live via the
+  // GitHub Actions API (zero event:"schedule" runs in its history), the exact "should have
+  // run by now, silently didn't" failure mode this watchdog exists to catch. No clampToToday
+  // needed -- unlike lifelenz, this table never carries a future-dated row.
+  qsrSalesQtrHour: { table: 'qsr_sales_quarter_hour', dateCol: 'dt', workflowFile: 'qsrsoft-sales-quarter-hour-pull.yml' },
 };
