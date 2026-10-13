@@ -114,6 +114,49 @@ shape.
   automated pull" checklist item 2 is a correct default for an eagerly-loaded stream, not for
   this shape — same precedent already established, not a new deviation.
 
+## ✅ Full history backfilled + daypart/metric leaderboard shipped (2026-10-13)
+
+After the `'qtr'` fix (above) merged, re-triggering the workflow confirmed the real fix: the
+first-day diagnostic logged **96 distinct `qtr_slot` values/store/day** (96 × 15min = 24h,
+`04:15`..`28:00`) — independently re-confirmed via a direct Supabase query against the live
+table (same credential/observation discipline this repo's "measure it" rule requires), not
+just the pull script's own log.
+
+**Backfill.** The table only held 90 days (since 2026-07-15) at that point. Rather than assume
+how far back quarter-hour grain was available, a single `2024-01-01` test date was pulled
+first via `workflow_dispatch` — it returned the full 96 distinct slots, matching `qsr_daily_
+activity`'s own already-measured 2024-01-01 floor for this identical endpoint. Confirmed the
+grain holds that far back before committing to the full pull. Backfilled in 10 quarterly
+chunks (`QSRSOFT_QTRHR_START_DATE`/`END_DATE` workflow inputs, dispatched in parallel —
+disjoint date ranges never collide on the upsert PK). Table went from 235,872 rows (90 days)
+to **2,511,402 rows**, 2024-01-01 → today, zero gaps across spot-checked months. The other
+QSRSoft-sourced tables checked at the same time (`qsr_cash_sheet`/`qsr_service_stats`/
+`qsr_sales_mix`/`qsr_daily_activity_rollup`/`qsr_labor_summary`) already sat at 2024-01-01 —
+no further gap to close there.
+
+**Leaderboard.** Owner follow-up ask: best BREAKFAST/LUNCH/etc. hour (not just whichever
+daypart the single overall-best window happens to land in), a second metric (transactions,
+not just sales $), and historical context — a "previous record" (rank 2) and a top-5-all-time
+list, not just the current #1 — all sortable/filterable uniformly. Built as a SEPARATE engine
+function, `computeHourLeaderboard`/`scopeHourLeaderboard` (`src/engine/record-hour.js`),
+rather than branching the original `computeHourRecords` — that function's "overall/sales, one
+value per store" contract is unit-tested exactly as it stands and has to stay perturbation-
+free. `allWindowsForDay` (the old `bestWindowForDay`, generalized to return every valid
+4-slot window instead of just the max) is computed once per store-day and shared by both;
+category = a daypart filter on each window's start hour (or none, for "Any Hour"); metric =
+which summed field (`sales`/`transactions`) ranks the windows. Each store's top-N is
+maintained as a running insert-sorted array (capped at 5) as days are scanned chronologically,
+excluding today's still-open business day from ever entering the permanent ranking (same
+provisional-day discipline the original feature already followed) — the district-wide top-5
+is then a cheap pool-and-resort of each store's own (already-capped) top-5, which is provably
+sufficient since no single store can contribute more than N entries to an N-sized cross-store
+ranking. UI: Category + Metric dropdowns and a Current-Record/Top-5-All-Time toggle, using the
+exact same `S.select`/`S.ghostBtn`/`SortTH` conventions every other Record Days tab already
+uses — every column (Store/Value/Date/Daypart) is click-to-sort in both views, not a one-off
+control. Tests: `src/__tests__/record-hour-leaderboard.test.js` (engine), extended
+`src/__tests__/record-hour-tab-render.test.js` (through the real `RecordDayTab`, exercising
+the Category dropdown and Top-5 toggle, not just the engine import).
+
 ## Files
 
 - `supabase/schema-qsr-sales-quarter-hour.sql` — new table, tenant_id + RLS.
