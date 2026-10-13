@@ -8626,7 +8626,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         style:{padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
           background:'rgba(96,165,250,.12)',color:'#60a5fa',
           border:'1px solid rgba(96,165,250,.3)'}},
-        '📧 Group Report'),
+        '📧 Operator Report'),
       // ── Patch Sheet button + inline group selector ─────────────────────────
       locs.length>0&&btn({
         onClick:()=>setSheetOpen(v=>!v),
