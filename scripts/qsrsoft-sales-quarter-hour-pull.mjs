@@ -4,23 +4,24 @@
 // API: https://api.reports.myqsrsoft.com/v1/reports/shift/daily-activity-raw
 // One API call per day covers ALL 27 stores simultaneously -- same endpoint and shape
 // scripts/qsrsoft-dar-pull.mjs already drives for the HOURLY qsr_daily_activity table;
-// this script requests the IDENTICAL endpoint with segmentBy/timeInterval='quarterHour'
-// instead of 'hour', writing to the new qsr_sales_quarter_hour table. See
-// supabase/schema-qsr-sales-quarter-hour.sql's header for the full "why" and the
-// architecture decision (pre-aggregated sales endpoint, not item-level Product Mix).
+// this script requests the IDENTICAL endpoint with segmentBy/timeInterval='qtr' instead
+// of 'hour', writing to the new qsr_sales_quarter_hour table. See supabase/schema-qsr-
+// sales-quarter-hour.sql's header for the full "why" and the architecture decision
+// (pre-aggregated sales endpoint, not item-level Product Mix).
 //
 // Built for Record Hour in Sales (src/engine/record-hour.js): the best 60-CONSECUTIVE-
 // MINUTE sliding window of sales a store has ever had, any 15-min-aligned start.
 //
-// ⚠️ UNVERIFIED AGAINST LIVE QSRSOFT: this was written without QSRSoft credentials
-// available (sandboxed dev session) -- segmentBy/timeInterval='quarterHour' is a
-// reasoned extrapolation from the API's existing 'hour' behavior and the endpoint's own
-// `endQtrHourTime` field name (see schema file), not a live-confirmed parameter value.
-// This script logs a loud diagnostic on the FIRST day of its FIRST real run (distinct
-// qtr_slot count) specifically so that run is the actual measurement, per CLAUDE.md's
-// "measure it, don't reason about it" rule -- check the Action's run log after this
-// first deploys, and do not assume Record Hour's numbers are trustworthy before that
-// log confirms more than 24 distinct slots/store/day are coming back.
+// ✅ VERIFIED AGAINST LIVE QSRSOFT 2026-10-12 (do not re-litigate) -- this script's first
+// real run used segmentBy/timeInterval='quarterHour' (a reasoned-but-wrong extrapolation
+// from the API's 'hour' behavior) and the API rejected EVERY date with a real HTTP 400:
+// `"segmentBy" must be one of [summary, daypart, peaks, timeSlice, qtr, hour]` -- the
+// API's own error message names the real enum. Corrected to 'qtr' here, mirroring
+// qsrsoft-dar-pull.mjs's own proven segmentBy===timeInterval pairing (both set to 'hour'
+// there) exactly, rather than guessing a second time. Re-run after this fix to confirm
+// 'qtr' is accepted and actually returns >24 distinct slots/store/day (the first-day
+// diagnostic below still checks this on every fresh run, so a wrong value can't ship
+// silently a second time).
 //
 // Required env vars:
 //   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -161,11 +162,13 @@ function buildUrl(date) {
   const params = new URLSearchParams({
     // Same single whole-day 'open-close' segment DAR uses for its own hourly pull --
     // segmentBy/timeInterval is what tells the API how finely to slice that one window.
-    timeSegment: 'openClose', segmentBy: 'quarterHour',
+    // 'qtr' confirmed live 2026-10-12 (see header) -- NOT 'quarterHour', the API's own
+    // HTTP 400 enum error for an invalid segmentBy value.
+    timeSegment: 'openClose', segmentBy: 'qtr',
     segmentNames: 'open-close', segmentsSelected: 'open-close',
     nsd: 'd', nsn: STORE_NSNS.join(','), orgId: ORG_ID,
     enterpriseName: 'McDonalds', startDate: date, endDate: date,
-    compType: 'trading', weekStart: '3', timeInterval: 'quarterHour',
+    compType: 'trading', weekStart: '3', timeInterval: 'qtr',
     selectCols: SELECT_COLS,
   });
   return `${BASE}/v1/reports/shift/daily-activity-raw?${params}`;
@@ -182,7 +185,7 @@ function logFirstDayDiagnostic(rows) {
     `qtr_slot values, ~${perStore.toFixed(1)} rows/store. Sample slots: ${[...slots].sort().slice(0, 8).join(',')}...`);
   if (slots.size <= 24) {
     console.warn('[qtrhr-pull] ⚠️  WARNING: 24 or fewer distinct slots seen — the API may have ' +
-      'ignored segmentBy/timeInterval=quarterHour and returned HOURLY granularity instead ' +
+      'ignored segmentBy/timeInterval=qtr and returned HOURLY granularity instead ' +
       '(the same shape qsr_daily_activity already has). Record Hour needs true 15-minute ' +
       'buckets to compute a real rolling 60-minute window — do not trust it until this is ' +
       'fixed. See this file\'s header comment.');

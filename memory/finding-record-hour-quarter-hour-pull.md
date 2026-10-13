@@ -67,6 +67,29 @@ Product Mix report's own network request with that control set to "By Quarter Ho
 the exact literal QSRSoft sends, the same way `memory/qsrsoft-report-catalog.md`'s existing
 captures were built.
 
+## ✅ CORRECTED 2026-10-12, live-measured — `'quarterHour'` was wrong; `'qtr'` is real
+
+The PR merged, the table migration ran, and the first manually-triggered live run (GitHub
+Actions, `workflow_dispatch`) was the actual measurement this section called for. Outcome:
+not a silent hourly-fallback (the thing the diagnostic was built to catch) but a hard
+failure — the API rejected **every single date** with a real HTTP 400:
+
+```
+"segmentBy" must be one of [summary, daypart, peaks, timeSlice, qtr, hour]
+```
+
+The API's own error names the real enum. `'quarterHour'` was never a valid value for this
+endpoint's `segmentBy`/`timeInterval` fields — the Product Mix report's "By Quarter Hour"
+UI label (the basis for the original guess) apparently maps to a different literal
+(`'qtr'`) on the wire than its own display text suggested. Fixed in
+`scripts/qsrsoft-sales-quarter-hour-pull.mjs` (both `segmentBy` and `timeInterval`, mirroring
+`qsrsoft-dar-pull.mjs`'s own proven `segmentBy === timeInterval === 'hour'` pairing exactly
+rather than guessing a second time). **Still not yet confirmed that `'qtr'` itself returns
+true 15-minute granularity** (>24 distinct slots/store/day) — that is the next real
+measurement, from the first post-fix run's diagnostic log. Do not assume it works until that
+log is checked; a parameter being *accepted* is not the same as it changing the response
+shape.
+
 ## Design choices in the new table (`qsr_sales_quarter_hour`)
 
 - **loc is UNPADDED** on read (`src/lib/supabase.js`'s `loadQsrSalesQuarterHour`), unlike
