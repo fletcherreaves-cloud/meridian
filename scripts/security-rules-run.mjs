@@ -548,7 +548,10 @@ function normalizeNameForMatch(name) {
 }
 
 export function mapTenureRow(r) {
-  return { loc: r.loc, geid: r.geid, employmentStatus: r.employment_status, terminationEntryDate: r.termination_entry_date };
+  return {
+    loc: r.loc, geid: r.geid, employmentStatus: r.employment_status,
+    terminationEntryDate: r.termination_entry_date, storeEndDate: r.store_end_date,
+  };
 }
 
 export function mapPunchTimeDateRow(r) {
@@ -571,18 +574,30 @@ export function supportsLaborManagerRate(rule) {
   return req.includes('lifelenz_punch_edits') && req.includes('qsr_punch_times');
 }
 
-// LABOR-001's own join -- attaches each edit row's subject's termination_entry_date (if any) and
-// derives postTerminationFlag: 1 when the EFFECTIVE punch date (the corrected/added time if one
-// exists, else the original) falls strictly after the termination date on file, 0 otherwise.
-// Deliberately reads ONLY terminationEntryDate, never employmentStatus's own string value -- a
-// termination date being on file at all is a simpler, more reliable signal than guessing at every
-// string QSRSoft's employmentStatus field might carry.
+// LABOR-001's own join -- attaches each edit row's subject's effective termination date (see
+// below) and derives postTerminationFlag: 1 when the EFFECTIVE punch date (the corrected/added
+// time if one exists, else the original) falls strictly after that date, 0 otherwise.
+//
+// ⚠️ CORRECTED 2026-10-13 (live-measured, do not re-litigate): this originally read ONLY
+// terminationEntryDate, reasoning "a termination date being on file at all is a simpler, more
+// reliable signal than guessing at every string QSRSoft's employmentStatus field might carry."
+// That reasoning was never wrong in the abstract, but it assumed terminationEntryDate is
+// actually populated for a terminated employee -- measured false for this tenant: a direct
+// probe of QSRSoft's employee-roster endpoint across a 9.5-month window (employmentStatus=all)
+// found terminationEntryDate was the API's own null sentinel ("0000-00-00", normalized to null
+// by cleanDate() before it ever reaches Supabase) on **0 of 1869** non-active employees.
+// storeEndDate, by contrast, was a real date on **1869 of 1869** -- so this now falls back to
+// storeEndDate whenever terminationEntryDate isn't on file, rather than silently staying
+// permanently inert for an org that simply doesn't populate the first field. Both are checked
+// (terminationEntryDate preferred when present) rather than storeEndDate alone, since a future
+// org/tenant might populate terminationEntryDate validly and it is the more semantically exact
+// field when it exists.
 export function joinPunchEditsWithTenure(editRows, tenureRows) {
   const tenureByKey = new Map();
   for (const t of (tenureRows || [])) tenureByKey.set(`${t.loc}::${t.geid}`, t);
   return (editRows || []).map(r => {
     const t = tenureByKey.get(`${r.loc}::${r.geid}`);
-    const terminationEntryDate = t?.terminationEntryDate || null;
+    const terminationEntryDate = t?.terminationEntryDate || t?.storeEndDate || null;
     const effectivePunchDate = String(r.adjustedPunchAt || r.originalPunchAt || '').slice(0, 10) || null;
     const postTerminationFlag = (terminationEntryDate && effectivePunchDate && effectivePunchDate > terminationEntryDate) ? 1 : 0;
     return { ...r, employmentStatus: t?.employmentStatus || null, terminationEntryDate, postTerminationFlag };

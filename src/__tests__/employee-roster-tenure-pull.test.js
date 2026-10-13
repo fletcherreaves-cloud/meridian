@@ -12,8 +12,22 @@
 // supabase.upsert() in the script), so testing it here is testing the actual call-site
 // contract, not a detached normalizer.
 import { describe, it, expect } from 'vitest';
-import { toTenureRows, assertNoDeniedSelectCols, SELECT_COLS } from '../../scripts/qsrsoft-employee-roster-pull.mjs';
+import { toTenureRows, assertNoDeniedSelectCols, SELECT_COLS, buildUrl } from '../../scripts/qsrsoft-employee-roster-pull.mjs';
 import { parseEmployeeRosterApi } from '../engine/people-reports.js';
+
+// ✅ CORRECTED 2026-10-13 (live-measured, do not re-litigate): employmentStatus was 'active'
+// from this pull's original build through 2026-10-13, which meant qsr_employee_tenure could
+// never receive a terminated employee -- confirmed the real root cause of LABOR-001 (ghost-
+// employee detection) never firing. The live API's own HTTP 400 error named the real enum
+// (`"employmentStatus" must be one of [all, inactive, active, ]`); 'all' returns both
+// populations in one call. See scripts/qsrsoft-employee-roster-pull.mjs's own header comment
+// for the full measurement.
+describe('buildUrl() — requests BOTH active and terminated employees, not active-only', () => {
+  it('sends employmentStatus=all', () => {
+    const url = buildUrl('2026-01');
+    expect(new URL(url).searchParams.get('employmentStatus')).toBe('all');
+  });
+});
 
 describe('toTenureRows() — qsr_employee_tenure write-path row shape', () => {
   it('pads loc to 7 chars (records carry the unpadded form)', () => {
