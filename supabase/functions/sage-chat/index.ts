@@ -1070,6 +1070,23 @@ async function streamAnthropicCall(
             block.input = {};
             block._inputJson = '';
           }
+          // web_search_tool_result (mass-review notes 70, 2026-10-13) -- the RESULT block
+          // Anthropic emits right after a server_tool_use web_search call, carrying the actual
+          // search hits (or an error). Unlike tool_use/server_tool_use above, this block arrives
+          // WHOLE in this one content_block_start event (cb.tool_use_id/cb.content), never
+          // streamed via input_json_delta -- so it was falling through to the generic `{type:
+          // cb.type}` default and losing both required fields. Harmless on a normal turn (this
+          // block is never replayed), but fatal on a pause_turn resume: the branch below replays
+          // `assistantContent` verbatim as the next request's conversation history, and Anthropic
+          // rejects a web_search_tool_result missing tool_use_id/content with HTTP 400
+          // invalid_request_error ("messages.N.content.M.web_search_tool_result... Field
+          // required") -- exactly the error a multi-search query (pause_turn is web_search's own
+          // internal search-loop continuing) was hitting. Captured directly from cb since there's
+          // no delta/accumulation step for this block type.
+          if (cb.type === 'web_search_tool_result') {
+            block.tool_use_id = cb.tool_use_id;
+            block.content = cb.content;
+          }
           if (cb.type === 'tool_use') toolUses.push({ id: cb.id, name: cb.name });
           contentByIdx.set(ev.index, block);
         }
