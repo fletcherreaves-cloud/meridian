@@ -16,12 +16,14 @@
 -- returns 24 rows/store-day keyed by `endQtrHourTime` -- a field name that was already
 -- a strong hint the API's native grain is quarter-hour and DAR was simply asking it to
 -- pre-aggregate up to the hour. scripts/qsrsoft-sales-quarter-hour-pull.mjs requests the
--- IDENTICAL endpoint/params with segmentBy=quarterHour&timeInterval=quarterHour instead,
--- confirmed valid by memory/qsrsoft-report-catalog.md's Product Mix filter-surface table
--- ("View Segment | By Total - By Hour - By Quarter Hour | timeInterval") -- that capture
--- is for the Product Mix report, not this one, so the pull script logs a loud diagnostic
--- on its first live day (distinct-slot count) rather than assuming the param carries over
--- silently. Re-measure against that log before trusting this table's grain.
+-- IDENTICAL endpoint/params with segmentBy=qtr&timeInterval=qtr instead.
+--
+-- ⚠️ CORRECTED 2026-10-12, live-measured (do not re-litigate): this originally shipped
+-- with segmentBy/timeInterval='quarterHour', a reasoned guess. The live API rejected
+-- every request with a real HTTP 400 -- `"segmentBy" must be one of [summary, daypart,
+-- peaks, timeSlice, qtr, hour]` -- the API's own error names the real enum value, 'qtr'.
+-- Fixed in the pull script; re-measure the first post-fix run's diagnostic log (distinct-
+-- slot count, >24 expected) before trusting this table's grain is genuinely 15-minute.
 --
 -- Deliberately NOT sourced from Product Mix's item-level `qtr-hr` segmentation --
 -- memory/qsrsoft-report-catalog.md flags that as "enormous volume" (441 rows/store-day
