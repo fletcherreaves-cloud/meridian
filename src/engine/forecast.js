@@ -13,7 +13,7 @@ function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase(
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
-import { metricDaily, metricAvg } from './metric-source.js';
+import { metricDaily, metricAvg, metricSeries } from './metric-source.js';
 import { weightedRecencyProjection, robustBaseline, median, mad, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
@@ -440,24 +440,11 @@ function fetchRecentActual(ds, loc, date, field='sales'){
   return (rr.length ? (rr[0][field]||0) : 0) || fetchRow(_qsrActIdx(ds), loc, date, field);
 }
 
-// How many observations a store actually has for a field over the trailing window. A raw
-// trailing average returns 0 for "no data", which is indistinguishable from a real zero — and
-// the scorecards only dash on null, so a store with no Controls upload rendered a wall of
-// 0.00% that the pass functions then graded as PASSING GREEN. Missing data was being presented
-// as compliance. Deliberately its own function rather than folded into the average call: most
-// consumers do arithmetic on the average, so this adds the missing information instead of
-// altering it.
-//
-// (This used to sit alongside a standalone avg6() with the same skip-a-real-zero shape — that
-// function was removed 2026-09-07 as dead code: `compute6wk()` had already migrated every field
-// it computes to metricAvg()/metric-source.js, and nothing else called avg6() at all. obs6()
-// itself is still live, called directly by compute6wk()'s own `_cov` coverage map below.)
-function obs6(rows,loc,field,wb){
-  const cut=new Date(Date.now()-wb*7*86400000);
-  let cnt=0;
-  for(const r of rows){if(r.loc!==loc||r.date<cut)continue;const v=r[field];if(typeof v==='number'&&v!==0)cnt++;}
-  return cnt;
-}
+// obs6() (manual-rows-only observation counting) removed 2026-10-13, mass-review notes 70 —
+// compute6wk()'s `_cov` coverage map now counts via metricSeries() (the same auto-first chain
+// M() itself resolves through), not raw ctrlL/opsL. See the comment above `_cov`'s construction
+// in compute6wk() for the bug this replaces. Same fate as avg6() (removed 2026-09-07) once its
+// last caller migrated.
 
 // SECTION 5: ANALYTICS ENGINE
 //
@@ -1038,10 +1025,14 @@ function compute6wk(loc,ds,wb){
     discPct:M('discPct'),cashRefCnt:M('cashRefCnt'),
     posOverCnt:M('posOverCnt'),drawerOpens:M('drawerOpens'),
 
-    // ── Manual-only: no auto stream carries these and no derivation exists ───────
-    // Verified 2026-08-08 against the live column lists of the auto/emailed tables; see
-    // MANUAL_ONLY_METRICS in metric-source.js. Routing them through the resolver would
-    // add nothing, so they keep the direct avg6 read.
+    // ⚠️ This heading used to read "Manual-only: no auto stream carries these and no
+    // derivation exists," verified 2026-08-08 — that stopped being true 2026-08-28 when
+    // empMealAmt/mgrMealAmt gained glimpseRows+auditRows chains and manualRefAmt gained an
+    // auditRows fallback (metric-source.js). All three were already routed through M() here
+    // regardless (so the VALUES were never actually manual-only), but found stale while
+    // fixing _cov's own manual-only assumption for the Controls Integrity fields above
+    // (2026-10-13) — left as a pointer that these three are no longer MANUAL_ONLY_METRICS
+    // either, not a claim that nothing here still is.
     empMealAmt:M('empMealAmt'),mgrMealAmt:M('mgrMealAmt'),
     manualRefAmt:M('manualRefAmt'),
     depositAmt:M('depositAmt'),
@@ -1051,15 +1042,35 @@ function compute6wk(loc,ds,wb){
     variableNeeded:M('variableNeeded'),
     oppCostPct:M('oppCostPct'),
     oppCostDollar:M('oppCostDollar')};
-  // Coverage map: how many real observations backed each metric. avg6 returns 0 for
-  // "no data", which the scorecards graded as a passing zero — see obs6's note. Consumers
-  // can now tell a genuine 0 from an absent metric and render '—' instead of green.
+  // Coverage map: how many real observations backed each metric. M() returns 0 for
+  // "no data", which the scorecards graded as a passing zero — see the note below.
+  // Consumers can now tell a genuine 0 from an absent metric and render '—' instead of green.
+  //
+  // ✅ FIXED (mass-review notes 70, 2026-10-13) — this used to count ONLY raw manual rows
+  // (obs6(ctrlL,...)/obs6(opsL,...)), completely bypassing the auto-first metric-source.js
+  // chain M() itself already resolves each of these fields through. A store with zero MANUAL
+  // Controls/Ops uploads (the now-common case per the "Auto/emailed-first" standing rule) read
+  // cov=0 for every field here even when metricAvg found real values from an auto-pulled
+  // source (e.g. qsr_cash_sheet → opsCashRows → cashOSPct/tRedAPct/drawerOpens/etc). Two
+  // compounding effects: CtrlScorecard's COV_FIELD gate (store-dash.js) showed '—' for every
+  // row despite real underlying data, and computeCtrlScore (pipeline.js) — which treats
+  // cov[field]<=0 as "skip this component, shrink the denominator" — ended up skipping EVERY
+  // component for such a store, collapsing to the same degenerate 75/100 (the one flat
+  // structural +3 allowance divided by the 4 max points left once every other component's
+  // "else max-=N" fired) regardless of real performance. Found live: a uniform 75/100 CTRL
+  // column across 26 stores with wildly different real OPS scores; qsr_cash_sheet confirmed
+  // (service-role read) to hold real, current drawer/T-Red/refund/overring data for a sample
+  // store the whole time. Now counts how many days metricSeries actually resolved — the same
+  // chain M() uses — so cov and the value it gates can never disagree about whether data exists.
+  const COV_CHAIN_KEY = {
+    cashOSPct:'cashOSPct', tRedAPct:'tRedAPct', tRedBPct:'tRedBPct', drawerOpens:'drawerOpens',
+    posOverCnt:'posOverCnt', cashRefCnt:'cashRefCnt', discPct:'discPct', manualRefAmt:'manualRefAmt',
+    empMealAmt:'empMealAmt', mgrMealAmt:'mgrMealAmt', otHrs:'otHrs', tpph:'tpph', laborPct:'laborPct',
+    oepe:'oepe', r2p:'r2p', kvst:'kvst', park:'park', kvsu:'kvsHealthy', // kvsu's own chain key differs
+  };
   r._cov=(()=>{
     const c={};
-    const add=(rows,fields)=>{for(const f of fields)c[f]=obs6(rows,loc,f,wb);};
-    add(ctrlL,['cashOSPct','tRedAPct','tRedBPct','drawerOpens','posOverCnt','cashRefCnt',
-               'discPct','manualRefAmt','empMealAmt','mgrMealAmt','otHrs','tpph','laborPct']);
-    add(opsL, ['oepe','r2p','kvst','park','kvsu']);
+    for(const f in COV_CHAIN_KEY) c[f]=Object.keys(metricSeries(ds,loc,_range,COV_CHAIN_KEY[f])).length;
     return c;
   })();
   // ✅ FIXED (mass-review notes 70, 2026-10-13) — kvsu used to be the one metric in this
