@@ -36,6 +36,7 @@ import { TargetsEditorSection } from './targets-editor.js';
 // standalone panel-registry optional-panel entry — see performance-calculator.js's own header
 // for the scoring-divergence and RBAC notes).
 import { PerformanceCalculatorSection } from './performance-calculator.js';
+import { loadQsrActSummary, loadGlimpse, loadOpsServiceStats } from '../lib/supabase.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -55,6 +56,48 @@ const TEXT   = 'var(--text)';
 const TEXT2  = 'var(--text2)';
 const TEXT3  = 'var(--text3)';
 const R      = 'var(--r)';
+
+// ── Auto-Fill window widening (mass-review notes 70, 2026-10-13) ───────────────
+// App.js bootstraps qsrActSummaryRows/glimpseRows/opsServiceRows with a fixed ~60-day trailing
+// window from "today" — fine for most panels, but autoPopulateKPIs (review-engine.js) always
+// fills all 12 months of a review's year, so a review period more than ~2 months in the past
+// silently read nothing from those three sources. See memory/finding-pace-to-target-window-
+// gap-2026-10-06.md for the sibling bug this mirrors (CurrentMonthPaceSection, analytics.js).
+const _oldestDateForLoc = (rows, loc) => {
+  let min = null;
+  for (const r of (rows || [])) {
+    if (String(r.loc) !== String(loc)) continue;
+    const d = r.date instanceof Date ? r.date : new Date(String(r.date || '') + 'T00:00:00');
+    if (isNaN(d)) continue;
+    if (!min || d < min) min = d;
+  }
+  return min;
+};
+// Returns `ds`, or a shallow copy with qsrActSummaryRows/glimpseRows/opsServiceRows replaced by
+// a fresh, wider fetch — only for whichever of those three doesn't already reach back to Jan 1
+// of `year` for this store. Never mutates the app's own `ds`; a failed fetch falls back to the
+// existing (narrower) rows rather than breaking Auto-Fill entirely.
+async function _dsForReviewYear(ds, loc, year) {
+  if (!ds) return ds;
+  const yearStart = new Date(year, 0, 1);
+  const daysBack = Math.max(60, Math.ceil((new Date() - yearStart) / 86400000) + 2);
+  const needsWiden = (rows) => { const oldest = _oldestDateForLoc(rows, loc); return !oldest || oldest > yearStart; };
+  const [act, glimpse, svc] = await Promise.all([
+    needsWiden(ds.qsrActSummaryRows) ? loadQsrActSummary(daysBack).catch(() => null) : null,
+    needsWiden(ds.glimpseRows)       ? loadGlimpse(daysBack).catch(() => null)       : null,
+    needsWiden(ds.opsServiceRows)    ? loadOpsServiceStats(daysBack).catch(() => null) : null,
+  ]);
+  // An empty-array result (no Supabase client configured, or genuinely no rows) must never
+  // REPLACE ds's existing rows with nothing — same `.length` guard App.js's own Ops Report
+  // stream load uses (`oCash.length?{opsCashRows:oCash}:{}`) for the identical reason.
+  const hasAct = act && act.length, hasGlimpse = glimpse && glimpse.length, hasSvc = svc && svc.length;
+  if (!hasAct && !hasGlimpse && !hasSvc) return ds;
+  return { ...ds,
+    ...(hasAct     ? { qsrActSummaryRows: act }     : {}),
+    ...(hasGlimpse ? { glimpseRows: glimpse }       : {}),
+    ...(hasSvc     ? { opsServiceRows: svc }        : {}),
+  };
+}
 
 // ── Period selector (dispatch #157, Priority 1 item 1) ─────────────────────────
 // A review record is a full YEAR now (dispatch #152) — `computeScores`/`computeScoreBreakdown`
@@ -937,12 +980,27 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const setComment   = (period, cat, val) => update(`comments.${period}.${cat}`, val);
   const setDevPlan   = (next) => { setReview(prev=>({...prev,devPlan:next})); setDirty(true); };
 
-  const doAutoFill = () => {
+  // ✅ FIXED (mass-review notes 70, 2026-10-13) — Auto-Fill wasn't populating the 2nd half of
+  // the year to date (owner-reported: should include July/August/September). Root cause: `ds`'s
+  // qsrActSummaryRows/glimpseRows/opsServiceRows are each bootstrapped ONCE at app startup with
+  // a fixed ~60-day trailing window from "today" (App.js), never refreshed for an older period —
+  // the exact same bug class memory/finding-pace-to-target-window-gap-2026-10-06.md already
+  // found and fixed for CurrentMonthPaceSection (analytics.js). autoPopulateKPIs (review-engine.js)
+  // always fills all 12 months of review.kpis.months, so any month outside that trailing window
+  // silently read nothing. Fixed the same way that finding did: an on-demand widened fetch for
+  // whichever of the three sources doesn't already reach back to Jan 1 of the review's year,
+  // used instead of the global ds for this one autoPopulateKPIs call — never mutates the app's
+  // own ds, so every other panel's 60-day window is untouched.
+  const doAutoFill = async () => {
     setAutoFilling(true);
-    const filled = autoPopulateKPIs(review, ds);
-    setReview(filled);
-    setDirty(true);
-    setTimeout(()=>setAutoFilling(false), 800);
+    try {
+      const augmented = await _dsForReviewYear(ds, review.loc, review.year);
+      const filled = autoPopulateKPIs(review, augmented);
+      setReview(filled);
+      setDirty(true);
+    } finally {
+      setAutoFilling(false);
+    }
   };
 
   // Dispatch #157, Priority 1 item 2 — approval status lives per-half now
