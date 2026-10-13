@@ -161,3 +161,42 @@ failing on every individually-listed denied field). Build clean, no client-bundl
 (both touched files are Node-only pull-side code, never imported by `src/app`).
 
 Not built, per this brief's own explicit scope: no panel, no pay surfacing, no backfill decision.
+
+## ✅ The "no backfill decision" deferred above was made 2026-10-13 — `employmentStatus=all` now
+
+LABOR-001 (ghost-employee / post-termination punch-edit detection, built 2026-10-12 directly on
+`qsr_employee_tenure`) shipped structurally unable to ever fire: this file's own "No backfill
+decision" note above flagged `employmentStatus=active` as reachable-but-deferred, and nobody
+revisited it before building a rule that needs exactly the population it excludes. Owner asked
+why Security showed no Labor results; traced it to this gap and got the go-ahead to fix it.
+
+Probed the live API directly rather than guessing a second time this week (same discipline as
+the Record Hour `segmentBy` fix the same day): the endpoint's own HTTP 400 named the real enum —
+`"employmentStatus" must be one of [all, inactive, active, ]`. `all` returns both populations in
+one call (measured: 1461 active + 47 terminated for a 13-day October window; 1484+143 for
+January; 1519+235 for June) — no second request needed. Changed `buildUrl()`'s
+`employmentStatus` from `'active'` to `'all'`. `rosterCounts()` already defaults to
+`activeOnly:true` internally (read before changing anything, not assumed), so
+`roster_role_counts`' existing headcount output is unaffected.
+
+**A second, independent bug surfaced in the same probe, also live-measured rather than assumed:**
+across a 9.5-month window, **0 of 1869** non-active employees had a real `terminationEntryDate`
+— it's the API's own null sentinel (`"0000-00-00"`, normalized to `null` by `people-reports.js`'s
+`cleanDate()`) every single time for this tenant — while `storeEndDate` was a real date on
+**1869 of 1869**. LABOR-001's join (`scripts/security-rules-run.mjs`'s `joinPunchEditsWithTenure`)
+read only `terminationEntryDate`, so even with the pull fixed it would have stayed permanently
+inert. Fixed to fall back to `storeEndDate` when `terminationEntryDate` isn't on file
+(`terminationEntryDate` still wins when both are present — more semantically exact, and a
+different tenant might populate it validly). `mapTenureRow()` now also carries `storeEndDate`.
+
+Fixed in the same pass: `scripts/qsrsoft-employee-roster-pull.mjs` (`buildUrl`, now exported for
+a direct test; its own `main()` log line, which previously mislabeled the full `records` array
+as "active employees"), `scripts/security-rules-run.mjs` (`mapTenureRow`,
+`joinPunchEditsWithTenure`). Tests: 5 new in `src/__tests__/security-rules-labor-2026-10-12.test.js`
+(storeEndDate mapping + the full fallback matrix — storeEndDate alone, terminationEntryDate
+preferred when both present, neither present), 1 new in
+`src/__tests__/employee-roster-tenure-pull.test.js` (`buildUrl` sends `employmentStatus=all`).
+Full suite + build verified. Cash/Inventory domains were independently confirmed NOT broken by
+this investigation (100 and 260 real flagged subject groups respectively, measured against live
+data with the Security panel's exact client-side query/grouping) — this was specifically a
+Labor-domain, LABOR-001-only gap.

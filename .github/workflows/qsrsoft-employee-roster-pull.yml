@@ -20,10 +20,6 @@ on:
         description: 'Verbose logging (1 = on)'
         required: false
         default: '0'
-      probe:
-        description: 'TEMP diagnostic (2026-10-13): 1 = run the read-only employmentStatus probe instead of the real pull'
-        required: false
-        default: '0'
 
 jobs:
   pull:
@@ -44,15 +40,7 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install chromium --with-deps
 
-      - name: TEMP -- probe employmentStatus values (read-only, no Supabase write)
-        if: ${{ github.event.inputs.probe == '1' }}
-        run: node scripts/_probe-roster-status-tmp.mjs
-        env:
-          QSRSOFT_USERNAME: ${{ secrets.QSRSOFT_USERNAME }}
-          QSRSOFT_PASSWORD: ${{ secrets.QSRSOFT_PASSWORD }}
-
       - name: Pull QSRSoft Employee Roster
-        if: ${{ github.event.inputs.probe != '1' }}
         run: node scripts/qsrsoft-employee-roster-pull.mjs
         env:
           VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}

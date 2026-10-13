@@ -33,9 +33,9 @@ describe('mapPunchEditRow() — snake_case lifelenz_punch_edits row -> camelCase
 });
 
 describe('mapTenureRow() / mapPunchTimeDateRow()', () => {
-  it('maps qsr_employee_tenure\'s relevant columns', () => {
-    expect(mapTenureRow({ loc: '0013113', geid: '200668686', employment_status: 'Terminated', termination_entry_date: '2026-09-01' }))
-      .toEqual({ loc: '0013113', geid: '200668686', employmentStatus: 'Terminated', terminationEntryDate: '2026-09-01' });
+  it('maps qsr_employee_tenure\'s relevant columns, including storeEndDate', () => {
+    expect(mapTenureRow({ loc: '0013113', geid: '200668686', employment_status: 'Terminated', termination_entry_date: '2026-09-01', store_end_date: '2026-08-15' }))
+      .toEqual({ loc: '0013113', geid: '200668686', employmentStatus: 'Terminated', terminationEntryDate: '2026-09-01', storeEndDate: '2026-08-15' });
   });
   it('maps qsr_punch_times down to just {loc,date}, slicing start_date_time to a calendar date', () => {
     expect(mapPunchTimeDateRow({ loc: '0013113', start_date_time: '2026-10-09T06:12:00+00:00' }))
@@ -94,6 +94,42 @@ describe('joinPunchEditsWithTenure() — LABOR-001\'s postTerminationFlag deriva
     const out = joinPunchEditsWithTenure(edits, tenure);
     expect(out[0].postTerminationFlag).toBe(0);
     expect(out[0].terminationEntryDate).toBeNull();
+  });
+
+  // ✅ CORRECTED 2026-10-13 (live-measured, do not re-litigate): a direct probe of QSRSoft's
+  // employee-roster endpoint across a 9.5-month window found terminationEntryDate is the API's
+  // own null sentinel on 0 of 1869 non-active employees for this tenant, while storeEndDate was
+  // a real date on all 1869 -- so this rule would have shipped permanently inert without this
+  // fallback. See scripts/security-rules-run.mjs's own comment on joinPunchEditsWithTenure.
+  describe('falls back to storeEndDate when terminationEntryDate is not on file', () => {
+    it('flags using storeEndDate alone', () => {
+      const tenureNoEntryDate = [mapTenureRow({ loc: 'B', geid: '2', employment_status: 'Termed', termination_entry_date: null, store_end_date: '2026-09-01' })];
+      const edits = [mapPunchEditRow({ loc: 'B', geid: '2', employee_name: 'Jordan Smith', manager_modified: 'Casey Diaz', adjusted_punch_at: '2026-09-15 08:00:00', modified_at: '2026-09-16 10:00:00' })];
+      const out = joinPunchEditsWithTenure(edits, tenureNoEntryDate);
+      expect(out[0].postTerminationFlag).toBe(1);
+      expect(out[0].terminationEntryDate).toBe('2026-09-01');
+    });
+    it('does not flag an edit on or before storeEndDate', () => {
+      const tenureNoEntryDate = [mapTenureRow({ loc: 'B', geid: '2', employment_status: 'Termed', termination_entry_date: null, store_end_date: '2026-09-01' })];
+      const edits = [mapPunchEditRow({ loc: 'B', geid: '2', employee_name: 'Jordan Smith', manager_modified: 'Casey Diaz', adjusted_punch_at: '2026-08-20 08:00:00', modified_at: '2026-09-16 10:00:00' })];
+      expect(joinPunchEditsWithTenure(edits, tenureNoEntryDate)[0].postTerminationFlag).toBe(0);
+    });
+    it('prefers terminationEntryDate over storeEndDate when BOTH are on file', () => {
+      // terminationEntryDate (2026-09-01) says this edit (2026-09-05) is post-termination;
+      // storeEndDate (2026-09-10) alone would have said it wasn't -- the explicit field wins.
+      const tenureBoth = [mapTenureRow({ loc: 'C', geid: '3', employment_status: 'Termed', termination_entry_date: '2026-09-01', store_end_date: '2026-09-10' })];
+      const edits = [mapPunchEditRow({ loc: 'C', geid: '3', employee_name: 'Jordan Smith', manager_modified: 'Casey Diaz', adjusted_punch_at: '2026-09-05 08:00:00', modified_at: '2026-09-16 10:00:00' })];
+      const out = joinPunchEditsWithTenure(edits, tenureBoth);
+      expect(out[0].postTerminationFlag).toBe(1);
+      expect(out[0].terminationEntryDate).toBe('2026-09-01');
+    });
+    it('a subject with neither date on file is never flagged', () => {
+      const tenureNeither = [mapTenureRow({ loc: 'D', geid: '4', employment_status: 'Active', termination_entry_date: null, store_end_date: null })];
+      const edits = [mapPunchEditRow({ loc: 'D', geid: '4', employee_name: 'Jordan Smith', manager_modified: 'Casey Diaz', adjusted_punch_at: '2026-10-01 08:00:00', modified_at: '2026-10-02 10:00:00' })];
+      const out = joinPunchEditsWithTenure(edits, tenureNeither);
+      expect(out[0].postTerminationFlag).toBe(0);
+      expect(out[0].terminationEntryDate).toBeNull();
+    });
   });
 });
 

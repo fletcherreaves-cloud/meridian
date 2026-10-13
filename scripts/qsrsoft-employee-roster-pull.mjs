@@ -22,13 +22,29 @@
 //   GET https://api.reports.myqsrsoft.com/reporting/v2/people/employee-roster
 //       ?catalogType=employeeRoster&nsd=d&nsn=<csv>&orgId=<org>&enterpriseName=McDonalds
 //       &startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3
-//       &locationType=home&employmentStatus=active&selectCols=<allowlist>
+//       &locationType=home&employmentStatus=all&selectCols=<allowlist>
 //   → { result: [ {storeNum, geid, fullEmployeeName, orgStartDate, storeStartDate,
 //                  storeEndDate, employmentStatus, locationType, terminationEntryDate,
 //                  terminationReason, jobTitleCode, jobCodeType, jobTitleCodeDescription,
 //                  jobTitleCodeStartDate, hourlyPayRate} ] }
 // Parsed with parseEmployeeRosterApi() + rosterCounts() from src/engine/people-reports.js
 // (the SAME engine the manual xlsx-upload path uses — one source of truth).
+//
+// ✅ CORRECTED 2026-10-13 (live-measured, do not re-litigate): employmentStatus was 'active'
+// from this pull's original build (dispatch #57, 2026-08-22) through 2026-10-13 -- a deliberate
+// choice at the time, since roster_role_counts (current headcount) is the ONLY thing that used
+// this pull. dispatch-57's own "No backfill decision" note already flagged this as reachable-
+// but-deferred: "employmentStatus=active is a request filter... whether to include leavers is
+// an owner call, not this dispatch's." LABOR-001 (ghost-employee / post-termination punch-edit
+// detection, 2026-10-12) was then built directly on qsr_employee_tenure without anyone revisiting
+// that open call -- so it shipped structurally unable to ever fire (no terminated employee ever
+// entered the table). Probed the live API directly for the real enum (its own HTTP 400 error
+// named it: `"employmentStatus" must be one of [all, inactive, active, ]`) and confirmed `all`
+// returns BOTH populations in one call (e.g. 1461 active + 47 terminated for a 13-day October
+// window) -- no second request needed. rosterCounts() (below) already defaults to
+// `activeOnly:true` internally, independent of this API-level filter, so roster_role_counts'
+// existing headcount output is unaffected by this change -- verified by reading that function
+// before changing this, not assumed.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 //
@@ -128,12 +144,12 @@ function periodRange(period) {
   };
 }
 
-function buildUrl(period) {
+export function buildUrl(period) {
   const { first, last } = periodRange(period);
   const params = new URLSearchParams({
     catalogType: 'employeeRoster', nsd: 'd', nsn: STORE_NSNS.join(','),
     orgId: ORG_ID, enterpriseName: ENTERPRISE, startDate: first, endDate: last,
-    weekStart: '3', locationType: 'home', employmentStatus: 'active', selectCols: SELECT_COLS.join(','),
+    weekStart: '3', locationType: 'home', employmentStatus: 'all', selectCols: SELECT_COLS.join(','),
   });
   return `${API_BASE}/reporting/v2/people/employee-roster?${params}`;
 }
@@ -372,10 +388,14 @@ async function main() {
   if (rawRows == null) { console.error('[employee-roster] ✗ no auth method succeeded'); process.exit(1); }
 
   const records = parseEmployeeRosterApi(rawRows);          // job-code/status/name/tenure/pay -- see header
+  // records now includes BOTH active and terminated employees (employmentStatus=all, see
+  // buildUrl's 2026-10-13 correction above) -- rosterCounts() defaults to activeOnly:true
+  // internally, so the headcount aggregate below is unaffected.
   const byLoc = rosterCounts(records);                      // active-only bucket counts per loc
   const rows = toRows(byLoc, period);
   const found = Object.keys(byLoc).length;
-  console.log(`[employee-roster] ${records.length} active employees → ${found} stores`);
+  const activeCount = records.filter(r => /^active$/i.test(String(r.employmentStatus || '').trim())).length;
+  console.log(`[employee-roster] ${records.length} total employees (${activeCount} active) → ${found} stores`);
   const saved = await upsert(rows);
   console.log(`[employee-roster] ✓ ${saved} store rows upserted to roster_role_counts for ${period}`);
 
