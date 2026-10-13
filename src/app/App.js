@@ -3633,7 +3633,7 @@ function App() {
       // lands here in that scope).
       routePanel==='above-store'&&h(AboveStoreOnePager,{ds,settings,userEvents,eventImpact:getEventImpact(),
         initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
-        initialView:aboveStoreInit?.view,
+        initialView:aboveStoreInit?.view,initialCustomRange:aboveStoreInit?.customRange,
         onClose:()=>{goRoute(null);setAboveStoreInit(null);}}),
       // 'time-punches' no longer has its own routePanel branch — dispatch #197 folded it into
       // CrewSchedulePanel's Punches tab (crewTab, initialTab above).
@@ -3742,7 +3742,7 @@ function App() {
           else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
           else if(sub.report==='smg-voice'){ setSmgVoiceInit(sub.scope||'all'); goRoute('smg-voice'); }
           else if(sub.report==='weekly-count-status'){ setWeeklyCountStatusInit(sub.scope||'all'); goRoute('weekly-count-status'); }
-          else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
+          else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels,customRange:sub.customRange}); goRoute('above-store'); }
         }}),
       routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,initialScope:smgVoiceInit,onClose:()=>{goRoute(null);setSmgVoiceInit(null);}}),
       routePanel==='task-queue'&&h(TaskQueuePanel,{settings,userRole,initialType:tqInitialType,onClose:()=>goRoute(null)})

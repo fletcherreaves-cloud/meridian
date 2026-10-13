@@ -42,7 +42,17 @@ export const REPORTS = [
   { key: 'weekly-count-status', label: 'Weekly Count Status', icon: '🗓', periods: false, panels: false,
     desc: 'Per-store weekly count roster: last full count, regular count day, this-week status, new items pending.' },
 ];
-const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month']];
+// 'custom' added (owner-requested, 2026-10-13) -- this picker used to offer only 3 fixed named
+// periods with no way to pick an actual date range. Matches the exact period vocabulary
+// AboveStoreOnePager (the one consumer that reads `period`) already implements internally
+// (its own period==='custom' + customRange state) rather than introducing a second, competing
+// date-range shape (e.g. DateRangeControl's trailing-N-days presets) that panel doesn't speak.
+const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month'], ['custom', 'Custom']];
+
+// Trailing 7 closed days -- same default AboveStoreOnePager's own customRange state seeds with,
+// so switching into Custom here starts from the same sane window, not an empty one.
+const defaultCustomRange = () => { const e = new Date(); e.setDate(e.getDate() - 1); const s = new Date(e); s.setDate(s.getDate() - 6);
+  return { s: s.toISOString().slice(0, 10), e: e.toISOString().slice(0, 10) }; };
 
 // scope stays a plain string ('all'|'ok'|'fl'|'grp:X'|storeId) — that's the persisted shape
 // (report_subscriptions rows already use it, in the wild), so LocationSelector's {level,id}
@@ -81,6 +91,7 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
   const [report, setReport] = useState('above-store');
   const [scope, setScope] = useState('all');
   const [period, setPeriod] = useState('mtd');
+  const [customRange, setCustomRange] = useState(defaultCustomRange);
   const [panels, setPanels] = useState(() => new Set(ONEPAGER_PANELS.map(p => p.key)));
 
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
@@ -98,12 +109,15 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
     setTimeout(() => setMsg(''), 2500);
   };
 
+  const periodLabel = () => period === 'custom' ? (customRange.s + ' to ' + customRange.e) : (PERIODS.find(p => p[0] === period) || [])[1];
+
   const addSub = () => {
     const list = subs || [];
     const sub = {
       id: mkId(list), report, scope, period,
+      customRange: (rptDef.periods && period === 'custom') ? customRange : null,
       panels: rptDef.panels ? Array.from(panels) : null,
-      label: rptDef.label + ' · ' + scopeLabel(scope, groups) + (rptDef.periods ? ' · ' + (PERIODS.find(p => p[0] === period) || [])[1] : ''),
+      label: rptDef.label + ' · ' + scopeLabel(scope, groups) + (rptDef.periods ? ' · ' + periodLabel() : ''),
     };
     persist([...list, sub]);
   };
@@ -157,10 +171,18 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
               div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: 2 } }, r.desc)))),
           // scope
           div(null, div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Level / grouping'), scopeSelect()),
-          // period
+          // period — a real date selector (owner-requested, 2026-10-13), not just 3 fixed names.
+          // 'custom' reveals two <input type="date"> fields; everything else is unchanged.
           rptDef.periods ? div(null, div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Period'),
-            div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden', width: 'fit-content' } },
-              ...PERIODS.map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '4px 10px', border: 'none', fontSize: '10px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)', fontWeight: period === v ? 700 : 400 } }, l)))) : null,
+            div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+              div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden', width: 'fit-content' } },
+                ...PERIODS.map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '4px 10px', border: 'none', fontSize: '10px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)', fontWeight: period === v ? 700 : 400 } }, l))),
+              period === 'custom' ? div({ style: { display: 'flex', gap: 6, alignItems: 'center' } },
+                h('input', { type: 'date', value: customRange.s, max: customRange.e, onChange: e => setCustomRange(r => ({ ...r, s: e.target.value })),
+                  style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '11px', padding: '4px 8px' } }),
+                span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'to'),
+                h('input', { type: 'date', value: customRange.e, min: customRange.s, onChange: e => setCustomRange(r => ({ ...r, e: e.target.value })),
+                  style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '11px', padding: '4px 8px' } })) : null)) : null,
           // panels (build your own)
           rptDef.panels ? div(null, div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Panels (build your own)'),
             div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
@@ -170,7 +192,7 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
           // actions
           div({ style: { display: 'flex', gap: 8, marginTop: 4 } },
             btn({ className: 'btn btn-a', style: { fontSize: '11px', fontWeight: 700 }, disabled: busy, onClick: addSub }, '➕ Save to My Reports'),
-            btn({ className: 'btn', style: { fontSize: '11px' }, onClick: () => launch({ report, scope, period, panels: rptDef.panels ? Array.from(panels) : null }) }, '▶ Open now (without saving)'))),
+            btn({ className: 'btn', style: { fontSize: '11px' }, onClick: () => launch({ report, scope, period, customRange: (rptDef.periods && period === 'custom') ? customRange : null, panels: rptDef.panels ? Array.from(panels) : null }) }, '▶ Open now (without saving)'))),
         // footnote
         div({ style: { fontSize: '9px', color: 'var(--text3)', borderTop: '1px solid var(--bdr)', paddingTop: 8 } },
           'Auto-delivery (scheduled email to supervisors/owners) is coming — for now these open in-app, pre-scoped. Saved per user; synced across your devices when signed in.'));
