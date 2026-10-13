@@ -218,6 +218,49 @@ export function orgEventsToDayMap(events, iconFor = () => '📌', exceptions = n
   return map;
 }
 
+// Collapses a flat list of per-day event occurrences into range-aware entries (owner-requested,
+// 2026-10-13, first consumer: above-store-onepager.js's "Upcoming Impacts" list). A multi-day
+// span sharing a `rangeId` -- the SAME convention orgEventsToDayMap above and store-dash.js's
+// EventCalendar.save() both already write (rangeId/rangeDayNum/rangeTotalDays, "(Day N of M)"
+// label suffix) -- becomes ONE entry covering its first-to-last day instead of one line per day.
+// A single-day event (no rangeId) passes through unchanged. This is the one place that
+// convention gets READ back as a summary, so any future "upcoming events" list anywhere in the
+// app (Morning Brief, Calendar, District View, etc.) should reuse this rather than re-deriving
+// day-by-day iteration + label-suffix-stripping on its own.
+//
+// Input shape: each item needs `dk` (its own day key) plus whatever rangeId/rangeDayNum/
+// rangeTotalDays/label/type/icon/note fields it carries (exactly what orgEventsToDayMap's output
+// values, or a userEvents[loc][dk] entry, already have). A caller that only has PART of a range
+// in view (e.g. a 21-day lookahead window that clips a longer event's tail) still gets one
+// correctly-labeled entry -- `daysShown` says how many of the range's real days are present,
+// separately from `totalDays` (the event's own true length), so a clipped view doesn't silently
+// claim to be the whole event.
+const RANGE_LABEL_SUFFIX = /\s*\(Day \d+ of \d+\)\s*$/i;
+export function groupEventRanges(dayEvents) {
+  const byRange = new Map();
+  const out = [];
+  for (const e of (dayEvents || [])) {
+    if (e.rangeId) {
+      if (!byRange.has(e.rangeId)) byRange.set(e.rangeId, []);
+      byRange.get(e.rangeId).push(e);
+    } else {
+      out.push(e);
+    }
+  }
+  for (const items of byRange.values()) {
+    items.sort((a, b) => (a.rangeDayNum || 0) - (b.rangeDayNum || 0));
+    const first = items[0], last = items[items.length - 1];
+    out.push({
+      ...first,
+      dk: first.dk, dkStart: first.dk, dkEnd: last.dk,
+      totalDays: first.rangeTotalDays || items.length,
+      daysShown: items.length,
+      label: String(first.label || '').replace(RANGE_LABEL_SUFFIX, '').trim(),
+    });
+  }
+  return out.sort((a, b) => a.dk.localeCompare(b.dk));
+}
+
 // Write-side counterpart to the scope expansion above — groups a FLAT per-store event array (the
 // shape expandRetailEvents() and applyEventToStores' cloud-sync diff already produce; deliberately
 // NOT rebuilt, per the dispatch's explicit constraint) into one row per (dateStart, dateEnd, label,
