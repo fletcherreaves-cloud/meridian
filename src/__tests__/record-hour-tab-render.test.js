@@ -60,4 +60,65 @@ describe('RecordDayTab — Record Hour tab, rendered through the real panel', ()
     expect(container.textContent).toContain('8:15 AM');
     expect(container.textContent).toContain('Confirmed');
   });
+
+  it('the Category dropdown restricts to one daypart -- not whichever daypart the overall best happens to land in', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T12:00:00'));
+    const dk = '2026-05-01';
+    const qsrSalesQtrHourRows = [
+      // Breakfast: modest. Dinner: the overall best.
+      row(LOC, dk, '06:15', 50), row(LOC, dk, '06:30', 50), row(LOC, dk, '06:45', 50), row(LOC, dk, '07:00', 50),
+      row(LOC, dk, '19:15', 5000), row(LOC, dk, '19:30', 5000), row(LOC, dk, '19:45', 5000), row(LOC, dk, '20:00', 5000),
+    ];
+    const ds = { loaded: true, storeIds: [LOC], laborRows: [], qsrSalesQtrHourRows };
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds }));
+    });
+    const hourTab = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Record Hour'));
+    await act(async () => { hourTab.click(); });
+
+    // Default (Any Hour) shows the overall best -- the $20,000 dinner window.
+    expect(container.textContent).toMatch(/20,000\.00/);
+
+    const categorySelect = [...container.querySelectorAll('select')][0];
+    await act(async () => {
+      categorySelect.value = 'breakfast';
+      categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // Restricted to Breakfast -- must show the $200 breakfast window, not the dinner figure.
+    expect(container.textContent).toMatch(/200\.00/);
+    expect(container.textContent).not.toMatch(/20,000\.00/);
+  });
+
+  it('the Top 5 All-Time toggle ranks every CONFIRMED day, not just the current record', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T12:00:00'));
+    const rows = [];
+    [1000, 2000, 3000].forEach((v, i) => {
+      const dk = `2026-05-0${i + 1}`;
+      rows.push(row(LOC, dk, '07:15', v / 4), row(LOC, dk, '07:30', v / 4), row(LOC, dk, '07:45', v / 4), row(LOC, dk, '08:00', v / 4));
+    });
+    const ds = { loaded: true, storeIds: [LOC], laborRows: [], qsrSalesQtrHourRows: rows };
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds }));
+    });
+    const hourTab = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Record Hour'));
+    await act(async () => { hourTab.click(); });
+    const top5Btn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Top 5 All-Time');
+    expect(top5Btn).toBeTruthy();
+    await act(async () => { top5Btn.click(); });
+
+    // All 3 confirmed days should appear, ranked best-first.
+    expect(container.textContent).toMatch(/3,000\.00/);
+    expect(container.textContent).toMatch(/2,000\.00/);
+    expect(container.textContent).toMatch(/1,000\.00/);
+  });
 });

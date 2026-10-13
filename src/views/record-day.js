@@ -4,7 +4,10 @@ import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
-import { computeHourRecords, scopeHourRecords, windowLabel } from '../engine/record-hour.js';
+import {
+  computeHourRecords, scopeHourRecords, windowLabel,
+  computeHourLeaderboard, scopeHourLeaderboard, HOUR_CATEGORIES, HOUR_METRICS,
+} from '../engine/record-hour.js';
 import { printHtml } from '../utils/print-html.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
@@ -927,9 +930,28 @@ function TopDaysTab({ data, breakIndex }) {
 // it on mount itself (RegisterAuditTab in store-analytics.js is the reference
 // implementation this mirrors) rather than assume it's already loaded the way
 // laborRows/opsRows are.
-function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory, fullHistoryState }) {
+//
+// Owner follow-up (2026-10-13): best BREAKFAST/LUNCH/etc. hour (not just whichever daypart
+// the single overall-best window lands in), a second metric (transactions, not just sales
+// $), and historical context (previous record + top-5-all-time) -- all via the SAME dropdown/
+// sort-header conventions every other tab in this file already uses (S.select, SortTH),
+// never a bespoke control. `ds`/`scopedLocs`/`windowDays` are threaded down from
+// RecordDayTab (see its own useMemo for computeHourLeaderboard) so this tab can recompute
+// the leaderboard itself whenever the category/metric dropdowns change, independent of the
+// plain "overall/sales" `data` prop (kept only for the loading/empty-state gate below, which
+// predates and is unaffected by this).
+function fMetricVal(value, metricKey) {
+  return metricKey === 'transactions' ? fGC(value) : f$2(value);
+}
+
+function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory, fullHistoryState, ds, scopedLocs, windowDays }) {
   const [pending, setPending] = useState(true);
   const [failed,  setFailed]  = useState(false);
+  const [category, setCategory] = useState('overall');
+  const [metric,   setMetric]   = useState('sales');
+  const [view,     setView]     = useState('current');   // 'current' | 'top5'
+  const [sortKey,  setSortKey]  = useState('value');
+
   React.useEffect(() => {
     const stillPending = ensureLazyFill('qsrSalesQtrHourRows');
     setPending(stillPending);
@@ -944,6 +966,13 @@ function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory,
     return () => clearInterval(id);
   }, []);
 
+  const metricDef   = HOUR_METRICS.find(m => m.key === metric) || HOUR_METRICS[0];
+  const categoryDef  = HOUR_CATEGORIES.find(c => c.key === category) || HOUR_CATEGORIES[0];
+  const leaderboard  = useMemo(
+    () => computeHourLeaderboard(ds, { windowDays, category, metric, topN:5 }),
+    [ds, windowDays, category, metric]);
+  const scopedLb = useMemo(() => scopeHourLeaderboard(leaderboard, scopedLocs), [leaderboard, scopedLocs]);
+
   if (pending) return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } }, 'Loading quarter-hour sales data…');
   if (failed)  return div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } }, '⚠ Could not load quarter-hour sales data. Try reopening this tab.');
   if (!data || data.totalStores === 0) {
@@ -954,47 +983,95 @@ function HourRecordTab({ data, breakIndex, fullHistoryLoaded, onLoadFullHistory,
       '.');
   }
 
-  const locs = Object.keys(data.stores).sort((a,b) => data.stores[b].best.sales - data.stores[a].best.sales);
+  // Flat row shape shared by BOTH views so one sort comparator + one set of SortTH columns
+  // covers both -- 'current' rows carry an extra `previous` (rank-2) value, 'top5' rows don't
+  // need one (each row already IS one specific rank).
+  const currentRows = Object.entries(scopedLb?.stores || {}).map(([loc, s]) => {
+    const cur = s.top[0] || s.provisionalToday || null;
+    if (!cur) return null;
+    return { loc, value:cur.value, dk:cur.dk, startMinutes:cur.startMinutes, endMinutes:cur.endMinutes,
+      daypart:cur.daypart, isProvisional:cur.isProvisional, provisionalOnly: s.top.length===0,
+      previous: s.top[1] || null };
+  }).filter(Boolean);
+  const top5Rows = (scopedLb?.distTop || []).map(r => ({ ...r }));
+
+  const rows = view === 'top5' ? top5Rows : currentRows;
+  const cmp = {
+    value:   (a,b) => (b.value||0) - (a.value||0),
+    store:   (a,b) => sName(a.loc).localeCompare(sName(b.loc)),
+    date:    (a,b) => (b.dk||'').localeCompare(a.dk||''),
+    daypart: (a,b) => (a.daypart||'').localeCompare(b.daypart||''),
+  }[sortKey] || null;
+  const sortedRows = cmp ? [...rows].sort(cmp) : rows;
+
+  const distBest = scopedLb?.distTop?.[0];
 
   return div({ style:{ display:'flex',flexDirection:'column',gap:16 } },
-    div({ style:S.sLbl }, 'Best 60-Minute Sales Window — All Time'),
+    div({ style:S.sLbl }, 'Best 60-Minute Window — All Time'),
     div({ style:{ fontSize:12, color:'var(--txt3)', marginBottom:4 } },
       'Any 15-minute-aligned start counts (7:15am–8:15am is as valid as 7:00am–8:00am) — a true ' +
-      'rolling window over real 15-minute sales buckets, not a fixed clock-hour reading. ',
+      'rolling window over real 15-minute buckets, not a fixed clock-hour reading. ',
       !fullHistoryLoaded && h('button',{
         style:{ ...S.ghostBtn, display:'inline', padding:'2px 8px', fontSize:11, marginLeft:4 },
         onClick:onLoadFullHistory, disabled:fullHistoryState==='loading',
       }, fullHistoryState==='loading' ? 'Loading full history…' : '🕰 Load full history (since 2022)')),
-    data.distBest && div({ style:S.heroCard },
-      div({ style:S.heroLbl }, '🏆 District Best 60-Min Sales'),
-      div({ style:S.heroVal }, f$2(data.distBest.sales), h(RecentBreakChip,{ show:isRecentBreak(breakIndex, data.distBest.loc, 'Hour Sales', data.distBest.dk) })),
-      div({ style:S.heroSub }, `${sName(data.distBest.loc)} · ${windowLabel(data.distBest.startMinutes, data.distBest.endMinutes)} · ${fDate(data.distBest.dk)} · ${data.distBest.daypart}${data.distBest.isProvisional ? ' · ⏳ provisional' : ''}`),
+
+    // Category / metric / view filters -- the SAME dropdown (S.select) + pill-button
+    // (S.ghostBtn) conventions every other tab in this file already uses.
+    div({ style:{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' } },
+      h('select',{ style:S.select, value:category, onChange:e=>setCategory(e.target.value), title:'Restrict to one daypart, or Any Hour for the district\'s single best window regardless of time of day.' },
+        ...HOUR_CATEGORIES.map(c => h('option',{ key:c.key, value:c.key }, c.label)),
+      ),
+      h('select',{ style:S.select, value:metric, onChange:e=>setMetric(e.target.value) },
+        ...HOUR_METRICS.map(m => h('option',{ key:m.key, value:m.key }, m.label)),
+      ),
+      div({ style:{ flex:1 } }),
+      h('button',{ style:{ ...S.ghostBtn, color:view==='current'?'var(--acc)':'var(--txt3)', borderColor:view==='current'?'var(--acc)':'var(--bdr2)' }, onClick:()=>setView('current') }, 'Current Record'),
+      h('button',{ style:{ ...S.ghostBtn, color:view==='top5'?'var(--acc)':'var(--txt3)', borderColor:view==='top5'?'var(--acc)':'var(--bdr2)' }, onClick:()=>setView('top5') }, 'Top 5 All-Time'),
     ),
-    div({ style:S.tblWrap },
-      table({ style:S.tbl },
-        thead({},
-          tr({},
-            TH({style:S.th},'Store'), TH({style:S.thR},'Best 60-Min Sales'),
-            TH({style:S.th},'Window'), TH({style:S.th},'Date'), TH({style:S.th},'Daypart'), TH({style:S.th},'Status'),
+
+    distBest && div({ style:S.heroCard },
+      div({ style:S.heroLbl }, `🏆 District Best — ${categoryDef.label} · ${metricDef.label}`),
+      div({ style:S.heroVal }, fMetricVal(distBest.value, metric), h(RecentBreakChip,{ show: metric==='sales' && isRecentBreak(breakIndex, distBest.loc, 'Hour Sales', distBest.dk) })),
+      div({ style:S.heroSub }, `${sName(distBest.loc)} · ${windowLabel(distBest.startMinutes, distBest.endMinutes)} · ${fDate(distBest.dk)}`),
+    ),
+
+    sortedRows.length === 0
+      ? div({ style:{ padding:'24px',textAlign:'center',color:'var(--txt3)',fontSize:13 } },
+          `No ${categoryDef.label.toLowerCase()} window data yet for this scope.`)
+      : div({ style:S.tblWrap },
+          table({ style:S.tbl },
+            thead({},
+              tr({},
+                view==='top5' ? TH({style:{...S.th,width:40}},'#') : null,
+                h(SortTH,{ label:'Store', sk:'store', sortKey, onSort:setSortKey }),
+                h(SortTH,{ label:`Best ${metricDef.label}`, sk:'value', sortKey, onSort:setSortKey, right:true }),
+                TH({style:S.th},'Window'),
+                h(SortTH,{ label:'Date', sk:'date', sortKey, onSort:setSortKey }),
+                h(SortTH,{ label:'Daypart', sk:'daypart', sortKey, onSort:setSortKey }),
+                view==='current' ? TH({style:S.thR},`Previous ${metricDef.label}`) : null,
+                TH({style:S.th},'Status'),
+              ),
+            ),
+            tbody({},
+              ...sortedRows.map((r,i) =>
+                tr({ key:r.loc+r.dk+i, style:{background:i%2?'':'var(--surf2)'} },
+                  view==='top5' ? td({style:{...S.td,color:i<3?'var(--acc)':'var(--txt3)',fontWeight:700}}, i+1) : null,
+                  td({style:{...S.td,fontWeight:500}}, sName(r.loc)),
+                  td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, fMetricVal(r.value, metric),
+                    h(RecentBreakChip,{show: metric==='sales' && isRecentBreak(breakIndex,r.loc,'Hour Sales',r.dk)})),
+                  td({style:S.td}, windowLabel(r.startMinutes, r.endMinutes)),
+                  td({style:S.tdM}, fDateShort(r.dk)),
+                  td({style:S.td}, r.daypart),
+                  view==='current' ? td({style:S.tdR}, r.previous ? fMetricVal(r.previous.value, metric) : span({style:{color:'var(--txt3)'}}, r.provisionalOnly ? '—' : 'first record')) : null,
+                  td({style:S.td}, r.isProvisional
+                    ? span({ style:BADGE_PROVISIONAL(), title:'Today\'s business day is still in progress — this window can still change once the day closes.' }, '⏳ Provisional')
+                    : span({ style:S.badge('#10b981','rgba(16,185,129,.08)') }, '✓ Confirmed')),
+                ),
+              ),
+            ),
           ),
         ),
-        tbody({},
-          ...locs.map((loc,i) => {
-            const b = data.stores[loc].best;
-            return tr({ key:loc, style:{background:i%2?'':'var(--surf2)'} },
-              td({style:{...S.td,fontWeight:500}}, sName(loc)),
-              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$2(b.sales), h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Hour Sales',b.dk)})),
-              td({style:S.td}, windowLabel(b.startMinutes, b.endMinutes)),
-              td({style:S.tdM}, fDateShort(b.dk)),
-              td({style:S.td}, b.daypart),
-              td({style:S.td}, b.isProvisional
-                ? span({ style:BADGE_PROVISIONAL(), title:'Today\'s business day is still in progress — this window can still change once the day closes.' }, '⏳ Provisional')
-                : span({ style:S.badge('#10b981','rgba(16,185,129,.08)') }, '✓ Confirmed')),
-            );
-          }),
-        ),
-      ),
-    ),
   );
 }
 
@@ -1450,6 +1527,7 @@ export function RecordDayTab({ stores, ds }) {
         fullHistoryLoaded: isLazyFillWideLoaded('qsrSalesQtrHourRows'),
         onLoadFullHistory: handleLoadQtrHourHistory,
         fullHistoryState: qtrHourHistoryState,
+        ds, scopedLocs, windowDays,
       }),
       viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
       viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
