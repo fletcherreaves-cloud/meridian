@@ -94,7 +94,16 @@ const ROOT = 'src/views';
 // as real), so that false 0 permanently masked opsServiceRows' real, auto-pulled, nonzero data
 // -- this conversion is what lets the fixed chain actually reach it. See
 // src/__tests__/cash-handling-header-match.test.js.
-const CEILING = 141;
+// 2026-10-13 (owner-reported live, same-day follow-on): +1 -- above-store-onepager.js's new
+// _dsForOnePagerRange() reads ds.laborRows ONCE, in an on-demand widen-fetch's needsWiden()
+// coverage check ("does this stream already reach back far enough"), the SAME existence-check
+// category dispatch #156's OperatorSummaryPanel hasData guard (already counted in this ratchet's
+// baseline) and performance-reviews.js's own _dsForReviewYear widen helper (reads
+// qsrActSummaryRows/glimpseRows/opsServiceRows -- outside this ratchet's 3-field pattern, so it
+// was never counted) both already established as acceptable here -- it answers "is there enough
+// history," never reads a metric VALUE from the raw row. See
+// dispatch-onepager-vsly-window-widen-2026-10-13.test.js.
+const CEILING = 142;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 

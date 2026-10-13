@@ -7,10 +7,11 @@ import * as React from 'react';
 import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
+import { groupEventRanges } from '../engine/events-import.js';
 import { shiftDays } from '../engine/trading-days.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
-import { supabase, loadEomCountStatus } from '../lib/supabase.js';
+import { supabase, loadEomCountStatus, loadLaborRows, loadQsrActSummary } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
@@ -76,6 +77,9 @@ export const ONEPAGER_PANELS = [
   { key: 'service',  label: 'Service' },
   { key: 'controls', label: 'Controls' },
   { key: 'voice',    label: 'Guest Voice' },
+  // Owner-requested (2026-10-13): was an always-on tile with no way to hide it -- every other
+  // section already had its own toggle here.
+  { key: 'events',   label: 'Upcoming Impacts' },
 ];
 const ALL_PANEL_KEYS = ONEPAGER_PANELS.map(p => p.key);
 
@@ -97,6 +101,52 @@ const selectorValueToScope = (v) => {
   if (v.level === 'store') return v.id || 'all';
   return 'all';
 };
+
+// Earliest date any row in `rows` carries for one of `locs` (null if none). Same helper
+// performance-reviews.js's _dsForReviewYear uses, generalized to a loc SET (this panel's scope
+// is usually a whole district/patch, not one store) — any one covered store is enough to call
+// the stream "already reaches back far enough" for this scope, same spirit as that function's
+// single-loc check.
+const _oldestDateForLocs = (rows, locSet) => {
+  let min = null;
+  for (const r of (rows || [])) {
+    if (!locSet.has(String(r.loc).replace(/^0+/, ''))) continue;
+    const d = r.date instanceof Date ? r.date : new Date(String(r.date || '') + 'T00:00:00');
+    if (isNaN(d)) continue;
+    if (!min || d < min) min = d;
+  }
+  return min;
+};
+// ✅ FIXED (owner-reported live, mass-review notes 70 follow-on, 2026-10-13) — "the sales/gc
+// section is not populating" for a Custom range far enough in the past. Root cause: App.js
+// bootstraps the laborRows stream (400 days) and qsrActSummaryRows (60 days) ONCE at app startup,
+// trailing from "today" — the same bug class already fixed twice this session elsewhere
+// (Performance Reviews Auto-Fill, CurrentMonthPaceSection). matchedVsLY (engine/vs-ly.js) needs
+// BOTH the picked range's own dates AND the dates 364 days further back (the LY leg) — for a
+// Custom range ~11 months old, the LY leg lands ~23 months back, past even the 400-day window.
+// Live-measured: labor_rows genuinely HAS both legs (2024-11-27 and 2025-11-27 for store 3708,
+// confirmed via Supabase service-role read) — the table isn't the limiter, the app's narrow
+// bootstrap fetch is. Mirrors performance-reviews.js's _dsForReviewYear exactly: widen ONLY the
+// sources that don't already reach back far enough, merge into a local ds copy, never touch the
+// app's own `ds`, and a failed/empty fetch never overrides existing non-empty rows.
+async function _dsForOnePagerRange(ds, locs, range) {
+  if (!ds || !range?.s) return ds;
+  const locSet = new Set((locs || []).map(l => String(l).replace(/^0+/, '')));
+  const rangeStart = new Date(range.s + 'T00:00:00');
+  const lyStart = new Date(rangeStart); lyStart.setDate(lyStart.getDate() - 364);
+  const daysBack = Math.max(60, Math.ceil((new Date() - lyStart) / 86400000) + 2);
+  const needsWiden = (rows) => { const oldest = _oldestDateForLocs(rows, locSet); return !oldest || oldest > lyStart; };
+  const [labor, act] = await Promise.all([
+    needsWiden(ds.laborRows)         ? loadLaborRows(daysBack).catch(() => null)      : null,
+    needsWiden(ds.qsrActSummaryRows) ? loadQsrActSummary(daysBack).catch(() => null)  : null,
+  ]);
+  const hasLabor = labor && labor.length, hasAct = act && act.length;
+  if (!hasLabor && !hasAct) return ds;
+  return { ...ds,
+    ...(hasLabor ? { laborRows: labor }        : {}),
+    ...(hasAct   ? { qsrActSummaryRows: act }   : {}),
+  };
+}
 
 export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels, initialView, initialCustomRange }) {
   const { useState, useMemo, useEffect } = React;
@@ -167,20 +217,34 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     const ls = new Date(y, m - 1, 1), le = new Date(y, m, 0); return { s: iso(ls), e: iso(le), label: 'Last month' };
   }, [period, customRange]);
 
+  // On-demand widened ds for a Custom range old enough that the app's bootstrap-window streams
+  // (laborRows/qsrActSummaryRows) don't reach back far enough for matchedVsLY's own LY leg (364
+  // days further back than the range itself) — see _dsForOnePagerRange's comment above. Runs as
+  // a background effect (not awaited inline) since `data` below is a passive memo, not a button
+  // click; a brief render on the narrower `ds` while this resolves is expected and harmless,
+  // same as every other async-widen consumer in this codebase.
+  const [wideDs, setWideDs] = useState(null);
+  useEffect(() => {
+    let live = true;
+    _dsForOnePagerRange(ds, locs, range).then(widened => { if (live) setWideDs(widened !== ds ? widened : null); });
+    return () => { live = false; };
+  }, [ds, locs, range.s, range.e]);
+  const effectiveDs = wideDs || ds;
+
   const data = useMemo(() => {
     try {
-      const cs = buildCurrentState(ds, fobRows, locs, range);      // [{key,label,actual,target,fmt,lowerBetter}]
-      const rv = buildReviewActuals(ds, locs, range);              // {gcVsLY, osat, osatB2B, accB2B, kvsPerGc, kvsHealthy, projSales, ...}
-      const salesVsLY = matchedVsLY(ds, locs, range, 'sales');
+      const cs = buildCurrentState(effectiveDs, fobRows, locs, range);      // [{key,label,actual,target,fmt,lowerBetter}]
+      const rv = buildReviewActuals(effectiveDs, locs, range);              // {gcVsLY, osat, osatB2B, accB2B, kvsPerGc, kvsHealthy, projSales, ...}
+      const salesVsLY = matchedVsLY(effectiveDs, locs, range, 'sales');
       const byKey = {}; for (const r of cs) byKey[r.key] = r;
       const controls = {
-        cashOS: metricAvg(ds, locs, range, 'cashOSPct'),
-        tRedA: metricAvg(ds, locs, range, 'tRedAPct'),
-        disc: metricAvg(ds, locs, range, 'discPct'),
+        cashOS: metricAvg(effectiveDs, locs, range, 'cashOSPct'),
+        tRedA: metricAvg(effectiveDs, locs, range, 'tRedAPct'),
+        disc: metricAvg(effectiveDs, locs, range, 'discPct'),
       };
       // Worst store-days behind the Controls averages (the "who + when"). Only for
       // multi-store scopes — a single store IS the outlier, no need to name it.
-      const controlsOut = locs.length > 1 ? buildControlsOutliers(ds, locs, range) : null;
+      const controlsOut = locs.length > 1 ? buildControlsOutliers(effectiveDs, locs, range) : null;
       // fobByRange has no locs param -- it returns EVERY loc present in fobRows (district-
       // wide), so it must be filtered to the selected scope here, same as every other
       // builder above already receives `locs` directly. Before this fix the header FOB%
@@ -198,22 +262,30 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       const fobNowPct = fobProd ? fob$ / fobProd : null;
       // Percentage-point delta vs LY; NEGATIVE = better (FOB is lower than last year).
       const fobVsLyPp = (fobNowPct != null && lyFobPct != null) ? (fobNowPct - lyFobPct) : null;
-      const sched = buildScheduleActuals(ds, locs, range);   // null if no schedule rows in window
+      const sched = buildScheduleActuals(ds, locs, range);   // null if no schedule rows in window -- LifeLenz's own stream, unaffected by this fix
       const projSales = rv.projSales;
       const pace = (projSales && byKey.sales?.actual) ? byKey.sales.actual / projSales : null;
-      const perStore = locs.length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, null) : [];
+      const perStore = locs.length > 1 ? buildPerLocationRows(effectiveDs, fobRows, locs, range, null) : [];
       return { byKey, rv, salesVsLY, controls, controlsOut, sched, fob$, fobProd, lyFobPct, fobVsLyPp, projSales, pace, perStore, err: null };
     } catch (e) { return { err: String(e?.message || e) }; }
-  }, [ds, fobRows, locs, range]);
+  }, [effectiveDs, ds, fobRows, locs, range]);
 
-  // Upcoming events (next 21 days) for the scope, deduped by label.
+  // Upcoming events (next 21 days) for the scope. Multi-day spans (sharing a rangeId -- the
+  // same convention orgEventsToDayMap/EventCalendar.save() write) are collapsed to ONE entry
+  // covering the full period via groupEventRanges (owner-requested, 2026-10-13) -- a 4-day
+  // closure used to show as 4 separate same-label lines, one per day. Dedup still runs on the
+  // flat per-day list first (single-day events by dk+label as before; multi-day days by
+  // rangeId+dk, cross-store so an org-wide event isn't repeated once per store in the scope).
   const upcoming = useMemo(() => {
     const start = new Date(); const end = new Date(); end.setDate(end.getDate() + 21);
-    const seen = new Set(), out = [];
+    const seenSingle = new Set(), seenRangeDay = new Set(), flat = [];
     for (const l of locs) { const m = (userEvents || {})[l]; if (!m) continue;
       for (const dk of Object.keys(m)) { const d = new Date(dk + 'T12:00:00'); if (d < start || d > end) continue;
-        const e = m[dk]; const key = dk + '|' + (e.label || e.type); if (seen.has(key)) continue; seen.add(key);
-        out.push({ dk, ...e }); } }
+        const e = m[dk];
+        if (e.rangeId) { const rk = e.rangeId + '|' + dk; if (seenRangeDay.has(rk)) continue; seenRangeDay.add(rk); }
+        else { const key = dk + '|' + (e.label || e.type); if (seenSingle.has(key)) continue; seenSingle.add(key); }
+        flat.push({ dk, ...e }); } }
+    const out = groupEventRanges(flat);
     return out.sort((a, b) => a.dk.localeCompare(b.dk)).slice(0, 24);
   }, [locs, userEvents]);
 
@@ -279,7 +351,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       }
     }
     if (showP('voice')) L.push(`Voice: OSAT 5★ ${fmtV(d.rv.osat, '%')} (tgt ${fmtV(d.rv.osatTarget, '%')}); OSAT B2B ${fmtV(d.rv.osatB2B, '%')}`);
-    if (upcoming.length) L.push(`Upcoming (21d): ${upcoming.slice(0, 8).map(e => e.dk.slice(5) + ' ' + (e.label || e.type)).join('; ')}`);
+    if (showP('events') && upcoming.length) L.push(`Upcoming (21d): ${upcoming.slice(0, 8).map(e => (e.dkEnd && e.dkEnd !== e.dk ? e.dk.slice(5) + '–' + e.dkEnd.slice(5) : e.dk.slice(5)) + ' ' + (e.label || e.type) + (e.totalDays > 1 ? ` (${e.totalDays}d)` : '')).join('; ')}`);
     return L;
   };
   const runAI = async () => {
@@ -404,9 +476,12 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       if (d.rv.smgMonth) rows += `<tr><td colspan="3" style="font-size:9.5px;color:#888">SMG month ${d.rv.smgMonth} · n-weighted</td></tr>`;
       sections.push(printSection('Guest Voice', '💬', rows, 'voice'));
     }
-    const upcomingHtml = upcoming.length
+    const upcomingHtml = (showP('events') && upcoming.length)
       ? `<div style="page-break-inside:avoid;margin-bottom:16px"><h2 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#666">📅 Upcoming Impacts (21 days)</h2>
-        <ul style="margin:0;padding-left:16px;font-size:10.5px">${upcoming.map(e => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other; return `<li>${e.dk.slice(5)} — ${esc(e.label || et.label)}</li>`; }).join('')}</ul></div>`
+        <ul style="margin:0;padding-left:16px;font-size:10.5px">${upcoming.map(e => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other;
+          const dateLabel = (e.dkEnd && e.dkEnd !== e.dk) ? e.dk.slice(5) + ' – ' + e.dkEnd.slice(5) : e.dk.slice(5);
+          const daysSuffix = e.totalDays > 1 ? ` (${e.totalDays}d)` : '';
+          return `<li>${dateLabel} — ${esc(e.label || et.label)}${daysSuffix}</li>`; }).join('')}</ul></div>`
       : '';
     const aiHtml = ai ? `<div style="page-break-inside:avoid"><h2 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#666">🧠 Analysis</h2><p style="font-size:11px;line-height:1.5">${esc(ai).replace(/\n/g, '<br>')}</p></div>` : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Above-Store One-Pager — ${esc(scopeLabel)}</title>
@@ -454,8 +529,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       const L = String(loc).replace(/^0+/, ''); const name = sNameC(L) || L;
       let cols = [];
       if (panelKey === 'sales') {
-        const s = matchedVsLY(ds, [loc], range, 'sales'); const g = matchedVsLY(ds, [loc], range, 'gc');
-        const rv = buildReviewActuals(ds, [loc], range);
+        const s = matchedVsLY(effectiveDs, [loc], range, 'sales'); const g = matchedVsLY(effectiveDs, [loc], range, 'gc');
+        const rv = buildReviewActuals(effectiveDs, [loc], range);
         cols = [['Sales vs LY (TD)', pct(s.pct)], ['GC vs LY (TD)', pct(g.pct)], ['Digital App %', fmtV(rv.digitalAppPct, '%')]];
       } else if (panelKey === 'fob') {
         const f = fobMap[L] || {};
@@ -465,10 +540,10 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         const s = buildScheduleActuals(ds, [loc], range);
         cols = s ? [['Sched Labor % (Total)', fmtV(s.laborPctTotal, '%')], ['Sched/Fcst hrs', fmtHrs(s.schedHrs) + ' / ' + fmtHrs(s.fcstHrs)], ['Fixed % of Sched', fmtV(s.fixedPct, '%')], ['Floor % of Sched', fmtV(s.floorPct, '%')], ['VLH % of Sched', fmtV(s.vlhPct, '%')]] : [['No schedule rows', '—']];
       } else if (panelKey === 'labor') {
-        cols = [['Labor %', fmtV(metricAvg(ds, loc, range, 'laborPct'), '%')], ['TPPH', fmtV(metricAvg(ds, loc, range, 'tpph'), 'n')]];
+        cols = [['Labor %', fmtV(metricAvg(effectiveDs, loc, range, 'laborPct'), '%')], ['TPPH', fmtV(metricAvg(effectiveDs, loc, range, 'tpph'), 'n')]];
       } else if (panelKey === 'service') {
-        const rv = buildReviewActuals(ds, [loc], range);
-        cols = [['OEPE', fmtV(metricAvg(ds, loc, range, 'oepe'), 's')], ['R2P', fmtV(metricAvg(ds, loc, range, 'r2p'), 's')], ['KVS/GC', fmtV(rv.kvsPerGc, 's')]];
+        const rv = buildReviewActuals(effectiveDs, [loc], range);
+        cols = [['OEPE', fmtV(metricAvg(effectiveDs, loc, range, 'oepe'), 's')], ['R2P', fmtV(metricAvg(effectiveDs, loc, range, 'r2p'), 's')], ['KVS/GC', fmtV(rv.kvsPerGc, 's')]];
       } else if (panelKey === 'controls') {
         cols = [['Cash O/S', fmtV(metricAvg(ds, loc, range, 'cashOSPct'), '%')], ['T-Reds After', fmtV(metricAvg(ds, loc, range, 'tRedAPct'), '%')], ['Discount', fmtV(metricAvg(ds, loc, range, 'discPct'), '%')]];
       } else if (panelKey === 'voice') {
@@ -661,17 +736,23 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           Row('OSAT 5★', d.rv.osat, d.rv.osatTarget, '%', false),
           Row('OSAT B2B (1★)', d.rv.osatB2B, d.rv.osatB2BTarget, '%', true),
           d.rv.smgMonth ? div({ key: 'sm', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'SMG month ' + d.rv.smgMonth + ' · n-weighted') : null),
-        // Upcoming impacts
-        Section('Upcoming Impacts (21 days)', '📅', null,
+        // Upcoming impacts -- now its own toggle, like every other section (owner-requested,
+        // 2026-10-13; panelKey:null before, so it was always on with no way to hide it).
+        showP('events') && Section('Upcoming Impacts (21 days)', '📅', null,
           upcoming.length === 0 ? div({ style: { fontSize: '10px', color: 'var(--text3)', padding: '4px 0' } }, 'No tagged events in the next 3 weeks for this scope.')
           : div({ style: { display: 'flex', flexDirection: 'column', gap: 2 } },
             ...upcoming.map((e, i) => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other; const lbl = e.label || et.label;
+              // A multi-day entry (groupEventRanges already collapsed it) shows its FULL period
+              // ("11/24 – 11/27") plus a day-count badge, instead of just its first day.
+              const isRange = e.dkEnd && e.dkEnd !== e.dk;
+              const dateLabel = isRange ? e.dk.slice(5) + ' – ' + e.dkEnd.slice(5) : e.dk.slice(5);
               return div({ key: i, style: { display: 'flex', gap: 6, fontSize: '10px', alignItems: 'flex-start', borderTop: i ? '1px solid var(--bdr)' : 'none', padding: '2px 0' } },
-                span({ style: { color: 'var(--text3)', minWidth: 42, paddingTop: 1 } }, e.dk.slice(5)),
+                span({ style: { color: 'var(--text3)', minWidth: isRange ? 72 : 42, paddingTop: 1, whiteSpace: 'nowrap' } }, dateLabel),
                 span({ style: { paddingTop: 1 } }, e.icon || et.icon),
                 // Notes 53: long labels used to get ellipsis-truncated with no way to read the
                 // rest. Now wraps to additional lines AND carries the full text as a hover title.
-                span({ title: lbl, style: { color: 'var(--text2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'break-word', lineHeight: 1.35 } }, lbl)); }))),
+                span({ title: lbl, style: { color: 'var(--text2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'break-word', lineHeight: 1.35 } }, lbl),
+                e.totalDays > 1 ? span({ style: { fontSize: '8.5px', color: 'var(--text3)', background: 'var(--surf3)', borderRadius: 999, padding: '1px 6px', whiteSpace: 'nowrap' } }, e.totalDays + 'd') : null); }))),
         (d.perStore && d.perStore.length) ? h('div', { key: 'ps', style: { gridColumn: '1/-1', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto' } }, [
           h('div', { key: 't', style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, '🏬 Per-store · worst sales vs LY first'),
           h('table', { key: 'tbl', style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
