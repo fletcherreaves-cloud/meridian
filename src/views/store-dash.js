@@ -3212,6 +3212,17 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
   const [editNote, setEditNote] = useState('');
   const [editLoc, setEditLoc] = useState('');
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
+  // Date-range creation (mass-review notes 70, 2026-10-13, owner-requested) — null means
+  // "single day" (every existing behavior: edit one day, add one day, unchanged). Only
+  // offered for a brand-new event (editKey==='new'); editing an existing day via startEdit()
+  // still edits just that one day, even if it's part of a multi-day range someone else
+  // created — matching how the list already treats a multi-day event as N separate per-day
+  // entries sharing a rangeId, not one editable object. Reuses the exact same rangeId/
+  // rangeDayNum/rangeTotalDays/"(Day N of M)" label convention events-import.js's
+  // orgEventsToDayMap() already established for org-sourced multi-day spans, so a manually-
+  // created range is structurally identical to an imported one to every downstream consumer
+  // (dupe detection's normLabel() already strips the "(Day N of M)" suffix).
+  const [editEndDate, setEditEndDate] = useState(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   // Dispatch #122: "which holiday" sub-filter, only meaningful when typeFilter==='holiday' —
@@ -3338,29 +3349,51 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
-    const existing = next[editLoc] && next[editLoc][editDate];
+    // Date range (mass-review notes 70) — only live for a brand-new event with a real end
+    // date past the start; editing an existing single day (startEdit) never sets editEndDate,
+    // so that path is byte-for-byte the single-day behavior this always had.
+    const days=[];
+    if(editEndDate && editEndDate>editDate){
+      let d=new Date(editDate+'T12:00:00'); const last=new Date(editEndDate+'T12:00:00');
+      for(let guard=0; d<=last && guard<92; guard++){ days.push(dKey(d)); d=addDR(d,1); }
+    } else {
+      days.push(editDate);
+    }
+    const multi=days.length>1;
+    const baseLabel=EVENT_TYPES[editType]?.label||'Other';
     // issue #142: mf_events is structurally one entry per (loc,date) — a write to an occupied slot
     // used to silently overwrite whatever was there, no warning. Warn before clobbering a DIFFERENT
     // event than the one actually being edited; editing the same slot in place (this modal was
     // opened via startEdit on it) still saves silently — that's just editing, not an overwrite.
+    // For a range, one confirm covers every day that would be overwritten, named individually so
+    // nobody blind-replaces a week of unrelated tags with a single click.
     const targetKey = editLoc+'_'+editDate;
-    if(existing && editKey!==targetKey){
+    const collisions = days.filter(dk => next[editLoc] && next[editLoc][dk] && (dk!==editDate || editKey!==targetKey));
+    if(collisions.length){
+      const names = collisions.map(dk => dk+' ("'+(next[editLoc][dk].label||next[editLoc][dk].note||'an event')+'")');
       const ok=window.confirm(
-        (STORE_NAMES[editLoc]||editLoc)+' already has "'+(existing.label||existing.note||'an event')+'" tagged on '+editDate+'.\n\n'+
-        'Saving will replace it with "'+(EVENT_TYPES[editType]?.label||'Other')+'". Continue?'
+        (STORE_NAMES[editLoc]||editLoc)+' already has '+(collisions.length>1?collisions.length+' days':'a day')+' tagged in this range:\n'+
+        names.join('\n')+'\n\nSaving will replace '+(collisions.length>1?'them':'it')+' with "'+baseLabel+'". Continue?'
       );
       if(!ok) return;
     }
     if(!next[editLoc])next[editLoc]={};
-    next[editLoc][editDate]={type:editType,note:editNote,icon:EVENT_TYPES[editType]?.icon||'📌',label:EVENT_TYPES[editType]?.label||'Other'};
-    onUpdate(next);setEditKey(null);
+    const rangeId = multi ? `manual_${editLoc}_${editDate}_${editEndDate}_${Date.now()}` : null;
+    days.forEach((dk,i)=>{
+      next[editLoc][dk]={
+        type:editType, note:editNote, icon:EVENT_TYPES[editType]?.icon||'📌',
+        label: multi ? `${baseLabel} (Day ${i+1} of ${days.length})` : baseLabel,
+        ...(multi ? { rangeId, rangeDayNum:i+1, rangeTotalDays:days.length } : {}),
+      };
+    });
+    onUpdate(next);setEditKey(null);setEditEndDate(null);
   };
   const remove=(loc,dk)=>{
     const next=JSON.parse(JSON.stringify(userEvents));
     if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
     onUpdate(next);
   };
-  const startEdit=(ev)=>{setEditKey(ev.loc+'_'+ev.dk);setEditLoc(ev.loc);setEditDate(ev.dk);setEditType(ev.type||'other');setEditNote(ev.note||'');};
+  const startEdit=(ev)=>{setEditKey(ev.loc+'_'+ev.dk);setEditLoc(ev.loc);setEditDate(ev.dk);setEditType(ev.type||'other');setEditNote(ev.note||'');setEditEndDate(null);};
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
@@ -3369,7 +3402,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
           allEventsGrouped.length+' event'+(allEventsGrouped.length===1?'':'s')+
           (allEvents.length!==allEventsGrouped.length?' ('+allEvents.length+' store-tags)':'')+
           (groupedFiltered.length!==allEventsGrouped.length?' · '+groupedFiltered.length+' shown':''))),
-        btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
+        btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');setEditEndDate(null);}},'+Add Event'),
         // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: the "🗓 Auto-Tag
         // Holidays" button used to live here — one click wrote ~1,539 org_events rows (19
         // holidays x 27 stores x 3 years) purely to materialize a fact isHoliday()/buildHolidays()
@@ -3464,8 +3497,13 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
         )
       ),
       (editKey!=null)&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
-        div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
+        div({style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:6}},
           inp({type:'date',value:editDate,onChange:e=>setEditDate(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
+          // Date-range creation (mass-review notes 70) — only offered when adding a brand-new
+          // event; editing an existing day (startEdit) keeps editEndDate null, same single-day
+          // UI this always had.
+          editKey==='new'&&span({style:{fontSize:'10px',color:'var(--text3)'}},'through'),
+          editKey==='new'&&inp({type:'date',value:editEndDate||'',min:editDate,placeholder:'(same day)',onChange:e=>setEditEndDate(e.target.value||null),title:'Optional — tag the same event across a range of days (e.g. a multi-day promotion or closure)',style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
           sel({value:editLoc,onChange:e=>setEditLoc(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}},
             stores.map(s=>opt({key:s.loc,value:s.loc},s.name))),
           sel({value:editType,onChange:e=>setEditType(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}},
