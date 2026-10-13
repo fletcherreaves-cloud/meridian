@@ -23,7 +23,8 @@ import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
 // main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
 // day-of-week depth. See StoreRecordsTab's own header comment for why only the computation +
 // formatters are imported, never record-day.js's own React components.
-import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT } from './record-day.js';
+import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT, HourRecordTab, buildBreakIndex } from './record-day.js';
+import { computeHourRecords, scopeHourRecords } from '../engine/record-hour.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -2674,7 +2675,39 @@ function StoreRecordsTab({ds, loc, name}) {
     title: 'Records only cover data already loaded into the app — this pulls the full sales history already saved in the cloud, back to 2022.',
   }, deepHistoryState === 'loading' ? 'Loading history since 2022…' : deepHistoryState === 'error' ? '⚠ Retry: full history since 2022' : '🕰 Load full history (since 2022)');
 
+  // Record Hour (mass-review notes 70, 2026-10-13) — same HourRecordTab the district-wide
+  // Records panel (record-day.js's RecordDayTab) already ships, reused here scoped to this one
+  // store (scopedLocs:[loc]) rather than rebuilt. Independent of the day-level `recs`/`liveRec`
+  // empty-state gate below — HourRecordTab has its own loading/empty states for its own stream
+  // (ds.qsrSalesQtrHourRows), same as RecordDayTab's own `tab==='hour'` branch.
+  const scopedLocs = loc ? [loc] : null;
+  const hourData     = React.useMemo(() => computeHourRecords(ds, { windowDays: liveWindow }), [ds, liveWindow]);
+  const hourViewData = React.useMemo(() => scopeHourRecords(hourData, scopedLocs), [hourData, scopedLocs]);
+  const hourBreakIndex = React.useMemo(
+    () => buildBreakIndex(hourViewData?.recentBreakers?.map(b => ({ ...b, type:'Hour Sales' }))),
+    [hourViewData]);
+  const [qtrHourHistoryState, setQtrHourHistoryState] = React.useState(
+    () => (isLazyFillWideLoaded('qsrSalesQtrHourRows') ? 'loaded' : 'idle'));
+  const handleLoadQtrHourHistory = React.useCallback(() => {
+    ensureLazyFillWide('qsrSalesQtrHourRows');
+    setQtrHourHistoryState('loading');
+  }, []);
+  React.useEffect(() => {
+    if (qtrHourHistoryState !== 'loading') return;
+    if (isLazyFillWideLoaded('qsrSalesQtrHourRows')) setQtrHourHistoryState('loaded');
+    else if (isLazyFillWideError('qsrSalesQtrHourRows')) setQtrHourHistoryState('error');
+  }, [ds, qtrHourHistoryState]);
+  const hourSection = div({style:{marginTop:20,paddingTop:16,borderTop:'.5px solid var(--bdr)'}},
+    h(HourRecordTab, {
+      data: hourViewData, breakIndex: hourBreakIndex,
+      fullHistoryLoaded: isLazyFillWideLoaded('qsrSalesQtrHourRows'),
+      onLoadFullHistory: handleLoadQtrHourHistory,
+      fullHistoryState: qtrHourHistoryState,
+      ds, scopedLocs, windowDays: liveWindow,
+    }));
+
   if(!recs && !liveRec) return div({style:{padding:20}},
+    hourSection,
     div({className:'empty-st'},
       div({className:'empty-st-t'},'No Records Data'),
       div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file, or load daily sales/ops data, to see store records.'),
@@ -2739,6 +2772,7 @@ function StoreRecordsTab({ds, loc, name}) {
     textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text2)',textAlign:align,borderBottom:'.5px solid var(--bdr)'}},l);
 
   return div({style:{padding:2}},
+    hourSection,
     recs && div(null,
       div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
         div({style:{fontSize:'13px',fontWeight:700}},'🏆 All-Time Store Records'),
