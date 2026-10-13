@@ -72,7 +72,15 @@ const STORE_NSNS = (process.env.ROSTER_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Conditional construction, not called unconditionally at module load — same pattern
+// qsrsoft-forms-completion-pull.mjs/qsrsoft-security-events-pull.mjs already use (their own
+// comment: "keeps this module importable ... under vitest, where neither env var is set").
+// Missed here originally: CI has neither env var set, so importing aggregate() for the new
+// weight-isolation test (2026-10-13) threw "supabaseUrl is required" at import time, before the
+// test itself ever ran — caught live by CI, not locally (this sandbox DOES have both set).
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const pad2 = n => String(n).padStart(2, '0');
 function currentPeriod() {
