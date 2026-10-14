@@ -78,6 +78,46 @@ describe('startCoachingCycle', () => {
     expect(cycle.verdict).toBeNull();
   });
 
+  // Owner, live, 2026-10-14: a real cycle was logged today ("coached_at": "2026-10-14") but its
+  // own note described training that happened weeks earlier ("...on Tuesday September 15th").
+  // The baseline auto-captured from the trailing window ending TODAY landed entirely AFTER that
+  // real intervention -- if the training changed behavior, the "baseline" already included the
+  // improvement, which would have silently erased the measured effect a month later at review.
+  // coachedAt lets the caller anchor the baseline window (and the 30-day review clock) to the
+  // real date instead.
+  it('an explicit coachedAt anchors the baseline window to THAT date, not today', () => {
+    const qsrFobRows = [
+      // Inside the 14-day window ending the last CLOSED business day before coachedAt
+      // (2026-07-15 itself is "in progress" as of that date, per snapshotMetricValue's own
+      // signature-#4 exclusion -- see the "excludes the in-progress day" test above): 5% ratio.
+      { loc: '10422', date: '2026-07-10', prodSalesAmt: 1000, condimentsAmt: 50 },
+      // Today's (ASOF's) window: a DIFFERENT 2% ratio -- would wrongly become the baseline if
+      // coachedAt were ignored (this is exactly the pre-fix bug).
+      { loc: '10422', date: '2026-08-10', prodSalesAmt: 1000, condimentsAmt: 20 },
+    ];
+    const cycle = startCoachingCycle(
+      { qsrFobRows },
+      { loc: '10422', metricKey: 'condiment_pct', note: 'training on 9/15', coachedAt: '2026-07-15' },
+      ASOF,
+    );
+    expect(cycle.coachedAt).toBe('2026-07-15');
+    expect(cycle.baseline).toBeCloseTo(0.05, 5); // the OLD window's ratio, not today's 0.02
+    expect(cycle.reviewAt).toBe('2026-08-14'); // +30 days from coachedAt, not from today/ASOF
+  });
+
+  it('rejects a coachedAt in the future rather than silently accepting a nonsensical baseline window', () => {
+    expect(() => startCoachingCycle(
+      { qsrFobRows: [] },
+      { loc: '10422', metricKey: 'condiment_pct', coachedAt: '2026-08-12' }, // one day after ASOF
+      ASOF,
+    )).toThrow(/future/i);
+  });
+
+  it('defaults coachedAt to today when omitted (unchanged one-tap flow)', () => {
+    const cycle = startCoachingCycle({ qsrFobRows: [] }, { loc: '10422', metricKey: 'condiment_pct' }, ASOF);
+    expect(cycle.coachedAt).toBe('2026-08-11');
+  });
+
   it('rejects a metric outside the food-cost/labor scope rather than silently accepting it', () => {
     expect(() => startCoachingCycle({}, { loc: '10422', metricKey: 'oepe' }, ASOF)).toThrow();
   });

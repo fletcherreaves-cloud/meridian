@@ -7,8 +7,9 @@
 import * as React from 'react';
 import { ModalShell } from '../components/ModalShell.js';
 import { STORE_NAMES } from '../constants.js';
-import { COACHING_METRICS, snapshotMetricValue, startCoachingCycle, recordCoachingResult } from '../engine/coaching-loop.js';
+import { COACHING_METRICS, REVIEW_WINDOW_DAYS, snapshotMetricValue, startCoachingCycle, recordCoachingResult } from '../engine/coaching-loop.js';
 import { saveCoachingCycle, updateCoachingCycleResult } from '../lib/supabase.js';
+import { dKey, addD } from '../utils/date.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -27,6 +28,15 @@ export function CoachingModal({ mode, loc, metricKey, cycle, ds, onClose, onSave
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
+  // "When did this happen?" (owner, live, 2026-10-14): a cycle logged today but describing
+  // training that happened weeks earlier captured its baseline from the WRONG window -- the
+  // trailing 14 days ending TODAY, entirely AFTER the real intervention, silently erasing the
+  // measured effect at review. Defaults to today (unchanged one-tap flow for the common case),
+  // but is now editable backward -- never forward, startCoachingCycle() itself rejects a future
+  // date. Still auto-captured, never a typed VALUE (rule 1 intact) -- this only lets the caller
+  // say which date's trailing window to auto-capture.
+  const today = dKey(new Date());
+  const [coachedAt, setCoachedAt] = useState(today);
 
   const effLoc = mode === 'start' ? loc : cycle?.loc;
   const effMetric = mode === 'start' ? metricKey : cycle?.metric;
@@ -34,9 +44,14 @@ export function CoachingModal({ mode, loc, metricKey, cycle, ds, onClose, onSave
   const storeName = STORE_NAMES[effLoc] || effLoc;
 
   const baseline = useMemo(
-    () => mode === 'start' ? snapshotMetricValue(ds, effLoc, effMetric) : cycle?.baseline,
-    [mode, ds, effLoc, effMetric, cycle]
+    // T12:00:00 (noon), not midnight -- matches startCoachingCycle()'s own anchor exactly, so
+    // this live preview never disagrees with what the actual save computes. See that function's
+    // comment: midnight falls inside the app's 4am-business-day cutover and can silently shift
+    // the trailing window back a day.
+    () => mode === 'start' ? snapshotMetricValue(ds, effLoc, effMetric, coachedAt + 'T12:00:00') : cycle?.baseline,
+    [mode, ds, effLoc, effMetric, cycle, coachedAt]
   );
+  const reviewAtPreview = useMemo(() => dKey(addD(new Date(coachedAt + 'T00:00:00'), REVIEW_WINDOW_DAYS)), [coachedAt]);
   // Live preview for mode:'review' — the SAME auto-capture the actual save will use, shown
   // before saving so the number displayed is never a guess at what will be recorded.
   const preview = useMemo(
@@ -48,7 +63,7 @@ export function CoachingModal({ mode, loc, metricKey, cycle, ds, onClose, onSave
     setSaving(true); setErr(null);
     try {
       if (mode === 'start') {
-        const newCycle = startCoachingCycle(ds, { loc: effLoc, metricKey: effMetric, note });
+        const newCycle = startCoachingCycle(ds, { loc: effLoc, metricKey: effMetric, note, coachedAt });
         const { error } = await saveCoachingCycle(newCycle);
         if (error) throw new Error(error);
       } else {
@@ -67,15 +82,23 @@ export function CoachingModal({ mode, loc, metricKey, cycle, ds, onClose, onSave
   return h(ModalShell, {
     title: mode === 'start' ? `Coach ${spec.label} — ${storeName}` : `Follow-up — ${spec.label} at ${storeName}`,
     subtitle: mode === 'start'
-      ? 'Baseline is auto-captured now. Review lands in Needs Attention in 30 days.'
+      ? `Baseline is auto-captured as of the date below. Review lands in Needs Attention on ${reviewAtPreview}.`
       : `Coached ${cycle?.coachedAt}${cycle?.note ? ': "' + cycle.note + '"' : ''}`,
     icon: '🎯',
     maxWidth: 460,
     onClose,
   },
     div({ style: { padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12 } },
+      mode === 'start' && div({ style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+        span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'When did this happen?'),
+        h('input', {
+          type: 'date', value: coachedAt, max: today,
+          onChange: e => e.target.value && setCoachedAt(e.target.value),
+          style: { background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '11px', padding: '5px 8px', fontFamily: 'inherit', width: 150 },
+        }),
+      ),
       mode === 'start' && div({ style: { display: 'flex', gap: 10, alignItems: 'baseline' } },
-        span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'Baseline (last 14 days, auto)'),
+        span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'Baseline (14 days ending that date, auto)'),
         span({ style: { fontSize: '14px', fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--mono)' } }, pct(baseline)),
       ),
       mode === 'review' && div({ style: { display: 'flex', flexDirection: 'column', gap: 6 } },

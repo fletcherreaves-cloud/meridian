@@ -114,18 +114,40 @@ export function snapshotMetricValue(ds, loc, metricKey, asOf = null) {
 
 /**
  * Rule 3: starts from an existing finding — loc/metricKey/note are the only caller inputs.
- * Everything else (baseline, coached_at, review_at) is derived here, never typed.
+ * Baseline/review_at are still ALWAYS derived here, never typed directly — but coached_at
+ * (when the conversation/training actually happened) is now a caller input too, defaulting to
+ * today when omitted. This does not weaken rule 1: the caller supplies a DATE, never a metric
+ * VALUE, and the baseline is still auto-captured -- just anchored to that date's own trailing
+ * window instead of always today's.
+ *
+ * Added 2026-10-14 (owner, live): a Madill cycle logged today but describing training that
+ * happened a month earlier captured its "baseline" from the WRONG window -- the trailing 14
+ * days ending TODAY, which is entirely AFTER the real intervention. If the training changed
+ * behavior, that baseline already includes the improvement, silently erasing the measured
+ * effect a month later at review. coachedAt lets the caller anchor both the baseline window
+ * and the 30-day review clock to the real date instead of whenever it was logged.
  */
-export function startCoachingCycle(ds, { loc, metricKey, note = '' }, asOf = null) {
+export function startCoachingCycle(ds, { loc, metricKey, note = '', coachedAt = null }, asOf = null) {
   if (!COACHING_METRICS[metricKey]) throw new Error(`Unknown coaching metric: ${metricKey}`);
   const today = dKey(asOf ? new Date(asOf) : new Date());
+  // dKey() takes a plain 'YYYY-MM-DD' string verbatim (no Date round-trip) -- wrapping it in
+  // new Date(coachedAt) first would parse it as UTC midnight, which dKey's own local-time
+  // getters can then read back as the PREVIOUS day in a negative UTC-offset timezone. The exact
+  // trap this file's own reviewAt line already avoids by appending 'T00:00:00'.
+  const effCoachedAt = coachedAt ? dKey(coachedAt) : today;
+  if (effCoachedAt > today) throw new Error('Coached date cannot be in the future');
   return {
     loc: unpad(loc),
     metric: metricKey,
-    baseline: snapshotMetricValue(ds, loc, metricKey, asOf),
-    coachedAt: today,
+    // Noon, not midnight: snapshotMetricValue() routes through lastClosedBusinessDay(), which
+    // (CLAUDE.md: "THE BUSINESS DAY RUNS 4:00am -> 4:00am") treats the 00:00-04:00 block as
+    // still belonging to the PREVIOUS business day. Anchoring at midnight would silently roll
+    // effCoachedAt's baseline window back a day; noon is safely inside the real calendar day
+    // either way. Matches this file's own test fixtures' established "T12:00:00" anchor.
+    baseline: snapshotMetricValue(ds, loc, metricKey, effCoachedAt + 'T12:00:00'),
+    coachedAt: effCoachedAt,
     note: note || '',
-    reviewAt: dKey(addD(new Date(today + 'T00:00:00'), REVIEW_WINDOW_DAYS)),
+    reviewAt: dKey(addD(new Date(effCoachedAt + 'T00:00:00'), REVIEW_WINDOW_DAYS)),
     result: null,
     verdict: null,
   };
