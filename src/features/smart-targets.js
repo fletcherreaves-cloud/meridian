@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { DEFAULT_TARGETS, STORE_NAMES, sNameC } from '../constants.js';
+import { DEFAULT_TARGETS, STORE_NAMES, sNameC, activeStoreIds } from '../constants.js';
 import { fetchLY, getStoreOrg } from '../engine/forecast.js';
 import { computeScheduleRollup, currentScheduleWeekRange } from '../engine/schedule-summary.js';
 
@@ -287,9 +287,15 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
     return SMART_METRICS.filter(m=>grp.keys.includes(m.k));
   },[metricTab]);
 
+  // dispatch 2026-10-14 (Lindsay 18213 -> 44689 relocation) -- activeStoreIds drops a store once
+  // its storeLifecycle closed-date (Settings -> Store Status) is reached, so Smart Targets stops
+  // computing/grading a dead store once it's actually retired. Full history for a closed store
+  // stays real and visible in Store Dashboard/Analytics/drilldowns -- this is a scoped, deliberate
+  // exclusion from "what are today's targets", not a data deletion. No-op for every store today
+  // (storeLifecycle defaults to {}), so this changes nothing until a close date is actually set.
   const allLocs = React.useMemo(()=>
-    (stores||[]).filter(s=>/^\d+$/.test(s.loc)).sort((a,b)=>+a.loc-+b.loc).map(s=>s.loc)
-  ,[stores]);
+    activeStoreIds((stores||[]).filter(s=>/^\d+$/.test(s.loc)).sort((a,b)=>+a.loc-+b.loc).map(s=>s.loc), settings.storeLifecycle)
+  ,[stores,settings.storeLifecycle]);
 
   // Compute targets for all stores
   React.useEffect(()=>{

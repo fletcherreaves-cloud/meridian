@@ -115,18 +115,40 @@ export function rankFilterRows(rankedRows, mode) {
   return rankedRows;
 }
 
-// For each period: {..period, combined: value|null, rows: [{loc, value, rank, pct}], n}.
-// `locs` never fabricates a row for a store with no data that period -- absence is honest,
-// matching the standing rule the Smart Targets backtest already established.
+// Inclusive day count for a {s,e} ISO-date range -- Current MTD is always SHORTER than the two
+// full-month periods beside it (13 days vs ~30), so this is what pace() below needs to turn a
+// raw period total into something comparable across periods of different length.
+function daysInRange(s, e) {
+  return Math.round((new Date(e) - new Date(s)) / 864e5) + 1;
+}
+
+// For each period: {..period, combined: value|null, pace: value|null, rows: [{loc, value, rank,
+// pct}], n}. `locs` never fabricates a row for a store with no data that period -- absence is
+// honest, matching the standing rule the Smart Targets backtest already established.
+//
+// `combined` is the real period total/rate -- what the headline number and the per-store table
+// both correctly show, unchanged. `pace` is a SEPARATE field added here (owner-reported bug,
+// 2026-10-14): for a 'sum' metric (Sales, Guest Count), `combined` is a raw total that scales
+// with how many days are in the period -- Current MTD (13 days, "completed days only" per this
+// file's own trendReportPeriods comment) will always look like a cliff next to two full ~30-day
+// months even when the underlying daily rate is flat or improving, and the trend line's own
+// red/green coloring (MiniTrend in the view, comparing raw combined values point-to-point) read
+// as "bad" almost every month purely from day-count, not performance. `pace` divides a 'sum'
+// metric's combined total by its own period's day count, so every period becomes a comparable
+// average-$-per-day figure; a 'rate' metric (Labor %, FOB %, TPPH, etc.) is already day-count-
+// independent via metricRate's own Sum/Sum math, so pace === combined there, unchanged. Used by
+// the view's trend-line sparkline ONLY -- never for the headline number or the per-store table,
+// both of which correctly show the real period total.
 export function computeTrendReport(ds, metric, locs, periods) {
   return periods.map(period => {
     const range = { s: period.s, e: period.e };
     const combined = periodValue(ds, locs, range, metric);
+    const pace = combined == null ? null : metric.agg === 'sum' ? combined / daysInRange(period.s, period.e) : combined;
     const raw = locs
       .map(loc => ({ loc, value: periodValue(ds, [loc], range, metric) }))
       .filter(r => r.value != null);
     const rows = metric.direction ? withRanks(raw, metric.direction) : raw.map((r, i) => ({ ...r, rank: i + 1, pct: null }));
-    return { ...period, combined, rows, n: rows.length };
+    return { ...period, combined, pace, rows, n: rows.length };
   });
 }
 

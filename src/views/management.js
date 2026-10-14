@@ -357,6 +357,61 @@ function GmAssignmentsEditor({ S, onUpdate }) {
         btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
+// ── Store Status editor (dispatch 2026-10-14, Lindsay 18213 -> 44689 relocation) ─────────────
+// Set or clear a store's LAST DAY OF OPERATION. Persists to settings.storeLifecycle -> org_config
+// 'app_settings', the same blanket-merge sync every other settings key already uses -- no new
+// Supabase table, no per-key allowlist to extend. Deliberately a flat {loc: date} map (not an
+// effective-dated timeline like Supervisor/GM Assignments above) -- a store closes once.
+//
+// This is the "toggle it or set it when needed" control: set the real date whenever it's
+// confirmed (even weeks ahead, per isStoreClosedOn/activeStoreIds in constants.js), or set it to
+// today for an instant close, or clear it to reopen/undo. Closing a store here does NOT delete or
+// hide its history anywhere -- Store Dashboard, Analytics and drilldowns are unaffected; only
+// Smart Targets' roster (the first wired consumer) stops computing targets for it once the date
+// is reached.
+function StoreStatusEditor({ S, onUpdate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const lifecycle = S.storeLifecycle || {};
+  const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), storeLifecycle: next });
+  const [store, setStore] = useState('');
+  const [closeDate, setCloseDate] = useState(today);
+
+  const apply = () => {
+    const loc = String(parseInt(store.trim(), 10)); if (!loc || loc === 'NaN') { alert('Enter a store ID'); return; }
+    if (!closeDate) { alert('Pick a close date (or use the ✕ on an existing row to reopen a store)'); return; }
+    save({ ...lifecycle, [loc]: closeDate });
+    setStore('');
+  };
+  const editDate = (loc, val) => {
+    if (!val) { const next = { ...lifecycle }; delete next[loc]; save(next); return; }
+    save({ ...lifecycle, [loc]: val });
+  };
+  const reopen = (loc) => { const next = { ...lifecycle }; delete next[loc]; save(next); };
+  const rows = Object.entries(lifecycle).sort((a, b) => (STORE_NAMES[a[0]] || a[0]).localeCompare(STORE_NAMES[b[0]] || b[0]));
+
+  return div({ className: 'set-sec' },
+    div({ className: 'set-sec-t' }, 'Store Status (closed/retired stores)'),
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'Set a store\'s last day of operation ahead of time, or on the day itself — either way, it automatically drops out of Smart Targets\' roster once that date is reached, with no need to remember to flip anything on the day. A closed store\'s history stays fully visible everywhere else (Store Dashboard, Analytics, drilldowns) — this only stops it from being counted as a currently-operating store. Clear the date (✕) to reopen/undo.'),
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Closed / closing'),
+    rows.length
+      ? div({ style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+          rows.map(([loc, date]) => div({ key: loc, style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5 } },
+            span({ style: { minWidth: 160, fontWeight: 600 } }, loc + ' — ' + (STORE_NAMES[loc] || loc)),
+            inp({ className: 'set-inp', type: 'date', defaultValue: date, key: loc + date, onBlur: e => editDate(loc, e.target.value), title: 'Last day of operation', style: { width: 140 } }),
+            date <= today
+              ? span({ style: { fontSize: 10, color: 'var(--crit,#ef4444)', fontWeight: 600 } }, 'Closed')
+              : span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'Closing'),
+            btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => reopen(loc) }, '✕ Reopen'))))
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, '— every store is active —'),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Close a store'),
+    div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      inp({ className: 'set-inp', placeholder: 'Store ID', value: store, onChange: e => setStore(e.target.value), style: { flex: '0 0 110px' } }),
+      inp({ className: 'set-inp', type: 'date', value: closeDate, onChange: e => setCloseDate(e.target.value), title: 'Last day of operation', style: { flex: '0 0 140px' } }),
+      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')));
+}
+
 // Generic name→store-list group editor — mirrors the 'operators' section's add/rename/remove-row
 // UI + "Sync from defaults" reset exactly (see activeSection==='operators' below), parameterized
 // by settings field so DOs/OMs (and any future tier) reuse the same three UI states instead of a
@@ -411,7 +466,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         div({style:{width:140,flexShrink:0,borderRight:'.5px solid var(--bdr)',
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
-              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['gms','👔 GMs'],['oms','⚙ OMs'],
+              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['gms','👔 GMs'],['oms','⚙ OMs'],['store-status','🔁 Store Status'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
               ...(onOpenAdmin?[['users','👥 Users']]:[]),
               // ⚠️ CORRECTED (RBAC audit, 2026-09-16): 'developer' is not a real profiles.role
@@ -667,6 +722,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           note:'Edit DOs and their store numbers. A name may also appear in Operators or Patches — dual roles (e.g. a DO who is also a Supervisor for a subset) are expected, not a bug.'}),
         activeSection==='supervisors'&&h(SupervisorAssignmentsEditor,{S,onUpdate}),
         activeSection==='gms'&&h(GmAssignmentsEditor,{S,onUpdate}),
+        activeSection==='store-status'&&h(StoreStatusEditor,{S,onUpdate}),
         activeSection==='oms'&&h(GroupsEditor,{S,onUpdate,field:'omGroups',title:'Operations Manager (OM) Groups',
           note:'Scaffold — empty by default. Add OMs and their store numbers here whenever ready; no code change needed.'}),
         activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),

@@ -36,6 +36,13 @@ const _pillStyle = (active) => ({
 // trends.js's own TrendSparkline (same dimensions/stroke approach) -- each panel that needs a
 // tiny inline trendline hand-rolls its own to this shared visual language rather than pulling
 // chart.js into the eager bundle just for 3 points.
+//
+// `points` carries a PER-DAY PACE value (computeTrendReport's own `pace`), not a raw period
+// total -- owner-reported bug, 2026-10-14: Current MTD is a shorter period (13 days, "completed
+// days only") than the two full-month periods beside it, so plotting raw totals made this line
+// (and its red/green color, which compares the last two points directly) look like a bad month
+// almost every time regardless of actual daily performance. A native <title> tooltip says so
+// explicitly so this isn't silently mis-read as "sales collapsed" again.
 function MiniTrend({ points, direction }) {
   const pts = (points || []).filter(p => p.value != null);
   if (pts.length < 2) return null;
@@ -51,6 +58,7 @@ function MiniTrend({ points, direction }) {
   const goodUp = direction === 'higher' ? lastUp : direction === 'lower' ? !lastUp : null;
   const col = goodUp == null ? 'var(--amber)' : goodUp ? '#10b981' : '#ef4444';
   return h('svg', { width: W, height: H, style: { display: 'block' } },
+    h('title', null, 'Average per-day pace, two months back → last month → current MTD — not raw period totals, so a shorter MTD-so-far window compares fairly against two full months.'),
     h('polyline', { points: poly, fill: 'none', stroke: col, strokeWidth: 1.75, strokeLinejoin: 'round' }),
     ...xs.map((x, i) => h('circle', { key: i, cx: x, cy: yCoord(vals[i]), r: i === xs.length - 1 ? 3 : 2, fill: col, opacity: i === xs.length - 1 ? 1 : .55 })),
   );
@@ -288,8 +296,13 @@ export function TrendReportPanel({ ds, onClose }) {
 
   const sections = useMemo(() => computeTrendReport(detailDs, metric, scopedLocs, periods), [detailDs, metric, scopedLocs, periods]);
 
-  // twoBack -> lastMonth -> mtd, oldest first, for the mini trend line.
-  const combinedTrendPoints = [...sections].reverse().map(p => ({ value: p.combined }));
+  // twoBack -> lastMonth -> mtd, oldest first, for the mini trend line. Uses p.pace (owner-
+  // reported bug, 2026-10-14), not p.combined -- Current MTD is a SHORTER period (13 days,
+  // "completed days only") than the two full-month periods beside it, so plotting raw period
+  // totals made the line look like a cliff every month regardless of actual daily performance
+  // (see computeTrendReport's own comment on pace). pace is a per-day average for 'sum' metrics
+  // (Sales, Guest Count) and identical to combined for 'rate' metrics, which were never affected.
+  const combinedTrendPoints = [...sections].reverse().map(p => ({ value: p.pace }));
 
   const scopeLabel = scopeValue.level === 'all' ? 'All Locations' : scopeValue.level === 'state' ? scopeValue.id + ' Locations' : scopeValue.level === 'patch' ? 'Patch ' + scopeValue.id : sNameC(scopeValue.id);
 
