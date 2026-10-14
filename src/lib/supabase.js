@@ -5418,12 +5418,28 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
   // so switching to it is a strict improvement on both axes, not a tradeoff. Falls back to the
   // now-fixed sequential fetchAll() automatically if its own estimated-count probe fails (existing
   // _pagedParallel behavior, unchanged).
+  //
+  // dispatch 2026-10-14 Part 2 (owner re-reported live, STILL empty after the _pagedParallel
+  // switch -- now "4 page(s) failed" instead of 1): the parallel switch was real progress but
+  // didn't fix the underlying cause -- pageSize 1000 is simply too much work per page for
+  // security_findings_latest's DISTINCT ON materialization. Live-measured directly: firing 6
+  // concurrent 1000-row pages at the table's worst-observed offset zone timed out 6/6 at a
+  // consistent ~8.3-8.4s (security_findings_latest_support_idx's own project-level statement
+  // timeout is ~8s) -- not occasional bad luck, every single one. The SAME test at pageSize 500
+  // still failed 3/6; at pageSize 300 it was 0/6 with a ~7x margin (max 1.1s); at 200, 0/6 with a
+  // ~30x margin (max 0.3s). Dropping to 300 end-to-end through the real loadSecurityFindings():
+  // 20,793/20,793 rows, ZERO page failures, 8-17s total (vs the pageSize-1000 version's 20-40s
+  // WITH failures) -- both faster and reliable, not a tradeoff between them. Same lesson this
+  // file's own loadQsrRawItemDetail already learned (its own comment: "PAGE SIZE 200, not the
+  // 1000 default... hit a real statement timeout... 200 rows completes in 0.6s") -- a DISTINCT
+  // ON/wide-row view can be fine at a small LIMIT and fall off a cliff well under 1000, so a
+  // generic pageSize default is not a safe assumption for every table.
   const data = await _pagedParallel({
     table, select: SECURITY_FINDINGS_COLS,
     orderCol: 'tenant_id', ascending: true,
     extraOrder: ['loc', 'subject_key', 'rule_id', { column: 'window_end', ascending: false }, { column: 'computed_at', ascending: false }],
     ...(ruleIds && ruleIds.length ? { inCol: 'rule_id', inVals: ruleIds } : {}),
-    pageSize: 1000, label: `security findings (${table})`,
+    pageSize: 300, label: `security findings (${table})`,
   });
   return data.map(_mapSecurityFindingRow);
 }

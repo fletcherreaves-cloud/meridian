@@ -19,6 +19,15 @@
 // loadSecurityFindings' own index-matching order is `tenant_id, loc, subject_key, rule_id` ASC
 // then `window_end, computed_at` DESC -- a mixed-direction order no existing caller needed before.
 //
+// Part 2 (owner re-reported STILL empty after the _pagedParallel switch, now "4 page(s) failed"
+// instead of 1): pageSize 1000 was simply too much work per page for this view's DISTINCT ON
+// materialization. Live-measured directly: 6 concurrent 1000-row pages at the table's
+// worst-observed offset zone timed out 6/6 at a consistent ~8.3s; the same test at pageSize 300
+// was 0/6 with a ~7x margin. Dropped to 300 -- end-to-end through the real loader: 20,793/20,793
+// rows, ZERO failures, 8-17s (vs pageSize 1000's 20-40s WITH failures). Same lesson this file's
+// own loadQsrRawItemDetail already learned (pageSize 200, not the 1000 default, for the same
+// statement-timeout reason) -- a DISTINCT ON view can fall off a cliff well under 1000 rows.
+//
 // Driven through the real exported loadSecurityFindings() against a mock Supabase client, per
 // this repo's "drive a fix through a real exported loader" convention (paged-parallel-count-
 // fallback.test.js, same file, same pattern) -- _pagedParallel/fetchAll are both unexported.
@@ -28,6 +37,7 @@ const __fakeConfig = {};
 const __orderCalls = []; // records every .order(col, opts) call, in sequence, per from(table)
 const __headModeTables = []; // records every table a {head:true} select was issued against --
 // ONLY _pagedParallel's upfront count-HEAD query does this; the sequential fetchAll() never did.
+const __rangeCalls = []; // records every .range(from, to) call, per table -- used to pin pageSize.
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
@@ -41,6 +51,7 @@ vi.mock('@supabase/supabase-js', () => ({
         in() { return builder; },
         order(col, opts) { __orderCalls.push({ table, col, ascending: opts ? opts.ascending : true }); return builder; },
         range(from, to) {
+          __rangeCalls.push({ table, from, to });
           return Promise.resolve({ data: cfg.rows.slice(from, to + 1), error: null });
         },
         // Reached for the count-HEAD call (_pagedParallel) AND the bare view-probe select
@@ -73,6 +84,7 @@ beforeEach(async () => {
   for (const k of Object.keys(__fakeConfig)) delete __fakeConfig[k];
   __orderCalls.length = 0;
   __headModeTables.length = 0;
+  __rangeCalls.length = 0;
   vi.stubEnv('VITE_SUPABASE_URL', 'https://fake.supabase.test');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'fake-anon-key');
   ({ loadSecurityFindings } = await import('../lib/supabase.js'));
@@ -80,16 +92,24 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('loadSecurityFindings() uses _pagedParallel (dispatch 2026-10-14)', () => {
-  it('pulls MORE than one page (1000+) through the parallel, count-based path -- proves it is no longer the sequential fetchAll', async () => {
-    // pageSize is 1000; 1500 rows forces a second page, only reachable if the count-HEAD query
-    // ran and `pages` was computed correctly (the sequential fetchAll path never issues a count
-    // query at all -- its mock signature wouldn't even need .select(cols, {head:true}) support).
+  it('pulls MORE than one page through the parallel, count-based path -- proves it is no longer the sequential fetchAll', async () => {
+    // pageSize is 300; 1500 rows forces 5 pages, only reachable if the count-HEAD query ran and
+    // `pages` was computed correctly (the sequential fetchAll path never issues a count query at
+    // all -- its mock signature wouldn't even need .select(cols, {head:true}) support).
     const rows = Array.from({ length: 1500 }, (_, i) => findingRow(i));
     __fakeConfig.security_findings_latest = { rows, countError: null };
     const result = await loadSecurityFindings();
     expect(result.length).toBe(1500);
     expect(result[0].wrin).toBe('WRIN-0');
     expect(result[1499].wrin).toBe('WRIN-1499');
+  });
+
+  it('pageSize is 300, not the 1000 default -- live-measured: 1000-row pages timed out 6/6 against this view, 300 was 0/6 with a 7x margin (regression guard: do not raise this back toward 1000)', async () => {
+    const rows = Array.from({ length: 301 }, (_, i) => findingRow(i));
+    __fakeConfig.security_findings_latest = { rows, countError: null };
+    await loadSecurityFindings();
+    const forTable = __rangeCalls.filter(c => c.table === 'security_findings_latest');
+    expect(forTable[0]).toMatchObject({ from: 0, to: 299 });
   });
 
   it('issues an upfront {head:true} count query against security_findings_latest -- the one signal unique to _pagedParallel; the old sequential fetchAll() never issued one (confirmed: this assertion fails on the pre-fix code)', async () => {
