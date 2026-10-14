@@ -351,7 +351,13 @@ export function buildScheduleActuals(ds, locs, range) {
     // Scheduled Labor % (Total) — LifeLenz's own "Labor % Sales" band figure: dollar-weighted
     // scheduled labor cost ÷ forecasted sales for the period (NOT the same basis as Fixed/Floor
     // %, which are shares of total SCHEDULED HOURS — see below). Notes 53: highlight at top.
-    laborPctTotal: band.laborPct,
+    // band.laborPct (schedule-summary.js's rollup()) is already on a PERCENT scale (24.50 means
+    // 24.50%, per normLaborPct's 3-70 band) -- but every consumer in above-store-onepager.js
+    // renders this through fmtV(v,'%'), which does (v*100).toFixed(2), expecting a 0-1 FRACTION
+    // like every sibling field here (fixedPct/floorPct/vlhPct/combinedPct are all hrs-ratio
+    // fractions). Divide back to a fraction here so the scale matches its renderer -- live
+    // measured root cause of the "2397.15%" anomaly (23.9715% run through fmtV a second time).
+    laborPctTotal: band.laborPct != null ? band.laborPct / 100 : null,
     vlhHrs,                                     // Variable Labor Hours (scheduled)
     vlhPct: band.schedHrs > 0 ? vlhHrs / band.schedHrs : null, // VLH ÷ total scheduled hrs
     fixedPct: band.fixedLaborPct,               // fixed hrs ÷ scheduled hrs (band 10–15%)
