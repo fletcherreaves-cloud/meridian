@@ -27,6 +27,35 @@
 // rows, ZERO failures, 8-17s (vs pageSize 1000's 20-40s WITH failures). Same lesson this file's
 // own loadQsrRawItemDetail already learned (pageSize 200, not the 1000 default, for the same
 // statement-timeout reason) -- a DISTINCT ON view can fall off a cliff well under 1000 rows.
+// *** This measurement used the SUPABASE SERVICE ROLE key -- see Part 3, below, for why that
+// made it meaningless for what actually happens in the owner's browser. ***
+//
+// Part 3 (owner ran the v5.555 RLS InitPlan-wrapping SQL migration, STILL "11 page(s) failed"):
+// re-measured for real this time with a throwaway admin-role AUTH SESSION (RLS actually applied,
+// exactly like the browser) instead of the service-role key every prior measurement in this
+// dispatch used (which bypasses RLS entirely and so could never have told us anything about an
+// RLS-specific slowdown). Isolated one variable at a time against the live table:
+//   - A single query against this view, ANY page size 50-1000, run alone (no concurrent
+//     sibling) -- costs a near-constant ~5.1-6.2s regardless of size. The identical query against
+//     the BASE table (no DISTINCT ON) cost 176-929ms -- 5-30x cheaper. So the view's DISTINCT ON
+//     materialization being recomputed under RLS on every call is the real cost, not page size --
+//     which is also why v5.555's InitPlan fix changed nothing: it targeted a cost model (per-row
+//     function re-evaluation) that was never the actual bottleneck.
+//   - 2 concurrent pages: borderline (7.3s max, too close to the ~8s timeout to trust live).
+//     3+ concurrent: FAILS 100% of the time at ~8.1-8.4s, at every page size tried -- this is
+//     exactly what "11 page(s) failed" was: _pagedParallel's shared 6-way _MAX_INFLIGHT firing
+//     6 already-marginal (~5-6s) queries at once, each one's cost compounding the others past
+//     the timeout.
+//   - Walked the full live table sequentially (21 pages of 1000 rows each, real RLS session):
+//     21/21 succeeded, max single page 6201ms (~1.8s margin under the 8s timeout),
+//     20,793/20,793 rows, zero failures.
+// Fix: pageSize back up to 1000 (it was never page size driving the cost) + a new PER-CALL
+// maxInflight:1 option on _pagedParallel (NOT a change to the shared _MAX_INFLIGHT=6 pool every
+// other caller draws from -- none of those tables share this one's RLS-view cost problem).
+// Slower than every other stream in this file, but reliable, which this table was not at any
+// concurrency above 1. A real DB-side fix (materializing this view instead of computing it live
+// under RLS on every call) is future work; this one needed no SQL migration and was verified
+// end-to-end against the real table under real RLS, unlike the three attempts before it.
 //
 // Driven through the real exported loadSecurityFindings() against a mock Supabase client, per
 // this repo's "drive a fix through a real exported loader" convention (paged-parallel-count-
@@ -38,6 +67,8 @@ const __orderCalls = []; // records every .order(col, opts) call, in sequence, p
 const __headModeTables = []; // records every table a {head:true} select was issued against --
 // ONLY _pagedParallel's upfront count-HEAD query does this; the sequential fetchAll() never did.
 const __rangeCalls = []; // records every .range(from, to) call, per table -- used to pin pageSize.
+let __inFlight = 0;
+let __maxInFlightSeen = 0; // peak concurrent in-flight .range() calls -- proves maxInflight is enforced, not just declared.
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
@@ -50,9 +81,15 @@ vi.mock('@supabase/supabase-js', () => ({
         gte() { return builder; },
         in() { return builder; },
         order(col, opts) { __orderCalls.push({ table, col, ascending: opts ? opts.ascending : true }); return builder; },
-        range(from, to) {
+        async range(from, to) {
           __rangeCalls.push({ table, from, to });
-          return Promise.resolve({ data: cfg.rows.slice(from, to + 1), error: null });
+          // A real artificial delay (not a same-tick Promise.resolve) -- needed so overlapping
+          // range() calls actually OVERLAP in wall-clock time, which is what lets
+          // __maxInFlightSeen catch a maxInflight cap that isn't being enforced.
+          __inFlight++; __maxInFlightSeen = Math.max(__maxInFlightSeen, __inFlight);
+          await new Promise(resolve => setTimeout(resolve, 5));
+          __inFlight--;
+          return { data: cfg.rows.slice(from, to + 1), error: null };
         },
         // Reached for the count-HEAD call (_pagedParallel) AND the bare view-probe select
         // (no .range() ever called on either path).
@@ -85,6 +122,8 @@ beforeEach(async () => {
   __orderCalls.length = 0;
   __headModeTables.length = 0;
   __rangeCalls.length = 0;
+  __inFlight = 0;
+  __maxInFlightSeen = 0;
   vi.stubEnv('VITE_SUPABASE_URL', 'https://fake.supabase.test');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'fake-anon-key');
   ({ loadSecurityFindings } = await import('../lib/supabase.js'));
@@ -104,12 +143,26 @@ describe('loadSecurityFindings() uses _pagedParallel (dispatch 2026-10-14)', () 
     expect(result[1499].wrin).toBe('WRIN-1499');
   });
 
-  it('pageSize is 300, not the 1000 default -- live-measured: 1000-row pages timed out 6/6 against this view, 300 was 0/6 with a 7x margin (regression guard: do not raise this back toward 1000)', async () => {
-    const rows = Array.from({ length: 301 }, (_, i) => findingRow(i));
+  it('pageSize is 1000 (Part 3 -- page size was never the cost driver under real RLS; a per-call maxInflight:1 cap is what makes 1000 safe again, see this file\'s own header)', async () => {
+    const rows = Array.from({ length: 1001 }, (_, i) => findingRow(i));
     __fakeConfig.security_findings_latest = { rows, countError: null };
     await loadSecurityFindings();
     const forTable = __rangeCalls.filter(c => c.table === 'security_findings_latest');
-    expect(forTable[0]).toMatchObject({ from: 0, to: 299 });
+    expect(forTable[0]).toMatchObject({ from: 0, to: 999 });
+  });
+
+  it('runs its pages fully SEQUENTIALLY (maxInflight:1), never more than one in flight at once -- the real fix for the live "11 page(s) failed" symptom, which was concurrency pushing already-marginal RLS queries over the statement timeout, not page size (regression guard: confirmed this assertion fails without maxInflight wired through)', async () => {
+    // 2500, not an exact multiple of pageSize (1000) -- the last page comes back short, so the
+    // count:'estimated' safety-extension (see _pagedParallel's own comment) never fires an extra
+    // probe page, keeping this test's page count exactly 3 and not coupled to that unrelated
+    // mechanism.
+    const rows = Array.from({ length: 2500 }, (_, i) => findingRow(i)); // 3 pages at pageSize 1000
+    __fakeConfig.security_findings_latest = { rows, countError: null };
+    const result = await loadSecurityFindings();
+    expect(result.length).toBe(2500);
+    const forTable = __rangeCalls.filter(c => c.table === 'security_findings_latest');
+    expect(forTable.length).toBe(3);
+    expect(__maxInFlightSeen).toBe(1);
   });
 
   it('issues an upfront {head:true} count query against security_findings_latest -- the one signal unique to _pagedParallel; the old sequential fetchAll() never issued one (confirmed: this assertion fails on the pre-fix code)', async () => {

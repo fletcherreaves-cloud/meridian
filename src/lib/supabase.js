@@ -81,8 +81,28 @@ async function _limited(fn) {
 // BOTH the head-count query and every page query, for a caller with one more filter than the
 // gteCol/inCol shortcuts cover (loadDtHistory's `.gt('dt_trans_cnt', 0)`). Additive-only: every
 // pre-existing caller omits it and is unaffected (defaults to identity).
-async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, extraFilter = q => q, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
+async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, extraFilter = q => q, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '', maxInflight = null }) {
   if (!supabase) return [];
+  // maxInflight (dispatch 2026-10-14 Part 3) -- an optional PER-CALL concurrency cap, separate
+  // from the shared _MAX_INFLIGHT=6 pool every other _pagedParallel caller draws from. Added
+  // because security_findings_latest turned out to need a cap of 1 (fully sequential) that would
+  // have throttled the other 9 callers (qsr_fob, labor_rows, ops_rows, etc.) if _MAX_INFLIGHT
+  // itself had been lowered -- none of them share this table's RLS-view cost problem, confirmed
+  // live (see loadSecurityFindings' own comment for the measurement). A dedicated local semaphore,
+  // scoped to just this call's own page requests, gets the lower cap without taking it out of the
+  // shared pool or contending with unrelated callers for it. Omit it (the default) to keep using
+  // the existing shared _limited() exactly as before -- every pre-existing caller is unaffected.
+  const _limitPage = maxInflight
+    ? (() => {
+        let inflight = 0; const waiting = [];
+        return async (fn) => {
+          if (inflight < maxInflight) inflight++;
+          else await new Promise(resolve => waiting.push(resolve));
+          try { return await fn(); }
+          finally { const next = waiting.shift(); if (next) next(); else inflight--; }
+        };
+      })()
+    : _limited;
   // count:'estimated', not 'exact' (correction to dispatch #88's PR #633 — this bottleneck
   // outlived the fix it was meant to be). Live-measured against production qsr_daily_activity
   // with SUPABASE_SERVICE_ROLE_KEY (2026-09-01, loadDtHistory's real 90-day/dt_trans_cnt>0
@@ -155,7 +175,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
   };
   const reqs = [];
   for (let p = 0; p < pages; p++) reqs.push(buildPage(p));
-  const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
+  const settled = await Promise.allSettled(reqs.map(f => _limitPage(f)));
   const data = []; let failed = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
@@ -169,7 +189,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
   let lastFull = !failed && settled.length > 0 && settled[settled.length - 1].status === 'fulfilled'
     && settled[settled.length - 1].value?.data?.length === pageSize;
   while (lastFull) {
-    const res = await _limited(buildPage(pages));
+    const res = await _limitPage(buildPage(pages));
     pages++;
     if (res && !res.error && res.data) {
       data.push(...res.data);
@@ -5434,12 +5454,49 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
   // 1000 default... hit a real statement timeout... 200 rows completes in 0.6s") -- a DISTINCT
   // ON/wide-row view can be fine at a small LIMIT and fall off a cliff well under 1000, so a
   // generic pageSize default is not a safe assumption for every table.
+  // dispatch 2026-10-14 Part 3 -- the owner ran the InitPlan-wrapping RLS migration
+  // (schema-security-findings-rls-perf-fix.sql) and STILL saw "11 page(s) failed" across every
+  // domain, not just Inventory. Re-measured and found this RIGHT: that migration genuinely made
+  // ZERO measurable difference (identical 6/6 failures, identical ~8.1-8.4s, before and after) --
+  // so it was never the cause, just a well-evidenced but wrong hypothesis. EVERY prior
+  // measurement in this dispatch (v5.552/553/554) used the SERVICE ROLE key, which bypasses RLS
+  // entirely; Part 2's "pageSize 300, 0/6 failures" result was real under service-role and
+  // meaningless for what the owner's browser actually experiences.
+  //
+  // Re-measured for real this time: a throwaway admin-role auth session (created/deleted via the
+  // service-role Admin API, no owner credentials touched) making REAL RLS-filtered requests,
+  // exactly like the browser does. Findings, isolating one variable at a time:
+  //   - A SINGLE query against this view, any page size from 50 to 1000 rows, SEQUENTIALLY (no
+  //     concurrent sibling request) -- costs a near-constant ~5.1-6.2s, every time, regardless of
+  //     page size. That is the signature of the view's DISTINCT ON materialization being
+  //     re-computed on every call under RLS (confirmed: the same query against the BASE table
+  //     `security_findings`, no DISTINCT ON, cost 176-929ms for an identical page -- 5-30x
+  //     cheaper), not a pagination or page-size problem at all. This is also why the v5.555
+  //     InitPlan-wrapping fix changed nothing: it targets a cost model (per-row function
+  //     re-evaluation) that was never the bottleneck.
+  //   - 2 CONCURRENT pages: borderline, 7.3s max observed -- too close to the ~8s statement
+  //     timeout to trust live. 3+ concurrent pages: FAILS 100% of the time, every page, ~8.1-8.4s,
+  //     at every page size tested (50/100/300/1000) -- this IS what "11 page(s) failed" was:
+  //     _pagedParallel's shared _MAX_INFLIGHT=6 firing 6 already-marginal (~5-6s) queries at once,
+  //     each one's cost compounding the others past the timeout.
+  //   - Walked the FULL live table (21 sequential pages of 1000 rows, real RLS session): 21/21
+  //     succeeded, max single page 6201ms (comfortable ~1.8s margin under the 8s timeout),
+  //     20,793/20,793 rows recovered, zero failures. ~124s total wall time -- slow, but reliable,
+  //     which this table has not been at any concurrency above 1.
+  // So: maxInflight:1 (fully sequential, NOT the shared 6-way pool every other _pagedParallel
+  // caller uses -- see _pagedParallel's own comment on why this needed to be a per-call cap, not
+  // a global one) + pageSize 1000 (now safe to raise back up -- it was never pageSize driving the
+  // cost, and a bigger page means fewer total round trips). Slower to load than every other
+  // stream in this file by a wide margin; a real DB-side fix (materializing this view instead of
+  // computing it live under RLS on every call) would fix the ROOT cost instead of working around
+  // it, but is future work -- this change needed no SQL migration and is fully verified end to
+  // end against the real table under real RLS, unlike the three attempts before it.
   const data = await _pagedParallel({
     table, select: SECURITY_FINDINGS_COLS,
     orderCol: 'tenant_id', ascending: true,
     extraOrder: ['loc', 'subject_key', 'rule_id', { column: 'window_end', ascending: false }, { column: 'computed_at', ascending: false }],
     ...(ruleIds && ruleIds.length ? { inCol: 'rule_id', inVals: ruleIds } : {}),
-    pageSize: 300, label: `security findings (${table})`,
+    pageSize: 1000, maxInflight: 1, label: `security findings (${table})`,
   });
   return data.map(_mapSecurityFindingRow);
 }
