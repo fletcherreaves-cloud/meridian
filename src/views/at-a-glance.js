@@ -297,7 +297,21 @@ function ToleranceRollupTile({ ds, stores, settings }) {
 // owner chose "let me see it built, then decide" on widget count/depth; the existing
 // Sections config (☰, moveSec/toggleSec above) already lets this tile be reordered or
 // turned off, which is the "configurable front door" the owner asked for.
-function NeedsYouTodayTile({ ds, stores, dateRange, onNav }) {
+// attention-feed.js's item.nav ("the panel/modal id to open on click", per that file's own
+// header comment) was designed for exactly this and had never been read by ANY consumer --
+// confirmed by grep: neither this tile nor the full Needs Attention panel (attention-now.js)
+// ever referenced item.nav before this fix, so every click fell back to one hardcoded
+// destination regardless of what actually produced the item. For an item that carries a
+// `loc`, the real "context supporting the claim" is that STORE's own dashboard -- not a
+// cross-store panel -- so this maps nav -> the StoreDash TAB id (store-analytics.js's own
+// `tabs` list) that actually shows the number behind the claim, where a direct, verified
+// mapping exists; everything else (including every brief-finding item, nav:'analytics' --
+// cashOS/tRedAfter/overtime/etc. all route the same way) lands on 'overview', which already
+// renders that store's own findings list + KPI vitals + context strip, a safe default that is
+// always real context, never a guess at a tab that doesn't exist.
+const NEEDS_TODAY_NAV_TAB = { fob: 'foodcost', 'forecast-audit': 'forecast' };
+
+function NeedsYouTodayTile({ ds, stores, dateRange, onNav, onOpenStore }) {
   const feed = useAttentionFeed({ ds, stores, dateRange, max: 20 });
   const [acks, setAcks] = React.useState({});
   React.useEffect(() => {
@@ -331,10 +345,20 @@ function NeedsYouTodayTile({ ds, stores, dateRange, onNav }) {
   if (!pending.length) return card(head, div({ style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Nothing is flagged right now — every store is clear.'));
 
   const sevColor = s => s === 'crit' ? '#ef4444' : s === 'warn' ? '#f59e0b' : 'var(--text3)';
+  // Per-item click -> real supporting context, not the generic "Needs Attention" hotlink
+  // (owner, 2026-10-14: "open to actual context supporting claim, not just hot link to needs
+  // attention"). A coaching-review item has no `nav` (toAttentionItem() never set one -- its
+  // one real action, logging the measured verdict, only exists inside the full Needs Attention
+  // panel), so that one case keeps going there; everything else with a `loc` opens that store
+  // directly, on the tab that actually backs the claim.
+  const openItem = (item) => {
+    if (item.kind === 'coaching-review' || !item.loc) { onNav && onNav(item.nav || 'attention'); return; }
+    onOpenStore && onOpenStore(item.loc, NEEDS_TODAY_NAV_TAB[item.nav] || 'overview');
+  };
   return card(head,
     div(null, ...top.map(item => div({ key: item.id,
         style: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', cursor: 'pointer' },
-        onClick: () => onNav && onNav('attention') },
+        onClick: () => openItem(item) },
       h('span', { style: { fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 } }, item.icon || '•'),
       div({ style: { flex: 1, minWidth: 0 } },
         div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text,#e8eaed)' } }, item.title),
@@ -2501,7 +2525,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
 
         // ── NEEDS YOU TODAY (front door, leads by owner decision) ──
-        secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav}),
+        secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav,onOpenStore}),
         secs.find(s=>s.id==='visit-readiness-today'&&s.on)&&h(VisitReadinessTile,{key:'visit-readiness-today',ds,onNav}),
         secs.find(s=>s.id==='tracking-to-plan'&&s.on)&&h(TrackingToPlanTile,{key:'tracking-to-plan',ds,stores,darRows,onNav}),
         secs.find(s=>s.id==='coaching-loop'&&s.on)&&h(CoachingLoopTile,{key:'coaching-loop',ds,onNav}),

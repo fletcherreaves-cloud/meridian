@@ -3533,12 +3533,23 @@ function App() {
         }
       }),
       view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,darRows,
-        onOpenStore:s=>{goStore(s);},
+        onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
         onOpenProjections:()=>goRoute('proj'),
         onOpenPVSA:()=>setShowPVSA(true),
         onOpenBrief:()=>goRoute('brief'),
-        onNav:v=>setView(v),
+        // onNav (owner report 2026-10-14: "clicking any link on Needs You Today Tile opens to
+        // a blank page") -- was unconditionally setView(v), but every at-a-glance.js home-tile
+        // caller passes a ROUTE-PANEL id ('attention'/'visit-readiness'/'signals', each opened
+        // elsewhere in this file via goRoute(id) + a routePanel==='id' render branch), not a
+        // top-level `view` id. setView('attention') set view to a string matching NO view===...
+        // branch below (the real ones are 'command'/'district'/'store'/'patch'/'org'/...) AND
+        // flipped `view==='command'` to false, unmounting AtAGlance with nothing replacing it --
+        // a real blank page, not a cosmetic nav miss. 'district' is the one call site
+        // (AtAGlance's own Controls & Integrity header) that genuinely IS a top-level view
+        // (view==='district'&&...h(DistrictGrid,...) below) -- keep it on setView; everything
+        // else routes through goRoute like every other panel-open call in this file already does.
+        onNav:v=>{ if(v==='district') setView(v); else goRoute(v); },
         onOpenModal:(modal)=>{
           if(modal==='ranking'||modal.startsWith('ranking:')){
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');

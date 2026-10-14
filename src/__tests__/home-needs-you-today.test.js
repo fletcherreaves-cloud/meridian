@@ -17,6 +17,15 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const NOOP = () => {};
 const recent = n => new Date(Date.now() - n * 864e5);
 
+// Scopes a DOM query to just the Needs You Today tile, not the whole AtAGlance render --
+// needed because at-a-glance.js ALSO has its own, unrelated "N days old" freshness banner
+// (worstAuto's staleDays text), so a plain textContent search for "days old" across the full
+// page can grab that banner instead of this tile's own staleData() item.
+function tileCard(container) {
+  const heading = [...container.querySelectorAll('div')].find(d => d.textContent === 'Needs You Today');
+  return heading && heading.parentElement.parentElement.parentElement;
+}
+
 // Same traffic-divergence fixture dispatch-316's own wiring test uses: sales holding, guest
 // counts falling — the McValue signature, reliably produces exactly one ranked item off a
 // single store (unlike fobOutliers, which needs >=3 stores to establish a district rate).
@@ -67,7 +76,7 @@ describe('Needs You Today home-screen tile', () => {
     expect(container.textContent).toContain('guest counts down'); // the OTHER item is untouched
   });
 
-  it('clicking a row or the footer opens the full Needs Attention panel via onNav', () => {
+  it('the footer link still opens the full Needs Attention panel via onNav, unchanged (owner: "that link... is fine")', () => {
     const { ds, stores, dateRange } = trafficFixture();
     let navTo = null;
     act(() => { root.render(React.createElement(AtAGlance, { ...baseProps, ds, stores, dateRange, onNav: v => { navTo = v; } })); });
@@ -75,6 +84,54 @@ describe('Needs You Today home-screen tile', () => {
     expect(footer).toBeTruthy();
     act(() => { footer.click(); });
     expect(navTo).toBe('attention');
+  });
+
+  // Owner report 2026-10-14: "when clicking any link on Needs You Today Tile, it opens to a
+  // blank page rather than taking me to the event(s)... open to actual context supporting
+  // claim, not just hot link to needs attention." Root cause: every item row's onClick called
+  // onNav('attention') -- the SAME call the footer makes -- and App.js's onNav (before this
+  // fix) was literally setView('attention'), which matches no view==='...' render branch and
+  // unmounts AtAGlance, producing a real blank page. Fixed two ways: App.js's onNav now routes
+  // panel ids through goRoute (verified separately in app.js's own suite), and a row with a
+  // `loc` opens that STORE directly via onOpenStore instead of the generic cross-store panel.
+  it('clicking an item ROW opens that store directly (real context), not the generic Needs Attention panel', () => {
+    const { ds, stores, dateRange } = trafficFixture();
+    let opened = null;
+    act(() => { root.render(React.createElement(AtAGlance, {
+      ...baseProps, ds, stores, dateRange, onNav: NOOP, onOpenStore: (loc, tab) => { opened = { loc, tab }; },
+    })); });
+    // The dismiss button is a DIRECT child of the row div that carries the onClick handler
+    // (at-a-glance.js's NeedsYouTodayTile row JSX), so its .parentElement IS that exact row --
+    // unambiguous, unlike a plain textContent search over every <div>, which also matches the
+    // row's own ancestors (they contain this row's text too) and can grab one with no handler.
+    const dismissBtn = [...tileCard(container).querySelectorAll('button[title="Dismiss for now"]')].find(b => b.parentElement?.textContent.includes('sales holding, traffic falling'));
+    expect(dismissBtn).toBeTruthy();
+    act(() => { dismissBtn.parentElement.click(); });
+    // trafficDivergenceAlerts items carry nav:'analytics' -- not in NEEDS_TODAY_NAV_TAB, so the
+    // safe default tab ('overview', which shows that store's own findings + KPI vitals) applies.
+    expect(opened).toEqual({ loc: '3708', tab: 'overview' });
+  });
+
+  it('a loc-less item (no store to open) still falls back to onNav, never throws for missing onOpenStore', () => {
+    // All source rows 20+ days old (not just stale vs LY) -> useAttentionFeed's own ageDays
+    // (freshest date across qsrActSummaryRows/laborRows/etc.) exceeds staleData()'s 14-day
+    // crit bar -- a loc-less item by construction (attention-feed.js's staleData()).
+    const ds = {
+      loaded: true,
+      qsrActSummaryRows: Array.from({ length: 20 }, (_, i) => ({ loc: '3708', date: recent(20 + i), sales: 1000, lySales: 1000, gc: 100, lyGc: 100 })),
+    };
+    let navTo = null;
+    act(() => { root.render(React.createElement(AtAGlance, {
+      ...baseProps, ds, stores: [{ loc: '3708' }], dateRange: { s: recent(30), e: recent(20) },
+      onNav: v => { navTo = v; },
+    })); });
+    // Scoped to the tile itself -- at-a-glance.js ALSO has its own unrelated "N days old"
+    // freshness banner elsewhere on the page (worstAuto's staleDays text), so an unscoped
+    // search for "days old" can match that instead of this tile's own staleData() item.
+    const dismissBtn = [...tileCard(container).querySelectorAll('button[title="Dismiss for now"]')].find(b => b.parentElement?.textContent.includes('days old'));
+    expect(dismissBtn).toBeTruthy();
+    act(() => { dismissBtn.parentElement.click(); });
+    expect(navTo).toBe('signals'); // staleData's own item.nav, per attention-feed.js
   });
 
   it('is configurable off via the existing Sections toggle (mf_kpi_secs), per the "configurable front door" decision', () => {
