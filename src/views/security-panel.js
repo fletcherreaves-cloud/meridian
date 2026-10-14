@@ -749,6 +749,17 @@ const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory', labor: 'Labor'
 // (`d === 'cash' ? ... : ...`) that had no room for a third domain.
 const DOMAIN_TAB_LABEL = { cash: '💵 Cash', inventory: '📦 Inventory', labor: '🕐 Labor' };
 
+// Owner-reported live 2026-10-14: Labor looked identical to "broken" on first click (0 groups,
+// "No findings match the current filters") even though LABOR-001/002 both had real data -- 330
+// real clear verdicts, zero flagged ones (every employee evaluated cleanly). The default Min
+// Signals floor of 1+ (see that pill row's own 2026-10-12 comment) hides any subject with zero
+// FLAGGED verdicts, which is every subject in a domain that hasn't flagged anyone yet -- exactly
+// the "100% clear" case that comment already named but didn't change the default for. Cash and
+// Inventory both have real flagged findings today, so 1+ is still the right default there (it's
+// what makes those two domains open straight to "here's what needs attention" instead of a wall
+// of clear subjects) -- only Labor needs to default to All.
+const DOMAIN_DEFAULT_MIN_SIGNALS = { cash: 1, inventory: 1, labor: 0 };
+
 // dispatch #56 Part A -- owner: "let's add directory of what each policy covers." Renders
 // ENTIRELY from the live `rules` array (loadSecurityRules()'s own security_rules read) -- never a
 // hand-written list. A hardcoded directory is a second copy of text that lives in a table an
@@ -1267,7 +1278,7 @@ export function SecurityPanel({ userRole, onClose }) {
     // ── Domain tabs + Legend ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
       ['cash', 'inventory', 'labor'].map(d => btn({
-        key: d, onClick: () => { setDomain(d); setRuleFilter(null); },
+        key: d, onClick: () => { setDomain(d); setRuleFilter(null); setMinSignals(DOMAIN_DEFAULT_MIN_SIGNALS[d] ?? 1); },
         style: {
           padding: '5px 12px', borderRadius: 'var(--r)', border: '1px solid ' + (domain === d ? 'var(--accent)' : 'var(--bdr)'),
           background: domain === d ? 'rgba(245,188,0,.12)' : 'transparent', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',

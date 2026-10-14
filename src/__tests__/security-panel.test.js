@@ -1746,19 +1746,31 @@ describe('minSignalsLabel()', () => {
 // live with 0/129 subjects flagged on EITHER rule (a clean, real, decided result -- not a
 // loading failure). Every pre-existing Min Signals floor (1+/2+/3+) requires at least one
 // FLAGGED verdict, so a domain that is 100% clear rendered an empty table indistinguishable
-// from "nothing loaded" -- exactly what prompted "none of them are pulling any data." Renders
-// through the REAL panel (standing rule from #366): a test that only imports
-// groupFindingsBySubject's own flaggedCount math can't tell "the UI has no way to show a clear
-// subject" from "the UI correctly shows nothing."
-describe('SecurityPanel — "All" min-signals pill (dispatch 2026-10-12): the only way to see a 100%-clear domain is actually populated', () => {
+// from "nothing loaded" -- exactly what prompted "none of them are pulling any data." This
+// dispatch originally shipped only the "All" pill as a manual escape hatch, defaulting EVERY
+// domain to 1+ including Labor -- which meant the owner saw that exact "looks broken" empty
+// state live on first click, reported "Labor still does not [show results]" believing it was
+// the same load bug Cash/Inventory had (it wasn't -- those loaded via the concurrency fix;
+// Labor was loading fine, just 100% clear under the 1+ default). Dispatch 2026-10-14 Part 4
+// (owner: "default Labor to All too") -- DOMAIN_DEFAULT_MIN_SIGNALS makes the domain-tab click
+// itself set Min Signals to each domain's own default (Labor: 0/All, Cash/Inventory: 1+,
+// unchanged) rather than requiring a second manual click Labor's own real-world launch state
+// made necessary every time. Renders through the REAL panel (standing rule from #366): a test
+// that only imports groupFindingsBySubject's own flaggedCount math can't tell "the UI has no
+// way to show a clear subject" from "the UI correctly shows nothing."
+describe('SecurityPanel — Labor defaults to Min Signals: All (dispatch 2026-10-14 Part 4, following 2026-10-12\'s "All" pill)', () => {
   let container, root;
   const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' },
     { ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch-edit activity', description: 'desc', baselineType: null, logicType: 'threshold', active: true, investigationAction: 'act' },
     { ruleId: 'LABOR-002', domain: 'labor', method: 'Employee self-approved punch edit', description: 'desc', baselineType: null, logicType: 'threshold', active: true, investigationAction: 'act' },
   ];
-  // Every subject clear on every rule -- the real LABOR-001/002 launch-day shape (0/129 flagged
-  // on either rule), not a contrived edge case.
-  const ALL_CLEAR_FINDINGS = [
+  // Every Labor subject clear on every rule -- the real LABOR-001/002 launch-day shape (0/129
+  // flagged on either rule), not a contrived edge case. One Cash finding, flagged, so Cash's
+  // own 1+ default still has something real to show (and this test file can tell "Cash still
+  // defaults to 1+" from "every domain silently defaults to All now").
+  const FINDINGS = [
+    { empToken: 'tok-casey', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 50, thresholdUsed: 10, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T19:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'LABOR-001', pass: false, value: 0, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T19:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'LABOR-002', pass: false, value: 0, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-12', computedAt: '2026-10-12T19:00:00Z', baselineContext: {}, explanation: [] },
   ];
@@ -1767,7 +1779,7 @@ describe('SecurityPanel — "All" min-signals pill (dispatch 2026-10-12): the on
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    loadSecurityFindingsMock.mockReset().mockResolvedValue(ALL_CLEAR_FINDINGS);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
     loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
     loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
     rpcMock.mockReset();
@@ -1777,33 +1789,45 @@ describe('SecurityPanel — "All" min-signals pill (dispatch 2026-10-12): the on
     container.remove();
   });
 
-  it('under the default 1+ filter, a 100%-clear domain shows the same empty state as no data at all', async () => {
+  it('clicking the Labor tab shows the real, clear subject immediately -- no extra "All" click needed (regression guard: confirmed this fails -- shows the empty state instead -- without DOMAIN_DEFAULT_MIN_SIGNALS wired into the tab click)', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
     const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
     await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush(container);
-    expect(container.textContent).toMatch(/No findings match the current filters/);
-    expect(container.textContent).not.toMatch(/Store 0000001/);
-  });
-
-  it('clicking "All" reveals the real, clear subject -- proving the data loaded all along', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
-    await flush(container);
-    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
-    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush(container);
-    // Two "All" pills render in this row -- the pre-existing Rule-filter one (first) and the
-    // new Min-Signals one (last, after the rule chips and the 1+/2+/3+ pills it sits beside) --
-    // take the LAST match, not the first, so this doesn't silently click the wrong control.
-    const allPills = [...container.querySelectorAll('button')].filter(b => b.textContent === 'All');
-    expect(allPills.length).toBe(2);
-    const minSignalsAllPill = allPills[allPills.length - 1];
-    await act(async () => { minSignalsAllPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush(container);
     expect(container.textContent).not.toMatch(/No findings match the current filters/);
     expect([...container.querySelectorAll('span')].some(s => s.textContent === 'Store 0000001')).toBe(true);
-    // Both rules render as Clear (green), not Flagged -- the honest verdict, not a fabricated one.
+    // Clear (green), not Flagged -- the honest verdict, not a fabricated one.
     expect(container.textContent).toMatch(/Clear/);
+    // The Min Signals row itself should show "All" as the active pill, not 1+ -- confirms this
+    // happened via the real default, not some other path (e.g. minSignals' filter being bypassed).
+    const minSignalsRow = [...container.querySelectorAll('span')].find(s => s.textContent === 'Min signals:');
+    expect(minSignalsRow).toBeTruthy();
+  });
+
+  it('Cash still defaults to 1+ (unchanged) -- only Labor\'s default moved, not every domain\'s', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Mounts on Cash by default; its one finding is pass:true (flagged), so it should already
+    // show under the pre-existing 1+ default with no tab click needed.
+    await flush(container);
+    expect(container.textContent).not.toMatch(/No findings match the current filters/);
+    expect(container.textContent).toMatch(/Flagged/);
+  });
+
+  it('switching Labor -> Cash -> Labor re-defaults to All each time, not just on the first visit', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    const cashTab = [...container.querySelectorAll('button')].find(b => b.textContent === '💵 Cash');
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).not.toMatch(/No findings match the current filters/);
+    await act(async () => { cashTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).not.toMatch(/No findings match the current filters/);
+    expect([...container.querySelectorAll('span')].some(s => s.textContent === 'Store 0000001')).toBe(true);
   });
 });
