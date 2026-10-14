@@ -135,7 +135,11 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
       if (inCol) q = q.in(inCol, inVals);
       q = extraFilter(q);
       q = q.order(orderCol, { ascending });
-      for (const oc of extraOrder) q = q.order(oc);
+      // extraOrder entries are either a plain column name (ascending) or {column, ascending} for
+      // a column that needs the OPPOSITE direction from the primary orderCol -- added so
+      // loadSecurityFindings() could express `loc/subject_key/rule_id asc, window_end/computed_at
+      // desc` through this shared helper instead of hand-rolling its own query builder.
+      for (const oc of extraOrder) q = typeof oc === 'string' ? q.order(oc) : q.order(oc.column, { ascending: oc.ascending });
       return q.range(from, to);
     }, pageSize, label || table);
   }
@@ -146,7 +150,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
     if (inCol) q = q.in(inCol, inVals);
     q = extraFilter(q);
     q = q.order(orderCol, { ascending });
-    for (const oc of extraOrder) q = q.order(oc);
+    for (const oc of extraOrder) q = typeof oc === 'string' ? q.order(oc) : q.order(oc.column, { ascending: oc.ascending });
     return () => q.range(p * pageSize, p * pageSize + pageSize - 1);
   };
   const reqs = [];
@@ -5401,15 +5405,26 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
   // just retrying the slow query harder. groupFindingsBySubject() (security-panel.js) does not
   // care what order `findings` arrives in (it re-sorts each rule's own window history by
   // windowEnd/computedAt internally), so this is a performance-only change, not a behavior one.
-  const data = await fetchAll((from, to) => {
-    let q = supabase.from(table).select(SECURITY_FINDINGS_COLS)
-      .order('tenant_id', { ascending: true }).order('loc', { ascending: true })
-      .order('subject_key', { ascending: true }).order('rule_id', { ascending: true })
-      .order('window_end', { ascending: false }).order('computed_at', { ascending: false })
-      .range(from, to);
-    if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
-    return q;
-  }, 1000, `security findings (${table})`);
+  //
+  // dispatch 2026-10-14 (owner-reported live, still empty after the fetchAll skip-and-continue
+  // fix): this loader was calling the SEQUENTIAL fetchAll() directly -- one page at a time, no
+  // concurrency -- instead of _pagedParallel(), the helper almost every other big-table loader in
+  // this file already uses. Live-measured end to end against the real table: a full sequential
+  // load of ~20,700 rows across ~21 pages took 39.5s with ZERO page failures that run -- not a
+  // truncation bug, just slow by construction. _pagedParallel() fires its pages concurrently
+  // (Promise.allSettled, same _MAX_INFLIGHT=6 cap every other stream shares) and ALREADY never
+  // had the single-page-kills-everything-after-it bug fetchAll() needed fixing for (its own header
+  // comment: "a partial/throttled read keeps whatever pages returned... instead of rejecting") --
+  // so switching to it is a strict improvement on both axes, not a tradeoff. Falls back to the
+  // now-fixed sequential fetchAll() automatically if its own estimated-count probe fails (existing
+  // _pagedParallel behavior, unchanged).
+  const data = await _pagedParallel({
+    table, select: SECURITY_FINDINGS_COLS,
+    orderCol: 'tenant_id', ascending: true,
+    extraOrder: ['loc', 'subject_key', 'rule_id', { column: 'window_end', ascending: false }, { column: 'computed_at', ascending: false }],
+    ...(ruleIds && ruleIds.length ? { inCol: 'rule_id', inVals: ruleIds } : {}),
+    pageSize: 1000, label: `security findings (${table})`,
+  });
   return data.map(_mapSecurityFindingRow);
 }
 
