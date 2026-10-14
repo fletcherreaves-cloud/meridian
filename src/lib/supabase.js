@@ -239,16 +239,27 @@ export function _withPageTimeout(promise, ms) {
   });
 }
 
+// A page that fails every retry used to stop pagination FOR GOOD — every page after it, however
+// many, was silently dropped (not just the one bad page). Live-reproduced (owner report, Security
+// panel 2026-10-14): security_findings_latest genuinely times out (57014) on roughly 1 page in
+// 20-ish under this exact query/index (measured directly against the live table), and INV-domain
+// rows are the majority of that table by row count — so a SINGLE mid-pagination timeout could
+// truncate away most of the inventory findings while the banner, hardcoded to `_recordDataError
+// (label, 1, 0, ...)`, reported a misleadingly tiny "1 page(s) failed" with no sense of how much
+// was actually lost. The data was never gone — later pages that would have succeeded were simply
+// never attempted. MAX_CONSECUTIVE_FAILURES bounds the "keep going" behavior so a table that is
+// genuinely unreachable (not just one unlucky page) still gives up instead of hammering forever.
+const MAX_CONSECUTIVE_PAGE_FAILURES = 3;
 async function fetchAll(builderFn, pageSize = 1000, label = '') {
-  let all = [], from = 0;
+  let all = [], from = 0, pageAttempts = 0, failedPages = 0, consecutiveFailures = 0;
   while (true) {
+    pageAttempts++;
     let { data, error } = await _withPageTimeout(builderFn(from, from + pageSize - 1), PAGE_TIMEOUT_MS);
     // Dispatch #218 — a single failed page used to be immediately fatal (see the fallback
-    // branch below, unchanged). Most page failures observed live (statement timeouts under
-    // concurrent startup load, egress/throttle blips) are transient — a fresh re-fetch of the
-    // SAME page moments later succeeds. Retry before falling through to the original
-    // warn/_recordDataError/_partial/break behavior, which stays exactly as it was for the
-    // "retries didn't help" (or "this was never retryable") case.
+    // branch below). Most page failures observed live (statement timeouts under concurrent
+    // startup load, egress/throttle blips) are transient — a fresh re-fetch of the SAME page
+    // moments later succeeds. Retry before falling through to the skip-and-continue behavior
+    // below, which only applies once a page's own retries are exhausted.
     if (error && _isRetryablePageError(error)) {
       for (const delay of _RETRY_DELAYS_MS) {
         await _sleep(delay);
@@ -258,28 +269,39 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
         if (!_isRetryablePageError(error)) break; // stop early if it turned out permanent
       }
     }
-    // A mid-pagination error (e.g. a free-tier egress/throttle cutoff) previously returned
-    // whatever pages loaded so far AS IF complete — silently dropping the rest of the rows.
-    // On big reads ordered oldest-first that meant the NEWEST days vanished with no warning
-    // (the "data stuck at an old date" bug). Warn loudly and mark the result partial so
-    // callers/guards can surface a stale-data banner instead of trusting a truncated set.
+    // A mid-pagination error (e.g. a free-tier egress/throttle cutoff, or one page's worth of
+    // rows that genuinely times out on a big table) SKIPS this one page's row range and keeps
+    // going, instead of abandoning everything from here on — a bounded, known-size hole (at most
+    // `pageSize` rows) beats discarding every page that would have come after it. Warn loudly and
+    // mark the result partial so callers/guards can surface a stale-data banner instead of
+    // trusting a truncated set.
     if (error) {
-      console.warn(`[Meridian] fetchAll(${label || '?'}) truncated after ${all.length} rows — read error:`, error.message || error);
+      console.warn(`[Meridian] fetchAll(${label || '?'}) page at offset ${from} failed after retries — skipping it, continuing with the rest:`, error.message || error);
       try { Object.defineProperty(all, '_partial', { value: true, enumerable: false }); } catch {}
-      // The _partial marker alone is NOT enough and never was: 14 of the 37 fetchAll
-      // callers .map() the result, and a non-enumerable property does not survive map,
-      // so the marker silently vanishes before any caller can read it. That is why six
-      // tables returning HTTP 500 produced no warning anywhere in the UI — the failures
-      // rendered as ordinary empty states ("No ledger detail yet"). Record globally so
-      // the DataErrorBanner fires regardless of what the caller does with the array.
-      _recordDataError(label || 'a data table', 1, 0, error.message || 'read failed');
-      break;
+      failedPages++;
+      consecutiveFailures++;
+      // A non-retryable error (bad column, missing table — the query itself is wrong) can't be
+      // fixed by trying the next page either; nor can a table that has failed MAX_CONSECUTIVE_
+      // PAGE_FAILURES pages in a row (genuinely unreachable, not one unlucky page) — give up
+      // rather than hammering a dead connection one page at a time.
+      if (!_isRetryablePageError(error) || consecutiveFailures >= MAX_CONSECUTIVE_PAGE_FAILURES) break;
+      from += pageSize;
+      continue;
     }
+    consecutiveFailures = 0;
     if (!data?.length) break;
     all.push(...data);
     if (data.length < pageSize) break;
     from += pageSize;
   }
+  // The _partial marker alone is NOT enough and never was: 14 of the 37 fetchAll callers .map()
+  // the result, and a non-enumerable property does not survive map, so the marker silently
+  // vanishes before any caller can read it. That is why six tables returning HTTP 500 produced no
+  // warning anywhere in the UI — the failures rendered as ordinary empty states ("No ledger detail
+  // yet"). Record globally so the DataErrorBanner fires regardless of what the caller does with
+  // the array — now with REAL counts (failedPages of pageAttempts), not the old hardcoded `1, 0`
+  // that read as "1 of 0 pages failed" no matter how much was actually attempted or lost.
+  if (failedPages) _recordDataError(label || 'a data table', failedPages, pageAttempts, 'one or more pages failed after retries (statement timeout or transient error) — the rest of the table was still attempted, but some rows may be missing');
   return all;
 }
 
