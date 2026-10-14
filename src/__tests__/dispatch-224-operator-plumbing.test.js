@@ -25,12 +25,18 @@ describe('#224 operatorGroups() — seed default', () => {
     expect(operatorGroups()).toBe(DEF_SETTINGS.operators);
   });
 
-  it('the seed covers all 27 real stores across exactly 4 operators, no gaps, no overlap', () => {
+  // 28, not 27, as of dispatch 2026-10-14 — 44689 (Lindsay-standalone, the freestanding
+  // successor to 18213) was added under Gary Mornhinweg alongside its predecessor, per the
+  // owner's "Supervisor and GM and Owner assignments stay the same" instruction for the
+  // relocation. Both locs are seeded simultaneously during the transition window; 18213 drops
+  // out of "live rotation" via storeLifecycle (Settings → Store Status) once it actually closes,
+  // not by removal from this seed.
+  it('the seed covers all 28 real stores across exactly 4 operators, no gaps, no overlap', () => {
     const groups = DEF_SETTINGS.operators;
     expect(Object.keys(groups).sort()).toEqual(['Gary Mornhinweg', 'Jacob Thorley', 'Rick/Kathy Thorley', 'Ryan Thorley'].sort());
     const allLocs = Object.values(groups).flat();
-    expect(allLocs.length).toBe(27); // no overlap — a duplicated loc would inflate this past 27
-    expect(new Set(allLocs).size).toBe(27); // no loc listed under two operators
+    expect(allLocs.length).toBe(28); // no overlap — a duplicated loc would inflate this past 28
+    expect(new Set(allLocs).size).toBe(28); // no loc listed under two operators
   });
 });
 

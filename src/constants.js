@@ -28,6 +28,13 @@ const DEFAULT_TARGETS={
   '38609':{tOepe:150,tTpph:5.7,tKvst:70,tKvsu:0.88,tPark:0.2,tAvgCheck:11.86,tProdSales:379463.39,tR2p:110,tLabor:0.23,tCrewLabor:0.235,tBonusLabor:0.2275,tCombLabor:0.2548,tGrowth:0.08,tRedBPct:0.0284,tRedBAvg:2.71,tRedBDollar:10883.87,tRedAPct:0.0029,tRedAAvg:2.95,tRedADollar:1107.39,tPromoCnt:2715.0,tPromoPct:0.0255,tPromoAmt:9780.48,tDiscCoupPct:0.0122,tDrawer:92.0,tPosOverPct:0.003,tPosOverAmt:1039.45,tRefundCnt:21.0,tRefundPct:0.001,tRefundAmt:223.22,tRefundCash:177.55,tManRefPct:0.0,tManRefAmt:0.0,tCashOSPct:-0.0002,tCashOSAmt:-53.29,tFOBBase:0.04,tCompWaste:0.0005,tRawWaste:0.0025,tCondiment:0.017,tEmpFood:0.002,tStatLoss:0.011,tUnex:0.0,tFOBTarget:0.033,tFOBTotal:0.2602,tFOBBonusBase:0.0355,tPaperCost:0.031,tOpSupply:3329.0335,tOsat:0.7,tOsatB2B:0.085,tVoiceEAD:0.73,t1800Contacts:5,tDigAppPct:0.2861,tDigAppGCRD:278.3,tMcdGCRD:55.00000000000001,tMcdWait:180,tMcdStars:4.5,tCrewStaffing:47,tShiftLeaders:7.05,tManagers:9,tHeadcount:55,tToShiftLeader:0,tToCrew090:0.5,tToCrewYTD:0.019556},
   '43380':{tOepe:110,tTpph:5.5,tKvst:55,tKvsu:0.6,tPark:0.12,tAvgCheck:10.05,tProdSales:66087.9,tR2p:85,tLabor:0.225,tCrewLabor:0.215,tBonusLabor:0.2125,tCombLabor:0.2455,tGrowth:0.038,tRedBPct:0.0313,tRedBAvg:3.08,tRedBDollar:2087.59,tRedAPct:0.0037,tRedAAvg:2.8,tRedADollar:243.19,tPromoCnt:649.0,tPromoPct:0.0335,tPromoAmt:2228.33,tDiscCoupPct:0.012,tDrawer:46.0,tPosOverPct:0.00318,tPosOverAmt:210.16,tRefundCnt:0.0,tRefundPct:0.0,tRefundAmt:0.0,tRefundCash:0.0,tManRefPct:0.0,tManRefAmt:0.0,tCashOSPct:-0.0004,tCashOSAmt:-24.01,tFOBBase:0.0405,tCompWaste:0.001,tRawWaste:0.004,tCondiment:0.02,tEmpFood:0.004,tStatLoss:0.011,tUnex:0.0,tFOBTarget:0.04,tFOBTotal:0.2895,tFOBBonusBase:0.0365,tPaperCost:0.034,tOpSupply:1564.229045,tOsat:0.9,tOsatB2B:0.04,tVoiceEAD:0.9,t1800Contacts:14,tDigAppPct:0.374157753397364,tDigAppGCRD:235.4,tMcdGCRD:0,tMcdWait:180,tMcdStars:4.5,tCrewStaffing:25,tShiftLeaders:3.75,tManagers:11,tHeadcount:35,tToShiftLeader:1.5,tToCrew090:-0.1,tToCrewYTD:0.025537999999999998},
   '43701':{tOepe:210,tTpph:4.8,tKvst:80,tKvsu:0.3,tPark:0.24,tAvgCheck:12.49,tProdSales:141572.93,tR2p:95,tLabor:0.26,tCrewLabor:0.26,tBonusLabor:0.2125,tCombLabor:0.2455,tGrowth:0.08,tRedBPct:0.0458,tRedBAvg:3.43,tRedBDollar:6527.98,tRedAPct:0.029,tRedAAvg:4.0,tRedADollar:415.92,tPromoCnt:585.0,tPromoPct:0.0177,tPromoAmt:2515.1,tDiscCoupPct:0.0088,tDrawer:150.0,tPosOverPct:0.003,tPosOverAmt:118.05,tRefundCnt:28.0,tRefundPct:0.001,tRefundAmt:380.19,tRefundCash:144.16,tManRefPct:0.0,tManRefAmt:0.0,tCashOSPct:-0.0003,tCashOSAmt:-24.01,tFOBBase:0.04,tCompWaste:0.0015,tRawWaste:0.008,tCondiment:0.017,tEmpFood:0.002,tStatLoss:0.02,tUnex:0.0,tFOBTarget:0.0485,tFOBTotal:0.2523,tFOBBonusBase:0.0365,tPaperCost:0.03,tOpSupply:1564.237545,tOsat:0.7,tOsatB2B:0.1,tVoiceEAD:0.8,t1800Contacts:2,tDigAppPct:0.2151,tDigAppGCRD:113.30000000000001,tMcdGCRD:0,tMcdWait:180,tMcdStars:4.5,tCrewStaffing:36,tShiftLeaders:5.3999999999999995,tManagers:5,tHeadcount:40,tToShiftLeader:0,tToCrew090:0,tToCrewYTD:0.5263},
+  // '44689' Lindsay-standalone -- the new freestanding build replacing 18213 (Lindsay-Wal-Mart),
+  // last day of operation 2026-11-10, new store projected to open 2026-11-14/15 (dates not
+  // final as of this entry -- see storeLifecycle below). NO real data exists for this loc yet,
+  // so every field here is a PLACEHOLDER: a verbatim copy of 18213's current targets (same crew,
+  // same GM, same menu -- just a different building), not a fabricated number. Replace with real
+  // figures once 44689 has its own trading history; do not treat these as owner-reviewed targets.
+  '44689':{tOepe:135,tTpph:5.5,tKvst:50,tKvsu:0.5,tPark:0.12,tAvgCheck:9.79,tProdSales:61438.07,tR2p:100,tLabor:0.225,tCrewLabor:0.225,tBonusLabor:0.2025,tCombLabor:0.2456,tGrowth:0.038,tRedBPct:0.0355,tRedBAvg:2.06,tRedBDollar:2206.83,tRedAPct:0.0025,tRedAAvg:2.4,tRedADollar:158.4,tPromoCnt:445.0,tPromoPct:0.0253,tPromoAmt:1572.38,tDiscCoupPct:0.0125,tDrawer:79.0,tPosOverPct:0.000277,tPosOverAmt:17.01,tRefundCnt:5.0,tRefundPct:0.000566,tRefundAmt:34.79,tRefundCash:35.11,tManRefPct:0.0,tManRefAmt:0.0,tCashOSPct:-0.0001,tCashOSAmt:-3.71,tFOBBase:0.046,tCompWaste:0.0015,tRawWaste:0.008,tCondiment:0.02,tEmpFood:0.003,tStatLoss:0.0125,tUnex:0.0,tFOBTarget:0.045,tFOBTotal:0.2875,tFOBBonusBase:0.037,tPaperCost:0.0335,tOpSupply:1554.442808,tOsat:0.82,tOsatB2B:0.027,tVoiceEAD:0.88,t1800Contacts:10,tDigAppPct:0.280713409579882,tDigAppGCRD:155.10000000000002,tMcdGCRD:6.802472527472529,tMcdWait:110,tMcdStars:4.5,tCrewStaffing:25,tShiftLeaders:3.75,tManagers:8,tHeadcount:32,tToShiftLeader:0.05,tToCrew090:0.7000000000000001,tToCrewYTD:0.015521999999999998},
 };
 
 // DEFAULT_MODEL_ASSIGNMENTS (v184) — walk-forward backtest on full data
@@ -151,7 +158,9 @@ const DEF_SETTINGS={
     // supervisor of record for these stores before 2026-10-05 (whoRan()/groupsAt() resolve by
     // tenure). Updating this seed does not erase or alter that history.
     'Robert Spencer':    ['6972','13113','32525','35064'],
-    'Krystiana Langford':['5183','18213','29760','33222'],
+    // '44689' added alongside predecessor 18213 (relocation, same supervisor) -- see constants.js's
+    // own 18213 STORE_KB note and src/engine/new-store-ramp.js for the full context.
+    'Krystiana Langford':['5183','18213','29760','33222','44689'],
     'Ashley Podroza':    ['5985','10422','33109'],
     'Steven Vaughn':     ['10915','33704','34222'],
     'Amanda Estrada':    ['11657','20475','31357'],
@@ -166,19 +175,31 @@ const DEF_SETTINGS={
     // (43380 is Tishomingo, OKLAHOMA — an earlier version of this comment listed it as
     // Florida. The data below was always right; only the comment was wrong.)
     'Ryan Thorley':       ['3708','6972','10034','10915','24471','29760','31357','32525','33222','37566','43380','43701'],
-    'Gary Mornhinweg':    ['5183','11657','18213','20475','33704','34222'],
+    // '44689' added alongside predecessor 18213 -- same operator ("Owner" in the relocation
+    // instruction), per the supervisorGroups comment above.
+    'Gary Mornhinweg':    ['5183','11657','18213','20475','33704','34222','44689'],
     'Rick/Kathy Thorley': ['5985','10422','13113','33109','35064'],
     // Emerald Arches — Florida (Jacob)
     'Jacob Thorley':      ['6178','6838','35242','38609']
   },
   doGroups:{
     // MCDOK — Oklahoma (union of all 5 supervisorGroups OK patches)
-    'Hugh Bonner':  ['3708','6972','24471','32525','5183','18213','29760','33222','5985','10422','13113','33109','43380','10915','33704','34222','35064','11657','20475','31357'],
+    // '44689' added alongside predecessor 18213 (relocation, same DO), same reasoning as
+    // supervisorGroups/operators above.
+    'Hugh Bonner':  ['3708','6972','24471','32525','5183','18213','29760','33222','5985','10422','13113','33109','43380','10915','33704','34222','35064','11657','20475','31357','44689'],
     // Emerald Arches — Florida. Brad Denley is ALSO a Supervisor for a 3-store subset of these
     // same 7 (see supervisorGroups above) — intentional dual role, not a bug to reconcile.
     'Brad Denley':  ['6178','6838','10034','35242','37566','38609','43701']
   },
   omGroups:{}, // scaffold only — no OM names seeded yet; populate via Settings when ready
+  // storeLifecycle (dispatch 2026-10-14, Lindsay 18213 -> 44689 relocation) -- {loc: 'YYYY-MM-DD'}
+  // map of a store's LAST DAY OF OPERATION. Exact dates for this transition were not final when
+  // this shipped ("I won't have exact dates until likely week of" -- owner), so this is deliberately
+  // SETTABLE from Settings -> Store Status (management.js) rather than hardcoded here -- empty by
+  // default, same effective-dated-adjacent pattern as orgAssignments/gmAssignments (a flat map, not
+  // a full timeline, since a store closes once, not repeatedly). See isStoreClosedOn/activeStoreIds
+  // below for the resolver, and src/engine/new-store-ramp.js for the companion new-store forecast.
+  storeLifecycle:{},
   // Metric activate/deactivate toggles (true = active in scoring)
   metricActive:{oepe:true,kvst:true,kvsu:true,park:true,tpph:true,labor:true,r2p:true,
     cashOS:true,tRedA:true,ot:true,refund:true,disc:true},
@@ -225,7 +246,11 @@ const STORE_COORDS = {
   '10915':{lat:35.2245,lon:-96.6724,tz:'America/Chicago'},   // Seminole
   '11657':{lat:34.9773,lon:-97.3606,tz:'America/Chicago'},   // Purcell
   '13113':{lat:34.0940,lon:-96.7724,tz:'America/Chicago'},   // Madill
-  '18213':{lat:34.8384,lon:-97.6006,tz:'America/Chicago'},   // Lindsay
+  '18213':{lat:34.8384,lon:-97.6006,tz:'America/Chicago'},   // Lindsay-Wal-Mart (closing 2026-11-10)
+  // '44689' Lindsay-standalone successor to 18213 -- placeholder coords (same as 18213, "on the
+  // same property" per the owner's original relocation report) until the real new-building
+  // address is confirmed.
+  '44689':{lat:34.8384,lon:-97.6006,tz:'America/Chicago'},   // Lindsay-standalone (placeholder coords)
   '20475':{lat:35.3867,lon:-97.4038,tz:'America/Chicago'},   // OKC-I240
   '24471':{lat:34.1741,lon:-97.1434,tz:'America/Chicago'},   // Ardmore-Cooper
   '29760':{lat:34.5026,lon:-97.9573,tz:'America/Chicago'},   // Duncan
@@ -313,6 +338,7 @@ const STORE_NAMES={
   '11657':'Purcell',
   '13113':'Madill-Hwy 70',
   '18213':'Lindsay-Wal-Mart',
+  '44689':'Lindsay',
   '20475':'OKC-I240/Sooner',
   '24471':'Ardmore-Cooper/12th',
   '29760':'Duncan-Hwy 81',
@@ -351,7 +377,8 @@ const STORE_KB = {
   '10915': {notes:'Seminole-Milt Phillips. Runs well. Consistent, reliable operations.',                                                                       tags:['consistent','well-run']},
   '11657': {notes:'Purcell. Mid-volume. Recent MAPE spike (11.2% 1W). DI skipped pending stable data window. Monitoring closely.',                             tags:['watch','di-skipped']},
   '13113': {notes:'Madill-Hwy 70. DI skipped — calibrating with more data. Elevated MAPE; management stability a factor. Worth re-enabling DI.',              tags:['watch','di-skipped']},
-  '18213': {notes:'Lindsay-Wal-Mart. Located in a very old Walmart. New relocation build in progress — transition will affect volume trends.',                  tags:['relocation-pending','walmart-adjacent']},
+  '18213': {notes:'Lindsay-Wal-Mart. Located in a very old Walmart. New freestanding successor store 44689 projected to open 11/14-11/15/26; 18213\'s last day of operation is 11/10/26 (owner-reported 2026-10-14, supersedes the earlier "same-date close/open" hope). See storeLifecycle (Settings → Store Status) for the actual close toggle/date once final.',                  tags:['relocation-pending','walmart-adjacent']},
+  '44689': {notes:'Lindsay-standalone. New freestanding build replacing 18213 (Lindsay-Wal-Mart) on the same close date — projected open 11/14-11/15/26, exact date TBD. Owner expects volume similar to Tishomingo (43380, also a freestanding small-town opening) adjusted for inflation, more than Ponce de Leon (43701, a gas-station/interstate location, less comparable). See src/engine/new-store-ramp.js for the comparable-store forecast blend built for this transition.', tags:['new-location','relocation-successor','walmart-to-standalone']},
   '20475': {notes:'OKC-I240/Sooner. Suburban OKC. Standard suburban traffic patterns.',                                                                        tags:[]},
   '24471': {notes:'Ardmore-Cooper/12th. Second Ardmore location. Different traffic profile from Ardmore-Broadway.',                                            tags:[]},
   '29760': {notes:'Duncan-Hwy 81 (Relo). Well-run mid-to-high volume. Model degrading recently (12-14% MAPE). DI skipped — RECOMMEND RE-ENABLING DI.',       tags:['well-run','di-skipped','model-degrading','recalibrate']},
@@ -503,6 +530,9 @@ const INV_ORG_COORDS={
   '11657':{lat:35.0012,lng:-97.3715,state:'OK',sup:'Amanda Estrada',op:'Gary Mornhinweg',del:'Tue/Fri'},
   '13113':{lat:34.0853,lng:-96.7724,state:'OK',sup:'Ashley Podroza',op:'Rick/Kathy Thorley',del:'Wed/Sun'},
   '18213':{lat:34.8431,lng:-97.6185,state:'OK',sup:'Krystiana Langford',op:'Gary Mornhinweg',del:'Tue/Fri'},
+  // '44689' -- same supervisor/operator as predecessor 18213, per owner instruction ("Supervisor
+  // and GM and Owner assignments stay the same"). Coords placeholder, same reasoning as STORE_COORDS.
+  '44689':{lat:34.8431,lng:-97.6185,state:'OK',sup:'Krystiana Langford',op:'Gary Mornhinweg',del:'Tue/Fri'},
   '20475':{lat:35.3854,lng:-97.4171,state:'OK',sup:'Amanda Estrada',op:'Gary Mornhinweg',del:'Tue/Fri'},
   '24471':{lat:34.1951,lng:-97.1182,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Wed/Sun'},
   '29760':{lat:34.5291,lng:-97.9654,state:'OK',sup:'Krystiana Langford',op:'Ryan Thorley',del:'Tue/Fri'},
@@ -820,6 +850,36 @@ function supervisorOf(loc, fallback) {
   return INV_ORG_COORDS[_unpadLoc(loc)]?.sup || null;
 }
 
+// ── Store lifecycle (dispatch 2026-10-14, Lindsay 18213 -> 44689 relocation) ──────────────
+// A store's last day of operation, settable live from Settings -> Store Status (management.js),
+// persisted to settings.storeLifecycle -> org_config 'app_settings' the same way every other
+// settings key already syncs (see App.js's blanket `{...DEF_SETTINGS,...cur,...remote}` merge --
+// no per-key allowlist to extend). Deliberately a flat {loc: closedDate} map, not an effective-
+// dated timeline like orgAssignments -- a store closes once, it doesn't get reassigned back and
+// forth the way a supervisor patch does.
+//
+// isStoreClosedOn is date-aware (not just a boolean toggle) specifically so "time it right" works
+// without anyone needing to remember to flip a switch on the exact day: set the real close date
+// whenever it's confirmed (even weeks ahead), and every consumer of activeStoreIds automatically
+// stops counting that store once `asOf` reaches it -- no action needed on the day itself. Setting
+// the date to today (or any past date) has the same effect as an instant toggle.
+function isStoreClosedOn(loc, storeLifecycle, asOf) {
+  const closedDate = (storeLifecycle || {})[_unpadLoc(loc)];
+  if (!closedDate) return false;
+  return _dstr(asOf) >= closedDate;
+}
+// Filters a list of loc ids (or {loc,...} objects) down to stores not yet closed as of `asOf`.
+// Deliberately NOT wired into every store-roster call site in the app (STORE_NAMES/DEFAULT_TARGETS
+// are read directly via Object.keys(...) in ~50+ files) -- that sweep is unscoped follow-up work,
+// not part of this dispatch. Wired into src/features/smart-targets.js's roster as the first real
+// consumer; a closed store's full history stays visible everywhere else (Store Dashboard,
+// Analytics, drilldowns) since that data remains real and worth keeping, just excluded from
+// "current operations" rosters like this one.
+function activeStoreIds(ids, storeLifecycle, asOf) {
+  const cutoff = _dstr(asOf || new Date());
+  return (ids || []).filter(x => !isStoreClosedOn(typeof x === 'string' ? x : x.loc, storeLifecycle, cutoff));
+}
+
 // ── Operator: live flat map (dispatch #224 Task 1) ────────────────────────────
 // Owner/operator groups mirror the SHAPE of supervisorGroups()/setLiveSupervisorGroups() above —
 // a flat { operator: [locs] } map, live-settable, seeded from DEF_SETTINGS.operators — but
@@ -870,4 +930,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, latestEffective, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, latestEffective, seedAssignmentsFromGroups, isStoreClosedOn, activeStoreIds, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

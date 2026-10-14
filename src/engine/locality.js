@@ -65,7 +65,11 @@ export const LOCALITIES = [
   { loc: '10915', town: 'Seminole',          state: 'OK', risk: 'high'   },
   { loc: '11657', town: 'Purcell',           state: 'OK', risk: 'medium' },
   { loc: '13113', town: 'Madill',            state: 'OK', risk: 'low'    },
-  { loc: '18213', town: 'Lindsay',           state: 'OK', risk: 'medium' },
+  // 44689 is the freestanding successor to 18213 (relocation, same town) -- shared:true per
+  // this file's own trap 1 (town-name match alone can't tell the two apart; they will not
+  // overlap in time once 18213 closes, but neither did Ardmore/DeFuniak Springs' pairs need to).
+  { loc: '18213', town: 'Lindsay',           state: 'OK', risk: 'medium', shared: true },
+  { loc: '44689', town: 'Lindsay',           state: 'OK', risk: 'medium', shared: true },
   // `broad` — the town is a large metro, so a bare town match means nothing: every OKC
   // story would attribute to this one store at I-240/Sooner. Requires the brand or a
   // specific area marker before attribution. Verified against the live KFOR feed, where
