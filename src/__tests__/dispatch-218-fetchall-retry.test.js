@@ -16,6 +16,18 @@
 // against a mock Supabase client, rather than reimplementing the mock scaffolding a third time.
 // _isRetryablePageError is exported specifically so its classification can also be unit-tested
 // in complete isolation, without going through the retry loop at all.
+//
+// 2026-10-14 (owner-reported live, Security panel): a page that still fails after its retries
+// used to stop pagination FOR GOOD -- not just that one page, every page after it too, however
+// many there were. Live-reproduced on security_findings_latest: roughly 1 page in 20 genuinely
+// times out (57014) under the app's own ordered/indexed query, and inventory-domain rows are the
+// MAJORITY of that table -- so one unlucky mid-pagination timeout could silently drop most of the
+// Inventory tab's findings while the banner, hardcoded to `_recordDataError(label, 1, 0, ...)`,
+// reported a misleadingly tiny "1 page(s) failed" no matter how much was actually lost. Extended
+// below: a page that exhausts its retries is now SKIPPED (not fatal) and pagination continues,
+// bounded by MAX_CONSECUTIVE_PAGE_FAILURES so a genuinely unreachable table still gives up rather
+// than hammering forever. The pre-existing "fails ALL retry attempts" test is updated to match --
+// it now makes 3 page-level attempts (the new cap), not 1, before giving up.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const __fakeConfig = {};
@@ -122,17 +134,16 @@ describe('fetchAll() retries a transient page failure (dispatch #218)', () => {
     expect(result._partial).toBeUndefined();
   });
 
-  it('a page that fails ALL retry attempts (still retryable every time) falls through to TODAY\'s exact existing give-up behavior', async () => {
+  it('a page that fails ALL retry attempts, forever (a genuinely unreachable table) gives up after MAX_CONSECUTIVE_PAGE_FAILURES page-level attempts, not just one (2026-10-14 extension)', async () => {
     const err = { message: 'network error' };
+    let calls = 0;
     __fakeConfig.qsr_raw_item_detail = {
-      // 1 initial attempt + up to 2 retries = 3 calls scripted, all failing the same way.
-      rangeHandler: scripted([{ data: null, error: err }, { data: null, error: err }, { data: null, error: err }]),
+      rangeHandler: async () => { calls++; return { data: null, error: err }; },
     };
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const p = loadQsrRawItemDetail({});
     await vi.runAllTimersAsync();
     const result = await p;
-    // Unchanged pre-dispatch shape: partial data (here, none loaded before the failing page),
     // _partial marker set (non-enumerable, so this checks the raw array fetchAll returns --
     // loadQsrRawItemDetail's own .map() would already have dropped it, matching the file's own
     // documented caveat that 14/37 callers lose the marker through .map()), and exactly one
@@ -141,8 +152,68 @@ describe('fetchAll() retries a transient page failure (dispatch #218)', () => {
     const errors = dataLoadErrors();
     expect(errors.length).toBe(1);
     expect(errors[0].label).toBe('qsr_raw_item_detail');
-    expect(errors[0].failed).toBe(1);
-    expect(errors[0].total).toBe(0);
+    // 3 page-level attempts (the new MAX_CONSECUTIVE_PAGE_FAILURES cap), not 1 -- a single bad
+    // page no longer ends pagination; only 3 CONSECUTIVE failures do. Each page-level attempt
+    // makes up to 3 calls (1 initial + 2 retries), so 3 attempts x 3 calls = 9 total.
+    expect(errors[0].failed).toBe(3);
+    expect(errors[0].total).toBe(3);
+    expect(calls).toBe(9);
+  });
+
+  it('a page that fails all its retries is SKIPPED, not fatal -- pagination continues and recovers the pages after it (2026-10-14, the live Security-panel bug)', async () => {
+    const fullPage = Array.from({ length: 200 }, (_, i) => ({ ...rawItemRow(), wrin: `PAGE1-${i}` }));
+    const shortPage = [{ ...rawItemRow(), wrin: 'PAGE3-ONLY' }]; // short page -> signals true end
+    const err = { message: 'network error' };
+    let call = 0;
+    __fakeConfig.qsr_raw_item_detail = {
+      rangeHandler: async () => {
+        call++;
+        if (call === 1) return { data: fullPage, error: null };                 // page 1: full, succeeds
+        if (call >= 2 && call <= 4) return { data: null, error: err };          // page 2: 1 + 2 retries, all fail
+        return { data: shortPage, error: null };                                 // page 3: succeeds, short -> stop
+      },
+    };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const p = loadQsrRawItemDetail({});
+    await vi.runAllTimersAsync();
+    const result = await p;
+    // Pre-fix, this would have returned ONLY page 1's 200 rows and dropped page 3 entirely (the
+    // loop broke dead at page 2's failure). Post-fix: page 2's row range is skipped, but
+    // pagination continues on to page 3 and recovers it.
+    expect(result.length).toBe(201); // 200 (page 1) + 1 (page 3) -- page 2's rows are the only gap
+    expect(result.some(r => r.wrin === 'PAGE3-ONLY')).toBe(true);
+    const errors = dataLoadErrors();
+    expect(errors.length).toBe(1);
+    expect(errors[0].failed).toBe(1);  // exactly the one page that failed, not "everything after it"
+    expect(errors[0].total).toBe(3);   // 3 page-level attempts total (1 ok, 1 failed, 1 ok)
+  });
+
+  it('a successful page after a failed one resets the consecutive-failure count -- isolated bad pages scattered through a big table never trip the MAX_CONSECUTIVE_PAGE_FAILURES cap', async () => {
+    const page = (tag) => Array.from({ length: 200 }, (_, i) => ({ ...rawItemRow(), wrin: `${tag}-${i}` }));
+    const err = { message: 'network error' };
+    let call = 0;
+    // Pattern: good, BAD(x3 calls), good, BAD(x3 calls), good, short-end. Two separate failed
+    // pages, each isolated by a successful page in between -- never 3 in a row.
+    const script = [
+      { data: page('A'), error: null },                 // page 1 ok
+      { data: null, error: err }, { data: null, error: err }, { data: null, error: err }, // page 2: fails x3
+      { data: page('B'), error: null },                 // page 3 ok -- resets the counter
+      { data: null, error: err }, { data: null, error: err }, { data: null, error: err }, // page 4: fails x3
+      { data: page('C'), error: null },                 // page 5 ok
+      { data: [], error: null },                        // page 6: empty -> true end
+    ];
+    __fakeConfig.qsr_raw_item_detail = {
+      rangeHandler: async () => { const r = script[call]; call++; return r; },
+    };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const p = loadQsrRawItemDetail({});
+    await vi.runAllTimersAsync();
+    const result = await p;
+    // All three good pages recovered (600 rows) -- neither isolated failure tripped the cap,
+    // because a success in between reset consecutiveFailures back to 0.
+    expect(result.length).toBe(600);
+    const errors = dataLoadErrors();
+    expect(errors[0].failed).toBe(2); // 2 distinct failed pages, neither one fatal
   });
 
   it('a page that fails with a NON-retryable error (42703) fails IMMEDIATELY -- no retry attempted, not just "same end state"', async () => {

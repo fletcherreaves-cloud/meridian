@@ -94,7 +94,7 @@ describe('fetchAll() recovers from a hung page (via loadQsrRawItemDetail)', () =
     expect(result._partial).toBeUndefined();
   });
 
-  it('a page that hangs on every attempt falls through to the SAME give-up behavior as any other unrecoverable page error', async () => {
+  it('a page that hangs on every attempt, every page, falls through to the SAME give-up behavior as any other unrecoverable page error', async () => {
     __fakeConfig.qsr_raw_item_detail = { rangeHandler: async () => neverResolves() };
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const p = loadQsrRawItemDetail({});
@@ -104,8 +104,11 @@ describe('fetchAll() recovers from a hung page (via loadQsrRawItemDetail)', () =
     const errors = dataLoadErrors();
     expect(errors.length).toBe(1);
     expect(errors[0].label).toBe('qsr_raw_item_detail');
-    expect(errors[0].failed).toBe(1);
-  });
+    // 2026-10-14 extension -- a single hung page no longer ends pagination outright; it now takes
+    // MAX_CONSECUTIVE_PAGE_FAILURES (3) consecutive page-level failures to give up, same as the
+    // plain-error case in dispatch-218-fetchall-retry.test.js.
+    expect(errors[0].failed).toBe(3);
+  }, 15000);
 
   it('the happy (no-hang) path still schedules no lingering timer — matches dispatch-218\'s own invariant', async () => {
     __fakeConfig.qsr_raw_item_detail = {
