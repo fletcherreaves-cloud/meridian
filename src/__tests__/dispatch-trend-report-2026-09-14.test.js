@@ -370,6 +370,39 @@ describe('TrendReportPanel — real render (owner request, 2026-09-14)', () => {
     expect(container.textContent).toContain('FOB %');
   });
 
+  // Owner-reported live, 2026-10-14: "What is the spark line supposed to represent here? It
+  // makes it look as though sales were horrible." Root cause: the sparkline plotted RAW period
+  // totals (computeTrendReport's `combined`) for three periods of different length -- Current
+  // MTD ("completed days only", always shorter than a full month) next to two full calendar
+  // months -- so the line sloped down and read as red/bad almost every month purely from day
+  // count, independent of actual daily performance. Fixed by switching the sparkline to `pace`
+  // (combined / days-in-period for 'sum' metrics), added alongside `combined` without changing
+  // the headline number or per-store table (see computeTrendReport's own comment).
+  it('the sparkline no longer slopes down for Sales when the real daily rate is flat across all three periods (regression for the owner-reported "sales were horrible" bug)', async () => {
+    // buildDs() gives every day, every store, the SAME sales figure for 70 days back -- a flat
+    // daily rate spanning Current MTD, Last Month, and Two Months Back alike. Under the pre-fix
+    // behavior (raw period totals), MTD's fewer days would still produce a visibly LOWER point
+    // than the two full months even though the underlying rate never changed.
+    const ds = buildDs();
+    await renderAndWaitForDetail(ds);
+    const select = container.querySelector('select');
+    await act(async () => {
+      select.value = 'sales'; // a 'sum' metric -- laborPct (the default) is a 'rate' metric and was never affected
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    // The new tooltip is present (proves the fixed MiniTrend, not a stale cached render).
+    const titleEl = [...container.querySelectorAll('svg title')].find(t => t.textContent.includes('Average per-day pace'));
+    expect(titleEl).toBeTruthy();
+    const polyline = container.querySelector('svg polyline');
+    expect(polyline).toBeTruthy();
+    const pts = polyline.getAttribute('points').trim().split(' ').map(p => p.split(',').map(Number));
+    expect(pts.length).toBe(3); // twoBack, lastMonth, mtd
+    const ys = pts.map(p => p[1]);
+    // Flat daily rate -> flat pace -> all three y-coordinates equal (within SVG rounding).
+    for (const y of ys) expect(y).toBeCloseTo(ys[0], 1);
+  });
+
   it('clicking a rank-mode pill (Top 25%) narrows the visible rows without throwing', async () => {
     const ds = buildDs();
     await renderAndWaitForDetail(ds);
