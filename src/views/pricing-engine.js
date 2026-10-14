@@ -8,17 +8,22 @@
 // scope for this panel — see memory/dispatch-212.md.
 //
 // ── Waste/comp/promo enrichment (dispatch #220, 2026-08-30) ────────────────────
-// qsr_menu_item_activity is a SEPARATE, tiny, fast-moving stream (27/27 stores, but only
-// 2 calendar days deep as of this dispatch, growing by one day/night) — deliberately NOT
-// folded into the pmixRows lazy-fill/wide-range machinery above, which is sized for a
-// multi-million-row table and re-fetches per range TIER, not per location scope. This
-// panel instead loads menu-item-activity rows directly (loadQsrMenuItemActivity(),
-// src/lib/supabase.js) keyed only to the same dateRange already computed for margins —
-// NOT re-fetched on location-scope changes, since enrichItemMargins() joins purely on
-// (loc, item_number) already present in marginRows; an unfiltered-by-loc activity fetch
-// still only ever matches the locs actually in scope. Own local loading state, same
-// idle/loading/loaded/error convention src/views/security-panel.js already uses for a
-// panel-local (non-ds) Supabase read.
+// qsr_menu_item_activity started "2 calendar days deep" at dispatch #220 but has since grown to
+// 627,939 rows total / 398,273 in the default 30-day window (live-measured 2026-10-14) — pulling
+// every raw row for the window (the original loadQsrMenuItemActivity()) now means ~400 strictly
+// sequential paginated round-trips, which started timing out and surfacing the app's "DATA
+// INCOMPLETE ... UNDERSTATED" banner (owner report, 2026-10-14, "pricing data not loading").
+// Switched to loadQsrMenuItemActivitySummary(), which sums waste/comp/promo/activity per
+// (loc, item_number) SERVER-SIDE (schema-qsr-menu-item-activity-summary-rpc.sql) — the only
+// shape enrichItemMargins() ever needed, since it immediately collapses every raw row into that
+// same per-(loc,item_number) sum and discards the rest. Deliberately NOT folded into the
+// pmixRows lazy-fill/wide-range machinery above, which is sized for a multi-million-row table
+// and re-fetches per range TIER, not per location scope — this panel loads activity rows keyed
+// only to the same dateRange already computed for margins, NOT re-fetched on location-scope
+// changes, since enrichItemMargins() joins purely on (loc, item_number) already present in
+// marginRows; an unfiltered-by-loc activity fetch still only ever matches the locs actually in
+// scope. Own local loading state, same idle/loading/loaded/error convention
+// src/views/security-panel.js already uses for a panel-local (non-ds) Supabase read.
 import * as React from 'react';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
@@ -26,7 +31,7 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
 import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact, estimateOutageLostSales } from '../engine/pricing-engine.js';
-import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe, loadQsrProductOutage, loadQsrMenuPriceComparison } from '../lib/supabase.js';
+import { loadQsrMenuItemActivitySummary, loadQsrMenuItemRecipe, loadQsrProductOutage, loadQsrMenuPriceComparison } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -245,7 +250,7 @@ function DrainTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
         tbody(null,
           !rows.length
             ? tr(null, td({ colSpan: DRAIN_HEAD_COLS.length, style: { padding: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } },
-              'No waste/comp/promo activity data for this scope/range yet — qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.'))
+              'No waste/comp/promo activity data for this scope/range yet.'))
             : rows.map(row => h(DrainRow, {
               key: row.itemNumber, row, wide,
               expanded: expandedSet.has(row.itemNumber),
@@ -899,7 +904,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   uE(() => {
     let cancelled = false;
     setActivityState('loading');
-    loadQsrMenuItemActivity({ dateRange }).then(rows => {
+    loadQsrMenuItemActivitySummary({ dateRange }).then(rows => {
       if (cancelled) return;
       setActivityRows(rows || []);
       setActivityState('loaded');
@@ -1072,7 +1077,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     ? 'Loading waste/comp/promo activity…'
     : activityState === 'error'
       ? 'Could not load waste/comp/promo activity for this window — try reopening this panel.'
-      : 'Ranked by waste $ + comp $. Promo $ is the FOOD-COST basis of promo\'d units (cost, not the discount given) — a different kind of dollar figure, shown separately, not folded into this ranking. qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.';
+      : 'Ranked by waste $ + comp $. Promo $ is the FOOD-COST basis of promo\'d units (cost, not the discount given) — a different kind of dollar figure, shown separately, not folded into this ranking.';
 
   const byOutage = uM(() => outageLostSales.byItem.slice(0, 15), [outageLostSales]);
 

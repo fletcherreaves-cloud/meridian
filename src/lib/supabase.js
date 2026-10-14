@@ -5722,6 +5722,88 @@ export async function loadQsrMenuItemActivity({ loc, dateRange } = {}) {
   }));
 }
 
+// ── Menu Item Activity SUMMARY (dispatch 2026-10-14, "pricing data not loading") ──────────────
+// loadQsrMenuItemActivity() above pulls every raw row for the window -- fine when the table was
+// "a couple of days deep," but it has since grown to 627,939 rows total / 398,273 in the default
+// 30-day window (live-measured 2026-10-14). fetchAll() pages that STRICTLY SEQUENTIALLY, so the
+// default Pricing Engine view was issuing ~400 serial round-trips and some page would eventually
+// time out, surfacing the "DATA INCOMPLETE ... UNDERSTATED" banner for real.
+//
+// enrichItemMargins() (engine/pricing-engine.js) only ever needed the SUM of waste/comp/promo/
+// activity per (loc, item_number) across the window -- it discards the per-row/per-day detail
+// immediately. schema-qsr-menu-item-activity-summary-rpc.sql's qsr_menu_item_activity_summary()
+// does that SUM/GROUP BY in Postgres and returns one row per (loc, item_number) -- a few hundred
+// rows regardless of how many raw rows fed it. This loader calls that RPC and synthesizes ONE
+// already-summed "row" per (loc, item_number) in the exact raw-row shape enrichItemMargins()
+// already parses (waste/empMeal/mgrMeal/promo/activity + a date inside the window) -- so
+// enrichItemMargins() itself needed NO changes; its own per-row summing loop just sums a single
+// pre-summed row, which is a no-op.
+//
+// Falls back to the old full-row loadQsrMenuItemActivity() if the RPC doesn't exist yet (owner
+// hasn't run the migration) -- PGRST202 / "could not find the function" from PostgREST -- so
+// shipping this code never breaks the panel ahead of the SQL being applied; it just stays on the
+// slow path until then.
+//
+// ── PAGINATED, and called via GET, not the client's default POST -- both load-bearing ──────────
+// Live-measured against the real table (2026-10-14, post-migration): the aggregate itself is
+// ~14,000 rows (27 stores x ~390-520 active items/store, matching the table's own per-store
+// subset), comfortably past PostgREST's default 1000-row page cap -- an UNPAGINATED call here
+// would have silently truncated to the first 1000 rows with NO error, the exact "looks fixed,
+// quietly wrong" failure mode this repo's CLAUDE.md warns about hardest. Needed fetchAll() (same
+// pagination this file's other loaders use) to get the real total.
+//
+// It ALSO needed the explicit `{ get: true }` third argument. Measured directly: a plain
+// supabase.rpc(name, params) POSTs a JSON body, and on this project POST-based RPC calls ignore
+// the Range header entirely -- every page request returned the SAME first 1000 rows regardless
+// of the requested offset (verified: three different Range values all echoed page 0, no error,
+// no 400 -- a silent, undetectable truncation, not a loud failure fetchAll's own retry/skip logic
+// would have caught). `{ get: true }` switches the call to GET with the args as a query string --
+// documented in @supabase/supabase-js for a read-only (stable/immutable) function, which this one
+// is (`language sql stable`) -- and GET-based calls DO honor Range correctly (verified: paginated
+// GET calls returned distinct rows per page with the real content-range total). Never drop this
+// option or switch back to a bare .rpc() call for this function.
+export async function loadQsrMenuItemActivitySummary({ dateRange } = {}) {
+  if (!supabase) return [];
+  const toDay = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const start = dateRange && (dateRange.start ?? dateRange.s) != null ? toDay(dateRange.start ?? dateRange.s) : null;
+  const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? toDay(dateRange.end   ?? dateRange.e) : null;
+
+  // Cheap single-row probe first, so a missing function (PGRST202 -- owner hasn't run the SQL
+  // migration yet) falls back to the slow-but-correct full-row loader instead of being treated as
+  // a batch of retryable page failures by fetchAll() below (which doesn't know this error class
+  // can never succeed on retry, and would otherwise surface a confusing "pages failed" banner
+  // instead of cleanly falling back).
+  const probe = await supabase.rpc('qsr_menu_item_activity_summary', { p_start: start, p_end: end }, { get: true }).range(0, 0);
+  if (probe.error) {
+    if (/could not find the function|PGRST202|does not exist/i.test(probe.error.message || '')) {
+      console.warn('[qsr_menu_item_activity_summary] RPC not installed yet -- run schema-qsr-menu-item-activity-summary-rpc.sql in Supabase, falling back to the slow full-row pull for now.');
+      return loadQsrMenuItemActivity({ dateRange });
+    }
+    console.warn('[qsr_menu_item_activity_summary] load error:', probe.error.message);
+    return [];
+  }
+
+  const data = await fetchAll(
+    (from, to) => supabase.rpc('qsr_menu_item_activity_summary', { p_start: start, p_end: end }, { get: true }).range(from, to),
+    1000, 'qsr_menu_item_activity_summary',
+  );
+
+  // A date inside [start,end] so enrichItemMargins()'s own window filter (which this already-
+  // filtered aggregate makes redundant, but doesn't know that) always keeps the row. Falls back
+  // to a fixed placeholder only for the "All Time" (both null) case, where no filtering happens.
+  const placeholderDate = start || end || '2000-01-01';
+  return (data || []).map(r => ({
+    loc:        r.loc,
+    itemNumber: r.item_number,
+    date:       placeholderDate,
+    waste:      r.waste,
+    empMeal:    r.comp,   // the SUMMED emp_meal+mgr_meal total -- enrichItemMargins() only ever
+    mgrMeal:    0,        // needs the combined `comp`, never the two halves separately.
+    promo:      r.promo,
+    activity:   r.activity,
+  }));
+}
+
 // ── qsr_menu_item_recipe (recipe/BOM + cost breakdown, current-state) ─────────────────────────
 // No date column — one row per (loc, store_menuitem_id), overwritten on each pull. loc-scoped
 // only (no dateRange param), matching the table's own current-state shape.
