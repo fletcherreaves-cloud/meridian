@@ -1160,7 +1160,9 @@ const STORE_STAFF={
   '43380':{gm:'Sabrina Turner',     gmEmail:'Sabrina@mcdok.com'},
   '6178': {gm:'Janet Jeter',        gmEmail:'Janet@emeraldarches.com'},
   '6838': {gm:'Stephanie Harris',   gmEmail:'Stephanie@emeraldarches.com'},
-  '10034':{gm:'Harlee Yates',       gmEmail:'Harlee@emeraldarches.com'},
+  // Melissa Hagerman is the real, current GM as of the owner's 2026-10-14 org-chart correction
+  // (confirmed against a re-uploaded, corrected workbook) -- Harlee Yates moved on/transferred.
+  '10034':{gm:'Melissa Hagerman',    gmEmail:'Melissa@emeraldarches.com'},
   '35242':{gm:'Michele Nixon',      gmEmail:'Michele@emeraldarches.com'},
   '37566':{gm:'Debra Herndon',      gmEmail:'Debra@emeraldarches.com'},
   '38609':{gm:'Christina Bencokzy', gmEmail:'Christina@emeraldarches.com'},
