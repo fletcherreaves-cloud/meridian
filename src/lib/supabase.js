@@ -5743,21 +5743,50 @@ export async function loadQsrMenuItemActivity({ loc, dateRange } = {}) {
 // hasn't run the migration) -- PGRST202 / "could not find the function" from PostgREST -- so
 // shipping this code never breaks the panel ahead of the SQL being applied; it just stays on the
 // slow path until then.
+//
+// ── PAGINATED, and called via GET, not the client's default POST -- both load-bearing ──────────
+// Live-measured against the real table (2026-10-14, post-migration): the aggregate itself is
+// ~14,000 rows (27 stores x ~390-520 active items/store, matching the table's own per-store
+// subset), comfortably past PostgREST's default 1000-row page cap -- an UNPAGINATED call here
+// would have silently truncated to the first 1000 rows with NO error, the exact "looks fixed,
+// quietly wrong" failure mode this repo's CLAUDE.md warns about hardest. Needed fetchAll() (same
+// pagination this file's other loaders use) to get the real total.
+//
+// It ALSO needed the explicit `{ get: true }` third argument. Measured directly: a plain
+// supabase.rpc(name, params) POSTs a JSON body, and on this project POST-based RPC calls ignore
+// the Range header entirely -- every page request returned the SAME first 1000 rows regardless
+// of the requested offset (verified: three different Range values all echoed page 0, no error,
+// no 400 -- a silent, undetectable truncation, not a loud failure fetchAll's own retry/skip logic
+// would have caught). `{ get: true }` switches the call to GET with the args as a query string --
+// documented in @supabase/supabase-js for a read-only (stable/immutable) function, which this one
+// is (`language sql stable`) -- and GET-based calls DO honor Range correctly (verified: paginated
+// GET calls returned distinct rows per page with the real content-range total). Never drop this
+// option or switch back to a bare .rpc() call for this function.
 export async function loadQsrMenuItemActivitySummary({ dateRange } = {}) {
   if (!supabase) return [];
   const toDay = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
   const start = dateRange && (dateRange.start ?? dateRange.s) != null ? toDay(dateRange.start ?? dateRange.s) : null;
   const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? toDay(dateRange.end   ?? dateRange.e) : null;
 
-  const { data, error } = await supabase.rpc('qsr_menu_item_activity_summary', { p_start: start, p_end: end });
-  if (error) {
-    if (/could not find the function|PGRST202|does not exist/i.test(error.message || '')) {
+  // Cheap single-row probe first, so a missing function (PGRST202 -- owner hasn't run the SQL
+  // migration yet) falls back to the slow-but-correct full-row loader instead of being treated as
+  // a batch of retryable page failures by fetchAll() below (which doesn't know this error class
+  // can never succeed on retry, and would otherwise surface a confusing "pages failed" banner
+  // instead of cleanly falling back).
+  const probe = await supabase.rpc('qsr_menu_item_activity_summary', { p_start: start, p_end: end }, { get: true }).range(0, 0);
+  if (probe.error) {
+    if (/could not find the function|PGRST202|does not exist/i.test(probe.error.message || '')) {
       console.warn('[qsr_menu_item_activity_summary] RPC not installed yet -- run schema-qsr-menu-item-activity-summary-rpc.sql in Supabase, falling back to the slow full-row pull for now.');
       return loadQsrMenuItemActivity({ dateRange });
     }
-    console.warn('[qsr_menu_item_activity_summary] load error:', error.message);
+    console.warn('[qsr_menu_item_activity_summary] load error:', probe.error.message);
     return [];
   }
+
+  const data = await fetchAll(
+    (from, to) => supabase.rpc('qsr_menu_item_activity_summary', { p_start: start, p_end: end }, { get: true }).range(from, to),
+    1000, 'qsr_menu_item_activity_summary',
+  );
 
   // A date inside [start,end] so enrichItemMargins()'s own window filter (which this already-
   // filtered aggregate makes redundant, but doesn't know that) always keeps the row. Falls back

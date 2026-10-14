@@ -42,6 +42,15 @@ as $$
     and (p_start is null or a.date >= p_start)
     and (p_end   is null or a.date <= p_end)
   group by a.loc, a.item_number
+  -- Required, not cosmetic: Postgres gives NO row-order guarantee for a GROUP BY result across
+  -- separately executed statements (the planner can pick a different order run to run, under
+  -- hash vs. sorted aggregation, parallel workers, etc.). A Range-paginated caller issues one
+  -- SEPARATE statement per page -- without this ORDER BY, live-measured 2026-10-14 (first version
+  -- of this function shipped without it): paginating the full ~14,000-row result end-to-end
+  -- produced 2,343 DUPLICATE (loc,item_number) rows across pages, which also means an equal count
+  -- of real rows were silently NEVER returned at all (LIMIT/OFFSET without a stable ORDER BY is
+  -- documented-undefined in Postgres, not just untested). Never remove this.
+  order by a.loc, a.item_number
 $$;
 
 -- Same tenant-scoped RLS the raw table already enforces on `select` applies here too (not
@@ -51,3 +60,14 @@ grant execute on function public.qsr_menu_item_activity_summary(date, date) to a
 
 comment on function public.qsr_menu_item_activity_summary(date, date) is
   'Per-(loc,item_number) SUM of waste/comp(emp_meal+mgr_meal)/promo/activity over an optional [p_start,p_end] window -- server-side aggregate for Pricing Engine''s enrichItemMargins(), replacing a client-side pull of every raw row (dispatch 2026-10-14, "pricing data not loading").';
+
+-- ── Caller note (not enforced by this file, but load-bearing for any client) ────────────────────
+-- The real result is ~14,000 rows (27 stores x ~390-520 active items/store), well past
+-- PostgREST's default 1000-row page cap, so a caller MUST paginate (Range header / the JS
+-- client's own .range()), never assume one unpaginated call returns everything. Live-measured
+-- 2026-10-14: a POST-style RPC call (the JS client's plain supabase.rpc(name, args)) silently
+-- ignored the Range header on THIS project -- every page request returned the identical first
+-- 1000 rows regardless of offset, no error. A GET-style call (@supabase/supabase-js's
+-- supabase.rpc(name, args, { get: true }), documented for a read-only/stable function, which
+-- this one is) paginates correctly. src/lib/supabase.js's loadQsrMenuItemActivitySummary() does
+-- both (get:true + fetchAll()-based pagination) -- do not simplify it back to a bare .rpc() call.
