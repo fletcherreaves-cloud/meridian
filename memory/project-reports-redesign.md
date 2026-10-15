@@ -155,24 +155,55 @@ defaultScope, defaultPeriod, groupBy}`), RLS'd the same way `report_subscription
 Saved reports open through the same Report Shell as every base report — so a saved custom report
 gets criteria/print/export for free, zero new per-report code, same as the hub's whole point.
 
-## Open decisions before building (your call, not mine to assume)
+## Decisions (owner, 2026-10-15)
 
-1. **Relocate existing report panels into the new hub, or just cross-list them?** Cross-listing
-   (B above) is lower-risk and ships faster; a full relocation makes "Reports" in the sidebar the
-   single literal home but touches more nav/registry wiring for panels that already work fine
-   where they are.
-2. **Custom Reports: personal-only, or shareable across roles?** `report_subscriptions` today is
-   personal (`RLS by auth.uid()`). A custom report could stay that way, or a DO/Owner could build
-   one and let a GM run it — the data a GM sees is still RLS-scoped to their own `accessible_locs`
-   regardless, same as every other panel, so sharing the *definition* doesn't leak data; it only
-   changes who can define vs. who can merely run.
-3. **Export scope for v1.** Print + CSV are both near-free (patterns already exist everywhere).
-   A real generated PDF (not browser print-to-PDF) and a first-class XLSX exporter (currently one
-   single usage, in `sage.js`) are bigger lifts — worth calling out explicitly as later phases
-   rather than silently deferring them.
+1. **Cross-list, not relocate** — existing report panels (Date-Range Report, Trend Report,
+   Forecast Reports, Pay Rate History, etc.) stay in their current nav slot; the hub adds a second,
+   categorized, pre-scoped launch entry (same mechanic `my-reports` already proves). Owner flagged
+   intent to relocate eventually — note that for a later pass, don't re-raise it as still open.
+2. **Custom Reports are shareable across roles**, not personal-only. A DO/Owner can build one and
+   a GM can run it. The report **definition** (which metrics, layout, default scope/period) is
+   shareable; the **data** each viewer sees stays RLS-scoped to their own `accessible_locs`
+   regardless of who authored the definition — same boundary every other panel already respects,
+   so sharing the definition cannot leak data across stores a viewer shouldn't see. `payroll.view`
+   -gated metrics need the same discipline inside the picker — see Phase 4 below.
+3. **PDF + XLSX export are in v1**, not deferred. This means: a real PDF generator (not just
+   browser print-to-PDF) and a first-class, reusable XLSX exporter (today exactly one usage
+   exists, in `sage.js`) both need to be built as shared Report Shell actions, not per-report
+   one-offs.
 
-Once these are decided, the natural build order is: (1) reconcile the metric catalogs [C], since
-everything else depends on it being correct, (2) ship the Report Shell [B] against one real base
-report as a proof, (3) stand up the Reports hub [A] and migrate/cross-list the existing base
-reports onto the shell opportunistically, (4) build the Custom Report Builder [D] last, since it's
-the only piece with genuinely new UI and a new table.
+## Build order (phased, each phase its own PR per this session's established ritual)
+
+**Phase 1 — Reconcile the metric catalogs (foundation, nothing else can start without it).**
+Build an additive adapter/catalog layer, NOT a rename sweep of either existing file —
+`metric-source.js` and `signal-registry.js` are both load-bearing elsewhere (Signals Scanner,
+every panel that calls `metricAvg`/`metricSeries`/`metricSumRatio`) and must keep working
+unchanged. The adapter maps `signal-registry.js`'s ~114 labeled/grouped entries onto
+`metric-source.js`'s ~92 resolvable keys (plus whichever of signal-registry's entries resolve via
+their own `source`/`field` directly, for metrics metric-source.js doesn't cover), producing one
+catalog shaped `{key, label, unit, category, better, resolve(scope,range) -> value|series}`. This
+is the Custom Report Builder's metric picker data source and the Reports hub's category grouping
+source.
+
+**Phase 2 — Report Shell + the two new export actions.** Date-range picker + `LocationSelector` +
+Run action, wired to Print (existing `printHtml()`), CSV (one generalized exporter replacing the
+~20 hand-rolled ones), a new PDF export (needs a real library — `jspdf` or `pdfmake` — lazy-loaded
+like `pdfjs-dist`/`xlsx` already are, to protect the entry-chunk budget), and a new generalized
+XLSX export (generalizing the one real pattern in `sage.js`). Prove it against one real existing
+report before treating it as the standard.
+
+**Phase 3 — Reports hub.** Category-tabbed landing page under `section:'reports'`; cross-lists
+existing report panels (pre-scoped launch, no relocation) alongside any new base reports; "My
+Reports" favorites/recently-run folds in here instead of staying a separate narrower panel.
+
+**Phase 4 — Custom Report Builder.** Metric picker over the Phase 1 catalog → columns over a
+date-range/location scope (reusing `DateRangeReport`'s table-of-metrics shape) → Save. New
+`custom_reports` table: owner-authored definitions, RLS lets OTHER roles read/run a definition
+marked shared (decision 2) while each viewer's actual query still runs through their own
+`accessible_locs` scoping — the definition grants no data access by itself. The picker must hide
+`payroll.view`-gated metrics (and any future tightly-scoped metric) from a builder who lacks that
+permission, same as every other permission check in the app — a shared definition must not let a
+non-privileged viewer back into wage data through a report built by someone who had it.
+
+Then: curate and build the actual **base reports** (the owner's next ask) on top of Phases 1-3,
+each one a small addition once the shell exists.
