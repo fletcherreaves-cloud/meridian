@@ -5191,6 +5191,31 @@ export async function addCoachingCycleNote({ cycleId, loc, note }) {
   return { id: data?.id || null, createdAt: data?.created_at || null, author, error: error?.message || null };
 }
 
+// ── Pay events (raises / review-cycle pay increases) ─────────────────────────────────────────
+// Store-level log feeding engine/pay-events.js's detectAropJumps()/payRaiseImpact() -- see
+// schema-pay-events.sql's header for why this is store-level, not per-employee.
+export async function loadPayEvents() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('pay_events').select('*').order('effective_date', { ascending: false }).range(from, to));
+  return (data || []).map(r => ({
+    id: r.id, loc: String(r.loc), raiseType: r.raise_type || 'other',
+    amountPerHour: r.amount_per_hour, employeeLabel: r.employee_label || '',
+    reviewDate: r.review_date, effectiveDate: r.effective_date, note: r.note || '',
+    createdAt: r.created_at,
+  }));
+}
+export async function savePayEvent(ev) {
+  if (!supabase || !ev?.loc || !ev?.effectiveDate) return { error: 'no-op' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const { data, error } = await supabase.from('pay_events').insert({
+    loc: String(ev.loc), raise_type: ev.raiseType || 'other',
+    amount_per_hour: ev.amountPerHour ?? null, employee_label: ev.employeeLabel || '',
+    review_date: ev.reviewDate || null, effective_date: ev.effectiveDate, note: ev.note || '',
+    created_by: uid,
+  }).select('id, created_at').single();
+  return { id: data?.id || null, createdAt: data?.created_at || null, error: error?.message || null };
+}
+
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
 // Keyword search over the KB (title + body). Sanitizes the query for PostgREST's or() filter syntax.
 export async function searchQsrKb(query, { limit = 20 } = {}) {

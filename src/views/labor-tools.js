@@ -11,6 +11,8 @@ import { saveUserSetting, loadUserSetting, loadVlhStoreConfigs } from '../lib/su
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
+import { detectAropJumps, payRaiseImpact, PAY_EVENT_TYPES, AROP_WINDOW_DAYS } from '../engine/pay-events.js';
+import { PayEventModal } from './pay-event-modal.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
 // apply-winners, manual override, reset), push the whole blob to Supabase as a
@@ -2888,4 +2890,88 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };
+// ── Pay Events report (owner request 2026-10-15) ────────────────────────────
+// "Labor & Scheduling tab" + "a report I can pull that shows impact of those raises to labor
+// and profitability" — lives as a tab right next to the AROP column it explains (this file's
+// own LaborAnalyticsPanel, just above). Two sections: stores with an unexplained AROP jump
+// (engine/pay-events.js's detectAropJumps — a nudge to log one), and every logged pay event
+// with its measured before/after impact (payRaiseImpact).
+// Always rendered embedded (a SchedulingHubPanel/RoutePanelShell tab, never a standalone
+// overlay) — so, per the panel contract (memory/panel-contract.md), there is no second
+// hand-rolled fixed/inset/backdrop branch to maintain here at all; a standalone mode would use
+// ModalShell/RoutePanelShell, never its own backdrop.
+function PayEventsReportPanel({ stores, ds, onPayEventSaved }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const allLocs = uM(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const payEvents = ds?.payEvents || [];
+  const [modalLoc, setModalLoc] = uSt(null);
+  const [modalDefaultDate, setModalDefaultDate] = uSt(null);
+  const [newLoc, setNewLoc] = uSt('');
+
+  const jumps = uM(() => detectAropJumps(ds, allLocs, payEvents), [ds, allLocs, payEvents]);
+  const events = uM(() => payEvents.map(ev => ({ ev, impact: payRaiseImpact(ds, ev) })), [ds, payEvents]);
+
+  const pct = v => v == null ? '—' : (v * 100).toFixed(2) + 'pp';
+  const dol = v => v == null ? '—' : f$(v);
+  const rateStr = v => v == null ? '—' : '$' + v.toFixed(2);
+
+  const OUTER = { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '14px 16px' };
+
+  return div({ style: OUTER },
+    div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: 12, lineHeight: 1.6 } },
+      'AROP = Average Rate Of Pay (labor $ ÷ actual hours). A jump that\'s still unexplained below is a nudge, not an alarm — log a reason once you know it, and the before/after impact fills in automatically once ' + AROP_WINDOW_DAYS + ' days have passed.'),
+
+    // ── Unexplained jumps ──
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '⚠ Unexplained Rate Jumps (' + jumps.length + ')'),
+    !jumps.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No unexplained AROP jumps right now.')
+      : div({ style: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 } },
+        ...jumps.map(j => div({ key: j.loc, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 6, background: 'var(--surf2)', border: '.5px solid rgba(245,158,11,.3)', fontSize: '10px' } },
+          span({ style: { fontWeight: 700, color: 'var(--text)', minWidth: 140 } }, sNameC(j.loc)),
+          span({ style: { color: 'var(--text2)', fontFamily: 'var(--mono)' } }, rateStr(j.prior) + ' → ' + rateStr(j.current)),
+          span({ style: { color: '#f59e0b', fontWeight: 700, fontFamily: 'var(--mono)' } }, '+' + rateStr(j.delta) + '/hr'),
+          btn({ style: { marginLeft: 'auto', fontSize: '9px', padding: '2px 8px', borderRadius: 4, background: 'transparent', color: 'var(--amber)', border: '.5px solid rgba(245,188,0,.4)', cursor: 'pointer' },
+            onClick: () => { setModalLoc(j.loc); setModalDefaultDate(null); } }, '💰 Log reason'))),
+      ),
+
+    // ── Log a new event (any store, any time) ──
+    div({ style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 } },
+      h('select', { value: newLoc, onChange: e => setNewLoc(e.target.value),
+        style: { background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '10px', padding: '4px 8px' } },
+        h('option', { value: '' }, 'Choose a store…'),
+        ...allLocs.map(l => h('option', { key: l, value: l }, sNameC(l)))),
+      btn({ className: 'btn btn-sm', disabled: !newLoc, style: { opacity: newLoc ? 1 : .5 },
+        onClick: () => { setModalDefaultDate(null); setModalLoc(newLoc); } }, '💰 Log Pay Event')),
+
+    // ── Logged events + impact ──
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '📋 Logged Pay Events (' + events.length + ')'),
+    !events.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'Nothing logged yet.')
+      : div({ style: { overflowX: 'auto' } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 760 } },
+          h('thead', null, h('tr', null,
+            ...['Store', 'Type', 'Effective', '$/hr', 'Who/What', 'AROP before→after', 'Labor % Δ', 'Weekly $ impact', 'Annualized'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          h('tbody', null, ...events.map(({ ev, impact }, i) => tr({ key: ev.id || i, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(ev.loc)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)' } }, (PAY_EVENT_TYPES[ev.raiseType] || {}).label || ev.raiseType),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, ev.effectiveDate),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, ev.amountPerHour != null ? rateStr(ev.amountPerHour) : '—'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontSize: '8.5px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' } }, ev.employeeLabel || '—'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, rateStr(impact.aropBefore) + ' → ' + rateStr(impact.aropAfter) + (impact.ready ? '' : ' (so far)')),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: impact.laborPctDeltaPP > 0 ? '#f59e0b' : impact.laborPctDeltaPP < 0 ? '#10b981' : 'var(--text2)' } }, impact.laborPctDeltaPP != null ? (impact.laborPctDeltaPP > 0 ? '+' : '') + pct(impact.laborPctDeltaPP / 100) : '—'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, dol(impact.weeklyLaborDollarImpact)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, dol(impact.annualizedLaborDollarImpact)),
+          )))
+        )
+      ),
+
+    modalLoc && h(PayEventModal, {
+      loc: modalLoc, ds, defaultEffectiveDate: modalDefaultDate,
+      onClose: () => setModalLoc(null),
+      onSaved: onPayEventSaved,
+    }),
+  );
+}
+
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };

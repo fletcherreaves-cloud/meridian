@@ -23,6 +23,8 @@ import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote } from '../lib/supabase.js';
 import { COACHING_METRICS, openCoachingCycles } from '../engine/coaching-loop.js';
+import { detectAropJumps } from '../engine/pay-events.js';
+import { PayEventModal } from './pay-event-modal.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -5593,7 +5595,43 @@ function OpenCoachingSection({ds, onCoachingSaved, onLogVerdict}) {
   );
 }
 
-function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose, onCoachingSaved}) {
+// ── Unexplained Rate Jumps (owner request 2026-10-15) ───────────────────────────────────────
+// "You should be able to detect that as well from data pulls" — a sibling of Open Coaching
+// just above, same collapsible-section shape, surfacing engine/pay-events.js's
+// detectAropJumps() so a real AROP step shows up here WITHOUT the owner having to go looking
+// for it on the Labor & Scheduling tab (where the full log + impact report lives, #63).
+function UnexplainedRateJumpsSection({ds, stores, onPayEventSaved}) {
+  const [open, setOpen] = React.useState(false);
+  const [payModalLoc, setPayModalLoc] = React.useState(null);
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const jumps = React.useMemo(() => detectAropJumps(ds, allLocs, ds?.payEvents || []), [ds, allLocs]);
+
+  return div({style:{marginTop:12,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+    div({onClick:()=>setOpen(p=>!p),style:{display:'flex',alignItems:'center',
+      justifyContent:'space-between',padding:'7px 12px',cursor:'pointer',
+      background:'var(--surf2)',fontSize:'10px',fontWeight:700,color:'#f59e0b'}},
+      span(null,'💰 Unexplained Rate Jumps ('+jumps.length+')'),
+      span({style:{fontSize:'9px',color:'var(--text3)'}},open?'collapse':'expand')
+    ),
+    open && div({style:{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}},
+      jumps.length===0
+        ? div({style:{fontSize:'9px',color:'var(--text3)',textAlign:'center',padding:8}},'No unexplained AROP jumps right now.')
+        : jumps.map(j => div({key:j.loc,style:{display:'flex',alignItems:'center',gap:10,padding:'6px 10px',borderRadius:'var(--r)',background:'var(--surf)',border:'.5px solid var(--bdr)',fontSize:'10px'}},
+            span({style:{fontWeight:700,color:'var(--text)',minWidth:140}}, sNameC(j.loc)),
+            span({style:{color:'var(--text2)',fontFamily:'var(--mono)'}}, '$'+j.prior.toFixed(2)+' → $'+j.current.toFixed(2)),
+            span({style:{color:'#f59e0b',fontWeight:700,fontFamily:'var(--mono)'}}, '+$'+j.delta.toFixed(2)+'/hr'),
+            btn({style:{marginLeft:'auto',fontSize:'9px',padding:'2px 8px',borderRadius:4,background:'transparent',color:'var(--amber)',border:'.5px solid rgba(245,188,0,.4)',cursor:'pointer'},
+              onClick:()=>setPayModalLoc(j.loc)},'💰 Log reason')))
+    ),
+    payModalLoc && h(PayEventModal, {
+      loc: payModalLoc, ds,
+      onClose: () => setPayModalLoc(null),
+      onSaved: onPayEventSaved,
+    }),
+  );
+}
+
+function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose, onCoachingSaved, onPayEventSaved}) {
   // #208 — which coaching cycle a "Log Verdict →" item is following up on.
   const [reviewCycle, setReviewCycle] = React.useState(null);
   // Part 2 of the Attention Now / Needs Attention merge (issue #115): severity-ranked,
@@ -5828,7 +5866,11 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
         ),
 
         // Open Coaching — progress on in-flight cycles, not just ones due for review today.
-        h(OpenCoachingSection, {ds, onCoachingSaved, onLogVerdict: setReviewCycle})
+        h(OpenCoachingSection, {ds, onCoachingSaved, onLogVerdict: setReviewCycle}),
+
+        // Unexplained Rate Jumps — detectAropJumps() nudge, same collapsible shape as Open
+        // Coaching just above.
+        h(UnexplainedRateJumpsSection, {ds, stores, onPayEventSaved})
       ),
     // #208 — record the measured follow-up for a coaching cycle whose review came due.
     reviewCycle && h(CoachingModal, {
@@ -8826,4 +8868,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, OpenCoachingSection, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages, rollupProj, rollupGroup, buildGroupSheetHTML, computeMonthActuals, PROJ_FIELDS };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, OpenCoachingSection, UnexplainedRateJumpsSection, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages, rollupProj, rollupGroup, buildGroupSheetHTML, computeMonthActuals, PROJ_FIELDS };

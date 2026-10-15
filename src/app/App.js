@@ -131,6 +131,7 @@ const ChecklistFillPanel  = lazyPanel(() => import('../views/checklist-fill.js')
 const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
 const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
 const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
+const PayEventsReportPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.PayEventsReportPanel })));
 const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
 const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
 const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
@@ -300,7 +301,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -440,6 +441,9 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
 // `settings`/`onClose` members of `common` it doesn't use, same as e.g. SkillsMatrixPanel does.
 const SCHED_TABS = [
   { id: 'analytics', label: 'Labor Analytics', icon: '👷', perm: 'analytics.labor' },
+  // Owner request 2026-10-15: pay-raise/review-cycle tracking lives right next to the AROP
+  // column it explains (LaborAnalyticsPanel's Rankings tab).
+  { id: 'payevents', label: 'Pay Events', icon: '💰', perm: 'analytics.labor' },
   { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
   { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
@@ -454,13 +458,14 @@ const SCHED_TABS = [
 // -- same "would this verification still pass if reverted" standing rule dispatch16 sets: a test
 // that only imported ScheduleRetentionSection directly could pass unchanged with the SCHED_TABS
 // wiring deleted.
-export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose }) {
+export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose, onPayEventSaved }) {
   const allowed = SCHED_TABS.filter(t => !perm || perm(t.perm));
   const first = (allowed[0] && allowed[0].id) || 'scheduling';
   const [tab, setTab] = useState(initialTab && allowed.some(t => t.id === initialTab) ? initialTab : first);
-  const common = { ds, stores, settings, onClose, embedded: true };
+  const common = { ds, stores, settings, onClose, embedded: true, onPayEventSaved };
   const active =
     tab === 'analytics' ? h(LaborAnalyticsPanel, common) :
+    tab === 'payevents' ? h(PayEventsReportPanel, common) :
     tab === 'scheduling' ? h(SchedulingPanel, common) :
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
@@ -1866,6 +1871,16 @@ function App() {
           setDs(prev=>{if(!prev)return prev;return {...prev,coachingCycleNotes};});
         }
       }catch(e){console.warn('[Meridian] Coaching cycle notes load failed:',e);} };
+      // Pay events (#raises, owner request 2026-10-15) — same small/slow-growing eager-load
+      // treatment as coachingCycles above, for the same reason (a handful of logged raises,
+      // not a per-day stream).
+      const _stPayEvents = async () => {
+      try{
+        const payEvents=await loadPayEvents();
+        if(payEvents.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,payEvents};});
+        }
+      }catch(e){console.warn('[Meridian] Pay events load failed:',e);} };
       // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — staff_assignments
       // reports-to graph rows (dispatch #150), the first client-side consumer. Feeds
       // computeSegmentedReview's promotion/transfer segmented scoring (Performance Reviews'
@@ -2265,6 +2280,7 @@ function App() {
         _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
         _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
         _timedStage('T2 coachingCycleNotes', _stCoachingCycleNotes, _t2Start),
+        _timedStage('T2 payEvents', _stPayEvents, _t2Start),
         _timedStage('T2 staffAssignments', _stStaffAssignments, _t2Start),
         _timedStage('T2 employeeTenure', _stEmployeeTenure, _t2Start),
       ]);
@@ -2565,6 +2581,16 @@ function App() {
       const [rows, notes] = await Promise.all([loadCoachingCycles(), loadCoachingCycleNotes()]);
       setDs(prev => prev ? { ...prev, coachingCycles: rows, coachingCycleNotes: notes } : prev);
     } catch (e) { console.warn('[Meridian] Coaching cycles refresh failed:', e); }
+  }, []);
+
+  // Pay events (#raises) — same "re-fetch after the logging modal saves" pattern as
+  // refreshCoachingCycles just above, so a just-logged raise clears its "unexplained AROP jump"
+  // Needs Attention item immediately.
+  const refreshPayEvents = React.useCallback(async () => {
+    try {
+      const payEvents = await loadPayEvents();
+      setDs(prev => prev ? { ...prev, payEvents } : prev);
+    } catch (e) { console.warn('[Meridian] Pay events refresh failed:', e); }
   }, []);
 
   // ── Swing alarm (Notes 58 #4) ────────────────────────────────────────────
@@ -3550,6 +3576,7 @@ function App() {
       view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,darRows,
         onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
+        onPayEventSaved:refreshPayEvents,
         onOpenProjections:()=>goRoute('proj'),
         onOpenPVSA:()=>setShowPVSA(true),
         onOpenBrief:()=>goRoute('brief'),
@@ -3630,7 +3657,7 @@ function App() {
       // renders unwrapped below now, same shape as sched-hub. count-cycle (its own seventh entry
       // in this batch) was retired by dispatch #189, folded into eom-dashboard as a tab — see
       // eomInitialMode below.
-      routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
+      routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null),onPayEventSaved:refreshPayEvents}),
       // planning — Dispatch #207: moved to the routePanel gate in the main content area
       // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
       routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onUpdateSettings:saveSettings,onClose:()=>goRoute(null)}),
@@ -3707,7 +3734,7 @@ function App() {
       // promo-roi's hand-rolled backdrop/header was refactored into RoutePanelShell internally
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
-      routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles}),
+      routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles,onPayEventSaved:refreshPayEvents}),
       routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',

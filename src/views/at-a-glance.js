@@ -847,7 +847,7 @@ function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
   return result;
 }
 
-function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
+function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
   // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
@@ -2358,7 +2358,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // component's own header comment), never the page's date-range selector. Used to be
       // passed here and silently dropped inside the component — removed at both ends rather
       // than left as a dead prop that looks live.
-      h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved }),
+      h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved, onPayEventSaved }),
 
       // #274 — Bullseye: distribution-gestalt companion to the heatmap above (gestalt, not
       // lookup — see the component's own header). Same plain-import pattern as PatchHeatmap:
