@@ -65,6 +65,7 @@ import { STORE_NAMES, sNameC, INV_ORG_COORDS, supervisorGroups } from '../consta
 import { unpad, fobByStoreLatest } from './attention-now.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { CoachingModal } from './coaching-modal.js';
+import { PayEventModal } from './pay-event-modal.js';
 import { withAlpha } from '../utils/fmt.js';
 
 // #208 — which of this grid's dimensions have a coaching-loop metric behind them. Food cost
@@ -233,11 +234,12 @@ export function patchDimensions(members) { // members: [{store, fobRow}]
   return dims;
 }
 
-export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
+export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved, onPayEventSaved }) {
   const { useMemo, useState } = React;
   const [selected, setSelected] = useState(null); // loc of the expanded detail cell
   const [selectedPatch, setSelectedPatch] = useState(null); // #220 — expanded patch tile
   const [coachTarget, setCoachTarget] = useState(null); // {loc, metricKey} or null
+  const [payEventLoc, setPayEventLoc] = useState(null); // loc or null — Labor dim's "💰 Log Raise"
 
   const fobByLoc = useMemo(() => fobByStoreLatest(ds?.qsrFobRows || []), [ds]);
 
@@ -387,13 +389,25 @@ export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
                 onClick: () => setCoachTarget({ loc: selectedCell.loc, metricKey: COACH_METRIC_BY_DIM[d.label] }),
                 title: 'Start a coaching cycle for this store + metric (#208)',
                 style: { fontSize: '8px', padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text3)', border: '.5px solid var(--bdr)', cursor: 'pointer', flexShrink: 0 },
-              }, '🎯 Coach'))))
+              }, '🎯 Coach'),
+              // Owner request 2026-10-15: the Labor dim is exactly where a rate-of-pay jump
+              // would be noticed first, same spot the "🎯 Coach" button already lives for it.
+              d.label === 'Labor' && h('button', {
+                onClick: () => setPayEventLoc(selectedCell.loc),
+                title: 'Log a pay raise / review-cycle increase for this store',
+                style: { fontSize: '8px', padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text3)', border: '.5px solid var(--bdr)', cursor: 'pointer', flexShrink: 0 },
+              }, '💰 Log Raise'))))
         : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this store yet.')
     ),
     coachTarget && h(CoachingModal, {
       mode: 'start', loc: coachTarget.loc, metricKey: coachTarget.metricKey, ds,
       onClose: () => setCoachTarget(null),
       onSaved: onCoachingSaved,
+    }),
+    payEventLoc && h(PayEventModal, {
+      loc: payEventLoc, ds,
+      onClose: () => setPayEventLoc(null),
+      onSaved: onPayEventSaved,
     })
   );
 }
