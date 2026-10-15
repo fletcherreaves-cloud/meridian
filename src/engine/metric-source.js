@@ -167,7 +167,7 @@ export const METRIC_SOURCES = {
   // #150/#178 item 6: mode:'pos' rejected a real 0% (a store legitimately never using the
   // 2nd-side KVS window) as "not found," so it fell through to the next source or resolved
   // to nothing — a genuine zero discarded as missing data. mode:'any' accepts it.
-  kvsHealthy: { mode: 'any', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
+  kvsHealthy: { mode: 'any', direction: 'higher', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
   // Same fix — a genuine 0% DT park rate (no cars ever pulled forward) was being discarded as
   // missing under mode:'pos'.
   park:      { mode: 'any', srcs: [['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park'], ['opsRows', 'park']] },
@@ -255,7 +255,7 @@ export const METRIC_SOURCES = {
   // already aliases over_time_total_dollars -> otDollar (supabase.js loadOpsLaborSummary),
   // it just had no chain yet (#270 phase 1, closing it alongside otHrs for SAGE's labor
   // summary rather than leaving one of the two OT columns manual-only).
-  otDollar:  { mode: 'any', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
+  otDollar:  { mode: 'any', direction: 'lower', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
   // Crew Hours — was the one metric in labor-tools.js explicitly flagged as having "NO
   // metric-source.js entry anywhere (no auto source registered, opsLaborRows included)"
   // (dispatch #324's own comment there, at the time correct: no chain existed). Closed
@@ -292,11 +292,11 @@ export const METRIC_SOURCES = {
   netSalesAmt: { mode: 'pos', srcs: [['opsCashRows', 'netSalesAmt']] },
   // Discount $ — manual Controls (already a real field, parseCtrlData), then the auto-pulled
   // Operations Report cash-sheet (aliased above from discount_amt).
-  discAmt:   { mode: 'any', srcs: [['opsCashRows', 'discAmt'], ['ctrlRows', 'discAmt']] },
+  discAmt:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discAmt'], ['ctrlRows', 'discAmt']] },
   // Discount COUNT — closed 2026-09-13: discount_qty was already on the opsCashRows row (same
   // raw column discAmt's own $ figure sits beside), just never aliased to camelCase. 'any' since
   // a real 0-discount day is legitimate, same as every other count chain here.
-  discCnt:   { mode: 'any', srcs: [['opsCashRows', 'discCnt'], ['ctrlRows', 'discCnt']] },
+  discCnt:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discCnt'], ['ctrlRows', 'discCnt']] },
   // T-Red Before/After $ — opsCashRows only; ctrlRows carries the counts (tRedACnt/tRedBCnt) and
   // the pct but not a dollar amount for this specific upload, so no manual fallback exists yet.
   tRedAAmt:  { mode: 'any', srcs: [['opsCashRows', 'tRedAAmt']] },
@@ -306,7 +306,7 @@ export const METRIC_SOURCES = {
   // Cash Over/Short $ (dollar, not %) — auto-first (dispatch #175): the auto-pulled Operations
   // Report cash-sheet leads, then emailed Glimpse/Cash Sheet (kept as a fallback for any (loc,
   // date) the ops-pull hasn't reached yet — correct since #172's fix), then manual Controls last.
-  cashOSAmt: { mode: 'any', srcs: [['opsCashRows', 'cashOSAmt'], ['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['ctrlRows', 'cashOSAmt']] },
+  cashOSAmt: { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'cashOSAmt'], ['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
   tRedAPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']],
@@ -314,7 +314,7 @@ export const METRIC_SOURCES = {
   tRedBPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']],
                derive: { inputs: ['tRedBAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
   // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
-  drawerOpens: { mode: 'any', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
+  drawerOpens: { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
   discPct:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']],
@@ -336,35 +336,35 @@ export const METRIC_SOURCES = {
 
   // Refunds — manual Controls, then the auto Operations Report cash-sheet, then the
   // emailed Cash Sheet. All three already emit these exact field names.
-  cashRefAmt:     { mode: 'any', srcs: [['opsCashRows', 'cashRefAmt'], ['cashRows', 'cashRefAmt'], ['ctrlRows', 'cashRefAmt']] },
-  cashRefCnt:     { mode: 'any', srcs: [['opsCashRows', 'cashRefCnt'], ['cashRows', 'cashRefCnt'], ['ctrlRows', 'cashRefCnt']] },
-  cashlessRefAmt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt'], ['ctrlRows', 'cashlessRefAmt']] },
-  cashlessRefCnt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt'], ['ctrlRows', 'cashlessRefCnt']] },
+  cashRefAmt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'cashRefAmt'], ['cashRows', 'cashRefAmt'], ['ctrlRows', 'cashRefAmt']] },
+  cashRefCnt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'cashRefCnt'], ['cashRows', 'cashRefCnt'], ['ctrlRows', 'cashRefCnt']] },
+  cashlessRefAmt: { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt'], ['ctrlRows', 'cashlessRefAmt']] },
+  cashlessRefCnt: { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt'], ['ctrlRows', 'cashlessRefCnt']] },
 
   // POS Over $ / count — auto-first (dispatch #175): the auto-pulled Operations Report
   // cash-sheet leads (loadOpsCashSheet now aliases overring_amt/overring_qty to camelCase),
   // then emailed Glimpse, then emailed Cash Sheet, then manual Controls last (parseCtrlData
   // does emit posOverAmt/posOverCnt, confirmed — kept as the final fallback).
-  posOverAmt:     { mode: 'any', srcs: [['opsCashRows', 'posOverAmt'], ['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
-  posOverCnt:     { mode: 'any', srcs: [['opsCashRows', 'posOverCnt'], ['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
+  posOverAmt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'posOverAmt'], ['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
+  posOverCnt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'posOverCnt'], ['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
   // Promo $ / % — auto-first (dispatch #180): the auto-pulled Operations Report cash-sheet
   // leads, then emailed Glimpse (kept as a fallback for any (loc, date) the ops-pull hasn't
   // reached yet), then manual Controls last. Closes the last remaining item from #165's audit
   // (promoAmt/promoPct measured 97-98% field match, same fix shape as #175's cashOS/posOver).
-  promoAmt:       { mode: 'any', srcs: [['opsCashRows', 'promoAmt'], ['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
-  promoPct:       { mode: 'any', srcs: [['opsCashRows', 'promoPct'], ['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
+  promoAmt:       { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'promoAmt'], ['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
+  promoPct:       { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'promoPct'], ['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
   // Promo COUNT — this comment used to say "deliberately NOT added: no auto/emailed stream
   // emits it, so a chain would be single-source theatre." That was WRONG, not stale-but-once-
   // true: promo_qty was in qsr_cash_sheet.metrics the whole time, sitting right beside
   // promo_amt above -- just never aliased to camelCase. Closed 2026-09-13, same fix as discCnt.
-  promoCnt:       { mode: 'any', srcs: [['opsCashRows', 'promoCnt'], ['ctrlRows', 'promoCnt']] },
+  promoCnt:       { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'promoCnt'], ['ctrlRows', 'promoCnt']] },
 
   // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
   // #37; the counts beside them did not, so the same tile could show a fresh % next to a
   // stale count.
-  tRedACnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedACnt'], ['ctrlRows', 'tRedACnt']] },
-  tRedBCnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedBCnt'], ['ctrlRows', 'tRedBCnt']] },
+  tRedACnt:       { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedACnt'], ['ctrlRows', 'tRedACnt']] },
+  tRedBCnt:       { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedBCnt'], ['ctrlRows', 'tRedBCnt']] },
 
   // Average check — emailed Glimpse / Cash Sheet / Sales Ledger, then manual Labor last.
   // 'pos' because a real avg check is never legitimately 0.
@@ -594,7 +594,7 @@ export const DERIVED_METRICS = {
   // metricSumRatio now closes it. oppCostPct just above is deliberately NOT marked — its own
   // comment flags the sales denominator as an unconfirmed assumption, and this fix should not
   // extend trust to a formula that hasn't been.
-  spph:    { mode: 'pos', derive: { inputs: ['sales', 'actHrs'],
+  spph:    { mode: 'pos', direction: 'higher', derive: { inputs: ['sales', 'actHrs'],
              fn: (sales, hrs) => (hrs > 0 ? sales / hrs : null), kind: 'ratio' } },
 
   // Average labour rate $/hr = labour dollars ÷ actual hours, and labour dollars =
@@ -654,7 +654,7 @@ const _auditCashierOnly = r => (r.registerType || 'cashier') === 'cashier';
 Object.assign(METRIC_SOURCES, {
   empMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealAmt'], ['ctrlRows', 'empMealAmt'], ['auditRows', 'empMealDisc', _auditCashierOnly, 'sum']] },
   mgrMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealAmt'], ['ctrlRows', 'mgrMealAmt'], ['auditRows', 'mgrMealAmt', _auditCashierOnly, 'sum']] },
-  manualRefAmt: { mode: 'pos', srcs: [['ctrlRows', 'manualRefAmt'], ['auditRows', 'manualRefAmt']] },
+  manualRefAmt: { mode: 'pos', direction: 'lower', srcs: [['ctrlRows', 'manualRefAmt'], ['auditRows', 'manualRefAmt']] },
   // Deposit $ — ctrl_rows carries it with 41,287 non-zero rows. It was on the manual-only
   // list purely because I checked the EMAILED streams and never checked whether the
   // Controls loader emitted it. Single-source for now: no auto stream carries deposits,

@@ -14,8 +14,20 @@ export const METRIC_CATEGORIES = [
       { key: 'oepe',        label: 'OEPE (sec)',                source: 'opsRows',    field: 'oepe',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
       { key: 'kvst',        label: 'KVS Time (sec)',             source: 'opsRows',    field: 'kvst',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec', altField: 'kvsu' },
       { key: 'r2p',         label: 'R2P Front Counter (sec)',    source: 'opsRows',    field: 'r2p',            granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
-      { key: 'parkPct',     label: 'DT Park Rate (%)',           source: 'opsRows',    field: 'park',           granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      // better:null, not 'lower' (fixed 2026-10-15, Reports-redesign Phase 1 catalog audit) --
+      // metric-source.js's own METRIC_SOURCES header documents park's direction as a
+      // DELIBERATE, owner-confirmed non-decision: a real 27-store park%×OEPE quadrant
+      // measurement showed the heaviest-parking stores also beat the median on flow, refuting
+      // "less parking is always better." This entry disagreed with that ruling (the exact
+      // dispatch #77 class of bug its header warns against reintroducing) until now.
+      { key: 'parkPct',     label: 'DT Park Rate (%)',           source: 'opsRows',    field: 'park',           granularity: ['daily','monthly'], better: null,  unit: 'pct' },
       { key: 'dtMixPct',    label: 'DT Mix % of Sales',         source: 'laborRows',  field: 'dtPctTotal',     granularity: ['daily','monthly'], better: null,     unit: 'pct' },
+      // 2026-10-15 (Reports-redesign Phase 1) -- kvsHealthy has a real metric-source.js chain
+      // (kvsHealthy, mode:'any') but never had a registry label; added via AUTO_FIRST_KEY_MAP
+      // below like every other bridged entry. better:'higher' is a safe, unambiguous call --
+      // "healthy" 2nd-side KVS order usage is definitionally a good thing, not a new direction
+      // judgment call the way park's non-monotone ruling was.
+      { key: 'kvsHealthy', label: 'KVS Healthy Usage %',        source: 'glimpseRows', field: 'kvsHealthy',     granularity: ['daily','monthly'], better: 'higher', unit: 'pct' },
     ],
   },
   {
@@ -25,6 +37,11 @@ export const METRIC_CATEGORIES = [
       { key: 'gc',          label: 'Guest Count',                source: 'laborRows',  field: 'gc',             granularity: ['daily','monthly'], better: 'higher', unit: 'guests' },
       { key: 'avgCheck',    label: 'Avg Check ($)',              source: 'laborRows',  field: 'avgCheck',       granularity: ['daily','monthly'], better: 'higher', unit: '$' },
       { key: 'salesVsLY',   label: 'Sales vs LY (%)',           source: 'fobRows',    field: 'salesVsLY',      granularity: ['monthly'],        better: 'higher', unit: 'pct' },
+      // 2026-10-15 (Reports-redesign Phase 1) -- projGC/projSales are QSRSoft's own plan/forecast
+      // figures (DAR proj_total_transactions/proj_sales_dollars). better:null -- a projection
+      // isn't a performance direction, it's a baseline to compare the real figure against.
+      { key: 'projGC',      label: 'Projected (Plan) Guest Count', source: 'qsrActSummaryRows', field: 'projGC', granularity: ['daily','monthly'], better: null, unit: 'guests' },
+      { key: 'projSales',   label: 'Projected (Plan) Sales ($)',   source: 'qsrActSummaryRows', field: 'projSales', granularity: ['daily','monthly'], better: null, unit: '$' },
     ],
   },
   {
@@ -35,6 +52,33 @@ export const METRIC_CATEGORIES = [
       { key: 'avgRate',     label: 'Avg Wage Rate ($/hr)',      source: 'laborRows',  field: 'avgRate',        granularity: ['daily','monthly'], better: null,     unit: '$/hr' },
       { key: 'otHrs',       label: 'OT Hours',                  source: 'laborRows',  field: 'otHrs',          granularity: ['daily','monthly'], better: 'lower',  unit: 'hrs', aggregate: 'sum' },
       { key: 'schedGap',    label: 'Schedule Gap vs Ideal (hrs)',source: 'schedRows',  field: 'schVsIdealDiff', granularity: ['daily','monthly'], better: null,     unit: 'hrs' },
+      // ── 2026-10-15 (Reports-redesign Phase 1 catalog audit) ──────────────────────────────
+      // The 15 entries below all have real metric-source.js chains (confirmed by the full-file
+      // audit backing memory/project-reports-redesign.md) but never had a registry label --
+      // added via AUTO_FIRST_KEY_MAP so they resolve through the exact same bridge every other
+      // labor metric above does, not a second resolution path. `better` is set ONLY where it's
+      // an unambiguous, non-controversial call (otDollar mirrors otHrs' already-settled
+      // direction; spph mirrors tpph's higher-is-better shape, and is the exact metric
+      // metric-source.js's own ROLLUP CAVEAT comment measured a Sum/Sum-vs-mean-of-daily gap
+      // on). Every SIGNED-GAP metric (actVsNeed, oppCostDollar, oppCostPct, actVsSched,
+      // actVsSchedOpp) gets better:null, deliberately -- same "closer to zero isn't lower or
+      // higher" reasoning metric-source.js's own header already applies to actVsNeed, now
+      // carried consistently to its dollar/% opportunity-cost siblings rather than inventing a
+      // new, un-vetted direction call for them here.
+      { key: 'otDollar',        label: 'OT Dollars ($)',                  source: 'opsLaborRows', field: 'otDollar',       granularity: ['daily','monthly'], better: 'lower', unit: '$', aggregate: 'sum' },
+      { key: 'crewHrs',         label: 'Crew (Punched) Hours',            source: 'opsLaborRows', field: 'crewHrs',        granularity: ['daily','monthly'], better: null, unit: 'hrs', aggregate: 'sum' },
+      { key: 'actVsNeed',       label: 'Actual vs Needed Hours (gap)',    source: 'qsrActSummaryRows', field: 'actVsNeed', granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'floorMgmtNeeded', label: 'Floor Management Needed (hrs)',   source: 'schedRows', field: 'needFloor',       granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'floorHrsSched',   label: 'Floor Hours Scheduled',           source: 'schedRows', field: 'schFloor',        granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'variableNeeded',  label: 'Variable Labor Needed (hrs)',     source: 'schedRows', field: 'needVLH',         granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'fixedContractHrs',label: 'Fixed Contract Hours',            source: 'schedRows', field: 'fixGuideHrs',     granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'schedHrs',        label: 'Total Scheduled Hours',           source: 'schedRows', field: 'schedTotHrs',     granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'salaryMgrHrs',    label: 'Salaried Manager Hours',          source: 'schedRows', field: 'salMgrHrs',       granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'oppCostDollar',   label: 'Opportunity Cost ($, signed)',    source: 'schedRows', field: 'oppCostDollar',   granularity: ['daily','monthly'], better: null, unit: '$' },
+      { key: 'oppCostPct',      label: 'Opportunity Cost (% of sales, signed)', source: 'schedRows', field: 'oppCostPct', granularity: ['daily','monthly'], better: null, unit: 'pct' },
+      { key: 'actVsSched',      label: 'Actual vs Scheduled Hours (gap)', source: 'schedRows', field: 'actVsSched',      granularity: ['daily','monthly'], better: null, unit: 'hrs' },
+      { key: 'actVsSchedOpp',   label: 'Act-vs-Sched Opportunity ($, signed)', source: 'schedRows', field: 'actVsSchedOpp', granularity: ['daily','monthly'], better: null, unit: '$' },
+      { key: 'spph',            label: 'Sales Per Person-Hour ($/hr)',    source: 'qsrActSummaryRows', field: 'spph',    granularity: ['daily','monthly'], better: 'higher', unit: '$/hr' },
     ],
   },
   {
@@ -76,6 +120,16 @@ export const METRIC_CATEGORIES = [
       { key: 'tRedBCnt',    label: 'T-Reds Before Total (count)',source: 'ctrlRows',  field: 'tRedBCnt',       granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
       { key: 'tRedAPct',    label: 'T-Reds After Total %',      source: 'ctrlRows',   field: 'tRedAPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
       { key: 'tRedACnt',    label: 'T-Reds After Total (count)', source: 'ctrlRows',   field: 'tRedACnt',       granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      // 2026-10-15 (Reports-redesign Phase 1) -- 5 more real metric-source.js chains with no
+      // prior registry label, same AUTO_FIRST_KEY_MAP bridge treatment as everything above.
+      // better:null throughout -- meal $/counts and deposit $ are operational facts, not a
+      // direction this app has ever ruled on (unlike discount/refund/override, which are all
+      // loss-prevention metrics where "more" is unambiguously worse).
+      { key: 'empMealAmt',  label: 'Employee Meal ($)',          source: 'glimpseRows', field: 'empMealAmt',    granularity: ['daily','monthly'], better: null, unit: '$', aggregate: 'sum' },
+      { key: 'mgrMealAmt',  label: 'Manager Meal ($)',           source: 'glimpseRows', field: 'mgrMealAmt',    granularity: ['daily','monthly'], better: null, unit: '$', aggregate: 'sum' },
+      { key: 'depositAmt',  label: 'Deposit ($)',                source: 'ctrlRows',    field: 'depositAmt',    granularity: ['daily','monthly'], better: null, unit: '$', aggregate: 'sum' },
+      { key: 'empMealCnt',  label: 'Employee Meal (count)',      source: 'glimpseRows', field: 'empMealCnt',    granularity: ['daily','monthly'], better: null, unit: 'count', aggregate: 'sum' },
+      { key: 'mgrMealCnt',  label: 'Manager Meal (count)',       source: 'glimpseRows', field: 'mgrMealCnt',    granularity: ['daily','monthly'], better: null, unit: 'count', aggregate: 'sum' },
     ],
   },
   {
@@ -116,7 +170,8 @@ export const METRIC_CATEGORIES = [
       { key: 'glTRedDel',    label: 'T-Red Deletes (count) · cloud',source: 'glimpseRows',field:'tRedDeletedCnt',granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
       { key: 'glOepe',       label: 'OEPE (sec) · cloud',        source: 'glimpseRows', field: 'oepe',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
       { key: 'glKvst',       label: 'KVS Time (sec) · cloud',    source: 'glimpseRows', field: 'kvst',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
-      { key: 'glParkedPct',  label: 'DT Park Rate % · cloud',    source: 'glimpseRows', field: 'parkedPct',      granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      // better:null -- same park-direction ruling as parkPct above, same fix.
+      { key: 'glParkedPct',  label: 'DT Park Rate % · cloud',    source: 'glimpseRows', field: 'parkedPct',      granularity: ['daily','monthly'], better: null,  unit: 'pct' },
       { key: 'glDigitalPct', label: 'Digital % of Sales · cloud', source: 'glimpseRows', field: 'digitalPctSales',granularity: ['daily','monthly'], better: null,    unit: 'pct' },
       { key: 'glAppPct',     label: 'App % of Sales · cloud',    source: 'glimpseRows', field: 'appPctSales',    granularity: ['daily','monthly'], better: null,     unit: 'pct' },
     ],
@@ -454,6 +509,21 @@ const AUTO_FIRST_KEY_MAP = {
   fobPct: 'fobPct', compWaste: 'compWaste', rawWaste: 'rawWaste', statVar: 'statVar',
   condiment: 'condiment', empMeal: 'empMeal', unexplained: 'unexplained',
   manualRefAmt: 'manualRefAmt', discCnt: 'discCnt', promoCnt: 'promoCnt',
+  // 2026-10-15 (Reports-redesign Phase 1) -- the 21 metric-source.js keys the full-catalog
+  // audit found with a real chain but no prior registry label (memory/project-reports-
+  // redesign.md). Every key here is identically named on both sides (metric-source.js's own
+  // key === this map's value) -- added as its own block rather than interleaved above so the
+  // provenance of this batch stays traceable to one dated audit, same as every other dated
+  // addition to this map.
+  kvsHealthy: 'kvsHealthy', projGC: 'projGC', projSales: 'projSales',
+  otDollar: 'otDollar', crewHrs: 'crewHrs', actVsNeed: 'actVsNeed',
+  floorMgmtNeeded: 'floorMgmtNeeded', floorHrsSched: 'floorHrsSched',
+  variableNeeded: 'variableNeeded', fixedContractHrs: 'fixedContractHrs',
+  schedHrs: 'schedHrs', salaryMgrHrs: 'salaryMgrHrs',
+  oppCostDollar: 'oppCostDollar', oppCostPct: 'oppCostPct',
+  actVsSched: 'actVsSched', actVsSchedOpp: 'actVsSchedOpp', spph: 'spph',
+  empMealAmt: 'empMealAmt', mgrMealAmt: 'mgrMealAmt', depositAmt: 'depositAmt',
+  empMealCnt: 'empMealCnt', mgrMealCnt: 'mgrMealCnt',
 };
 // src/__tests__/dispatch-229-auto-first-metrics.test.js asserts every value above actually
 // resolves to a real METRIC_SOURCES key — this map silently no-opping (metricSeriesWithSource
@@ -632,6 +702,69 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
   return Object.values(byKey)
     .filter(b => b.n > 0)
     .map(b => ({ loc: b.loc, date: b.date, value: meta.aggregate === 'sum' ? b.sum : b.sum / b.n }));
+}
+
+// ── Date-range scoping (Reports redesign Phase 1, 2026-10-15) ────────────────
+// extractMetricValues() has always returned a metric's FULL loaded history (the Scanner sweeps
+// it unfiltered, Trend Explorer's own date-window filter runs on the array this function
+// returns, not inside it) -- useful for correlation, useless for "what was metric X for store Y
+// between date A and B," which is the base operation a report needs. These two thin wrappers
+// add that one missing piece on top of the existing resolver rather than building a second one;
+// see memory/project-reports-redesign.md for why a second resolver was never on the table once
+// this file's existing extractMetricValues/findMetric turned out to already cover virtually
+// every metric a report would want.
+//
+// NOTE for whoever builds the first real report panel on this (Phase 2): importing this file
+// just for these two functions also pulls in every Scanner-only export (scanAllPairs,
+// computeCustomSignal, computeAllCustomSignals, shouldRetire, getProjectionInfluence) -- the
+// exact "pulling in ~900 lines of Signals-specific machinery" cost correlation-stats.js's own
+// split (dispatch #195, see the comment just below) was carved out to avoid for callers that
+// only need the math, not the Scanner. If a report panel's own bundle-size check (the standing
+// "measure before/after, put both numbers in the commit body" rule) shows this file's weight
+// landing in a report chunk that shouldn't carry it, extract METRIC_CATEGORIES/METRIC_FLAT/
+// findMetric/extractMetricValues/the two functions below into their own `metric-catalog.js`,
+// with THIS file importing back from it -- same direction correlation-stats.js's split already
+// took, don't invent a different shape. Not done preemptively here: no real report panel exists
+// yet to measure the actual cost against (CLAUDE.md: don't design for hypothetical requirements).
+function _dateKeyOf(d) {
+  if (typeof d === 'string') return d.slice(0, 10);
+  if (d instanceof Date) return _dKey(d);
+  return null;
+}
+
+/**
+ * Every {loc,date,value} point for metricKey, filtered to [start,end] (both 'YYYY-MM-DD',
+ * inclusive) and optionally scoped to one loc or a list of locs. Always resolves at daily
+ * granularity (a report's own date range IS the aggregation window -- asking extractMetricValues
+ * for pre-aggregated monthly points here would double-aggregate). Unscoped-then-filtered-locally
+ * rather than one extractMetricValues call per loc, since several of its branches (price events,
+ * pmix items) do real per-call work that a report over N stores shouldn't pay N times for.
+ */
+export function metricRowsForRange(metricKey, ds, { loc, locs, start, end } = {}) {
+  if (!start || !end) return [];
+  const rows = extractMetricValues(metricKey, ds, 'daily', null);
+  const wantLocs = locs && locs.length ? new Set(locs.map(_normLoc)) : (loc ? new Set([_normLoc(loc)]) : null);
+  return rows.filter(r => {
+    const dk = _dateKeyOf(r.date);
+    if (!dk || dk < start || dk > end) return false;
+    return !wantLocs || wantLocs.has(_normLoc(r.loc));
+  });
+}
+
+/**
+ * Reduces metricRowsForRange's rows to the single number a report cell shows: Σ for a
+ * sum-aggregated metric (e.g. OT Hours, refund counts), mean for everything else -- the exact
+ * same meta.aggregate rule extractMetricValues' own monthly rollup already applies just above,
+ * so a report's number and the Scanner's monthly point for the same metric/window never drift
+ * apart from using two different rollup rules. null (not 0) when nothing resolved -- a report
+ * cell with no data must read as missing, not as a real zero.
+ */
+export function metricValueForRange(metricKey, ds, opts = {}) {
+  const rows = metricRowsForRange(metricKey, ds, opts);
+  if (!rows.length) return null;
+  const meta = findMetric(metricKey);
+  const sum = rows.reduce((s, r) => s + r.value, 0);
+  return (meta && meta.aggregate === 'sum') ? sum : sum / rows.length;
 }
 
 // ── Statistics ────────────────────────────────────────────────────────────────
