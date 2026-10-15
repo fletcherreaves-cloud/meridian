@@ -1,0 +1,73 @@
+name: QSRSoft 7-Year Backfill
+
+on:
+  schedule:
+    # Daily, staggered well clear of the live daily pulls' 08:00/10:00 UTC windows
+    # (qsrsoft-dar-pull.yml, qsrsoft-ops-pull.yml, qsrsoft-ebos-pull.yml) so this never competes
+    # with them for a freshly-minted Cognito token mid-run. Owner: "meter the data in" — one
+    # ~90-day chunk per report type per day is deliberately conservative; see
+    # scripts/qsrsoft-backfill-driver.mjs's own header for why.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Limit this run to one report type (ebos|dar|ops). Leave blank for all three.'
+        required: false
+        default: ''
+      chunk_days:
+        description: 'Days per chunk this run (default: 90)'
+        required: false
+        default: '90'
+      years_back:
+        description: 'How far back the campaign targets, in years (default: 7 — QSRSoft''s own rolling retention)'
+        required: false
+        default: '7'
+      dry_run:
+        description: 'Compute the next chunk and log it without actually pulling (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # One run advances each report type by exactly one chunk, never the whole campaign — sized
+    # well above the one measured per-day rate in this repo (ops-pull's ~6.6s/day) for a 90-day
+    # chunk across all three report types combined, with generous headroom.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Advance the backfill cursor
+        run: node scripts/qsrsoft-backfill-driver.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_EBOS_TOKEN:         ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_BACKFILL_ONLY:         ${{ github.event.inputs.only       || '' }}
+          QSRSOFT_BACKFILL_CHUNK_DAYS:   ${{ github.event.inputs.chunk_days || '90' }}
+          QSRSOFT_BACKFILL_YEARS:       ${{ github.event.inputs.years_back || '7' }}
+          QSRSOFT_BACKFILL_DRY_RUN:     ${{ github.event.inputs.dry_run    || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

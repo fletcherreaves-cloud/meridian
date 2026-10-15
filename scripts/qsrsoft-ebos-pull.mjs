@@ -24,6 +24,11 @@
 //   QSRSOFT_EBOS_DAYS_BACK    — max history on first run (default: 900 ≈ 30 months)
 //   QSRSOFT_EBOS_DAYS_RECENT  — rolling re-pull window for corrections (default: 30)
 //   QSRSOFT_EBOS_DEBUG        — set to '1' for verbose logging
+//   QSRSOFT_EBOS_START_DATE / QSRSOFT_EBOS_END_DATE — explicit backfill window (YYYY-MM-DD),
+//     overrides the gap-detection logic above. Keep the window narrow (~90 days) — this script
+//     does one unbounded API call per store for the whole requested range, so a multi-year
+//     window in a single call is untested and risky. scripts/qsrsoft-backfill-driver.mjs
+//     always calls this in small chunks for exactly that reason.
 //
 // Token refresh: when QSRSOFT_EBOS_TOKEN expires, go to:
 //   v3.myqsrsoft.com → Inventory → Purchases → Ledger tab
@@ -42,6 +47,17 @@ const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
 const DAYS_RECENT = parseInt(process.env.QSRSOFT_EBOS_DAYS_RECENT || '30',  10);
 const DEBUG       = process.env.QSRSOFT_EBOS_DEBUG      === '1';
 const FORCE_FULL  = process.env.QSRSOFT_EBOS_FORCE_FULL === '1';
+// Explicit backfill window override, matching QSRSOFT_DAR_START_DATE/END_DATE and
+// QSRSOFT_OPS_START_DATE/END_DATE's exact naming convention (qsrsoft-dar-pull.mjs,
+// qsrsoft-ops-pull.mjs). Added for the 7-year QSRSoft-retention backfill (scripts/
+// qsrsoft-backfill-driver.mjs) -- this script previously had NO such override, unlike its two
+// siblings, and did one single unbounded per-store API call for whatever range getDateRange()
+// picked. The driver always hands this a narrow (~90-day) window, so no internal chunking is
+// added here -- the caller is what keeps each call bounded, exactly as DAR/OPS already rely on
+// their own callers (a human re-dispatching workflow_dispatch, or now the driver) to pick a
+// sane window rather than chunking inside the script itself.
+const START_DATE  = (process.env.QSRSOFT_EBOS_START_DATE || '').trim();
+const END_DATE    = (process.env.QSRSOFT_EBOS_END_DATE   || '').trim();
 
 const pad2    = n => String(n).padStart(2, '0');
 const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
@@ -113,6 +129,11 @@ async function getLatestDate() {
 
 async function getDateRange() {
   const today = new Date();
+  if (START_DATE) {
+    const e = END_DATE || fmtDate(today);
+    console.log(`[ebos-pull] explicit backfill window ${START_DATE} → ${e}`);
+    return { startDate: START_DATE, endDate: e };
+  }
   if (FORCE_FULL) {
     console.log(`[ebos-pull] force_full=1 — pulling full ${DAYS_BACK} days of history`);
     return { startDate: fmtDate(addDay(today, -DAYS_BACK)), endDate: fmtDate(today) };
