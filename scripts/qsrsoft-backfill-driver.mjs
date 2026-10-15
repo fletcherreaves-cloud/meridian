@@ -57,10 +57,15 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // run (so the campaign starts from the real current floor, not a guess). 'ops' pulls 6
 // endpoints across 5 tables per call but always the SAME date range for all of them
 // (qsrsoft-ops-pull.mjs's single getDates()) — qsr_cash_sheet is representative, not a gap.
-const TYPES = {
+// Exported so tests can cross-check destDateCol against the real column name each pull script
+// itself queries by (see qsrsoft-backfill-driver.test.js) -- a live dry-run already caught one
+// of these wrong once (ops's destDateCol was 'date'; qsr_cash_sheet's real column is 'dt', same
+// as qsr_daily_activity's) and that class of bug has no other guard, since it only surfaces on
+// a real Supabase read, not from nextChunk()/targetStartDate()'s pure logic.
+export const TYPES = {
   ebos: { script: 'qsrsoft-ebos-pull.mjs', startVar: 'QSRSOFT_EBOS_START_DATE', endVar: 'QSRSOFT_EBOS_END_DATE', destTable: 'qsr_ebos_daily', destDateCol: 'date' },
   dar:  { script: 'qsrsoft-dar-pull.mjs',  startVar: 'QSRSOFT_DAR_START_DATE',  endVar: 'QSRSOFT_DAR_END_DATE',  destTable: 'qsr_daily_activity', destDateCol: 'dt' },
-  ops:  { script: 'qsrsoft-ops-pull.mjs',  startVar: 'QSRSOFT_OPS_START_DATE',  endVar: 'QSRSOFT_OPS_END_DATE',  destTable: 'qsr_cash_sheet', destDateCol: 'date' },
+  ops:  { script: 'qsrsoft-ops-pull.mjs',  startVar: 'QSRSOFT_OPS_START_DATE',  endVar: 'QSRSOFT_OPS_END_DATE',  destTable: 'qsr_cash_sheet', destDateCol: 'dt' },
 };
 
 const pad2 = n => String(n).padStart(2, '0');
