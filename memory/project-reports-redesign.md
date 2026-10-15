@@ -174,16 +174,55 @@ gets criteria/print/export for free, zero new per-report code, same as the hub's
 
 ## Build order (phased, each phase its own PR per this session's established ritual)
 
-**Phase 1 — Reconcile the metric catalogs (foundation, nothing else can start without it).**
-Build an additive adapter/catalog layer, NOT a rename sweep of either existing file —
-`metric-source.js` and `signal-registry.js` are both load-bearing elsewhere (Signals Scanner,
-every panel that calls `metricAvg`/`metricSeries`/`metricSumRatio`) and must keep working
-unchanged. The adapter maps `signal-registry.js`'s ~114 labeled/grouped entries onto
-`metric-source.js`'s ~92 resolvable keys (plus whichever of signal-registry's entries resolve via
-their own `source`/`field` directly, for metrics metric-source.js doesn't cover), producing one
-catalog shaped `{key, label, unit, category, better, resolve(scope,range) -> value|series}`. This
-is the Custom Report Builder's metric picker data source and the Reports hub's category grouping
-source.
+**Phase 1 — SHIPPED 2026-10-15 (v5.571). Turned out much smaller than planned below, because a
+real "resolver" basically already existed** — do not re-plan or re-scope this phase; the
+corrected shape is what actually shipped, kept here so the next session reads the real state, not
+the original guess. An exhaustive two-pass audit (full read of both files, every
+`METRIC_SOURCES` key and every `METRIC_CATEGORIES` entry cross-checked) found
+`signal-registry.js`'s `findMetric()`/`extractMetricValues()` — built for the Signals Scanner —
+ALREADY resolve any of its ~101 labeled metrics by key, for any scope/granularity, bridging into
+`metric-source.js`'s own auto-first chains via the existing `AUTO_FIRST_KEY_MAP` for anything with
+a real chain there. There was no second resolver to build. What Phase 1 actually did:
+1. **Fixed a real, pre-existing bug**: 16 metric-source.js keys (discount/promo/cash-O/S/
+   refunds/overrides/T-Reds, $ and counts) had no `direction` even though signal-registry.js
+   already declared `better` for every one of them — a gap dispatch #77's migration left open
+   (it only touched the rate/% headline metrics). All 16 now agree, `direction:'lower'`.
+2. **Fixed a real, pre-existing disagreement**: signal-registry.js's `parkPct`/`glParkedPct`
+   declared `better:'lower'`, directly contradicting metric-source.js's own documented,
+   owner-confirmed ruling that park has no single direction. Both now read `better:null`. **Note:
+   `src/engine/kpi-registry.js`'s OWN separate `parkPct` entry (`better:'lower'`) has the SAME
+   disagreement and was deliberately NOT touched** — it's a third, independent direction table
+   dispatch #77 already knew about and explicitly left alone (CLAUDE.md: "the 4 existing
+   panel-side direction tables... were NOT touched except the 3 owner-confirmed-wrong values"),
+   so fixing it here would have been scope creep beyond this phase's stated reconciliation of
+   metric-source.js ↔ signal-registry.js specifically. Flagging it as a known, real, low-risk
+   follow-up fix for whoever next touches `kpi-registry.js`'s park entry — not an open question.
+3. **Added 21 real, resolvable metric-source.js metrics with no signal-registry label at all**
+   (projGC/projSales, kvsHealthy, otDollar, crewHrs, actVsNeed, floorMgmtNeeded/floorHrsSched/
+   variableNeeded/fixedContractHrs/schedHrs/salaryMgrHrs, oppCostDollar/oppCostPct/actVsSched/
+   actVsSchedOpp, spph, empMealAmt/mgrMealAmt/empMealCnt/mgrMealCnt/depositAmt) — added to both
+   `METRIC_CATEGORIES` (label/unit/category) and `AUTO_FIRST_KEY_MAP` (the resolution bridge),
+   so a report-builder picker can now offer them through the exact same path as everything else.
+   Signed-gap metrics got `better:null` deliberately (matching `actVsNeed`'s own already-settled
+   treatment), not an invented direction.
+4. **Added the one genuinely missing primitive**: `metricRowsForRange()`/`metricValueForRange()`
+   in `signal-registry.js`, right after `extractMetricValues()`. That function has always
+   returned a metric's FULL loaded history (right for the Scanner's correlation sweep) with no
+   date-range concept — a report needs "metric X for store Y between date A and B," which neither
+   existing function gave directly.
+5. **Deferred, not forgotten**: `signal-registry.js` is still a ~900-line Signals-Scanner-heavy
+   file (`scanAllPairs`, `computeCustomSignal`, etc.) that a lazy Report panel importing it for
+   just the catalog+resolver would pull in whole, same bundle-weight class of problem
+   `correlation-stats.js`'s own split (dispatch #195) was carved out to avoid. Flagged with a
+   comment right above the two new functions for whoever builds Phase 2's first real report
+   panel: if that panel's own before/after bundle measurement shows this file's weight landing
+   somewhere it shouldn't, extract `METRIC_CATEGORIES`/`METRIC_FLAT`/`findMetric`/
+   `extractMetricValues`/the two range functions into their own `metric-catalog.js`, with THIS
+   file importing back from it — same direction correlation-stats.js's split took. Not done
+   preemptively since no real consumer exists yet to measure against.
+
+Tests: `src/__tests__/reports-catalog-phase1.test.js` (75 tests) plus full suite
+(614/614 files, 5794/5794) and build (clean, 563.21 KB eager / 850 KB budget) both green.
 
 **Phase 2 — Report Shell + the two new export actions.** Date-range picker + `LocationSelector` +
 Run action, wired to Print (existing `printHtml()`), CSV (one generalized exporter replacing the
