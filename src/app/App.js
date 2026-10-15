@@ -300,7 +300,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1856,6 +1856,16 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${coachingCycles.length} coaching cycles from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Coaching cycles load failed:',e);} };
+      // Owner, live, 2026-10-14 — progress-log entries for open coaching cycles (append-only,
+      // separate table — see schema-coaching-cycle-notes.sql). Same eager-load treatment as
+      // coachingCycles just above (small, slow-growing).
+      const _stCoachingCycleNotes = async () => {
+      try{
+        const coachingCycleNotes=await loadCoachingCycleNotes();
+        if(coachingCycleNotes.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,coachingCycleNotes};});
+        }
+      }catch(e){console.warn('[Meridian] Coaching cycle notes load failed:',e);} };
       // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — staff_assignments
       // reports-to graph rows (dispatch #150), the first client-side consumer. Feeds
       // computeSegmentedReview's promotion/transfer segmented scoring (Performance Reviews'
@@ -2254,6 +2264,7 @@ function App() {
         _timedStage('T2 recurringRules', _stRecurringRules, _t2Start),
         _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
         _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
+        _timedStage('T2 coachingCycleNotes', _stCoachingCycleNotes, _t2Start),
         _timedStage('T2 staffAssignments', _stStaffAssignments, _t2Start),
         _timedStage('T2 employeeTenure', _stEmployeeTenure, _t2Start),
       ]);
@@ -2545,10 +2556,14 @@ function App() {
   // #208 — re-fetch coaching_cycles after a coaching modal saves (start OR record-follow-up),
   // so a just-recorded verdict clears its Needs Attention item immediately instead of waiting
   // for the next full reload. Threaded down the same way onOpenStore already is.
+  // Also reloads coachingCycleNotes (not just coachingCycles) -- a note append is a "coaching
+  // changed" event the same as starting a cycle or recording a verdict, and every call site that
+  // passes this as onCoachingSaved already expects one refresh to catch every coaching-state
+  // change rather than needing a second, parallel callback threaded everywhere this one already is.
   const refreshCoachingCycles = React.useCallback(async () => {
     try {
-      const rows = await loadCoachingCycles();
-      setDs(prev => prev ? { ...prev, coachingCycles: rows } : prev);
+      const [rows, notes] = await Promise.all([loadCoachingCycles(), loadCoachingCycleNotes()]);
+      setDs(prev => prev ? { ...prev, coachingCycles: rows, coachingCycleNotes: notes } : prev);
     } catch (e) { console.warn('[Meridian] Coaching cycles refresh failed:', e); }
   }, []);
 
@@ -3533,12 +3548,23 @@ function App() {
         }
       }),
       view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,darRows,
-        onOpenStore:s=>{goStore(s);},
+        onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
         onOpenProjections:()=>goRoute('proj'),
         onOpenPVSA:()=>setShowPVSA(true),
         onOpenBrief:()=>goRoute('brief'),
-        onNav:v=>setView(v),
+        // onNav (owner report 2026-10-14: "clicking any link on Needs You Today Tile opens to
+        // a blank page") -- was unconditionally setView(v), but every at-a-glance.js home-tile
+        // caller passes a ROUTE-PANEL id ('attention'/'visit-readiness'/'signals', each opened
+        // elsewhere in this file via goRoute(id) + a routePanel==='id' render branch), not a
+        // top-level `view` id. setView('attention') set view to a string matching NO view===...
+        // branch below (the real ones are 'command'/'district'/'store'/'patch'/'org'/...) AND
+        // flipped `view==='command'` to false, unmounting AtAGlance with nothing replacing it --
+        // a real blank page, not a cosmetic nav miss. 'district' is the one call site
+        // (AtAGlance's own Controls & Integrity header) that genuinely IS a top-level view
+        // (view==='district'&&...h(DistrictGrid,...) below) -- keep it on setView; everything
+        // else routes through goRoute like every other panel-open call in this file already does.
+        onNav:v=>{ if(v==='district') setView(v); else goRoute(v); },
         onOpenModal:(modal)=>{
           if(modal==='ranking'||modal.startsWith('ranking:')){
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
@@ -3555,7 +3581,7 @@ function App() {
           else if(modal==='forecast-reports')goRoute('forecast-reports');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab,onCoachingSaved:refreshCoachingCycles}),
       view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
       view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations

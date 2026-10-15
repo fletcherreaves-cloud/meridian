@@ -840,7 +840,15 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     }, 300);
     return () => clearInterval(id);
   }, []);
-  const hasCloudPMix = !!(ds.pmixRows && ds.pmixRows.length);
+  // ds can be null/undefined momentarily on a cold load of this route (e.g. opening
+  // ?panel=pricing-engine directly, before App.js's own data load resolves) -- live-reproduced
+  // 2026-10-14 (owner: "open the pricing engine and check it"): a direct `ds.pmixRows` read
+  // here threw "Cannot read properties of null (reading 'pmixRows')" and took the panel down
+  // into the error boundary. Matches the `(ds && ds.x) || []` guard every other ds-reading
+  // panel in this codebase already uses (e.g. smg-voice.js's SMGVoicePanel) -- one local alias
+  // reused below instead of repeating the guard at each call site.
+  const pmixRows = (ds && ds.pmixRows) || [];
+  const hasCloudPMix = !!pmixRows.length;
 
   const [range, setRange] = uSt('30');
   const [wideState, setWideState] = uSt(isLazyFillWideLoaded('pmixRows') ? 'loaded' : 'idle');
@@ -877,9 +885,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   // never silently understates a "current" menu price.
   const maxDate = uM(() => {
     let max = null;
-    (ds.pmixRows || []).forEach(r => { const d = pmixDate(r); if (!isNaN(d) && (!max || d > max)) max = d; });
+    pmixRows.forEach(r => { const d = pmixDate(r); if (!isNaN(d) && (!max || d > max)) max = d; });
     return clampToLastClosedDay(max, lastClosedBusinessDay());
-  }, [ds.pmixRows]);
+  }, [pmixRows]);
 
   const dateRange = uM(() => {
     if (range === 'all' || !maxDate) return null;
@@ -889,9 +897,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
 
   const itemRows = uM(() => {
     if (wideNeededAndNotReady) return [];
-    return computeItemMargins(ds.pmixRows || [], { locFilter: scopedLocs, dateRange });
+    return computeItemMargins(pmixRows, { locFilter: scopedLocs, dateRange });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ds.pmixRows, locFilterKey, dateRange, wideNeededAndNotReady]);
+  }, [pmixRows, locFilterKey, dateRange, wideNeededAndNotReady]);
 
   // ── Menu-item-activity load (dispatch #220) — keyed to dateRange ONLY, not
   // locFilterKey/scope: enrichItemMargins() joins purely on (loc, item_number) already

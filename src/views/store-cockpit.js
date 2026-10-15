@@ -28,6 +28,7 @@ import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
 } from '../engine/metric-source.js';
 import { addD, dKey, lastClosedBusinessDay, dowOf } from '../utils/date.js';
+import { CoachingModal } from './coaching-modal.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -55,15 +56,41 @@ function Card({ title, sub, accent, style }, ...children) {
     ...children);
 }
 
-function VerdictBand(label, textNode, whyNode) {
+// action (owner, live, 2026-10-14: "great opportunity to wire this to add to coaching as well")
+// — an optional node (the "🎯 Coach" button both call sites below supply) rendered inline next
+// to the label, so starting a real coaching cycle (#208) is one click from the exact narrative
+// that justified it, not a separate trip to Patch Heatmap to find the same finding again.
+function VerdictBand(label, textNode, whyNode, action) {
   return div({ style: {
     display: 'flex', gap: 10, padding: '11px 14px', background: 'var(--surf2)',
     border: '.5px solid var(--bdr)', borderLeft: '3px solid var(--amber)', borderRadius: 8, marginTop: 12,
   } },
     div({ style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--amber)', flexShrink: 0, paddingTop: 1 } }, 'Coach'),
     div({ style: { flex: 1 } },
-      div({ style: { fontSize: 12.5, fontWeight: 600, lineHeight: 1.5, color: 'var(--text)' } }, textNode),
+      div({ style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 } },
+        div({ style: { fontSize: 12.5, fontWeight: 600, lineHeight: 1.5, color: 'var(--text)' } }, textNode),
+        action),
       whyNode && div({ style: { fontSize: 10.5, color: 'var(--text2)', marginTop: 7, paddingTop: 7, borderTop: '.5px solid var(--bdr)', lineHeight: 1.5 } }, whyNode)));
+}
+
+// Same "🎯 Coach" button + CoachingModal wiring patch-heatmap.js's "Coach this" already uses
+// (dispatch #208) — one shared component so both VerdictBand call sites below stay identical,
+// not two hand-copied versions that could drift.
+function CoachThisButton({ loc, metricKey, ds, onCoachingSaved }) {
+  const [open, setOpen] = useState(false);
+  if (!metricKey) return null;
+  return div(null,
+    h('button', {
+      onClick: () => setOpen(true),
+      title: 'Start a coaching cycle for this store + metric (#208)',
+      style: { fontSize: '8px', padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text3)', border: '.5px solid var(--bdr)', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' },
+    }, '🎯 Coach'),
+    open && h(CoachingModal, {
+      mode: 'start', loc, metricKey, ds,
+      onClose: () => setOpen(false),
+      onSaved: onCoachingSaved,
+    })
+  );
 }
 
 // One driver-bar row (Food Cost components, ranked).
@@ -178,7 +205,7 @@ export function computeFoodCostHeadline(loc, fobRows, t, opts = {}) {
 }
 
 // ════════════════════════════════════════ FOOD COST TAB ═══════════════════════════════════════
-export function FoodCostCockpitTab({ store, ds }) {
+export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   const loc = String(store.loc), t = store.t || {};
 
   // FOB rows — shared hook (see useFobRowsWithFallback above).
@@ -273,7 +300,7 @@ export function FoodCostCockpitTab({ store, ds }) {
           oppLabel: report.overTarget ? 'Monthly opportunity' : report.underTarget ? 'Monthly savings' : null,
           oppValue: report.overTarget ? f$(report.oppDollars) : report.underTarget ? f$(report.savingsDollars) : null,
         }),
-        VerdictBand('Coach', verdictText, whyText)),
+        VerdictBand('Coach', verdictText, whyText, h(CoachThisButton, { loc, metricKey: 'fob_total_pct', ds, onCoachingSaved }))),
       Card({ title: 'Component Drivers', sub: 'actual vs. target, ranked worst→best' },
         div(null, comps.map((c, i) => h(DriverRow, {
           key: c.key, rank: i + 1, label: c.label,
@@ -365,7 +392,7 @@ function slotStartLabel(hourSlot) {
   return hh + ampm;
 }
 
-export function LaborCockpitTab({ store, ds }) {
+export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
   const loc = String(store.loc), t = store.t || {};
 
   // Planning-vs-execution split (labor-gap-split.js) — Wed-Tue PAY week, the engine's own
@@ -488,7 +515,7 @@ export function LaborCockpitTab({ store, ds }) {
           oppLabel: oppWeek > 0 ? 'Opportunity / week' : null,
           oppValue: oppWeek > 0 ? f$(Math.round(oppWeek)) : null,
         }),
-        VerdictBand('Coach', verdictText, whyText)),
+        VerdictBand('Coach', verdictText, whyText, h(CoachThisButton, { loc, metricKey: 'labor_pct', ds, onCoachingSaved }))),
       Card({ title: 'Why Labor % Moved', sub: 'rate · hours · sales, week-over-week' },
         decomp ? h(Decomp, { decomp }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 16, textAlign: 'center' } }, 'Need two complete pay weeks to decompose the move.'))),
     div(gridStyle('1fr 1fr'),

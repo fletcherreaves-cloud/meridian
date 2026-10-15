@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   COACHING_METRICS, NOISE_THRESHOLDS, SNAPSHOT_WINDOW_DAYS, REVIEW_WINDOW_DAYS,
-  snapshotMetricValue, startCoachingCycle, dueForReview, computeVerdict,
+  snapshotMetricValue, startCoachingCycle, dueForReview, openCoachingCycles, computeVerdict,
   recordCoachingResult, toAttentionItem,
 } from '../engine/coaching-loop.js';
 
@@ -78,6 +78,46 @@ describe('startCoachingCycle', () => {
     expect(cycle.verdict).toBeNull();
   });
 
+  // Owner, live, 2026-10-14: a real cycle was logged today ("coached_at": "2026-10-14") but its
+  // own note described training that happened weeks earlier ("...on Tuesday September 15th").
+  // The baseline auto-captured from the trailing window ending TODAY landed entirely AFTER that
+  // real intervention -- if the training changed behavior, the "baseline" already included the
+  // improvement, which would have silently erased the measured effect a month later at review.
+  // coachedAt lets the caller anchor the baseline window (and the 30-day review clock) to the
+  // real date instead.
+  it('an explicit coachedAt anchors the baseline window to THAT date, not today', () => {
+    const qsrFobRows = [
+      // Inside the 14-day window ending the last CLOSED business day before coachedAt
+      // (2026-07-15 itself is "in progress" as of that date, per snapshotMetricValue's own
+      // signature-#4 exclusion -- see the "excludes the in-progress day" test above): 5% ratio.
+      { loc: '10422', date: '2026-07-10', prodSalesAmt: 1000, condimentsAmt: 50 },
+      // Today's (ASOF's) window: a DIFFERENT 2% ratio -- would wrongly become the baseline if
+      // coachedAt were ignored (this is exactly the pre-fix bug).
+      { loc: '10422', date: '2026-08-10', prodSalesAmt: 1000, condimentsAmt: 20 },
+    ];
+    const cycle = startCoachingCycle(
+      { qsrFobRows },
+      { loc: '10422', metricKey: 'condiment_pct', note: 'training on 9/15', coachedAt: '2026-07-15' },
+      ASOF,
+    );
+    expect(cycle.coachedAt).toBe('2026-07-15');
+    expect(cycle.baseline).toBeCloseTo(0.05, 5); // the OLD window's ratio, not today's 0.02
+    expect(cycle.reviewAt).toBe('2026-08-14'); // +30 days from coachedAt, not from today/ASOF
+  });
+
+  it('rejects a coachedAt in the future rather than silently accepting a nonsensical baseline window', () => {
+    expect(() => startCoachingCycle(
+      { qsrFobRows: [] },
+      { loc: '10422', metricKey: 'condiment_pct', coachedAt: '2026-08-12' }, // one day after ASOF
+      ASOF,
+    )).toThrow(/future/i);
+  });
+
+  it('defaults coachedAt to today when omitted (unchanged one-tap flow)', () => {
+    const cycle = startCoachingCycle({ qsrFobRows: [] }, { loc: '10422', metricKey: 'condiment_pct' }, ASOF);
+    expect(cycle.coachedAt).toBe('2026-08-11');
+  });
+
   it('rejects a metric outside the food-cost/labor scope rather than silently accepting it', () => {
     expect(() => startCoachingCycle({}, { loc: '10422', metricKey: 'oepe' }, ASOF)).toThrow();
   });
@@ -98,6 +138,41 @@ describe('dueForReview', () => {
     ];
     const due = dueForReview(cycles, ASOF);
     expect(due.map(c => c.loc).sort()).toEqual(['A', 'B']);
+  });
+});
+
+// Owner, live, 2026-10-14: "why don't we include an area in the panel to check on progress of
+// any and all open coaching issues." dueForReview() only ever surfaces a cycle for one single
+// day-window; this is the full browsable list.
+describe('openCoachingCycles', () => {
+  it('includes every result==null cycle, not just ones due today -- unlike dueForReview', () => {
+    const cycles = [
+      { loc: 'A', reviewAt: '2026-08-10', result: null },   // overdue
+      { loc: 'B', reviewAt: '2026-09-15', result: null },   // weeks away -- dueForReview excludes this
+      { loc: 'C', reviewAt: '2026-08-01', result: 0.02 },   // already recorded -- excluded (closed)
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.map(c => c.loc).sort()).toEqual(['A', 'B']);
+  });
+
+  it('sorts soonest-review-first, so the list reads as a queue', () => {
+    const cycles = [
+      { loc: 'far', reviewAt: '2026-09-15', result: null },
+      { loc: 'overdue', reviewAt: '2026-08-01', result: null },
+      { loc: 'soon', reviewAt: '2026-08-12', result: null },
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.map(c => c.loc)).toEqual(['overdue', 'soon', 'far']);
+  });
+
+  it('attaches daysUntilReview, negative when already overdue', () => {
+    const cycles = [
+      { loc: 'A', reviewAt: '2026-08-06', result: null },  // 5 days before ASOF's day -> -5
+      { loc: 'B', reviewAt: '2026-08-21', result: null },  // 10 days after -> +10
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.find(c => c.loc === 'A').daysUntilReview).toBe(-5);
+    expect(open.find(c => c.loc === 'B').daysUntilReview).toBe(10);
   });
 });
 
