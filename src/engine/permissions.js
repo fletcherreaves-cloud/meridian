@@ -57,6 +57,19 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    group: 'Payroll',
+    items: [
+      // Owner request 2026-10-15 (pay-rate history): wage data is a different sensitivity tier
+      // from everything else analytics.labor already covers (store-level AROP, scheduling) --
+      // deliberately its own key, not folded into analytics.labor, so it can stay Owner/Admin/
+      // DO-only while labor analytics stays broadly available. The actual enforcement boundary
+      // is Supabase RLS (get_my_role() in ('admin','owner','do') on employee_pay_rate_changes/
+      // lifelenz_shift_pay) -- this key only gates the nav entry + load, same "UI-layer gate,
+      // RLS is the real boundary" relationship every other permission key here has.
+      { key: 'payroll.view', label: 'Pay rate history & payroll impact (wage data)' },
+    ],
+  },
+  {
     group: 'Security',
     items: [
       // Static baseline only -- admin/supervisor always match security_findings' RLS tier, but
@@ -98,6 +111,7 @@ const SUPERVISOR_PERMS = {
   'users.manage.all':       false,
   'users.manage.lower':     true,
   'security.view':          true,
+  'payroll.view':           false,
 };
 
 const MANAGER_PERMS = {
@@ -120,6 +134,7 @@ const MANAGER_PERMS = {
   'settings.edit':          false,
   'users.manage.all':       false,
   'users.manage.lower':     false,
+  'payroll.view':           false,
   // true, not false: a manager's REAL access is org_config.gm_identity_reveal_enabled, a runtime
   // flag this static template can't see. Set true so the nav entry appears and
   // securityPanelAccess() resolves the live answer -- false here would hide the entry from every
@@ -155,11 +170,13 @@ const VP_PERMS = {
   'users.manage.all':       false,
   'users.manage.lower':     true,
   'security.view':          true,
+  'payroll.view':           false, // overridden true in DO_PERMS just below
 };
 
 const DO_PERMS = {
   ...VP_PERMS,
   'analytics.integrity':    false,
+  'payroll.view':           true,
 };
 
 const OM_PERMS = {
@@ -188,6 +205,7 @@ const GM_PERMS = {
   'users.manage.all':       false,
   'users.manage.lower':     true,
   'security.view':          true,
+  'payroll.view':           false,
 };
 
 const SM_AM_DM_PERMS = {
@@ -211,6 +229,7 @@ const SM_AM_DM_PERMS = {
   'users.manage.all':       false,
   'users.manage.lower':     false,
   'security.view':          true,
+  'payroll.view':           false,
 };
 
 export const ROLE_PERMISSION_TEMPLATES = {

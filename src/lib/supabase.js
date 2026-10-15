@@ -1250,6 +1250,50 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
   }));
 }
 
+// ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
+// Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
+// schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's
+// own hasPermission('payroll.view') check -- that check only decides whether App.js bothers
+// calling these loaders at all (see App.js's _stPayrollHistory gate), it is not the real
+// enforcement boundary. A caller without the role gets an empty array back from Supabase, same
+// as any other RLS-filtered read in this app, not an error.
+//
+// DELIBERATELY SEPARATE from loadLifeLenzShiftAssignments -- that table's RLS is intentionally
+// broad (tenant+loc only, dispatch #125) because names/schedules were judged safe to show
+// broadly; wage data was never covered by that decision and lives in its own table so its
+// stricter RLS never has to touch that one's existing visibility.
+export async function loadLifeLenzShiftPay({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  // No direct date column on this table (joined to lifelenz_shift_assignments by shift_id) --
+  // callers filter by date/loc themselves after joining, same as any other keyed-join loader.
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_shift_pay').select('*').range(from, to);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_shift_pay');
+  return (data || []).map(r => ({
+    loc: r.loc, shiftId: r.shift_id, earnings: r.earnings, seconds: r.seconds, updatedAt: r.updated_at,
+  }));
+}
+
+// Append-only management (GM/AM/DM/SM) pay-rate change log -- see
+// schema-employee-pay-rate-changes.sql's own header for why hourly crew isn't stored here
+// (its history is derived on demand from loadLifeLenzShiftPay instead).
+export async function loadEmployeePayRateChanges({ locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('employee_pay_rate_changes').select('*').order('effective_date', { ascending: false }).range(from, to);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'employee_pay_rate_changes');
+  return (data || []).map(r => ({
+    id: r.id, loc: r.loc, source: r.source, personKey: r.person_key,
+    employeeName: r.employee_name, jobTitle: r.job_title,
+    priorRate: r.prior_rate, newRate: r.new_rate, effectiveDate: r.effective_date,
+    detectedAt: r.detected_at,
+  }));
+}
+
 // ── LifeLenz Attendance (2026-09-06) — replaces scheduling.js's hand-transcribed TA_DATA ──────
 // Store-level rolling-28-day rollup, one row per (loc, period_end), written only by
 // scripts/lifelenz-attendance-pull.mjs's service-role key. `date` maps to `period_end` (not a

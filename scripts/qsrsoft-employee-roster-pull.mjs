@@ -238,6 +238,50 @@ export function toTenureRows(records) {
   return Array.from(byKey.values());
 }
 
+// ── Pay-rate change detection (owner request 2026-10-15) ──────────────────────────────────────
+// qsr_employee_tenure is upserted on (tenant_id,loc,geid) every run -- the PRIOR hourly_pay_rate
+// is gone the instant upsertTenure() below writes the new one, so this MUST run first, reading
+// the about-to-be-overwritten value, and insert a change row into employee_pay_rate_changes
+// (append-only, role-gated -- see schema-employee-pay-rate-changes.sql) before it disappears.
+// Best-effort, same posture as every other secondary write in this script: a failure here must
+// never block or roll back the tenure upsert that already works today.
+//
+// Pure diff logic pulled out (no supabase dependency) so it's directly testable the same way
+// this file's own toTenureRows() already is -- priorByKey is {loc}|{geid} -> hourly_pay_rate
+// (or absent entirely for a person never seen before).
+export function computePayRateChanges(rows, priorByKey, today) {
+  const changes = [];
+  for (const row of (rows || [])) {
+    if (row.hourly_pay_rate == null) continue; // nothing to compare -- this run has no rate at all
+    const key = `${row.loc}|${row.geid}`;
+    const prior = priorByKey.has(key) ? priorByKey.get(key) : undefined;
+    // undefined = genuinely new person (never seen before) -- not a "change," just a baseline;
+    // recording it as one would manufacture a false "hired at $X" change event with no real
+    // prior to compare against. null = seen before with NO rate on file -- also not comparable.
+    // Only a REAL prior NUMBER that differs from the new one is a change.
+    if (prior == null || prior === row.hourly_pay_rate) continue;
+    changes.push({
+      loc: row.loc, source: 'qsr_tenure', person_key: row.geid,
+      employee_name: row.full_employee_name || null, job_title: row.job_title_code_description || null,
+      prior_rate: prior, new_rate: row.hourly_pay_rate, effective_date: today,
+    });
+  }
+  return changes;
+}
+
+async function detectAndRecordPayRateChanges(rows) {
+  if (!rows.length) return 0;
+  const { data: current, error: readErr } = await supabase
+    .from('qsr_employee_tenure').select('loc,geid,hourly_pay_rate');
+  if (readErr) { console.warn('[pay-rate-changes] read current rates failed (skipping detection this run):', readErr.message); return 0; }
+  const priorByKey = new Map((current || []).map(r => [`${r.loc}|${r.geid}`, r.hourly_pay_rate]));
+  const changes = computePayRateChanges(rows, priorByKey, new Date().toISOString().slice(0, 10));
+  if (!changes.length) return 0;
+  const { error: insErr } = await supabase.from('employee_pay_rate_changes').insert(changes);
+  if (insErr) { console.warn('[pay-rate-changes] insert failed:', insErr.message); return 0; }
+  return changes.length;
+}
+
 async function upsertTenure(rows) {
   if (!rows.length) return 0;
   const CHUNK = 500; let saved = 0;
@@ -403,6 +447,10 @@ async function main() {
   // a tenure-upsert failure must not roll back or block the roster_role_counts write that
   // already succeeded above.
   const tenureRows = toTenureRows(records);
+  // MUST run before upsertTenure() below -- it reads the rate upsertTenure is about to
+  // overwrite. See detectAndRecordPayRateChanges' own header for why.
+  const rateChanges = await detectAndRecordPayRateChanges(tenureRows);
+  if (rateChanges) console.log(`[employee-roster] ✓ ${rateChanges} pay-rate change(s) recorded`);
   const tenureSaved = await upsertTenure(tenureRows);
   console.log(`[employee-roster] ✓ ${tenureSaved} person rows upserted to qsr_employee_tenure`);
 
