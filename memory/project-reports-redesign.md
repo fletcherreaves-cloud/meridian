@@ -224,12 +224,40 @@ a real chain there. There was no second resolver to build. What Phase 1 actually
 Tests: `src/__tests__/reports-catalog-phase1.test.js` (75 tests) plus full suite
 (614/614 files, 5794/5794) and build (clean, 563.21 KB eager / 850 KB budget) both green.
 
-**Phase 2 — Report Shell + the two new export actions.** Date-range picker + `LocationSelector` +
-Run action, wired to Print (existing `printHtml()`), CSV (one generalized exporter replacing the
-~20 hand-rolled ones), a new PDF export (needs a real library — `jspdf` or `pdfmake` — lazy-loaded
-like `pdfjs-dist`/`xlsx` already are, to protect the entry-chunk budget), and a new generalized
-XLSX export (generalizing the one real pattern in `sage.js`). Prove it against one real existing
-report before treating it as the standard.
+**Phase 2 — SHIPPED 2026-10-15 (v5.57x).** Built as planned, with two real deviations worth
+recording so the next phase doesn't re-litigate them:
+1. **No existing report was retrofitted onto the shell.** Rewriting a live, tested panel
+   (DateRangeReport was the natural candidate) carried real regression risk for a proof step
+   that didn't need it. Instead the shell's proof vehicle is a brand-new report, **Loss
+   Prevention Summary** (`src/engine/loss-prevention-report.js` + `src/views/loss-prevention-report.js`,
+   panel id `loss-prevention`, section `reports`, perm `analytics.store`) — reuses exactly the
+   16 metric-source.js keys Phase 1 gave a real direction to. Existing reports still adopt the
+   shell opportunistically later, per the panel-contract "touch it, bring it into line"
+   convention — not a retrofit sweep now.
+2. **jspdf is deliberately NOT pinned in `vite.config.ts`'s `manualChunks`, unlike xlsx/
+   html2canvas.** Tried the identical pin first (same pattern, same stated rationale) and
+   MEASURED it to be actively wrong for this dependency: it merged jspdf's ~140 KB gzip into the
+   same chunk as the app's shared dynamic-import runtime helper, which the entry page always
+   fetches eagerly — confirmed by diffing the built `dist/index.html`'s `<link
+   rel="modulepreload">` list with and without the pin (eager total jumped 563→703 KB WITH the
+   pin, back to ~563 KB without it). Left to automatic chunking, jspdf and jspdf-autotable each
+   land in their own real lazy chunk, never preloaded. **Lesson for the next large lazy
+   dependency: the xlsx/html2canvas pin is not a template to copy by analogy — build and diff
+   the modulepreload list before and after, every time.** Documented in `src/lib/jspdf-lazy.js`'s
+   own header so this isn't rediscovered the hard way again.
+
+What shipped: `src/components/ReportShell.js` (date range + `LocationSelector` + Run, then an
+Export ▾ menu once a run has produced data), `src/utils/report-export.js` (the shared
+`{title, subtitle?, headers, rows}` contract → CSV/XLSX/PDF/Print, all four for free on any
+report built on the shell), `src/lib/jspdf-lazy.js` (new dependency: `jspdf` + `jspdf-autotable`,
+confirmed zero new `npm audit` vulnerabilities — same 11 pre-existing ones, unrelated). CSV
+generalizes the hand-rolled Blob-download pattern for NEW reports only — the ~20 existing
+hand-rolled exporters are untouched. 27 new tests across engine/shell/panel layers (including
+real generated-PDF byte verification, not just "didn't throw" — see
+`report-export.test.js`'s own header for why `.save()` had to be tested via the real file it
+writes under this harness's Node+happy-dom hybrid, not a browser-only mock). Full suite green
+(618/618 files, 5821/5821 tests), build clean, within budget (563.48 KB eager / 850 KB budget —
+effectively unchanged from Phase 1's baseline, confirming the jspdf fix above actually holds).
 
 **Phase 3 — Reports hub.** Category-tabbed landing page under `section:'reports'`; cross-lists
 existing report panels (pre-scoped launch, no relocation) alongside any new base reports; "My

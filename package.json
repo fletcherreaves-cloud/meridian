@@ -18,6 +18,8 @@
     "chart.js": "^4.5.1",
     "dexie": "^4.4.4",
     "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

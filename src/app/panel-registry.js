@@ -283,6 +283,14 @@ export const PANELS = [
   // src/features/lifelenz.js) is unchanged.
   { id:'lifelenz-bridge', label:'MBI vs LifeLenz Accuracy', icon:'🌉', perm:'analytics.forecasting', kind:'hub-tab', section:'forecasting' },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
+  // Loss Prevention Summary (Reports redesign Phase 2 proof-of-concept, 2026-10-15) -- the
+  // first report built on the new ReportShell (date range + LocationSelector + Run, then
+  // Print/CSV/Excel/PDF export, all for free -- components/ReportShell.js). Reuses exactly the
+  // 16 metric-source.js keys Phase 1 just gave a real, agreed-upon direction to. perm matches
+  // every other store-level operational report's own gate (analytics.store), not a new,
+  // narrower one -- loss-prevention $/counts are already visible through Controls/Security,
+  // unlike payroll.view's deliberately tighter wage-data boundary.
+  { id:'loss-prevention', label:'Loss Prevention Summary', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
