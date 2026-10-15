@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   COACHING_METRICS, NOISE_THRESHOLDS, SNAPSHOT_WINDOW_DAYS, REVIEW_WINDOW_DAYS,
-  snapshotMetricValue, startCoachingCycle, dueForReview, computeVerdict,
+  snapshotMetricValue, startCoachingCycle, dueForReview, openCoachingCycles, computeVerdict,
   recordCoachingResult, toAttentionItem,
 } from '../engine/coaching-loop.js';
 
@@ -138,6 +138,41 @@ describe('dueForReview', () => {
     ];
     const due = dueForReview(cycles, ASOF);
     expect(due.map(c => c.loc).sort()).toEqual(['A', 'B']);
+  });
+});
+
+// Owner, live, 2026-10-14: "why don't we include an area in the panel to check on progress of
+// any and all open coaching issues." dueForReview() only ever surfaces a cycle for one single
+// day-window; this is the full browsable list.
+describe('openCoachingCycles', () => {
+  it('includes every result==null cycle, not just ones due today -- unlike dueForReview', () => {
+    const cycles = [
+      { loc: 'A', reviewAt: '2026-08-10', result: null },   // overdue
+      { loc: 'B', reviewAt: '2026-09-15', result: null },   // weeks away -- dueForReview excludes this
+      { loc: 'C', reviewAt: '2026-08-01', result: 0.02 },   // already recorded -- excluded (closed)
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.map(c => c.loc).sort()).toEqual(['A', 'B']);
+  });
+
+  it('sorts soonest-review-first, so the list reads as a queue', () => {
+    const cycles = [
+      { loc: 'far', reviewAt: '2026-09-15', result: null },
+      { loc: 'overdue', reviewAt: '2026-08-01', result: null },
+      { loc: 'soon', reviewAt: '2026-08-12', result: null },
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.map(c => c.loc)).toEqual(['overdue', 'soon', 'far']);
+  });
+
+  it('attaches daysUntilReview, negative when already overdue', () => {
+    const cycles = [
+      { loc: 'A', reviewAt: '2026-08-06', result: null },  // 5 days before ASOF's day -> -5
+      { loc: 'B', reviewAt: '2026-08-21', result: null },  // 10 days after -> +10
+    ];
+    const open = openCoachingCycles(cycles, ASOF);
+    expect(open.find(c => c.loc === 'A').daysUntilReview).toBe(-5);
+    expect(open.find(c => c.loc === 'B').daysUntilReview).toBe(10);
   });
 });
 

@@ -21,7 +21,8 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote } from '../lib/supabase.js';
+import { COACHING_METRICS, openCoachingCycles } from '../engine/coaching-loop.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -5501,6 +5502,97 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   );
 }
 
+// Owner, live, 2026-10-14: "why don't we include an area in the panel to check on progress of
+// any and all open coaching issues. To see what is happening and be able to append new notes to
+// it with time stamped and date stamped entries and by whom." A coaching-review item only ever
+// surfaces in the main findings list once its 30-day review comes due (toAttentionItem()) -- this
+// is the browsable superset (openCoachingCycles, engine/coaching-loop.js), with a per-cycle
+// append-only note log (coaching_cycle_notes, separate from coaching_cycles.note, the one-time
+// start note) so progress can be recorded WHILE a cycle is still open, not just at the end.
+function OpenCoachingNoteForm({cycleId, loc, onAdded}) {
+  const [text, setText] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const add = async () => {
+    if (!text.trim() || saving) return;
+    setSaving(true);
+    try {
+      const { error } = await addCoachingCycleNote({ cycleId, loc, note: text });
+      if (!error) { setText(''); onAdded && onAdded(); }
+    } finally { setSaving(false); }
+  };
+  return div({style:{display:'flex',gap:6,marginTop:8}},
+    h('input', {
+      type: 'text', value: text, placeholder: 'Add a progress note…', disabled: saving,
+      onChange: e => setText(e.target.value),
+      onKeyDown: e => { if (e.key === 'Enter') add(); },
+      style: {flex:1,fontSize:'10px',padding:'5px 8px',background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)'},
+    }),
+    btn({className:'btn btn-sm',style:{fontSize:'9px'},disabled:saving||!text.trim(),onClick:add}, saving?'Adding…':'+ Add')
+  );
+}
+
+function OpenCoachingSection({ds, onCoachingSaved, onLogVerdict}) {
+  const [open, setOpen] = React.useState(false);
+  const [expandedCycle, setExpandedCycle] = React.useState(null);
+  const cycles = React.useMemo(() => openCoachingCycles(ds?.coachingCycles || []), [ds?.coachingCycles]);
+  const notesByCycle = React.useMemo(() => {
+    const m = new Map();
+    for (const n of (ds?.coachingCycleNotes || [])) {
+      if (!m.has(n.cycleId)) m.set(n.cycleId, []);
+      m.get(n.cycleId).push(n);
+    }
+    return m;
+  }, [ds?.coachingCycleNotes]);
+
+  const dueLabel = (d) => d < 0 ? `${-d} day${-d===1?'':'s'} overdue` : d === 0 ? 'Due today' : `Due in ${d} day${d===1?'':'s'}`;
+  const fmtDT = (iso) => { try { return new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); } catch { return iso; } };
+
+  return div({style:{marginTop:12,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+    div({onClick:()=>setOpen(p=>!p),style:{display:'flex',alignItems:'center',
+      justifyContent:'space-between',padding:'7px 12px',cursor:'pointer',
+      background:'var(--surf2)',fontSize:'10px',fontWeight:700,color:'var(--amber)'}},
+      span(null,'🎯 Open Coaching ('+cycles.length+')'),
+      span({style:{fontSize:'9px',color:'var(--text3)'}},open?'collapse':'expand')
+    ),
+    open && div({style:{padding:'8px 12px',display:'flex',flexDirection:'column',gap:6}},
+      cycles.length===0
+        ? div({style:{fontSize:'9px',color:'var(--text3)',textAlign:'center',padding:8}},'No open coaching cycles')
+        : cycles.map(c => {
+            const spec = COACHING_METRICS[c.metric];
+            const notes = notesByCycle.get(c.id) || [];
+            const isOpen = expandedCycle === c.id;
+            return div({key:c.id,style:{border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+              div({onClick:()=>setExpandedCycle(p=>p===c.id?null:c.id),style:{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer',background:'var(--surf)'}},
+                span({style:{fontWeight:700,fontSize:'10.5px',color:'var(--text)',flexShrink:0}}, sNameC(c.loc)),
+                span({style:{fontSize:'9px',color:'var(--text3)',flexShrink:0}}, spec?.label || c.metric),
+                div({style:{flex:1,minWidth:0,fontSize:'9px',color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                  !isOpen && (c.note || '')),
+                span({style:{fontSize:'9px',fontWeight:700,color:c.daysUntilReview<0?'var(--crit)':c.daysUntilReview<=3?'#f5bc00':'var(--text3)',flexShrink:0}}, dueLabel(c.daysUntilReview)),
+                span({style:{fontSize:'9px',color:'var(--text3)',flexShrink:0}}, notes.length+' note'+(notes.length===1?'':'s')),
+                span({style:{fontSize:'10px',color:'var(--text3)',flexShrink:0}}, isOpen?'▾':'▸')
+              ),
+              isOpen && div({style:{padding:'10px 12px',background:'var(--surf2)',display:'flex',flexDirection:'column',gap:8}},
+                div({style:{fontSize:'9px',color:'var(--text3)'}},
+                  'Coached '+c.coachedAt+(c.baseline!=null?` · baseline ${(c.baseline*100).toFixed(2)}%`:'')+' · review '+c.reviewAt),
+                c.note && div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5,padding:'6px 8px',background:'var(--surf3)',borderRadius:'var(--r)'}},
+                  '📝 ',h('b',null,'Start: '),c.note),
+                notes.length>0 && div({style:{display:'flex',flexDirection:'column',gap:4}},
+                  ...notes.map(n => div({key:n.id,style:{fontSize:'9.5px',color:'var(--text2)',lineHeight:1.5,borderLeft:'2px solid var(--bdr)',paddingLeft:7}},
+                    n.note,
+                    div({style:{fontSize:'8px',color:'var(--text3)',marginTop:1}},
+                      (n.author||'Unknown')+' · '+fmtDT(n.createdAt))
+                  ))
+                ),
+                h(OpenCoachingNoteForm, {cycleId:c.id, loc:c.loc, onAdded:onCoachingSaved}),
+                c.daysUntilReview<=0 && div({style:{display:'flex',justifyContent:'flex-end',marginTop:4}},
+                  btn({className:'btn btn-sm',style:{fontSize:'9px',color:'var(--amber)'},onClick:()=>onLogVerdict&&onLogVerdict(c)},'🎯 Log Verdict →'))
+              )
+            );
+          })
+    )
+  );
+}
+
 function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose, onCoachingSaved}) {
   // #208 — which coaching cycle a "Log Verdict →" item is following up on.
   const [reviewCycle, setReviewCycle] = React.useState(null);
@@ -5733,7 +5825,10 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
                   padding:'3px 8px',borderRadius:12,background:'rgba(16,185,129,.08)',
                   border:'.5px solid rgba(16,185,129,.2)'}},s.name||sNameC(s.loc)))
           )
-        )
+        ),
+
+        // Open Coaching — progress on in-flight cycles, not just ones due for review today.
+        h(OpenCoachingSection, {ds, onCoachingSaved, onLogVerdict: setReviewCycle})
       ),
     // #208 — record the measured follow-up for a coaching cycle whose review came due.
     reviewCycle && h(CoachingModal, {
@@ -8731,4 +8826,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages, rollupProj, rollupGroup, buildGroupSheetHTML, computeMonthActuals, PROJ_FIELDS };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, OpenCoachingSection, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages, rollupProj, rollupGroup, buildGroupSheetHTML, computeMonthActuals, PROJ_FIELDS };

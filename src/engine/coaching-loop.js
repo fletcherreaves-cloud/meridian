@@ -160,6 +160,24 @@ export function dueForReview(cycles = [], asOf = null) {
 }
 
 /**
+ * ALL open (in-progress, result == null) cycles, not just the ones due for review today --
+ * owner, live, 2026-10-14: "why don't we include an area in the panel to check on progress of
+ * any and all open coaching issues." dueForReview() above only ever surfaces a cycle for exactly
+ * one day-window (once reviewAt <= today starts being true); this is the browsable superset,
+ * sorted soonest-review-first so the list reads as a queue. Each cycle gets a `daysUntilReview`
+ * (negative = already overdue, i.e. would also appear in dueForReview()) for display -- computed
+ * here rather than left to the caller so every consumer agrees on the same "today."
+ */
+export function openCoachingCycles(cycles = [], asOf = null) {
+  const today = asOf ? new Date(asOf) : new Date();
+  const todayMs = new Date(dKey(today) + 'T00:00:00').getTime();
+  return (cycles || [])
+    .filter(c => c && c.result == null && c.reviewAt)
+    .map(c => ({ ...c, daysUntilReview: Math.round((new Date(c.reviewAt + 'T00:00:00').getTime() - todayMs) / 86400000) }))
+    .sort((a, b) => a.daysUntilReview - b.daysUntilReview);
+}
+
+/**
  * Rule 4: measured, never self-reported. Returns null (not a guess) when no threshold is
  * registered for this metric yet — the explicit v1 fallback. All 5 current metrics are
  * cost/labor percentages where LOWER is better, so a negative delta (result < baseline) is

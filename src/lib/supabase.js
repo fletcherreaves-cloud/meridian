@@ -5167,6 +5167,30 @@ export async function loadCoachingCycles() {
   }));
 }
 
+// ── Coaching cycle notes — progress log (owner, live, 2026-10-14) ─────────────────────────────
+// Append-only timestamped/attributed entries DURING a cycle's 30-day window, separate from
+// coaching_cycles.note (the one-time start note) -- see schema-coaching-cycle-notes.sql's own
+// header for why this is a separate table rather than a read-modify-write array column.
+export async function loadCoachingCycleNotes() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('coaching_cycle_notes').select('*').order('created_at', { ascending: true }).range(from, to));
+  return (data || []).map(r => ({
+    id: r.id, cycleId: r.cycle_id, loc: String(r.loc), note: r.note,
+    author: r.author || null, createdAt: r.created_at,
+  }));
+}
+// Same auth.getUser() email-attribution convention AttentionPanel's ackItem() and
+// NeedsYouTodayTile's dismiss() already use -- "by whom," not just "when."
+export async function addCoachingCycleNote({ cycleId, loc, note }) {
+  if (!supabase || !cycleId || !loc || !note?.trim()) return { error: 'no-op' };
+  let author = null;
+  try { author = (await supabase.auth.getUser())?.data?.user?.email || null; } catch {}
+  const { data, error } = await supabase.from('coaching_cycle_notes').insert({
+    cycle_id: cycleId, loc: String(loc), note: note.trim(), author,
+  }).select('id, created_at').single();
+  return { id: data?.id || null, createdAt: data?.created_at || null, author, error: error?.message || null };
+}
+
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
 // Keyword search over the KB (title + body). Sanitizes the query for PostgREST's or() filter syntax.
 export async function searchQsrKb(query, { limit = 20 } = {}) {
