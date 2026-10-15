@@ -3581,7 +3581,7 @@ function App() {
           else if(modal==='forecast-reports')goRoute('forecast-reports');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab,onCoachingSaved:refreshCoachingCycles}),
       view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
       view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations

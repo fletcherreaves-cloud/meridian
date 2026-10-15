@@ -1958,7 +1958,7 @@ function TabDigestRow({store, ds, settings, setTab}) {
 }
 
 // STORE DASHBOARD (SECTION 13)
-function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings, initialTab}) {
+function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings, initialTab, onCoachingSaved}) {
   // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('StoreDash', 'render+commit', performance.now() - _rt0); });
@@ -2603,8 +2603,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
     tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
-    tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds}),
-    tab==='laborsched' && h(LaborCockpitTab,{store,ds})
+    tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds,onCoachingSaved}),
+    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved})
   );
 }
 
