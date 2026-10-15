@@ -217,6 +217,7 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 // rendered as the Punches tab, same "absorbed into the hub, no standalone entry point" pattern as
 // CountCyclePanel/count-cycle-panel.js above.
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
+const PayRateHistoryPanel = lazyPanel(() => import('../views/pay-rate-history.js').then(m => ({ default: m.PayRateHistoryPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -301,7 +302,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1881,6 +1882,18 @@ function App() {
           setDs(prev=>{if(!prev)return prev;return {...prev,payEvents};});
         }
       }catch(e){console.warn('[Meridian] Pay events load failed:',e);} };
+      // Management pay-rate change log (owner request 2026-10-15) — same small/slow-growing
+      // eager-load treatment as payEvents above. RLS-restricted to Owner/Admin/DO
+      // (schema-employee-pay-rate-changes.sql) -- any other role's read returns empty, same as
+      // every other RLS-filtered table in this app, not an error; the payroll.view permission
+      // check gates the UI/nav entry, not this load.
+      const _stEmployeePayRateChanges = async () => {
+      try{
+        const employeePayRateChanges=await loadEmployeePayRateChanges();
+        if(employeePayRateChanges.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,employeePayRateChanges};});
+        }
+      }catch(e){console.warn('[Meridian] Employee pay-rate changes load failed:',e);} };
       // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — staff_assignments
       // reports-to graph rows (dispatch #150), the first client-side consumer. Feeds
       // computeSegmentedReview's promotion/transfer segmented scoring (Performance Reviews'
@@ -2281,6 +2294,7 @@ function App() {
         _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
         _timedStage('T2 coachingCycleNotes', _stCoachingCycleNotes, _t2Start),
         _timedStage('T2 payEvents', _stPayEvents, _t2Start),
+        _timedStage('T2 employeePayRateChanges', _stEmployeePayRateChanges, _t2Start),
         _timedStage('T2 staffAssignments', _stStaffAssignments, _t2Start),
         _timedStage('T2 employeeTenure', _stEmployeeTenure, _t2Start),
       ]);
@@ -3405,6 +3419,7 @@ function App() {
         // tab via crewTab (see its own declaration above for the full reasoning).
         if(modal==='crew-schedule')  perm('analytics.store')&&(setCrewTab('schedule'),goRoute('crew-schedule'));
         if(modal==='time-punches')   perm('analytics.store')&&(setCrewTab('punches'),goRoute('crew-schedule'));
+        if(modal==='pay-rate-history') perm('payroll.view')&&goRoute('pay-rate-history');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -3691,6 +3706,7 @@ function App() {
       // 'time-punches' no longer has its own routePanel branch — dispatch #197 folded it into
       // CrewSchedulePanel's Punches tab (crewTab, initialTab above).
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,initialTab:crewTab,onClose:()=>goRoute(null)}),
+      routePanel==='pay-rate-history'&&h(PayRateHistoryPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did

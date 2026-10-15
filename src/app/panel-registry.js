@@ -127,6 +127,12 @@ export const PANELS = [
   // unchanged. Chosen as the surviving id/anchor per the dispatch's own default (the
   // earlier/more-established of the two, #123 vs #138) -- nothing found that argued otherwise.
   { id:'crew-schedule', label:'Crew Schedule', icon:'🗓', perm:'analytics.store', kind:'nav', section:'people', route:true },
+  // Pay Rate History (owner request 2026-10-15) -- deliberately a NARROWER permission than
+  // every sibling 'people' panel above (payroll.view, not analytics.store/analytics.labor):
+  // wage data is a different sensitivity tier. The real enforcement boundary is Supabase RLS
+  // (get_my_role() in ('admin','owner','do') on the underlying tables) -- this key only gates
+  // the nav entry, same relationship every permission key here has to its own RLS.
+  { id:'pay-rate-history', label:'Pay Rate History', icon:'💰', perm:'payroll.view', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations', route:true },

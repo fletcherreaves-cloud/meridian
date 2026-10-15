@@ -409,3 +409,16 @@ describe('reconcileLadderLevels()', () => {
     expect(byId.gm.level).toBeLessThan(byId.sm_am_dm.level);
   });
 });
+
+// Owner request 2026-10-15 (pay-rate history): wage data gets its own permission key,
+// deliberately narrower than analytics.labor -- Owner/Admin/DO only. The real enforcement
+// boundary is Supabase RLS (get_my_role() in ('admin','owner','do')); this is the UI-layer
+// mirror of that, same relationship every other permission key here has to its own RLS.
+describe('permissions.js — payroll.view (pay-rate history, owner request 2026-10-15)', () => {
+  it('admin/owner/do can see it; every other role cannot', () => {
+    const allowed = ['admin', 'owner', 'do'];
+    for (const role of DEFAULT_ROLES) {
+      expect(hasPermission(role.id, 'payroll.view')).toBe(allowed.includes(role.id));
+    }
+  });
+});

@@ -197,9 +197,21 @@ export function shiftsForEmployeeSchedule(shifts, opts = {}) {
     const eid = nd.assignedEmploymentId;
     if (!eid || !nd.shiftStartTime || !nd.shiftEndTime) continue;
     const info = roster.get(eid) || {};
-    const seg = (nd.pivotMetrics || []).find(s => s && s.businessRoleId) || {};
+    const pm = nd.pivotMetrics || [];
+    const seg = pm.find(s => s && s.businessRoleId) || {};
     const roleId = seg.businessRoleId || null;
     const meta = resolveRoleMeta(roleId);
+    // Pay-rate history (owner request 2026-10-15): earnings/seconds summed across ALL of the
+    // shift's pivotMetrics segments (a role-split shift has >1, same as rollupShiftsByRole/
+    // rollupShiftsByEmployee above sum them for their own cost totals) -- NOT just the one
+    // segment `seg` above picks for display purposes. These two numbers were already being
+    // fetched by SHIFTS_QUERY and consumed by the two rollup functions in this same file; they
+    // were simply never carried through to this PER-SHIFT, PERSISTED row, so the historical
+    // per-shift effective rate (earnings/hours) was being silently discarded on every save.
+    // Zero new LifeLenz query or new PII touch -- employee_name already flows into this exact
+    // row (dispatch #125's reversal of the earlier tokenized-name design).
+    const earnings = pm.reduce((s, x) => s + _n(x && x.earnings), 0);
+    const seconds = pm.reduce((s, x) => s + _n(x && x.seconds), 0);
     out.push({
       employmentId: eid,
       name: info.computedName || info.name || null,
@@ -214,6 +226,7 @@ export function shiftsForEmployeeSchedule(shifts, opts = {}) {
       category: meta ? meta.category : null,
       code: meta ? meta.code : null,
       isAbsent: !!nd.isAbsent,
+      earnings, seconds,
     });
   }
   return out.sort((a, b) => a.startISO.localeCompare(b.startISO));

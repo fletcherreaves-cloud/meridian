@@ -12,7 +12,7 @@
 // supabase.upsert() in the script), so testing it here is testing the actual call-site
 // contract, not a detached normalizer.
 import { describe, it, expect } from 'vitest';
-import { toTenureRows, assertNoDeniedSelectCols, SELECT_COLS, buildUrl } from '../../scripts/qsrsoft-employee-roster-pull.mjs';
+import { toTenureRows, assertNoDeniedSelectCols, SELECT_COLS, buildUrl, computePayRateChanges } from '../../scripts/qsrsoft-employee-roster-pull.mjs';
 import { parseEmployeeRosterApi } from '../engine/people-reports.js';
 
 // ✅ CORRECTED 2026-10-13 (live-measured, do not re-litigate): employmentStatus was 'active'
@@ -155,5 +155,65 @@ describe('assertNoDeniedSelectCols() — the SELECT_COLS denial guard', () => {
 
   it('is case-insensitive (a widened field is caught regardless of casing)', () => {
     expect(() => assertNoDeniedSelectCols([...SELECT_COLS, 'SSN'])).toThrow();
+  });
+});
+
+// Owner request 2026-10-15 (pay-rate history): qsr_employee_tenure is upserted every run, so
+// the prior hourly_pay_rate is gone the instant that upsert lands -- computePayRateChanges is
+// the pure diff logic that must run BEFORE it, reading the about-to-be-overwritten value. All
+// fixtures synthetic, same PII discipline as this file's own header note.
+describe('computePayRateChanges() — pure diff against the about-to-be-overwritten rate', () => {
+  const TODAY = '2026-10-15';
+
+  it('a real prior rate that differs from the new one is a change', () => {
+    const rows = [{ loc: '0003708', geid: '1', hourly_pay_rate: 15.5, full_employee_name: 'A Tenure', job_title_code_description: 'General Manager' }];
+    const prior = new Map([['0003708|1', 15.0]]);
+    const changes = computePayRateChanges(rows, prior, TODAY);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      loc: '0003708', source: 'qsr_tenure', person_key: '1',
+      employee_name: 'A Tenure', job_title: 'General Manager',
+      prior_rate: 15.0, new_rate: 15.5, effective_date: TODAY,
+    });
+  });
+
+  it('an unchanged rate is NOT a change', () => {
+    const rows = [{ loc: '0003708', geid: '1', hourly_pay_rate: 15.0 }];
+    const prior = new Map([['0003708|1', 15.0]]);
+    expect(computePayRateChanges(rows, prior, TODAY)).toEqual([]);
+  });
+
+  it('a genuinely new person (no prior key at all) is NOT a change -- no false "hired at $X" event', () => {
+    const rows = [{ loc: '0003708', geid: '99', hourly_pay_rate: 15.0 }];
+    const prior = new Map(); // never seen before
+    expect(computePayRateChanges(rows, prior, TODAY)).toEqual([]);
+  });
+
+  it('a person seen before with a null prior rate on file is NOT a change -- nothing to compare against', () => {
+    const rows = [{ loc: '0003708', geid: '1', hourly_pay_rate: 15.0 }];
+    const prior = new Map([['0003708|1', null]]);
+    expect(computePayRateChanges(rows, prior, TODAY)).toEqual([]);
+  });
+
+  it('a row with no hourly_pay_rate this run is skipped entirely', () => {
+    const rows = [{ loc: '0003708', geid: '1', hourly_pay_rate: null }];
+    const prior = new Map([['0003708|1', 15.0]]);
+    expect(computePayRateChanges(rows, prior, TODAY)).toEqual([]);
+  });
+
+  it('the same geid at two different stores are independent keys', () => {
+    const rows = [
+      { loc: '0003708', geid: '1', hourly_pay_rate: 16.0 },
+      { loc: '0005183', geid: '1', hourly_pay_rate: 15.0 },
+    ];
+    const prior = new Map([['0003708|1', 15.0], ['0005183|1', 15.0]]);
+    const changes = computePayRateChanges(rows, prior, TODAY);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].loc).toBe('0003708');
+  });
+
+  it('empty/null rows yields an empty array, not a throw', () => {
+    expect(computePayRateChanges([], new Map(), TODAY)).toEqual([]);
+    expect(computePayRateChanges(null, new Map(), TODAY)).toEqual([]);
   });
 });

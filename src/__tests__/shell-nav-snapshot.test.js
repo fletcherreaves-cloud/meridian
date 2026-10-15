@@ -173,7 +173,11 @@ function renderNavTexts(permFn) {
 // Analytics or Reports. 📋 (Performance Reviews) is still shared with Graded Visits
 // (Operations) and fob-eom's old un-rendered claim -- unaffected, per the established
 // "icon has another owner" reasoning used throughout this file's own history above.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🗂','My Reports','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// 2026-10-15: 'Pay Rate History' (owner request, perm payroll.view) is a brand-new People
+// entry, landing right after 'Crew Schedule' (declaration order in panel-registry.js) and
+// before 'Security'. Its 💰 icon is shared with 'Opportunity $' (Analytics, perm
+// analytics.district) -- see that permission's own updated note in HIDDEN_WHEN_DENIED below.
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🗂','My Reports','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -262,7 +266,12 @@ const HIDDEN_WHEN_DENIED = {
   // perm widened 'analytics.district' -> 'analytics.store' (owner RBAC decision, "Narrower fix,
   // store specific at that level unless overridden in settings"), so an analytics.district-only
   // denial no longer touches it at all. It moves to the 'analytics.store' entry below instead.
-  'analytics.district': ['Above-Store One-Pager', 'District View', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞', '💰'],
+  // 2026-10-15: '💰' dropped out of this entry -- 'Pay Rate History' (People section, perm
+  // payroll.view, see its own new entry below) now also carries 💰, so denying
+  // analytics.district alone no longer removes every 💰 text node (Opportunity $ keeps
+  // rendering as its own separate denial, but the icon itself has a second owner now), same
+  // "icon has another owner" shape as 📦/🏆 elsewhere in this map.
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞'],
   // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
   // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
   // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
@@ -340,6 +349,10 @@ const HIDDEN_WHEN_DENIED = {
   // & Labor' already demonstrate.
   'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Inventory & Food Cost', 'Inventory Control', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Review Forms', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', 'Weekly Count Status', '✅', '⭐', '🏆', '🎟️', '💬', '💲', '📈', '📦', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
+  // 2026-10-15: 'Pay Rate History' (People section, owner request) is a brand-new entry, perm
+  // payroll.view. '💰' does NOT join this list -- 'Opportunity $' (perm analytics.district)
+  // already owns that icon, same "icon has another owner" shape noted on that entry above.
+  'payroll.view': ['Pay Rate History'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
   // kind:'hub-tab' in panel-registry.js, same "opens a hub and selects a tab" pattern as

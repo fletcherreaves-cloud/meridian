@@ -1233,6 +1233,40 @@ async function upsertShiftAssignmentRows(loc, rows) {
   return saved;
 }
 
+// ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
+// earnings/seconds were already fetched by SHIFTS_QUERY and consumed by rollupShiftsByRole/
+// rollupShiftsByEmployee's cost totals (src/engine/lifelenz-shift-jobs.js) but never persisted
+// at the per-shift grain -- shiftsForEmployeeSchedule now sums them across a shift's
+// pivotMetrics segments and carries them through to each row.
+//
+// DELIBERATELY A SEPARATE TABLE, not two more columns on lifelenz_shift_assignments: Postgres
+// RLS restricts ROWS, not columns, and lifelenz_shift_assignments' existing RLS is intentionally
+// broad (tenant+loc only, dispatch #125: "there is no reason to hide names for scheduling and
+// punch times") -- adding earnings/seconds as columns there would expose wage data to every
+// role that already has Crew Schedule Lookup access, not just Owner/Admin/DO. A separate table
+// with its own role-gated RLS (get_my_role() in ('admin','owner','do') -- see
+// schema-lifelenz-shift-pay.sql) keeps the existing table's visibility completely unchanged.
+async function upsertShiftPayRows(loc, rows) {
+  if (!rows.length) return 0;
+  const now = new Date().toISOString();
+  const upsert = rows.map(r => ({
+    loc, shift_id: r.shiftId, earnings: r.earnings, seconds: r.seconds, updated_at: now,
+  }));
+  // Same dispatch #137 same-conflict-key dedup as upsertShiftAssignmentRows just above.
+  const dedup = new Map();
+  for (const row of upsert) dedup.set(row.shift_id, row);
+  const deduped = [...dedup.values()];
+  const CHUNK = 500;
+  let saved = 0;
+  for (let i = 0; i < deduped.length; i += CHUNK) {
+    const { error } = await supabase.from('lifelenz_shift_pay')
+      .upsert(deduped.slice(i, i + CHUNK), { onConflict: 'loc,shift_id' });
+    if (error) { console.warn('[shift-pay] save error:', error.message); }
+    else saved += Math.min(CHUNK, deduped.length - i);
+  }
+  return saved;
+}
+
 async function pullShiftAssignments(token, schedules, start, end) {
   const weeks = weeksInRange(start, end);
   console.log(`[shift-assignments] pulling ${weeks.length} week(s) × ${schedules.length} store(s)…`);
@@ -1273,6 +1307,8 @@ async function pullShiftAssignments(token, schedules, start, end) {
       total += storeRows.length; saved += n;
       const named = storeRows.filter(r => r.name).length;
       console.log(`  [shift-assignments] ${loc}: ${n} shift-rows saved (${named}/${storeRows.length} with a resolved name)`);
+      // Separate table, separate (role-gated) RLS -- see upsertShiftPayRows' own header comment.
+      await upsertShiftPayRows(loc, storeRows);
     }
   }
   console.log(`[shift-assignments] ✓ ${saved}/${total} shift-rows saved${gqlFailed ? ' (some shift fetches failed — see first warning)' : ''}${rosterFailed ? ' (some roster fetches failed — see first warning)' : ''}`);

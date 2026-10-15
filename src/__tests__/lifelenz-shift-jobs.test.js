@@ -158,4 +158,38 @@ describe('lifelenz-shift-jobs — shiftsForEmployeeSchedule (per-shift, dispatch
     ] };
     expect(shiftsForEmployeeSchedule(noTimes, { scheduleId: SCH })).toEqual([]);
   });
+
+  // Owner request 2026-10-15 (pay-rate history): earnings/seconds were already fetched by
+  // SHIFTS_QUERY and consumed by rollupShiftsByRole/rollupShiftsByEmployee's cost totals above,
+  // but silently dropped before reaching this per-shift, PERSISTED row -- so the historical
+  // per-shift effective rate was discarded on every save. These guard the fix.
+  it('a single-segment shift carries its own earnings/seconds through (E2: $67.50 / 16200s)', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    const e2 = rows.find(r => r.employmentId === 'E2');
+    expect(e2.earnings).toBeCloseTo(67.5, 6);
+    expect(e2.seconds).toBe(16200);
+  });
+
+  it('a role-split shift (2 pivotMetrics segments) sums BOTH into one shift total, not just the display segment', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    const e1first = rows.find(r => r.employmentId === 'E1' && r.date === '2026-08-25');
+    // DT segment (60/14400) + a second DT segment (37.5/9000) -- same businessRoleId here, but
+    // the sum must still cover every segment, not just the one `seg` picks for display.
+    expect(e1first.earnings).toBeCloseTo(97.5, 6);
+    expect(e1first.seconds).toBe(23400);
+    // Effective rate for this shift: $97.50 / 6.5h = $15/hr, matching the fixture's own
+    // "$15/hr" comment at the top of this file.
+    expect(e1first.earnings / (e1first.seconds / 3600)).toBeCloseTo(15, 6);
+  });
+
+  it('a segment with null earnings/seconds contributes 0, not NaN/undefined (_committed still requires a non-empty pivotMetrics array)', () => {
+    const nullMetrics = { edges: [
+      { node: { assignedEmploymentId: 'E9', shiftType: 'roster', scheduleId: SCH,
+        shiftStartTime: '2026-08-28T13:00:00.000Z', shiftEndTime: '2026-08-28T19:00:00.000Z',
+        pivotMetrics: [{ businessRoleId: DT, earnings: null, seconds: null, payType: 'regular' }] } },
+    ] };
+    const rows = shiftsForEmployeeSchedule(nullMetrics, { scheduleId: SCH });
+    expect(rows[0].earnings).toBe(0);
+    expect(rows[0].seconds).toBe(0);
+  });
 });
