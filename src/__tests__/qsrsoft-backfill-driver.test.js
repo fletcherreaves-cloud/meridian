@@ -3,7 +3,8 @@
 // "meter the data in"). Covers only targetStartDate()/nextChunk() -- no network, no Supabase --
 // the actual pull/cursor-write behavior needs real credentials and is exercised live, not here.
 import { describe, it, expect } from 'vitest';
-import { targetStartDate, nextChunk } from '../../scripts/qsrsoft-backfill-driver.mjs';
+import { readFileSync } from 'node:fs';
+import { targetStartDate, nextChunk, TYPES } from '../../scripts/qsrsoft-backfill-driver.mjs';
 
 describe('targetStartDate', () => {
   it('is exactly N years before "today", computed fresh (not frozen)', () => {
@@ -55,4 +56,27 @@ describe('nextChunk', () => {
     const c = nextChunk({ earliestDatePulled: '2019-11-24', today: laterToday, chunkDays: 90, yearsBack: 7 });
     expect(c).toBeNull(); // 2019-11-23 is now before the receded floor (2020-05-03)
   });
+});
+
+// Live dry-run (2026-10-15) caught exactly this: TYPES.ops.destDateCol was wrongly 'date' --
+// qsr_cash_sheet (like qsr_daily_activity) actually uses 'dt'. nextChunk()/targetStartDate()'s
+// pure logic can't catch a wrong column name at all; it only surfaces on a real Supabase read.
+// This cross-checks each TYPES entry's destDateCol against the column name the REAL pull
+// script itself queries that table by, so a future typo here fails in CI instead of in a
+// scheduled run against production.
+describe('TYPES.*.destDateCol matches the column each pull script itself actually queries', () => {
+  const EXTRACTORS = {
+    ebos: { file: 'scripts/qsrsoft-ebos-pull.mjs', re: /onConflict:\s*'loc,(\w+)'/ },
+    dar:  { file: 'scripts/qsrsoft-dar-pull.mjs',  re: /onConflict:\s*'loc,(\w+),hour_slot'/ },
+    ops:  { file: 'scripts/qsrsoft-ops-pull.mjs',  re: /from\('qsr_cash_sheet'\)\.select\('(?:loc,)?(\w+)/ },
+  };
+
+  for (const [type, { file, re }] of Object.entries(EXTRACTORS)) {
+    it(`${type}: destDateCol ('${TYPES[type].destDateCol}') matches ${file}'s own real column`, () => {
+      const src = readFileSync(file, 'utf8');
+      const m = re.exec(src);
+      expect(m, `pattern not found in ${file} -- update EXTRACTORS if that script's query shape changed`).not.toBeNull();
+      expect(TYPES[type].destDateCol).toBe(m[1]);
+    });
+  }
 });
