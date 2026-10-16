@@ -5260,6 +5260,53 @@ export async function savePayEvent(ev) {
   return { id: data?.id || null, createdAt: data?.created_at || null, error: error?.message || null };
 }
 
+// ── Custom Report Builder (Reports redesign Phase 4, 2026-10-16) ────────────────────────────
+// Saved metric-picker definitions -- schema-custom-reports.sql. Row-based CRUD (not a single
+// upsert-a-blob-per-user table like report_subscriptions above), since visibility differs per
+// row: a viewer sees their OWN rows plus any row ANYONE has marked shared (RLS enforces this --
+// see that file's custom_reports_select policy). Fails soft to an empty list when the table
+// hasn't been migrated yet (same error -> [] pattern every other loader here uses), so the
+// builder panel degrades to "no saved reports" rather than crashing if the SQL migration in
+// supabase/schema-custom-reports.sql hasn't been run yet.
+export async function loadCustomReports() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('custom_reports').select('*').order('updated_at', { ascending: false }).range(from, to));
+  return (data || []).map(r => ({
+    id: r.id, name: r.name, metricKeys: Array.isArray(r.metric_keys) ? r.metric_keys : [],
+    shared: !!r.shared, createdBy: r.created_by, createdByLabel: r.created_by_label || '',
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }));
+}
+export async function saveCustomReport({ name, metricKeys, shared }) {
+  if (!supabase || !name?.trim() || !metricKeys?.length) return { error: 'no-op' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  let label = '';
+  try { label = (await supabase.auth.getUser())?.data?.user?.email || ''; } catch {}
+  const { data, error } = await supabase.from('custom_reports').insert({
+    name: name.trim(), metric_keys: metricKeys, shared: !!shared,
+    created_by: uid, created_by_label: label,
+  }).select('id, created_at, updated_at').single();
+  return { id: data?.id || null, createdAt: data?.created_at || null, error: error?.message || null };
+}
+// Owner-only per RLS (custom_reports_update) -- a viewer running someone else's shared report
+// has no write access and this call fails soft (no error surfaced to them beyond `error` being
+// set; the panel itself never offers Edit/Delete on a report it didn't author, see
+// custom-report-builder.js's own isOwner check).
+export async function updateCustomReport(id, { name, metricKeys, shared } = {}) {
+  if (!supabase || !id) return { error: 'no-op' };
+  const patch = { updated_at: new Date().toISOString() };
+  if (name !== undefined) patch.name = name;
+  if (metricKeys !== undefined) patch.metric_keys = metricKeys;
+  if (shared !== undefined) patch.shared = !!shared;
+  const { error } = await supabase.from('custom_reports').update(patch).eq('id', id);
+  return { error: error?.message || null };
+}
+export async function deleteCustomReport(id) {
+  if (!supabase || !id) return { error: 'no-op' };
+  const { error } = await supabase.from('custom_reports').delete().eq('id', id);
+  return { error: error?.message || null };
+}
+
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
 // Keyword search over the KB (title + body). Sanitizes the query for PostgREST's or() filter syntax.
 export async function searchQsrKb(query, { limit = 20 } = {}) {

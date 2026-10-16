@@ -291,6 +291,13 @@ export const PANELS = [
   // narrower one -- loss-prevention $/counts are already visible through Controls/Security,
   // unlike payroll.view's deliberately tighter wage-data boundary.
   { id:'loss-prevention', label:'Loss Prevention Summary', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Custom Report Builder (Reports redesign Phase 4, 2026-10-16) -- pick any metrics from the
+  // Phase 1 reconciled catalog, side by side, over a date range/scope, save and share (owner
+  // decision 2: shareable across roles, data stays accessible_locs-scoped per viewer). Also
+  // built on ReportShell, same perm tier as Loss Prevention -- none of the metric catalog's
+  // entries are payroll.view-gated today (the picker itself filters any that would be, see
+  // engine/custom-report.js's customReportCatalog), so analytics.store is the correct floor.
+  { id:'custom-reports', label:'Custom Report Builder', icon:'🧩', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },

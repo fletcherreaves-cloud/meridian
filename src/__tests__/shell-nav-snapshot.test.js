@@ -189,7 +189,10 @@ function renderNavTexts(permFn) {
 // permission hiding only the nav item would otherwise be invisible in this very snapshot, since
 // the section header's "Reports" stays rendered either way). HIDDEN_WHEN_DENIED's
 // 'analytics.dashboard' entry below updated to match.
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// Same day (Reports redesign Phase 4): 'Custom Report Builder' (🧩, perm analytics.store) is a
+// brand-new Reports entry, landing right after 'Loss Prevention Summary' (declaration order).
+// Its icon is not shared with anything else currently rendered in this snapshot.
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -364,7 +367,11 @@ const HIDDEN_WHEN_DENIED = {
   // this list -- perm:'analytics.store', same as every other store-level operational report.
   // Its icon '🛡️' already has another owner (Visit Readiness) under this SAME permission, so
   // the icon stays in the list unchanged -- only the new label text is added.
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Inventory & Food Cost', 'Inventory Control', 'Leaderboards', 'Local News', 'Loss Prevention Summary', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Review Forms', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', 'Weekly Count Status', '✅', '⭐', '🏆', '🎟️', '💬', '💲', '📈', '📦', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // 2026-10-16: 'Custom Report Builder' (Reports redesign Phase 4) joins this list the same
+  // way -- perm:'analytics.store'. Its icon '🧩' does NOT join: Panel Manager already owns
+  // '🧩' under a DIFFERENT permission (settings.view), so denying analytics.store alone leaves
+  // that icon on screen (Panel Manager still renders) -- only the new label text is added.
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'Custom Report Builder', 'Customer Complaints', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Inventory & Food Cost', 'Inventory Control', 'Leaderboards', 'Local News', 'Loss Prevention Summary', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Review Forms', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store Assessments', 'Store One-Pager', 'Trend Explorer', 'Visit Readiness', 'Weekly Count Status', '✅', '⭐', '🏆', '🎟️', '💬', '💲', '📈', '📦', '📡', '📮', '📰', '🗓', '🗒️', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 2026-10-15: 'Pay Rate History' (People section, owner request) is a brand-new entry, perm
   // payroll.view. '💰' does NOT join this list -- 'Opportunity $' (perm analytics.district)
@@ -386,7 +393,11 @@ const HIDDEN_WHEN_DENIED = {
   // 'Crew Schedule' no longer carries perm:'security.view' as of dispatch #125 (moved to
   // analytics.store, see above) -- 🔒 is unique to 'Security' so it disappears with it.
   'security.view': ['Security', '🔒'],
-  'settings.view': ['Panel Manager', 'Settings', '⚙', '🧩'],
+  // 2026-10-16: '🧩' drops out of this list -- Custom Report Builder (perm 'analytics.store',
+  // a DIFFERENT permission) now also owns icon '🧩', so denying settings.view alone no longer
+  // removes every '🧩' text node from the sidebar (Custom Report Builder still renders) --
+  // same "icon has another owner" convention this file applies everywhere else.
+  'settings.view': ['Panel Manager', 'Settings', '⚙'],
 };
 
 describe('AppSidebar permission gates survive the Job B section-driven render', () => {

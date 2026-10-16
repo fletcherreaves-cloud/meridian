@@ -219,6 +219,9 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
 const PayRateHistoryPanel = lazyPanel(() => import('../views/pay-rate-history.js').then(m => ({ default: m.PayRateHistoryPanel })));
 const LossPreventionReportPanel = lazyPanel(() => import('../views/loss-prevention-report.js').then(m => ({ default: m.LossPreventionReportPanel })));
+// Custom Report Builder (Reports redesign Phase 4, 2026-10-16) -- same lazy-panel treatment as
+// every other occasional-use report panel above.
+const CustomReportBuilderPanel = lazyPanel(() => import('../views/custom-report-builder.js').then(m => ({ default: m.CustomReportBuilderPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -3426,6 +3429,7 @@ function App() {
         if(modal==='time-punches')   perm('analytics.store')&&(setCrewTab('punches'),goRoute('crew-schedule'));
         if(modal==='pay-rate-history') perm('payroll.view')&&goRoute('pay-rate-history');
         if(modal==='loss-prevention') perm('analytics.store')&&goRoute('loss-prevention');
+        if(modal==='custom-reports') perm('analytics.store')&&goRoute('custom-reports');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -3714,6 +3718,7 @@ function App() {
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,initialTab:crewTab,onClose:()=>goRoute(null)}),
       routePanel==='pay-rate-history'&&h(PayRateHistoryPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='loss-prevention'&&h(LossPreventionReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='custom-reports'&&h(CustomReportBuilderPanel,{ds,stores,can:perm,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
