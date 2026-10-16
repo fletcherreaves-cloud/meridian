@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the forty-nine panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder and the six Reports redesign Phase 5 base reports)', () => {
+  it('is exactly the fifty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, and Cash Variance Pattern)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -325,10 +325,15 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // redesign Phase 5 (owner request "let's do them all") adds six more base reports in one
     // batch -- 'controls-food-cost-link', 'weather-impact', 'price-change-impact',
     // 'item-velocity', 'channel-mix', 'labor-opportunity-cost' -- every one also built
-    // route:true from day one, same ReportShell treatment (forty-three -> forty-nine).
+    // route:true from day one, same ReportShell treatment (forty-three -> forty-nine). Same
+    // day, Reports Hub Tier 1 cross-listing adds route:true to 'forms-completion' (the one
+    // proven panel in that batch that still used the old modal-state pattern; the other seven
+    // cross-listed panels were already route:true) (forty-nine -> fifty). Same day, Tier 3 adds
+    // one brand-new report, 'cash-variance-pattern', route:true from day one, same ReportShell
+    // treatment as every report since Phase 2 (fifty -> fifty-one).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'brief', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'crew-schedule', 'custom-reports', 'customer-complaints',
-      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits',
+      'above-store', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'crew-schedule', 'custom-reports', 'customer-complaints',
+      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
       'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',

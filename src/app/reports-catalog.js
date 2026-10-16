@@ -71,6 +71,33 @@ const DIRECT_PANELS = [
     desc: 'DT / Delivery / Mobile Order Pickup / Kiosk / Front Counter — % of sales and its trend.' },
   { id: 'labor-opportunity-cost', category: 'Labor & Payroll',
     desc: 'OT, overstaffing and understaffing $ — broken into drivers, by store.' },
+  // Tier 1 cross-listing (2026-10-16, owner request "go ahead with all of these") — proven,
+  // live route:true nav panels that had never been cross-listed into the Reports Hub catalog.
+  // Pure catalog additions, same "cross-list, don't relocate" rule Phase 3 established — no
+  // panel code changed except forms-completion, which needed route:true wiring first (see its
+  // own commit). Fills Guest Experience, which previously had zero direct-panel tiles.
+  { id: 'graded-visits', category: 'Guest Experience',
+    desc: 'CFV / RGRV / EcoSure graded-visit log — scores, pass/fail, critical findings, by store and visit.' },
+  { id: 'customer-complaints', category: 'Guest Experience',
+    desc: 'Logged guest complaints by store, category and resolution status.' },
+  { id: 'pricing-engine', category: 'Financial & Promotions',
+    desc: 'Item rankings, cost/volume lookup, cross-store price compare, and the Price Impact simulator.' },
+  { id: 'perf-reviews', category: 'Labor & Payroll',
+    desc: 'Performance review cycles and completion status by employee and store.' },
+  { id: 'loc-intel', category: 'Leadership & Above-Store',
+    desc: 'Market demographics, competitive landscape and trade-area intelligence per store.' },
+  { id: 'dt-sos', category: 'Daily & Operations',
+    desc: 'Drive-thru speed of service by station and store, with historical trend.' },
+  { id: 'delivery-mix', category: 'Sales & Forecasting',
+    desc: '3rd-party delivery channel sales, volume and mix trend by store.' },
+  { id: 'eom-dashboard', category: 'Financial & Promotions',
+    desc: 'All-stores EOM inventory count/finalization status, FOB $/% snapshot, plus Count Cycle, Supervisor Rollup and Recount-Impact tabs.' },
+  { id: 'forms-completion', category: 'Daily & Operations',
+    desc: 'QSRSoft Forms/checklist completion rollup and per-occurrence detail, by store.' },
+  // Tier 3 (2026-10-16) -- new report, privacy-safe by construction (store x day-of-week, never
+  // register or employee -- see engine/cash-variance-pattern.js's header for why).
+  { id: 'cash-variance-pattern', category: 'Financial & Promotions',
+    desc: 'Cash O/S, POS overrides, refunds and T-Reds averaged by store and day of week — recurring patterns, never by register or employee.' },
 ];
 
 /** Builds the full Reports Hub catalog: direct-launch panel tiles + subscribable report tiles,
