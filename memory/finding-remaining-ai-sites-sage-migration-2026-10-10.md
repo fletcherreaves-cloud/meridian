@@ -82,3 +82,16 @@ were already fixed before that audit and aren't part of the 11.)
 
 **Every mechanical migration is done.** What's left isn't a to-do list item, it's an open
 product decision — see the three options above.
+
+---
+
+## ✅ SUPERSEDED 2026-10-16 — option 2 was taken; all 3 remaining sites are now migrated
+
+Owner chose option 2 above: `sage-chat`'s `TOOLS` array gained `web_search_20260209` (v5.515,
+2026-10-11), and the next day (v5.516) `why.js`'s `lookupMissEvent`, `calendar.js`'s
+`searchUpcomingEvents`, and `analytics.js`'s `AIBacktestScanner.callClaudeWithSearch` were all
+migrated onto `callSageOnce` — confirmed directly against `src/app/changelog/5.516.js` and the
+3 files' own code comments (each now reads "used to require localStorage `mf_anthropic_key`...").
+**All 11 of the original `api.anthropic.com` call sites are on `sage-chat`; no feature in the app
+depends on a personal Anthropic API key.** CLAUDE.md's SAGE section corrected in the same pass.
+Do not re-raise this as open work.
