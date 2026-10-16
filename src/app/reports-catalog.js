@@ -57,6 +57,20 @@ const DIRECT_PANELS = [
     desc: 'Leaderboards, record days, top/bottom performers.' },
   { id: 'custom-reports', category: 'Custom Reports',
     desc: 'Pick any metrics, side by side, over a date range and scope. Save and share across roles.' },
+  // Reports redesign Phase 5 (2026-10-16, owner request "let's do them all") -- six new base
+  // reports, each built on ReportShell exactly like loss-prevention above.
+  { id: 'controls-food-cost-link', category: 'Financial & Promotions',
+    desc: "FOB's reported food-cost ratios alongside Controls' meal/deposit/discount facts, by store and month." },
+  { id: 'price-change-impact', category: 'Financial & Promotions',
+    desc: 'What happened to sales and guest counts after each confirmed repricing event.' },
+  { id: 'weather-impact', category: 'Sales & Forecasting',
+    desc: "How rain and heat have historically moved each store's sales and guest counts." },
+  { id: 'item-velocity', category: 'Sales & Forecasting',
+    desc: "What's selling and what's dying, across the stores you pick." },
+  { id: 'channel-mix', category: 'Sales & Forecasting',
+    desc: 'DT / Delivery / Mobile Order Pickup / Kiosk / Front Counter — % of sales and its trend.' },
+  { id: 'labor-opportunity-cost', category: 'Labor & Payroll',
+    desc: 'OT, overstaffing and understaffing $ — broken into drivers, by store.' },
 ];
 
 /** Builds the full Reports Hub catalog: direct-launch panel tiles + subscribable report tiles,

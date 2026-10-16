@@ -222,6 +222,13 @@ const LossPreventionReportPanel = lazyPanel(() => import('../views/loss-preventi
 // Custom Report Builder (Reports redesign Phase 4, 2026-10-16) -- same lazy-panel treatment as
 // every other occasional-use report panel above.
 const CustomReportBuilderPanel = lazyPanel(() => import('../views/custom-report-builder.js').then(m => ({ default: m.CustomReportBuilderPanel })));
+// Reports redesign Phase 5 (2026-10-16) -- six new base reports, same lazy-panel treatment.
+const ControlsFoodCostLinkPanel = lazyPanel(() => import('../views/controls-food-cost-link.js').then(m => ({ default: m.ControlsFoodCostLinkPanel })));
+const WeatherImpactPanel = lazyPanel(() => import('../views/weather-impact.js').then(m => ({ default: m.WeatherImpactPanel })));
+const PriceChangeImpactPanel = lazyPanel(() => import('../views/price-change-impact.js').then(m => ({ default: m.PriceChangeImpactPanel })));
+const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').then(m => ({ default: m.ItemVelocityPanel })));
+const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })));
+const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -3430,6 +3437,12 @@ function App() {
         if(modal==='pay-rate-history') perm('payroll.view')&&goRoute('pay-rate-history');
         if(modal==='loss-prevention') perm('analytics.store')&&goRoute('loss-prevention');
         if(modal==='custom-reports') perm('analytics.store')&&goRoute('custom-reports');
+        if(modal==='controls-food-cost-link') perm('analytics.store')&&goRoute('controls-food-cost-link');
+        if(modal==='weather-impact') perm('analytics.store')&&goRoute('weather-impact');
+        if(modal==='price-change-impact') perm('analytics.store')&&goRoute('price-change-impact');
+        if(modal==='item-velocity') perm('analytics.store')&&goRoute('item-velocity');
+        if(modal==='channel-mix') perm('analytics.store')&&goRoute('channel-mix');
+        if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -3719,6 +3732,12 @@ function App() {
       routePanel==='pay-rate-history'&&h(PayRateHistoryPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='loss-prevention'&&h(LossPreventionReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='custom-reports'&&h(CustomReportBuilderPanel,{ds,stores,can:perm,onClose:()=>goRoute(null)}),
+      routePanel==='controls-food-cost-link'&&h(ControlsFoodCostLinkPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='weather-impact'&&h(WeatherImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='price-change-impact'&&h(PriceChangeImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='item-velocity'&&h(ItemVelocityPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='channel-mix'&&h(ChannelMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did

@@ -380,5 +380,79 @@ permission's denial list can claim the icon alone). Full suite green (624/624 fi
 tests), build clean, within budget (563.99 KB eager / 850 KB budget — `custom-report-builder.js`
 lands in its own real lazy chunk, 7.69 KB / 2.98 KB gzip, confirmed not in the eager preload list).
 
-Then: curate and build the actual **base reports** (the owner's next ask) on top of Phases 1-4,
-each one a small addition once the shell exists.
+**Phase 5 — SHIPPED 2026-10-16 (v5.575).** The owner's "base reports" ask from Phase 1-4, done:
+"give me great suggestions for additional reports, then let's do them all." The suggestions came
+from three real sources, not invention — (1) grepping `memory/*.md` backlog/vision files for
+named-but-unbuilt report ideas, (2) reading `signal-registry.js`'s full `METRIC_CATEGORIES` list
+for metric groups with real pulled data but no dedicated report, (3) re-reading the owner's own
+quoted ask in this file's Phase 1-4 section. Six shipped, each built on `ReportShell` exactly like
+Loss Prevention Summary, cross-listed under an EXISTING `REPORT_CATEGORIES` entry (no new
+category needed):
+
+1. **Controls ↔ Food Cost Linkage** (`controls-food-cost-link`) — the owner's own dated,
+   unbuilt ask (`memory/project-backlog.md`, 2026-08-31: *"we have to link cash controls to food
+   cost and report that as well"*). **A real course-correction happened here before building
+   anything**: the initial research pass claimed Loss Prevention Summary (Phase 2) was already
+   missing discount%/promo%/drawer-opens fields — re-reading `loss-prevention-report.js`'s own
+   `LOSS_PREVENTION_METRICS` directly showed those ARE already covered there; the genuine gap is
+   narrower — only `empMealAmt`/`mgrMealAmt`/`depositAmt`/`empMealCnt`/`mgrMealCnt` (the Controls
+   category's meal/deposit facts) have never been in any report, and the owner's actual ask is
+   the FOB-to-controls crossover, not a Loss-Prevention duplicate. Shipped as a month-bucketed
+   table (FOB reports monthly; Controls is daily — resolved to the real whole calendar months
+   covering the picked range, same "resolve to the natural bucket" convention Weekly Count
+   Status already uses) showing both families side by side for the first time. `engine/
+   controls-food-cost-link.js`.
+2. **Weather Impact** (`weather-impact`) — `ds.weatherRows` (auto-pulled since v4.533) was only
+   ever readable through Signal Lab's Scanner. Splits each store's loaded days into rainy-vs-dry
+   and the hotter-vs-cooler half (by that store's own median high temp) and reports the real
+   sales/guest-count delta. Deliberately a simple historical split, not a matched-day design —
+   weather has no exogenous "coverage window" the way a national promo calendar does, and said so
+   plainly rather than overclaiming. `engine/weather-impact.js`.
+3. **Price Change Impact** (`price-change-impact`) — reuses `price-events.js`'s existing
+   confirmed-step detector verbatim (the same 14-observed-day-flat-before/after algorithm the
+   Pricing Engine's live simulator and Signal Lab already trust) for the one view it never had:
+   what actually happened to sales/guests in the 14 days after a confirmed repricing event.
+   `engine/price-change-impact.js`.
+4. **Item Velocity** (`item-velocity`) — one direct pass over `ds.pmixRows` (699+ distinct items,
+   measured 2026-08-27) aggregated into a district-or-single-store list sorted by units sold,
+   with a first-half-vs-second-half trend. Deliberately NOT routed through the per-item
+   `pmixItem:<code>` dynamic resolver (one `findMetric`/`extractMetricValues` call per item would
+   mean hundreds of calls for one report render) — same single-sweep shape `pmixItemsIndex()`
+   already uses for the Signal Lab item picker. `engine/item-velocity.js`.
+5. **Channel Mix** (`channel-mix`) — Sales Ledger's DT/Delivery(3PO)/Mobile-Order-Pickup/Kiosk/
+   Front-Counter % fields, period average plus a first-half-vs-second-half trend in **percentage
+   POINTS**, not a relative-% change (a relative change of a %-of-sales metric reads confusingly
+   — "+10pt" is immediately legible, "+18.2%" of a 55% baseline is not). `engine/channel-mix.js`.
+6. **Labor Opportunity Cost** (`labor-opportunity-cost`) — the narrative version of the 15 labor
+   fields Phase 1's catalog audit labeled. $ TOTALS (summed across the period) for OT and the two
+   signed opportunity-cost fields — "how much this cost us this period" is the natural question
+   for a $ figure a report like this is about; AVERAGES (the registry's own default) for the two
+   hour-gap fields and Sales/Person-Hr, since summing an hours gap that persists every day would
+   double-count the same staffing problem. `engine/labor-opportunity-cost.js`.
+
+**A real, non-obvious gotcha surfaced building #6, and documented so it isn't re-discovered the
+hard way**: `oppCostDollar`/`avgRate`/`actVsSchedOpp`/`spph` (and, separately, `fobPct` from
+report #1) are all `metric-source.js` **derive-only** chains with no `srcs` array of their own.
+`metricRowsForRange` always resolves a metric **unscoped** (`scopeLoc=null`) and filters by loc
+*afterward* — so for a metric with no `srcs`, the unscoped resolution's only way to discover which
+locs exist at all is `ds.storeIds`. The real app always populates this; a test fixture that omits
+it silently resolves these metrics to nothing, which is exactly what happened and was caught while
+writing `labor-opportunity-cost-panel.test.js` (not a product bug — fixed by completing the
+fixture, documented in both engine files' headers for the next report built on this pattern).
+
+38 new tests across the six reports' own engine + panel pairs (the before/after and first-half/
+second-half trend splits most of them compute, checked against real underlying metric chains, not
+a mocked resolver) plus `reports-catalog-phase5.test.js` (the six new catalog entries + their
+shared `analytics.store` perm boundary) and `shell-nav-snapshot.test.js`/`panel-registry.test.js`
+updated for six new nav entries (route count forty-three → forty-nine). All six icons (🔗 🌦️ 🎚️
+🔥 🔀 ⏱️) were confirmed unused anywhere else in `panel-registry.js` before being picked, so none
+needed an "icon has another owner" footnote. Full suite green (636/636 files, 5917/5917 tests),
+build clean, within budget (564.62 KB eager / 850 KB — all six land in their own real lazy chunks,
+~4.3–5.2 KB each, confirmed not in the eager preload list).
+
+Next candidate reports, not yet scoped or built (surfaced by the same research pass but not asked
+for in this round): a Forms Completion report cross-listing the existing `forms-completion`
+panel (currently `kind:'test-kitchen'` + a modal, not `route:true` — would need promotion first,
+not a from-scratch build); anything using the `calendar` metric group (weekend/Friday/Monday
+flags) standalone, which has low value outside a correlation context so was deliberately left
+off this batch.
