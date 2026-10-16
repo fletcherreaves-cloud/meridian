@@ -128,12 +128,26 @@ Roles are enforced two ways, both real: (1) `src/engine/permissions.js`'s `hasPe
 permKey)` gates nav items and panels via `panel-registry.js`'s `perm:` field (fails closed — an
 unrecognized role id gets zero permissions, not "everything"); (2) Supabase RLS on the
 `accessible_locs` profile field (`public.my_locs()`, installed on 51 core tables via
-`schema-rls-phase2-loc.sql`) scopes which stores' data a query returns. **The RLS store-scoping
-mechanism has never been exercised with a real restricted account** — the only profile that has
-ever existed has `accessible_locs = NULL` (unrestricted). Before onboarding a second operator with
-a real restricted role, create a test profile with a non-null `accessible_locs` and confirm
-scoping holds across more than one panel — do not assume the mechanism works end-to-end just
-because it's installed and was correct in a point-in-time structural check.
+`schema-rls-phase2-loc.sql`) scopes which stores' data a query returns.
+
+✅ **CORRECTED 2026-10-16 — the RLS store-scoping mechanism HAS now been exercised end-to-end with
+a real restricted account, through real RLS (anon key + a signed-in user JWT, never service-role,
+which bypasses RLS entirely) — do not re-raise this as an open unknown.** Created a throwaway test
+user, set its profile's `accessible_locs` to a single real store, and measured against live
+production data: `lifelenz_schedule` returned exactly 666/16522 rows (all `loc='0003708'`),
+`qsr_daily_activity` returned exactly 28801/742196, `qsr_fob` returned exactly 1002/25965 — all
+matched to that one store only. An explicit query for a *different* real store's loc
+(`loc=eq.0005183`, which has 666 rows of its own) came back `content-range: */0` — actively
+blocked, not silently ignored. Resetting the same profile's `accessible_locs` to `null` and
+re-querying with the same already-issued JWT then returned the full unrestricted `16522` total,
+confirming the NULL/unrestricted branch also runs through real policy evaluation, not just
+service-role bypass. Test artifacts (auth user + profile) were deleted after. **This also corrects
+the old "the only profile that has ever existed has `accessible_locs = NULL`" claim — that was
+already false before this test**: profile `bd8ea9b8-f498-497b-9abe-6e3dd98000e8`
+(`freaves@gmail.com`, created 2026-08-26) has carried a non-null `accessible_locs` the whole time.
+Not yet covered: a real second-operator login exercising this scoping across more than one panel
+in the actual UI (this test was REST-API-direct) — that remains worth doing before a live beta
+onboarding, but the underlying RLS mechanism itself is no longer an open question.
 
 ---
 
@@ -257,10 +271,16 @@ actual `TOOLS` array) — missing `query_forms`** (shipped v5.474, #1309: QSRSof
 completion, same rollup logic the in-app Forms dashboard uses) **and, as of this same pass,
 `web_search`** — Anthropic's server-side `web_search_20260209` tool, added so SAGE can ground
 answers needing live information (local news/weather/events, school calendars) outside
-Meridian's own data, same capability `why.js`'s AI Lookup / `calendar.js`'s proactive event
-search / `analytics.js`'s Anomaly Scanner already use their own personal-API-key copies of (see
-`memory/finding-remaining-ai-sites-sage-migration-2026-10-10.md`) — those 3 call sites are not
-yet migrated onto this. Web search is a server-side tool: it resolves within the same streamed
+Meridian's own data. ✅ **CORRECTED 2026-10-16 — the migration this paragraph used to describe as
+open is DONE (v5.516, 2026-10-11, confirmed directly against that changelog and against the 3
+files' own code comments this pass — do not re-raise it).** `why.js`'s `lookupMissEvent`,
+`calendar.js`'s `searchUpcomingEvents`, and `analytics.js`'s `AIBacktestScanner`'s shared
+`callClaudeWithSearch` (both its per-row "🔍 AI" lookup and its "🤖 AI Batch" scan) all call
+`callSageOnce` now instead of hand-rolling their own personal-key `tool_use` loop against
+`api.anthropic.com` directly — all 11 of the original personal-Anthropic-key call sites are on
+`sage-chat`, and no feature in the app still depends on a personal Anthropic API key.
+`memory/finding-remaining-ai-sites-sage-migration-2026-10-10.md` is now superseded by this
+correction, not an open item. Web search is a server-side tool: it resolves within the same streamed
 response (never a client-round-tripped `tool_use`), and can itself return `stop_reason:
 'pause_turn'` if its own internal search loop runs long — `sage-chat/index.ts`'s round loop
 resumes it by resending the conversation with the paused assistant turn appended, per
