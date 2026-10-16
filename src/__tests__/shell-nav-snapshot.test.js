@@ -181,7 +181,15 @@ function renderNavTexts(permFn) {
 // analytics.store) is a brand-new Reports entry, landing right after 'Above-Store One-Pager'
 // (declaration order again). Its 🛡️ icon is shared with 'Visit Readiness' -- same permission
 // on both, so no new "icon has another owner" complication (see HIDDEN_WHEN_DENIED below).
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🗂','My Reports','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// 2026-10-16 (Reports redesign Phase 3): 'My Reports' relabeled 'Reports Hub' -- the id/perm/
+// icon/route are all unchanged (it now opens the categorized Reports Hub, which embeds the old
+// My Reports picker as its own tab), only the sidebar label text changed. NOT labeled bare
+// 'Reports' -- that string is already this entry's own section header text (see
+// panel-registry.js's own comment on this entry for why that collision matters: a denied
+// permission hiding only the nav item would otherwise be invisible in this very snapshot, since
+// the section header's "Reports" stays rendered either way). HIDDEN_WHEN_DENIED's
+// 'analytics.dashboard' entry below updated to match.
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -252,7 +260,8 @@ const HIDDEN_WHEN_DENIED = {
   // kind:'internal' now (merged into Events & Tags), no longer a sidebar entry to hide at all.
   // Events Phase 3 (a), 2026-09-04: 'Event Impact'/'📈' dropped the same way -- event-impact is
   // kind:'internal' now too (merged into Events as an Impact pill), nothing left to hide.
-  'analytics.dashboard': ['My Reports'],
+  // 2026-10-16: label changed 'My Reports' -> 'Reports Hub' (Phase 3) -- same id/perm, text node only.
+  'analytics.dashboard': ['Reports Hub'],
   // dispatch #202 (2026-08-28): 'EOM Supervisor' dropped out -- kind:'internal' now, renders
   // nowhere in the sidebar regardless of permission, so an analytics.district denial can't hide
   // text that was never rendered in the first place. 📊 stays absent from this list (unchanged --

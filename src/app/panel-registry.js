@@ -296,7 +296,15 @@ export const PANELS = [
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
   // section:'reports' -- see above-store's own comment above; same 2026-09-25 move.
-  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'reports', route:true },
+  // Relabeled 'My Reports' -> 'Reports Hub' (Phase 3, 2026-10-16): this id now opens the
+  // categorized Reports Hub (reports-hub.js), which embeds the old My Reports picker as its own
+  // tab rather than being that picker itself -- id/perm/route unchanged, so no legacy-redirect
+  // needed. NOT labeled bare 'Reports' -- that string is already this panel's own SECTION
+  // header (SECTIONS below), so the two would render as two adjacent, identical-looking "Reports"
+  // text nodes in the sidebar (and a permission denial that hides only the nav item would be
+  // invisible in the rendered text, since the section header's "Reports" stays either way --
+  // caught by shell-nav-snapshot.test.js's HIDDEN_WHEN_DENIED check before this shipped).
+  { id:'my-reports', label:'Reports Hub', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'reports', route:true },
   { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
   // becomes recoverable dollars" panel. kind:'test-kitchen' with its real eventual section:

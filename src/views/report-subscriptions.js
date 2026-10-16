@@ -18,15 +18,22 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // Reports that can be subscribed to. `panels:true` = supports the build-your-own panel picker.
+// `category` (Reports Hub Phase 3, 2026-10-16) groups this entry alongside the hub's direct-
+// launch panel tiles (src/app/reports-catalog.js) -- same category vocabulary, added here so
+// label/icon/desc/category live in exactly one place rather than a second lookup table that
+// could drift when a key or label changes.
 export const REPORTS = [
   { key: 'above-store', label: 'Above-Store One-Pager', icon: '📄', periods: true, panels: true,
+    category: 'Leadership & Above-Store',
     desc: 'Sales/GC · FOB · Labor · Service · Controls · Voice rollup for a group + period.' },
   { key: 'calendar', label: 'Events Calendar', icon: '📅', periods: false, panels: false,
+    category: 'Guest Experience',
     desc: 'Tagged events (school/sports/festivals/LTOs) for the scope, print-ready.' },
   // Notes 56 #2 — the first non-QSRSoft-source panel to get a real reporting layer.
   // No period picker: readiness reads a fixed trailing window (daily metrics) plus the
   // latest month on record (SMG / FOB), so a user-chosen period would misrepresent it.
   { key: 'visit-readiness', label: 'Visit Readiness (PACE)', icon: '🛡️', periods: false, panels: false,
+    category: 'Guest Experience',
     desc: 'Graded-visit readiness + calibration audit: contribution per area, every target and source, declared gaps.' },
   // Backlog: "Custom reports for non-QSRSoft panels (SMG/Voice, LifeLenz, calendars)" -- calendar
   // and PACE (visit-readiness) above were already done; this is the SMG VOICE slice. No period
@@ -34,12 +41,14 @@ export const REPORTS = [
   // the latest FullScale month), not a chosen window, so a period selector here would imply a
   // control that doesn't actually change what's shown.
   { key: 'smg-voice', label: 'SMG VOICE', icon: '🗣️', periods: false, panels: false,
+    category: 'Guest Experience',
     desc: 'Guest satisfaction: OSAT/Accuracy B2B scorecard + comment feed, for a scope.' },
   // Owner req (2026-10-11) -- a printable/exportable district roster modeled off Count Cycle's
   // own data: last full count, regular count day (+ a drift flag against settings), this-week
   // complete/incomplete, and pending new items. No period picker -- like visit-readiness/
   // smg-voice above, this reads the current on-hand snapshot, not a chosen window.
   { key: 'weekly-count-status', label: 'Weekly Count Status', icon: '🗓', periods: false, panels: false,
+    category: 'Daily & Operations',
     desc: 'Per-store weekly count roster: last full count, regular count day, this-week status, new items pending.' },
 ];
 // 'custom' added (owner-requested, 2026-10-13) -- this picker used to offer only 3 fixed named
@@ -82,7 +91,12 @@ const scopeLabel = (scope, groups) => {
 // A short, stable id without Date.now()/Math.random() (unavailable in some contexts) — index+scope+report.
 const mkId = (list) => 'sub' + (list.reduce((m, s) => Math.max(m, +(String(s.id).replace(/\D/g, '')) || 0), 0) + 1);
 
-export function ReportSubscriptions({ onClose, onLaunch }) {
+// ReportSubscriptionsBody (Reports Hub Phase 3, 2026-10-16) -- the saved-list + build-a-report
+// form, extracted from ReportSubscriptions below with ZERO behavior change, so the Reports Hub
+// (src/views/reports-hub.js) can embed it as its own "My Reports" tab without a second, nested
+// RoutePanelShell. ReportSubscriptions keeps wrapping this in its own shell unchanged, so every
+// existing test that renders <ReportSubscriptions> still exercises the exact same tree.
+export function ReportSubscriptionsBody({ onLaunch }) {
   const { useState, useEffect, useMemo } = React;
   const [subs, setSubs] = useState(null);        // loaded list (null = loading)
   const [busy, setBusy] = useState(false);
@@ -136,16 +150,12 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
     value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
   });
 
-  // route:true (dispatch #206, URL migration batch 3) — swapped ModalShell for RoutePanelShell.
-  // Already ModalShell-based (no hand-rolled backdrop of its own), same lower-risk shell-swap
-  // shape as DeliveryMixPanel got under dispatch #205 — just the shell swap + onClose->onBack
-  // rename, no backdrop refactor.
-  return h(RoutePanelShell, {
-    title: 'My Reports', icon: '🗂', onBack: onClose,
-    subtitle: 'Save the reports and groupings you want — one-click, pre-scoped',
-    headerExtra: msg ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
-    bodyStyle: { display: 'flex', flexDirection: 'column', gap: 14 },
-  },
+  // Body only -- no shell of its own (Reports Hub Phase 3, 2026-10-16). The save/sync indicator
+  // that used to live in RoutePanelShell's headerExtra now renders as the first row here instead,
+  // so it still shows up whether this body is reached via the thin ReportSubscriptions wrapper
+  // below or embedded in the Reports Hub's "My Reports" tab.
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+        msg ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
         // ── saved list ──
         div(null,
           div({ style: { fontSize: '10px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, 'Saved (' + ((subs || []).length) + ')'),
@@ -196,4 +206,15 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
         // footnote
         div({ style: { fontSize: '9px', color: 'var(--text3)', borderTop: '1px solid var(--bdr)', paddingTop: 8 } },
           'Auto-delivery (scheduled email to supervisors/owners) is coming — for now these open in-app, pre-scoped. Saved per user; synced across your devices when signed in.'));
+}
+
+// ReportSubscriptions — thin RoutePanelShell wrapper around ReportSubscriptionsBody above,
+// unchanged in behavior from before the Phase 3 extraction (route:true, dispatch #206 — swapped
+// ModalShell for RoutePanelShell). Kept as its own export so any existing direct deep link /
+// test against <ReportSubscriptions> keeps working unmodified.
+export function ReportSubscriptions({ onClose, onLaunch }) {
+  return h(RoutePanelShell, {
+    title: 'My Reports', icon: '🗂', onBack: onClose,
+    subtitle: 'Save the reports and groupings you want — one-click, pre-scoped',
+  }, h(ReportSubscriptionsBody, { onLaunch }));
 }
