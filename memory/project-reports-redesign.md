@@ -259,9 +259,53 @@ writes under this harness's Node+happy-dom hybrid, not a browser-only mock). Ful
 (618/618 files, 5821/5821 tests), build clean, within budget (563.48 KB eager / 850 KB budget —
 effectively unchanged from Phase 1's baseline, confirming the jspdf fix above actually holds).
 
-**Phase 3 — Reports hub.** Category-tabbed landing page under `section:'reports'`; cross-lists
-existing report panels (pre-scoped launch, no relocation) alongside any new base reports; "My
-Reports" favorites/recently-run folds in here instead of staying a separate narrower panel.
+**Phase 3 — SHIPPED 2026-10-16 (v5.573).** Built as planned, with the real deviations worth
+recording so a later phase doesn't re-litigate them:
+1. **Not labeled bare "Reports".** The sidebar entry (id `my-reports`) was going to be relabeled
+   from "My Reports" straight to "Reports" — caught before shipping that it's already this
+   entry's own SECTION header text (`SECTIONS` in `panel-registry.js`), so the two would render
+   as two adjacent, identical-looking "Reports" nav labels, and — the thing that actually caught
+   it — `shell-nav-snapshot.test.js`'s `HIDDEN_WHEN_DENIED` check went from asserting
+   `['Reports']` disappears on an `analytics.dashboard` denial to asserting nothing visibly
+   disappeared at all: the section header's own "Reports" string stayed rendered either way, so
+   a naive text-list diff couldn't see the one nav item that actually vanished. Relabeled
+   **"Reports Hub"** instead — distinct from the section header, accurately describes the new
+   page. Lesson for any future rename: check it isn't colliding with that panel's own section
+   header text before shipping, not just that the string "sounds right."
+2. **Direct-launch tiles need no pre-scoping at all.** The five existing `report_subscriptions`-
+   backed reports (above-store/calendar/visit-readiness/smg-voice/weekly-count-status) need a
+   scope+period handed to them before they can render anything useful. The OTHER nine cross-listed
+   panels (Date-Range Report, Trend Report, Forecast Reports, Pay Rate History, Promo ROI, Loss
+   Prevention Summary, Store One-Pager, Org Summary, Leaderboards) already own their own
+   `LocationSelector`/date controls internally — a hub tile for one of those is just
+   `goRoute(id)`, nothing else. Worth stating plainly since the original proposal's "same mechanic
+   `my-reports` already proves out" phrasing could be read as implying every tile needs the
+   subscription flow; only the original five do.
+3. **`ReportSubscriptionsBody` extraction, zero behavior change.** `report-subscriptions.js`'s
+   `ReportSubscriptions` component was split into a thin `RoutePanelShell` wrapper + an exported
+   `ReportSubscriptionsBody` (no shell), so the hub can embed the body as its own "My Reports" tab
+   without a second, nested `RoutePanelShell`. Every pre-existing test against
+   `<ReportSubscriptions>` (custom-range, SMG VOICE, Above-Store launch-shape) still exercises the
+   identical rendered tree — confirmed green, unmodified, after the split. The one UI change: the
+   save/sync status text (`Saved (synced)`/`Saved (this device)`) moved from `RoutePanelShell`'s
+   `headerExtra` slot to the first row of the body itself, since the thin wrapper no longer has
+   access to that state — no test asserted the old placement, so this is a deliberate, not
+   accidental, difference.
+4. **Catalog is a thin layer over two existing sources, not a third list.** `reports-catalog.js`'s
+   `reportsCatalog(can)` pulls direct-launch tile label/icon/perm live from `panel-registry.js`'s
+   `PANEL_BY_ID` (so a future label/perm edit there can never drift out of sync here) and
+   subscribable tiles from `report-subscriptions.js`'s own `REPORTS` array, which just gained a
+   `category` field — not a fourth hand-maintained label/desc table.
+
+What shipped: `src/app/reports-catalog.js` (new), `src/views/reports-hub.js` (new —
+`ReportsHub`, category tabs + tiles + the embedded My Reports tab), `report-subscriptions.js`'s
+`ReportSubscriptionsBody` extraction, `panel-registry.js`'s `my-reports` relabel, `App.js`'s
+`routePanel==='my-reports'` render swapped from `ReportSubscriptions` to `ReportsHub`. 28 new
+tests (`reports-catalog-phase3.test.js`, `reports-hub.test.js`) plus
+`shell-nav-snapshot.test.js`/`panel-registry.test.js` updated for the real label change. Full
+suite green (620/620 files, 5835/5835 tests), build clean, within budget (563.53 KB eager / 850 KB
+budget — `reports-hub.js` lands in its own real lazy chunk, 11.46 KB / 4.21 KB gzip, confirmed not
+in the eager preload list — effectively unchanged from Phase 2's own baseline).
 
 **Phase 4 — Custom Report Builder.** Metric picker over the Phase 1 catalog → columns over a
 date-range/location scope (reusing `DateRangeReport`'s table-of-metrics shape) → Save. New

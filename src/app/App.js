@@ -239,7 +239,11 @@ const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m 
 import { AdminPanel } from '../views/admin.js';
 // #207: see the FormsLibraryPanel comment below — same fix, same reason. report-subscriptions.js
 // was the other static importer defeating a lazy import (above-store-onepager.js, 55KB).
-const ReportSubscriptions = lazyPanel(() => import('../views/report-subscriptions.js').then(m => ({ default: m.ReportSubscriptions })));
+// Reports Hub Phase 3 (2026-10-16): 'my-reports' now renders ReportsHub (reports-hub.js), not
+// ReportSubscriptions directly — reports-hub.js imports ReportSubscriptionsBody itself, so this
+// lazy boundary still keeps report-subscriptions.js (and above-store-onepager.js through it) out
+// of the eager bundle, same as before.
+const ReportsHub = lazyPanel(() => import('../views/reports-hub.js').then(m => ({ default: m.ReportsHub })));
 const EmailDigestSubscriptionsPanel = lazyPanel(() => import('../views/email-digest-subscriptions-panel.js').then(m => ({ default: m.EmailDigestSubscriptionsPanel })));
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
 // FOBEOMPanel — Dispatch #188: no longer its own top-level lazyPanel() entry. Merged into Food
@@ -3800,15 +3804,22 @@ function App() {
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/
       // smg-voice/task-queue all carry RoutePanelShell inside their own component (same "shell
       // inside the component" pattern as one-pager/graded-visits/operator-summary/delivery-mix
-      // above). onLaunch below closes 'my-reports' (goRoute(null)) then immediately routes
-      // elsewhere for the calendar/visit-readiness/above-store branches — a second goRoute call
-      // in the same handler simply supersedes the first, same as every other saved-report launch.
+      // above). onLaunchSubscription below closes 'my-reports' (goRoute(null)) then immediately
+      // routes elsewhere for the calendar/visit-readiness/above-store branches — a second
+      // goRoute call in the same handler simply supersedes the first, same as every other
+      // saved-report launch.
       routePanel==='dt-sos'&&h(DTSpeedOfServicePanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='news'&&h(NewsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='inventory'&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='loc-intel'&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>goRoute(null)}),
-      routePanel==='my-reports'&&h(ReportSubscriptions,{onClose:()=>goRoute(null),
-        onLaunch:(sub)=>{
+      // Reports Hub (Phase 3, 2026-10-16) — 'my-reports' now opens the categorized Reports Hub
+      // instead of the old standalone My Reports picker; ReportsHub embeds that same picker as
+      // its own "My Reports" tab (see reports-hub.js). onOpenPanel just routes straight to a
+      // direct-launch report panel's own existing route — no pre-scoping needed, those panels
+      // already own their own LocationSelector/date controls.
+      routePanel==='my-reports'&&h(ReportsHub,{can:perm,onClose:()=>goRoute(null),
+        onOpenPanel:(id)=>goRoute(id),
+        onLaunchSubscription:(sub)=>{
           goRoute(null);
           if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsView('calendar'); goRoute('events'); }
           else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
@@ -3858,7 +3869,8 @@ function App() {
     // showAboveStore — Dispatch #160: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside AboveStoreOnePager itself; see routePanel==='above-store').
     // showReportSubs — Dispatch #206: moved to the routePanel gate in the main content area
-    // (ReportSubscriptions carries RoutePanelShell internally; see routePanel==='my-reports').
+    // (ReportsHub carries RoutePanelShell internally; see routePanel==='my-reports'. Phase 3,
+    // 2026-10-16: renders ReportsHub now, not ReportSubscriptions directly — see that file).
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
