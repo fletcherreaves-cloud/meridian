@@ -387,7 +387,31 @@ triggered the 2026-10-02 audit and is kept only for the original ask's context.*
 
 **Original "for later" entry, kept for context:**
 
-## Recount visibility report — which locations recounted, helped/hurt, FOB $/% before vs after (owner request, 2026-10-02, explicitly "for later")
+## ✅ RESOLVED 2026-10-16 — Recount visibility report already fully shipped the day after this was logged (was "for later" below)
+
+Verified against the live code (2026-10-16, Reports Hub Tier 2 pass): all 4 of this item's own
+"open questions / likely real gaps" below are answered — `src/views/eom-recount-report.js`'s
+2026-10-03 header comment (dated the day AFTER this backlog entry) documents the owner asked
+for exactly this and it shipped same-week:
+1. **Both $ and %** — `moneyPct()` combines them in one cell (owner's own "assign a dollar and
+   percent to it" quoted verbatim in that file's header).
+2. **Before/after side by side** — the item table has explicit "Baseline ($ / %)" / "Post-Recount
+   ($ / %)" / "Δ" columns, not just a net verdict.
+3. **One-line-per-location recount yes/no roll-up** — `locationSummary` prop
+   (`recountLocationSummary`, `eom-dashboard.js`) renders every in-scope store, INCLUDING ones
+   with zero recounts this period, with a "✓ Yes / — No" column — exactly the "simple recounts
+   performed or not" roll-up asked for.
+4. **Weekly coverage, not just EOM** — `mode`/`onModeChange` toggle (EOM default, Weekly reuses
+   the same `autoWindowDays` clustering already proven on the At-A-Glance "Items Recounted" tile).
+
+Live-wired: `eom-dashboard.js` imports and renders `EOMRecountImpactPanel` with all of the above
+props already populated (not an orphaned file). 19 passing tests across
+`dispatch-227-eom-reports.test.js` / `dispatch-cross-store-recount-consistency.test.js` /
+`eom-recount-report-format-text.test.js`. **No code changes needed — do not re-build this.**
+The `eom-dashboard` panel (which hosts this report as a tab) was also cross-listed into the
+Reports Hub catalog the same session (Tier 1), so it's now reachable there too.
+
+## Recount visibility report — which locations recounted, helped/hurt, FOB $/% before vs after (owner request, 2026-10-02, explicitly "for later") [SUPERSEDED — see ✅ RESOLVED note immediately above]
 
 Owner, verbatim: *"I want to be able to go back and determine which locations performed any
 recounts for weekly and eom inventory. Especially EOM. It would be nice to list the items

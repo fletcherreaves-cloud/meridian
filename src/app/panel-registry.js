@@ -216,10 +216,13 @@ export const PANELS = [
   // redirect effect in App.js (goRoute('fob-analysis') + initial EOM mode) instead of 404ing
   // to the default view. Removing route:true here would silently break that link.
   { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'internal', section:'inventory-food-cost', route:true },
-  // QSRSoft Forms dashboard, Slice 2 of 3 -- kind:'test-kitchen' since Slice 3's pull script
-  // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
-  // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.
-  { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:9 },
+  // QSRSoft Forms dashboard. ⚠️ The comment here used to say "Slice 3's pull script hasn't
+  // shipped yet" -- stale; it shipped at v5.474 (#1309, see SAGE's query_forms tool, same
+  // rollup this panel reads). route:true added (2026-10-16, Reports Hub Tier 1) so this
+  // proven, live-data panel (shipped v5.098, iterated through v5.474) is reachable from the
+  // Reports Hub catalog -- kind stays 'test-kitchen' per the one-field-flip promotion
+  // convention; promoting it out of Test Kitchen is a separate, not-yet-made decision.
+  { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:9, route:true },
   // MCDOK People confidential review forms (Crew/Crew Trainer/Maintenance/Shift Manager Review)
   // -- a SEPARATE source from forms-completion above (qsr_forms_reviews, not qsr_forms_completion;
   // see src/engine/forms-reviews.js's header). kind:'test-kitchen' for the same reason
@@ -309,6 +312,11 @@ export const PANELS = [
   { id:'item-velocity', label:'Item Velocity', icon:'🔥', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'channel-mix', label:'Channel Mix', icon:'🔀', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'labor-opportunity-cost', label:'Labor Opportunity Cost', icon:'⏱️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Reports redesign Tier 3 (2026-10-16, owner request "go ahead with all of these") -- store ×
+  // day-of-week cash-variance pattern, built privacy-safe by construction: no register-number
+  // field exists in this app's data model and naming individuals is out of scope per this
+  // repo's "verify, don't accuse" convention (see engine/cash-variance-pattern.js's header).
+  { id:'cash-variance-pattern', label:'Cash Variance Pattern', icon:'🧾', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },

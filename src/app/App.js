@@ -229,6 +229,7 @@ const PriceChangeImpactPanel = lazyPanel(() => import('../views/price-change-imp
 const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').then(m => ({ default: m.ItemVelocityPanel })));
 const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })));
 const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })));
+const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -1143,7 +1144,11 @@ function App() {
   // showDtSoS — dispatch #206: replaced by routePanel==='dt-sos' (see routePanel above).
   // showGradedVisits — dispatch #205: replaced by routePanel==='graded-visits' (see routePanel above).
   // showSecurity — dispatch #192: replaced by routePanel==='security' (see routePanel above).
-  const [showFormsCompletion, setShowFormsCompletion] = useState(false);
+  // showFormsCompletion — dispatch (2026-10-16, Reports Hub Tier 1 cross-listing): replaced by
+  // routePanel==='forms-completion' (see routePanel above) so it's reachable from the Reports
+  // Hub catalog the same way every other route:true panel already is; FormsCompletionPanel had
+  // no internal chrome to strip (same "signals/security" case the dispatch #192 comment names),
+  // so it's now wrapped directly in RoutePanelShell at the routePanel gate instead of ModalShell.
   const [showFormsReviews, setShowFormsReviews] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
@@ -3241,7 +3246,7 @@ function App() {
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showFormsReviews||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsReviews||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -3265,7 +3270,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);
-      setShowFormsCompletion(false);setShowFormsReviews(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
+      setShowFormsReviews(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowKB(false);setShowEmailDigests(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);
       setShowModelAssign(false);
@@ -3443,9 +3448,10 @@ function App() {
         if(modal==='item-velocity') perm('analytics.store')&&goRoute('item-velocity');
         if(modal==='channel-mix') perm('analytics.store')&&goRoute('channel-mix');
         if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
+        if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
-        if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
+        if(modal==='forms-completion') perm('analytics.store')&&goRoute('forms-completion');
         if(modal==='forms-reviews') perm('analytics.store')&&setShowFormsReviews(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
@@ -3738,6 +3744,7 @@ function App() {
       routePanel==='item-velocity'&&h(ItemVelocityPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='channel-mix'&&h(ChannelMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
@@ -3820,6 +3827,11 @@ function App() {
       routePanel==='weekly-count-status'&&h(WeeklyCountStatusPanel,{stores,ds,settings,initialScope:weeklyCountStatusInit,onClose:()=>{goRoute(null);setWeeklyCountStatusInit(null);}}),
       routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='customer-complaints'&&h(CustomerComplaintsPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='forms-completion'&&h(RoutePanelShell,{
+        title:'✅ Form Completions',
+        onBack:()=>goRoute(null),
+        bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+      }, h(FormsCompletionPanel,{stores,userRole,onClose:()=>goRoute(null)})),
       routePanel==='store-assessments'&&h(StoreAssessmentsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
@@ -3924,12 +3936,8 @@ function App() {
     // signals / security — Dispatch #192: moved to the routePanel gates in the main content
     // area (wrapped directly in RoutePanelShell there; see routePanel==='signals' /
     // routePanel==='security' — neither component had internal chrome to strip).
-    showFormsCompletion&&h(ModalShell,{
-      title:'✅ Form Completions',
-      onClose:()=>setShowFormsCompletion(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
-    },
-      h(FormsCompletionPanel,{stores,userRole,onClose:()=>setShowFormsCompletion(false)})
-    ),
+    // showFormsCompletion — moved to the routePanel gate in the main content area
+    // (wrapped directly in RoutePanelShell there; see routePanel==='forms-completion').
     showFormsReviews&&h(ModalShell,{
       title:'⭐ Review Forms',
       onClose:()=>setShowFormsReviews(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}

@@ -456,3 +456,98 @@ panel (currently `kind:'test-kitchen'` + a modal, not `route:true` — would nee
 not a from-scratch build); anything using the `calendar` metric group (weekend/Friday/Monday
 flags) standalone, which has low value outside a correlation context so was deliberately left
 off this batch.
+
+---
+
+## Reports Hub Tiers 1–3 + Lifelenz Gap live-recompute fix (v5.576, 2026-10-16)
+
+Owner, after a whole-project sweep for high-impact candidates: "Go ahead with all of these" —
+authorizing all three tiers below — plus, separately, a screenshot report of the Lifelenz
+Scheduling Gap Report showing an implausible 202.70% avg Lifelenz MAPE and a 27-0 Meridian sweep.
+
+### Lifelenz Gap Report fix (not part of the reports-hub sweep, but shipped same session)
+
+Root-caused, not guessed at: Meridian's side of the comparison read a FROZEN number
+(`DEFAULT_MODEL_ASSIGNMENTS[loc].weekly.mape`) baked in once from the original Sep2025–May2026
+backtest (`src/parsers/index.js:68`'s own "AE 9.29% vs Lifelenz 9.51%, AE wins 16/27" comment).
+Lifelenz's side was always LIVE-recomputed from whatever Labor Analysis file happens to be
+loaded. Once a newer file moved onto a far more recent window (confirmed by the "n days" column
+reading ~38-39, nowhere near a 9-month span), the panel kept its hardcoded "same Sep 2025–May
+2026 window" subtitle while silently comparing two different periods.
+
+Fix: both sides now compute live, on the EXACT SAME matched dates — `forecastDay` called with
+`mode:'Back Test'` (so `eDt` becomes the historical date itself, never today — leak-free, same
+discipline `backtest.js`'s `runBacktest`/`runPeriodTotalBacktest` already use) and
+`forceModel:'ae'` (preserving the AE-specific comparison `LIFELENZ BRIDGE`'s own header already
+cites as "proved"). Subtitle/footer/summary-card subtitles now show the real loaded date range
+instead of a stale hardcoded one. Also fixed: picking a period with zero matched rows used to
+render a silently blank table (no summary cards, no explanation) — now a real empty-state
+message. `src/features/lifelenz.js`'s `LifelenzGapPanel`. 4 new tests
+(`dispatch-lifelenz-gap-live-recompute-2026-10-16.test.js`), mocking `forecastDay` to a
+date-dependent return value so the test can prove the live path actually runs per matched date,
+not a frozen-number stand-in.
+
+### Tier 1 — cross-list 8 proven, already-live panels into the Reports Hub catalog
+
+Pure catalog additions (`reports-catalog.js` `DIRECT_PANELS`) for `graded-visits`,
+`customer-complaints`, `pricing-engine`, `perf-reviews`, `loc-intel`, `dt-sos`, `delivery-mix`,
+`eom-dashboard` — all already `route:true` nav panels, zero other code touched. Fills **Guest
+Experience**, which previously had zero direct-panel tiles (only 3 thin subscriptions).
+
+`forms-completion` needed real wiring first: it was still on the old `modal==='forms-completion'`
++ `showFormsCompletion` state pattern, not `routePanel`. Converted to the established "no internal
+chrome to strip" pattern (`signals`/`security`'s own precedent, dispatch #192) — wrapped directly
+in `RoutePanelShell` at the `routePanel==='forms-completion'` gate, `route:true` added to its
+registry entry (`kind` stays `'test-kitchen'` — promoting it out of Test Kitchen is a separate,
+not-yet-made decision). Also corrected that entry's stale comment ("Slice 3's pull script hasn't
+shipped yet" — it shipped at v5.474/#1309).
+
+Full suite caught a real bug from the rewire that this session's own targeted test runs missed:
+`App.js`'s "Universal Escape hatch" (closes every open modal on Escape) still called the deleted
+`setShowFormsCompletion(false)` — a `no-undef` ESLint check (`src-no-undef.test.js`,
+`dispatch-72-a3-app-no-undef.test.js`) caught it before it shipped. Removed, matching the exact
+precedent documented immediately above that line (dispatch #72 A3's own "removed rather than
+invented" note for `setShowDev`/`setShowInsights`). **Lesson for the next routePanel conversion:
+grep for every remaining reference to the deleted state setter, not just the 3 call sites the
+established pattern names (declaration, modal dispatch, render) — a sweep like the Escape hatch
+is easy to miss.**
+
+### Tier 2 — verified, not built: Recount Visibility report
+
+`memory/project-backlog.md`'s "Recount visibility report" item (logged 2026-10-02, "for later")
+turned out to be fully answered the very next day (2026-10-03) — `eom-recount-report.js`'s own
+header comment documents the owner asked for exactly this and it shipped same-week. All 4 of the
+backlog item's own "open questions" are resolved in the live code: $ AND % combined
+(`moneyPct()`), baseline/post-recount side by side (not just a delta), a per-location
+recounted-yes/no roll-up including zero-recount stores, and an EOM/Weekly mode toggle. No code
+changes — backlog entry corrected with a `✅ RESOLVED` note pointing at the live evidence.
+
+### Tier 3 — new report: Cash Variance Pattern
+
+The other half of the owner's 2026-08-31 "link cash controls to food cost" ask: a CoachQ sample
+report also showed a register/cashier-level cash-variance table naming individuals
+("Register 13 — Seth F, Bobbi J"), deliberately NOT built at the time per this repo's "verify,
+don't accuse" convention (`eom-diagnosis.js`'s `INTEGRITY_LABEL` section).
+
+Measured before building, not assumed: Meridian's own Register Audit import
+(`parsers/index.js`'s `parseRegisterAudit`) is keyed by EMPLOYEE + store + date — **there is no
+register-number field anywhere in this app's data model**, so a literal "by register" report was
+never buildable here regardless of the privacy question. Built the version that IS buildable and
+privacy-safe by construction: the same cash-variance signal (Cash O/S, POS overrides, refunds,
+no-sale drawer opens, T-Reds After) already tracked store-day-level in `signal-registry.js`'s
+Controls metric group, aggregated by **store × day-of-week** instead of register or person — a
+store's recurring Thursday cash-variance problem is the same kind of pattern finding, at the
+grain this app's real data actually supports. Deliberately **no synthetic "flagged" threshold**
+(CLAUDE.md's own standing rule against inventing unvalidated cutoffs — no backtest exists yet to
+derive one) — real per-day-of-week averages only, sortable, same posture Weather Impact and
+Channel Mix already take. `engine/cash-variance-pattern.js` + `views/cash-variance-pattern.js`.
+
+### Numbers
+
+36 new tests total (4 Lifelenz Gap live-recompute, 10 Tier 1 catalog + route:true checks, 2 Tier
+3 catalog, 20 Cash Variance Pattern engine + panel including an explicit privacy-safe-by-
+construction check on both the engine's row shape and the panel's rendered table). Route count
+fifty → fifty-one (`cash-variance-pattern`, plus `forms-completion` gaining `route:true`: forty-
+nine → fifty from that alone). `shell-nav-snapshot.test.js`/`panel-registry.test.js` updated.
+Full suite green (641/641 files, 5946/5946 tests after the Escape-hatch fix), build clean, within
+budget — Cash Variance Pattern lands in its own lazy chunk (confirmed via `dist/assets/`).

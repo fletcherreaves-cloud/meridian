@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { addD, dKey, sodOf, weekStartOf, lastClosedBusinessDay } from '../utils/date.js';
-import { DEFAULT_MODEL_ASSIGNMENTS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
 import { forecastDay, getModelAssignment } from '../engine/forecast.js';
 import { runWhyEngineScan, runWhyEngineDistrict, diagnoseMiss } from '../engine/why.js';
 import { grade } from '../utils/fmt.js';
@@ -18,11 +18,28 @@ const td   = (props, ...c) => h('td',     props, ...c);
 const th   = (props, ...c) => h('th',     props, ...c);
 const tr   = (props, ...c) => h('tr',     props, ...c);
 
-// LIFELENZ SCHEDULING GAP REPORT  (v187)
+// LIFELENZ SCHEDULING GAP REPORT  (v187; live-recompute fix same session as the dispatch
+// below, 2026-10-16)
 // Compares Meridian's model projections vs Lifelenz (WFM Projected
 // Sales) vs actual results from Labor Analysis file.
 // Shows per-store accuracy gap, bias direction, dollar impact.
 // Pre/post Lifelenz split (est. cutover July 2024).
+//
+// ⚠️ FIXED (dispatch, 2026-10-16) — Meridian's side used to read
+// `DEFAULT_MODEL_ASSIGNMENTS[loc].weekly.mape`, a FROZEN number baked in once from the
+// original Sep2025–May2026 backtest (index.js's "AE 9.29% vs Lifelenz 9.51%, AE wins 16/27"
+// comment). Lifelenz's side was always LIVE-recomputed from whatever Labor Analysis file
+// happens to be loaded right now. Once a newer file got uploaded covering a different, much
+// more recent window, the panel kept its hardcoded "same Sep 2025–May 2026 window" subtitle
+// while actually comparing a live-recent Lifelenz number against a 9-month-old frozen
+// Meridian number — apples to oranges, mislabeled as apples to apples (owner-reported: live
+// panel showed Lifelenz at 202.70% avg MAPE / 27-0 sweep vs the validated 9.51% / 16-27).
+// Now BOTH sides are computed live, over the EXACT SAME matched dates (forecastDay with
+// mode:'Back Test' so eDt=the historical date itself, never today — leak-free, same
+// discipline backtest.js's runBacktest/runPeriodTotalBacktest already use), forceModel:'ae'
+// to stay the same AE-vs-Lifelenz comparison the rest of the app (see LIFELENZ BRIDGE below)
+// already cites as "proved". Subtitle/footer now show the real loaded date range instead of
+// a stale hardcoded one.
 function LifelenzGapPanel({ds, settings, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
   const [period,  setPeriod]  = uSt('post');    // 'pre' | 'post' | 'all'
@@ -30,6 +47,11 @@ function LifelenzGapPanel({ds, settings, onClose}) {
   const [sortDir, setSortDir] = uSt(-1);         // 1=asc -1=desc
 
   const LFZ_CUTOVER = new Date('2025-09-01'); // User-confirmed: Altametrics→Lifelenz transition Sep 2025
+
+  // Back Test mode: forecastDay's eDt becomes the historical date being forecast, not
+  // "today" — without this, every call would silently use the live anchor/today's actuals
+  // as its evaluation point regardless of which historical date was requested.
+  const btSettings = uM(()=>({...(settings||{}), mode:'Back Test', _aeStrictParams:true}),[settings]);
 
   const analysis = uM(()=>{
     const rows = ds?.laborRows||[];
@@ -49,7 +71,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
       else if(r.date) results[loc].post.push(entry);
     });
 
-    const calcStats=(arr)=>{
+    const calcLfzStats=(arr)=>{
       if(!arr.length) return null;
       const n=arr.length;
       const mape=arr.reduce((a,r)=>a+Math.abs(r.actual-r.proj)/r.actual,0)/n*100;
@@ -58,26 +80,48 @@ function LifelenzGapPanel({ds, settings, onClose}) {
       return{n,mape,bias,avgAct};
     };
 
-    // Meridian MAPE = AE weekly values validated on Sep 2025–May 2026 (same window as LFZ)
-    // DO NOT use monthly?.mape — that's full-period DI, a different and longer window
-    const meridianMape=(loc)=>{
-      const def=DEFAULT_MODEL_ASSIGNMENTS[loc];
-      if(!def) return null;
-      return def.weekly?.mape||null;  // AE Sep2025-May2026 validated MAPE
+    // Live Meridian AE MAPE over the EXACT SAME matched dates as the Lifelenz arr for this
+    // store+period — the genuine apples-to-apples fix (see header comment above).
+    const calcMeridianStats=(loc,arr)=>{
+      if(!ds||!arr.length) return null;
+      const apes=[];
+      for(const e of arr){
+        if(!e.date) continue;
+        let fc;
+        try{ fc=forecastDay(loc,e.date,ds,btSettings,null,null,'weekly','ae'); }
+        catch(err){ continue; }
+        if(fc&&fc.forecast>0&&e.actual>0) apes.push(Math.abs(e.actual-fc.forecast)/e.actual*100);
+      }
+      if(!apes.length) return null;
+      return{n:apes.length, mape:apes.reduce((a,b)=>a+b,0)/apes.length};
     };
 
     return Object.values(results).map(r=>{
-      const all=calcStats(r.all);
-      const pre=calcStats(r.pre);
-      const post=calcStats(r.post);
-      const mMape=meridianMape(r.loc);
-      const lfzMape=(period==='pre'?pre:period==='post'?post:all)?.mape;
-      const gap=mMape&&lfzMape ? lfzMape-mMape : null; // + = Meridian better
+      const all=calcLfzStats(r.all);
+      const pre=calcLfzStats(r.pre);
+      const post=calcLfzStats(r.post);
       const stats=(period==='pre'?pre:period==='post'?post:all);
-      const dollarImpact=stats&&gap ? Math.abs(gap/100)*stats.avgAct*stats.n : null;
+      const matchedArr=(period==='pre'?r.pre:period==='post'?r.post:r.all);
+      const mStats=calcMeridianStats(r.loc,matchedArr);
+      const lfzMape=stats?.mape;
+      const mMape=mStats?.mape;
+      const gap=(mMape!=null&&lfzMape!=null) ? lfzMape-mMape : null; // + = Meridian better
+      const dollarImpact=stats&&gap!=null ? Math.abs(gap/100)*stats.avgAct*stats.n : null;
       return{...r, all, pre, post, mMape, lfzMape, gap, dollarImpact,
-        bias:stats?.bias, n:stats?.n||0};
+        bias:stats?.bias, n:stats?.n||0, meridianN:mStats?.n||0};
     }).filter(r=>r.n>0);
+  },[ds, period, btSettings]);
+
+  // Real loaded date range for the selected period — replaces the old hardcoded "Sep
+  // 2025–May 2026" subtitle claim, which stayed on screen even once a newer Labor Analysis
+  // file moved the actual compared window somewhere else entirely.
+  const dateRangeLabel = uM(()=>{
+    const rows=ds?.laborRows||[];
+    const dates=rows.filter(r=>r.loc&&r.sales>=100&&r.projSales>=100&&r.date&&
+      (period==='pre'?r.date<LFZ_CUTOVER:period==='post'?r.date>=LFZ_CUTOVER:true)).map(r=>r.date);
+    if(!dates.length) return null;
+    const fmt=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return fmt(new Date(Math.min(...dates)))+' – '+fmt(new Date(Math.max(...dates)));
   },[ds?.laborRows, period]);
 
   const sorted = uM(()=>{
@@ -129,7 +173,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
         span({style:{fontSize:'18px'}},'📊'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Lifelenz Scheduling Gap Report'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'Adaptive Ensemble vs Lifelenz · same Sep 2025–May 2026 window · from Labor Analysis · Meridian MAPE = AE weekly model · Lifelenz MAPE = WFM projected sales')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'Adaptive Ensemble vs Lifelenz · '+(dateRangeLabel?dateRangeLabel+' (loaded data)':'no data loaded for this period')+' · Meridian MAPE = live AE forecast, same matched dates · Lifelenz MAPE = WFM projected sales')
         ),
         div({style:{display:'flex',gap:4}},
           ...['pre','post','all'].map(p=>btn({key:p,className:'btn btn-sm',
@@ -144,6 +188,15 @@ function LifelenzGapPanel({ds, settings, onClose}) {
         div({style:{fontSize:40}},'📊'),
         div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'Labor Analysis Required'),
         div({style:{fontSize:'10px',textAlign:'center',maxWidth:400,lineHeight:1.7}},'Load the Labor Analysis file (Labor_Analysis_YYYYMMDD_to_YYYYMMDD.xlsx) to see Lifelenz vs Meridian accuracy comparison. The file must contain both actual sales and WFM projected sales columns.')
+      ):(analysis&&!analysis.length)?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+        flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
+        div({style:{fontSize:40}},'🗓️'),
+        div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'No Data For This Period'),
+        div({style:{fontSize:'10px',textAlign:'center',maxWidth:420,lineHeight:1.7}},
+          (period==='pre'?'The loaded Labor Analysis file has no rows dated before the Sep 2025 Lifelenz cutover.':
+           period==='post'?'The loaded Labor Analysis file has no rows dated Sep 2025 or later.':
+           'The loaded Labor Analysis file has no rows with both actual and projected sales.'),
+          ' Try a different period toggle above, or load a Labor Analysis file covering this range.')
       ):
       React.createElement(React.Fragment,null,
         // Summary cards
@@ -152,8 +205,8 @@ function LifelenzGapPanel({ds, settings, onClose}) {
           ...[
             {l:'Meridian Wins',     v:summary.improved,     sub:'Better MAPE than Lifelenz', c:'#10b981'},
             {l:'Lifelenz Wins',     v:summary.degraded,     sub:'Lifelenz more accurate',    c:'#ef4444'},
-            {l:'Avg Lifelenz MAPE', v:summary.avgLfz.toFixed(2)+'%', sub:'Post-cutover avg', c:mapeColor(summary.avgLfz)},
-            {l:'Avg Meridian MAPE', v:summary.avgMer.toFixed(2)+'%', sub:'AE model · same window', c:mapeColor(summary.avgMer)},
+            {l:'Avg Lifelenz MAPE', v:summary.avgLfz.toFixed(2)+'%', sub:dateRangeLabel||'—', c:mapeColor(summary.avgLfz)},
+            {l:'Avg Meridian MAPE', v:summary.avgMer.toFixed(2)+'%', sub:'Live AE · same matched dates', c:mapeColor(summary.avgMer)},
             {l:'Under-Forecast',    v:summary.underForecast+' stores', sub:'Consistently below actual', c:'#f59e0b'},
             {l:'Total $ Gap Impact',v:'$'+Math.round(summary.totalImpact/1000)+'K', sub:'Cumulative MAPE difference', c:'var(--amber)'},
           ].map((k,i)=>div({key:i,style:{background:'var(--surf)',border:'.5px solid var(--bdr)',
@@ -168,8 +221,8 @@ function LifelenzGapPanel({ds, settings, onClose}) {
           fontSize:'9px',color:'var(--text2)',lineHeight:1.7,
           background:summary.improved>summary.degraded?'rgba(16,185,129,.05)':'rgba(239,68,68,.05)'}},
           summary.improved>summary.degraded
-            ?`✓ Meridian AE outperforms Lifelenz at ${summary.improved} of ${summary.n} stores — same Sep 2025–May 2026 window, true apples-to-apples.`
-            :`⚠ Lifelenz outperforms Meridian AE at ${summary.degraded} of ${summary.n} stores — FL interstate stores dominate. Same Sep 2025–May 2026 window.`,
+            ?`✓ Meridian AE outperforms Lifelenz at ${summary.improved} of ${summary.n} stores — ${dateRangeLabel||'loaded data'}, both sides live-computed on the same matched dates.`
+            :`⚠ Lifelenz outperforms Meridian AE at ${summary.degraded} of ${summary.n} stores — ${dateRangeLabel||'loaded data'}, both sides live-computed on the same matched dates.`,
           ` ${summary.underForecast} stores show consistent under-forecasting bias (Lifelenz below actual) — scheduling risk.`,
           ` Gap legend: `,
           span({style:{color:'#10b981'}},'Green = Meridian more accurate'),
@@ -196,7 +249,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
                 h('td',{style:{padding:'7px 8px 7px 14px',fontWeight:600,color:'var(--amber)',verticalAlign:'middle'}},
                   div(null,STORE_NAMES[r.loc]||r.loc),
                   div({style:{fontSize:'7.5px',color:'var(--text3)',marginTop:1}},
-                    'Model: '+(DEFAULT_MODEL_ASSIGNMENTS[r.loc]?.monthly?.model||'—').toUpperCase())
+                    'vs AE (forced, '+(r.meridianN||0)+'/'+(r.n||0)+' days forecast)')
                 ),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   fontWeight:700,color:mapeColor(r.lfzMape)}},r.lfzMape?r.lfzMape.toFixed(2)+'%':'—'),
@@ -222,7 +275,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
           'Gap = Lifelenz MAPE minus Meridian MAPE · Positive gap = Meridian more accurate · ',
           '$ Impact = |gap| × avg daily sales × days · ',
           'Bias: ↓ Under = Lifelenz forecasted below actual (understaffing risk) · ',
-          'Cutover: September 2025 (user-confirmed) · Altametrics era: Jan 2022–Aug 2025 · Lifelenz era: Sep 2025–present · Meridian MAPE = AE model, same Sep 2025–May 2026 window')
+          'Cutover: September 2025 (user-confirmed) · Altametrics era: Jan 2022–Aug 2025 · Lifelenz era: Sep 2025–present · Meridian MAPE = live AE forecast (forceModel, Back Test mode — no future leakage), computed on the exact same matched dates as the Lifelenz figure shown'+(dateRangeLabel?' ('+dateRangeLabel+')':''))
       )
     )
   );
