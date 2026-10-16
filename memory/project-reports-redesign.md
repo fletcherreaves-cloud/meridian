@@ -307,14 +307,78 @@ suite green (620/620 files, 5835/5835 tests), build clean, within budget (563.53
 budget — `reports-hub.js` lands in its own real lazy chunk, 11.46 KB / 4.21 KB gzip, confirmed not
 in the eager preload list — effectively unchanged from Phase 2's own baseline).
 
-**Phase 4 — Custom Report Builder.** Metric picker over the Phase 1 catalog → columns over a
-date-range/location scope (reusing `DateRangeReport`'s table-of-metrics shape) → Save. New
-`custom_reports` table: owner-authored definitions, RLS lets OTHER roles read/run a definition
-marked shared (decision 2) while each viewer's actual query still runs through their own
-`accessible_locs` scoping — the definition grants no data access by itself. The picker must hide
-`payroll.view`-gated metrics (and any future tightly-scoped metric) from a builder who lacks that
-permission, same as every other permission check in the app — a shared definition must not let a
-non-privileged viewer back into wage data through a report built by someone who had it.
+**Phase 4 — SHIPPED 2026-10-16 (v5.574).** Built as planned (metric picker over the Phase 1
+catalog → columns over a date-range/location scope → Save, built on `ReportShell` exactly like
+Loss Prevention Summary, no second resolution path), with the real deviations and two caught bugs
+worth recording so a later phase doesn't re-hit either:
+1. **Scope reduction from the original proposal, deliberate.** No `defaultScope`/`defaultPeriod`/
+   `groupBy` columns on a saved definition — a definition is JUST `{name, metric_keys, shared}`.
+   `ReportShell` already owns date-range/location scope at run time (every report built on it
+   picks scope fresh each run, never persists one), so baking a default scope into the saved row
+   would be a second, redundant place that could drift from what the user actually ran last. Not
+   ruled out forever — just not in scope for "pick metrics, save the picks."
+2. **Two real bugs caught by writing the panel's OWN render test, not by review alone** (both in
+   `src/views/custom-report-builder.js` as first written, both fixed before this shipped):
+   - A **missing closing paren** in the metric-picker JSX (`m.label)))))` needed one more `)` to
+     close the outer `div(null, ...)` the whole `picker()` function returns) — would have failed
+     `npm run build` outright the moment anyone touched this file again. Confirmed with
+     `node --input-type=module --check < file.js` before and after — a fast, cheap syntax-only
+     check worth reaching for on any file this dense with nested `h()`/`div()` calls.
+   - A mis-written `_label` helper: `const _label = (style) => div({style...})` returns a React
+     **element** immediately (div with no children), not a function — but every call site used it
+     curried, `_label({...})('text')`, i.e. treating the returned element as a function to call
+     again. Threw `TypeError: _label(...) is not a function` on the FIRST render, not some edge
+     case — would have broken the panel for every user, immediately. Fixed by actually currying
+     it: `(style) => (...children) => div({style...}, ...children)`.
+   Neither bug was caught by `npm run build` alone during the original build (the paren bug is a
+   genuine syntax error vite's build step would have caught — it simply hadn't been re-run since
+   the file was last edited in this same session) nor by eyeballing the file. **The panel's own
+   render test is what found both**, the same lesson CLAUDE.md's "would this verification still
+   pass if reverted" rule points at: a file that was never actually mounted and clicked through
+   can look complete and still not run.
+3. **`_label` and the metric-picker JSX earn a plain-language flag for next time:** deeply nested
+   `h()`/`div()` call chains with 4-6 trailing closing parens on one line are exactly where a
+   paren-count bug hides from a human read-through. Worth a `node --check` pass on any file built
+   this way before considering it done, not just a full build (which this session happened to run
+   again anyway, but shouldn't be the only thing standing between a bug like this and a merge).
 
-Then: curate and build the actual **base reports** (the owner's next ask) on top of Phases 1-3,
+What shipped: `src/engine/custom-report.js` (new — `customReportCatalog`/`buildCustomReportRows`/
+`customReportMetricMeta`), `supabase/schema-custom-reports.sql` (new — see table below for RLS
+shape), `src/lib/supabase.js`'s `loadCustomReports`/`saveCustomReport`/`updateCustomReport`/
+`deleteCustomReport` (row-based CRUD, `pay_events.sql`'s pattern, not a single-blob upsert —
+visibility differs per row), `src/views/custom-report-builder.js` (new — `CustomReportBuilderPanel`),
+`panel-registry.js`'s `custom-reports` entry (perm `analytics.store`, same tier as Loss Prevention
+Summary — nothing in today's catalog needs tighter gating), `App.js`'s lazy import + both the
+`routePanel==='custom-reports'` render line and its `modal==='custom-reports'` deep-link dispatch,
+`reports-catalog.js`'s new "Custom Reports" category + its one tile.
+
+RLS shape (`custom_reports` table, modeled on `pay_events.sql`'s per-row pattern, NOT
+`report_subscriptions.sql`'s single-blob-per-user pattern — visibility differs per row here):
+baseline tenant-isolation policy (every other tenant-scoped table's pattern) + a restrictive
+SELECT policy (`created_by = auth.uid() or shared = true`) + three restrictive owner-only policies
+for insert/update/delete. **Deliberately carries NO `my_locs()` per-location restrictive policy**
+(unlike `pay_events`) — this table holds a definition's metadata (which metrics), never per-store
+data, so there is nothing for a location policy to scope.
+
+**⚠️ Needs manual action, cannot be done from this session:** `supabase/schema-custom-reports.sql`
+has not been applied. This session has no direct Postgres/`DATABASE_URL` connection — only the
+REST API, which cannot run DDL. The client code fails soft either way (empty saved list, "Save
+failed" message) until the table exists, matching every other not-yet-migrated table's contract
+in this app — but Save/Load/Share won't actually persist anything for real users until the owner
+runs this file once in the Supabase SQL editor.
+
+20 new tests (`custom-report-engine.test.js` — catalog filtering incl. the perm-gating mechanism
+itself proven with an injected fake gated metric since no real one exists yet, row-building
+against real `metricValueForRange`, stale-key/no-data degradation; `custom-report-builder-panel.test.js`
+— pick/run/remove/export against real computed figures, save-failure surfacing against a mocked
+`../lib/supabase.js` client so the test is deterministic regardless of whether the calling session
+happens to carry live Supabase credentials; `reports-catalog-phase4.test.js` — the new category and
+its `analytics.store` perm boundary) plus `shell-nav-snapshot.test.js`/`panel-registry.test.js`
+updated for the real nav entry (including the `'🧩' icon has another owner` correction both ways —
+Custom Report Builder now shares that icon with Panel Manager, perm `settings.view`, so neither
+permission's denial list can claim the icon alone). Full suite green (624/624 files, 5878/5878
+tests), build clean, within budget (563.99 KB eager / 850 KB budget — `custom-report-builder.js`
+lands in its own real lazy chunk, 7.69 KB / 2.98 KB gzip, confirmed not in the eager preload list).
+
+Then: curate and build the actual **base reports** (the owner's next ask) on top of Phases 1-4,
 each one a small addition once the shell exists.

@@ -27,6 +27,11 @@ export const REPORT_CATEGORIES = [
   'Labor & Payroll',
   'Financial & Promotions',
   'Leadership & Above-Store',
+  // Phase 4 (2026-10-16) -- the owner's own "under its own subtitled section of customized
+  // reporting" ask. One tile (the builder itself); saved/shared definitions live inside that
+  // panel, not as separate hub tiles -- same "list + build form in one screen" shape the My
+  // Reports tab already uses for its own saved subscriptions.
+  'Custom Reports',
 ];
 
 // Direct-launch panels, each given its hub category + a one-line description (panel-registry.js
@@ -50,6 +55,8 @@ const DIRECT_PANELS = [
     desc: 'District/org rollup across every core KPI.' },
   { id: 'ranking', category: 'Leadership & Above-Store',
     desc: 'Leaderboards, record days, top/bottom performers.' },
+  { id: 'custom-reports', category: 'Custom Reports',
+    desc: 'Pick any metrics, side by side, over a date range and scope. Save and share across roles.' },
 ];
 
 /** Builds the full Reports Hub catalog: direct-launch panel tiles + subscribable report tiles,
