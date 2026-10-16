@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the forty-three panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary and Custom Report Builder)', () => {
+  it('is exactly the forty-nine panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder and the six Reports redesign Phase 5 base reports)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -321,13 +321,18 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // proof-of-concept report, the first built on the new ReportShell -- also built route:true
     // from day one (forty-one -> forty-two). 2026-10-16: 'custom-reports' (Custom Report
     // Builder, Reports-redesign Phase 4) -- also built route:true from day one, same ReportShell
-    // treatment as 'loss-prevention' above (forty-two -> forty-three).
+    // treatment as 'loss-prevention' above (forty-two -> forty-three). Same day, Reports-
+    // redesign Phase 5 (owner request "let's do them all") adds six more base reports in one
+    // batch -- 'controls-food-cost-link', 'weather-impact', 'price-change-impact',
+    // 'item-velocity', 'channel-mix', 'labor-opportunity-cost' -- every one also built
+    // route:true from day one, same ReportShell treatment (forty-three -> forty-nine).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'custom-reports', 'customer-complaints', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
-      'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel', 'loss-prevention',
-      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'pricing-engine', 'proj',
-      'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends',
-      'visit-readiness', 'weekly-count-status',
+      'above-store', 'attention', 'brief', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'crew-schedule', 'custom-reports', 'customer-complaints',
+      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits',
+      'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'one-pager',
+      'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
+      'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
+      'weather-impact', 'weekly-count-status',
     ]);
   });
 

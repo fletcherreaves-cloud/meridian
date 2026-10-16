@@ -298,6 +298,17 @@ export const PANELS = [
   // entries are payroll.view-gated today (the picker itself filters any that would be, see
   // engine/custom-report.js's customReportCatalog), so analytics.store is the correct floor.
   { id:'custom-reports', label:'Custom Report Builder', icon:'🧩', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Reports redesign Phase 5 (2026-10-16, owner request "let's do them all") -- six new base
+  // reports, all built on ReportShell at the same perm tier as every other store-level
+  // operational report above. Each icon below is confirmed unused anywhere else in this file
+  // before being picked, so none needs an "icon has another owner" footnote in
+  // shell-nav-snapshot.test.js -- there is no second owner to leave behind.
+  { id:'controls-food-cost-link', label:'Controls ↔ Food Cost Linkage', icon:'🔗', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  { id:'weather-impact', label:'Weather Impact', icon:'🌦️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  { id:'price-change-impact', label:'Price Change Impact', icon:'🎚️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  { id:'item-velocity', label:'Item Velocity', icon:'🔥', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  { id:'channel-mix', label:'Channel Mix', icon:'🔀', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  { id:'labor-opportunity-cost', label:'Labor Opportunity Cost', icon:'⏱️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
