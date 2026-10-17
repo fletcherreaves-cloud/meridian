@@ -9,12 +9,12 @@ import { ReportShell } from '../components/ReportShell.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { f$, fN } from '../utils/fmt.js';
 import { buildPriceChangeImpactReport } from '../engine/price-change-impact.js';
+import { useSortedRows, SortTh } from '../components/SortableTh.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const td = (p, ...c) => h('td', p, ...c);
 const tr = (p, ...c) => h('tr', p, ...c);
-const th = (p, ...c) => h('th', p, ...c);
 
 // Already-percentage numbers (e.g. +10, -3.2) — same convention weather-impact.js's fDelta
 // uses, not utils/fmt.js's fraction-expecting fP/fPct.
@@ -41,6 +41,7 @@ const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 export function PriceChangeImpactPanel({ ds, stores, onClose }) {
   const { useState } = React;
   const [rows, setRows] = useState(null);
+  const { sorted, sortKey, sortDir, onSort } = useSortedRows(rows);
 
   const run = async ({ locs, range }) => {
     setRows(buildPriceChangeImpactReport(ds, { locs, range }));
@@ -71,10 +72,10 @@ export function PriceChangeImpactPanel({ ds, stores, onClose }) {
         : div({ style: { overflowX: 'auto' } },
           h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 1300 } },
             h('thead', null, h('tr', null,
-              th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', position: 'sticky', left: 0, background: 'var(--surf)' } }, 'Store'),
-              ...COLS.map(c => th({ key: c.key, style: { textAlign: 'right', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, c.label)),
+              h(SortTh, { label: 'Store', colKey: 'name', sortKey, sortDir, onSort, style: { position: 'sticky', left: 0, background: 'var(--surf)' } }),
+              ...COLS.map(c => h(SortTh, { key: c.key, label: c.label, colKey: c.key, sortKey, sortDir, onSort, align: 'right' })),
             )),
-            h('tbody', null, ...rows.map((r, i) => tr({ key: r.loc + '|' + r.date, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            h('tbody', null, ...sorted.map((r, i) => tr({ key: r.loc + '|' + r.date, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
               td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, sNameC(r.loc) || r.name),
               ...COLS.map(c => td({ key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, c.fmt(r[c.key]))),
             ))),

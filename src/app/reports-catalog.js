@@ -98,6 +98,10 @@ const DIRECT_PANELS = [
   // register or employee -- see engine/cash-variance-pattern.js's header for why).
   { id: 'cash-variance-pattern', category: 'Financial & Promotions',
     desc: 'Cash O/S, POS overrides, refunds and T-Reds averaged by store and day of week — recurring patterns, never by register or employee.' },
+  // 2026-10-17, owner: "And, yes, build it" -- live version of the owner's own Excel FOB
+  // reference table.
+  { id: 'fob-reference-table', category: 'Financial & Promotions',
+    desc: 'Rolling L3M / L6W / LM / MTD / Projected / Trend for Sales, Comp Sales %, Crew Labor %, TPPH and every FOB component, by store.' },
 ];
 
 /** Builds the full Reports Hub catalog: direct-launch panel tiles + subscribable report tiles,

@@ -550,6 +550,18 @@ function _autoFirstLocUniverse(ds, msKey) {
   return [...locs];
 }
 
+// qsr_fob (the backing stream for every key below) is a MONTH-TO-DATE CUMULATIVE snapshot per
+// (loc, date) — each day's raw value is the running total since the 1st of the month, NOT that
+// day's own activity (confirmed in src/views/at-a-glance.js's own comment: "qsr_fob is
+// month-to-date, so this shows current running MTD cost", and its fobByMonth/fobAgg logic, which
+// deliberately takes only the LATEST row per store per month). Averaging every day's cumulative
+// value across a month (what the generic branch below does for every other, genuinely
+// per-day-independent metric) silently understates the real monthly ratio — a monotonically
+// growing curve's mean sits below its endpoint. Fixed here (finding filed alongside
+// engine/fob-reference.js, which hit this exact trap while building a separate feature and
+// deliberately avoided reusing this path for that reason) rather than reused-as-is.
+const CUMULATIVE_MTD_SOURCE_KEYS = new Set(['fobPct', 'compWaste', 'rawWaste', 'statVar', 'condiment', 'empMeal', 'unexplained']);
+
 // Same {loc,date,value}[] shape and the same "0 is missing unless allowZero" / sum-vs-mean
 // monthly rollup rules the static ds[source] branch below uses — a caller (Trend Explorer's
 // bucketing, Scanner's pairwise correlation) cannot tell which path produced a given series.
@@ -565,13 +577,19 @@ function _extractViaMetricSource(msKey, ds, granularity, scopeLoc, meta) {
     }
   }
   if (granularity === 'daily') return daily;
+  const cumulative = CUMULATIVE_MTD_SOURCE_KEYS.has(msKey);
   const byKey = {};
   for (const r of daily) {
     const k = r.loc + '_' + _mKey(r.date);
-    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sum: 0, n: 0 };
+    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sum: 0, n: 0, latestDate: r.date, latestValue: r.value };
     byKey[k].sum += r.value; byKey[k].n++;
+    if (r.date > byKey[k].latestDate) { byKey[k].latestDate = r.date; byKey[k].latestValue = r.value; }
   }
-  return Object.values(byKey).map(b => ({ loc: b.loc, date: b.date, value: meta.aggregate === 'sum' ? b.sum : b.sum / b.n }));
+  return Object.values(byKey).map(b => ({
+    loc: b.loc,
+    date: cumulative ? b.latestDate : b.date,
+    value: cumulative ? b.latestValue : (meta.aggregate === 'sum' ? b.sum : b.sum / b.n),
+  }));
 }
 
 export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {

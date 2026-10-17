@@ -18,6 +18,7 @@ import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { fP, f$, fN } from '../utils/fmt.js';
 import { buildCustomReportRows, customReportCatalog, customReportMetricMeta } from '../engine/custom-report.js';
 import { loadCustomReports, saveCustomReport, updateCustomReport, deleteCustomReport, supabase } from '../lib/supabase.js';
+import { useSortedRows, SortTh } from '../components/SortableTh.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -25,7 +26,6 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 const td = (p, ...c) => h('td', p, ...c);
 const tr = (p, ...c) => h('tr', p, ...c);
-const th = (p, ...c) => h('th', p, ...c);
 
 function _fmt(v, unit) {
   if (v == null) return '—';
@@ -65,6 +65,7 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [groupBy, setGroupBy] = useState('range'); // 'range' | 'daily' | 'weekly' | 'monthly' -- owner ask 2026-10-17
+  const { sorted, sortKey, sortDir, onSort } = useSortedRows(rows);
 
   const catalog = useMemo(() => customReportCatalog(can), [can]);
 
@@ -170,7 +171,6 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
     btn({ className: 'btn btn-a', style: { fontSize: '11px', fontWeight: 700 }, disabled: busy || !reportName.trim() || !selectedKeys.length, onClick: saveAs },
       editingId ? '💾 Save Changes' : '💾 Save As New'));
 
-  const th2 = (l) => th({ style: { padding: '5px 8px', background: 'var(--surf3)', fontSize: '8px', textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text2)', textAlign: 'right', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, l);
   const td2 = (v) => td({ style: { padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', textAlign: 'right' } }, v);
 
   const viewAsControl = () => div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } },
@@ -189,10 +189,10 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
       : div({ style: { overflowX: 'auto' } },
         h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 400 + selectedKeys.length * 110 } },
           h('thead', null, h('tr', null,
-            grouped ? th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, 'Period') : null,
-            th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', position: 'sticky', left: 0, background: 'var(--surf)' } }, 'Store'),
-            ...selectedKeys.map(k => th2(customReportMetricMeta(k).label)))),
-          h('tbody', null, ...rows.map((r, i) => tr({ key: r.loc + (r.periodStart || ''), style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            grouped ? h(SortTh, { label: 'Period', colKey: 'periodStart', sortKey, sortDir, onSort }) : null,
+            h(SortTh, { label: 'Store', colKey: 'name', sortKey, sortDir, onSort, style: { position: 'sticky', left: 0, background: 'var(--surf)' } }),
+            ...selectedKeys.map(k => h(SortTh, { key: k, label: customReportMetricMeta(k).label, colKey: k, sortKey, sortDir, onSort, align: 'right' })))),
+          h('tbody', null, ...sorted.map((r, i) => tr({ key: r.loc + (r.periodStart || ''), style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
             grouped ? td({ style: { padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, _periodLabel(r)) : null,
             td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, r.name),
             ...selectedKeys.map(k => td2(_fmt(r[k], customReportMetricMeta(k).unit))))))));

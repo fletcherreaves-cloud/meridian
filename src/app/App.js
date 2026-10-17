@@ -231,6 +231,7 @@ const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').th
 const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })));
 const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })));
 const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })));
+const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -3456,6 +3457,7 @@ function App() {
         if(modal==='channel-mix') perm('analytics.store')&&goRoute('channel-mix');
         if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
         if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
+        if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&goRoute('forms-completion');
@@ -3752,6 +3754,7 @@ function App() {
       routePanel==='channel-mix'&&h(ChannelMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
