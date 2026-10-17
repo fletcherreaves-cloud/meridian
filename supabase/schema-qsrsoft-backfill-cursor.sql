@@ -28,4 +28,15 @@ alter table public.qsrsoft_backfill_cursor enable row level security;
 -- pull script's Supabase access.
 
 comment on table public.qsrsoft_backfill_cursor is
-  'Per-report-type progress cursor for the QSRSoft 7-year historical backfill (scripts/qsrsoft-backfill-driver.mjs, owner request 2026-10-15). earliest_date_pulled walks backward ~90 days per scheduled run until it reaches today-minus-7-years, at which point done flips true. Internal automation bookkeeping, never read by the app.';
+  'Per-report-type progress cursor for the QSRSoft historical backfill (scripts/qsrsoft-backfill-driver.mjs, owner request 2026-10-15). earliest_date_pulled walks backward ~90 days per scheduled run until it either finds the real floor (consecutive_empty_chunks reaches the driver''s threshold) or hits the YEARS_BACK safety ceiling, at which point done flips true. Internal automation bookkeeping, never read by the app.';
+
+-- Added 2026-10-17 — a live >7-year retention probe (owner request) disproved this table's own
+-- header comment above ("today-minus-7-years" as a real data floor): real DAR/OPS data came
+-- back for 2019-09 (>7 years old as of the probe date), while 2018-02 came back confirmed
+-- empty. scripts/qsrsoft-backfill-driver.mjs no longer trusts a fixed 7-year calendar target to
+-- know where to stop — it now tracks how many CONSECUTIVE chunks in a row came back confirmed-
+-- empty (zero rows, zero per-unit errors) and marks done once that streak crosses its own
+-- threshold, which is the real per-report-type floor, not an assumed one. See
+-- memory/finding-qsrsoft-retention-2026-10-17.md for the measured findings.
+alter table public.qsrsoft_backfill_cursor
+  add column if not exists consecutive_empty_chunks integer not null default 0;

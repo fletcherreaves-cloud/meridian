@@ -25,7 +25,19 @@
 // per this repo's own standing rule against inventing thresholds: once real runs
 // accumulate under this instrumentation, recalibrate against the observed distribution
 // the same way the swing alarm's -10% and the count-completeness 0.75 were picked.
+import { writeFileSync } from 'node:fs';
+
 const FAIL_THRESHOLD_PCT = 0.25;
+
+// Dispatch 2026-10-17 (owner-requested >7-year QSRSoft-retention probe): a historical backfill
+// chunk that comes back with zero rows AND zero per-unit failures is informationally different
+// from a live daily pull returning zero rows — the former can legitimately mean "this window
+// predates what QSRSoft has," the latter never should. Opt-in only (QSRSOFT_BACKFILL_PROBE=1,
+// set by scripts/qsrsoft-backfill-driver.mjs when it invokes a pull script as a backfill
+// subprocess) so every existing scheduled daily pull keeps its unchanged, correct "zero rows is
+// always bad" behavior — this never fires unless something explicitly opts in. Read live inside
+// finalize() below (not frozen as a module-level constant) so a test can toggle the env var
+// per-case without re-importing the module.
 
 export function makeOutcomeTracker(label, { failThresholdPct = FAIL_THRESHOLD_PCT } = {}) {
   const failed = []; // { unit, reason }
@@ -44,7 +56,20 @@ export function makeOutcomeTracker(label, { failThresholdPct = FAIL_THRESHOLD_PC
         for (const f of failed) console.warn(`  ${f.unit}: ${f.reason}`);
         if (formatRerun) console.warn(`[${label}] re-run just the failed ones: ${formatRerun(failed.map(f => f.unit))}`);
       }
+      // Lets a caller (the backfill driver) that invoked this as a subprocess learn totalSaved
+      // without parsing stdout — written for BOTH outcomes below so it can tell a confirmed-empty
+      // chunk (totalSaved:0, exit 0) apart from a chunk that actually saved real rows.
+      const outcomeFile = process.env.QSRSOFT_BACKFILL_OUTCOME_FILE;
+      if (outcomeFile) {
+        try {
+          writeFileSync(outcomeFile, JSON.stringify({ label, requested: n, failedCount: failed.length, totalSaved }));
+        } catch { /* best-effort -- never block the real exit-code decision on this */ }
+      }
       if (n > 0 && totalSaved === 0) {
+        if (process.env.QSRSOFT_BACKFILL_PROBE === '1' && failed.length === 0) {
+          console.log(`[${label}] zero rows across ${n} requested unit(s), no per-unit errors -- confirmed-empty historical window (backfill probe mode), not treated as a failure.`);
+          return 0;
+        }
         console.error(`[${label}] ✗ zero rows saved across ${n} requested unit(s) -- a quiet no-op, not a success.`);
         return 1;
       }

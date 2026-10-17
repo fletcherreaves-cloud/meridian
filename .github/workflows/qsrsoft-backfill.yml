@@ -1,4 +1,9 @@
-name: QSRSoft 7-Year Backfill
+name: QSRSoft Historical Backfill
+
+# Was "QSRSoft 7-Year Backfill" -- renamed 2026-10-17. A live retention probe (owner request)
+# found the "7 years" framing wrong (real data confirmed well past that point); the driver now
+# finds each report type's own real floor instead of walking toward a fixed 7-year target. See
+# scripts/qsrsoft-backfill-driver.mjs's header and memory/finding-qsrsoft-retention-2026-10-17.md.
 
 on:
   schedule:
@@ -19,9 +24,13 @@ on:
         required: false
         default: '90'
       years_back:
-        description: 'How far back the campaign targets, in years (default: 7 — QSRSoft''s own rolling retention)'
+        description: 'Safety ceiling only, in years (default: 15) -- the driver now finds each report type''s real floor itself via consecutive confirmed-empty chunks (see empty_stop); a live probe measured the owner''s original "7 years" assumption wrong (memory/finding-qsrsoft-retention-2026-10-17.md)'
         required: false
-        default: '7'
+        default: '15'
+      empty_stop:
+        description: 'Consecutive confirmed-empty 90-day chunks before marking a report type done (default: 3 ≈ 9 months)'
+        required: false
+        default: '3'
       dry_run:
         description: 'Compute the next chunk and log it without actually pulling (1 = on)'
         required: false
@@ -60,7 +69,8 @@ jobs:
           QSRSOFT_EBOS_TOKEN:         ${{ secrets.QSRSOFT_EBOS_TOKEN }}
           QSRSOFT_BACKFILL_ONLY:         ${{ github.event.inputs.only       || '' }}
           QSRSOFT_BACKFILL_CHUNK_DAYS:   ${{ github.event.inputs.chunk_days || '90' }}
-          QSRSOFT_BACKFILL_YEARS:       ${{ github.event.inputs.years_back || '7' }}
+          QSRSOFT_BACKFILL_YEARS:       ${{ github.event.inputs.years_back || '15' }}
+          QSRSOFT_BACKFILL_EMPTY_STOP:  ${{ github.event.inputs.empty_stop || '3' }}
           QSRSOFT_BACKFILL_DRY_RUN:     ${{ github.event.inputs.dry_run    || '0' }}
 
       - name: Upload debug screenshots
