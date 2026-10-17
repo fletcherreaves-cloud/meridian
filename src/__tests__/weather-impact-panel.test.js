@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // @ts-nocheck
 // Reports redesign Phase 5 -- renders the REAL WeatherImpactPanel, built on the REAL ReportShell.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -11,6 +11,9 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const STORES = [{ loc: '3708' }];
 const D = (d) => new Date(Date.now() - d * 86400000);
+// Pinned so ReportShell's own real default-range resolution (lastClosedBusinessDay(today)) always
+// lands after every D(d) fixture date, regardless of the sandbox's real wall-clock date.
+const NOW = '2026-10-20T12:00:00';
 
 async function mount(props) {
   const container = document.createElement('div');
@@ -22,7 +25,7 @@ async function mount(props) {
 
 describe('WeatherImpactPanel', () => {
   let container, root;
-  afterEach(() => { act(() => root?.unmount()); container?.remove(); });
+  afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.useRealTimers(); });
 
   it('shows the pre-run empty state before Run Report is clicked', async () => {
     ({ container, root } = await mount({ ds: {}, stores: STORES, onClose: () => {} }));
@@ -30,6 +33,8 @@ describe('WeatherImpactPanel', () => {
   });
 
   it('Run Report computes and renders real rainy/dry and hot/cool splits from the real engine', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
     const ds = {
       laborRows: [
         { loc: '3708', date: D(6), sales: 1000, gc: 100 },
@@ -57,6 +62,8 @@ describe('WeatherImpactPanel', () => {
   });
 
   it('after a run, CSV export fires with the real headers and the real figures', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
     const ds = {
       laborRows: [{ loc: '3708', date: D(1), sales: 1000, gc: 100 }, { loc: '3708', date: D(2), sales: 1000, gc: 100 }, { loc: '3708', date: D(3), sales: 1000, gc: 100 }],
       weatherRows: [{ loc: '3708', date: D(1), tmax: 60, rain: 0 }, { loc: '3708', date: D(2), tmax: 70, rain: 0 }, { loc: '3708', date: D(3), tmax: 80, rain: 0 }],

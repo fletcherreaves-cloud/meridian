@@ -199,7 +199,7 @@ function renderNavTexts(permFn) {
 // icons was confirmed unused anywhere else in panel-registry.js before being picked, so none
 // needs the "icon has another owner" treatment either in this array or in HIDDEN_WHEN_DENIED
 // below.
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -519,8 +519,11 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // it -- 11 + 1 = 12, a deliberate growth, not drift. 2026-09-14 added 'trend-report'
     // (Performance Trends) as a new kind:'test-kitchen' panel -- 12 + 1 = 13, a deliberate
     // growth, not drift. 2026-10-08 added 'forms-reviews' (Review Forms) as a new
-    // kind:'test-kitchen' panel -- 13 + 1 = 14, a deliberate growth, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (forms-reviews added 2026-10-08), the CENSUS must not drift silently').toBe(14);
+    // kind:'test-kitchen' panel -- 13 + 1 = 14, a deliberate growth, not drift. 2026-10-17
+    // added 'access-log' (Access Log, app_access_log) as a new kind:'test-kitchen' panel, per
+    // the standing rule that every new panel starts there -- 14 + 1 = 15, a deliberate growth,
+    // not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (access-log added 2026-10-17), the CENSUS must not drift silently').toBe(15);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -556,7 +559,7 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all fourteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+  it('covers all fifteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
     // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
     // 12 -> 11: dispatch #203 promoted 'top-bottom' OUT of Test Kitchen (kind:'test-kitchen' ->
@@ -569,7 +572,8 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
     // kind:'test-kitchen' panel (Staged Experiments / Risk Tracking backlog).
     // 12 -> 13: 2026-09-14 added 'trend-report' (Performance Trends).
     // 13 -> 14: 2026-10-08 added 'forms-reviews' (Review Forms).
-    expect(testKitchenPanels.length).toBe(14);
+    // 14 -> 15: 2026-10-17 added 'access-log' (Access Log, app_access_log).
+    expect(testKitchenPanels.length).toBe(15);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {

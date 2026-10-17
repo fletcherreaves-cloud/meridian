@@ -80,6 +80,12 @@ export const PERMISSION_GROUPS = [
       // (manager: true, so they see it and the panel resolves the real answer; the panel itself
       // never trusts this key alone).
       { key: 'security.view', label: 'View Security panel (loss-prevention findings)' },
+      // Owner request 2026-10-17 (app_access_log). Deliberately its own key, tighter than
+      // payroll.view's ('admin','owner','do') — this is oversight OF a DO's own logins/panel
+      // views too, not something a DO reviews for others. Enforcement boundary is Supabase RLS
+      // (get_my_role() in ('admin','owner') on app_access_log) — same "UI-layer gate, RLS is
+      // the real boundary" relationship every other permission key here has.
+      { key: 'security.auditLog', label: 'View access/audit log (admin/owner only)' },
     ],
   },
 ];
@@ -112,6 +118,7 @@ const SUPERVISOR_PERMS = {
   'users.manage.lower':     true,
   'security.view':          true,
   'payroll.view':           false,
+  'security.auditLog':      false,
 };
 
 const MANAGER_PERMS = {
@@ -142,6 +149,7 @@ const MANAGER_PERMS = {
   // direction (a manager who SHOULD have access getting none) rather than the direction this
   // build is careful about (nobody sees more than RLS allows).
   'security.view':          true,
+  'security.auditLog':      false,
 };
 
 // ── The 7-rung review-hierarchy ladder (dispatch #148) ─────────────────────────
@@ -171,6 +179,7 @@ const VP_PERMS = {
   'users.manage.lower':     true,
   'security.view':          true,
   'payroll.view':           false, // overridden true in DO_PERMS just below
+  'security.auditLog':      false, // stays false in DO_PERMS too -- see that key's own comment
 };
 
 const DO_PERMS = {
@@ -206,6 +215,7 @@ const GM_PERMS = {
   'users.manage.lower':     true,
   'security.view':          true,
   'payroll.view':           false,
+  'security.auditLog':      false,
 };
 
 const SM_AM_DM_PERMS = {
@@ -230,6 +240,7 @@ const SM_AM_DM_PERMS = {
   'users.manage.lower':     false,
   'security.view':          true,
   'payroll.view':           false,
+  'security.auditLog':      false,
 };
 
 export const ROLE_PERMISSION_TEMPLATES = {

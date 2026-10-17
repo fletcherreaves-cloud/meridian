@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { supabase } from '../lib/supabase.js';
+import { supabase, logAppAccess } from '../lib/supabase.js';
 
 const { useState, useEffect } = React;
 const h = React.createElement;
@@ -313,6 +313,10 @@ export function AuthGate({ children }) {
       setSession(s);
       // If sign-out happens while pendingPwSet, clear that too
       if (!s) { setPendingPwSet(false); setScreen('login'); }
+      // Owner request 2026-10-17 (app_access_log) — log only a REAL credential-based sign-in,
+      // never INITIAL_SESSION (an already-persisted session restored on page load/refresh) or
+      // TOKEN_REFRESHED (a silent background renewal). Best-effort, never blocks auth.
+      if (_event === 'SIGNED_IN') logAppAccess('login').catch(() => {});
     });
 
     return () => subscription.unsubscribe();

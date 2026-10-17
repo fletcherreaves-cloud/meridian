@@ -205,6 +205,7 @@ const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-rev
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
+const AccessLogPanel = lazyPanel(() => import('../views/access-log.js').then(m => ({ default: m.AccessLogPanel })));
 // TroubleshootingPanel — dispatch #196: the app's real "Help" (two modes, End User/Developer).
 const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })));
 // CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
@@ -3434,6 +3435,7 @@ function App() {
         if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
         if(modal==='trend-report')   perm('analytics.district')&&goRoute('trend-report');
         if(modal==='security')       perm('security.view')&&goRoute('security');
+        if(modal==='access-log')     perm('security.auditLog')&&goRoute('access-log');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
         // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
         // tab via crewTab (see its own declaration above for the full reasoning).
@@ -3795,6 +3797,11 @@ function App() {
         onBack:()=>goRoute(null),
         bodyStyle:{display:'flex',flexDirection:'column'},
       }, h(SecurityPanel,{userRole,onClose:()=>goRoute(null)})),
+      routePanel==='access-log'&&h(RoutePanelShell,{
+        title:'🪪 Access Log',
+        onBack:()=>goRoute(null),
+        bodyStyle:{display:'flex',flexDirection:'column'},
+      }, h(AccessLogPanel,{onClose:()=>goRoute(null)})),
       routePanel==='signals'&&h(RoutePanelShell,{
         title:'📡 Signals',
         onBack:()=>goRoute(null),

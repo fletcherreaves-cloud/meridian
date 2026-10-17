@@ -15,7 +15,7 @@
 import * as React from 'react';
 import { ModalShell } from '../components/ModalShell.js';
 import { STORE_NAMES, sNameC } from '../constants.js';
-import { loadLifeLenzShiftPay, loadLifeLenzShiftAssignments } from '../lib/supabase.js';
+import { loadLifeLenzShiftPay, loadLifeLenzShiftAssignments, logAppAccess } from '../lib/supabase.js';
 import {
   weeklyCrewRates, detectRateSteps, managementRateChanges, payImpact, ASSUMED_MANAGEMENT_WEEKLY_HOURS,
 } from '../engine/employee-pay-history.js';
@@ -45,6 +45,10 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
   const [dataState, setDataState] = useState('loading'); // loading | loaded | error
   const [shiftPay, setShiftPay] = useState([]);
   const [shiftAssignments, setShiftAssignments] = useState([]);
+
+  // Owner request 2026-10-17 (app_access_log) -- wage data is sensitive; log the view.
+  // Best-effort, fires once on mount, never blocks the panel.
+  useEffect(() => { logAppAccess('panel_view', 'pay-rate-history').catch(() => {}); }, []);
 
   useEffect(() => {
     let cancelled = false;

@@ -3585,6 +3585,36 @@ export async function logOrgAssignmentChange(assignmentType, loc, action, oldVal
   return { error: null };
 }
 
+// ── App access log (owner request 2026-10-17, "usage logs/reports for auditing") ─────────────
+// Deliberately narrow first cut: 'login' (AuthGate.js, on a real SIGNED_IN event only — never on
+// every page load with an already-persisted session) and 'panel_view' (the two existing Owner/
+// Admin/DO-only panels, Pay Rate History + Security, on mount). Same best-effort, never-block-
+// the-UI pattern as logOrgAssignmentChange just above — a failed audit write must never prevent
+// sign-in or block a panel from opening. See supabase/schema-app-access-log.sql for the table +
+// RLS (admin/owner read only, no update/delete policy at all, by design).
+export async function logAppAccess(eventType, panelId) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  if (!uid) return { error: 'Not signed in' };
+  const row = { actor_id: uid, event_type: eventType, panel_id: panelId ?? null };
+  const { error } = await supabase.from('app_access_log').insert(row);
+  if (error) { console.warn('[app_access_log] insert error (non-fatal):', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
+// Admin/owner-only read, enforced by RLS (a non-admin/owner caller simply gets an empty array
+// back, not an error — same "RLS is the real boundary" relationship every other admin-only
+// loader in this file has). `limit` caps how many of the most recent rows come back.
+export async function loadAppAccessLog(limit = 500) {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('app_access_log')
+    .select('id, actor_id, event_type, panel_id, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.warn('[app_access_log] load error:', error.message); return []; }
+  return data || [];
+}
+
 // ── EOM digest schedule config (dispatch #217) ────────────────────────────────
 // App-WIDE (not per-user) setting — which roll-up levels the daily scheduled EOM digest
 // emails, and at what UTC hour — so it lives in org_config, not user_settings, matching how
