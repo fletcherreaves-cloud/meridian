@@ -10,12 +10,12 @@ import { ReportShell } from '../components/ReportShell.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { fP, f$, fN } from '../utils/fmt.js';
 import { computeFobReferenceTable, FOB_REFERENCE_METRICS } from '../engine/fob-reference.js';
+import { useSortedRows, SortTh } from '../components/SortableTh.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const td = (p, ...c) => h('td', p, ...c);
 const tr = (p, ...c) => h('tr', p, ...c);
-const th = (p, ...c) => h('th', p, ...c);
 
 const WINDOW_COLS = [
   { key: 'l3m', label: 'L3M' }, { key: 'l6w', label: 'L6W' }, { key: 'lm', label: 'LM' },
@@ -54,6 +54,13 @@ export function FobReferenceTablePanel({ ds, stores, onClose }) {
 
   const metric = useMemo(() => FOB_REFERENCE_METRICS.find(m => m.key === metricKey) || FOB_REFERENCE_METRICS[0], [metricKey]);
 
+  // Flattened one-row-per-store view of the currently selected metric -- sortable by any window
+  // column directly (useSortedRows sorts on a row's own fields, not a nested per-metric lookup).
+  const displayRows = useMemo(() => (rows || []).map(r => ({
+    loc: r.loc, name: sNameC(r.loc) || r.loc, ...r.metrics[metric.key],
+  })), [rows, metric]);
+  const { sorted, sortKey, sortDir, onSort } = useSortedRows(displayRows);
+
   const getExportData = () => ({
     title: 'FOB Reference Table',
     headers: ['Store', 'Metric', ...WINDOW_COLS.map(c => c.label), 'Trend'],
@@ -90,16 +97,15 @@ export function FobReferenceTablePanel({ ds, stores, onClose }) {
         : div({ style: { overflowX: 'auto' } },
           h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '10px', minWidth: 760 } },
             h('thead', null, h('tr', null,
-              th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', position: 'sticky', left: 0, background: 'var(--surf)' } }, 'Store'),
-              ...WINDOW_COLS.map(c => th({ key: c.key, style: { textAlign: 'right', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, c.label)),
-              th({ style: { textAlign: 'center', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, 'Trend'),
+              h(SortTh, { label: 'Store', colKey: 'name', sortKey, sortDir, onSort, style: { position: 'sticky', left: 0, background: 'var(--surf)' } }),
+              ...WINDOW_COLS.map(c => h(SortTh, { key: c.key, label: c.label, colKey: c.key, sortKey, sortDir, onSort, align: 'right' })),
+              h(SortTh, { label: 'Trend', colKey: 'trendSlope', sortKey, sortDir, onSort, align: 'center' }),
             )),
-            h('tbody', null, ...rows.map((r, i) => {
-              const cell = r.metrics[metric.key];
+            h('tbody', null, ...sorted.map((r, i) => {
               return tr({ key: r.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
-                td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, sNameC(r.loc) || r.loc),
-                ...WINDOW_COLS.map(c => td({ key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, _fmt(cell[c.key], metric.kind))),
-                td({ style: { padding: '5px 8px', textAlign: 'center', fontWeight: 700, color: _trendColor(cell.trend, metric.better) } }, TREND_ARROW[cell.trend]),
+                td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, r.name),
+                ...WINDOW_COLS.map(c => td({ key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, _fmt(r[c.key], metric.kind))),
+                td({ style: { padding: '5px 8px', textAlign: 'center', fontWeight: 700, color: _trendColor(r.trend, metric.better) } }, TREND_ARROW[r.trend]),
               );
             })),
           ),

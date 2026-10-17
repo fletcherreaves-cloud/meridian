@@ -55,6 +55,34 @@ describe('ItemVelocityPanel', () => {
     expect(container.textContent).toContain('$200'); // Big Mac revenue: 40 * $5
   });
 
+  it('clicking the Units Sold header sorts rows ascending by real units, not engine order', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    const ds = {
+      pmixRows: [
+        { loc: '0003708', date: D(3), item: '1', desc: 'Big Mac', price: 5, soldQty: 20 },
+        { loc: '0003708', date: D(2), item: '1', desc: 'Big Mac', price: 5, soldQty: 20 },
+        { loc: '0003708', date: D(1), item: '2', desc: 'Fries', price: 3, soldQty: 10 },
+      ],
+    };
+    ({ container, root } = await mount({ ds, stores: STORES, onClose: () => {} }));
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    // Natural (engine) order: Big Mac (40 units) before Fries (10 units).
+    const rowsBefore = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsBefore[0]).toContain('Big Mac');
+
+    const unitsHeader = [...container.querySelectorAll('th')].find(t => t.textContent.startsWith('Units Sold'));
+    await act(async () => { unitsHeader.click(); });
+    const rowsAfterAsc = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsAfterAsc[0]).toContain('Fries'); // 10 < 40, ascending puts Fries first
+
+    await act(async () => { unitsHeader.click(); }); // toggle to descending
+    const rowsAfterDesc = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsAfterDesc[0]).toContain('Big Mac');
+  });
+
   it('after a run, CSV export fires with the real headers and figures', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));

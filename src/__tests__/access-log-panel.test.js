@@ -61,6 +61,29 @@ describe('AccessLogPanel', () => {
     expect(container.textContent).toMatch(/Panel View/);
   });
 
+  it('clicking the Who header sorts by the resolved actor name, not the raw actor_id', async () => {
+    _logRows = [
+      { id: 'e1', actor_id: 'u1', event_type: 'login', panel_id: null, created_at: '2026-10-17T14:00:00Z' },
+      { id: 'e2', actor_id: 'u2', event_type: 'login', panel_id: null, created_at: '2026-10-17T15:00:00Z' },
+    ];
+    _profiles = [
+      { id: 'u1', name: 'Zed Owner', email: 'z@example.com', role: 'owner' },
+      { id: 'u2', name: 'Amy Admin', email: 'a@example.com', role: 'admin' },
+    ];
+    ({ container, root } = await mount());
+    // Default sort is newest-first (created_at desc) -- Amy's later event leads.
+    const rowsBefore = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsBefore[0]).toContain('Amy Admin');
+
+    const whoHeader = [...container.querySelectorAll('th')].find(t => t.textContent.startsWith('Who'));
+    await act(async () => { whoHeader.click(); }); // ascending by name
+    const rowsAfter = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsAfter[0]).toContain('Amy Admin'); // 'Amy' < 'Zed' alphabetically too
+    await act(async () => { whoHeader.click(); }); // descending
+    const rowsDesc = [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+    expect(rowsDesc[0]).toContain('Zed Owner');
+  });
+
   it('falls back to the raw actor id when no matching profile is found', async () => {
     _logRows = [{ id: 'e3', actor_id: 'orphan-uuid', event_type: 'login', panel_id: null, created_at: '2026-10-17T14:30:00Z' }];
     _profiles = [];
