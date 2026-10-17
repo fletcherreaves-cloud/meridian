@@ -88,17 +88,24 @@ against DAR + two OPS endpoints for a spread of sample dates from Dec 2010 throu
   one-month window. Not narrowed further than month-level (not requested; a day-level pin would
   be a cheap follow-up if the owner wants it).
 
-**This contradicts the owner's own recollection of a March–April 2011 transition** — which the
-owner had already flagged as an imprecise memory going in ("I am sure this is not totally
-accurate"). NSN 35064 first reports real QSRSoft data in **September 2019**, not 2011. The
-requested $500k-first-year / percentage-increase comparison cannot be built around the 2011 date
-as given. If the owner still wants the comparison, the real, data-backed options are: (a)
-compare 35064's first 12 months of REAL data (Sep 2019 → Sep 2020) against whatever it traded
-at before that (impossible if that's when it first opened/activated in QSRSoft at all — would
-need the owner to confirm whether Sep 2019 is plausibly the real Holdenville relocation date,
-not 2011), or (b) the owner may be thinking of a different store-number pair/date than
-2979→35064 for the 2011 note. This needs an owner decision, not further probing — the data side
-is now fully measured.
+⚠️ **CORRECTED 2026-10-17 (owner, same day) — the paragraph below originally read the Sep-2019
+empty/real boundary as possibly meaning 35064 didn't exist/activate until 2019. Owner: "remember,
+this is due to limitations of data retention in QSRSoft. 35064 opened in 2011."** The store
+itself opened in 2011, confirming the owner's original recollection — do not re-raise the
+2011-transition date as doubtful. The empty window Dec 2010 → Aug 2019 is **not** a 35064-specific
+activation gap; it is 35064 hitting the exact same platform-wide retention floor this whole
+dispatch already measured for every other store/report type tested (the ~18-month gap between
+2018-02 confirmed-empty and 2019-09 confirmed-real, see the Results table above) — 35064's own
+Sep-2019 boundary lines up with that general floor almost exactly, which is corroboration, not a
+separate, later "first real data" date for this store alone.
+
+**Practical consequence, unchanged from before this correction:** the requested $500k-first-year /
+percentage-increase comparison still cannot be built from QSRSoft data — not because the 2011
+transition didn't happen (it did), but because QSRSoft's own retention has erased that window for
+every store, this one included. There is no further probing that recovers it; the data side is
+fully measured and closed. If the owner wants the comparison, it would need a source other than
+QSRSoft (e.g. a contemporaneous P&L/financials, an SMG record, or any manual record kept at the
+time) — not a data-pull question for this repo's automation to solve.
 
 ## The latent bug this surfaced in the backfill driver
 
