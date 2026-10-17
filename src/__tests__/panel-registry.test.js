@@ -333,10 +333,11 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // treatment as every report since Phase 2 (fifty -> fifty-one). Same owner request ("usage
     // logs/reports for auditing"), 'access-log' adds its own route:true (fifty-one -> fifty-two)
     // -- admin/owner-only, kind stays 'test-kitchen' per the standing rule for a brand-new,
-    // unproven panel.
+    // unproven panel. 2026-10-17, owner: "And, yes, build it" -- 'fob-reference-table' (the
+    // live Excel FOB reference table) adds its own route:true (fifty-two -> fifty-three).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'crew-schedule', 'custom-reports', 'customer-complaints',
-      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'forms-completion', 'graded-visits',
+      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
       'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',

@@ -324,6 +324,11 @@ export const PANELS = [
   // field exists in this app's data model and naming individuals is out of scope per this
   // repo's "verify, don't accuse" convention (see engine/cash-variance-pattern.js's header).
   { id:'cash-variance-pattern', label:'Cash Variance Pattern', icon:'🧾', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // 2026-10-17, owner: "And, yes, build it" -- live version of the owner's own Excel FOB
+  // reference table (Loc / L3M / L6W / LM / MTD / Projected / Trend), off auto-pulled streams
+  // instead of a manual paste. See engine/fob-reference.js's header for the qsr_fob
+  // cumulative-MTD-snapshot handling.
+  { id:'fob-reference-table', label:'FOB Reference Table', icon:'📋', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
