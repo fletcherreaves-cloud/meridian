@@ -81,21 +81,24 @@ against DAR + two OPS endpoints for a spread of sample dates from Dec 2010 throu
   NSN. Getting real data for 2979 (if QSRSoft even still has any) would need the vendor/account
   side to re-grant visibility to a deactivated store number, which is outside this repo's reach.
 - **NSN 35064** — clean `status 200, 0 rows` (no error, no 403 — a real, confirmed-empty
-  answer) for **every sampled date from Dec 2010 through Jan 2019** (15 sample points spanning
-  that whole span, including the believed March-April 2011 transition window itself). Real data
-  — DAR (24 hour-slot rows) **and** OPS cash/sales-mix rows — first appears at **2020-01-01**;
-  2019-01-01 is still empty. So 35064's real first-reporting date sits somewhere in 2019, not
-  2011. A follow-up dispatch is narrowing that 2019 window further (results land in the live
-  session, not here, to avoid a second place this can go stale).
+  answer) for every sampled date from **Dec 2010 through Aug 2019** (19 sample points spanning
+  that whole span, including the believed March-April 2011 transition window itself). **First
+  real data: 2019-09-01** (24 real DAR hour-slot rows + real OPS cash/sales-mix rows, $4,658.32
+  net sales that day) — 2019-08-01 is still confirmed empty, so the real floor narrows to that
+  one-month window. Not narrowed further than month-level (not requested; a day-level pin would
+  be a cheap follow-up if the owner wants it).
 
 **This contradicts the owner's own recollection of a March–April 2011 transition** — which the
 owner had already flagged as an imprecise memory going in ("I am sure this is not totally
-accurate"). Whatever happened with Holdenville's store numbering in 2011, NSN 35064 specifically
-was not yet reporting real sales data in QSRSoft as of January 2019, 2020 being the first
-confirmed real year. The requested $500k-first-year / percentage-increase comparison cannot be
-built around the 2011 date as given — it would need to be re-anchored to whatever 35064's real
-activation turns out to be (2019, pending the narrower probe), or the owner may be thinking of a
-different store-number pair / date than 2979→35064.
+accurate"). NSN 35064 first reports real QSRSoft data in **September 2019**, not 2011. The
+requested $500k-first-year / percentage-increase comparison cannot be built around the 2011 date
+as given. If the owner still wants the comparison, the real, data-backed options are: (a)
+compare 35064's first 12 months of REAL data (Sep 2019 → Sep 2020) against whatever it traded
+at before that (impossible if that's when it first opened/activated in QSRSoft at all — would
+need the owner to confirm whether Sep 2019 is plausibly the real Holdenville relocation date,
+not 2011), or (b) the owner may be thinking of a different store-number pair/date than
+2979→35064 for the 2011 note. This needs an owner decision, not further probing — the data side
+is now fully measured.
 
 ## The latent bug this surfaced in the backfill driver
 
