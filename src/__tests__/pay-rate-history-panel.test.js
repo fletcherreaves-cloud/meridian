@@ -18,6 +18,9 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 let _shiftPay = [];
 let _shiftAssignments = [];
+// Owner request 2026-10-17 (app_access_log) -- wage data is sensitive; the panel logs its own
+// view on mount. Spied (not left as the real implementation) so the test below can assert it.
+const logAppAccessMock = vi.fn().mockResolvedValue({ error: null });
 
 vi.mock('../lib/supabase.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -25,6 +28,7 @@ vi.mock('../lib/supabase.js', async (importOriginal) => {
     ...actual,
     loadLifeLenzShiftPay: vi.fn(async () => _shiftPay),
     loadLifeLenzShiftAssignments: vi.fn(async () => _shiftAssignments),
+    logAppAccess: (...args) => logAppAccessMock(...args),
   };
 });
 
@@ -41,7 +45,12 @@ async function mount(props) {
 
 describe('PayRateHistoryPanel', () => {
   let container, root;
-  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); _shiftPay = []; _shiftAssignments = []; });
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); _shiftPay = []; _shiftAssignments = []; logAppAccessMock.mockClear(); });
+
+  it('logs its own view on mount (app_access_log, owner request 2026-10-17)', async () => {
+    ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
+    expect(logAppAccessMock).toHaveBeenCalledWith('panel_view', 'pay-rate-history');
+  });
 
   it('shows the empty state when nothing has changed for either population', async () => {
     ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));

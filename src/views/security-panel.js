@@ -16,7 +16,7 @@
 // role, indistinguishable from "no findings" on the wire, so this panel never lets an empty read
 // stand in for a permission check. securityPanelAccess() is the one place that decision is made.
 import * as React from 'react';
-import { supabase } from '../lib/supabase.js';
+import { supabase, logAppAccess } from '../lib/supabase.js';
 import {
   loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled,
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
@@ -1089,6 +1089,14 @@ export function SecurityPanel({ userRole, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [userRole]);
+
+  // Owner request 2026-10-17 (app_access_log) -- log every actually-ALLOWED view, from every
+  // role security.view admits (not just admin/owner -- this is the whole point: admin/owner are
+  // the ones who READ the log, everyone else's views are what gets logged). Fires once per
+  // permState transition to 'allowed', best-effort, never blocks the panel.
+  React.useEffect(() => {
+    if (permState === 'allowed') logAppAccess('panel_view', 'security').catch(() => {});
+  }, [permState]);
 
   // Deliberately depends ONLY on permState, not on dataState -- a real bug found by the
   // permitted-but-empty test, not assumed away: including dataState (which THIS effect itself

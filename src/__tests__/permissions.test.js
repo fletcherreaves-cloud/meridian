@@ -422,3 +422,17 @@ describe('permissions.js — payroll.view (pay-rate history, owner request 2026-
     }
   });
 });
+
+// Owner request 2026-10-17 (app_access_log, "usage logs/reports for auditing"). Deliberately
+// TIGHTER than payroll.view's ('admin','owner','do') -- this log is oversight OF a DO's own
+// logins/panel views too, not something a DO reviews for others, so DO is excluded. The real
+// enforcement boundary is Supabase RLS (get_my_role() in ('admin','owner') on app_access_log);
+// this is the UI-layer mirror of that, same relationship every other permission key here has.
+describe('permissions.js — security.auditLog (access log, owner request 2026-10-17)', () => {
+  it('only admin/owner can see it; every other role, including do, cannot', () => {
+    const allowed = ['admin', 'owner'];
+    for (const role of DEFAULT_ROLES) {
+      expect(hasPermission(role.id, 'security.auditLog')).toBe(allowed.includes(role.id));
+    }
+  });
+});

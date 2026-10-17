@@ -4,7 +4,7 @@
 // Only totals (not the trend split, which depends on the exact midpoint of ReportShell's own
 // resolved default range, already covered precisely in item-velocity-engine.test.js with a
 // controlled range) are asserted here -- this test's job is proving the real wiring end-to-end.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -14,6 +14,9 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const STORES = [{ loc: '3708' }];
 const D = (d) => new Date(Date.now() - d * 86400000);
+// Pinned so ReportShell's own real default-range resolution (lastClosedBusinessDay(today)) always
+// lands after every D(d) fixture date, regardless of the sandbox's real wall-clock date.
+const NOW = '2026-10-20T12:00:00';
 
 async function mount(props) {
   const container = document.createElement('div');
@@ -25,7 +28,7 @@ async function mount(props) {
 
 describe('ItemVelocityPanel', () => {
   let container, root;
-  afterEach(() => { act(() => root?.unmount()); container?.remove(); });
+  afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.useRealTimers(); });
 
   it('shows the pre-run empty state before Run Report is clicked', async () => {
     ({ container, root } = await mount({ ds: {}, stores: STORES, onClose: () => {} }));
@@ -33,6 +36,8 @@ describe('ItemVelocityPanel', () => {
   });
 
   it('Run Report computes and renders real item totals from the real engine', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
     const ds = {
       pmixRows: [
         { loc: '0003708', date: D(3), item: '1', desc: 'Big Mac', price: 5, soldQty: 20 },
@@ -51,6 +56,8 @@ describe('ItemVelocityPanel', () => {
   });
 
   it('after a run, CSV export fires with the real headers and figures', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
     const ds = { pmixRows: [{ loc: '0003708', date: D(1), item: '1', desc: 'Big Mac', price: 5, soldQty: 20 }] };
     let clicks = [];
     const origClick = HTMLAnchorElement.prototype.click;

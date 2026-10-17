@@ -27,6 +27,11 @@ const loadQsrSecurityEventsForSubjectMock = vi.fn().mockResolvedValue([]);
 // passing unchanged with the group's own bulk-loaded historyByRule; dedicated tests below override
 // this per-case to verify the fetched history actually supersedes it.
 const loadSecurityFindingsForSubjectMock = vi.fn().mockResolvedValue([]);
+// Owner request 2026-10-17 (app_access_log) -- SecurityPanel now calls this on every
+// permState==='allowed' transition. Mocked here (not spread from actual, matching this file's
+// existing full-replacement style) so every pre-existing render test below keeps passing
+// instead of hitting "logAppAccess is not a function" the moment access resolves to allowed.
+const logAppAccessMock = vi.fn().mockResolvedValue({ error: null });
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -38,6 +43,7 @@ vi.mock('../lib/supabase.js', () => ({
   loadAuditRowsWindow: (...args) => loadAuditRowsWindowMock(...args),
   loadQsrSecurityEventsForSubject: (...args) => loadQsrSecurityEventsForSubjectMock(...args),
   loadSecurityFindingsForSubject: (...args) => loadSecurityFindingsForSubjectMock(...args),
+  logAppAccess: (...args) => logAppAccessMock(...args),
 }));
 
 import {
@@ -417,6 +423,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
     loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
     loadSecurityRulesMock.mockReset().mockResolvedValue([]);
     loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(false);
+    logAppAccessMock.mockClear();
   });
   afterEach(() => {
     act(() => { root.unmount(); });
@@ -431,6 +438,8 @@ describe('SecurityPanel — permission states are visually distinct, and a block
     expect(loadGmIdentityRevealEnabledMock).not.toHaveBeenCalled();
     expect(loadSecurityFindingsMock).toHaveBeenCalled();
     expect(container.textContent).not.toMatch(/not permitted/i);
+    // Owner request 2026-10-17 (app_access_log) -- an allowed view logs itself.
+    expect(logAppAccessMock).toHaveBeenCalledWith('panel_view', 'security');
   });
 
   it('manager with the org flag OFF: renders "not permitted", and NEVER calls loadSecurityFindings -- an empty read must never stand in for a permission check', async () => {
@@ -440,6 +449,8 @@ describe('SecurityPanel — permission states are visually distinct, and a block
     expect(container.textContent).toMatch(/not permitted/i);
     expect(container.textContent).not.toMatch(/no findings/i);
     expect(loadSecurityFindingsMock).not.toHaveBeenCalled();
+    // A DENIED view must never log itself as an access event.
+    expect(logAppAccessMock).not.toHaveBeenCalled();
   });
 
   it('manager with the org flag ON: proceeds to load findings, same as admin/supervisor', async () => {

@@ -43,6 +43,13 @@
 //            today; adding it to a panel is a real routing change (see routing.js), not a label.
 export const PANELS = [
   { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'admin' },
+  // Owner request 2026-10-17 (app_access_log, "usage logs/reports for auditing") -- new,
+  // unproven panel against a new RLS-gated table that still needs its SQL migration run
+  // manually (same "needs manual action before it does anything" status as
+  // employee_pay_rate_changes had). kind:'test-kitchen' per the standing rule every new panel
+  // starts there; real eventual section ('admin', alongside Settings/Data Manager/Panel
+  // Manager) given from day one per this repo's own kind-vs-section convention.
+  { id:'access-log', label:'Access Log', icon:'🪪', perm:'security.auditLog', kind:'test-kitchen', section:'admin', route:true, tkOrder:17 },
   // section:'reports' (owner decision, 2026-09-25) -- notes-67-queue.md §1's Reports grouping
   // ("Org Summary is a report," "Rankings can go under reports also") named Above-Store One-
   // Pager/My Reports/Store One-Pager for the same move; that half sat unactioned in the backlog
