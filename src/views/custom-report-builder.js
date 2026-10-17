@@ -34,6 +34,22 @@ function _fmt(v, unit) {
   return fN(v, 2);
 }
 
+const _dshort = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// A period's display label -- a single day shows once, a multi-day period shows its own
+// start–end (which may be clipped short at either edge of the picked range; see
+// splitRangeByGranularity's own clipping comment in engine/custom-report.js).
+function _periodLabel(r) {
+  if (!r.periodStart) return '';
+  return r.periodStart === r.periodEnd ? _dshort(r.periodStart) : `${_dshort(r.periodStart)} – ${_dshort(r.periodEnd)}`;
+}
+
+const VIEW_AS_OPTIONS = [
+  { id: 'range', label: 'Whole Range (total)' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'monthly', label: 'Monthly' },
+];
+
 const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 const _label = (style) => (...children) => div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', ...style } }, ...children);
 
@@ -48,6 +64,7 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [groupBy, setGroupBy] = useState('range'); // 'range' | 'daily' | 'weekly' | 'monthly' -- owner ask 2026-10-17
 
   const catalog = useMemo(() => customReportCatalog(can), [can]);
 
@@ -96,13 +113,14 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
   };
 
   const run = async ({ range, locs }) => {
-    setRows(buildCustomReportRows(ds, { locs, range: { s: range.s, e: range.e }, metricKeys: selectedKeys }));
+    setRows(buildCustomReportRows(ds, { locs, range: { s: range.s, e: range.e }, metricKeys: selectedKeys, groupBy }));
   };
 
+  const grouped = (rows || []).some(r => r.periodStart);
   const getExportData = () => ({
     title: reportName.trim() || 'Custom Report',
-    headers: ['Store', ...selectedKeys.map(k => customReportMetricMeta(k).label)],
-    rows: (rows || []).map(r => [r.name, ...selectedKeys.map(k => _fmt(r[k], customReportMetricMeta(k).unit))]),
+    headers: [...(grouped ? ['Period'] : []), 'Store', ...selectedKeys.map(k => customReportMetricMeta(k).label)],
+    rows: (rows || []).map(r => [...(grouped ? [_periodLabel(r)] : []), r.name, ...selectedKeys.map(k => _fmt(r[k], customReportMetricMeta(k).unit))]),
   });
 
   const savedList = () => div(null,
@@ -155,6 +173,15 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
   const th2 = (l) => th({ style: { padding: '5px 8px', background: 'var(--surf3)', fontSize: '8px', textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text2)', textAlign: 'right', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, l);
   const td2 = (v) => td({ style: { padding: '5px 8px', fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text2)', textAlign: 'right' } }, v);
 
+  const viewAsControl = () => div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } },
+    span({ style: { fontSize: '10px', color: 'var(--text3)', fontWeight: 600 } }, 'View As'),
+    h('select', {
+      value: groupBy, onChange: e => { setGroupBy(e.target.value); setRows(null); },
+      title: 'How to break out the picked date range -- the window itself (Date Range above) is unchanged; this only controls whether it reports as one total or split into days/weeks/months.',
+      style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '10.5px', padding: '4px 8px' },
+    }, ...VIEW_AS_OPTIONS.map(o => h('option', { key: o.id, value: o.id }, o.label))),
+    rows == null ? null : span({ style: { fontSize: '9.5px', color: 'var(--text3)' } }, '(Run Report again after changing this)'));
+
   const resultsTable = () => rows == null
     ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 20, fontSize: '11px' } }, selectedKeys.length ? 'Choose a date range and location, then Run Report.' : 'Pick at least one metric above, then Run Report.')
     : !rows.length
@@ -162,9 +189,11 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
       : div({ style: { overflowX: 'auto' } },
         h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 400 + selectedKeys.length * 110 } },
           h('thead', null, h('tr', null,
+            grouped ? th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' } }, 'Period') : null,
             th({ style: { textAlign: 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)', position: 'sticky', left: 0, background: 'var(--surf)' } }, 'Store'),
             ...selectedKeys.map(k => th2(customReportMetricMeta(k).label)))),
-          h('tbody', null, ...rows.map((r, i) => tr({ key: r.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+          h('tbody', null, ...rows.map((r, i) => tr({ key: r.loc + (r.periodStart || ''), style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            grouped ? td({ style: { padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, _periodLabel(r)) : null,
             td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, r.name),
             ...selectedKeys.map(k => td2(_fmt(r[k], customReportMetricMeta(k).unit))))))));
 
@@ -177,7 +206,7 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
     div({ style: { display: 'flex', flexDirection: 'column', gap: 18 } },
       savedList(),
       div({ style: { borderTop: '1px solid var(--bdr)', paddingTop: 12 } }, picker(), saveForm()),
-      div({ style: { borderTop: '1px solid var(--bdr)', paddingTop: 12 } }, resultsTable()),
+      div({ style: { borderTop: '1px solid var(--bdr)', paddingTop: 12 } }, viewAsControl(), resultsTable()),
     ),
   );
 }

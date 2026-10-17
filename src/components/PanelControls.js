@@ -77,10 +77,21 @@ const _dateInputStyle = {
   color: 'var(--text)', fontSize: '11px', padding: '4px 8px',
 };
 
+const _selectStyle = {
+  background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)',
+  color: 'var(--text)', fontSize: '11px', padding: '4px 8px',
+};
+
 // value: {id, s, e} — id is a preset id, or 'custom' with explicit s/e.
 // onChange receives the same shape. `presets` lets each panel pick its own subset (owner
 // decision: shared list, per-panel default — see issue #126).
-export function DateRangeControl({ presets = DATE_RANGE_PRESETS, value, onChange, allowCustom = true }) {
+// variant: 'pills' (default, unchanged) — a pill per preset, same look every existing consumer
+// already has. 'dropdown' (owner ask, 2026-10-17: "condense the date selections... to drop
+// downs... much cleaner look") — the identical preset list + custom range, condensed into one
+// <select>, the same pattern record-day.js's window-days picker and several other older panels
+// already use (see PanelControls.js's own header comment: style is copied from reference
+// panels, not invented) — collapses N pill buttons down to one control.
+export function DateRangeControl({ presets = DATE_RANGE_PRESETS, value, onChange, allowCustom = true, variant = 'pills' }) {
   const [customOpen, setCustomOpen] = React.useState(value?.id === 'custom');
   const [customS, setCustomS] = React.useState(value?.s || '');
   const [customE, setCustomE] = React.useState(value?.e || '');
@@ -94,6 +105,26 @@ export function DateRangeControl({ presets = DATE_RANGE_PRESETS, value, onChange
     if (!isValidCustomRange(customS, customE)) return;
     onChange?.({ id: 'custom', s: customS, e: customE });
   };
+
+  if (variant === 'dropdown') {
+    return div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+      h('select', {
+        value: value?.id === 'custom' ? 'custom' : (value?.id || presets[0]?.id || ''),
+        onChange: (e) => { if (e.target.value === 'custom') { setCustomOpen(true); } else { pickPreset(e.target.value); } },
+        style: _selectStyle,
+      },
+        ...presets.map((p) => h('option', { key: p.id, value: p.id }, p.label)),
+        allowCustom && h('option', { value: 'custom' }, 'Custom…')),
+      allowCustom && customOpen && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        inp({ type: 'date', value: customS, onChange: (e) => setCustomS(e.target.value), style: _dateInputStyle }),
+        span({ style: { fontSize: '10px', color: 'var(--text3)' } }, '–'),
+        inp({ type: 'date', value: customE, onChange: (e) => setCustomE(e.target.value), style: _dateInputStyle }),
+        btn({
+          className: 'btn btn-sm', disabled: !isValidCustomRange(customS, customE), onClick: applyCustom,
+        }, 'Apply'),
+      ),
+    );
+  }
 
   return div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
     ...presets.map((p) => btn({
@@ -152,6 +183,20 @@ export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
   return { locs, states, patches, storeLabel: (l) => (storeNames?.[l] ? l + ' — ' + storeNames[l] : l) };
 }
 
+// Pure: a LocationSelector {level,id} value <-> the single flat string an HTML <select> option
+// needs. Exported so the encoding is independently testable without rendering the component
+// (this file's own convention — see its header comment on why nothing here gets rendered in
+// tests). 'all' round-trips to itself; state/patch/store carry their id after a ':'.
+export function locationSelectorOptionValue(value) {
+  if (!value || value.level === 'all') return 'all';
+  return `${value.level}:${value.id}`;
+}
+export function parseLocationSelectorOptionValue(raw) {
+  if (!raw || raw === 'all') return { level: 'all', id: null };
+  const i = raw.indexOf(':');
+  return i < 0 ? { level: 'all', id: null } : { level: raw.slice(0, i), id: raw.slice(i + 1) };
+}
+
 // value: {level:'all'|'state'|'patch'|'store', id} — id is null for 'all', else the state/patch/
 // store id. onChange receives the same shape.
 // mode: 'full' (All → State → Patch → Store, per feedback-selector-ui-standard.md), 'store'
@@ -161,12 +206,40 @@ export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
 // pill styling as 'full', staying inside the documented pill-style standard, but revealed one
 // tier at a time instead of all 30+ pills flat/simultaneous: States show first, picking a State
 // reveals its Patches, picking a Patch reveals its Stores).
-export function LocationSelector({ stores, invOrgCoords, storeNames, value, onChange, mode = 'full' }) {
+// variant: 'pills' (default, unchanged) or 'dropdown' (owner ask, 2026-10-17 — see
+// DateRangeControl's matching comment). A single <select> with the same All → State → Patch →
+// Store hierarchy via <optgroup> sections, rather than every pill flat/simultaneous. Applies to
+// 'full' and 'store' modes; 'progressive' already condenses one tier at a time and keeps its
+// pill rendering regardless of `variant` (no caller currently combines the two, and a cascading-
+// select version of 'progressive' is a separate, bigger change, not a two-line add).
+export function LocationSelector({ stores, invOrgCoords, storeNames, value, onChange, mode = 'full', variant = 'pills' }) {
   const tree = React.useMemo(
     () => buildLocationHierarchy(stores, invOrgCoords, storeNames),
     [stores, invOrgCoords, storeNames],
   );
   const pick = (level, id) => onChange?.({ level, id });
+
+  if (variant === 'dropdown' && mode === 'store') {
+    return h('select', {
+      value: locationSelectorOptionValue(value), onChange: (e) => onChange?.(parseLocationSelectorOptionValue(e.target.value)), style: _selectStyle,
+    },
+      h('option', { value: 'all' }, 'All Locations'),
+      ...tree.locs.map((l) => h('option', { key: l, value: `store:${l}` }, tree.storeLabel(l))));
+  }
+
+  if (variant === 'dropdown' && mode === 'full') {
+    return h('select', {
+      value: locationSelectorOptionValue(value), onChange: (e) => onChange?.(parseLocationSelectorOptionValue(e.target.value)), style: _selectStyle,
+    },
+      h('option', { value: 'all' }, 'All Locations'),
+      tree.states.length ? h('optgroup', { label: 'By State' },
+        ...tree.states.map((s) => h('option', { key: 'st-' + s.id, value: `state:${s.id}` }, s.label))) : null,
+      tree.patches.length ? h('optgroup', { label: 'By Patch' },
+        ...tree.patches.map((p) => h('option', { key: 'pt-' + p.id, value: `patch:${p.id}` }, p.label))) : null,
+      ...tree.states.map((s) => h('optgroup', { key: 'stores-' + s.id, label: s.label + ' Stores' },
+        ...s.locs.map((l) => h('option', { key: 'lc-' + l, value: `store:${l}` }, tree.storeLabel(l))))),
+    );
+  }
 
   if (mode === 'store') {
     return div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
