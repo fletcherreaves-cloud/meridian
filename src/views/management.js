@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups, latestEffective } from '../constants.js';
-import { logOrgAssignmentChange } from '../lib/supabase.js';
+import { logOrgAssignmentChange, logAppAccess } from '../lib/supabase.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 
@@ -454,6 +454,11 @@ function GroupsEditor({S, onUpdate, field, title, note}) {
 function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes, onOpenAdmin}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
+
+  // Owner request 2026-10-17 (app_access_log) -- App.js only mounts this behind its own
+  // perm('settings.view') gate (VP/DO/Admin/Owner only), so logging on mount needs no internal
+  // permState dance like Security's.
+  useEffect(() => { logAppAccess('panel_view', 'settings').catch(() => {}); }, []);
   const set=(path,val)=>{const keys=path.split('.');const next=JSON.parse(JSON.stringify(S));let cur=next;keys.slice(0,-1).forEach(k=>{if(!cur[k])cur[k]={};cur=cur[k];});cur[keys[keys.length-1]]=val;onUpdate(next);};
   const inp2=({path,...rest})=>inp({...rest,value:S[path]??'',onChange:e=>set(path,isNaN(e.target.value)?e.target.value:+e.target.value)});
   const Toggle=({label,path,options})=>div({className:'set-row'},div({className:'set-lbl'},label),div({style:{display:'flex',gap:4}},options.map(([l,v])=>btn({key:String(l),className:'sbtn'+(S[path]===v?' on':''),onClick:()=>set(path,v),style:{fontSize:'10px',padding:'2px 8px'}},l))));

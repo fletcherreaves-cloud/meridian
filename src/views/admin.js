@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { supabase } from '../lib/supabase.js';
+import { supabase, logAppAccess } from '../lib/supabase.js';
 import {
   PERMISSION_GROUPS, DEFAULT_ROLES,
   getOrgRoles, saveOrgRoles, pushOrgRolesToSupabase,
@@ -524,6 +524,11 @@ function RolesTab({ orgRoles, setOrgRoles }) {
 export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRoles }) {
   const [tab, setTab]           = useState('users');
   const [orgRoles, setOrgRoles] = useState(() => initRoles || getOrgRoles());
+
+  // Owner request 2026-10-17 (app_access_log) -- this panel only ever mounts once App.js's own
+  // perm('users.manage.all') gate has already passed (admin/owner only, the tightest permission
+  // in the system), so logging on mount needs no internal permState dance like Security's.
+  useEffect(() => { logAppAccess('panel_view', 'admin-panel').catch(() => {}); }, []);
 
   const handleSetRoles = (roles) => {
     setOrgRoles(roles);
