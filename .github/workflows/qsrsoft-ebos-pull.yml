@@ -42,6 +42,14 @@ on:
         description: 'Dispatch #177 one-off: probe GET /purchase?purchase_status=Pending for all stores (1 = on), read-only, no persistence'
         required: false
         default: '0'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date to pull an explicit window, overriding days_back/force_full — same convention as DAR/OPS pull'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
 
 jobs:
   pull:
@@ -80,6 +88,8 @@ jobs:
           DUMP_EBOS_MONTH:           ${{ github.event.inputs.dump_month || '2026-07' }}
           DUMP_EBOS_DATES:           ${{ github.event.inputs.dump_dates || '' }}
           PROBE_PENDING_INVOICES:    ${{ github.event.inputs.probe_pending_invoices || '0' }}
+          QSRSOFT_EBOS_START_DATE:   ${{ github.event.inputs.start_date || '' }}
+          QSRSOFT_EBOS_END_DATE:     ${{ github.event.inputs.end_date || '' }}
 
       - name: Upload debug screenshots
         if: always()
