@@ -7,7 +7,7 @@
 // optional ones. Renders the REAL PanelManagerPanel from src/app/App.js, not a hand-rolled
 // stand-in -- reverting the App.js addition must fail this test, since a test against a
 // duplicated component could pass unchanged with the real one reverted.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -15,6 +15,20 @@ import { PanelManagerPanel } from '../app/App.js';
 import { PANELS } from '../app/panel-registry.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+// Owner request 2026-10-17 (app_access_log) -- extending Access Log beyond Pay Rate History/
+// Security to the other restricted-tier panels. Mocked here (spread, not full-replacement) in
+// the SAME test file that already imports PanelManagerPanel from the full App.js module, rather
+// than a second dedicated test file -- importing App.js a second time (its own isolated
+// environment/module graph) is what caused a stray dynamic import of at-a-glance.js/
+// count-cycle.js/weekly-cadence.js to resolve after that second file's environment had already
+// torn down (an EnvironmentTeardownError surfaced only under the full-suite run, not in
+// isolation). One shared import of App.js avoids the duplicate exposure entirely.
+const logAppAccessMock = vi.fn().mockResolvedValue({ error: null });
+vi.mock('../lib/supabase.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, logAppAccess: (...args) => logAppAccessMock(...args) };
+});
 
 function mountRoot() {
   const container = document.createElement('div');
@@ -25,7 +39,15 @@ function mountRoot() {
 
 describe('PanelManagerPanel -- core panel reference section', () => {
   let container, root;
-  afterEach(() => { act(() => { root.unmount(); }); container.remove(); });
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); logAppAccessMock.mockClear(); });
+
+  it('logs its own view on mount (app_access_log, owner request 2026-10-17)', async () => {
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {} }));
+    });
+    expect(logAppAccessMock).toHaveBeenCalledWith('panel_view', 'panel-manager');
+  });
 
   it('is collapsed by default, and expanding it lists every kind:"nav" panel, grouped by section', async () => {
     ({ container, root } = mountRoot());

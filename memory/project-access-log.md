@@ -35,6 +35,33 @@ low value for a 1-2-operator tool, high effort, and a real scope-creep risk the 
    logged only once `permState` resolves to `'allowed'`, never on a denied attempt). Not
    instrumented on every panel — pivot to more panels later if a real need shows up.
 
+## Extension 1 (same day, owner: "other panels sound like a good plan")
+
+Grepped `panel-registry.js`/`permissions.js` for every panel gated behind a permission key
+narrower than the broadly-granted `analytics.*` tier (the same test Pay Rate History/Security
+were picked by) and found three more real, narrowly-gated panels, none of them blanket
+telemetry:
+
+- **`admin-panel`** (`AdminPanel`, `src/views/admin.js`) — full user/role management, gated
+  `users.manage.all`: **admin/owner only**, the single tightest permission in the whole system
+  (tighter even than `payroll.view`/`security.auditLog`). The clearest match to the original
+  rationale.
+- **`settings`** (`Settings`, `src/views/management.js`) — app config, gated `settings.view`:
+  VP/DO/Admin/Owner (false for Supervisor/OM/Manager/GM/SM-AM-DM).
+- **`panel-manager`** (`PanelManagerPanel`, `src/app/App.js` — defined inline, not a separate
+  view file) — nav/registry control, same `settings.view` gate as Settings.
+
+Deliberately did NOT add Performance Reviews (`reviews.view` is broadly granted to almost every
+role — doesn't fit the "restricted tier" test) or Data Manager (`data.upload`, also broad).
+Checked for a dedicated roster/PII viewer (CLAUDE.md's `employeeRoster` PII fields) — none
+exists in the UI; that data never reaches a panel, so there's nothing to instrument there.
+
+No schema change needed — `app_access_log.panel_id` is free text with no `check` constraint, so
+the three new `panel_id` values need only the app-side change + `access-log.js`'s `PANEL_LABELS`
+map, not a new migration. All three panels only ever mount after their own `perm(...)` gate in
+`App.js` has already passed, so (like Pay Rate History, unlike Security) no internal
+`permState` resolution dance was needed — a plain mount-effect suffices.
+
 ## What shipped
 
 - `supabase/schema-app-access-log.sql` — `app_access_log` table. Columns: `actor_id`,
@@ -57,21 +84,31 @@ low value for a 1-2-operator tool, high effort, and a real scope-creep risk the 
   SQL migration run — same status `employee_pay_rate_changes` had at ship time), real eventual
   `section:'admin'` given from day one per the kind-vs-section convention, `route:true`.
 
-## ⚠️ Needs manual action
+## Manual action — DONE
 
-`supabase/schema-app-access-log.sql` has NOT been applied — this session has no direct Postgres
-connection. Run it once in the Supabase SQL editor before the Access Log panel shows anything
-(or before login/panel-view events start being captured at all).
+`supabase/schema-app-access-log.sql` was run in the Supabase SQL editor the same day (owner
+confirmed). `app_access_log` is live; the three new `panel_id` values above need no further SQL.
 
 ## Verification
 
-25 new tests: `permissions.test.js` (role matrix for `security.auditLog`), 4 in
-`authgate-login-logging.test.js` (SIGNED_IN logs, INITIAL_SESSION/TOKEN_REFRESHED/SIGNED_OUT
-don't), 1 added to `pay-rate-history-panel.test.js` (logs on mount), 2 added to
-`security-panel.test.js` (logs on allowed view, does NOT log on a denied view), 4 in
-`access-log-panel.test.js` (real panel render: empty state, login row, panel_view row with its
-real label, orphan-actor fallback). `shell-nav-snapshot.test.js`/`panel-registry.test.js`
-updated (route count fifty-one → fifty-two; Test Kitchen census fourteen → fifteen).
+25 new tests from the original cut (see git history for the exact names), plus 3 more for this
+extension: `admin-panel-access-log.test.js`, `settings-panel-access-log.test.js`, and one added
+INTO the existing `dispatch-panel-manager-core-section-2026-09-18.test.js` (not a third new
+file) — each mounts the REAL panel component (not a stand-in) and asserts the exact
+`logAppAccess('panel_view', '<id>')` call on mount, same pattern as
+`pay-rate-history-panel.test.js`'s own logging test.
+
+**PanelManagerPanel's test deliberately did NOT get its own new test file.** `PanelManagerPanel`
+is defined inline in `src/app/App.js` (not a separate view module), so any test exercising it has
+to import that whole file. A first attempt added a dedicated
+`panel-manager-access-log.test.js` alongside the pre-existing
+`dispatch-panel-manager-core-section-2026-09-18.test.js` (which already imports the same
+component from the same place) — under the full suite, Vitest's per-file module isolation meant
+App.js's module graph loaded a SECOND time, and a stray dynamic import
+(`at-a-glance.js`→`count-cycle.js`→`weekly-cadence.js`, unrelated to Panel Manager itself)
+resolved after that second file's environment had already torn down
+(`EnvironmentTeardownError`, surfaced only under the full-suite run, not in isolation). Fixed by
+adding the logging assertion into the one existing test file instead of a second one.
 
 Full suite run alongside this work also surfaced 3 unrelated, pre-existing failures
 (`item-velocity-panel.test.js`, `labor-opportunity-cost-panel.test.js`,

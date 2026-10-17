@@ -18,7 +18,13 @@ const tr = (p, ...c) => h('tr', p, ...c);
 const th = (p, ...c) => h('th', p, ...c);
 
 const EVENT_LABELS = { login: '🔑 Login', panel_view: '👁 Panel View' };
-const PANEL_LABELS = { 'pay-rate-history': 'Pay Rate History', 'security': 'Security' };
+const PANEL_LABELS = {
+  'pay-rate-history': 'Pay Rate History',
+  'security':         'Security',
+  'admin-panel':      'User Management',
+  'settings':         'Settings',
+  'panel-manager':    'Panel Manager',
+};
 
 function fmtWhen(iso) {
   const d = new Date(iso);
@@ -47,8 +53,8 @@ export function AccessLogPanel({ onClose }) {
 
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     div({ style: { padding: '8px 14px', fontSize: '10.5px', color: 'var(--text2)', lineHeight: 1.6, borderBottom: '.5px solid var(--bdr)' } },
-      'Sign-ins and views of the two Owner/Admin/DO-only panels (Pay Rate History, Security) — the most recent 500 events, newest first. ',
-      'This is a deliberately narrow first cut, not blanket usage tracking — every other panel in the app is unlogged.'),
+      'Sign-ins and views of five restricted-tier panels (Pay Rate History, Security, User Management, Settings, Panel Manager) — the most recent 500 events, newest first. ',
+      'This is a deliberately narrow cut, not blanket usage tracking — every other panel in the app is unlogged.'),
     error && div({ style: { padding: '8px 14px', color: 'var(--crit)', fontSize: '11px' } }, error),
     div({ style: { flex: 1, overflowY: 'auto' } },
       rows == null
