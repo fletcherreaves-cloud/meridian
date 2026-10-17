@@ -5,6 +5,16 @@
 // drops a day... I will eventually want to backfill all stores data for that period. Set it up
 // whenever convenient and meter the data in if that works best for limits and such."
 //
+// ⚠️ CORRECTED 2026-10-17 — the "7 years" part of that quote was the owner's own belief going
+// in, stated as the reason to build this; it is NOT what a direct, live retention probe measured
+// (owner-requested, same day). Real DAR/OPS data came back for a 2019-09 window -- genuinely
+// more than 7 years old as of today -- while a 2018-02 window came back confirmed empty; the
+// real floor is somewhere in that ~18-month gap, not a clean 7-year mark, and EBOS (purchases)
+// is governed by a completely different, per-store "ebos_activation_date" with no relation to
+// retention at all. Full findings: memory/finding-qsrsoft-retention-2026-10-17.md. This file's
+// own YEARS_BACK/CONSECUTIVE_EMPTY_STOP constants below were corrected in the same pass -- the
+// fixed-7-year target this script originally walked toward no longer governs where it stops.
+//
 // WHY A DRIVER, NOT JUST A BIGGER start_date: DAR and OPS already accept an explicit
 // QSRSOFT_*_START_DATE/END_DATE window (qsrsoft-dar-pull.mjs, qsrsoft-ops-pull.mjs) and EBOS now
 // does too (this dispatch), but nothing in this repo has ever metered a multi-YEAR, multi-
@@ -43,12 +53,36 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 
 const CHUNK_DAYS = parseInt(process.env.QSRSOFT_BACKFILL_CHUNK_DAYS || '90', 10);
-const YEARS_BACK = parseInt(process.env.QSRSOFT_BACKFILL_YEARS || '7', 10);
+// ⚠️ CORRECTED 2026-10-17 — bumped from 7. The owner's own 2026-10-15 framing ("QSRSoft retains
+// data only for 7 years on a rolling cycle") was this script's original design basis and is now
+// measured WRONG: a direct >7-year retention probe (owner request) found real, retrievable DAR
+// (daily sales/activity) and OPS (cash/labor/service/sales-mix/peaks) data as recently-tested as
+// 2019-09 — genuinely >7 years old as of today — while a 2018-02 window came back confirmed
+// empty. The real floor sits somewhere in that ~18-month gap, not at a clean 7-year mark, and
+// may differ per report type or even per store (EBOS/purchases is a separate case again — its
+// own activation date varies per store, unrelated to retention at all). See
+// memory/finding-qsrsoft-retention-2026-10-17.md for the full measured findings. 15 is a
+// generous ceiling now, not the real target — CONSECUTIVE_EMPTY_STOP below is what actually
+// finds and stops at each report type's real floor; this is just the backstop so a genuinely
+// confused run can't grind forever.
+const YEARS_BACK = parseInt(process.env.QSRSOFT_BACKFILL_YEARS || '15', 10);
 const DRY_RUN = process.env.QSRSOFT_BACKFILL_DRY_RUN === '1';
 const ONLY_TYPE = (process.env.QSRSOFT_BACKFILL_ONLY || '').trim(); // '' = all three
+// How many CONSECUTIVE confirmed-empty chunks (zero rows, zero per-unit errors -- see
+// scripts/lib/pull-outcome.mjs's QSRSOFT_BACKFILL_PROBE mode) in a row mean "this is the real
+// floor, stop here" rather than "today-minus-YEARS_BACK, stop here".
+// 3 chunks * 90 days ≈ 9 months is comfortably inside that ~18-month band rather than past it --
+// deliberately so, since a real floor sitting anywhere in that range should trip this well before
+// the walk reaches YEARS_BACK. The actual guard against one isolated empty chunk inside otherwise-
+// real history is the CONSECUTIVE requirement itself (a single stray empty chunk resets to 0, not
+// 1-and-done) — the threshold's job is only to turn "a few consecutive empties" into "stop," not
+// to outlast the uncertainty band in days.
+const CONSECUTIVE_EMPTY_STOP = parseInt(process.env.QSRSOFT_BACKFILL_EMPTY_STOP || '3', 10);
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -127,11 +161,11 @@ async function getOrBootstrapCursor(db, reportType) {
 
 async function advanceOne(db, reportType) {
   const cursor = await getOrBootstrapCursor(db, reportType);
-  if (cursor.done) { console.log(`[backfill-driver] ${reportType}: already done (reached the ${YEARS_BACK}-year floor). Skipping.`); return; }
+  if (cursor.done) { console.log(`[backfill-driver] ${reportType}: already done. Skipping.`); return; }
 
   const chunk = nextChunk({ earliestDatePulled: cursor.earliest_date_pulled });
   if (!chunk) {
-    console.log(`[backfill-driver] ${reportType}: cursor (${cursor.earliest_date_pulled}) has reached the ${YEARS_BACK}-year floor (${targetStartDate()}). Marking done.`);
+    console.log(`[backfill-driver] ${reportType}: cursor (${cursor.earliest_date_pulled}) has reached the ${YEARS_BACK}-year ceiling (${targetStartDate()}) without finding ${CONSECUTIVE_EMPTY_STOP} consecutive confirmed-empty chunks first. Marking done.`);
     await db.from('qsrsoft_backfill_cursor').update({ done: true, updated_at: new Date().toISOString() }).eq('report_type', reportType);
     return;
   }
@@ -140,16 +174,46 @@ async function advanceOne(db, reportType) {
   console.log(`[backfill-driver] ${reportType}: pulling chunk ${chunk.start} → ${chunk.end}`);
   if (DRY_RUN) { console.log(`[backfill-driver] ${reportType}: DRY RUN — not actually spawning ${script}`); return; }
 
+  // QSRSOFT_BACKFILL_PROBE tells the pull script's shared outcome tracker (scripts/lib/
+  // pull-outcome.mjs) that a clean zero-rows/zero-errors result for THIS invocation is a
+  // confirmed-empty historical window, not a failure -- exit 0 instead of 1, so execFileSync
+  // doesn't throw and the cursor still advances past it. QSRSOFT_BACKFILL_OUTCOME_FILE is how
+  // this process learns, after the fact, whether that chunk actually saved real rows or was
+  // empty -- stdio stays 'inherit' (full live log in the Action run) so this can't be read from
+  // captured stdout; a dropped sidecar file is the only channel.
+  const outcomeFile = path.join(os.tmpdir(), `qsrsoft-backfill-outcome-${reportType}-${Date.now()}.json`);
+  try { rmSync(outcomeFile, { force: true }); } catch {}
+
   try {
     execFileSync('node', [path.join(SCRIPT_DIR, script)], {
-      env: { ...process.env, [startVar]: chunk.start, [endVar]: chunk.end },
+      env: {
+        ...process.env, [startVar]: chunk.start, [endVar]: chunk.end,
+        QSRSOFT_BACKFILL_PROBE: '1', QSRSOFT_BACKFILL_OUTCOME_FILE: outcomeFile,
+      },
       stdio: 'inherit',
     });
+
+    let chunkTotalSaved = null;
+    try { chunkTotalSaved = JSON.parse(readFileSync(outcomeFile, 'utf8')).totalSaved; } catch { /* outcome file is best-effort on the script side too */ }
+    try { rmSync(outcomeFile, { force: true }); } catch {}
+    const wasConfirmedEmpty = chunkTotalSaved === 0;
+    const consecutiveEmpty = wasConfirmedEmpty ? (cursor.consecutive_empty_chunks || 0) + 1 : 0;
+    const foundRealFloor = wasConfirmedEmpty && consecutiveEmpty >= CONSECUTIVE_EMPTY_STOP;
+
     await db.from('qsrsoft_backfill_cursor').update({
       earliest_date_pulled: chunk.start, last_chunk_start: chunk.start, last_chunk_end: chunk.end,
       last_status: 'ok', last_error: null, last_run_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      consecutive_empty_chunks: consecutiveEmpty,
+      ...(foundRealFloor ? { done: true } : {}),
     }).eq('report_type', reportType);
-    console.log(`[backfill-driver] ${reportType}: cursor advanced to ${chunk.start}`);
+
+    if (foundRealFloor) {
+      console.log(`[backfill-driver] ${reportType}: ${consecutiveEmpty} consecutive confirmed-empty chunks (${CONSECUTIVE_EMPTY_STOP} required) -- real floor found around ${chunk.end}. Marking done.`);
+    } else if (wasConfirmedEmpty) {
+      console.log(`[backfill-driver] ${reportType}: chunk ${chunk.start}→${chunk.end} confirmed-empty (${consecutiveEmpty}/${CONSECUTIVE_EMPTY_STOP} consecutive) -- cursor advanced past it to ${chunk.start}.`);
+    } else {
+      console.log(`[backfill-driver] ${reportType}: cursor advanced to ${chunk.start}`);
+    }
   } catch (e) {
     // Leave earliest_date_pulled UNCHANGED — the next run retries this exact chunk, same
     // idempotent-upsert safety every pull script already relies on for its own daily re-pulls.

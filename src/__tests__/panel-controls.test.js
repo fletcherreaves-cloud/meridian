@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DATE_RANGE_PRESETS, resolveDatePreset, isValidCustomRange,
   buildLocationHierarchy, locationSelectorLocs, nonEmptyActionGroups,
+  locationSelectorOptionValue, parseLocationSelectorOptionValue,
 } from '../components/PanelControls.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { ModalShell } from '../components/ModalShell.js';
@@ -138,6 +139,33 @@ describe('locationSelectorLocs', () => {
   });
   it('an unknown state/patch id returns empty, not every loc (fail closed)', () => {
     expect(locationSelectorLocs({ level: 'state', id: 'ZZ' }, tree)).toEqual([]);
+  });
+});
+
+// ── LocationSelector dropdown-variant encoding (owner ask 2026-10-17) ───────
+
+describe('locationSelectorOptionValue / parseLocationSelectorOptionValue', () => {
+  it('round-trips "all" (including null/undefined value)', () => {
+    expect(locationSelectorOptionValue(null)).toBe('all');
+    expect(locationSelectorOptionValue({ level: 'all', id: null })).toBe('all');
+    expect(parseLocationSelectorOptionValue('all')).toEqual({ level: 'all', id: null });
+    expect(parseLocationSelectorOptionValue(null)).toEqual({ level: 'all', id: null });
+    expect(parseLocationSelectorOptionValue('')).toEqual({ level: 'all', id: null });
+  });
+
+  it('round-trips state/patch/store levels', () => {
+    for (const v of [{ level: 'state', id: 'OK' }, { level: 'patch', id: 'A' }, { level: 'store', id: '100' }]) {
+      expect(parseLocationSelectorOptionValue(locationSelectorOptionValue(v))).toEqual(v);
+    }
+  });
+
+  it('an id containing a colon still round-trips (only the FIRST colon splits level from id)', () => {
+    const v = { level: 'patch', id: 'A:B' };
+    expect(parseLocationSelectorOptionValue(locationSelectorOptionValue(v))).toEqual(v);
+  });
+
+  it('falls back to "all" for a garbage raw value instead of throwing', () => {
+    expect(parseLocationSelectorOptionValue('not-a-real-option')).toEqual({ level: 'all', id: null });
   });
 });
 

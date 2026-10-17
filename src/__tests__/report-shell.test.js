@@ -71,15 +71,22 @@ describe('ReportShell', () => {
     expect(arg.range).toMatchObject({ s: expect.any(String), e: expect.any(String) });
   });
 
-  it('scoping to one store narrows `locs` to just that store before Run', async () => {
+  it('scoping to one store narrows `locs` to just that store before Run (dropdown LocationSelector, owner ask 2026-10-17)', async () => {
     const onRun = vi.fn(async () => {});
     ({ container, root } = await mount({
       title: 'Report', stores: STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, locationMode: 'store',
       onRun, getExportData: () => ({ title: 't', headers: [], rows: [] }), children: null,
     }));
-    const storeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Ardmore'));
-    expect(storeBtn).toBeTruthy();
-    await act(async () => { storeBtn.click(); });
+    // ReportShell now renders LocationSelector as a <select> (variant:'dropdown'), not pills --
+    // find the option whose text names the store and select it via a real change event.
+    const select = [...container.querySelectorAll('select')].find(s =>
+      [...s.options].some(o => o.textContent.includes('Ardmore')));
+    expect(select).toBeTruthy();
+    const option = [...select.options].find(o => o.textContent.includes('Ardmore'));
+    await act(async () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 
     const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
     await act(async () => { runBtn.click(); await Promise.resolve(); });
