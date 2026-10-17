@@ -1,0 +1,41 @@
+name: QSRSoft Store-Transition Retention Probe
+
+# One-off, read-only. Owner note (2026-10-17): Holdenville transitioned store NSN 2979 -> 35064
+# in March-April 2011. Checks whether QSRSoft still has retrievable data for the OLD number
+# (2979, not in any production pull script's hard-coded store list) and when the NEW number
+# (35064) starts producing real data. Writes nothing to Supabase -- logs only.
+on:
+  workflow_dispatch:
+    inputs:
+      nsns:
+        description: 'Comma-separated NSNs to probe (default: 2979,35064)'
+        required: false
+        default: ''
+      dates:
+        description: 'Comma-separated YYYY-MM-DD dates to probe (default: a spread across Dec 2010 - Sep 2011)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Probe store-transition retention
+        run: node scripts/qsrsoft-store-transition-probe.mjs
+        env:
+          QSRSOFT_USERNAME: ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD: ${{ secrets.QSRSOFT_PASSWORD }}
+          PROBE_NSNS:        ${{ github.event.inputs.nsns  || '' }}
+          PROBE_DATES:       ${{ github.event.inputs.dates || '' }}
