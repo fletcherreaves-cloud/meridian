@@ -491,7 +491,7 @@ async function pullViaPlaywright(startDate, endDate) {
             });
           }
           log.push(`NSN ${nsn}: ${items.length} line items → ${nDays} day-rows`);
-          if (debug) log.push(`  sample: ${JSON.stringify(items[0]).slice(0, 120)}`);
+          if (debug && items.length) log.push(`  sample: ${JSON.stringify(items[0]).slice(0, 120)}`);
 
           // Dispatch #177 investigation: confirmed via a DEBUG request-log capture that
           // GET /api/inv/{nsn}/purchase?purchase_status=Pending is a real, same-token eBOS
