@@ -4601,6 +4601,11 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - `src/components/ModalShell.js` — shared modal shell (Workstream D, ✅ done v4.938–v4.939): standardizes
   the close-button/header pattern app-wide. See [[vision-and-roadmap]] Workstream D and [[notes-63-queue]].
 - [PWA Share bug](project-pwa-share-bug.md) · [Backlog](project-backlog.md) · [Meridian status](project-meridian.md)
+- [Equipment Profile system](project-equipment-profile.md) — NOT STARTED (captured 2026-10-18). Live,
+  open-link-editable per-store equipment profile (manufacturer/model dropdowns + flagged manual
+  entry, serial/cert date on a subset, visual floor-plan placement) so Ops Supplies ordering can be
+  constrained to what a store actually has. Owner explicitly said "remind me" — read this before
+  scoping, it has the open design questions already identified.
 
 ## 📇 Previously unindexed (added 2026-08-16)
 
