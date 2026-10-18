@@ -19,15 +19,17 @@ specific equipment model (e.g. Taylor's `tcmcd.co/C835`, Frymaster's
 is usually the manufacturer's own model code, directly useful for the
 Equipment Profile catalog's manufacturer/model dropdown.
 
-**Not yet resolved:** this session's network policy blocks outbound
-access to these external sites, so none of the 113 URLs have actually
-been fetched — the inventory is the decoded QR text only, not what's
-behind each link. About a dozen entries are generic short-link
-services (`l.ead.me`, `qrs.ly`, `tiny.cc`, `qrcodes.pro`, etc.) whose
-real destination and manufacturer are unknown until followed. A
-session with broader network access (environment Network access
-settings → add the relevant domains, or a broader access level) could
-resolve these and pull real model/spec data from each page.
+**Resolved 2026-10-18** (once network access was granted): each entry
+now also has a `resolved` object — `final_url` (after redirects, which
+also resolves the short-link services like `l.ead.me`/`qrs.ly`/`tiny.cc`
+to their real destination), `title` (the page's `<title>`), and
+`description` (its meta description, where present). 44 of 113 resolved
+to a real `title` (e.g. "Universal Holding Cabinet Touch (UHCTHD) |
+Frymaster"); the other 69 fetched successfully (no HTTP/network error)
+but returned no `<title>` in the raw HTML — likely JS-rendered
+microsites whose real content only appears after the page's own script
+runs, which a plain `curl` fetch doesn't execute. Those would need a
+headless-browser fetch (Playwright) to pull their real content.
 
 ## `Floor Plans/`
 
