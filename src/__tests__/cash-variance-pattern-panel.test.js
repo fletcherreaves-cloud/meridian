@@ -12,11 +12,15 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const STORES = [{ loc: '3708' }];
 const D = (d) => new Date(Date.now() - d * 86400000);
 
-// 21 consecutive days ending today = exactly 3 occurrences of every day-of-week, same trick
-// cash-variance-pattern-engine.test.js uses with fixed dates.
+// The panel's real default range is ReportShell's '28d' preset, not a fixed 21 days (confirmed
+// live: a prior 21-day fixture under-filled that 28-day window by a week, so whichever weekday
+// fell in the uncovered gap missed the table's own "minimum 3 observed days" threshold and
+// silently dropped out -- flaky depending on which real calendar day the suite happened to run
+// on). 28 consecutive days = exactly 4 occurrences of every day-of-week regardless of which day
+// "today" is, so this can never under-fill the real resolved window no matter when it runs.
 function buildCtrlRows() {
   const rows = [];
-  for (let d = 0; d < 21; d++) {
+  for (let d = 0; d < 28; d++) {
     const date = D(d);
     rows.push({
       loc: '3708', date,

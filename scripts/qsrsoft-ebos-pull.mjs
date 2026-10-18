@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-ebos-pull.mjs — QSRSoft eBOS Purchases daily sync
 // Pulls the store purchase ledger from prod.ebos.qsrsoft.com for all 27 stores.
-// Aggregates line items to daily totals (food, paper, ops supplies, happy meal, other).
+// Aggregates line items to daily totals (food, paper, ops supplies, happy meal, other) into
+// qsr_ebos_daily, AND persists the same Purchase/Credit/Adjustment line items individually into
+// qsr_ebos_line_items (owner request 2026-10-18, "raw item pricing through invoices/purchases" —
+// supabase/schema-qsr-ebos-line-items.sql) -- the per-line wrin/description/price detail was
+// already being fetched here, just discarded before this; now it's kept for both auth paths
+// (direct-token and Playwright fallback).
 // Smart gap-detection: only re-pulls what's missing + a rolling recent window for corrections.
 //
 // Required env vars:
@@ -41,6 +46,7 @@ import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
+import { toLineItemRows } from './lib/qsrsoft-ebos-line-items.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
@@ -383,9 +389,9 @@ async function pullViaPlaywright(startDate, endDate) {
     // Aggregation runs in-browser to keep the returned payload small.
     console.log(`[ebos-pull] date range: ${startDate} → ${endDate} | stores: ${STORE_NSNS.length}`);
 
-    const { rows, log } = await page.evaluate(async (args) => {
+    const { rows, log, lineItems } = await page.evaluate(async (args) => {
       const { token, nsns, startDate, endDate, base, debug } = args;
-      const rows = [], log = [];
+      const rows = [], log = [], lineItems = [];
       let dumped = false;
 
       for (const nsn of nsns) {
@@ -442,9 +448,12 @@ async function pullViaPlaywright(startDate, endDate) {
             }
           }
 
-          // Aggregate: sum sub-categories by posted_date, Purchase records only
+          // Aggregate: sum sub-categories by posted_date, Purchase records only. Also keep each
+          // individual line (same PT filter) for qsr_ebos_line_items -- the per-line
+          // wrin/description/price detail aggregateByDate-equivalent logic above discards.
           const byDate = {};
           const PT = { Purchase: 1, Credit: 1, Adjustment: 1 };   // ledger "Total Purchases" = these (not Out/In transfers)
+          const loc = String(nsn).padStart(7, '0');
           for (const item of items) {
             if (!PT[item.record_type] || !item.posted_date) continue;
             const d = item.posted_date;
@@ -454,8 +463,22 @@ async function pullViaPlaywright(startDate, endDate) {
             byDate[d][2] += item.ops_sub        || 0;
             byDate[d][3] += item.happy_meal_sub || 0;
             byDate[d][4] += item.other_sub      || 0;
+            lineItems.push({
+              loc, posted_date: d,
+              record_type:        item.record_type || null,
+              wrin:                item.wrin || null,
+              description:         item.description || null,
+              invoice_identifier:  item.invoice_identifier || null,
+              ebos_item_id:        item.line_item_id != null ? String(item.line_item_id) : (item.id != null ? String(item.id) : null),
+              food_sub:            item.food_sub       || 0,
+              paper_sub:           item.paper_sub      || 0,
+              ops_sub:             item.ops_sub        || 0,
+              happy_meal_sub:      item.happy_meal_sub || 0,
+              other_sub:           item.other_sub      || 0,
+              total_amount:        item.total_amount   || 0,
+              raw:                 item,
+            });
           }
-          const loc = String(nsn).padStart(7, '0');
           const nDays = Object.keys(byDate).length;
           for (const [date, t] of Object.entries(byDate)) {
             rows.push({
@@ -468,7 +491,7 @@ async function pullViaPlaywright(startDate, endDate) {
             });
           }
           log.push(`NSN ${nsn}: ${items.length} line items → ${nDays} day-rows`);
-          if (debug) log.push(`  sample: ${JSON.stringify(items[0]).slice(0, 120)}`);
+          if (debug && items.length) log.push(`  sample: ${JSON.stringify(items[0]).slice(0, 120)}`);
 
           // Dispatch #177 investigation: confirmed via a DEBUG request-log capture that
           // GET /api/inv/{nsn}/purchase?purchase_status=Pending is a real, same-token eBOS
@@ -526,7 +549,7 @@ async function pullViaPlaywright(startDate, endDate) {
           log.push(`NSN ${nsn} error: ${e.message}`);
         }
       }
-      return { rows, log };
+      return { rows, log, lineItems };
     }, { token: ebosToken, nsns: STORE_NSNS, startDate, endDate, base: EBOS_BASE, debug: DEBUG,
          dumpFields: process.env.DUMP_EBOS_FIELDS === '1', dumpStore: process.env.DUMP_EBOS_STORE || '5183', dumpMonth: process.env.DUMP_EBOS_MONTH || '2026-07',
          dumpDates: (process.env.DUMP_EBOS_DATES || '').split(',').map(s => s.trim()).filter(Boolean),
@@ -534,7 +557,7 @@ async function pullViaPlaywright(startDate, endDate) {
 
     for (const msg of log) console.log('[ebos]', msg);
     await snap('ebos-final.png');
-    return { rows, log };
+    return { rows, log, lineItems };
 
   } catch (e) {
     console.error('[auth] Playwright error:', e.message);
@@ -547,10 +570,11 @@ async function pullViaPlaywright(startDate, endDate) {
 
 // ── Fetch all stores with a known token (external Node.js fetches) ────────────
 async function runWithToken(token, startDate, endDate) {
-  let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, authFailed = false;
+  let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, totalLineItemsSaved = 0, authFailed = false;
   const tracker = makeOutcomeTracker('ebos-pull');
   const coveredStores = new Set();
   const buffer = [];
+  const lineItemBuffer = [];
   const flush = async () => {
     if (!buffer.length) return;
     const batch = buffer.splice(0);
@@ -558,12 +582,20 @@ async function runWithToken(token, startDate, endDate) {
     if (error) console.error('[supabase] upsert error:', error.message);
     else totalSaved += batch.length;
   };
+  const flushLineItems = async () => {
+    if (!lineItemBuffer.length) return;
+    const batch = lineItemBuffer.splice(0);
+    const { error } = await withRetry(() => supabase.from('qsr_ebos_line_items').insert(batch), { label: 'qsr_ebos_line_items insert' });
+    if (error) console.error('[supabase] qsr_ebos_line_items insert error:', error.message);
+    else totalLineItemsSaved += batch.length;
+  };
   console.log(`[ebos-pull] date range: ${startDate} → ${endDate}`);
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     try {
       const items = await fetchStoreLedger(token, nsn, startDate, endDate);
       const rows  = aggregateByDate(items, nsn);
+      const lineItemRows = toLineItemRows(items, nsn);
       totalLineItems += items.length;
       totalDayRows   += rows.length;
       // Dispatch (2026-09-01, Mossy Head/37566 finding): a day that had purchase-record ops on an
@@ -574,16 +606,24 @@ async function runWithToken(token, startDate, endDate) {
       // duplicated a day-total that had moved to Aug 12 / Aug 19 respectively). Clear the store's
       // whole pulled window first, THEN insert the fresh set below -- only after a successful fetch
       // for THIS store, so a per-store fetch failure never wipes that store's still-good prior data.
+      // Same reasoning applies to qsr_ebos_line_items -- cleared in the same window, same guard.
       const loc = String(nsn).padStart(7, '0');
       const { error: clearErr } = await withRetry(
         () => supabase.from('qsr_ebos_daily').delete().eq('loc', loc).gte('date', startDate).lte('date', endDate),
         { label: 'qsr_ebos_daily stale-day clear' },
       );
       if (clearErr) console.error(`[ebos] NSN ${nsn} stale-day clear error: ${clearErr.message}`);
+      const { error: clearLineErr } = await withRetry(
+        () => supabase.from('qsr_ebos_line_items').delete().eq('loc', loc).gte('posted_date', startDate).lte('posted_date', endDate),
+        { label: 'qsr_ebos_line_items stale-range clear' },
+      );
+      if (clearLineErr) console.error(`[ebos] NSN ${nsn} line-item clear error: ${clearLineErr.message}`);
       buffer.push(...rows);
+      lineItemBuffer.push(...lineItemRows);
       if (rows.length > 0) coveredStores.add(loc);
-      console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows`);
+      console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows, ${lineItemRows.length} line-item rows`);
       if (buffer.length >= 500) await flush();
+      if (lineItemBuffer.length >= 500) await flushLineItems();
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) {
         authFailed = true;
@@ -595,7 +635,8 @@ async function runWithToken(token, startDate, endDate) {
     }
   }
   await flush();
-  console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved`);
+  await flushLineItems();
+  console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved, ${totalLineItemsSaved} line-item rows saved`);
   if (authFailed) process.exit(1);
 
   // R8 (dispatch #25/#32, Workstream C): unconditional per-store coverage -- a store that
@@ -650,7 +691,7 @@ async function main() {
     console.error('[ebos-pull] no auth — set QSRSOFT_EBOS_TOKEN or QSRSOFT_USERNAME+PASSWORD');
     process.exit(1);
   }
-  const { rows, log: pwLog } = pwResult;
+  const { rows, log: pwLog, lineItems } = pwResult;
 
   // #263: pullViaPlaywright's per-store loop runs inside the browser (page.evaluate) and
   // can't reach this process's tracker directly -- it logs "NSN X error:"/"NSN X HTTP NNN"
@@ -672,6 +713,11 @@ async function main() {
       { label: 'qsr_ebos_daily stale-day clear' },
     );
     if (clearErr) console.error(`[ebos] stale-day clear error: ${clearErr.message}`);
+    const { error: clearLineErr } = await withRetry(
+      () => supabase.from('qsr_ebos_line_items').delete().in('loc', clearedLocs).gte('posted_date', startDate).lte('posted_date', endDate),
+      { label: 'qsr_ebos_line_items stale-range clear' },
+    );
+    if (clearLineErr) console.error(`[ebos] line-item clear error: ${clearLineErr.message}`);
   }
 
   let totalSaved = 0;
@@ -682,6 +728,15 @@ async function main() {
     else totalSaved += batch.length;
   }
   console.log(`[ebos-pull] done — ${rows.length} store-days aggregated, ${totalSaved} rows saved to qsr_ebos_daily`);
+
+  let totalLineItemsSaved = 0;
+  for (let i = 0; i < lineItems.length; i += 500) {
+    const batch = lineItems.slice(i, i + 500);
+    const { error } = await withRetry(() => supabase.from('qsr_ebos_line_items').insert(batch), { label: 'qsr_ebos_line_items insert' });
+    if (error) console.error('[supabase] qsr_ebos_line_items insert error:', error.message);
+    else totalLineItemsSaved += batch.length;
+  }
+  console.log(`[ebos-pull] ${lineItems.length} line items aggregated, ${totalLineItemsSaved} rows saved to qsr_ebos_line_items`);
 
   // R8 (dispatch #25/#32, Workstream C): unconditional per-store coverage, same as runWithToken's
   // adoption above -- a store whose fetch succeeded but returned zero purchase-record line items
