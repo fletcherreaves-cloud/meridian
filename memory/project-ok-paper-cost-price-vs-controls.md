@@ -88,3 +88,58 @@ reasons alone, independent of anything operational.
 Scratch analysis scripts/data (reproducible, not committed): session scratchpad
 `price-vs-controls/` — `pull.py`, `analyze_price_juloct.py`, `analyze_volume.py`,
 `pull_sales.py`, `pull_sales_ly.py`, `analyze_pct.py`.
+
+## 4. Checked separately: is McDonald's "Monopoly" promotional packaging the seasonal factor?
+
+Owner asked to compare regular vs. Monopoly-branded packaging cost, since the annual Monopoly
+promotion runs every fall and could plausibly be a *real, recurring* driver of a Sept/Oct
+elevation (as opposed to the price-step and controls causes already ruled out above). Measured
+directly against `qsr_ebos_line_items`, fleet-wide (all 27 stores, not just OK):
+
+- **The promotion is real and recurs annually, confirmed in the ledger itself**: 2025 run was
+  Sept 29 – Oct 10, 2025; the 2026 run started Sept 21, 2026 and is still active as of this
+  measurement (Oct 18, 2026) — both inside the Jul–Oct window this whole analysis covers.
+- Each Monopoly item is its own distinct WRIN (not a price bump on the regular WRIN) — e.g. the
+  regular 30oz clear cup (`15737-073`) and its Monopoly cup (`15737-100`) are separate SKUs.
+  Matched 8 regular/Monopoly WRIN pairs and compared same-store monthly-minimum $ (the same
+  unit-price proxy used throughout this file; with no unit/quantity field, monthly minimum per
+  `(loc, wrin)` is the only base-unit-cost signal available) — paired by store so a store's own
+  ordering pattern is the baseline, not pooled across stores with different order sizes:
+
+| Item | Monopoly ÷ regular (median across paired stores) |
+|---|---|
+| A Bag | 1.00x (flat) — 23 stores |
+| B Bag | 1.00x (flat) — 23 stores |
+| C Bag | 1.00x (flat) — 27 stores |
+| 4oz fry carton | 1.00x (flat) — 23 stores |
+| WRAP 4N1 Biscuit | 0.81x (19% *cheaper*) — 26 stores |
+| 30oz clear cup | 1.08x — only 1 store had both (too few Monopoly cup orders yet to trust) |
+| **Hash brown bag** | **2.52x (+152%)** — 27/27 stores, tight clustering |
+| **6oz fry carton** | **2.33x (+133%)** — 26/27 stores, tight clustering |
+
+Most Monopoly items cost the same as their regular counterpart — only printing changed. Two
+items (hash brown bag, 6oz fry carton) show a real, fleet-wide, tightly-clustered markup — that
+consistency across 26-27 independently-ordering stores is itself evidence this is a real vendor
+cost difference for those two items, not noise (case-pack-size differences between the regular
+and Monopoly version of an item remain a possible confound given there's no quantity field to
+rule it out directly, but it would have to apply identically at ~2.3-2.5x to independently affect
+26+ stores to produce this pattern).
+
+- **Dollar impact of the two marked-up items, Sept 21–Oct 18, 2026, fleet-wide: ~$14,900
+  "excess"** (mono_total_$ fleet-wide was $10,502 for hash brown bag and $15,076 for 6oz fry
+  carton; at their measured markup ratios, roughly $6,330 + $8,610 of that is above what the
+  regular-item rate would have cost).
+- **But there's also a corporate/vendor credit tied to the same promotion**, posted as its own
+  ledger line (`wrin='00000-000'`, description `"Monopoly Promotion"`), landing in the `paper_sub`
+  category: **−$51,561 fleet-wide** over the same window, varying per store/transaction (one
+  common value, −$416.92, repeats 25 times; the rest are store/invoice-specific, consistent with
+  a real volume-tied rebate rather than a flat fabricated number).
+- **Net: the promotional credit (−$51,561) is larger than the two items' markup overhead
+  (~+$14,900)** — Monopoly is a net REDUCTION to measured paper cost this period, not an
+  inflator. This is already baked into the "paper $ volume is down district-wide" finding in
+  section 2 above, not a separate adjustment needed.
+
+**Conclusion: Monopoly packaging is real and does recur every year, but it is not the Sept/Oct
+seasonal factor, and if anything nets slightly favorable.** It does NOT change the bottom line
+above — the apparent spike is still explained almost entirely by the seasonal-baseline framing
+in section 3, not by price, controls, or Monopoly packaging.
