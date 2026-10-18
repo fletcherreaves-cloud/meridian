@@ -637,7 +637,13 @@ async function runWithToken(token, startDate, endDate) {
   await flush();
   await flushLineItems();
   console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved, ${totalLineItemsSaved} line-item rows saved`);
-  if (authFailed) process.exit(1);
+  // Return a sentinel instead of exiting directly -- a stale QSRSOFT_EBOS_TOKEN (Path A) or a
+  // freshly-minted-but-rejected SSO token (Path B) should fall through to the next auth path,
+  // not kill the whole run. Confirmed live 2026-10-18: a stored QSRSOFT_EBOS_TOKEN that had
+  // expired made main() take Path A unconditionally (`if (envToken) return runWithToken(...)`)
+  // and exit 1 immediately, never trying Path B/C even though QSRSOFT_USERNAME/PASSWORD were
+  // set and would have worked.
+  if (authFailed) return 'AUTH_FAILED';
 
   // R8 (dispatch #25/#32, Workstream C): unconditional per-store coverage -- a store that
   // returned 200 with zero purchase-record line items in the window (no error, so tracker.fail()
@@ -669,7 +675,9 @@ async function main() {
 
   // ── Path A: pre-captured QSRSOFT_EBOS_TOKEN ──
   if (envToken) {
-    return runWithToken(envToken, startDate, endDate);
+    const result = await runWithToken(envToken, startDate, endDate);
+    if (result !== 'AUTH_FAILED') return result;
+    console.log('[auth] stored QSRSOFT_EBOS_TOKEN rejected — falling back to a freshly-minted token');
   }
 
   // ── Path B: SSO token exchange, cognito token minted fresh via getFreshToken() ──
@@ -678,9 +686,12 @@ async function main() {
     const ssoToken = await getEbosTokenViaSso(cognitoToken);
     if (ssoToken) {
       console.log('[auth] ✓ eBOS token obtained via SSO exchange');
-      return runWithToken(ssoToken, startDate, endDate);
+      const result = await runWithToken(ssoToken, startDate, endDate);
+      if (result !== 'AUTH_FAILED') return result;
+      console.log('[auth] freshly-minted SSO token also rejected — falling back to Playwright');
+    } else {
+      console.log('[auth] SSO exchange did not return a usable token — falling back to Playwright');
     }
-    console.log('[auth] SSO exchange did not return a usable token — falling back to Playwright');
   } catch (e) {
     console.log(`[auth] getFreshToken() failed (${e.message}) — falling back to Playwright`);
   }
