@@ -28,3 +28,24 @@ real destination and manufacturer are unknown until followed. A
 session with broader network access (environment Network access
 settings → add the relevant domains, or a broader access level) could
 resolve these and pull real model/spec data from each page.
+
+## `Floor Plans/`
+
+Real store layout material for the visual floor-plan placement feature:
+
+- **`K-SHEETS.pdf`** (4 pages) — an architectural kitchen equipment
+  layout drawing ("K-sheet"): symbol legend, equipment item numbers,
+  hood/exhaust and utility routing callouts tied to specific floor
+  positions. This is a real, large-format (24"x36") drawing sheet, not
+  a simplified diagram — useful as source material for a simplified
+  floor-plan template, not necessarily pinnable as-is.
+- **`2026 Specialty Beverage Equipment & Technology Playbook.pdf`**
+  (54 pages) — covers beverage-station build types (CBB, BDAP,
+  Parallel CBB Cell, In-Store/Non-DT, Gas Station/Oil Alliance), each
+  with its own "Current Restaurant Layout" section, equipment
+  installation notes, a technology overview, and required/optional
+  equipment lists. Its "Detailed Plans/Layouts" section (pages 28+)
+  has real per-layout-type floor plans for beverage equipment
+  specifically.
+
+Owner note (2026-10-18): more documents like these may follow.
