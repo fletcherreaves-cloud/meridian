@@ -49,3 +49,16 @@ Real store layout material for the visual floor-plan placement feature:
   specifically.
 
 Owner note (2026-10-18): more documents like these may follow.
+
+## `Reference Guides/`
+
+- **`Grill_Toaster_Release_Sheets-Belts_Reference_Guide.pdf`** (4 pages,
+  updated 1/6/2024) — the core cross-reference for the Equipment Profile
+  project's actual purpose: a real WRIN table mapping specific grill/
+  toaster models (Garland MWE9801/MWE9501, Taylor 11/12/15/69/22/22E/32/35,
+  Taylor Intelli-Gap 832/835/842/845, Taylor NextGen C850-C860, Garland
+  NextGen/MWE3W/MWG3W/MWE3S) to the correct upper/lower release sheet WRIN
+  for each, plus a previous→new WRIN transition table. The Taylor model
+  codes here (C835, C842, C845, C850-860, etc.) match the same codes
+  found in the `qr-code-inventory.json` QR-code URLs from Taylor's
+  `tcmcd.co` microsite — the two sources cross-reference each other.
