@@ -37,11 +37,13 @@ import path from 'node:path';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 import { parsePeakRoipVisit } from '../src/parsers/graded-visits.js';
 import { padLoc } from './import-graded-visits-bulk.mjs';
+import { warnOnSeedPathMismatch } from './lib/seed-path-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = process.env.PEAK_VISIT_DETAIL_SEED_PATH
   ? path.resolve(process.env.PEAK_VISIT_DETAIL_SEED_PATH)
   : path.join(__dirname, '../memory/data/peak-visit-detail-seed.json');
+warnOnSeedPathMismatch('PEAK_VISIT_DETAIL_SEED_PATH', '[import-peak-visit-detail]');
 
 // One update-ready peak_detail payload from a parsed visit + its resolved reviewer token.
 export function buildPeakDetailPayload(visit, auditorToken) {

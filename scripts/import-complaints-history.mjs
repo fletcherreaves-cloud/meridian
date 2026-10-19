@@ -25,11 +25,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parseComplaintEntry } from '../src/parsers/complaints.js';
+import { warnOnSeedPathMismatch } from './lib/seed-path-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = process.env.COMPLAINTS_SEED_PATH
   ? path.resolve(process.env.COMPLAINTS_SEED_PATH)
   : path.join(__dirname, '../memory/data/complaints-seed.json');
+warnOnSeedPathMismatch('COMPLAINTS_SEED_PATH', '[import-complaints-history]');
 
 export const padLoc = loc => String(loc).padStart(5, '0');
 

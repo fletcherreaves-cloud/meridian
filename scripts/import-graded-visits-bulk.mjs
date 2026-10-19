@@ -32,11 +32,13 @@ import path from 'node:path';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 import { parseEcoSureVisit, parseRGRBulkVisit, parseCfvBulkVisit } from '../src/parsers/graded-visits.js';
 import { fetchExistingGradedVisitsByKey, chunkedUpsertGradedVisits } from './lib/graded-visits-upsert.mjs';
+import { warnOnSeedPathMismatch } from './lib/seed-path-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = process.env.GRADED_VISITS_BULK_SEED_PATH
   ? path.resolve(process.env.GRADED_VISITS_BULK_SEED_PATH)
   : path.join(__dirname, '../memory/data/graded-visits-bulk-seed.json');
+warnOnSeedPathMismatch('GRADED_VISITS_BULK_SEED_PATH', '[import-graded-visits-bulk]');
 
 export const padLoc = loc => String(loc).padStart(5, '0');
 
