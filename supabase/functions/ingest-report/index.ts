@@ -27,6 +27,9 @@ function detectReportType(filename: string): string {
   if (/^eu\d{10,}\.pdf$/i.test(filename)) return 'smg-voice';
   // SMG VOICE Operator Performance Reports (filename: McDonalds_VOICE_Operator_Performance_XXXXXXXXXX.PDF)
   if (/^mcdonalds_voice_operator_performance_\d+\.pdf$/i.test(filename)) return 'voice-performance';
+  // Conversion Efficiency Ratio reports (McDonald's corporate "Owner Operator Reports",
+  // filename: Owner_Operator_<OWNER NAME>.pdf) -- mirrors parsers/index.js's detectType.
+  if (fn.startsWith('owner_operator')) return 'conversion-efficiency';
   return 'unknown';
 }
 
