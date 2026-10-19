@@ -14,10 +14,10 @@
 //   labeled "meridian-processed". For each attachment found, POSTs the bytes to the Supabase
 //   ingest-report Edge Function. Labels the thread when done so it's never processed twice.
 //
-//   Conversion Efficiency Ratio reports (processConversionEfficiencyEmails below) need
-//   CONVERSION_EFFICIENCY_SENDERS filled in with the real From: address before they'll do
-//   anything -- it ships empty/disabled, not guessing at a sender like QSRSoft/SMG VOICE
-//   above (both of those WERE confirmed real system addresses, so hardcoding them was safe).
+//   Conversion Efficiency Ratio reports (processConversionEfficiencyEmails below) use
+//   CONVERSION_EFFICIENCY_SENDERS, five real sender addresses the owner confirmed directly
+//   (2026-10-19) -- not system addresses like QSRSoft/SMG VOICE above, so a new owner shows up
+//   here occasionally; add their address to the list rather than guessing at a pattern.
 
 const EDGE_FUNCTION_URL  = 'https://oiajpwdcihgvhofntjcn.supabase.co/functions/v1/ingest-report';
 const SUPABASE_ANON_KEY  = 'sb_publishable_2eafXeOEWmR6aNCqdWC_-A_zJvvJhwa';
@@ -177,13 +177,14 @@ function processVoicePerformanceEmails() {
 }
 
 // ── Conversion Efficiency Ratio emails (monthly, "Owner Operator Reports") ────
-// McDonald's corporate sends these from a real person's mailbox (e.g. "Thorley Rick (US
-// Partners)" / "LOPEZ-THORLEY KATHRYN E"), not a system address like QSRSoft/SMG VOICE above —
-// confirm the real From: address in Gmail (not just the display name) before relying on this.
-// TODO: fill in the real sender address(es) below, then this function works exactly like
-// processVoicePerformanceEmails() above.
+// McDonald's corporate sends these from real people's mailboxes (owner-confirmed 2026-10-19),
+// not a system address like QSRSoft/SMG VOICE above.
 const CONVERSION_EFFICIENCY_SENDERS = [
-  // e.g. 'rick.thorley@us.mcd.com',
+  'kathy.lopez-thorley@partners.mcd.com',
+  'rick.thorley@partners.mcd.com',
+  'gary.mornhinweg@partners.mcd.com',
+  'ryan.thorley@partners.mcd.com',
+  'jacob.thorley@partners.mcd.com',
 ];
 
 function processConversionEfficiencyEmails() {
