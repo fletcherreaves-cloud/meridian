@@ -128,6 +128,23 @@ describe('parseConversionEfficiencyPDF', () => {
     expect(out.some(r => r.raw_item === 'Total')).toBe(false);
   });
 
+  it('extracts the period from the dated "52 Weeks Ending" item even when a bare undated label with the same leading text sits earlier in the item list — real bug found 2026-10-19 against live sample reports', async () => {
+    // Some reports repeat "52 Weeks Ending" twice per page: a bare column-header label with no
+    // month/year, and the real dated value elsewhere. items.find() on a loose substring match
+    // picked the bare label first and left period permanently null for the whole file.
+    const page = [
+      item('Conversion Efficiency', 300, 780),
+      item('52 Weeks Ending', 66, 780), // bare label, no month/year -- must NOT be picked
+      item('Owner:', 40, 760), item('TEST OWNER B', 100, 760),
+      item('52 Weeks Ending August 2026', 270, 744), // the real value
+      item('Restaurant: 03708-TEST STORE-US HWY 1', 40, 720),
+      ...row('Coffee', 700, { a: 1.1, t: 1.1, e: 0, f: 0 }),
+    ];
+    const out = await parseWith([page]);
+    expect(out.length).toBe(1);
+    expect(out[0].period).toBe('2026-08');
+  });
+
   it('returns no rows when the PDF never shows the report title (misrouted file guard)', async () => {
     const out = await parseWith([buildPage({ withTitle: false, rows: [{ label: 'Coffee', vals: { a: 1, t: 1 } }] })]);
     expect(out).toEqual([]);

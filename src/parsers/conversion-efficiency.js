@@ -70,7 +70,12 @@ export async function parseConversionEfficiencyPDF(arrayBuffer, filename = '') {
       }
     }
     if (!period) {
-      const tf = items.find(i => /52 Weeks Ending/i.test(i.text));
+      // Some reports repeat this label twice per page -- a bare "52 Weeks Ending" column
+      // header (no month/year) at one position, and the real "52 Weeks Ending <Month> <Year>"
+      // value at another. items.find() on a substring match alone can land on the bare label
+      // first and silently leave period unset for the entire file. Require the month/year to
+      // already be present in the matched item, not just the leading phrase.
+      const tf = items.find(i => /52 Weeks Ending\s+\w+\s+\d{4}/i.test(i.text));
       if (tf) {
         const m = tf.text.match(/52 Weeks Ending\s+(\w+)\s+(\d{4})/i);
         if (m) {
