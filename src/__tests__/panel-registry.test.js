@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the fifty-two panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, and Access Log)', () => {
+  it('is exactly the fifty-four panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, and Conversion Efficiency Ratio)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -335,8 +335,12 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // -- admin/owner-only, kind stays 'test-kitchen' per the standing rule for a brand-new,
     // unproven panel. 2026-10-17, owner: "And, yes, build it" -- 'fob-reference-table' (the
     // live Excel FOB reference table) adds its own route:true (fifty-two -> fifty-three).
+    // 2026-10-19, owner: "How can we best pull them from my email and store them and begin
+    // analyzing the data in app" -- 'conversion-efficiency' (Conversion Efficiency Ratio) is a
+    // brand-new report, built route:true from day one, same ReportShell treatment as every
+    // report since Phase 2 (fifty-three -> fifty-four).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'crew-schedule', 'custom-reports', 'customer-complaints',
+      'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'custom-reports', 'customer-complaints',
       'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',

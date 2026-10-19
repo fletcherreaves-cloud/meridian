@@ -195,6 +195,10 @@ function detectType(filename, wb){
   // fell through to "Unrecognized PDF" and never loaded.
   if(ext==='pdf'&&/^eu\d{5,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Report',dr,confidence:'high'};
   if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
+  // Conversion Efficiency Ratio — McDonald's corporate "Owner Operator Reports" (emailed
+  // monthly, Oracle Analytics Publisher PDF). Filenames observed from real samples:
+  // "Owner_Operator_<OWNER NAME>.pdf".
+  if(ext==='pdf'&&fn.startsWith('owner_operator'))return{type:'conversion-efficiency',label:'Conversion Efficiency Ratio Report',dr,confidence:'high'};
   if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
   // "Large Graph", or "Data Only" sheet (whichever export layout was chosen).
@@ -2453,3 +2457,4 @@ function parsePeopleSkillsWb(wb){
 }
 
 export { parseXLDate, findCol, fc, fcx, parseNum, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays };
+export { parseConversionEfficiencyPDF } from './conversion-efficiency.js';

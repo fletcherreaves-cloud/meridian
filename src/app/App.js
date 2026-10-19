@@ -232,6 +232,7 @@ const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m
 const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })));
 const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })));
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })));
+const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -320,7 +321,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -2826,6 +2827,20 @@ function App() {
               if(supabase&&!file._pendingId&&!file._manualSyncId)
                 uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
             }
+          } else if(typeInfo.type==='conversion-efficiency'){
+            const {parseConversionEfficiencyPDF}=await import('../parsers/conversion-efficiency.js');
+            const arr=await file.arrayBuffer();
+            const ceRows=await parseConversionEfficiencyPDF(arr,file.name);
+            if(ceRows.length>0){
+              const res=await saveConversionEfficiency(ceRows);
+              const stores=new Set(ceRows.map(r=>r.loc)).size;
+              const periods=[...new Set(ceRows.map(r=>r.period).filter(Boolean))].sort();
+              console.log(`[Meridian] Conversion Efficiency: ${ceRows.length} rows (${stores} store${stores===1?'':'s'}) from ${file.name} (saved ${res.saved}${res.errors?.length?', err '+res.errors.join('; '):''})`);
+              loaded.push({name:file.name,type:typeInfo,periods,stores,saved:res.saved,saveErr:res.errors?.length?res.errors.join('; '):null});
+            } else {
+              console.warn('[Meridian] Conversion Efficiency PDF matched by filename but parsed 0 rows (wrong report type?):',file.name);
+              loaded.push({name:file.name,type:{...typeInfo,label:typeInfo.label+' (0 rows parsed)'}});
+            }
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }
@@ -3458,6 +3473,7 @@ function App() {
         if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
         if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
+        if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&goRoute('forms-completion');
@@ -3755,6 +3771,7 @@ function App() {
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
