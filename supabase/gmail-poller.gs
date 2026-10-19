@@ -9,10 +9,15 @@
 //   3. Authorize when prompted (needs Gmail read access + external HTTP).
 //
 // HOW IT WORKS:
-//   Runs every hour. Searches Gmail for emails from QSRSoft with Excel
-//   attachments that haven't been labeled "meridian-processed". For each
-//   attachment found, POSTs the bytes to the Supabase ingest-report Edge
-//   Function. Labels the thread when done so it's never processed twice.
+//   Runs every hour. Searches Gmail for emails from QSRSoft/SMG VOICE/the McDonald's
+//   corporate Conversion Efficiency program with Excel/PDF attachments that haven't been
+//   labeled "meridian-processed". For each attachment found, POSTs the bytes to the Supabase
+//   ingest-report Edge Function. Labels the thread when done so it's never processed twice.
+//
+//   Conversion Efficiency Ratio reports (processConversionEfficiencyEmails below) need
+//   CONVERSION_EFFICIENCY_SENDERS filled in with the real From: address before they'll do
+//   anything -- it ships empty/disabled, not guessing at a sender like QSRSoft/SMG VOICE
+//   above (both of those WERE confirmed real system addresses, so hardcoding them was safe).
 
 const EDGE_FUNCTION_URL  = 'https://oiajpwdcihgvhofntjcn.supabase.co/functions/v1/ingest-report';
 const SUPABASE_ANON_KEY  = 'sb_publishable_2eafXeOEWmR6aNCqdWC_-A_zJvvJhwa';
@@ -27,6 +32,7 @@ function processAllEmails() {
   processQSREmails();
   processSMGVoiceEmails();
   processVoicePerformanceEmails();
+  processConversionEfficiencyEmails();
 }
 
 // ── SMG VOICE Customer Comment Report emails (weekly, Monday mornings) ────────
@@ -168,6 +174,89 @@ function processVoicePerformanceEmails() {
   }
 
   console.log(`Done. ${filesIngested} VOICE Performance file(s) ingested from ${threads.length} thread(s).`);
+}
+
+// ── Conversion Efficiency Ratio emails (monthly, "Owner Operator Reports") ────
+// McDonald's corporate sends these from a real person's mailbox (e.g. "Thorley Rick (US
+// Partners)" / "LOPEZ-THORLEY KATHRYN E"), not a system address like QSRSoft/SMG VOICE above —
+// confirm the real From: address in Gmail (not just the display name) before relying on this.
+// TODO: fill in the real sender address(es) below, then this function works exactly like
+// processVoicePerformanceEmails() above.
+const CONVERSION_EFFICIENCY_SENDERS = [
+  // e.g. 'rick.thorley@us.mcd.com',
+];
+
+function processConversionEfficiencyEmails() {
+  if (!CONVERSION_EFFICIENCY_SENDERS.length) {
+    console.log('CONVERSION_EFFICIENCY_SENDERS not configured yet — skipping.');
+    return;
+  }
+  const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
+  if (!secret) {
+    console.error('INGEST_SECRET not set in Script Properties. Aborting.');
+    return;
+  }
+
+  const fromClause = CONVERSION_EFFICIENCY_SENDERS.map(s => `from:${s}`).join(' OR ');
+  const query = `(${fromClause}) has:attachment -label:${PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query, 0, 20);
+
+  if (!threads.length) {
+    console.log('No unprocessed Conversion Efficiency emails found.');
+    return;
+  }
+
+  let label = GmailApp.getUserLabelByName(PROCESSED_LABEL);
+  if (!label) label = GmailApp.createLabel(PROCESSED_LABEL);
+
+  let filesIngested = 0;
+
+  for (const thread of threads) {
+    let threadOk = true;
+    console.log('Processing Conversion Efficiency thread:', thread.getFirstMessageSubject(), '| msgs:', thread.getMessageCount());
+
+    for (const msg of thread.getMessages()) {
+      const attachments = msg.getAttachments({ includeInlineImages: false });
+
+      for (const att of attachments) {
+        const name = att.getName();
+        if (!name.match(/^Owner_Operator_.*\.pdf$/i)) continue; // only Owner Operator Report PDFs
+
+        try {
+          const response = UrlFetchApp.fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Authorization':   `Bearer ${SUPABASE_ANON_KEY}`,
+              'X-Ingest-Secret': secret,
+              'X-File-Name':     name,
+              'X-Source':        'email',
+              'Content-Type':    'application/pdf',
+            },
+            payload:            att.copyBlob().getBytes(),
+            muteHttpExceptions: true,
+          });
+
+          const code = response.getResponseCode();
+          const body = response.getContentText();
+
+          if (code === 200) {
+            console.log(`✓ Ingested Conversion Efficiency: ${name} → ${body}`);
+            filesIngested++;
+          } else {
+            console.warn(`✗ Failed [${code}]: ${name} → ${body}`);
+            threadOk = false;
+          }
+        } catch (e) {
+          console.error(`✗ Error sending ${name}:`, e.message);
+          threadOk = false;
+        }
+      }
+    }
+
+    if (threadOk) thread.addLabel(label);
+  }
+
+  console.log(`Done. ${filesIngested} Conversion Efficiency file(s) ingested from ${threads.length} thread(s).`);
 }
 
 // ── Main function (runs on hourly trigger) ────────────────────────────────────

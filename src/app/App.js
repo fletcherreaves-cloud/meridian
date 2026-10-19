@@ -1541,6 +1541,45 @@ function App() {
         console.log(`[Meridian] ✓ VOICE Performance: ${totalRows} rows from ${processedIds.length} PDF(s)`);
       }catch(e){console.warn('[Meridian] VOICE Performance ingest failed:',e);}
     })();
+    // ── Auto-ingest Conversion Efficiency Ratio PDFs from Gmail poller ───────
+    // Same shape as the VOICE Performance block above — downloads from Storage, parses with
+    // PDF.js, saves extracted rows to the conversion_efficiency Supabase table.
+    (async()=>{
+      try{
+        if(!supabase) return;
+        const{data:cePending,error:ceErr}=await supabase
+          .from('pending_reports')
+          .select('id,filename,storage_path')
+          .eq('processed',false)
+          .eq('report_type','conversion-efficiency')
+          .order('uploaded_at',{ascending:true})
+          .limit(20);
+        if(ceErr||!cePending?.length) return;
+        console.log(`[Meridian] ${cePending.length} Conversion Efficiency PDF(s) pending`);
+        const {parseConversionEfficiencyPDF}=await import('../parsers/conversion-efficiency.js');
+        let totalRows=0;
+        const processedIds=[];
+        for(const rec of cePending){
+          try{
+            const{data:blob,error:dlErr}=await supabase.storage
+              .from('qsr-reports')
+              .download(rec.storage_path);
+            if(dlErr||!blob){console.warn('[conversion_efficiency] DL failed:',rec.filename);continue;}
+            const arr=await blob.arrayBuffer();
+            const rows=await parseConversionEfficiencyPDF(arr,rec.filename);
+            if(rows.length) totalRows+=rows.length;
+            await saveConversionEfficiency(rows);
+            processedIds.push(rec.id);
+          }catch(e){console.warn('[conversion_efficiency] parse error:',rec.filename,e);}
+        }
+        if(processedIds.length){
+          await supabase.from('pending_reports')
+            .update({processed:true,processed_at:new Date().toISOString()})
+            .in('id',processedIds);
+        }
+        console.log(`[Meridian] ✓ Conversion Efficiency: ${totalRows} rows from ${processedIds.length} PDF(s)`);
+      }catch(e){console.warn('[Meridian] Conversion Efficiency ingest failed:',e);}
+    })();
     // ── Cross-device sync — load manual uploads from other devices ───────────
     // Downloads from the 'reports' Storage bucket via storage_path (uploadReportFile,
     // src/lib/supabase.js, writes there now). Falls back to the legacy base64 file_data
