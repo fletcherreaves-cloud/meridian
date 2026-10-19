@@ -1044,6 +1044,60 @@ export async function loadVoicePerf() {
   return data || [];
 }
 
+// ── Conversion Efficiency Ratio persistence (owner request 2026-10-19) ──────
+// One row per (loc, raw_item, period) — see schema-conversion-efficiency.sql for the full
+// rationale. A re-upload of the same monthly PDF (or a 2nd owner's report that happens to
+// cover an overlapping store/period) upserts cleanly rather than duplicating; keep the
+// most-populated candidate per key, same dedup discipline as saveVoicePerf above.
+const _CE_METRIC_KEYS = [
+  'conv_eff_52wk', 'conv_eff_target', 'excess_cases_annual', 'financial_opportunity_annual',
+  'conv_eff_2025_ye', 'conv_eff_ytd', 'conv_eff_pct_chg', 'financial_impact_ytd',
+];
+const _ceFill = r => _CE_METRIC_KEYS.reduce((n, k) => n + (r[k] != null ? 1 : 0), 0);
+
+export async function saveConversionEfficiency(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.loc || !r.raw_item || !r.period) continue;
+    const loc = String(r.loc);
+    const k = `${loc}|${r.raw_item}|${r.period}`;
+    const cand = {
+      loc, raw_item: r.raw_item, period: r.period,
+      loc_name:   r.loc_name || null,
+      owner_name: r.owner_name || null,
+      conv_eff_52wk:                r.conv_eff_52wk ?? null,
+      conv_eff_target:              r.conv_eff_target ?? null,
+      excess_cases_annual:          r.excess_cases_annual ?? null,
+      financial_opportunity_annual: r.financial_opportunity_annual ?? null,
+      conv_eff_2025_ye:             r.conv_eff_2025_ye ?? null,
+      conv_eff_ytd:                 r.conv_eff_ytd ?? null,
+      conv_eff_pct_chg:             r.conv_eff_pct_chg ?? null,
+      financial_impact_ytd:         r.financial_impact_ytd ?? null,
+      source_file: r.source_file || null,
+    };
+    if (!byKey[k] || _ceFill(cand) > _ceFill(byKey[k])) byKey[k] = cand;
+  }
+  const upsert = Object.values(byKey);
+  if (!upsert.length) return { saved: 0, errors: [] };
+  const { error } = await supabase
+    .from('conversion_efficiency')
+    .upsert(upsert, { onConflict: 'loc,raw_item,period' });
+  if (error) { console.warn('[conversion_efficiency] save error:', error); return { saved: 0, errors: [error.message] }; }
+  console.log(`[conversion_efficiency] saved ${upsert.length} rows`);
+  return { saved: upsert.length, errors: [] };
+}
+
+export async function loadConversionEfficiency() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase
+    .from('conversion_efficiency')
+    .select('*')
+    .order('period', { ascending: false })
+    .range(from, to));
+  return data || [];
+}
+
 // ── SMG VOICE Daypart (Time-of-Day) persistence ──────────────────────────────
 // One row per (period, report_type, loc, daypart) with 8 metric %s. Identity is
 // the store's daypart within a period/window — operator label is irrelevant.

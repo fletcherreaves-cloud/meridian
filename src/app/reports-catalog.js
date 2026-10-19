@@ -102,6 +102,9 @@ const DIRECT_PANELS = [
   // reference table.
   { id: 'fob-reference-table', category: 'Financial & Promotions',
     desc: 'Rolling L3M / L6W / LM / MTD / Projected / Trend for Sales, Comp Sales %, Crew Labor %, TPPH and every FOB component, by store.' },
+  // Owner request 2026-10-19 -- see panel-registry.js's own comment on this id.
+  { id: 'conversion-efficiency', category: 'Financial & Promotions',
+    desc: 'Food usage vs. target by raw item (French Fries, beef, fish, cheese, etc.) and the $ opportunity each one represents, from McDonald’s corporate Owner Operator Reports.' },
 ];
 
 /** Builds the full Reports Hub catalog: direct-launch panel tiles + subscribable report tiles,

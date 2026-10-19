@@ -24,12 +24,37 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const NAME_KEY = 'mf_equip_submitted_by';
 
+// Owner feedback 2026-10-19: replaced with the real zone names used in-store (BDAP Cell/Parallel
+// CBB Cell is the actual McDonald's beverage-build-type term — data/equipment-survey/README.md's
+// Floor Plans section confirms it, not a guess at an acronym).
 const PLACEMENTS = [
   { value: 'front_counter', label: 'Front Counter' },
-  { value: 'kitchen_line', label: 'Kitchen Line' },
   { value: 'drive_thru', label: 'Drive Thru' },
+  { value: 'mccafe_cell', label: 'McCafé Cell' },
+  { value: 'bdap_cell', label: 'BDAP Cell' },
+  { value: 'dessert_cell', label: 'Dessert Cell' },
+  { value: 'production_area', label: 'Production Area (Kitchen)' },
+  { value: 'prep_area', label: 'Prep Area' },
   { value: 'back_of_house', label: 'Back of House' },
 ];
+
+// Owner feedback 2026-10-19: grills need an absolute side (a store's own Side 1/Side 2
+// numbering, which isn't standardized store-to-store); the protein fryer is more often
+// described RELATIVE to the grills ("same side" / "opposite side") than by an absolute side the
+// reporter may not know. Both fields can be set together ("select both criteria if needed for
+// clarity") -- stored as one position_detail jsonb object, never forced into a single choice.
+const SIDE_OPTIONS = [
+  { value: 'side1_right', label: 'Side 1 — Right' },
+  { value: 'side1_left', label: 'Side 1 — Left' },
+  { value: 'side2_right', label: 'Side 2 — Right' },
+  { value: 'side2_left', label: 'Side 2 — Left' },
+];
+const RELATIVE_OPTIONS = [
+  { value: 'same_as_grill', label: 'Same side as grill(s)' },
+  { value: 'opposite_of_grill', label: 'Opposite side of grill(s)' },
+];
+const sideLabel = v => SIDE_OPTIONS.find(o => o.value === v)?.label;
+const relativeLabel = v => RELATIVE_OPTIONS.find(o => o.value === v)?.label;
 
 // ── Shared dark-theme primitives, matching eom-share-view.js's palette ─────────────────────────
 const colors = { bg: '#0f1117', surf: '#171a21', surf2: '#1d222b', bdr: '#262b36', bdr2: '#333a48', text: '#e7ebf3', dim: '#78839a', gold: '#f5bc00', good: '#4ade80', warn: '#fb923c', bad: '#f87171' };
@@ -105,6 +130,8 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
   const [manualManufacturer, setManualManufacturer] = useState(editing?.manualManufacturer || '');
   const [manualModel, setManualModel] = useState(editing?.manualModel || '');
   const [placement, setPlacement] = useState(editing?.placementZone || '');
+  const [side, setSide] = useState(editing?.positionDetail?.side || '');
+  const [relative, setRelative] = useState(editing?.positionDetail?.relative || '');
   const [serial, setSerial] = useState(editing?.serialNumber || '');
   const [certDate, setCertDate] = useState(editing?.certDate || '');
   const [photoUrl, setPhotoUrl] = useState(editing?.photoUrl || null);
@@ -122,6 +149,9 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
   const itemConsumables = useMemo(() => selectedItem ? consumables.filter(cc => cc.catalog_item_id === selectedItem.id) : [], [consumables, selectedItem]);
   const needsSerial = manualMode || (selectedItem && selectedItem.needs_serial);
   const needsCertDate = manualMode || (selectedItem && selectedItem.needs_cert_date);
+  const effectiveType = (manualMode ? manualType : (selectedItem?.type || type || '')).toLowerCase();
+  const showSide = effectiveType.includes('grill') || effectiveType.includes('fryer');
+  const showRelative = effectiveType.includes('fryer');
 
   const onPhoto = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -163,10 +193,11 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
       } else if (!finalCatalogItemId) {
         setErr('Pick a model, or switch to "Not listed."'); setSaving(false); return;
       }
+      const positionDetail = (side || relative) ? { side: side || null, relative: relative || null } : null;
       const entry = {
         loc, instanceId: editing?.instanceId || undefined,
         catalogItemId: finalCatalogItemId, manualEntryText,
-        placementZone: placement || null, serialNumber: serial || null, certDate: certDate || null,
+        placementZone: placement || null, positionDetail, serialNumber: serial || null, certDate: certDate || null,
         action, submittedBy, photoUrl, aiExtraction,
       };
       const r = await submitEquipmentEntry(token, entry);
@@ -203,6 +234,15 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
     label('Placement (optional)'),
     h('select', { style: inputStyle, value: placement, onChange: e => setPlacement(e.target.value) },
       h('option', { value: '' }, '— Select —'), ...PLACEMENTS.map(p => h('option', { key: p.value, value: p.value }, p.label))),
+
+    showSide && div({},
+      label('Side (optional — this store’s own Side 1/Side 2, as your crew knows it)'),
+      h('select', { style: inputStyle, value: side, onChange: e => setSide(e.target.value) },
+        h('option', { value: '' }, '— Select —'), ...SIDE_OPTIONS.map(o => h('option', { key: o.value, value: o.value }, o.label)))),
+    showRelative && div({},
+      label('Relative to the grill(s) (optional)'),
+      h('select', { style: inputStyle, value: relative, onChange: e => setRelative(e.target.value) },
+        h('option', { value: '' }, '— Select —'), ...RELATIVE_OPTIONS.map(o => h('option', { key: o.value, value: o.value }, o.label)))),
 
     div({ style: { marginBottom: '12px' } },
       label('Data plate photo (optional — helps fill in the fields below)'),
@@ -260,7 +300,7 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
       h('button', { onClick: () => { setMode('list'); setEditingEntry(null); }, style: { background: 'none', border: 'none', color: colors.dim, fontSize: '13px', cursor: 'pointer', padding: 0, marginBottom: '14px' } }, '← Back'),
       h(EquipmentForm, {
         token, loc, catalog, consumables, submittedBy,
-        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url } : null,
+        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, positionDetail: editingEntry.position_detail, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url } : null,
         onCancel: () => { setMode('list'); setEditingEntry(null); },
         onSaved: () => { setMode('list'); setEditingEntry(null); reload(); },
       }),
@@ -282,8 +322,13 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
             ...entries.map(e => div({ key: e.instance_id, style: { background: colors.surf, border: `1px solid ${colors.bdr}`, borderRadius: '9px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
               div({},
                 div({ style: { fontWeight: 600, fontSize: '14px' } }, describeEntry(e)),
-                (e.placement_zone || e.serial_number) && div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
-                  [e.placement_zone && PLACEMENTS.find(p => p.value === e.placement_zone)?.label, e.serial_number && `S/N ${e.serial_number}`].filter(Boolean).join(' · '))),
+                (e.placement_zone || e.position_detail?.side || e.position_detail?.relative || e.serial_number) && div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
+                  [
+                    e.placement_zone && PLACEMENTS.find(p => p.value === e.placement_zone)?.label,
+                    e.position_detail?.side && sideLabel(e.position_detail.side),
+                    e.position_detail?.relative && relativeLabel(e.position_detail.relative),
+                    e.serial_number && `S/N ${e.serial_number}`,
+                  ].filter(Boolean).join(' · '))),
               h('button', { onClick: () => setEditingEntry(e), style: { background: 'none', border: `1px solid ${colors.bdr2}`, color: colors.text, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Edit'),
             )))),
   );
