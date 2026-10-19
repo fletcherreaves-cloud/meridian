@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-12T21:25:05.247Z",
-  "nArticles": 208,
+  "generatedAt": "2026-10-19T18:50:40.755Z",
+  "nArticles": 270,
   "taxonomy": {
     "QsrSoft Support for McDonalds": {
       "QSRSoft® Support": [
@@ -539,6 +539,448 @@
           "url": "https://support.qsrsoft.com/hc/en-us/articles/34843618887831-On-Hand-Inventory"
         }
       ],
+      "QSRSoft® Products, Newsletters, Emails & Release Notes": [
+        {
+          "id": 42312607739799,
+          "title": "July 29, 2026 - Campaigns",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42312607739799-July-29-2026-Campaigns"
+        },
+        {
+          "id": 32557625696279,
+          "title": "June 11, 2025 - MyQSRSoft Dashboard",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/32557625696279-June-11-2025-MyQSRSoft-Dashboard"
+        },
+        {
+          "id": 42257783898519,
+          "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory"
+        },
+        {
+          "id": 42296841589015,
+          "title": "July 29, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42296841589015-July-29-2026-Chat"
+        },
+        {
+          "id": 41866692655383,
+          "title": "July 8, 2026 - Purchases",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases"
+        },
+        {
+          "id": 39599589429143,
+          "title": "April 8, 2026 - Food Over Base Enhancements",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements"
+        },
+        {
+          "id": 39262999992727,
+          "title": "March 25, 2026 - MyQSRSoft Inventory",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39262999992727-March-25-2026-MyQSRSoft-Inventory"
+        },
+        {
+          "id": 38608295877143,
+          "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit"
+        },
+        {
+          "id": 38297464701463,
+          "title": "February 11, 2026 - Inventory Analysis Report",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report"
+        },
+        {
+          "id": 42293709812119,
+          "title": "July 29, 2026 - News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42293709812119-July-29-2026-News-Feed"
+        },
+        {
+          "id": 42282829724183,
+          "title": "July 29, 2026 - Training",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42282829724183-July-29-2026-Training"
+        },
+        {
+          "id": 42261903534487,
+          "title": "July 29, 2026 - Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement"
+        },
+        {
+          "id": 42172435805591,
+          "title": "July 29, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42172435805591-July-29-2026-Chat"
+        },
+        {
+          "id": 41783428763415,
+          "title": "July 8, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat"
+        },
+        {
+          "id": 41430313878295,
+          "title": "June 24, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat"
+        },
+        {
+          "id": 41400058484887,
+          "title": "June 24, 2026 - Employee Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41400058484887-June-24-2026-Employee-Engagement"
+        },
+        {
+          "id": 41084746259991,
+          "title": "June 10, 2026 - News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41084746259991-June-10-2026-News-Feed"
+        },
+        {
+          "id": 35633335033367,
+          "title": "October 15, 2025 - CommsHub",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/35633335033367-October-15-2025-CommsHub"
+        },
+        {
+          "id": 39234550790679,
+          "title": "March 25, 2026 - Employee Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement"
+        },
+        {
+          "id": 38606659933847,
+          "title": "February 25, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38606659933847-February-25-2026-Chat"
+        },
+        {
+          "id": 38578312343063,
+          "title": "February 25, 2026 - Resource Library and CoachQ",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38578312343063-February-25-2026-Resource-Library-and-CoachQ"
+        },
+        {
+          "id": 38308392967831,
+          "title": "February 11, 2026 - Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38308392967831-February-11-2026-Rewards"
+        },
+        {
+          "id": 38272036614807,
+          "title": "February 11, 2026 - Chat and CoachQ",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38272036614807-February-11-2026-Chat-and-CoachQ"
+        },
+        {
+          "id": 37969739814167,
+          "title": "January 28, 2026 - Employee Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37969739814167-January-28-2026-Employee-Engagement"
+        },
+        {
+          "id": 37897091450135,
+          "title": "January 28, 2026 - Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37897091450135-January-28-2026-Rewards"
+        },
+        {
+          "id": 37893898677783,
+          "title": "January 28, 2026 - Customer Feedback",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37893898677783-January-28-2026-Customer-Feedback"
+        },
+        {
+          "id": 37611604501527,
+          "title": "January 14, 2026 - Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards"
+        },
+        {
+          "id": 37506803920279,
+          "title": "January 14, 2026 - Employee Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37506803920279-January-14-2026-Employee-Engagement"
+        },
+        {
+          "id": 37043184328471,
+          "title": "December 17, 2025 - Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37043184328471-December-17-2025-Rewards"
+        },
+        {
+          "id": 36719556409367,
+          "title": "December 3, 2025 - Forms 2026",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36719556409367-December-3-2025-Forms-2026"
+        },
+        {
+          "id": 40582814716567,
+          "title": "May 20, 2026 - Employee Engagement: Newsfeed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40582814716567-May-20-2026-Employee-Engagement-Newsfeed"
+        },
+        {
+          "id": 40268148843415,
+          "title": "May 6, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40268148843415-May-6-2026-Chat"
+        },
+        {
+          "id": 39901877034263,
+          "title": "April 22, 2026 - Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39901877034263-April-22-2026-Chat"
+        },
+        {
+          "id": 39890166474775,
+          "title": "April 22, 2026 - News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39890166474775-April-22-2026-News-Feed"
+        },
+        {
+          "id": 39877545966999,
+          "title": "April 22, 2026 - Employee Engagement - Rewards & Payday",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39877545966999-April-22-2026-Employee-Engagement-Rewards-Payday"
+        },
+        {
+          "id": 39572338595863,
+          "title": "April 8, 2026 - Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39572338595863-April-8-2026-Rewards"
+        },
+        {
+          "id": 40221495366551,
+          "title": "May 6, 2026 - Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40221495366551-May-6-2026-Equipment"
+        },
+        {
+          "id": 39548463494679,
+          "title": "April 8, 2026 - Chat Enhancements",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39548463494679-April-8-2026-Chat-Enhancements"
+        },
+        {
+          "id": 39483897320855,
+          "title": "April 8, 2026 - Resource Library & News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39483897320855-April-8-2026-Resource-Library-News-Feed"
+        },
+        {
+          "id": 39240051266967,
+          "title": "March 25, 2026 - News Feed, Chat",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39240051266967-March-25-2026-News-Feed-Chat"
+        },
+        {
+          "id": 43344639124631,
+          "title": "September 9, 2026 - Planned Maintenance Attachments",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43344639124631-September-9-2026-Planned-Maintenance-Attachments"
+        },
+        {
+          "id": 42265356243735,
+          "title": "July 29, 2026 - Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42265356243735-July-29-2026-Equipment"
+        },
+        {
+          "id": 31717200169367,
+          "title": "April 30, 2025 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/31717200169367-April-30-2025-Forms"
+        },
+        {
+          "id": 35626002606871,
+          "title": "October 15, 2025 - Operations Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/35626002606871-October-15-2025-Operations-Equipment"
+        },
+        {
+          "id": 34960501802647,
+          "title": "September 17, 2025 - Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/34960501802647-September-17-2025-Equipment"
+        },
+        {
+          "id": 33642260580375,
+          "title": "July 23, 2025 - Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/33642260580375-July-23-2025-Equipment"
+        },
+        {
+          "id": 30764121026327,
+          "title": "March 19, 2025 - Equipment",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/30764121026327-March-19-2025-Equipment"
+        },
+        {
+          "id": 44045628331415,
+          "title": "October 7, 2026 - CommsHub Campaigns",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/44045628331415-October-7-2026-CommsHub-Campaigns"
+        },
+        {
+          "id": 42636157789079,
+          "title": "August 12, 2026 - CommsHub Permissions",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42636157789079-August-12-2026-CommsHub-Permissions"
+        },
+        {
+          "id": 44037553957783,
+          "title": "October 7, 2026 - CommsHub Surveys",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/44037553957783-October-7-2026-CommsHub-Surveys"
+        },
+        {
+          "id": 43656787442711,
+          "title": "September 23, 2026 - CommsHub News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43656787442711-September-23-2026-CommsHub-News-Feed"
+        },
+        {
+          "id": 43339343033623,
+          "title": "September 9, 2026 - Approval Notifications",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43339343033623-September-9-2026-Approval-Notifications"
+        },
+        {
+          "id": 43335384986775,
+          "title": "September 9, 2026 - Survey Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43335384986775-September-9-2026-Survey-Reports"
+        },
+        {
+          "id": 43333691276695,
+          "title": "September 9, 2026 - QSRSoft TV",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43333691276695-September-9-2026-QSRSoft-TV"
+        },
+        {
+          "id": 42645874675735,
+          "title": "August 12, 2026 - CommsHub - News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42645874675735-August-12-2026-CommsHub-News-Feed"
+        },
+        {
+          "id": 41089183063575,
+          "title": "June 10, 2026 - CommsHub",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41089183063575-June-10-2026-CommsHub"
+        },
+        {
+          "id": 39554821112727,
+          "title": "April 8, 2026 - CommsHub - Resource Library and News Feed",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39554821112727-April-8-2026-CommsHub-Resource-Library-and-News-Feed"
+        },
+        {
+          "id": 38298560173207,
+          "title": "February 11, 2026 - CommsHub Enhancements",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements"
+        },
+        {
+          "id": 37506495174935,
+          "title": "January 14, 2026 - CommsHub",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37506495174935-January-14-2026-CommsHub"
+        },
+        {
+          "id": 37042163506839,
+          "title": "December 17, 2025 - CommsHub",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37042163506839-December-17-2025-CommsHub"
+        },
+        {
+          "id": 36265690617879,
+          "title": "November 12, 2025 - CommsHub Surveys",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36265690617879-November-12-2025-CommsHub-Surveys"
+        },
+        {
+          "id": 44014782229655,
+          "title": "October 7, 2026 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/44014782229655-October-7-2026-Forms"
+        },
+        {
+          "id": 41778175751959,
+          "title": "July 8, 2026 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41778175751959-July-8-2026-Forms"
+        },
+        {
+          "id": 41055953516311,
+          "title": "June 10, 2026 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41055953516311-June-10-2026-Forms"
+        },
+        {
+          "id": 39243027332887,
+          "title": "March 25, 2026 - QSRSoft Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39243027332887-March-25-2026-QSRSoft-Forms"
+        },
+        {
+          "id": 38508871182359,
+          "title": "February 25, 2026 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38508871182359-February-25-2026-Forms"
+        },
+        {
+          "id": 38274964243479,
+          "title": "February 11, 2026 - Forms",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38274964243479-February-11-2026-Forms"
+        },
+        {
+          "id": 43676418271895,
+          "title": "September 23, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/43676418271895-September-23-2026-Reports"
+        },
+        {
+          "id": 42954818470423,
+          "title": "August 26, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42954818470423-August-26-2026-Reports"
+        },
+        {
+          "id": 42552925541015,
+          "title": "August 12, 2026 - Reports Calendar / Date Picker",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42552925541015-August-12-2026-Reports-Calendar-Date-Picker"
+        },
+        {
+          "id": 42284060339863,
+          "title": "July 29, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/42284060339863-July-29-2026-Reports"
+        },
+        {
+          "id": 41790219129623,
+          "title": "July 8, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41790219129623-July-8-2026-Reports"
+        },
+        {
+          "id": 41430137556759,
+          "title": "June 24, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/41430137556759-June-24-2026-Reports"
+        },
+        {
+          "id": 40564316283415,
+          "title": "May 20, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40564316283415-May-20-2026-Reports"
+        },
+        {
+          "id": 40247655050135,
+          "title": "May 6, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40247655050135-May-6-2026-Reports"
+        },
+        {
+          "id": 39501482456215,
+          "title": "April 8, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports"
+        },
+        {
+          "id": 38934890192791,
+          "title": "March 11, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports"
+        },
+        {
+          "id": 38610415370263,
+          "title": "February 25, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports"
+        },
+        {
+          "id": 38282741669271,
+          "title": "February 11, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/38282741669271-February-11-2026-Reports"
+        },
+        {
+          "id": 37885421679383,
+          "title": "January 28, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37885421679383-January-28-2026-Reports"
+        },
+        {
+          "id": 37564944308247,
+          "title": "January 14, 2026 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37564944308247-January-14-2026-Reports"
+        },
+        {
+          "id": 36727970081047,
+          "title": "December 3, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36727970081047-December-3-2025-Reports"
+        },
+        {
+          "id": 36230738589591,
+          "title": "November 12, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36230738589591-November-12-2025-Reports"
+        },
+        {
+          "id": 35909167089431,
+          "title": "October 29, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/35909167089431-October-29-2025-Reports"
+        },
+        {
+          "id": 34639199871639,
+          "title": "September 3, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/34639199871639-September-3-2025-Reports"
+        },
+        {
+          "id": 34268329394839,
+          "title": "August 20, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/34268329394839-August-20-2025-Reports"
+        },
+        {
+          "id": 33968788088087,
+          "title": "August 6, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports"
+        },
+        {
+          "id": 33643417806871,
+          "title": "July 23, 2025 - Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/33643417806871-July-23-2025-Reports"
+        }
+      ],
       "QSRSoft® Equipment - Digital Planned Maintenance": [
         {
           "id": 11156269601431,
@@ -595,44 +1037,17 @@
           "url": "https://support.qsrsoft.com/hc/en-us/articles/35044632182679-Agency-Menu-Items"
         }
       ],
-      "QSRSoft® TV": [
-        {
-          "id": 19595421608215,
-          "title": "Amazon App Store - Enable Remote Management",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/19595421608215-Amazon-App-Store-Enable-Remote-Management"
-        },
-        {
-          "id": 4572278896023,
-          "title": "Amazon - Check the Fire Stick Internet Connection",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/4572278896023-Amazon-Check-the-Fire-Stick-Internet-Connection"
-        },
-        {
-          "id": 10067921586967,
-          "title": "Amazon - Delete the QSRSoft TV App From My Fire Stick",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/10067921586967-Amazon-Delete-the-QSRSoft-TV-App-From-My-Fire-Stick"
-        },
-        {
-          "id": 9942399687831,
-          "title": "Amazon App Store - How Do I Install/Update my QSRSoft TV app?",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/9942399687831-Amazon-App-Store-How-Do-I-Install-Update-my-QSRSoft-TV-app"
-        },
-        {
-          "id": 13928237018519,
-          "title": "Amazon - Ensure My Fire Stick is Running the Latest Amazon Update",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/13928237018519-Amazon-Ensure-My-Fire-Stick-is-Running-the-Latest-Amazon-Update"
-        },
-        {
-          "id": 19854781723159,
-          "title": "Amazon - Upgrade To The Current Version of the QSRSoft TV app",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/19854781723159-Amazon-Upgrade-To-The-Current-Version-of-the-QSRSoft-TV-app"
-        },
-        {
-          "id": 21568334647703,
-          "title": "How Do I Fix - Black screen with the error “No deck found for location id: xxxxx”?",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/21568334647703-How-Do-I-Fix-Black-screen-with-the-error-No-deck-found-for-location-id-xxxxx"
-        }
-      ],
       "QSRSoft® Academy": [
+        {
+          "id": 4404621574935,
+          "title": "Video - How To Use Recognition",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4404621574935-Video-How-To-Use-Recognition"
+        },
+        {
+          "id": 4404621144087,
+          "title": "Video - How To Use Slide Management",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4404621144087-Video-How-To-Use-Slide-Management"
+        },
         {
           "id": 360009695173,
           "title": "Video - Introduction to QSRSoft Cash & Inventory",
@@ -659,6 +1074,46 @@
           "url": "https://support.qsrsoft.com/hc/en-us/articles/360009122194-Video-Skims"
         },
         {
+          "id": 18862043335575,
+          "title": "QSRSoft TV - Demo Displaying Schedules",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/18862043335575-QSRSoft-TV-Demo-Displaying-Schedules"
+        },
+        {
+          "id": 40163018785815,
+          "title": "Video - How To Use Base Food Analysis",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/40163018785815-Video-How-To-Use-Base-Food-Analysis"
+        },
+        {
+          "id": 37887743313175,
+          "title": "CommsHub (BUs and Other) for Communication and Engagement",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/37887743313175-CommsHub-BUs-and-Other-for-Communication-and-Engagement"
+        },
+        {
+          "id": 20046296308631,
+          "title": "Video - Business Unit Analytics for Organizations",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/20046296308631-Video-Business-Unit-Analytics-for-Organizations"
+        },
+        {
+          "id": 4402199184407,
+          "title": "Video - Reports - Intro to the Main Dashboard and Digital Dashboard",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4402199184407-Video-Reports-Intro-to-the-Main-Dashboard-and-Digital-Dashboard"
+        },
+        {
+          "id": 360058974854,
+          "title": "Video - Reports - Main Dashboard Containers",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/360058974854-Video-Reports-Main-Dashboard-Containers"
+        },
+        {
+          "id": 1500000486361,
+          "title": "Video - Reports - Intro To Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/1500000486361-Video-Reports-Intro-To-Reports"
+        },
+        {
+          "id": 8747520771095,
+          "title": "Videos - Reconstruct Business Day (RBD)",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD"
+        },
+        {
           "id": 360009252933,
           "title": "Videos - Drawer Counts",
           "url": "https://support.qsrsoft.com/hc/en-us/articles/360009252933-Videos-Drawer-Counts"
@@ -672,11 +1127,6 @@
           "id": 4406311053591,
           "title": "Videos - Cash Sheet",
           "url": "https://support.qsrsoft.com/hc/en-us/articles/4406311053591-Videos-Cash-Sheet"
-        },
-        {
-          "id": 8747520771095,
-          "title": "Videos - Reconstruct Business Day (RBD)",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD"
         },
         {
           "id": 360009123454,
@@ -757,318 +1207,178 @@
           "id": 31615039267607,
           "title": "Video - NFLA Food Cost Presentation April 2025",
           "url": "https://support.qsrsoft.com/hc/en-us/articles/31615039267607-Video-NFLA-Food-Cost-Presentation-April-2025"
+        },
+        {
+          "id": 5668692498967,
+          "title": "Video - How To Use The Mobile Inventory App for Waste",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/5668692498967-Video-How-To-Use-The-Mobile-Inventory-App-for-Waste"
+        },
+        {
+          "id": 360050588693,
+          "title": "Webinars",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/360050588693-Webinars"
+        },
+        {
+          "id": 360049786114,
+          "title": "Video - Mobile Inventory App Features Video",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/360049786114-Video-Mobile-Inventory-App-Features-Video"
+        },
+        {
+          "id": 360042980373,
+          "title": "Video - Overview Of The Mobile Inventory App Video",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980373-Video-Overview-Of-The-Mobile-Inventory-App-Video"
+        },
+        {
+          "id": 1500008522982,
+          "title": "Video - How To Use The Menu and Settings",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008522982-Video-How-To-Use-The-Menu-and-Settings"
+        },
+        {
+          "id": 1500008537681,
+          "title": "Video - How To Set Up and Manage Locations",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008537681-Video-How-To-Set-Up-and-Manage-Locations"
+        },
+        {
+          "id": 360042980733,
+          "title": "Videos - How To Use The Mobile Inventory App For Taking Inventory",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980733-Videos-How-To-Use-The-Mobile-Inventory-App-For-Taking-Inventory"
+        },
+        {
+          "id": 4415215953431,
+          "title": "Video - How To Use The Mobile Inventory App For Transfers",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4415215953431-Video-How-To-Use-The-Mobile-Inventory-App-For-Transfers"
+        },
+        {
+          "id": 5097712465047,
+          "title": "Video - How To Use The Mobile Inventory App Analysis Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/5097712465047-Video-How-To-Use-The-Mobile-Inventory-App-Analysis-Reports"
+        },
+        {
+          "id": 26900286117911,
+          "title": "Video - Rewards - Create Ad Hoc Rewards",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/26900286117911-Video-Rewards-Create-Ad-Hoc-Rewards"
+        },
+        {
+          "id": 31259909054615,
+          "title": "Video - Using Chat To Share Reports",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/31259909054615-Video-Using-Chat-To-Share-Reports"
+        },
+        {
+          "id": 36302937788695,
+          "title": "Video - Shift Managers - Forms, Tasks and Scorecard on the SMDB",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36302937788695-Video-Shift-Managers-Forms-Tasks-and-Scorecard-on-the-SMDB"
+        },
+        {
+          "id": 36304260753943,
+          "title": "Video - General Managers - SMDB",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36304260753943-Video-General-Managers-SMDB"
+        },
+        {
+          "id": 36921598982423,
+          "title": "Video - Above Store Users - Forms Completion Report - Part 1",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36921598982423-Video-Above-Store-Users-Forms-Completion-Report-Part-1"
+        },
+        {
+          "id": 36923701370647,
+          "title": "Video - Above Store Users - Forms Completion Report - Part 2",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36923701370647-Video-Above-Store-Users-Forms-Completion-Report-Part-2"
+        },
+        {
+          "id": 36925316504471,
+          "title": "Video - Above Store Users - Forms Completion Report - Part 3",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/36925316504471-Video-Above-Store-Users-Forms-Completion-Report-Part-3"
+        },
+        {
+          "id": 4403457165847,
+          "title": "Video - QSRSoft TV - Feature Overview",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4403457165847-Video-QSRSoft-TV-Feature-Overview"
+        },
+        {
+          "id": 4402523432599,
+          "title": "Video - QSRSoft TV - Introduction Demo",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4402523432599-Video-QSRSoft-TV-Introduction-Demo"
+        },
+        {
+          "id": 4668613267607,
+          "title": "Video - How To Use Settings",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4668613267607-Video-How-To-Use-Settings"
+        },
+        {
+          "id": 4404781087511,
+          "title": "Video - How To Use Reminders",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4404781087511-Video-How-To-Use-Reminders"
+        },
+        {
+          "id": 18231872305943,
+          "title": "QSRSoft TV Features October 5th, 2023 Webinar",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/18231872305943-QSRSoft-TV-Features-October-5th-2023-Webinar"
+        },
+        {
+          "id": 5622890307351,
+          "title": "QSRSoft TV - Recorded Webinar",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/5622890307351-QSRSoft-TV-Recorded-Webinar"
+        },
+        {
+          "id": 5622625663383,
+          "title": "QSRSoft TV Demo - Adding Video To Slides",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/5622625663383-QSRSoft-TV-Demo-Adding-Video-To-Slides"
+        },
+        {
+          "id": 4403122062871,
+          "title": "QSRSoft TV Webinar - Q&A",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A"
+        },
+        {
+          "id": 33539160957079,
+          "title": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick"
+        },
+        {
+          "id": 21491902586007,
+          "title": "Video - Intro To Digital Hero KPIs on the MyQSRSoft Dashboard",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/21491902586007-Video-Intro-To-Digital-Hero-KPIs-on-the-MyQSRSoft-Dashboard"
+        },
+        {
+          "id": 21350965650583,
+          "title": "Video - Business Unit Analytics for Orgs - Intro and Demo Meeting",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/21350965650583-Video-Business-Unit-Analytics-for-Orgs-Intro-and-Demo-Meeting"
         }
       ],
-      "QSRSoft® Products, Newsletters, Emails & Release Notes": [
+      "QSRSoft® TV": [
         {
-          "id": 32557625696279,
-          "title": "June 11, 2025 - MyQSRSoft Dashboard",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/32557625696279-June-11-2025-MyQSRSoft-Dashboard"
+          "id": 19595421608215,
+          "title": "Amazon App Store - Enable Remote Management",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/19595421608215-Amazon-App-Store-Enable-Remote-Management"
         },
         {
-          "id": 42257783898519,
-          "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory"
+          "id": 4572278896023,
+          "title": "Amazon - Check the Fire Stick Internet Connection",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/4572278896023-Amazon-Check-the-Fire-Stick-Internet-Connection"
         },
         {
-          "id": 42296841589015,
-          "title": "July 29, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42296841589015-July-29-2026-Chat"
+          "id": 10067921586967,
+          "title": "Amazon - Delete the QSRSoft TV App From My Fire Stick",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/10067921586967-Amazon-Delete-the-QSRSoft-TV-App-From-My-Fire-Stick"
         },
         {
-          "id": 41866692655383,
-          "title": "July 8, 2026 - Purchases",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases"
+          "id": 9942399687831,
+          "title": "Amazon App Store - How Do I Install/Update my QSRSoft TV app?",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/9942399687831-Amazon-App-Store-How-Do-I-Install-Update-my-QSRSoft-TV-app"
         },
         {
-          "id": 39599589429143,
-          "title": "April 8, 2026 - Food Over Base Enhancements",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements"
+          "id": 13928237018519,
+          "title": "Amazon - Ensure My Fire Stick is Running the Latest Amazon Update",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/13928237018519-Amazon-Ensure-My-Fire-Stick-is-Running-the-Latest-Amazon-Update"
         },
         {
-          "id": 39262999992727,
-          "title": "March 25, 2026 - MyQSRSoft Inventory",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39262999992727-March-25-2026-MyQSRSoft-Inventory"
+          "id": 19854781723159,
+          "title": "Amazon - Upgrade To The Current Version of the QSRSoft TV app",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/19854781723159-Amazon-Upgrade-To-The-Current-Version-of-the-QSRSoft-TV-app"
         },
         {
-          "id": 38608295877143,
-          "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit"
-        },
-        {
-          "id": 38297464701463,
-          "title": "February 11, 2026 - Inventory Analysis Report",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report"
-        },
-        {
-          "id": 38298560173207,
-          "title": "February 11, 2026 - CommsHub Enhancements",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements"
-        },
-        {
-          "id": 42293709812119,
-          "title": "July 29, 2026 - News Feed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42293709812119-July-29-2026-News-Feed"
-        },
-        {
-          "id": 42282829724183,
-          "title": "July 29, 2026 - Training",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42282829724183-July-29-2026-Training"
-        },
-        {
-          "id": 42261903534487,
-          "title": "July 29, 2026 - Engagement",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement"
-        },
-        {
-          "id": 42172435805591,
-          "title": "July 29, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42172435805591-July-29-2026-Chat"
-        },
-        {
-          "id": 41783428763415,
-          "title": "July 8, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat"
-        },
-        {
-          "id": 41430313878295,
-          "title": "June 24, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat"
-        },
-        {
-          "id": 41400058484887,
-          "title": "June 24, 2026 - Employee Engagement",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41400058484887-June-24-2026-Employee-Engagement"
-        },
-        {
-          "id": 41084746259991,
-          "title": "June 10, 2026 - News Feed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41084746259991-June-10-2026-News-Feed"
-        },
-        {
-          "id": 40582814716567,
-          "title": "May 20, 2026 - Employee Engagement: Newsfeed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/40582814716567-May-20-2026-Employee-Engagement-Newsfeed"
-        },
-        {
-          "id": 40268148843415,
-          "title": "May 6, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/40268148843415-May-6-2026-Chat"
-        },
-        {
-          "id": 39901877034263,
-          "title": "April 22, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39901877034263-April-22-2026-Chat"
-        },
-        {
-          "id": 39890166474775,
-          "title": "April 22, 2026 - News Feed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39890166474775-April-22-2026-News-Feed"
-        },
-        {
-          "id": 39877545966999,
-          "title": "April 22, 2026 - Employee Engagement - Rewards & Payday",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39877545966999-April-22-2026-Employee-Engagement-Rewards-Payday"
-        },
-        {
-          "id": 39572338595863,
-          "title": "April 8, 2026 - Rewards",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39572338595863-April-8-2026-Rewards"
-        },
-        {
-          "id": 39548463494679,
-          "title": "April 8, 2026 - Chat Enhancements",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39548463494679-April-8-2026-Chat-Enhancements"
-        },
-        {
-          "id": 39483897320855,
-          "title": "April 8, 2026 - Resource Library & News Feed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39483897320855-April-8-2026-Resource-Library-News-Feed"
-        },
-        {
-          "id": 39240051266967,
-          "title": "March 25, 2026 - News Feed, Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39240051266967-March-25-2026-News-Feed-Chat"
-        },
-        {
-          "id": 39234550790679,
-          "title": "March 25, 2026 - Employee Engagement",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement"
-        },
-        {
-          "id": 38606659933847,
-          "title": "February 25, 2026 - Chat",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38606659933847-February-25-2026-Chat"
-        },
-        {
-          "id": 38578312343063,
-          "title": "February 25, 2026 - Resource Library and CoachQ",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38578312343063-February-25-2026-Resource-Library-and-CoachQ"
-        },
-        {
-          "id": 38308392967831,
-          "title": "February 11, 2026 - Rewards",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38308392967831-February-11-2026-Rewards"
-        },
-        {
-          "id": 38272036614807,
-          "title": "February 11, 2026 - Chat and CoachQ",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38272036614807-February-11-2026-Chat-and-CoachQ"
-        },
-        {
-          "id": 37969739814167,
-          "title": "January 28, 2026 - Employee Engagement",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37969739814167-January-28-2026-Employee-Engagement"
-        },
-        {
-          "id": 37897091450135,
-          "title": "January 28, 2026 - Rewards",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37897091450135-January-28-2026-Rewards"
-        },
-        {
-          "id": 37893898677783,
-          "title": "January 28, 2026 - Customer Feedback",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37893898677783-January-28-2026-Customer-Feedback"
-        },
-        {
-          "id": 37611604501527,
-          "title": "January 14, 2026 - Rewards",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards"
-        },
-        {
-          "id": 37506803920279,
-          "title": "January 14, 2026 - Employee Engagement",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37506803920279-January-14-2026-Employee-Engagement"
-        },
-        {
-          "id": 37043184328471,
-          "title": "December 17, 2025 - Rewards",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37043184328471-December-17-2025-Rewards"
-        },
-        {
-          "id": 36719556409367,
-          "title": "December 3, 2025 - Forms 2026",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/36719556409367-December-3-2025-Forms-2026"
-        },
-        {
-          "id": 42265356243735,
-          "title": "July 29, 2026 - Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42265356243735-July-29-2026-Equipment"
-        },
-        {
-          "id": 40221495366551,
-          "title": "May 6, 2026 - Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/40221495366551-May-6-2026-Equipment"
-        },
-        {
-          "id": 35626002606871,
-          "title": "October 15, 2025 - Operations Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/35626002606871-October-15-2025-Operations-Equipment"
-        },
-        {
-          "id": 39243027332887,
-          "title": "March 25, 2026 - QSRSoft Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39243027332887-March-25-2026-QSRSoft-Forms"
-        },
-        {
-          "id": 34960501802647,
-          "title": "September 17, 2025 - Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/34960501802647-September-17-2025-Equipment"
-        },
-        {
-          "id": 33642260580375,
-          "title": "July 23, 2025 - Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/33642260580375-July-23-2025-Equipment"
-        },
-        {
-          "id": 30764121026327,
-          "title": "March 19, 2025 - Equipment",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/30764121026327-March-19-2025-Equipment"
-        },
-        {
-          "id": 42312607739799,
-          "title": "July 29, 2026 - Campaigns",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42312607739799-July-29-2026-Campaigns"
-        },
-        {
-          "id": 41089183063575,
-          "title": "June 10, 2026 - CommsHub",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41089183063575-June-10-2026-CommsHub"
-        },
-        {
-          "id": 39554821112727,
-          "title": "April 8, 2026 - CommsHub - Resource Library and News Feed",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/39554821112727-April-8-2026-CommsHub-Resource-Library-and-News-Feed"
-        },
-        {
-          "id": 37506495174935,
-          "title": "January 14, 2026 - CommsHub",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37506495174935-January-14-2026-CommsHub"
-        },
-        {
-          "id": 37042163506839,
-          "title": "December 17, 2025 - CommsHub",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/37042163506839-December-17-2025-CommsHub"
-        },
-        {
-          "id": 36265690617879,
-          "title": "November 12, 2025 - CommsHub Surveys",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/36265690617879-November-12-2025-CommsHub-Surveys"
-        },
-        {
-          "id": 35633335033367,
-          "title": "October 15, 2025 - CommsHub",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/35633335033367-October-15-2025-CommsHub"
-        },
-        {
-          "id": 41778175751959,
-          "title": "July 8, 2026 - Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41778175751959-July-8-2026-Forms"
-        },
-        {
-          "id": 41055953516311,
-          "title": "June 10, 2026 - Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41055953516311-June-10-2026-Forms"
-        },
-        {
-          "id": 38508871182359,
-          "title": "February 25, 2026 - Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38508871182359-February-25-2026-Forms"
-        },
-        {
-          "id": 38274964243479,
-          "title": "February 11, 2026 - Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/38274964243479-February-11-2026-Forms"
-        },
-        {
-          "id": 31717200169367,
-          "title": "April 30, 2025 - Forms",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/31717200169367-April-30-2025-Forms"
-        },
-        {
-          "id": 42284060339863,
-          "title": "July 29, 2026 - Reports",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/42284060339863-July-29-2026-Reports"
-        },
-        {
-          "id": 41790219129623,
-          "title": "July 8, 2026 - Reports",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41790219129623-July-8-2026-Reports"
-        },
-        {
-          "id": 41430137556759,
-          "title": "June 24, 2026 - Reports",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/41430137556759-June-24-2026-Reports"
-        },
-        {
-          "id": 40564316283415,
-          "title": "May 20, 2026 - Reports",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/40564316283415-May-20-2026-Reports"
-        },
-        {
-          "id": 40247655050135,
-          "title": "May 6, 2026 - Reports",
-          "url": "https://support.qsrsoft.com/hc/en-us/articles/40247655050135-May-6-2026-Reports"
+          "id": 21568334647703,
+          "title": "How Do I Fix - Black screen with the error “No deck found for location id: xxxxx”?",
+          "url": "https://support.qsrsoft.com/hc/en-us/articles/21568334647703-How-Do-I-Fix-Black-screen-with-the-error-No-deck-found-for-location-id-xxxxx"
         }
       ]
     }
@@ -1090,17 +1400,17 @@
         "score": 6
       },
       {
-        "id": 360015955414,
-        "title": "Video - Food Over Base",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/360015955414-Video-Food-Over-Base",
-        "score": 6
-      },
-      {
         "id": 39599589429143,
         "title": "April 8, 2026 - Food Over Base Enhancements",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements",
+        "score": 6
+      },
+      {
+        "id": 360015955414,
+        "title": "Video - Food Over Base",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360015955414-Video-Food-Over-Base",
         "score": 6
       },
       {
@@ -1115,6 +1425,13 @@
         "title": "Video - Promotions and Waste",
         "section": "QSRSoft® Academy",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/360009125254-Video-Promotions-and-Waste",
+        "score": 5
+      },
+      {
+        "id": 5668692498967,
+        "title": "Video - How To Use The Mobile Inventory App for Waste",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5668692498967-Video-How-To-Use-The-Mobile-Inventory-App-for-Waste",
         "score": 5
       },
       {
@@ -1202,6 +1519,13 @@
         "score": 3
       },
       {
+        "id": 38610415370263,
+        "title": "February 25, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
+        "score": 3
+      },
+      {
         "id": 40133550918679,
         "title": "CoachQ Quick Start Guide",
         "section": "MyQSRSoft Premium",
@@ -1241,6 +1565,13 @@
         "title": "Videos - The Inventory Analysis Report",
         "section": "QSRSoft® Academy",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/360047801993-Videos-The-Inventory-Analysis-Report",
+        "score": 2
+      },
+      {
+        "id": 38934890192791,
+        "title": "March 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports",
         "score": 2
       },
       {
@@ -1589,10 +1920,10 @@
         "score": 1
       },
       {
-        "id": 8747520771095,
-        "title": "Videos - Reconstruct Business Day (RBD)",
+        "id": 18862043335575,
+        "title": "QSRSoft TV - Demo Displaying Schedules",
         "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/18862043335575-QSRSoft-TV-Demo-Displaying-Schedules",
         "score": 1
       },
       {
@@ -1610,10 +1941,73 @@
         "score": 1
       },
       {
+        "id": 8747520771095,
+        "title": "Videos - Reconstruct Business Day (RBD)",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
+        "score": 1
+      },
+      {
+        "id": 360042980733,
+        "title": "Videos - How To Use The Mobile Inventory App For Taking Inventory",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980733-Videos-How-To-Use-The-Mobile-Inventory-App-For-Taking-Inventory",
+        "score": 1
+      },
+      {
+        "id": 18231872305943,
+        "title": "QSRSoft TV Features October 5th, 2023 Webinar",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/18231872305943-QSRSoft-TV-Features-October-5th-2023-Webinar",
+        "score": 1
+      },
+      {
+        "id": 5622890307351,
+        "title": "QSRSoft TV - Recorded Webinar",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5622890307351-QSRSoft-TV-Recorded-Webinar",
+        "score": 1
+      },
+      {
+        "id": 5622625663383,
+        "title": "QSRSoft TV Demo - Adding Video To Slides",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5622625663383-QSRSoft-TV-Demo-Adding-Video-To-Slides",
+        "score": 1
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
+        "score": 1
+      },
+      {
+        "id": 33539160957079,
+        "title": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick",
+        "score": 1
+      },
+      {
         "id": 38274964243479,
         "title": "February 11, 2026 - Forms",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/38274964243479-February-11-2026-Forms",
+        "score": 1
+      },
+      {
+        "id": 38282741669271,
+        "title": "February 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38282741669271-February-11-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 37564944308247,
+        "title": "January 14, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37564944308247-January-14-2026-Reports",
         "score": 1
       }
     ],
@@ -1707,6 +2101,13 @@
         "title": "What is a Department Head's Daily Routine",
         "section": "MyQSRSoft",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/9987467326743-What-is-a-Department-Head-s-Daily-Routine",
+        "score": 1
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
         "score": 1
       }
     ],
@@ -1999,6 +2400,13 @@
         "score": 1
       },
       {
+        "id": 4402199184407,
+        "title": "Video - Reports - Intro to the Main Dashboard and Digital Dashboard",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4402199184407-Video-Reports-Intro-to-the-Main-Dashboard-and-Digital-Dashboard",
+        "score": 1
+      },
+      {
         "id": 39877545966999,
         "title": "April 22, 2026 - Employee Engagement - Rewards & Payday",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
@@ -2006,17 +2414,17 @@
         "score": 1
       },
       {
-        "id": 42265356243735,
-        "title": "July 29, 2026 - Equipment",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/42265356243735-July-29-2026-Equipment",
-        "score": 1
-      },
-      {
         "id": 40221495366551,
         "title": "May 6, 2026 - Equipment",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/40221495366551-May-6-2026-Equipment",
+        "score": 1
+      },
+      {
+        "id": 42265356243735,
+        "title": "July 29, 2026 - Equipment",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42265356243735-July-29-2026-Equipment",
         "score": 1
       },
       {
@@ -2045,6 +2453,34 @@
         "title": "March 19, 2025 - Equipment",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/30764121026327-March-19-2025-Equipment",
+        "score": 1
+      },
+      {
+        "id": 39501482456215,
+        "title": "April 8, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 38610415370263,
+        "title": "February 25, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 37885421679383,
+        "title": "January 28, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37885421679383-January-28-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 33968788088087,
+        "title": "August 6, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports",
         "score": 1
       }
     ],
@@ -2120,6 +2556,20 @@
         "score": 3
       },
       {
+        "id": 4402199184407,
+        "title": "Video - Reports - Intro to the Main Dashboard and Digital Dashboard",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4402199184407-Video-Reports-Intro-to-the-Main-Dashboard-and-Digital-Dashboard",
+        "score": 3
+      },
+      {
+        "id": 21491902586007,
+        "title": "Video - Intro To Digital Hero KPIs on the MyQSRSoft Dashboard",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/21491902586007-Video-Intro-To-Digital-Hero-KPIs-on-the-MyQSRSoft-Dashboard",
+        "score": 3
+      },
+      {
         "id": 42284060339863,
         "title": "July 29, 2026 - Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
@@ -2159,6 +2609,13 @@
         "title": "Settings",
         "section": "MyQSRSoft",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/30259376059031-Settings",
+        "score": 2
+      },
+      {
+        "id": 43676418271895,
+        "title": "September 23, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43676418271895-September-23-2026-Reports",
         "score": 2
       },
       {
@@ -2244,6 +2701,13 @@
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards",
         "score": 1
+      },
+      {
+        "id": 44037553957783,
+        "title": "October 7, 2026 - CommsHub Surveys",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/44037553957783-October-7-2026-CommsHub-Surveys",
+        "score": 1
       }
     ],
     "Labor / VLH": [
@@ -2280,6 +2744,20 @@
         "title": "🎉 CoachQ Major Upgrade!",
         "section": "MyQSRSoft Premium",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/39779793526295--CoachQ-Major-Upgrade",
+        "score": 3
+      },
+      {
+        "id": 42954818470423,
+        "title": "August 26, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42954818470423-August-26-2026-Reports",
+        "score": 3
+      },
+      {
+        "id": 33968788088087,
+        "title": "August 6, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports",
         "score": 3
       },
       {
@@ -2584,6 +3062,20 @@
         "score": 1
       },
       {
+        "id": 39234550790679,
+        "title": "March 25, 2026 - Employee Engagement",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement",
+        "score": 1
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
+        "score": 1
+      },
+      {
         "id": 39877545966999,
         "title": "April 22, 2026 - Employee Engagement - Rewards & Payday",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
@@ -2598,10 +3090,17 @@
         "score": 1
       },
       {
-        "id": 39234550790679,
-        "title": "March 25, 2026 - Employee Engagement",
+        "id": 44014782229655,
+        "title": "October 7, 2026 - Forms",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/44014782229655-October-7-2026-Forms",
+        "score": 1
+      },
+      {
+        "id": 34268329394839,
+        "title": "August 20, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/34268329394839-August-20-2025-Reports",
         "score": 1
       }
     ],
@@ -2646,6 +3145,13 @@
         "title": "Food Over Base",
         "section": "MyQSRSoft Inventory",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/35675980638487-Food-Over-Base",
+        "score": 4
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
         "score": 4
       },
       {
@@ -2747,6 +3253,13 @@
         "score": 3
       },
       {
+        "id": 42257783898519,
+        "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory",
+        "score": 3
+      },
+      {
         "id": 360009252933,
         "title": "Videos - Drawer Counts",
         "section": "QSRSoft® Academy",
@@ -2765,13 +3278,6 @@
         "title": "Video - Promotions and Waste",
         "section": "QSRSoft® Academy",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/360009125254-Video-Promotions-and-Waste",
-        "score": 3
-      },
-      {
-        "id": 42257783898519,
-        "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory",
         "score": 3
       },
       {
@@ -2842,6 +3348,13 @@
         "title": "Digital/Mobile App Reporting in QSRSoft® Reports",
         "section": "QSRSoft® Reports",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/4404871192855-Digital-Mobile-App-Reporting-in-QSRSoft-Reports",
+        "score": 2
+      },
+      {
+        "id": 38610415370263,
+        "title": "February 25, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
         "score": 2
       },
       {
@@ -2964,6 +3477,20 @@
         "score": 1
       },
       {
+        "id": 38608295877143,
+        "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit",
+        "score": 1
+      },
+      {
+        "id": 41430313878295,
+        "title": "June 24, 2026 - Chat",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat",
+        "score": 1
+      },
+      {
         "id": 1500004339201,
         "title": "Videos - Food Donation Program",
         "section": "QSRSoft® Academy",
@@ -2978,17 +3505,10 @@
         "score": 1
       },
       {
-        "id": 38608295877143,
-        "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit",
-        "score": 1
-      },
-      {
-        "id": 41430313878295,
-        "title": "June 24, 2026 - Chat",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat",
+        "id": 5668692498967,
+        "title": "Video - How To Use The Mobile Inventory App for Waste",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5668692498967-Video-How-To-Use-The-Mobile-Inventory-App-for-Waste",
         "score": 1
       },
       {
@@ -3024,6 +3544,41 @@
         "title": "June 24, 2026 - Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/41430137556759-June-24-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 39501482456215,
+        "title": "April 8, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 38934890192791,
+        "title": "March 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 37885421679383,
+        "title": "January 28, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37885421679383-January-28-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 36727970081047,
+        "title": "December 3, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36727970081047-December-3-2025-Reports",
+        "score": 1
+      },
+      {
+        "id": 36230738589591,
+        "title": "November 12, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36230738589591-November-12-2025-Reports",
         "score": 1
       }
     ],
@@ -3134,6 +3689,13 @@
         "score": 6
       },
       {
+        "id": 4415215953431,
+        "title": "Video - How To Use The Mobile Inventory App For Transfers",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4415215953431-Video-How-To-Use-The-Mobile-Inventory-App-For-Transfers",
+        "score": 6
+      },
+      {
         "id": 35972697396887,
         "title": "Menu Items - Recipes",
         "section": "MyQSRSoft Inventory",
@@ -3155,17 +3717,17 @@
         "score": 5
       },
       {
-        "id": 360009125274,
-        "title": "Videos - Inventory",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009125274-Videos-Inventory",
-        "score": 5
-      },
-      {
         "id": 39599589429143,
         "title": "April 8, 2026 - Food Over Base Enhancements",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements",
+        "score": 5
+      },
+      {
+        "id": 360009125274,
+        "title": "Videos - Inventory",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009125274-Videos-Inventory",
         "score": 5
       },
       {
@@ -3229,6 +3791,13 @@
         "title": "Video - Raw Item Information and Activity",
         "section": "QSRSoft® Academy",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/360009124734-Video-Raw-Item-Information-and-Activity",
+        "score": 4
+      },
+      {
+        "id": 360042980733,
+        "title": "Videos - How To Use The Mobile Inventory App For Taking Inventory",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980733-Videos-How-To-Use-The-Mobile-Inventory-App-For-Taking-Inventory",
         "score": 4
       },
       {
@@ -3323,20 +3892,6 @@
         "score": 3
       },
       {
-        "id": 360009252933,
-        "title": "Videos - Drawer Counts",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009252933-Videos-Drawer-Counts",
-        "score": 3
-      },
-      {
-        "id": 360042653853,
-        "title": "Video - Mobile Inventory App",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042653853-Video-Mobile-Inventory-App",
-        "score": 3
-      },
-      {
         "id": 42257783898519,
         "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
@@ -3362,6 +3917,62 @@
         "title": "February 11, 2026 - Inventory Analysis Report",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report",
+        "score": 3
+      },
+      {
+        "id": 360009252933,
+        "title": "Videos - Drawer Counts",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009252933-Videos-Drawer-Counts",
+        "score": 3
+      },
+      {
+        "id": 360042653853,
+        "title": "Video - Mobile Inventory App",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042653853-Video-Mobile-Inventory-App",
+        "score": 3
+      },
+      {
+        "id": 5668692498967,
+        "title": "Video - How To Use The Mobile Inventory App for Waste",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5668692498967-Video-How-To-Use-The-Mobile-Inventory-App-for-Waste",
+        "score": 3
+      },
+      {
+        "id": 360049786114,
+        "title": "Video - Mobile Inventory App Features Video",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360049786114-Video-Mobile-Inventory-App-Features-Video",
+        "score": 3
+      },
+      {
+        "id": 360042980373,
+        "title": "Video - Overview Of The Mobile Inventory App Video",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980373-Video-Overview-Of-The-Mobile-Inventory-App-Video",
+        "score": 3
+      },
+      {
+        "id": 5097712465047,
+        "title": "Video - How To Use The Mobile Inventory App Analysis Reports",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5097712465047-Video-How-To-Use-The-Mobile-Inventory-App-Analysis-Reports",
+        "score": 3
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
+        "score": 3
+      },
+      {
+        "id": 33539160957079,
+        "title": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick",
         "score": 3
       },
       {
@@ -3502,6 +4113,13 @@
         "title": "June 24, 2026 - Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/41430137556759-June-24-2026-Reports",
+        "score": 2
+      },
+      {
+        "id": 38610415370263,
+        "title": "February 25, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
         "score": 2
       },
       {
@@ -3666,6 +4284,27 @@
         "score": 1
       },
       {
+        "id": 42261903534487,
+        "title": "July 29, 2026 - Engagement",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement",
+        "score": 1
+      },
+      {
+        "id": 41783428763415,
+        "title": "July 8, 2026 - Chat",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat",
+        "score": 1
+      },
+      {
+        "id": 37611604501527,
+        "title": "January 14, 2026 - Rewards",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards",
+        "score": 1
+      },
+      {
         "id": 360009123454,
         "title": "Videos - Start & End Business Day",
         "section": "QSRSoft® Academy",
@@ -3680,17 +4319,24 @@
         "score": 1
       },
       {
-        "id": 42261903534487,
-        "title": "July 29, 2026 - Engagement",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement",
+        "id": 360050588693,
+        "title": "Webinars",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360050588693-Webinars",
         "score": 1
       },
       {
-        "id": 41783428763415,
-        "title": "July 8, 2026 - Chat",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat",
+        "id": 1500008522982,
+        "title": "Video - How To Use The Menu and Settings",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008522982-Video-How-To-Use-The-Menu-and-Settings",
+        "score": 1
+      },
+      {
+        "id": 1500008537681,
+        "title": "Video - How To Set Up and Manage Locations",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008537681-Video-How-To-Set-Up-and-Manage-Locations",
         "score": 1
       },
       {
@@ -3708,17 +4354,66 @@
         "score": 1
       },
       {
-        "id": 37611604501527,
-        "title": "January 14, 2026 - Rewards",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards",
-        "score": 1
-      },
-      {
         "id": 34960501802647,
         "title": "September 17, 2025 - Equipment",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/34960501802647-September-17-2025-Equipment",
+        "score": 1
+      },
+      {
+        "id": 44037553957783,
+        "title": "October 7, 2026 - CommsHub Surveys",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/44037553957783-October-7-2026-CommsHub-Surveys",
+        "score": 1
+      },
+      {
+        "id": 43676418271895,
+        "title": "September 23, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43676418271895-September-23-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 39501482456215,
+        "title": "April 8, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 38934890192791,
+        "title": "March 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 37564944308247,
+        "title": "January 14, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37564944308247-January-14-2026-Reports",
+        "score": 1
+      },
+      {
+        "id": 36230738589591,
+        "title": "November 12, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36230738589591-November-12-2025-Reports",
+        "score": 1
+      },
+      {
+        "id": 35909167089431,
+        "title": "October 29, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/35909167089431-October-29-2025-Reports",
+        "score": 1
+      },
+      {
+        "id": 33968788088087,
+        "title": "August 6, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports",
         "score": 1
       }
     ],
@@ -3871,6 +4566,13 @@
         "score": 1
       },
       {
+        "id": 41866692655383,
+        "title": "July 8, 2026 - Purchases",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases",
+        "score": 1
+      },
+      {
         "id": 360009125234,
         "title": "Videos - Purchases",
         "section": "QSRSoft® Academy",
@@ -3878,10 +4580,17 @@
         "score": 1
       },
       {
-        "id": 41866692655383,
-        "title": "July 8, 2026 - Purchases",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases",
+        "id": 360042980733,
+        "title": "Videos - How To Use The Mobile Inventory App For Taking Inventory",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980733-Videos-How-To-Use-The-Mobile-Inventory-App-For-Taking-Inventory",
+        "score": 1
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
         "score": 1
       }
     ],
@@ -3913,6 +4622,13 @@
         "section": "QSRSoft® Reports",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/25587602686743-Report-Scheduling-for-email-Delivery",
         "score": 7
+      },
+      {
+        "id": 42552925541015,
+        "title": "August 12, 2026 - Reports Calendar / Date Picker",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42552925541015-August-12-2026-Reports-Calendar-Date-Picker",
+        "score": 6
       },
       {
         "id": 6444474956567,
@@ -3954,6 +4670,13 @@
         "title": "July 8, 2026 - Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/41790219129623-July-8-2026-Reports",
+        "score": 5
+      },
+      {
+        "id": 38934890192791,
+        "title": "March 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports",
         "score": 5
       },
       {
@@ -4055,6 +4778,41 @@
         "score": 4
       },
       {
+        "id": 42954818470423,
+        "title": "August 26, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/42954818470423-August-26-2026-Reports",
+        "score": 4
+      },
+      {
+        "id": 39501482456215,
+        "title": "April 8, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports",
+        "score": 4
+      },
+      {
+        "id": 38610415370263,
+        "title": "February 25, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
+        "score": 4
+      },
+      {
+        "id": 37564944308247,
+        "title": "January 14, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37564944308247-January-14-2026-Reports",
+        "score": 4
+      },
+      {
+        "id": 33643417806871,
+        "title": "July 23, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33643417806871-July-23-2025-Reports",
+        "score": 4
+      },
+      {
         "id": 1500006291002,
         "title": "How Do I Reconstruct a Business Day (RBD)",
         "section": "QSRSoft® Cash",
@@ -4146,6 +4904,34 @@
         "score": 3
       },
       {
+        "id": 38297464701463,
+        "title": "February 11, 2026 - Inventory Analysis Report",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report",
+        "score": 3
+      },
+      {
+        "id": 4402199184407,
+        "title": "Video - Reports - Intro to the Main Dashboard and Digital Dashboard",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4402199184407-Video-Reports-Intro-to-the-Main-Dashboard-and-Digital-Dashboard",
+        "score": 3
+      },
+      {
+        "id": 360058974854,
+        "title": "Video - Reports - Main Dashboard Containers",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360058974854-Video-Reports-Main-Dashboard-Containers",
+        "score": 3
+      },
+      {
+        "id": 1500000486361,
+        "title": "Video - Reports - Intro To Reports",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/1500000486361-Video-Reports-Intro-To-Reports",
+        "score": 3
+      },
+      {
         "id": 4406311053591,
         "title": "Videos - Cash Sheet",
         "section": "QSRSoft® Academy",
@@ -4181,10 +4967,66 @@
         "score": 3
       },
       {
-        "id": 38297464701463,
-        "title": "February 11, 2026 - Inventory Analysis Report",
+        "id": 5097712465047,
+        "title": "Video - How To Use The Mobile Inventory App Analysis Reports",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/5097712465047-Video-How-To-Use-The-Mobile-Inventory-App-Analysis-Reports",
+        "score": 3
+      },
+      {
+        "id": 31259909054615,
+        "title": "Video - Using Chat To Share Reports",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/31259909054615-Video-Using-Chat-To-Share-Reports",
+        "score": 3
+      },
+      {
+        "id": 36302937788695,
+        "title": "Video - Shift Managers - Forms, Tasks and Scorecard on the SMDB",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36302937788695-Video-Shift-Managers-Forms-Tasks-and-Scorecard-on-the-SMDB",
+        "score": 3
+      },
+      {
+        "id": 36921598982423,
+        "title": "Video - Above Store Users - Forms Completion Report - Part 1",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36921598982423-Video-Above-Store-Users-Forms-Completion-Report-Part-1",
+        "score": 3
+      },
+      {
+        "id": 36923701370647,
+        "title": "Video - Above Store Users - Forms Completion Report - Part 2",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36923701370647-Video-Above-Store-Users-Forms-Completion-Report-Part-2",
+        "score": 3
+      },
+      {
+        "id": 36925316504471,
+        "title": "Video - Above Store Users - Forms Completion Report - Part 3",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36925316504471-Video-Above-Store-Users-Forms-Completion-Report-Part-3",
+        "score": 3
+      },
+      {
+        "id": 4403122062871,
+        "title": "QSRSoft TV Webinar - Q&A",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
+        "score": 3
+      },
+      {
+        "id": 43335384986775,
+        "title": "September 9, 2026 - Survey Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43335384986775-September-9-2026-Survey-Reports",
+        "score": 3
+      },
+      {
+        "id": 43676418271895,
+        "title": "September 23, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43676418271895-September-23-2026-Reports",
         "score": 3
       },
       {
@@ -4213,6 +5055,62 @@
         "title": "May 6, 2026 - Reports",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/40247655050135-May-6-2026-Reports",
+        "score": 3
+      },
+      {
+        "id": 38282741669271,
+        "title": "February 11, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38282741669271-February-11-2026-Reports",
+        "score": 3
+      },
+      {
+        "id": 37885421679383,
+        "title": "January 28, 2026 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/37885421679383-January-28-2026-Reports",
+        "score": 3
+      },
+      {
+        "id": 36727970081047,
+        "title": "December 3, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36727970081047-December-3-2025-Reports",
+        "score": 3
+      },
+      {
+        "id": 36230738589591,
+        "title": "November 12, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36230738589591-November-12-2025-Reports",
+        "score": 3
+      },
+      {
+        "id": 35909167089431,
+        "title": "October 29, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/35909167089431-October-29-2025-Reports",
+        "score": 3
+      },
+      {
+        "id": 34639199871639,
+        "title": "September 3, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/34639199871639-September-3-2025-Reports",
+        "score": 3
+      },
+      {
+        "id": 34268329394839,
+        "title": "August 20, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/34268329394839-August-20-2025-Reports",
+        "score": 3
+      },
+      {
+        "id": 33968788088087,
+        "title": "August 6, 2025 - Reports",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports",
         "score": 3
       },
       {
@@ -4538,20 +5436,6 @@
         "score": 1
       },
       {
-        "id": 8747520771095,
-        "title": "Videos - Reconstruct Business Day (RBD)",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
-        "score": 1
-      },
-      {
-        "id": 360009123454,
-        "title": "Videos - Start & End Business Day",
-        "section": "QSRSoft® Academy",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009123454-Videos-Start-End-Business-Day",
-        "score": 1
-      },
-      {
         "id": 32557625696279,
         "title": "June 11, 2025 - MyQSRSoft Dashboard",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
@@ -4563,20 +5447,6 @@
         "title": "April 8, 2026 - Food Over Base Enhancements",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements",
-        "score": 1
-      },
-      {
-        "id": 38298560173207,
-        "title": "February 11, 2026 - CommsHub Enhancements",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements",
-        "score": 1
-      },
-      {
-        "id": 39240051266967,
-        "title": "March 25, 2026 - News Feed, Chat",
-        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-        "url": "https://support.qsrsoft.com/hc/en-us/articles/39240051266967-March-25-2026-News-Feed-Chat",
         "score": 1
       },
       {
@@ -4608,10 +5478,73 @@
         "score": 1
       },
       {
+        "id": 8747520771095,
+        "title": "Videos - Reconstruct Business Day (RBD)",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
+        "score": 1
+      },
+      {
+        "id": 360009123454,
+        "title": "Videos - Start & End Business Day",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/360009123454-Videos-Start-End-Business-Day",
+        "score": 1
+      },
+      {
+        "id": 36304260753943,
+        "title": "Video - General Managers - SMDB",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/36304260753943-Video-General-Managers-SMDB",
+        "score": 1
+      },
+      {
+        "id": 4402523432599,
+        "title": "Video - QSRSoft TV - Introduction Demo",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/4402523432599-Video-QSRSoft-TV-Introduction-Demo",
+        "score": 1
+      },
+      {
+        "id": 33539160957079,
+        "title": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+        "section": "QSRSoft® Academy",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick",
+        "score": 1
+      },
+      {
+        "id": 39240051266967,
+        "title": "March 25, 2026 - News Feed, Chat",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/39240051266967-March-25-2026-News-Feed-Chat",
+        "score": 1
+      },
+      {
         "id": 33642260580375,
         "title": "July 23, 2025 - Equipment",
         "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
         "url": "https://support.qsrsoft.com/hc/en-us/articles/33642260580375-July-23-2025-Equipment",
+        "score": 1
+      },
+      {
+        "id": 43656787442711,
+        "title": "September 23, 2026 - CommsHub News Feed",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43656787442711-September-23-2026-CommsHub-News-Feed",
+        "score": 1
+      },
+      {
+        "id": 43339343033623,
+        "title": "September 9, 2026 - Approval Notifications",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/43339343033623-September-9-2026-Approval-Notifications",
+        "score": 1
+      },
+      {
+        "id": 38298560173207,
+        "title": "February 11, 2026 - CommsHub Enhancements",
+        "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+        "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements",
         "score": 1
       },
       {
@@ -4826,6 +5759,20 @@
       "section": "QSRSoft® Reports",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/26327474230679-Job-Title-Codes-JTC-Crew-and-Manager",
       "id": 26327474230679
+    },
+    {
+      "sentence": "In short, an Organization has (the number of your TV Locations) x 4 = total Devices.",
+      "article": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick",
+      "id": 33539160957079
+    },
+    {
+      "sentence": "Labor Analysis Report We have added the Variable Labor Hours Scheduled column to the Labor Analysis report to provide the data necessary to see all the parts of the Act vs Sched column formula (Fixed Scheduled plus Floor Scheduled plus Variable Scheduled).",
+      "article": "August 26, 2026 - Reports",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42954818470423-August-26-2026-Reports",
+      "id": 42954818470423
     }
   ],
   "keyArticles": [
@@ -5349,6 +6296,14 @@
       "nChars": 1287
     },
     {
+      "id": 42312607739799,
+      "title": "July 29, 2026 - Campaigns",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42312607739799-July-29-2026-Campaigns",
+      "nChars": 70
+    },
+    {
       "id": 18441658319767,
       "title": "Enter QSRSoft Product Feedback Anytime",
       "category": "QsrSoft Support for McDonalds",
@@ -5531,6 +6486,14 @@
       "section": "Business Unit / Business Unit BI",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/35170315971991-Business-Unit-Data-Analytics",
       "nChars": 1789
+    },
+    {
+      "id": 4404621574935,
+      "title": "Video - How To Use Recognition",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4404621574935-Video-How-To-Use-Recognition",
+      "nChars": 134
     },
     {
       "id": 35044632182679,
@@ -5789,6 +6752,14 @@
       "nChars": 4761
     },
     {
+      "id": 4404621144087,
+      "title": "Video - How To Use Slide Management",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4404621144087-Video-How-To-Use-Slide-Management",
+      "nChars": 145
+    },
+    {
       "id": 9986430272791,
       "title": "What is the Owner's Daily Routine",
       "category": "QsrSoft Support for McDonalds",
@@ -5973,6 +6944,302 @@
       "nChars": 5
     },
     {
+      "id": 18862043335575,
+      "title": "QSRSoft TV - Demo Displaying Schedules",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/18862043335575-QSRSoft-TV-Demo-Displaying-Schedules",
+      "nChars": 410
+    },
+    {
+      "id": 32557625696279,
+      "title": "June 11, 2025 - MyQSRSoft Dashboard",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/32557625696279-June-11-2025-MyQSRSoft-Dashboard",
+      "nChars": 280
+    },
+    {
+      "id": 42257783898519,
+      "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory",
+      "nChars": 267
+    },
+    {
+      "id": 42296841589015,
+      "title": "July 29, 2026 - Chat",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42296841589015-July-29-2026-Chat",
+      "nChars": 259
+    },
+    {
+      "id": 40163018785815,
+      "title": "Video - How To Use Base Food Analysis",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/40163018785815-Video-How-To-Use-Base-Food-Analysis",
+      "nChars": 0
+    },
+    {
+      "id": 41866692655383,
+      "title": "July 8, 2026 - Purchases",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases",
+      "nChars": 767
+    },
+    {
+      "id": 39599589429143,
+      "title": "April 8, 2026 - Food Over Base Enhancements",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements",
+      "nChars": 2267
+    },
+    {
+      "id": 39262999992727,
+      "title": "March 25, 2026 - MyQSRSoft Inventory",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/39262999992727-March-25-2026-MyQSRSoft-Inventory",
+      "nChars": 123
+    },
+    {
+      "id": 38608295877143,
+      "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit",
+      "nChars": 173
+    },
+    {
+      "id": 38297464701463,
+      "title": "February 11, 2026 - Inventory Analysis Report",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report",
+      "nChars": 162
+    },
+    {
+      "id": 42293709812119,
+      "title": "July 29, 2026 - News Feed",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42293709812119-July-29-2026-News-Feed",
+      "nChars": 482
+    },
+    {
+      "id": 42282829724183,
+      "title": "July 29, 2026 - Training",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42282829724183-July-29-2026-Training",
+      "nChars": 296
+    },
+    {
+      "id": 42261903534487,
+      "title": "July 29, 2026 - Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement",
+      "nChars": 1365
+    },
+    {
+      "id": 42172435805591,
+      "title": "July 29, 2026 - Chat",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42172435805591-July-29-2026-Chat",
+      "nChars": 308
+    },
+    {
+      "id": 41783428763415,
+      "title": "July 8, 2026 - Chat",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat",
+      "nChars": 342
+    },
+    {
+      "id": 37887743313175,
+      "title": "CommsHub (BUs and Other) for Communication and Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37887743313175-CommsHub-BUs-and-Other-for-Communication-and-Engagement",
+      "nChars": 0
+    },
+    {
+      "id": 41430313878295,
+      "title": "June 24, 2026 - Chat",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat",
+      "nChars": 803
+    },
+    {
+      "id": 41400058484887,
+      "title": "June 24, 2026 - Employee Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/41400058484887-June-24-2026-Employee-Engagement",
+      "nChars": 1035
+    },
+    {
+      "id": 41084746259991,
+      "title": "June 10, 2026 - News Feed",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/41084746259991-June-10-2026-News-Feed",
+      "nChars": 148
+    },
+    {
+      "id": 35633335033367,
+      "title": "October 15, 2025 - CommsHub",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/35633335033367-October-15-2025-CommsHub",
+      "nChars": 128
+    },
+    {
+      "id": 39234550790679,
+      "title": "March 25, 2026 - Employee Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement",
+      "nChars": 599
+    },
+    {
+      "id": 38606659933847,
+      "title": "February 25, 2026 - Chat",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38606659933847-February-25-2026-Chat",
+      "nChars": 232
+    },
+    {
+      "id": 38578312343063,
+      "title": "February 25, 2026 - Resource Library and CoachQ",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38578312343063-February-25-2026-Resource-Library-and-CoachQ",
+      "nChars": 416
+    },
+    {
+      "id": 38308392967831,
+      "title": "February 11, 2026 - Rewards",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38308392967831-February-11-2026-Rewards",
+      "nChars": 131
+    },
+    {
+      "id": 38272036614807,
+      "title": "February 11, 2026 - Chat and CoachQ",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38272036614807-February-11-2026-Chat-and-CoachQ",
+      "nChars": 153
+    },
+    {
+      "id": 37969739814167,
+      "title": "January 28, 2026 - Employee Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37969739814167-January-28-2026-Employee-Engagement",
+      "nChars": 462
+    },
+    {
+      "id": 37897091450135,
+      "title": "January 28, 2026 - Rewards",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37897091450135-January-28-2026-Rewards",
+      "nChars": 263
+    },
+    {
+      "id": 37893898677783,
+      "title": "January 28, 2026 - Customer Feedback",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37893898677783-January-28-2026-Customer-Feedback",
+      "nChars": 699
+    },
+    {
+      "id": 37611604501527,
+      "title": "January 14, 2026 - Rewards",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards",
+      "nChars": 153
+    },
+    {
+      "id": 37506803920279,
+      "title": "January 14, 2026 - Employee Engagement",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37506803920279-January-14-2026-Employee-Engagement",
+      "nChars": 1626
+    },
+    {
+      "id": 37043184328471,
+      "title": "December 17, 2025 - Rewards",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37043184328471-December-17-2025-Rewards",
+      "nChars": 76
+    },
+    {
+      "id": 36719556409367,
+      "title": "December 3, 2025 - Forms 2026",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36719556409367-December-3-2025-Forms-2026",
+      "nChars": 542
+    },
+    {
+      "id": 20046296308631,
+      "title": "Video - Business Unit Analytics for Organizations",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/20046296308631-Video-Business-Unit-Analytics-for-Organizations",
+      "nChars": 150
+    },
+    {
+      "id": 4402199184407,
+      "title": "Video - Reports - Intro to the Main Dashboard and Digital Dashboard",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4402199184407-Video-Reports-Intro-to-the-Main-Dashboard-and-Digital-Dashboard",
+      "nChars": 117
+    },
+    {
+      "id": 360058974854,
+      "title": "Video - Reports - Main Dashboard Containers",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/360058974854-Video-Reports-Main-Dashboard-Containers",
+      "nChars": 78
+    },
+    {
+      "id": 1500000486361,
+      "title": "Video - Reports - Intro To Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/1500000486361-Video-Reports-Intro-To-Reports",
+      "nChars": 97
+    },
+    {
+      "id": 8747520771095,
+      "title": "Videos - Reconstruct Business Day (RBD)",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
+      "nChars": 285
+    },
+    {
       "id": 360009252933,
       "title": "Videos - Drawer Counts",
       "category": "QsrSoft Support for McDonalds",
@@ -5995,14 +7262,6 @@
       "section": "QSRSoft® Academy",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/4406311053591-Videos-Cash-Sheet",
       "nChars": 227
-    },
-    {
-      "id": 8747520771095,
-      "title": "Videos - Reconstruct Business Day (RBD)",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Academy",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/8747520771095-Videos-Reconstruct-Business-Day-RBD",
-      "nChars": 285
     },
     {
       "id": 360009123454,
@@ -6133,140 +7392,220 @@
       "nChars": 74
     },
     {
-      "id": 32557625696279,
-      "title": "June 11, 2025 - MyQSRSoft Dashboard",
+      "id": 5668692498967,
+      "title": "Video - How To Use The Mobile Inventory App for Waste",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/32557625696279-June-11-2025-MyQSRSoft-Dashboard",
-      "nChars": 280
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/5668692498967-Video-How-To-Use-The-Mobile-Inventory-App-for-Waste",
+      "nChars": 246
     },
     {
-      "id": 42257783898519,
-      "title": "July 29, 2026 - MyQSRSoft Cash and Inventory",
+      "id": 360050588693,
+      "title": "Webinars",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42257783898519-July-29-2026-MyQSRSoft-Cash-and-Inventory",
-      "nChars": 267
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/360050588693-Webinars",
+      "nChars": 119
     },
     {
-      "id": 42296841589015,
-      "title": "July 29, 2026 - Chat",
+      "id": 360049786114,
+      "title": "Video - Mobile Inventory App Features Video",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42296841589015-July-29-2026-Chat",
-      "nChars": 259
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/360049786114-Video-Mobile-Inventory-App-Features-Video",
+      "nChars": 0
     },
     {
-      "id": 41866692655383,
-      "title": "July 8, 2026 - Purchases",
+      "id": 360042980373,
+      "title": "Video - Overview Of The Mobile Inventory App Video",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/41866692655383-July-8-2026-Purchases",
-      "nChars": 767
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980373-Video-Overview-Of-The-Mobile-Inventory-App-Video",
+      "nChars": 36
     },
     {
-      "id": 39599589429143,
-      "title": "April 8, 2026 - Food Over Base Enhancements",
+      "id": 1500008522982,
+      "title": "Video - How To Use The Menu and Settings",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/39599589429143-April-8-2026-Food-Over-Base-Enhancements",
-      "nChars": 2267
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008522982-Video-How-To-Use-The-Menu-and-Settings",
+      "nChars": 142
     },
     {
-      "id": 39262999992727,
-      "title": "March 25, 2026 - MyQSRSoft Inventory",
+      "id": 1500008537681,
+      "title": "Video - How To Set Up and Manage Locations",
       "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/39262999992727-March-25-2026-MyQSRSoft-Inventory",
-      "nChars": 123
-    },
-    {
-      "id": 38608295877143,
-      "title": "February 26, 2026 - MyQSRSoft Inventory - Audit",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38608295877143-February-26-2026-MyQSRSoft-Inventory-Audit",
-      "nChars": 173
-    },
-    {
-      "id": 38297464701463,
-      "title": "February 11, 2026 - Inventory Analysis Report",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38297464701463-February-11-2026-Inventory-Analysis-Report",
-      "nChars": 162
-    },
-    {
-      "id": 38298560173207,
-      "title": "February 11, 2026 - CommsHub Enhancements",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements",
-      "nChars": 607
-    },
-    {
-      "id": 42293709812119,
-      "title": "July 29, 2026 - News Feed",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42293709812119-July-29-2026-News-Feed",
-      "nChars": 482
-    },
-    {
-      "id": 42282829724183,
-      "title": "July 29, 2026 - Training",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42282829724183-July-29-2026-Training",
-      "nChars": 296
-    },
-    {
-      "id": 42261903534487,
-      "title": "July 29, 2026 - Engagement",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42261903534487-July-29-2026-Engagement",
-      "nChars": 1365
-    },
-    {
-      "id": 42172435805591,
-      "title": "July 29, 2026 - Chat",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42172435805591-July-29-2026-Chat",
-      "nChars": 308
-    },
-    {
-      "id": 41783428763415,
-      "title": "July 8, 2026 - Chat",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/41783428763415-July-8-2026-Chat",
-      "nChars": 342
-    },
-    {
-      "id": 41430313878295,
-      "title": "June 24, 2026 - Chat",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/41430313878295-June-24-2026-Chat",
-      "nChars": 803
-    },
-    {
-      "id": 41400058484887,
-      "title": "June 24, 2026 - Employee Engagement",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/41400058484887-June-24-2026-Employee-Engagement",
-      "nChars": 1035
-    },
-    {
-      "id": 41084746259991,
-      "title": "June 10, 2026 - News Feed",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/41084746259991-June-10-2026-News-Feed",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/1500008537681-Video-How-To-Set-Up-and-Manage-Locations",
       "nChars": 148
+    },
+    {
+      "id": 360042980733,
+      "title": "Videos - How To Use The Mobile Inventory App For Taking Inventory",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/360042980733-Videos-How-To-Use-The-Mobile-Inventory-App-For-Taking-Inventory",
+      "nChars": 703
+    },
+    {
+      "id": 4415215953431,
+      "title": "Video - How To Use The Mobile Inventory App For Transfers",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4415215953431-Video-How-To-Use-The-Mobile-Inventory-App-For-Transfers",
+      "nChars": 163
+    },
+    {
+      "id": 5097712465047,
+      "title": "Video - How To Use The Mobile Inventory App Analysis Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/5097712465047-Video-How-To-Use-The-Mobile-Inventory-App-Analysis-Reports",
+      "nChars": 105
+    },
+    {
+      "id": 26900286117911,
+      "title": "Video - Rewards - Create Ad Hoc Rewards",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/26900286117911-Video-Rewards-Create-Ad-Hoc-Rewards",
+      "nChars": 117
+    },
+    {
+      "id": 31259909054615,
+      "title": "Video - Using Chat To Share Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/31259909054615-Video-Using-Chat-To-Share-Reports",
+      "nChars": 0
+    },
+    {
+      "id": 36302937788695,
+      "title": "Video - Shift Managers - Forms, Tasks and Scorecard on the SMDB",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36302937788695-Video-Shift-Managers-Forms-Tasks-and-Scorecard-on-the-SMDB",
+      "nChars": 132
+    },
+    {
+      "id": 36304260753943,
+      "title": "Video - General Managers - SMDB",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36304260753943-Video-General-Managers-SMDB",
+      "nChars": 132
+    },
+    {
+      "id": 36921598982423,
+      "title": "Video - Above Store Users - Forms Completion Report - Part 1",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36921598982423-Video-Above-Store-Users-Forms-Completion-Report-Part-1",
+      "nChars": 180
+    },
+    {
+      "id": 36923701370647,
+      "title": "Video - Above Store Users - Forms Completion Report - Part 2",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36923701370647-Video-Above-Store-Users-Forms-Completion-Report-Part-2",
+      "nChars": 187
+    },
+    {
+      "id": 36925316504471,
+      "title": "Video - Above Store Users - Forms Completion Report - Part 3",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36925316504471-Video-Above-Store-Users-Forms-Completion-Report-Part-3",
+      "nChars": 186
+    },
+    {
+      "id": 4403457165847,
+      "title": "Video - QSRSoft TV - Feature Overview",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4403457165847-Video-QSRSoft-TV-Feature-Overview",
+      "nChars": 67
+    },
+    {
+      "id": 4402523432599,
+      "title": "Video - QSRSoft TV - Introduction Demo",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4402523432599-Video-QSRSoft-TV-Introduction-Demo",
+      "nChars": 163
+    },
+    {
+      "id": 4668613267607,
+      "title": "Video - How To Use Settings",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4668613267607-Video-How-To-Use-Settings",
+      "nChars": 203
+    },
+    {
+      "id": 4404781087511,
+      "title": "Video - How To Use Reminders",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4404781087511-Video-How-To-Use-Reminders",
+      "nChars": 144
+    },
+    {
+      "id": 18231872305943,
+      "title": "QSRSoft TV Features October 5th, 2023 Webinar",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/18231872305943-QSRSoft-TV-Features-October-5th-2023-Webinar",
+      "nChars": 266
+    },
+    {
+      "id": 5622890307351,
+      "title": "QSRSoft TV - Recorded Webinar",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/5622890307351-QSRSoft-TV-Recorded-Webinar",
+      "nChars": 369
+    },
+    {
+      "id": 5622625663383,
+      "title": "QSRSoft TV Demo - Adding Video To Slides",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/5622625663383-QSRSoft-TV-Demo-Adding-Video-To-Slides",
+      "nChars": 330
+    },
+    {
+      "id": 4403122062871,
+      "title": "QSRSoft TV Webinar - Q&A",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/4403122062871-QSRSoft-TV-Webinar-Q-A",
+      "nChars": 16621
+    },
+    {
+      "id": 33539160957079,
+      "title": "TV Equipment Needs and App Installation or Update (Recommended ONN or Fire Stick)",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/33539160957079-TV-Equipment-Needs-and-App-Installation-or-Update-Recommended-ONN-or-Fire-Stick",
+      "nChars": 9538
+    },
+    {
+      "id": 21491902586007,
+      "title": "Video - Intro To Digital Hero KPIs on the MyQSRSoft Dashboard",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/21491902586007-Video-Intro-To-Digital-Hero-KPIs-on-the-MyQSRSoft-Dashboard",
+      "nChars": 109
+    },
+    {
+      "id": 21350965650583,
+      "title": "Video - Business Unit Analytics for Orgs - Intro and Demo Meeting",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Academy",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/21350965650583-Video-Business-Unit-Analytics-for-Orgs-Intro-and-Demo-Meeting",
+      "nChars": 173
     },
     {
       "id": 40582814716567,
@@ -6317,6 +7656,14 @@
       "nChars": 434
     },
     {
+      "id": 40221495366551,
+      "title": "May 6, 2026 - Equipment",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/40221495366551-May-6-2026-Equipment",
+      "nChars": 263
+    },
+    {
       "id": 39548463494679,
       "title": "April 8, 2026 - Chat Enhancements",
       "category": "QsrSoft Support for McDonalds",
@@ -6341,100 +7688,12 @@
       "nChars": 1249
     },
     {
-      "id": 39234550790679,
-      "title": "March 25, 2026 - Employee Engagement",
+      "id": 43344639124631,
+      "title": "September 9, 2026 - Planned Maintenance Attachments",
       "category": "QsrSoft Support for McDonalds",
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/39234550790679-March-25-2026-Employee-Engagement",
-      "nChars": 599
-    },
-    {
-      "id": 38606659933847,
-      "title": "February 25, 2026 - Chat",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38606659933847-February-25-2026-Chat",
-      "nChars": 232
-    },
-    {
-      "id": 38578312343063,
-      "title": "February 25, 2026 - Resource Library and CoachQ",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38578312343063-February-25-2026-Resource-Library-and-CoachQ",
-      "nChars": 416
-    },
-    {
-      "id": 38308392967831,
-      "title": "February 11, 2026 - Rewards",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38308392967831-February-11-2026-Rewards",
-      "nChars": 131
-    },
-    {
-      "id": 38272036614807,
-      "title": "February 11, 2026 - Chat and CoachQ",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/38272036614807-February-11-2026-Chat-and-CoachQ",
-      "nChars": 153
-    },
-    {
-      "id": 37969739814167,
-      "title": "January 28, 2026 - Employee Engagement",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37969739814167-January-28-2026-Employee-Engagement",
-      "nChars": 462
-    },
-    {
-      "id": 37897091450135,
-      "title": "January 28, 2026 - Rewards",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37897091450135-January-28-2026-Rewards",
-      "nChars": 263
-    },
-    {
-      "id": 37893898677783,
-      "title": "January 28, 2026 - Customer Feedback",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37893898677783-January-28-2026-Customer-Feedback",
-      "nChars": 699
-    },
-    {
-      "id": 37611604501527,
-      "title": "January 14, 2026 - Rewards",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37611604501527-January-14-2026-Rewards",
-      "nChars": 153
-    },
-    {
-      "id": 37506803920279,
-      "title": "January 14, 2026 - Employee Engagement",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37506803920279-January-14-2026-Employee-Engagement",
-      "nChars": 1626
-    },
-    {
-      "id": 37043184328471,
-      "title": "December 17, 2025 - Rewards",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/37043184328471-December-17-2025-Rewards",
-      "nChars": 76
-    },
-    {
-      "id": 36719556409367,
-      "title": "December 3, 2025 - Forms 2026",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/36719556409367-December-3-2025-Forms-2026",
-      "nChars": 542
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43344639124631-September-9-2026-Planned-Maintenance-Attachments",
+      "nChars": 194
     },
     {
       "id": 42265356243735,
@@ -6445,12 +7704,12 @@
       "nChars": 348
     },
     {
-      "id": 40221495366551,
-      "title": "May 6, 2026 - Equipment",
+      "id": 31717200169367,
+      "title": "April 30, 2025 - Forms",
       "category": "QsrSoft Support for McDonalds",
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/40221495366551-May-6-2026-Equipment",
-      "nChars": 263
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/31717200169367-April-30-2025-Forms",
+      "nChars": 206
     },
     {
       "id": 35626002606871,
@@ -6459,14 +7718,6 @@
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/35626002606871-October-15-2025-Operations-Equipment",
       "nChars": 318
-    },
-    {
-      "id": 39243027332887,
-      "title": "March 25, 2026 - QSRSoft Forms",
-      "category": "QsrSoft Support for McDonalds",
-      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/39243027332887-March-25-2026-QSRSoft-Forms",
-      "nChars": 307
     },
     {
       "id": 34960501802647,
@@ -6493,12 +7744,68 @@
       "nChars": 1106
     },
     {
-      "id": 42312607739799,
-      "title": "July 29, 2026 - Campaigns",
+      "id": 44045628331415,
+      "title": "October 7, 2026 - CommsHub Campaigns",
       "category": "QsrSoft Support for McDonalds",
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/42312607739799-July-29-2026-Campaigns",
-      "nChars": 70
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/44045628331415-October-7-2026-CommsHub-Campaigns",
+      "nChars": 208
+    },
+    {
+      "id": 42636157789079,
+      "title": "August 12, 2026 - CommsHub Permissions",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42636157789079-August-12-2026-CommsHub-Permissions",
+      "nChars": 274
+    },
+    {
+      "id": 44037553957783,
+      "title": "October 7, 2026 - CommsHub Surveys",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/44037553957783-October-7-2026-CommsHub-Surveys",
+      "nChars": 457
+    },
+    {
+      "id": 43656787442711,
+      "title": "September 23, 2026 - CommsHub News Feed",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43656787442711-September-23-2026-CommsHub-News-Feed",
+      "nChars": 245
+    },
+    {
+      "id": 43339343033623,
+      "title": "September 9, 2026 - Approval Notifications",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43339343033623-September-9-2026-Approval-Notifications",
+      "nChars": 436
+    },
+    {
+      "id": 43335384986775,
+      "title": "September 9, 2026 - Survey Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43335384986775-September-9-2026-Survey-Reports",
+      "nChars": 142
+    },
+    {
+      "id": 43333691276695,
+      "title": "September 9, 2026 - QSRSoft TV",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43333691276695-September-9-2026-QSRSoft-TV",
+      "nChars": 190
+    },
+    {
+      "id": 42645874675735,
+      "title": "August 12, 2026 - CommsHub - News Feed",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42645874675735-August-12-2026-CommsHub-News-Feed",
+      "nChars": 396
     },
     {
       "id": 41089183063575,
@@ -6515,6 +7822,14 @@
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/39554821112727-April-8-2026-CommsHub-Resource-Library-and-News-Feed",
       "nChars": 1276
+    },
+    {
+      "id": 38298560173207,
+      "title": "February 11, 2026 - CommsHub Enhancements",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38298560173207-February-11-2026-CommsHub-Enhancements",
+      "nChars": 607
     },
     {
       "id": 37506495174935,
@@ -6541,12 +7856,12 @@
       "nChars": 107
     },
     {
-      "id": 35633335033367,
-      "title": "October 15, 2025 - CommsHub",
+      "id": 44014782229655,
+      "title": "October 7, 2026 - Forms",
       "category": "QsrSoft Support for McDonalds",
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/35633335033367-October-15-2025-CommsHub",
-      "nChars": 128
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/44014782229655-October-7-2026-Forms",
+      "nChars": 258
     },
     {
       "id": 41778175751959,
@@ -6565,6 +7880,14 @@
       "nChars": 150
     },
     {
+      "id": 39243027332887,
+      "title": "March 25, 2026 - QSRSoft Forms",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/39243027332887-March-25-2026-QSRSoft-Forms",
+      "nChars": 307
+    },
+    {
       "id": 38508871182359,
       "title": "February 25, 2026 - Forms",
       "category": "QsrSoft Support for McDonalds",
@@ -6581,12 +7904,28 @@
       "nChars": 731
     },
     {
-      "id": 31717200169367,
-      "title": "April 30, 2025 - Forms",
+      "id": 43676418271895,
+      "title": "September 23, 2026 - Reports",
       "category": "QsrSoft Support for McDonalds",
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
-      "url": "https://support.qsrsoft.com/hc/en-us/articles/31717200169367-April-30-2025-Forms",
-      "nChars": 206
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/43676418271895-September-23-2026-Reports",
+      "nChars": 131
+    },
+    {
+      "id": 42954818470423,
+      "title": "August 26, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42954818470423-August-26-2026-Reports",
+      "nChars": 813
+    },
+    {
+      "id": 42552925541015,
+      "title": "August 12, 2026 - Reports Calendar / Date Picker",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/42552925541015-August-12-2026-Reports-Calendar-Date-Picker",
+      "nChars": 473
     },
     {
       "id": 42284060339863,
@@ -6627,6 +7966,110 @@
       "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
       "url": "https://support.qsrsoft.com/hc/en-us/articles/40247655050135-May-6-2026-Reports",
       "nChars": 330
+    },
+    {
+      "id": 39501482456215,
+      "title": "April 8, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/39501482456215-April-8-2026-Reports",
+      "nChars": 704
+    },
+    {
+      "id": 38934890192791,
+      "title": "March 11, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38934890192791-March-11-2026-Reports",
+      "nChars": 451
+    },
+    {
+      "id": 38610415370263,
+      "title": "February 25, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38610415370263-February-25-2026-Reports",
+      "nChars": 1039
+    },
+    {
+      "id": 38282741669271,
+      "title": "February 11, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/38282741669271-February-11-2026-Reports",
+      "nChars": 377
+    },
+    {
+      "id": 37885421679383,
+      "title": "January 28, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37885421679383-January-28-2026-Reports",
+      "nChars": 84
+    },
+    {
+      "id": 37564944308247,
+      "title": "January 14, 2026 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/37564944308247-January-14-2026-Reports",
+      "nChars": 161
+    },
+    {
+      "id": 36727970081047,
+      "title": "December 3, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36727970081047-December-3-2025-Reports",
+      "nChars": 940
+    },
+    {
+      "id": 36230738589591,
+      "title": "November 12, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/36230738589591-November-12-2025-Reports",
+      "nChars": 296
+    },
+    {
+      "id": 35909167089431,
+      "title": "October 29, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/35909167089431-October-29-2025-Reports",
+      "nChars": 627
+    },
+    {
+      "id": 34639199871639,
+      "title": "September 3, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/34639199871639-September-3-2025-Reports",
+      "nChars": 609
+    },
+    {
+      "id": 34268329394839,
+      "title": "August 20, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/34268329394839-August-20-2025-Reports",
+      "nChars": 292
+    },
+    {
+      "id": 33968788088087,
+      "title": "August 6, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/33968788088087-August-6-2025-Reports",
+      "nChars": 1102
+    },
+    {
+      "id": 33643417806871,
+      "title": "July 23, 2025 - Reports",
+      "category": "QsrSoft Support for McDonalds",
+      "section": "QSRSoft® Products, Newsletters, Emails & Release Notes",
+      "url": "https://support.qsrsoft.com/hc/en-us/articles/33643417806871-July-23-2025-Reports",
+      "nChars": 387
     }
   ]
 }
