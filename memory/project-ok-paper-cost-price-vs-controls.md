@@ -143,3 +143,39 @@ rule it out directly, but it would have to apply identically at ~2.3-2.5x to ind
 seasonal factor, and if anything nets slightly favorable.** It does NOT change the bottom line
 above — the apparent spike is still explained almost entirely by the seasonal-baseline framing
 in section 3, not by price, controls, or Monopoly packaging.
+
+### Isolated vs. net — both are true, they answer different questions
+
+Owner asked (2026-10-19): if the corporate rebate is set aside, did the two marked-up Monopoly
+items genuinely raise the Paper Cost % PnL line? **Yes — the markup is real dollars on real
+purchase-ledger lines, independent of the rebate.** Quantified, fleet-wide, Sept 21–Oct 18,
+2026:
+
+- The $14,940 excess (hash brown bag + 6oz fry carton, vs. what the regular-item rate would
+  have cost) is **≈0.18 percentage points of Paper Cost %** for that window, measured against
+  fleet sales of $8,204,173 and fleet paper purchase-$ of $372,527 (4.541% on a purchase-$
+  basis). Strip only that excess out and the window's paper cost % would read ~4.36% instead of
+  4.54%.
+- This is a *different question* from "what was the net effect of the whole Monopoly
+  promotion." **Both are correct, simultaneously**: in isolation, the two marked-up items did
+  push the cost line up by ~0.18pp; net of the −$51,561 promotional rebate (which the ledger
+  books separately, also under `paper_sub`), the *combined* Monopoly effect this period was a
+  reduction, because the rebate (>3x the markup) swamps it. The rebate doesn't make the markup
+  not real — it's a separate credit that happens to more than offset it on the P&L.
+
+### Reference document: owner-supplied official 2026 execution manual
+
+`data/monopoly-promo/2026_McD_Monopoly_ExecutionManual_OTC.pdf` (McDonald's USA, LLC's own
+restaurant execution manual for this program) independently corroborates the above:
+
+- Its "Themed Only Packaging Element" table (p.13) lists A Bag 100% Recyclable = WRIN
+  `10958-962`, B Bag = `13229-666`, C Bag = `15849-199` — **all three match the live ledger
+  WRINs exactly**, confirming the dataset and the per-store paired-ratio comparison methodology.
+- **Hash Browns and (Large) Fries are official national program items** (p.7's "Packaging
+  Products" trigger-item list), not a local/vendor anomaly — the manual's packaging-WRIN tables
+  (p.6, p.13-14) just aren't exhaustive for every trigger product, so the hash-brown-bag and
+  6oz-fry-carton WRINs found live but not itemized there are still legitimate program packaging.
+- **The official promotion runs through 11/1/26** (Game Piece Card distribution 10/6–11/1), two
+  weeks past this analysis's 10/18 measurement cutoff — so the $14,940 excess / −$51,561 rebate
+  figures above are a partial-window snapshot. Re-measure after 11/1/26 for the full-promotion
+  total before treating either number as final.
