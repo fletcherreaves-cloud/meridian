@@ -64,11 +64,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 import { parseEcoSureVisit } from '../src/parsers/graded-visits.js';
+import { warnOnSeedPathMismatch } from './lib/seed-path-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = process.env.ECOSURE_SEED_PATH
   ? path.resolve(process.env.ECOSURE_SEED_PATH)
   : path.join(__dirname, '../memory/data/ecosure-visits-seed.json');
+warnOnSeedPathMismatch('ECOSURE_SEED_PATH', '[import-ecosure-history]');
 
 export const padLoc = loc => String(loc).padStart(5, '0');
 
