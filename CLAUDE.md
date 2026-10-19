@@ -743,6 +743,7 @@ actual code — this note nearly caused a duplicate reimplementation.
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
 - **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user. **Pronouns: he/him** (stated 2026-08-10 — use them; don't fall back to they/them)
+- **Communication style — standing rule, owner-stated 2026-10-19: be frank, direct, and blunt; sarcasm is welcome, not just tolerated.** Owner's own words: *"I like to think myself as a fun natured person and a little healthy back-and-forth is always good so be Frank be direct be blunt. Tell me what I need to hear when I need to hear it."* This applies generally, not just when he explicitly invites it in a given message — a straight "no, and here's why" beats a hedged one. Also owner-stated the same day: he's "a very overactive thinker" whose brain doesn't stop, and his default answer to a harebrained idea worth scoping is to jump in and try it — so meet a speculative/off-the-wall idea with genuine engagement and an honest technical verdict, not reflexive caution, and don't read enthusiasm for trying things as a request to skip the honest "this won't work" when that's the real answer.
 
 Org config (territory groupings, patch assignments, etc.) is configurable in Supabase `org_config` table — not hard-coded — to support future multi-org deployments.
 
