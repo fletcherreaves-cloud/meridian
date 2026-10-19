@@ -9,6 +9,7 @@ import { ErrorBoundary } from './features/session.js';
 import App from './app/App.js';
 import { AuthGate } from './components/AuthGate.js';
 import { EomShareView } from './views/eom-share-view.js';
+import { EquipmentSurveyView } from './views/equipment-survey-view.js';
 
 // Startup load tracer (?trace=1). No-op unless enabled; must run before any module fetches.
 initLoadTrace();
@@ -43,13 +44,20 @@ if ('serviceWorker' in navigator) {
 try {
   // Public, no-login EOM share route: ?share=<token> renders the read-only report ONLY — it never
   // mounts AuthGate or the full app, so a shared link can't reach anything but its one snapshot.
-  const _shareToken = new URLSearchParams(location.search).get('share');
+  const _params = new URLSearchParams(location.search);
+  const _shareToken = _params.get('share');
+  // Public, no-login Equipment Survey route: ?equip=<token> — same posture as ?share= (no AuthGate,
+  // no full app), but this link writes (append-only) through the equipment-survey edge function
+  // rather than just reading a snapshot. See src/views/equipment-survey-view.js's own header.
+  const _equipToken = _params.get('equip');
   // One Suspense boundary for the whole app so lazily-loaded panels (React.lazy in App.js) resolve
   // against it — the initial bundle ships only the shell + landing view; each panel's code loads the
   // first time it's opened (code-splitting → faster first load and hard refresh).
   const _fallback = React.createElement('div', { style: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f1117', color: '#f5bc00', font: "600 14px/1 ui-sans-serif,system-ui,sans-serif" } }, 'Loading…');
   const _tree = _shareToken
     ? React.createElement(ErrorBoundary, null, React.createElement(EomShareView, { token: _shareToken }))
+    : _equipToken
+    ? React.createElement(ErrorBoundary, null, React.createElement(EquipmentSurveyView, { token: _equipToken }))
     : React.createElement(ErrorBoundary, null,
         React.createElement(AuthGate, null, React.createElement(React.Suspense, { fallback: _fallback }, React.createElement(App))));
   createRoot(document.getElementById('root')).render(_tree);

@@ -5181,6 +5181,58 @@ export async function fetchSharedEom(token) { return callShareFn({ token }); }
 export async function refreshSharedEom(token) { return callShareFn({ token, action: 'refresh' }); }
 export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }
 
+// ── Equipment Profile survey links (Phase 2) ────────────────────────────────────────────────
+// Same open-link shape as eom_share_links (token-based, service-role validated via the
+// equipment-survey edge function) but NOT scoped to one store/period — one link works for the
+// whole fleet. Link management (create/list/revoke) is authenticated, in-app; the public
+// walkthrough form never touches these tables directly, only the edge function.
+export async function createEquipmentSurveyLink(label) {
+  if (!supabase) return { token: null, error: 'no-db' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const { data, error } = await supabase.from('equipment_survey_links')
+    .insert({ label: label || null, created_by: uid }).select('token').single();
+  return { token: data?.token || null, error: error?.message || null };
+}
+export async function loadEquipmentSurveyLinks() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_survey_links')
+    .select('token,label,created_at,revoked,view_count,last_viewed_at').order('created_at', { ascending: false }).range(from, to));
+  return (data || []).map(r => ({ token: r.token, label: r.label, createdAt: r.created_at, revoked: r.revoked, viewCount: r.view_count, lastViewedAt: r.last_viewed_at }));
+}
+export async function revokeEquipmentSurveyLink(token, revoked = true) {
+  if (!supabase || !token) return { error: 'no-op' };
+  const { error } = await supabase.from('equipment_survey_links').update({ revoked }).eq('token', token);
+  return { error: error?.message || null };
+}
+// Public reader/writer — no auth; calls the equipment-survey edge function (the only public
+// gateway). Mirrors callShareFn's shape above.
+async function callEquipmentSurveyFn(payload) {
+  if (!URL || !KEY) return { error: 'no-db' };
+  try {
+    const res = await fetch(`${URL}/functions/v1/equipment-survey`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: `Bearer ${KEY}` },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (e) { return { error: String(e?.message || e) }; }
+}
+export async function fetchEquipmentCatalog(token) { return callEquipmentSurveyFn({ token }); }
+export async function fetchEquipmentEntries(token, loc) { return callEquipmentSurveyFn({ token, action: 'entries', loc }); }
+export async function submitEquipmentEntry(token, entry) { return callEquipmentSurveyFn({ token, action: 'submit', entry }); }
+export async function addEquipmentCatalogItem(token, item) { return callEquipmentSurveyFn({ token, action: 'add_catalog_item', item }); }
+// Separate function — larger payload (a photo), Claude vision call, and its own timeout profile,
+// so it's kept off the lighter catalog/entries/submit gateway above.
+export async function extractEquipmentPlate(token, imageBase64, mediaType) {
+  if (!URL || !KEY) return { error: 'no-db' };
+  try {
+    const res = await fetch(`${URL}/functions/v1/equipment-plate-extract`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: `Bearer ${KEY}` },
+      body: JSON.stringify({ token, imageBase64, mediaType }),
+    });
+    return await res.json();
+  } catch (e) { return { error: String(e?.message || e) }; }
+}
+
 // ── EOM count-date exceptions (accept an early count as the EOM count; logged + attributed) ──
 export async function saveEomCountException(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };
