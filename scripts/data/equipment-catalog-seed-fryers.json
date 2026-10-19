@@ -1,0 +1,60 @@
+{
+  "items": [
+    {
+      "type": "fryer",
+      "manufacturer": "Frymaster",
+      "model": "BIELA — Electric LOV Fryer (M3000 Controller)",
+      "modelAliases": ["BIELA"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resource - Frymaster.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Frymaster",
+      "model": "BIELA-T — Electric LOV Fryer (Touch Screen)",
+      "modelAliases": ["BIELA-T", "BIELAT"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resource - Frymaster.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Frymaster",
+      "model": "BIGLA — Gas LOV Fryer (M3000 Controller)",
+      "modelAliases": ["BIGLA"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resource - Frymaster.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Frymaster",
+      "model": "BIGLA-T — Gas LOV Fryer (Touch Screen)",
+      "modelAliases": ["BIGLA-T", "BIGLAT"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resource - Frymaster.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Henny Penny",
+      "model": "LVE Electric 100/200 Series",
+      "modelAliases": ["LVE 100", "LVE 200", "LVE-100", "LVE-200"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resources - Henny Penny.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Henny Penny",
+      "model": "LVE Electric 300 Series (Touchscreen)",
+      "modelAliases": ["LVE 300", "LVE-300"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resources - Henny Penny.pdf",
+      "consumables": []
+    },
+    {
+      "type": "fryer",
+      "manufacturer": "Henny Penny",
+      "model": "LVG Gas 100/200 Series",
+      "modelAliases": ["LVG 100", "LVG 200", "LVG-100", "LVG-200"],
+      "sourceDoc": "data/equipment-survey/Help Files/Fryers/Fryer Equipment Resources - Henny Penny.pdf",
+      "consumables": []
+    }
+  ]
+}

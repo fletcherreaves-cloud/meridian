@@ -81,6 +81,10 @@ Deno.serve(async (req) => {
         submitted_by: clean(e.submittedBy, 100) || null,
         photo_url: clean(e.photoUrl, 500) || null,
         ai_extraction: e.aiExtraction && typeof e.aiExtraction === 'object' ? e.aiExtraction : null,
+        position_detail: e.positionDetail && typeof e.positionDetail === 'object' ? {
+          side: ['side1_right', 'side1_left', 'side2_right', 'side2_left'].includes(e.positionDetail.side) ? e.positionDetail.side : null,
+          relative: ['same_as_grill', 'opposite_of_grill'].includes(e.positionDetail.relative) ? e.positionDetail.relative : null,
+        } : null,
       };
       const { data: inserted, error } = await sb.from('equipment_survey_entries').insert(row).select('id,instance_id').single();
       if (error) return json({ error: error.message }, 500);
