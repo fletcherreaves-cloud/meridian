@@ -1,0 +1,134 @@
+{
+  "sourceDoc": "data/equipment-survey/Reference Guides/Grill_Toaster_Release_Sheets-Belts_Reference_Guide.pdf (Martin Brower, updated 2024-01-06)",
+  "items": [
+    {
+      "type": "grill",
+      "manufacturer": "Garland",
+      "model": "2-platen Electric Grill (MWE-9501/9801, MWG-9501)",
+      "modelAliases": ["MWE-9501", "MWE9801", "MWG-9501"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2174-012", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2198-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Garland",
+      "model": "3-platen Gas & Electric (MWE3W, MWG3W, MWE3S)",
+      "modelAliases": ["MWE3W", "MWG3W", "MWE3S"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2180-012", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2199-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Garland",
+      "model": "3-platen Gas or Electric, NextGen (2+1 single chassis) M(G/E)-3PX",
+      "modelAliases": ["MG-3PX", "ME-3PX"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "13180-003", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "13071-000", "label": "Lower Release Sheet", "notes": "Will change to 13180-000 once 13071-000 is depleted" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Taylor",
+      "model": "3-platen Gas or Electric Intelli-Gap (C842 & C844)",
+      "modelAliases": ["C842", "C844"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2701-009", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2199-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Taylor",
+      "model": "2-platen Gas or Electric Intelli-Gap (C832 & C835)",
+      "modelAliases": ["C832", "C835"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2188-009", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2198-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Taylor",
+      "model": "2-platen Gas or Electric (Models 12, 15, 69, 22, 22E, 32 & 35)",
+      "modelAliases": ["12", "15", "69", "22", "22E", "32", "35"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2184-003", "label": "Upper Release Sheet", "notes": "Will change to 2184-012 once 2184-003 is depleted" },
+        { "consumableType": "lower_release_sheet", "wrin": "2198-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Taylor",
+      "model": "3-platen Gas or Electric NextGen (C850-C860)",
+      "modelAliases": ["C850", "C852", "C855", "C860"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "13264-000", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2199-012", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "grill",
+      "manufacturer": "Taylor",
+      "model": "2-platen Gas or Electric (Model 11)",
+      "modelAliases": ["11"],
+      "consumables": [
+        { "consumableType": "upper_release_sheet", "wrin": "2175-012", "label": "Upper Release Sheet" },
+        { "consumableType": "lower_release_sheet", "wrin": "2198-003", "label": "Lower Release Sheet" }
+      ]
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "A.J. Antunes",
+      "model": "Horizontal Contact Toaster (HCT-5H / HEBT-5V)",
+      "modelAliases": ["HCT-5H", "HEBT-5V"],
+      "consumables": [
+        { "consumableType": "belt_crown", "wrin": "1630-021", "label": "Crown Belt (2 belts)" },
+        { "consumableType": "belt_main", "wrin": "1630-024", "label": "Main Belt (1 belt)" },
+        { "consumableType": "belt_heel_club", "wrin": "1630-027", "label": "Heel/Club Belt (1 belt)" }
+      ]
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "A.J. Antunes",
+      "model": "Universal Toaster (UTX-200/200L)",
+      "modelAliases": ["UTX-200", "UTX-200L"],
+      "consumables": [
+        { "consumableType": "release_sheet", "wrin": "7409-040", "label": "Universal Toaster Sheet" }
+      ]
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "A.J. Antunes",
+      "model": "Club Toaster (CTX-200/200L)",
+      "modelAliases": ["CTX-200", "CTX-200L"],
+      "consumables": [
+        { "consumableType": "release_sheet", "wrin": "5623-000", "label": "Universal Club Toaster Sheet", "notes": "Current WRIN -- will change to 5623-030 once 5623-000 is depleted" }
+      ]
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Prince Castle",
+      "model": "CBT Horizontal Toaster",
+      "modelAliases": ["CBT"],
+      "consumables": [
+        { "consumableType": "release_sheet", "wrin": "7409-038", "label": "CBT Release Sheets x4" },
+        { "consumableType": "belt_club", "wrin": "5623-012", "label": "CBT Club Toaster Belts x2", "notes": "Will change to 5623-028 once 5623-012 is depleted" }
+      ]
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "A.J. Antunes",
+      "model": "Vertical Toaster (VCT-250)",
+      "modelAliases": ["VCT-250"],
+      "consumables": [
+        { "consumableType": "release_sheet", "wrin": "1630-009", "label": "Chemsil Silicone Belt/Release Sheet 770mm x 285mm x2", "notes": "Will change to 5623-027 once 1630-009 is depleted" },
+        { "consumableType": "belt_wrap", "wrin": "1247-003", "label": "Belt Wrap (7039 FG Black Sheets, 800mm x 310mm x3)" }
+      ]
+    }
+  ]
+}
