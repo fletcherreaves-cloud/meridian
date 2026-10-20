@@ -357,6 +357,112 @@ function GmAssignmentsEditor({ S, onUpdate }) {
         btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
+// ── Role Assignments editor (owner request 2026-10-20, generalizing GM/Supervisor) ───────────
+// "for anytime I make notations such as this let's mark the change somehow so that we can also
+// determine strengths and weaknesses of who our people are when assigned to specific roles such
+// as accounting manager of the scheduling manager to kind of coincide with notating when GM's
+// change or Supervisor patches change." Same effective-dated timeline + permanent audit-log
+// model as GmAssignmentsEditor/SupervisorAssignmentsEditor above, generalized to ANY role name
+// rather than a third/fourth/fifth near-identical editor -- the set of roles is open-ended by
+// design (new ones get named as the owner thinks of them), so `role` is free text with a
+// datalist of previously-used values, same pattern SupervisorAssignmentsEditor's own supervisor-
+// name field already uses for an open-ended name set. GM/Supervisor themselves are left exactly
+// as they are -- proven, heavily used, not worth the migration risk to fold in here; this is the
+// parallel system for everything ELSE, per the owner's own "to kind of coincide with" framing.
+// Logs to the SAME org_assignment_audit table GM/Supervisor already write to
+// (logOrgAssignmentChange's assignmentType param already took an arbitrary string -- only the
+// DB's own CHECK constraint restricted it to 'gm'/'supervisor', widened in schema-role-
+// assignment-audit-widen.sql) under a slugified assignment_type (e.g. 'accounting_manager') so
+// the one audit trail covers every role uniformly. Strengths/weaknesses-by-person analytics
+// (the owner's own stated end goal) is a separate, later project that needs real assignment
+// history to work from -- this just builds the thing that records it.
+function roleSlug(name) {
+  const s = String(name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  return s.length >= 2 ? s : 'role';
+}
+function RoleAssignmentsEditor({ S, onUpdate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const asg = S.roleAssignments || [];
+  const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), roleAssignments: next });
+  const roleNames = [...new Set(asg.map(a => a.role))].sort();
+  const personNames = [...new Set(asg.map(a => a.person))].sort();
+  // Current, grouped by role then store -- each (role, loc) pair resolved independently via
+  // latestEffective (same "latest start <= date wins" rule GM/Supervisor already use), since a
+  // store can hold a current assignee under several different roles at once.
+  const currentByRole = {};
+  for (const role of roleNames) {
+    const roleRows = asg.filter(a => a.role === role);
+    const locs = [...new Set(roleRows.map(a => a.loc))];
+    const perLoc = {};
+    for (const loc of locs) {
+      const rec = latestEffective(loc, today, roleRows, a => ({ person: a.person, email: a.email || '' }));
+      if (rec) perLoc[loc] = rec;
+    }
+    if (Object.keys(perLoc).length) currentByRole[role] = perLoc;
+  }
+  const [role, setRole] = useState('');
+  const [person, setPerson] = useState('');
+  const [email, setEmail] = useState('');
+  const [store, setStore] = useState('');
+  const [eff, setEff] = useState(today);
+
+  const apply = () => {
+    const roleName = role.trim(); if (!roleName) { alert('Role name required'); return; }
+    const name = person.trim(); if (!name) { alert('Person name required'); return; }
+    const loc = String(parseInt(store.trim(), 10)); if (!loc || loc === 'NaN') { alert('Enter a store ID'); return; }
+    const row = { loc, role: roleName, person: name, email: email.trim(), start: eff || '' };
+    save([...asg, row]);
+    logOrgAssignmentChange(roleSlug(roleName), loc, 'add', null, row).catch(() => {});
+    setPerson(''); setEmail(''); setStore('');
+  };
+  const editStart = (idx, val) => {
+    const before = asg[idx];
+    save(asg.map((a, i) => i === idx ? { ...a, start: val } : a));
+    logOrgAssignmentChange(roleSlug(before.role), before.loc, 'edit', before, { ...before, start: val }).catch(() => {});
+  };
+  const remove = (idx) => {
+    const removed = asg[idx];
+    save(asg.filter((_, i) => i !== idx));
+    logOrgAssignmentChange(roleSlug(removed.role), removed.loc, 'remove', removed, null).catch(() => {});
+  };
+  const rows = asg.map((a, i) => ({ ...a, _i: i })).sort((a, b) => a.role.localeCompare(b.role) || a.loc.localeCompare(b.loc) || (a.start || '').localeCompare(b.start || ''));
+
+  return div({ className: 'set-sec' },
+    div({ className: 'set-sec-t' }, 'Role Assignments (effective-dated)'),
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'For any role besides GM/Supervisor — Accounting Manager, Scheduling Manager, whatever comes up. Same effective-dated model: a store\'s assignee for a role on any date = the assignment with the latest effective date on/before it. Reassign by adding a row with the effective date — no need to remove the old one, the newer date wins. Blank date = since always. Every add/edit/removal here is also logged to the same permanent audit trail GM/Supervisor changes use — even a ✕ removal stays recoverable.'),
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Current — as of today'),
+    Object.keys(currentByRole).length
+      ? Object.entries(currentByRole).sort((a, b) => a[0].localeCompare(b[0])).map(([roleName, perLoc]) =>
+          div({ key: roleName, style: { marginBottom: 6 } },
+            div({ style: { fontWeight: 700, fontSize: 11.5 } }, roleName + ':'),
+            Object.entries(perLoc).sort((a, b) => (STORE_NAMES[a[0]] || a[0]).localeCompare(STORE_NAMES[b[0]] || b[0])).map(([loc, rec]) =>
+              div({ key: loc, style: { fontSize: 11.5, marginLeft: 10 } },
+                span({ style: { color: 'var(--text3)' } }, (STORE_NAMES[loc] || loc) + ': '),
+                span({ style: { fontWeight: 600 } }, rec.person + (rec.email ? ' (' + rec.email + ')' : ''))))))
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, '—'),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assign / reassign a role'),
+    div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      inp({ className: 'set-inp', placeholder: 'Role (new or existing)', value: role, onChange: e => setRole(e.target.value), list: 'role-names', style: { flex: '1 1 150px' } }),
+      h('datalist', { id: 'role-names' }, roleNames.map(n => opt({ key: n, value: n }))),
+      inp({ className: 'set-inp', placeholder: 'Person name', value: person, onChange: e => setPerson(e.target.value), list: 'role-person-names', style: { flex: '1 1 150px' } }),
+      h('datalist', { id: 'role-person-names' }, personNames.map(n => opt({ key: n, value: n }))),
+      inp({ className: 'set-inp', placeholder: 'Email (optional)', value: email, onChange: e => setEmail(e.target.value), style: { flex: '1 1 170px' } }),
+      inp({ className: 'set-inp', placeholder: 'Store ID', value: store, onChange: e => setStore(e.target.value), style: { flex: '0 0 110px' } }),
+      inp({ className: 'set-inp', type: 'date', value: eff, onChange: e => setEff(e.target.value), title: 'Effective date', style: { flex: '0 0 140px' } }),
+      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assignment history (' + asg.length + ')'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' } },
+      rows.map(r => div({ key: r._i, style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5 } },
+        span({ style: { minWidth: 120, fontWeight: 700 } }, r.role),
+        span({ style: { minWidth: 160, color: 'var(--text3)' } }, r.loc + ' — ' + (STORE_NAMES[r.loc] || r.loc)),
+        span({ style: { minWidth: 120, fontWeight: 600 } }, r.person),
+        inp({ className: 'set-inp', type: 'date', defaultValue: r.start || '', key: 'd' + r._i + (r.start || ''), onBlur: e => editStart(r._i, e.target.value), title: 'Effective date (blank = since always)', style: { width: 140 } }),
+        btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
+}
+
 // ── Store Status editor (dispatch 2026-10-14, Lindsay 18213 -> 44689 relocation) ─────────────
 // Set or clear a store's LAST DAY OF OPERATION. Persists to settings.storeLifecycle -> org_config
 // 'app_settings', the same blanket-merge sync every other settings key already uses -- no new
@@ -471,7 +577,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         div({style:{width:140,flexShrink:0,borderRight:'.5px solid var(--bdr)',
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
-              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['gms','👔 GMs'],['oms','⚙ OMs'],['store-status','🔁 Store Status'],
+              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['gms','👔 GMs'],['roles','🧑‍💼 Roles'],['oms','⚙ OMs'],['store-status','🔁 Store Status'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
               ...(onOpenAdmin?[['users','👥 Users']]:[]),
               // ⚠️ CORRECTED (RBAC audit, 2026-09-16): 'developer' is not a real profiles.role
@@ -727,6 +833,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           note:'Edit DOs and their store numbers. A name may also appear in Operators or Patches — dual roles (e.g. a DO who is also a Supervisor for a subset) are expected, not a bug.'}),
         activeSection==='supervisors'&&h(SupervisorAssignmentsEditor,{S,onUpdate}),
         activeSection==='gms'&&h(GmAssignmentsEditor,{S,onUpdate}),
+        activeSection==='roles'&&h(RoleAssignmentsEditor,{S,onUpdate}),
         activeSection==='store-status'&&h(StoreStatusEditor,{S,onUpdate}),
         activeSection==='oms'&&h(GroupsEditor,{S,onUpdate,field:'omGroups',title:'Operations Manager (OM) Groups',
           note:'Scaffold — empty by default. Add OMs and their store numbers here whenever ready; no code change needed.'}),
