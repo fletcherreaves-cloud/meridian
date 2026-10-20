@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "type": "steamer",
+      "manufacturer": "Antunes",
+      "model": "SS-400",
+      "modelAliases": ["SS400"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Steamer Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "steamer",
+      "manufacturer": "Antunes",
+      "model": "UCS-2000",
+      "modelAliases": ["UCS2000"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Steamer Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "steamer",
+      "manufacturer": "Prince Castle (Marmon)",
+      "model": "625 Series",
+      "modelAliases": ["625"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Steamer Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "model": "MT-12",
+      "modelAliases": ["MT12"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "model": "UTX-200 / CTX-200",
+      "modelAliases": ["UTX-200", "CTX-200", "UTX200", "CTX200"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "model": "HCT-5H / HRT-5H",
+      "modelAliases": ["HCT-5H", "HRT-5H", "HCT5H", "HRT5H"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Prince Castle (Marmon)",
+      "model": "340-URTG2L",
+      "modelAliases": ["340-URTG2L", "URTG2L"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Prince Castle (Marmon)",
+      "model": "CBT-MCD (Core Bun Toaster, Model CBT-SB-NA-1PS)",
+      "modelAliases": ["CBT-MCD", "CBT-SB-NA-1PS"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "toaster",
+      "manufacturer": "Prince Castle (Marmon)",
+      "model": "IRT-MCD (Infrared Toaster, Model IRT-SB-NA-1PS / IRT-SB-NA-3PS)",
+      "modelAliases": ["IRT-MCD", "IRT-SB-NA-1PS", "IRT-SB-NA-3PS"],
+      "sourceDoc": "data/equipment-survey/Help Files/Toasters:Steamers/Toaster Equipment Resource.pdf",
+      "consumables": []
+    }
+  ]
+}

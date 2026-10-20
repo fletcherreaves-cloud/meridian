@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "type": "shake_sundae",
+      "manufacturer": "Carpigiani",
+      "model": "K3/E",
+      "modelAliases": ["K3/E", "K3E", "K3"],
+      "sourceDoc": "data/equipment-survey/Help Files/Shake:Sundae/Carpigiani K3.png",
+      "consumables": []
+    },
+    {
+      "type": "shake_sundae",
+      "manufacturer": "Taylor",
+      "model": "C602 (Soft Serve / Shake Combination Freezer)",
+      "modelAliases": ["C602"],
+      "sourceDoc": "data/equipment-survey/Help Files/Shake:Sundae/Taylor C602.png",
+      "consumables": []
+    }
+  ]
+}

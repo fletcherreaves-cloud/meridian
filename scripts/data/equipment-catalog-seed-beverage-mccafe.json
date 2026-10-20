@@ -1,0 +1,140 @@
+{
+  "items": [
+    {
+      "type": "abs",
+      "manufacturer": "Cornelius/Marmon",
+      "model": "ABS 1.0 (discontinued 2019, parts/support through 2029)",
+      "modelAliases": ["ABS 1.0", "ABS1.0"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/ABS/ABS Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "abs",
+      "manufacturer": "Cornelius/Marmon",
+      "model": "ABS 2.0 (OEM Model #621058590)",
+      "modelAliases": ["ABS 2.0", "ABS2.0", "621058590"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/ABS/ABS Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "juice_dispenser",
+      "manufacturer": "BUNN",
+      "model": "JDF-2",
+      "modelAliases": ["JDF2"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Juice Dispensers/Juice Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "juice_dispenser",
+      "manufacturer": "Taylor",
+      "model": "C009 (discontinued manufacturing Dec 2021, parts support through Dec 2031)",
+      "modelAliases": ["C009"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Juice Dispensers/Juice Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "Silver King (Marmon/Prince Castle)",
+      "model": "SK-1 (obsolete as of 2021, parts through 2031)",
+      "modelAliases": ["SK-1", "SK1"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "Silver King (Marmon/Prince Castle)",
+      "model": "SK-2",
+      "modelAliases": ["SK-2", "SK2"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "SureShot",
+      "model": "AC110-PC-51 (obsolete as of 6/30/2024, parts through 6/30/2034)",
+      "modelAliases": ["AC110-PC-51"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "SureShot",
+      "model": "AC110-V2PCC-1-D2",
+      "modelAliases": ["AC110-V2PCC-1-D2"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "SureShot",
+      "model": "AC230-PC-29",
+      "modelAliases": ["AC230-PC-29"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "sweetener_creamer_dispenser",
+      "manufacturer": "SureShot",
+      "model": "AC2-GP-1-G38",
+      "modelAliases": ["AC2-GP-1-G38"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/Sweetener:Creamer Dispenser Equipment Resources/Sweetener_Creamer Dispenser Equipment Resources.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_1step",
+      "manufacturer": "Franke",
+      "model": "SB1200 (obsolete as of 2026, parts through 2029)",
+      "modelAliases": ["SB1200"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/1-Step Espresso/Specialty McCafe 1Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_1step",
+      "manufacturer": "Franke",
+      "model": "FM850 (obsolete as of 2019, parts through 2029)",
+      "modelAliases": ["FM850"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/1-Step Espresso/Specialty McCafe 1Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_1step",
+      "manufacturer": "Bunn",
+      "model": "Sure-Tamp (obsolete as of 2/1/2023, parts through 2/1/2028)",
+      "modelAliases": ["Sure-Tamp", "Sure Tamp"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/1-Step Espresso/Specialty McCafe 1Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_1step",
+      "manufacturer": "Melitta",
+      "model": "CT8 (obsolete as of 2024, parts through 2029)",
+      "modelAliases": ["CT8"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/1-Step Espresso/Specialty McCafe 1Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_2step",
+      "manufacturer": "Thermoplan",
+      "model": "CTS",
+      "modelAliases": ["CTS"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/2-Step Espresso/Specialty McCafe 2Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_2step",
+      "manufacturer": "Franke",
+      "model": "S700",
+      "modelAliases": ["S700"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/2-Step Espresso/Specialty McCafe 2Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "espresso_2step",
+      "manufacturer": "WMF (SEB Professional)",
+      "model": "5000 S+",
+      "modelAliases": ["5000S+", "WMF 5000 S+"],
+      "sourceDoc": "data/equipment-survey/Help Files/Beverage:McCafe/2-Step Espresso/Specialty McCafe 2Step Espresso Equipment Resource.pdf",
+      "consumables": []
+    }
+  ]
+}
