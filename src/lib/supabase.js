@@ -1098,6 +1098,64 @@ export async function loadConversionEfficiency() {
   return data || [];
 }
 
+// ── Oil Efficiency persistence (owner request 2026-10-19) ───────────────────
+// One row per (loc, period) -- see schema-oil-efficiency.sql for the full rationale. Store-level
+// only, no per-item dimension like Conversion Efficiency has.
+const _OE_METRIC_KEYS = [
+  'oil_use_3mo_pct', 'oil_use_6mo_pct', 'oil_use_12mo_pct',
+  'impact_3mo_dollars', 'impact_3mo_label', 'impact_6mo_dollars', 'impact_6mo_label',
+  'impact_12mo_dollars', 'impact_12mo_label',
+  'filtration_3mo_pct', 'filtration_6mo_pct', 'filtration_12mo_pct',
+];
+const _oeFill = r => _OE_METRIC_KEYS.reduce((n, k) => n + (r[k] != null ? 1 : 0), 0);
+
+export async function saveOilEfficiency(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.loc || !r.period) continue;
+    const loc = String(r.loc);
+    const k = `${loc}|${r.period}`;
+    const cand = {
+      loc, period: r.period,
+      loc_name:   r.loc_name || null,
+      owner_name: r.owner_name || null,
+      oil_use_3mo_pct:     r.oil_use_3mo_pct ?? null,
+      oil_use_6mo_pct:     r.oil_use_6mo_pct ?? null,
+      oil_use_12mo_pct:    r.oil_use_12mo_pct ?? null,
+      impact_3mo_dollars:  r.impact_3mo_dollars ?? null,
+      impact_3mo_label:    r.impact_3mo_label ?? null,
+      impact_6mo_dollars:  r.impact_6mo_dollars ?? null,
+      impact_6mo_label:    r.impact_6mo_label ?? null,
+      impact_12mo_dollars: r.impact_12mo_dollars ?? null,
+      impact_12mo_label:   r.impact_12mo_label ?? null,
+      filtration_3mo_pct:  r.filtration_3mo_pct ?? null,
+      filtration_6mo_pct:  r.filtration_6mo_pct ?? null,
+      filtration_12mo_pct: r.filtration_12mo_pct ?? null,
+      source_file: r.source_file || null,
+    };
+    if (!byKey[k] || _oeFill(cand) > _oeFill(byKey[k])) byKey[k] = cand;
+  }
+  const upsert = Object.values(byKey);
+  if (!upsert.length) return { saved: 0, errors: [] };
+  const { error } = await supabase
+    .from('oil_efficiency')
+    .upsert(upsert, { onConflict: 'loc,period' });
+  if (error) { console.warn('[oil_efficiency] save error:', error); return { saved: 0, errors: [error.message] }; }
+  console.log(`[oil_efficiency] saved ${upsert.length} rows`);
+  return { saved: upsert.length, errors: [] };
+}
+
+export async function loadOilEfficiency() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase
+    .from('oil_efficiency')
+    .select('*')
+    .order('period', { ascending: false })
+    .range(from, to));
+  return data || [];
+}
+
 // ── SMG VOICE Daypart (Time-of-Day) persistence ──────────────────────────────
 // One row per (period, report_type, loc, daypart) with 8 metric %s. Identity is
 // the store's daypart within a period/window — operator label is irrelevant.

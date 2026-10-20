@@ -14,14 +14,26 @@
 //   labeled "meridian-processed". For each attachment found, POSTs the bytes to the Supabase
 //   ingest-report Edge Function. Labels the thread when done so it's never processed twice.
 //
-//   Conversion Efficiency Ratio reports (processConversionEfficiencyEmails below) need
-//   CONVERSION_EFFICIENCY_SENDERS filled in with the real From: address before they'll do
-//   anything -- it ships empty/disabled, not guessing at a sender like QSRSoft/SMG VOICE
-//   above (both of those WERE confirmed real system addresses, so hardcoding them was safe).
+//   Conversion Efficiency Ratio AND Oil Efficiency reports (processConversionEfficiencyEmails /
+//   processOilEfficiencyEmails below) share one sender list, OWNER_OPERATOR_SENDERS -- five real
+//   addresses the owner confirmed directly (2026-10-19), same "Owner Operator Reports" program
+//   for both report types. Not system addresses like QSRSoft/SMG VOICE above, so a new owner
+//   shows up here occasionally; add their address to the list rather than guessing at a pattern.
+//   Because these two share one sender list, they do NOT share PROCESSED_LABEL -- see
+//   CE_PROCESSED_LABEL/OE_PROCESSED_LABEL below for why.
 
 const EDGE_FUNCTION_URL  = 'https://oiajpwdcihgvhofntjcn.supabase.co/functions/v1/ingest-report';
 const SUPABASE_ANON_KEY  = 'sb_publishable_2eafXeOEWmR6aNCqdWC_-A_zJvvJhwa';
 const PROCESSED_LABEL    = 'meridian-processed';
+// Conversion Efficiency + Oil Efficiency get their OWN labels, not the shared PROCESSED_LABEL
+// above. They're the only two processors pulling from the same human sender addresses
+// (OWNER_OPERATOR_SENDERS) -- every other processor's senders are disjoint system addresses, so
+// a shared label can never cause one processor to hide a thread from another. These two could:
+// if one real email/thread ever carried attachments for both report types, whichever processor
+// ran first would label the thread and the other would never see it again. Separate labels mean
+// each processor tracks only what IT has ingested.
+const CE_PROCESSED_LABEL  = 'meridian-processed-conversion-efficiency';
+const OE_PROCESSED_LABEL  = 'meridian-processed-oil-efficiency';
 
 const QSR_SENDERS = [
   'scheduled-reports@myqsrsoft.com',
@@ -33,6 +45,7 @@ function processAllEmails() {
   processSMGVoiceEmails();
   processVoicePerformanceEmails();
   processConversionEfficiencyEmails();
+  processOilEfficiencyEmails();
 }
 
 // ── SMG VOICE Customer Comment Report emails (weekly, Monday mornings) ────────
@@ -177,18 +190,19 @@ function processVoicePerformanceEmails() {
 }
 
 // ── Conversion Efficiency Ratio emails (monthly, "Owner Operator Reports") ────
-// McDonald's corporate sends these from a real person's mailbox (e.g. "Thorley Rick (US
-// Partners)" / "LOPEZ-THORLEY KATHRYN E"), not a system address like QSRSoft/SMG VOICE above —
-// confirm the real From: address in Gmail (not just the display name) before relying on this.
-// TODO: fill in the real sender address(es) below, then this function works exactly like
-// processVoicePerformanceEmails() above.
-const CONVERSION_EFFICIENCY_SENDERS = [
-  // e.g. 'rick.thorley@us.mcd.com',
+// McDonald's corporate sends these from real people's mailboxes (owner-confirmed 2026-10-19),
+// not a system address like QSRSoft/SMG VOICE above.
+const OWNER_OPERATOR_SENDERS = [
+  'kathy.lopez-thorley@partners.mcd.com',
+  'rick.thorley@partners.mcd.com',
+  'gary.mornhinweg@partners.mcd.com',
+  'ryan.thorley@partners.mcd.com',
+  'jacob.thorley@partners.mcd.com',
 ];
 
 function processConversionEfficiencyEmails() {
-  if (!CONVERSION_EFFICIENCY_SENDERS.length) {
-    console.log('CONVERSION_EFFICIENCY_SENDERS not configured yet — skipping.');
+  if (!OWNER_OPERATOR_SENDERS.length) {
+    console.log('OWNER_OPERATOR_SENDERS not configured yet — skipping.');
     return;
   }
   const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
@@ -197,8 +211,8 @@ function processConversionEfficiencyEmails() {
     return;
   }
 
-  const fromClause = CONVERSION_EFFICIENCY_SENDERS.map(s => `from:${s}`).join(' OR ');
-  const query = `(${fromClause}) has:attachment -label:${PROCESSED_LABEL}`;
+  const fromClause = OWNER_OPERATOR_SENDERS.map(s => `from:${s}`).join(' OR ');
+  const query = `(${fromClause}) has:attachment -label:${CE_PROCESSED_LABEL}`;
   const threads = GmailApp.search(query, 0, 20);
 
   if (!threads.length) {
@@ -206,8 +220,8 @@ function processConversionEfficiencyEmails() {
     return;
   }
 
-  let label = GmailApp.getUserLabelByName(PROCESSED_LABEL);
-  if (!label) label = GmailApp.createLabel(PROCESSED_LABEL);
+  let label = GmailApp.getUserLabelByName(CE_PROCESSED_LABEL);
+  if (!label) label = GmailApp.createLabel(CE_PROCESSED_LABEL);
 
   let filesIngested = 0;
 
@@ -257,6 +271,82 @@ function processConversionEfficiencyEmails() {
   }
 
   console.log(`Done. ${filesIngested} Conversion Efficiency file(s) ingested from ${threads.length} thread(s).`);
+}
+
+// ── Oil Efficiency ("Oil Management Report", Cargill) emails ─────────────────
+// Same sender list as Conversion Efficiency above -- same "Owner Operator Reports" program,
+// different report. Attachment filename: <operatorId>_Cargill_food_oil_report_<Mon>_<YYYY>.pdf.
+function processOilEfficiencyEmails() {
+  if (!OWNER_OPERATOR_SENDERS.length) {
+    console.log('OWNER_OPERATOR_SENDERS not configured yet — skipping.');
+    return;
+  }
+  const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
+  if (!secret) {
+    console.error('INGEST_SECRET not set in Script Properties. Aborting.');
+    return;
+  }
+
+  const fromClause = OWNER_OPERATOR_SENDERS.map(s => `from:${s}`).join(' OR ');
+  const query = `(${fromClause}) has:attachment -label:${OE_PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query, 0, 20);
+
+  if (!threads.length) {
+    console.log('No unprocessed Oil Efficiency emails found.');
+    return;
+  }
+
+  let label = GmailApp.getUserLabelByName(OE_PROCESSED_LABEL);
+  if (!label) label = GmailApp.createLabel(OE_PROCESSED_LABEL);
+
+  let filesIngested = 0;
+
+  for (const thread of threads) {
+    let threadOk = true;
+    console.log('Processing Oil Efficiency thread:', thread.getFirstMessageSubject(), '| msgs:', thread.getMessageCount());
+
+    for (const msg of thread.getMessages()) {
+      const attachments = msg.getAttachments({ includeInlineImages: false });
+
+      for (const att of attachments) {
+        const name = att.getName();
+        if (!name.match(/cargill_food_oil_report.*\.pdf$/i)) continue; // only Oil Management Report PDFs
+
+        try {
+          const response = UrlFetchApp.fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Authorization':   `Bearer ${SUPABASE_ANON_KEY}`,
+              'X-Ingest-Secret': secret,
+              'X-File-Name':     name,
+              'X-Source':        'email',
+              'Content-Type':    'application/pdf',
+            },
+            payload:            att.copyBlob().getBytes(),
+            muteHttpExceptions: true,
+          });
+
+          const code = response.getResponseCode();
+          const body = response.getContentText();
+
+          if (code === 200) {
+            console.log(`✓ Ingested Oil Efficiency: ${name} → ${body}`);
+            filesIngested++;
+          } else {
+            console.warn(`✗ Failed [${code}]: ${name} → ${body}`);
+            threadOk = false;
+          }
+        } catch (e) {
+          console.error(`✗ Error sending ${name}:`, e.message);
+          threadOk = false;
+        }
+      }
+    }
+
+    if (threadOk) thread.addLabel(label);
+  }
+
+  console.log(`Done. ${filesIngested} Oil Efficiency file(s) ingested from ${threads.length} thread(s).`);
 }
 
 // ── Main function (runs on hourly trigger) ────────────────────────────────────
