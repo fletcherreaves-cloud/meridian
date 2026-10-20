@@ -27,6 +27,20 @@ const td = (p, ...c) => h('td', p, ...c);
 const tr = (p, ...c) => h('tr', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
+// This report is monthly-period data (one row per store per calendar month), not daily — the
+// shared DATE_RANGE_PRESETS (7D/14D/.../180D) tops out well under a year and, worse, ReportShell's
+// own default (28D) covers only the current month. Since buildConversionEfficiencyReport always
+// collapses to each store's single LATEST period *within the selected range* (see engine header),
+// a too-narrow default silently hides every store whose latest upload isn't inside it — exactly
+// the bug (2026-10-20) where a freshly re-uploaded historical backfill "wasn't loading" while
+// today's emailed row did show: the backfilled months were simply outside the 28-day window.
+// Own preset list, wide enough for realistic backfill depth, defaulting to effectively "all".
+export const CE_DATE_PRESETS = [
+  { id: '12mo', label: '12 Months', days: 366 },
+  { id: '24mo', label: '24 Months', days: 731 },
+  { id: 'all', label: 'All Time', days: 3653 },
+];
+
 // financial_opportunity_annual/financial_impact_ytd are already signed $ figures (positive =
 // using MORE than target, a real $ loss opportunity; negative = running under target, a $
 // credit) — straight f$ with an explicit sign reads clearer here than a bare dollar amount.
@@ -85,6 +99,7 @@ export function ConversionEfficiencyPanel({ stores, onClose }) {
     title: 'Conversion Efficiency Ratio', icon: '🍟', onBack: onClose,
     subtitlePrefix: 'Food usage vs. target by raw item, from McDonald’s corporate Owner Operator Reports',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+    datePresets: CE_DATE_PRESETS, defaultPresetId: 'all',
     onRun: run, getExportData,
   },
     div({ style: { fontSize: '10.5px', color: 'var(--text2)', lineHeight: 1.6, marginBottom: 10, padding: '8px 10px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },

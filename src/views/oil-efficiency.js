@@ -16,6 +16,16 @@ const div = (p, ...c) => h('div', p, ...c);
 const td = (p, ...c) => h('td', p, ...c);
 const tr = (p, ...c) => h('tr', p, ...c);
 
+// Same reasoning as conversion-efficiency.js's CE_DATE_PRESETS: this is monthly-period data, and
+// buildOilEfficiencyReport collapses to each store's single latest period WITHIN the selected
+// range -- ReportShell's generic 28D default silently hid a freshly re-uploaded historical
+// backfill (2026-10-20) because the backfilled months fell outside that window.
+export const OE_DATE_PRESETS = [
+  { id: '12mo', label: '12 Months', days: 366 },
+  { id: '24mo', label: '24 Months', days: 731 },
+  { id: 'all', label: 'All Time', days: 3653 },
+];
+
 function fPct(n) { return n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(0) + '%'; }
 function fImpact(dollars, label) {
   if (dollars != null) return f$(dollars);
@@ -72,6 +82,7 @@ export function OilEfficiencyPanel({ stores, onClose }) {
     title: 'Oil Efficiency', icon: '🛢️', onBack: onClose,
     subtitlePrefix: 'Oil use vs. target and filtration compliance by store, from Cargill’s monthly Oil Management Reports',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+    datePresets: OE_DATE_PRESETS, defaultPresetId: 'all',
     onRun: run, getExportData,
   },
     div({ style: { fontSize: '10.5px', color: 'var(--text2)', lineHeight: 1.6, marginBottom: 10, padding: '8px 10px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },

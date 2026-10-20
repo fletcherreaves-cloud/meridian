@@ -16,6 +16,8 @@ import { detectType } from '../parsers/index.js';
 import {
   periodsInRange, latestPeriodByStore, buildConversionEfficiencyReport, itemsForStore,
 } from '../engine/conversion-efficiency.js';
+import { resolveDatePreset } from '../components/PanelControls.js';
+import { CE_DATE_PRESETS } from '../views/conversion-efficiency.js';
 
 // item(text, x, y) -- mirrors a real pdfjs TextItem's {str, transform} shape closely enough for
 // the parser's own item-mapping (`{text: i.str.trim(), x: i.transform[4], y: i.transform[5]}`).
@@ -243,5 +245,23 @@ describe('engine/conversion-efficiency.js', () => {
     const { itemsByLoc } = buildConversionEfficiencyReport(rows, {});
     const items = itemsForStore(itemsByLoc, '1');
     expect(items.map(i => i.raw_item)).toEqual(['B', 'A']);
+  });
+
+  // Regression, 2026-10-20: a re-uploaded historical backfill "wasn't loading" in the panel while
+  // today's emailed row did show. Root cause wasn't the save or the engine -- it was ReportShell's
+  // generic defaultPresetId='28d' (src/components/ReportShell.js), which only ever covers the
+  // current month, silently excluding every older period before buildConversionEfficiencyReport
+  // even runs. This test exercises the real call-site fix (CE_DATE_PRESETS + defaultPresetId:
+  // 'all' in views/conversion-efficiency.js), not just the already-correct engine filter, per this
+  // repo's "verification must touch the call site" rule.
+  it('the panel’s own default date range (CE_DATE_PRESETS "all") does not exclude a year-old backfilled period', () => {
+    const range = resolveDatePreset('all', CE_DATE_PRESETS, new Date('2026-10-20'));
+    expect(range).toBeTruthy();
+    const rows = [
+      mk('1', '2024-11', 'French Fries', { financial_opportunity_annual: 500 }), // old backfill
+      mk('2', '2026-10', 'French Fries', { financial_opportunity_annual: 10 }), // today's emailed row
+    ];
+    const { storeRows } = buildConversionEfficiencyReport(rows, { range });
+    expect(storeRows.map(r => r.loc).sort()).toEqual(['1', '2']);
   });
 });
