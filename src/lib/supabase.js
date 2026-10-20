@@ -5332,6 +5332,15 @@ export async function fetchEquipmentCatalog(token) { return callEquipmentSurveyF
 export async function fetchEquipmentEntries(token, loc) { return callEquipmentSurveyFn({ token, action: 'entries', loc }); }
 export async function submitEquipmentEntry(token, entry) { return callEquipmentSurveyFn({ token, action: 'submit', entry }); }
 export async function addEquipmentCatalogItem(token, item) { return callEquipmentSurveyFn({ token, action: 'add_catalog_item', item }); }
+// Review & Share (owner request 2026-10-19) — candidate email recipients for a store (its
+// current GM, resolved server-side from the live gmAssignments timeline, plus the owner as a
+// standing fallback) and the send itself. Both go through the same public gateway as every other
+// equipment-survey action — the function re-fetches the store's own current entries server-side
+// to build the email rather than trusting whatever the client happened to have in memory.
+export async function fetchEquipmentRecipients(token, loc) { return callEquipmentSurveyFn({ token, action: 'recipients', loc }); }
+export async function sendEquipmentSurveyEmail(token, { loc, submittedBy, recipients }) {
+  return callEquipmentSurveyFn({ token, action: 'email', loc, submittedBy, recipients });
+}
 // Separate function — larger payload (a photo), Claude vision call, and its own timeout profile,
 // so it's kept off the lighter catalog/entries/submit gateway above.
 export async function extractEquipmentPlate(token, imageBase64, mediaType) {

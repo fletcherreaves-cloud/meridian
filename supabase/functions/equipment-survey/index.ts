@@ -12,14 +12,34 @@
 //   { token, action:"submit", entry }      → append one equipment_survey_entries row
 //   { token, action:"add_catalog_item", item } → crew "type it in" escape hatch: inserts a new
 //                                             equipment_catalog row with flagged=true, source='crew-added'
+//   { token, action:"recipients", loc }    → candidate email recipients for a store (Review &
+//                                             Share, owner request 2026-10-19): the store's
+//                                             current GM (resolved server-side from the live
+//                                             gmAssignments timeline in org_config, same data
+//                                             management.js's GmAssignmentsEditor writes and
+//                                             src/features/morning-brief.js's whoIsGM() reads)
+//                                             plus the owner as a standing fallback recipient.
+//   { token, action:"email", loc, submittedBy, recipients } → re-fetches the store's own current
+//                                             entries server-side (never trusts whatever the
+//                                             client had in memory), builds the same rollup the
+//                                             client's Review & Share screen shows, and emails it
+//                                             via Resend to each validated recipient address.
 //
 // Deploy: supabase functions deploy equipment-survey --no-verify-jwt   (public, so no JWT)
+// Also needs its OWN Resend secret set (separate store from GitHub Action secrets):
+//   supabase secrets set RESEND_API_KEY=<same key scripts/lib/resend-notify.mjs uses>
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { latestEntriesByInstance } from '../../../src/engine/equipment-survey.js';
+import {
+  latestEntriesByInstance, resolveStoreGM, buildEquipmentRollupRows, buildEquipmentRollupText,
+} from '../../../src/engine/equipment-survey.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const RESEND_URL = 'https://api.resend.com/emails';
+const RESEND_FROM = 'Meridian <onboarding@resend.dev>'; // same shared Resend sender resend-notify.mjs uses
+const OWNER_CONTACT = { name: 'Fletcher (Owner)', email: 'fletcher.reaves@mcreaves.com' };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +53,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 function clean(s: unknown, max = 500): string {
   return String(s ?? '').trim().slice(0, max);
+}
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 Deno.serve(async (req) => {
@@ -89,6 +112,57 @@ Deno.serve(async (req) => {
       const { data: inserted, error } = await sb.from('equipment_survey_entries').insert(row).select('id,instance_id').single();
       if (error) return json({ error: error.message }, 500);
       return json({ ok: true, id: inserted.id, instanceId: inserted.instance_id });
+    }
+
+    if (action === 'recipients') {
+      const loc = clean(b.loc, 20);
+      if (!loc) return json({ error: 'loc required' }, 400);
+      const { data: cfg, error: cfgErr } = await sb.from('org_config').select('data').eq('key', 'app_settings').maybeSingle();
+      if (cfgErr) return json({ error: 'lookup failed' }, 500);
+      const gmAssignments = Array.isArray(cfg?.data?.gmAssignments) ? cfg.data.gmAssignments : [];
+      const gm = resolveStoreGM(gmAssignments, loc);
+      return json({ ok: true, gm: (gm && gm.email) ? gm : null, owner: OWNER_CONTACT });
+    }
+
+    if (action === 'email') {
+      const loc = clean(b.loc, 20);
+      if (!loc) return json({ error: 'loc required' }, 400);
+      const submittedBy = clean(b.submittedBy, 100);
+      const recipients = [...new Set((Array.isArray(b.recipients) ? b.recipients : [])
+        .map((r: unknown) => clean(r, 200)).filter((r: string) => EMAIL_RE.test(r)))].slice(0, 10);
+      if (!recipients.length) return json({ error: 'At least one valid recipient email is required.' }, 400);
+      const apiKey = Deno.env.get('RESEND_API_KEY');
+      if (!apiKey) return json({ error: 'Email sending is not configured yet (RESEND_API_KEY missing) — ask the owner to set it.' }, 500);
+
+      const [entR, catR] = await Promise.all([
+        sb.from('equipment_survey_entries').select('*').eq('loc', loc).order('submitted_at', { ascending: false }),
+        sb.from('equipment_catalog').select('id,type,manufacturer,model'),
+      ]);
+      if (entR.error) return json({ error: 'lookup failed' }, 500);
+      const entries = latestEntriesByInstance(entR.data || []);
+      const catalogById: Record<string, unknown> = {};
+      for (const c of (catR.data || [])) catalogById[(c as { id: string }).id] = c;
+      const storeLabel = loc; // the edge function has no STORE_NAMES map; the loc code is still unambiguous
+      const rows = buildEquipmentRollupRows(entries, catalogById);
+      const text = buildEquipmentRollupText(storeLabel, rows);
+      const html = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px">
+<p style="margin:0 0 10px;color:#555">${submittedBy ? `Submitted by ${escapeHtml(submittedBy)} via` : 'From'} the Meridian Equipment Survey.</p>
+<pre style="white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:12px">${escapeHtml(text)}</pre>
+</div>`;
+
+      let sent = 0; const errors: string[] = [];
+      for (const to of recipients) {
+        try {
+          const resp = await fetch(RESEND_URL, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: RESEND_FROM, to: [to], subject: `Equipment Survey — Store ${storeLabel}`, html }),
+          });
+          if (resp.ok) sent++; else errors.push(`${to}: ${resp.status}`);
+        } catch (e) { errors.push(`${to}: ${String((e as Error)?.message || e)}`); }
+      }
+      if (!sent) return json({ error: `Send failed for all recipient(s): ${errors.join('; ')}` }, 502);
+      return json({ ok: true, sent, errors: errors.length ? errors : undefined });
     }
 
     if (action === 'add_catalog_item') {

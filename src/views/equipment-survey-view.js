@@ -14,47 +14,19 @@
 import * as React from 'react';
 import {
   fetchEquipmentCatalog, fetchEquipmentEntries, submitEquipmentEntry, addEquipmentCatalogItem,
-  extractEquipmentPlate,
+  extractEquipmentPlate, fetchEquipmentRecipients, sendEquipmentSurveyEmail,
 } from '../lib/supabase.js';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
+import {
+  PLACEMENTS, SIDE_OPTIONS, RELATIVE_OPTIONS, sideLabel, relativeLabel,
+  describeEquipmentEntry, buildEquipmentRollupRows, buildEquipmentRollupText,
+} from '../engine/equipment-survey.js';
 
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const NAME_KEY = 'mf_equip_submitted_by';
-
-// Owner feedback 2026-10-19: replaced with the real zone names used in-store (BDAP Cell/Parallel
-// CBB Cell is the actual McDonald's beverage-build-type term — data/equipment-survey/README.md's
-// Floor Plans section confirms it, not a guess at an acronym).
-const PLACEMENTS = [
-  { value: 'front_counter', label: 'Front Counter' },
-  { value: 'drive_thru', label: 'Drive Thru' },
-  { value: 'mccafe_cell', label: 'McCafé Cell' },
-  { value: 'bdap_cell', label: 'BDAP Cell' },
-  { value: 'dessert_cell', label: 'Dessert Cell' },
-  { value: 'production_area', label: 'Production Area (Kitchen)' },
-  { value: 'prep_area', label: 'Prep Area' },
-  { value: 'back_of_house', label: 'Back of House' },
-];
-
-// Owner feedback 2026-10-19: grills need an absolute side (a store's own Side 1/Side 2
-// numbering, which isn't standardized store-to-store); the protein fryer is more often
-// described RELATIVE to the grills ("same side" / "opposite side") than by an absolute side the
-// reporter may not know. Both fields can be set together ("select both criteria if needed for
-// clarity") -- stored as one position_detail jsonb object, never forced into a single choice.
-const SIDE_OPTIONS = [
-  { value: 'side1_right', label: 'Side 1 — Right' },
-  { value: 'side1_left', label: 'Side 1 — Left' },
-  { value: 'side2_right', label: 'Side 2 — Right' },
-  { value: 'side2_left', label: 'Side 2 — Left' },
-];
-const RELATIVE_OPTIONS = [
-  { value: 'same_as_grill', label: 'Same side as grill(s)' },
-  { value: 'opposite_of_grill', label: 'Opposite side of grill(s)' },
-];
-const sideLabel = v => SIDE_OPTIONS.find(o => o.value === v)?.label;
-const relativeLabel = v => RELATIVE_OPTIONS.find(o => o.value === v)?.label;
 
 // ── Shared dark-theme primitives, matching eom-share-view.js's palette ─────────────────────────
 const colors = { bg: '#0f1117', surf: '#171a21', surf2: '#1d222b', bdr: '#262b36', bdr2: '#333a48', text: '#e7ebf3', dim: '#78839a', gold: '#f5bc00', good: '#4ade80', warn: '#fb923c', bad: '#f87171' };
@@ -267,6 +239,109 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
   );
 }
 
+// ── Review & Share (owner request 2026-10-19): rolled-up copy the crew member can keep, plus an
+// optional email to the store's GM and/or anyone else they pick ────────────────────────────────
+// "identify the user and send results to their email as well... If unsure, loop in a
+// clarification section... Or alternatively, use a selection list to let them select one or more
+// people." Built as a selection list (checkboxes), never an auto-send — this is a public,
+// no-login page, so there is no verified identity to silently guess an email from; the GM/owner
+// candidates come from fetchEquipmentRecipients (the one directory Meridian already keeps,
+// src/features/morning-brief.js's live gmAssignments, resolved server-side) and the crew member
+// explicitly confirms who it goes to, same as they'd confirm any other send.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function ReviewShare({ token, loc, submittedBy, entries, catalogById, onBack }) {
+  const storeName = STORE_NAMES[loc] || loc;
+  const rows = useMemo(() => buildEquipmentRollupRows(entries, catalogById), [entries, catalogById]);
+  const text = useMemo(() => buildEquipmentRollupText(storeName, rows), [storeName, rows]);
+  const [copied, setCopied] = useState(false);
+  const [recipients, setRecipients] = useState(null); // { gm, owner } | null
+  const [recErr, setRecErr] = useState('');
+  const [selected, setSelected] = useState({}); // email -> checked
+  const [extraEmails, setExtraEmails] = useState([]);
+  const [otherEmail, setOtherEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState(null); // { ok, sent } | { error }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchEquipmentRecipients(token, loc).then(r => {
+      if (cancelled) return;
+      if (r?.error) { setRecErr(r.error); return; }
+      setRecipients(r);
+      if (r?.gm?.email) setSelected(s => ({ ...s, [r.gm.email]: true }));
+    });
+    return () => { cancelled = true; };
+  }, [token, loc]);
+
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const canClipboard = typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function';
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { /* clipboard permission denied -- the text is already visible on screen to select manually */ }
+  };
+  const share = async () => {
+    try { await navigator.share({ title: `Equipment Survey — ${storeName}`, text }); }
+    catch { /* user backed out of the share sheet -- not an error */ }
+  };
+  const addOtherEmail = () => {
+    const v = otherEmail.trim();
+    if (!v || !EMAIL_RE.test(v)) return;
+    setExtraEmails(x => [...new Set([...x, v])]);
+    setSelected(s => ({ ...s, [v]: true }));
+    setOtherEmail('');
+  };
+  const sendEmail = async () => {
+    const to = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
+    if (!to.length) { setSendResult({ error: 'Pick at least one recipient first.' }); return; }
+    setSending(true); setSendResult(null);
+    const r = await sendEquipmentSurveyEmail(token, { loc, submittedBy, recipients: to });
+    setSending(false);
+    setSendResult(r?.error ? { error: r.error } : { ok: true, sent: r?.sent ?? to.length });
+  };
+
+  const checkRow = (emailAddr, labelText) => emailAddr && div({ key: emailAddr, style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '13px' } },
+    h('input', { type: 'checkbox', checked: !!selected[emailAddr], onChange: e => setSelected(s => ({ ...s, [emailAddr]: e.target.checked })) }),
+    span({}, labelText));
+
+  return card(
+    div({ style: { fontWeight: 700, fontSize: '16px', marginBottom: '4px' } }, 'Review & Share'),
+    div({ style: { fontSize: '12px', color: colors.dim, marginBottom: '14px' } }, `${rows.length} item${rows.length === 1 ? '' : 's'} logged for ${storeName}`),
+
+    div({ style: { background: colors.surf2, border: `1px solid ${colors.bdr2}`, borderRadius: '8px', padding: '10px 12px', fontSize: '12.5px', whiteSpace: 'pre-wrap', maxHeight: '320px', overflowY: 'auto', marginBottom: '14px', fontFamily: 'ui-monospace,Menlo,Consolas,monospace' } }, text),
+
+    div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '18px' } },
+      canClipboard && h('button', { style: btn('secondary'), onClick: copy }, copied ? 'Copied ✓' : '📋 Copy to Clipboard'),
+      canShare && h('button', { style: btn('secondary'), onClick: share }, '📤 Share…'),
+    ),
+
+    div({ style: { fontWeight: 700, fontSize: '14px', marginBottom: '10px', borderTop: `1px solid ${colors.bdr}`, paddingTop: '14px' } }, 'Also email this to:'),
+    recErr ? div({ style: { color: colors.bad, fontSize: '12px', marginBottom: '10px' } }, recErr)
+      : !recipients ? div({ style: { color: colors.dim, fontSize: '12px', marginBottom: '10px' } }, 'Loading recipients…')
+      : div({},
+          recipients.gm?.email
+            ? checkRow(recipients.gm.email, `${recipients.gm.name} — Store GM (${recipients.gm.email})`)
+            : div({ style: { fontSize: '12px', color: colors.dim, marginBottom: '8px' } }, 'No GM on file yet for this store.'),
+          recipients.owner?.email && checkRow(recipients.owner.email, `${recipients.owner.name} (${recipients.owner.email})`),
+          ...extraEmails.map(em => checkRow(em, em)),
+        ),
+
+    div({ style: { display: 'flex', gap: '8px', marginTop: '8px', marginBottom: '14px' } },
+      h('input', { style: { ...inputStyle, marginBottom: 0, flex: 1 }, placeholder: 'Add another email…', value: otherEmail, onChange: e => setOtherEmail(e.target.value), onKeyDown: e => { if (e.key === 'Enter') { e.preventDefault(); addOtherEmail(); } } }),
+      h('button', { style: btn('secondary'), onClick: addOtherEmail }, 'Add'),
+    ),
+
+    sendResult?.error && div({ style: { color: colors.bad, fontSize: '13px', marginBottom: '10px' } }, sendResult.error),
+    sendResult?.ok && div({ style: { color: colors.good, fontSize: '13px', marginBottom: '10px' } }, `Sent to ${sendResult.sent} recipient${sendResult.sent === 1 ? '' : 's'}.`),
+
+    div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap' } },
+      h('button', { style: btn('primary'), disabled: sending || !recipients, onClick: sendEmail }, sending ? 'Sending…' : '✉️ Send Email'),
+      h('button', { style: btn('secondary'), onClick: onBack }, '← Back'),
+    ),
+  );
+}
+
 // ── Store detail: current equipment list + add/edit ─────────────────────────────────────────
 function StoreDetail({ token, loc, submittedBy, onBack }) {
   const [catalog, setCatalog] = useState([]);
@@ -290,10 +365,9 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
 
   const catalogById = useMemo(() => { const m = {}; for (const c of catalog) m[c.id] = c; return m; }, [catalog]);
 
-  const describeEntry = (e) => {
-    const item = e.catalog_item_id ? catalogById[e.catalog_item_id] : null;
-    return item ? `${item.type} — ${item.manufacturer} ${item.model}` : (e.manual_entry_text || 'Equipment');
-  };
+  if (mode === 'review') {
+    return h(ReviewShare, { token, loc, submittedBy, entries, catalogById, onBack: () => setMode('list') });
+  }
 
   if (mode === 'add' || editingEntry) {
     return page(
@@ -315,13 +389,16 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
     loading ? div({ style: { color: colors.dim, padding: '30px 0', textAlign: 'center' } }, 'Loading…') :
     err ? div({ style: { color: colors.bad, fontSize: '13px' } }, err) :
     div({},
-      h('button', { style: { ...btn('primary'), width: '100%', marginBottom: '16px' }, onClick: () => setMode('add') }, '+ Add Equipment'),
+      div({ style: { display: 'flex', gap: '10px', marginBottom: '16px' } },
+        h('button', { style: { ...btn('primary'), flex: 1 }, onClick: () => setMode('add') }, '+ Add Equipment'),
+        entries.length > 0 && h('button', { style: { ...btn('secondary'), flex: 1 }, onClick: () => setMode('review') }, '📋 Review & Share'),
+      ),
       entries.length === 0
         ? div({ style: { color: colors.dim, fontSize: '13px', textAlign: 'center', padding: '20px 0' } }, 'No equipment logged for this store yet.')
         : div({ style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
             ...entries.map(e => div({ key: e.instance_id, style: { background: colors.surf, border: `1px solid ${colors.bdr}`, borderRadius: '9px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
               div({},
-                div({ style: { fontWeight: 600, fontSize: '14px' } }, describeEntry(e)),
+                div({ style: { fontWeight: 600, fontSize: '14px' } }, describeEquipmentEntry(e, catalogById)),
                 (e.placement_zone || e.position_detail?.side || e.position_detail?.relative || e.serial_number) && div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
                   [
                     e.placement_zone && PLACEMENTS.find(p => p.value === e.placement_zone)?.label,
