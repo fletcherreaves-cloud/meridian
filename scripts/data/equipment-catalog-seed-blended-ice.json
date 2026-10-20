@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "type": "blended_ice",
+      "manufacturer": "Multiplex",
+      "model": "BIC PLUS (Blend In Cup PLUS MA-8-2, manual fill)",
+      "modelAliases": ["BIC PLUS", "MA-8-2 PLUS"],
+      "sourceDoc": "data/equipment-survey/Help Files/Blended Ice/BIC_BIM Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "blended_ice",
+      "manufacturer": "Multiplex",
+      "model": "BIC (Blend In Cup MA-8-2 Legacy, manual fill)",
+      "modelAliases": ["BIC", "MA-8-2 Legacy"],
+      "sourceDoc": "data/equipment-survey/Help Files/Blended Ice/BIC_BIM Equipment Resource.pdf",
+      "consumables": []
+    },
+    {
+      "type": "blended_ice",
+      "manufacturer": "Taylor",
+      "model": "C029",
+      "modelAliases": ["C029"],
+      "sourceDoc": "data/equipment-survey/Help Files/Blended Ice/BIC_BIM Equipment Resource.pdf",
+      "consumables": []
+    }
+  ]
+}

@@ -4,11 +4,17 @@
 // Defaults to scripts/data/equipment-catalog-seed.json (Grill/Toaster, transcribed from data/
 // equipment-survey/Reference Guides/Grill_Toaster_Release_Sheets-Belts_Reference_Guide.pdf --
 // the one real structured model->consumable-WRIN cross-reference document on hand as of
-// 2026-10-19). Pass a different seed file (e.g. equipment-catalog-seed-fryers.json) to add more
-// types -- every type besides Grill/Toaster starts with zero catalog rows and grows either via
-// a seed file like this one (when a real manufacturer reference doc exists, even with zero
-// consumables -- see that doc's own header) or via the Phase 2 survey form's "type it in, flag
-// for review" path.
+// 2026-10-19). Pass a different seed file to add more types -- every type besides Grill/Toaster
+// starts with zero catalog rows and grows either via a seed file like this one (when a real
+// manufacturer reference doc exists, even with zero consumables -- see that doc's own header) or
+// via the Phase 2 survey form's "type it in, flag for review" path.
+// 2026-10-20 (owner: "add other equipment to our list as you can") -- seeded live from the real
+// reference PDFs/asset-tag photos in data/equipment-survey/Help Files/: equipment-catalog-seed-
+// fryers.json, -steamers-toasters.json, -combi-ovens.json, -uhc.json, -staging-cabinet.json,
+// -prep-lines.json, -blended-ice.json, -beverage-mccafe.json (ABS/juice/sweetener-creamer/
+// 1-step+2-step espresso), -shake-sundae.json. See
+// src/__tests__/equipment-catalog-seed-remaining-categories.test.js for the schema this seed
+// file shape is held to.
 // Requires VITE_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.
 import fs from 'node:fs';
 import path from 'node:path';

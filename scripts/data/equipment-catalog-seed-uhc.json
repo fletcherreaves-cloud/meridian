@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "type": "uhc",
+      "manufacturer": "Frymaster",
+      "model": "UHCHD (Legacy High Density UHC, discontinued globally June 30, 2020)",
+      "modelAliases": ["UHCHD"],
+      "sourceDoc": "data/equipment-survey/Help Files/UHC/UHC Equipment Resource.pdf",
+      "consumables": [
+        { "consumableType": "apsc_cleaner", "wrin": "05890-000", "label": "KAY® SolidSense™ All-Purpose Super Concentrate (APSC)" }
+      ]
+    },
+    {
+      "type": "uhc",
+      "manufacturer": "Frymaster",
+      "model": "UHC Touchscreen (High Density UHC with touchscreen UI)",
+      "modelAliases": ["UHC Touchscreen"],
+      "sourceDoc": "data/equipment-survey/Help Files/UHC/UHC Equipment Resource.pdf",
+      "consumables": [
+        { "consumableType": "apsc_cleaner", "wrin": "05890-000", "label": "KAY® SolidSense™ All-Purpose Super Concentrate (APSC)" }
+      ]
+    },
+    {
+      "type": "uhc",
+      "manufacturer": "Prince Castle (Marmon)",
+      "model": "UHC6PT-22MCD",
+      "modelAliases": ["UHC6PT22MCD"],
+      "sourceDoc": "data/equipment-survey/Help Files/UHC/UHC Equipment Resource.pdf",
+      "consumables": [
+        { "consumableType": "apsc_cleaner", "wrin": "05890-000", "label": "KAY® SolidSense™ All-Purpose Super Concentrate (APSC)" }
+      ]
+    },
+    {
+      "type": "uhc",
+      "manufacturer": "Henny Penny",
+      "model": "UHC-600 (Universal Holding Cabinet)",
+      "modelAliases": ["UHC-600", "UHC600"],
+      "sourceDoc": "data/equipment-survey/Help Files/UHC/UHC Equipment Resource.pdf",
+      "consumables": [
+        { "consumableType": "apsc_cleaner", "wrin": "05890-000", "label": "KAY® SolidSense™ All-Purpose Super Concentrate (APSC)" }
+      ]
+    }
+  ]
+}

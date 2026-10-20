@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "type": "combi_oven",
+      "manufacturer": "Blodgett",
+      "model": "BLCT-6E-H-MCD",
+      "modelAliases": ["BLCT6EHMCD"],
+      "sourceDoc": "data/equipment-survey/Help Files/Combi Ovens/Simplified Breakfast - Combi Oven Best Practices v11 FINAL for manual.pdf",
+      "consumables": []
+    },
+    {
+      "type": "combi_oven",
+      "manufacturer": "Convotherm",
+      "model": "Generation 1 (gray screen overlay)",
+      "modelAliases": ["Convotherm Gen-1", "Gen-1"],
+      "sourceDoc": "data/equipment-survey/Help Files/Combi Ovens/Simplified Breakfast - Combi Oven Best Practices v11 FINAL for manual.pdf",
+      "consumables": []
+    },
+    {
+      "type": "combi_oven",
+      "manufacturer": "Convotherm",
+      "model": "Generation 2 (black screen overlay)",
+      "modelAliases": ["Convotherm Gen-2", "Gen-2"],
+      "sourceDoc": "data/equipment-survey/Help Files/Combi Ovens/Simplified Breakfast - Combi Oven Best Practices v11 FINAL for manual.pdf",
+      "consumables": []
+    }
+  ]
+}

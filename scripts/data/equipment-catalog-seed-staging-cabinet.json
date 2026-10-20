@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "type": "staging_cabinet",
+      "manufacturer": "Moffat",
+      "model": "Simplified Breakfast Staging Cabinet",
+      "modelAliases": ["Moffat Cabinet", "Moffat Staging Cabinet"],
+      "sourceDoc": "data/equipment-survey/Help Files/Simplified Breakfast Staging Cabinet/Simplified Breakfast Equipment Best Practices and Resources 3-19-2024 vf.pdf",
+      "consumables": [
+        { "consumableType": "delimer_tablet", "wrin": "02722-044", "label": "KAY® Delimer Tablet", "notes": "Weekly deliming -- place 2 tablets in the water tank, soak 30 minutes; up to 4 tablets or longer soak if severe limescale buildup." }
+      ]
+    }
+  ]
+}

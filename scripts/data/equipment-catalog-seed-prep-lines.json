@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "type": "prep_line",
+      "manufacturer": "QC Conveyors (Duravant)",
+      "model": "PF53 Conveyor",
+      "modelAliases": ["PF53"],
+      "sourceDoc": "data/equipment-survey/Help Files/Prep Lines/COPL Prep Line Conveyor QC Conveyor Resources.pdf",
+      "consumables": []
+    }
+  ]
+}
