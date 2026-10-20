@@ -30,6 +30,9 @@ function detectReportType(filename: string): string {
   // Conversion Efficiency Ratio reports (McDonald's corporate "Owner Operator Reports",
   // filename: Owner_Operator_<OWNER NAME>.pdf) -- mirrors parsers/index.js's detectType.
   if (fn.startsWith('owner_operator')) return 'conversion-efficiency';
+  // Oil Efficiency ("Oil Management Report", Cargill-generated), same program -- filename:
+  // <operatorId>_Cargill_food_oil_report_<Mon>_<YYYY>.pdf.
+  if (fn.includes('cargill_food_oil_report')) return 'oil-efficiency';
   return 'unknown';
 }
 

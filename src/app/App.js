@@ -233,6 +233,7 @@ const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportu
 const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })));
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })));
 const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })));
+const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -321,7 +322,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1579,6 +1580,44 @@ function App() {
         }
         console.log(`[Meridian] ✓ Conversion Efficiency: ${totalRows} rows from ${processedIds.length} PDF(s)`);
       }catch(e){console.warn('[Meridian] Conversion Efficiency ingest failed:',e);}
+    })();
+    // ── Auto-ingest Oil Efficiency PDFs from Gmail poller ─────────────────────
+    // Same shape as the Conversion Efficiency block above.
+    (async()=>{
+      try{
+        if(!supabase) return;
+        const{data:oePending,error:oeErr}=await supabase
+          .from('pending_reports')
+          .select('id,filename,storage_path')
+          .eq('processed',false)
+          .eq('report_type','oil-efficiency')
+          .order('uploaded_at',{ascending:true})
+          .limit(20);
+        if(oeErr||!oePending?.length) return;
+        console.log(`[Meridian] ${oePending.length} Oil Efficiency PDF(s) pending`);
+        const {parseOilEfficiencyPDF}=await import('../parsers/oil-efficiency.js');
+        let totalRows=0;
+        const processedIds=[];
+        for(const rec of oePending){
+          try{
+            const{data:blob,error:dlErr}=await supabase.storage
+              .from('qsr-reports')
+              .download(rec.storage_path);
+            if(dlErr||!blob){console.warn('[oil_efficiency] DL failed:',rec.filename);continue;}
+            const arr=await blob.arrayBuffer();
+            const rows=await parseOilEfficiencyPDF(arr,rec.filename);
+            if(rows.length) totalRows+=rows.length;
+            await saveOilEfficiency(rows);
+            processedIds.push(rec.id);
+          }catch(e){console.warn('[oil_efficiency] parse error:',rec.filename,e);}
+        }
+        if(processedIds.length){
+          await supabase.from('pending_reports')
+            .update({processed:true,processed_at:new Date().toISOString()})
+            .in('id',processedIds);
+        }
+        console.log(`[Meridian] ✓ Oil Efficiency: ${totalRows} rows from ${processedIds.length} PDF(s)`);
+      }catch(e){console.warn('[Meridian] Oil Efficiency ingest failed:',e);}
     })();
     // ── Cross-device sync — load manual uploads from other devices ───────────
     // Downloads from the 'reports' Storage bucket via storage_path (uploadReportFile,
@@ -2880,6 +2919,20 @@ function App() {
               console.warn('[Meridian] Conversion Efficiency PDF matched by filename but parsed 0 rows (wrong report type?):',file.name);
               loaded.push({name:file.name,type:{...typeInfo,label:typeInfo.label+' (0 rows parsed)'}});
             }
+          } else if(typeInfo.type==='oil-efficiency'){
+            const {parseOilEfficiencyPDF}=await import('../parsers/oil-efficiency.js');
+            const arr=await file.arrayBuffer();
+            const oeRows=await parseOilEfficiencyPDF(arr,file.name);
+            if(oeRows.length>0){
+              const res=await saveOilEfficiency(oeRows);
+              const stores=new Set(oeRows.map(r=>r.loc)).size;
+              const periods=[...new Set(oeRows.map(r=>r.period).filter(Boolean))].sort();
+              console.log(`[Meridian] Oil Efficiency: ${oeRows.length} rows (${stores} store${stores===1?'':'s'}) from ${file.name} (saved ${res.saved}${res.errors?.length?', err '+res.errors.join('; '):''})`);
+              loaded.push({name:file.name,type:typeInfo,periods,stores,saved:res.saved,saveErr:res.errors?.length?res.errors.join('; '):null});
+            } else {
+              console.warn('[Meridian] Oil Efficiency PDF matched by filename but parsed 0 rows (wrong report type?):',file.name);
+              loaded.push({name:file.name,type:{...typeInfo,label:typeInfo.label+' (0 rows parsed)'}});
+            }
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }
@@ -3513,6 +3566,7 @@ function App() {
         if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
         if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
+        if(modal==='oil-efficiency') perm('analytics.store')&&goRoute('oil-efficiency');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&goRoute('forms-completion');
@@ -3811,6 +3865,7 @@ function App() {
       routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
+      routePanel==='oil-efficiency'&&h(OilEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did

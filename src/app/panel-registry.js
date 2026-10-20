@@ -334,6 +334,9 @@ export const PANELS = [
   // no self-service API known to exist for this corporate program; see
   // parsers/conversion-efficiency.js's own header.
   { id:'conversion-efficiency', label:'Conversion Efficiency Ratio', icon:'🍟', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-10-19 ("do the same for oil efficiency reports") -- same program as
+  // conversion-efficiency above, see parsers/oil-efficiency.js's own header.
+  { id:'oil-efficiency', label:'Oil Efficiency', icon:'🛢️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },

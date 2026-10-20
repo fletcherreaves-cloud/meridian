@@ -199,6 +199,10 @@ function detectType(filename, wb){
   // monthly, Oracle Analytics Publisher PDF). Filenames observed from real samples:
   // "Owner_Operator_<OWNER NAME>.pdf".
   if(ext==='pdf'&&fn.startsWith('owner_operator'))return{type:'conversion-efficiency',label:'Conversion Efficiency Ratio Report',dr,confidence:'high'};
+  // Oil Efficiency ("Oil Management Report") -- Cargill-generated, same "Owner Operator Reports"
+  // program as Conversion Efficiency above. Filenames observed from real samples:
+  // "<operatorId>_Cargill_food_oil_report_<Mon>_<YYYY>.pdf".
+  if(ext==='pdf'&&fn.includes('cargill_food_oil_report'))return{type:'oil-efficiency',label:'Oil Efficiency (Cargill)',dr,confidence:'high'};
   if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
   // "Large Graph", or "Data Only" sheet (whichever export layout was chosen).
@@ -2458,3 +2462,4 @@ function parsePeopleSkillsWb(wb){
 
 export { parseXLDate, findCol, fc, fcx, parseNum, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays };
 export { parseConversionEfficiencyPDF } from './conversion-efficiency.js';
+export { parseOilEfficiencyPDF } from './oil-efficiency.js';
