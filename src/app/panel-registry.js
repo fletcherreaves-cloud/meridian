@@ -337,6 +337,12 @@ export const PANELS = [
   // Owner request 2026-10-19 ("do the same for oil efficiency reports") -- same program as
   // conversion-efficiency above, see parsers/oil-efficiency.js's own header.
   { id:'oil-efficiency', label:'Oil Efficiency', icon:'🛢️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-10-21: real, in-app, read/write visual floor-plan view of a store's
+  // Equipment Profile survey data (src/views/equipment-layout.js's own header has the full
+  // design rationale, incl. why it's single-store-only for v1). Test-kitchen for now -- first
+  // real use hasn't happened yet; section is 'operations' (its real future home) from day one
+  // per this file's own promotion-is-a-one-field-flip convention.
+  { id:'equipment-layout', label:'Layout Planner', icon:'🗺️', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:18 },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
