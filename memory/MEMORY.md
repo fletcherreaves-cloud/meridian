@@ -4590,6 +4590,13 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   [attribution-validity-register-login.md](attribution-validity-register-login.md)'s
   contested-attribution design, SAGE's disclosure-gating policy). Not yet scoped into dispatches.
 - [RLS hardening plan](project-rls-hardening-plan.md) — require-auth policies (Phase 1 done).
+- [Multi-tenant onboarding status](project-multitenant-onboarding.md) — 2026-10-21, owner asked
+  "just curious" what a second operator would take. Consolidates the real answer: tenant-level RLS
+  isolation and per-store isolation are BOTH already live and independently measured (not just
+  written), and the store/targets registry already has a live-override path wired through `App.js`.
+  What's actually left is short and concrete: `org_config`'s PK needs to become `(key, tenant_id)`,
+  the automated pull scripts need per-tenant credential/tenant_id stamping, and new-tenant users need
+  a manual provisioning step (no self-serve signup path yet). Read this before re-deriving any of it.
 - [Project audit 2026-07-27](project-audit-2026-07-27.md) · [Supabase priority](project-supabase-priority.md)
   · [Data model](project-data-model.md) · [Sync rework](project-sync-rework.md) · [Hosting](project-hosting.md)
 - [Deploy rule](feedback-deploy.md) — push to branch; Vercel auto-deploys. [Selector UI standard](feedback-selector-ui-standard.md).
