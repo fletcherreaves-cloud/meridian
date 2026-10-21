@@ -5354,6 +5354,65 @@ export async function extractEquipmentPlate(token, imageBase64, mediaType) {
   } catch (e) { return { error: String(e?.message || e) }; }
 }
 
+// ── Layout Planner — direct authenticated reads/writes (owner request 2026-10-21) ─────────────
+// Everything above this point in the Equipment Profile section goes through the equipment-survey
+// EDGE FUNCTION, built for the anonymous token-gated crew walkthrough form (no login). This is a
+// SEPARATE path for the in-app, logged-in admin view: equipment_catalog and
+// equipment_survey_entries both already grant "authenticated: for all" (schema-equipment-
+// survey.sql / schema-equipment-catalog.sql), so a signed-in Meridian user can read/insert these
+// tables directly through the normal Supabase client, same as every other panel in this file —
+// no edge function round trip needed here.
+//
+// equipment_survey_entries is APPEND-ONLY (never updated/deleted in place): saveEquipmentEntry
+// always INSERTs a new row. A correction reuses the same instance_id with a later submitted_at;
+// a brand-new item gets a fresh instance_id (caller's job to pass one or omit it -- omitted means
+// "new item", matching the DB default). "Current state" is resolved client-side the same way the
+// edge function and the crew form both already do it: engine/equipment-survey.js's
+// latestEntriesByInstance(), not a query-side trick, so there is exactly one definition of
+// "current" across the whole app.
+export async function loadEquipmentCatalogDirect() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_catalog')
+    .select('*').order('type', { ascending: true }).range(from, to));
+  return data || [];
+}
+export async function loadEquipmentEntriesDirect(loc) {
+  if (!supabase || !loc) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
+    .select('*').eq('loc', String(loc)).order('submitted_at', { ascending: false }).range(from, to));
+  return data || [];
+}
+// row: { instance_id?, loc, catalog_item_id?, manual_entry_text?, placement_zone?, serial_number?,
+//        cert_date?, action?, position_detail? } -- submitted_by/submitted_at are stamped here,
+// never trusted from the caller (same posture as every other write path in this file).
+export async function saveEquipmentEntryDirect(row) {
+  if (!supabase || !row?.loc) return { error: 'no-op' };
+  const user = (await supabase.auth.getUser())?.data?.user;
+  const submittedBy = user?.user_metadata?.name || user?.email || null;
+  const insertRow = {
+    instance_id: row.instance_id || undefined, // undefined -> DB default (gen_random_uuid()) = new item
+    loc: String(row.loc),
+    catalog_item_id: row.catalog_item_id ?? null,
+    manual_entry_text: row.manual_entry_text ?? null,
+    placement_zone: row.placement_zone ?? null,
+    serial_number: row.serial_number ?? null,
+    cert_date: row.cert_date || null,
+    action: row.action || 'added',
+    position_detail: row.position_detail ?? null,
+    submitted_by: submittedBy,
+    submitted_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('equipment_survey_entries').insert(insertRow).select('*').single();
+  return { entry: data || null, error: error?.message || null };
+}
+// Public bucket (schema-equipment-catalog-photos.sql) -- one reference photo per catalog TYPE
+// (not per manufacturer/model), keyed by filename. Returns null when Supabase isn't configured
+// (local-only mode) rather than a broken URL.
+export function equipmentCatalogPhotoUrl(type) {
+  if (!supabase || !type) return null;
+  return supabase.storage.from('equipment-catalog-photos').getPublicUrl(`${type}.jpg`).data?.publicUrl || null;
+}
+
 // ── EOM count-date exceptions (accept an early count as the EOM count; logged + attributed) ──
 export async function saveEomCountException(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };

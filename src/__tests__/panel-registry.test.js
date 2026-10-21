@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the fifty-five panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, and Oil Efficiency)', () => {
+  it('is exactly the fifty-six panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, and Layout Planner)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -341,9 +341,13 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // report since Phase 2 (fifty-three -> fifty-four). Same day, owner: "do the same for oil
     // efficiency reports... build out to app" -- 'oil-efficiency' (Oil Efficiency) is a second
     // brand-new report, same program and same ReportShell treatment (fifty-four -> fifty-five).
+    // 2026-10-21: owner asked to make real a claude.ai Artifact mockup he'd been iterating on
+    // (a visual drag-and-drop store equipment layout tool) -- 'equipment-layout' (Layout
+    // Planner) is a brand-new, real read/write panel wired to equipment_catalog/
+    // equipment_survey_entries, route:true from day one (fifty-five -> fifty-six).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'custom-reports', 'customer-complaints',
-      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
+      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
       'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',

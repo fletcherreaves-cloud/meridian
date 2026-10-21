@@ -234,6 +234,7 @@ const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })));
 const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })));
 const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })));
+const EquipmentLayoutPanel = lazyPanel(() => import('../views/equipment-layout.js').then(m => ({ default: m.EquipmentLayoutPanel })));
 const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
@@ -3567,6 +3568,7 @@ function App() {
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
         if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
         if(modal==='oil-efficiency') perm('analytics.store')&&goRoute('oil-efficiency');
+        if(modal==='equipment-layout') perm('analytics.store')&&goRoute('equipment-layout');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&goRoute('forms-completion');
@@ -3866,6 +3868,7 @@ function App() {
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='oil-efficiency'&&h(OilEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
+      routePanel==='equipment-layout'&&h(EquipmentLayoutPanel,{stores,onClose:()=>goRoute(null)}),
       // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
