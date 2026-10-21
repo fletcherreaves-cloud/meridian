@@ -12,6 +12,8 @@ import { detectType } from '../parsers/index.js';
 import {
   periodsInRange, latestPeriodByStore, buildOilEfficiencyReport, qualityConcernStores, totalImpactDollars,
 } from '../engine/oil-efficiency.js';
+import { resolveDatePreset } from '../components/PanelControls.js';
+import { OE_DATE_PRESETS } from '../views/oil-efficiency.js';
 
 function item(text, x, y) { return { str: text, transform: [1, 0, 0, 1, x, y] }; }
 
@@ -195,5 +197,20 @@ describe('engine/oil-efficiency.js', () => {
     const { storeRows } = buildOilEfficiencyReport(rows, {});
     expect(qualityConcernStores(storeRows).map(r => r.loc)).toEqual(['2']);
     expect(totalImpactDollars(storeRows)).toBe(800);
+  });
+
+  // Regression, 2026-10-20 — same root cause and same fix as conversion-efficiency.test.js's
+  // equivalent test: ReportShell's generic defaultPresetId='28d' silently excluded a re-uploaded
+  // historical backfill. Exercises the real call-site fix (OE_DATE_PRESETS + defaultPresetId:
+  // 'all' in views/oil-efficiency.js).
+  it('the panel’s own default date range (OE_DATE_PRESETS "all") does not exclude a year-old backfilled period', () => {
+    const range = resolveDatePreset('all', OE_DATE_PRESETS, new Date('2026-10-20'));
+    expect(range).toBeTruthy();
+    const rows = [
+      mk('1', '2024-11', { impact_3mo_dollars: 500 }), // old backfill
+      mk('2', '2026-10', { impact_3mo_dollars: 10 }), // today's emailed row
+    ];
+    const { storeRows } = buildOilEfficiencyReport(rows, { range });
+    expect(storeRows.map(r => r.loc).sort()).toEqual(['1', '2']);
   });
 });
