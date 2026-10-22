@@ -19,7 +19,7 @@
 import * as React from 'react';
 import { KIND_LABEL } from '../engine/swing-detect.js';
 import { ackKey } from '../engine/swing-feed.js';
-import { contextSummary } from '../engine/swing-context.js';
+import { contextSummary, aiScourForSwing } from '../engine/swing-context.js';
 
 const metricRow = (m) => span({ key: m.key, style: { fontSize: 11.5, color: 'var(--text2,#9aa4b2)', padding: '3px 0', lineHeight: 1.45, display: 'block' } },
   span({ style: { color: 'var(--text,#e8eaed)', fontWeight: 600 } }, m.label + ': '),
@@ -40,6 +40,12 @@ function CriticalSwing({ item, onAck, onOpenStore, context = [], metricContext =
   const s = item.swing || {};
   const down = s.direction === 'down';
   const col = down ? '#ef4444' : '#10b981';
+
+  // Notes 58 #4's 4th requirement ("use AI to scour for anything missed") — on demand only,
+  // since it's a real API call, not fired automatically for every swing. Reset per mount:
+  // SwingAlarm below gives this component a fresh `key` per swing item, so switching stores
+  // never carries a stale AI result over.
+  const [aiResult, setAiResult] = React.useState({ loading: false, text: '', error: null });
 
   return div({
     style: {
@@ -99,7 +105,29 @@ function CriticalSwing({ item, onAck, onOpenStore, context = [], metricContext =
         metricContext.length ? div({ style: { marginTop: 10 } },
           div({ style: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3,#6b7280)', marginBottom: 5 } },
             'Worth checking — this store\'s own metrics'),
-          ...metricContext.map(metricRow)) : null),
+          ...metricContext.map(metricRow)) : null,
+
+        // AI scour — the one requirement the engine comments flagged as not yet wired.
+        // Same "candidates, never cause" framing as the two sections above.
+        div({ style: { marginTop: 10, paddingTop: 10, borderTop: '.5px solid var(--bdr,#2a2f3a)' } },
+          !aiResult.loading && !aiResult.text && !aiResult.error ? h('button', {
+            onClick: () => aiScourForSwing(item, { context, metricContext }, setAiResult),
+            style: { background: 'rgba(99,102,241,.15)', border: '1px solid rgba(99,102,241,.4)',
+                     borderRadius: 7, color: '#a5b4fc', padding: '6px 12px', cursor: 'pointer', fontSize: 11.5, fontWeight: 600 },
+          }, '🤖 AI Scour — anything else that could explain this?') : null,
+          aiResult.loading ? div({ style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#a5b4fc' } },
+            span(null, 'Searching for what the local-news and metric checks could have missed…')) : null,
+          aiResult.text ? div(null,
+            div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 } },
+              span({ style: { fontSize: 10.5, fontWeight: 700, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🤖 AI scour'),
+              h('button', {
+                onClick: () => setAiResult({ loading: false, text: '', error: null }),
+                style: { background: 'none', border: 'none', color: 'var(--text3,#6b7280)', fontSize: 11, cursor: 'pointer', marginLeft: 'auto' },
+              }, '× clear')),
+            div({ style: { fontSize: 11.5, color: 'var(--text2,#9aa4b2)', lineHeight: 1.55, whiteSpace: 'pre-line',
+                           background: 'rgba(99,102,241,.07)', border: '.5px solid rgba(99,102,241,.2)', borderRadius: 8, padding: '8px 10px' } },
+              aiResult.text)) : null,
+          aiResult.error ? div({ style: { fontSize: 11.5, color: '#ef4444', lineHeight: 1.5 } }, aiResult.error) : null)),
 
       div({ style: { padding: '12px 20px', borderTop: '.5px solid var(--bdr,#2a2f3a)',
                      display: 'flex', gap: 8, alignItems: 'center' } },

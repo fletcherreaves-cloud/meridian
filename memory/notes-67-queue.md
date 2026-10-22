@@ -101,6 +101,17 @@ today:
 
 ## 2. Concrete bugs (not design/reorg — these are correctness issues)
 
+✅ **RESOLVED 2026-08-24 — all three bugs below, do not re-chase.** `memory/dispatch-88.md` shipped
+real, independently-verified fixes for all three on PR #632: item 1 was a render-order race in
+`FOBAnalysisPanel`'s auto-select effect (not a stale/dead data stream — fixed by gating on
+`qsrFobRows!==null`); item 2 swapped `loadDtHistory` onto the already-existing `_pagedParallel`
+helper (58 serial round-trips → ~11 concurrent rounds, a 5.27x reduction in scheduling rounds,
+measured against a mock sized to the real 58,320-row/58-page shape — see that file for the
+production-milliseconds caveat); item 3 turned out to already be fixed two weeks earlier (v4.945,
+PR #120) and just needed its own regression test, no code change. This file's own index entry in
+`memory/MEMORY.md` had gone stale (never updated after the fix shipped) — re-verified live on
+2026-10-22 before being corrected here.
+
 - **Food Cost (Original) date-selector defaults to May 2026** even though all data is showing
   correctly otherwise. Owner: "weird quirk... need to correct this." Sounds like a stale default
   value or a hardcoded month reference left in from testing/dev — worth a quick grep for a
