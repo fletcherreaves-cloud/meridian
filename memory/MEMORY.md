@@ -4433,7 +4433,10 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   Monitor qty-variance + case-conversion, scoring-system revisit (Ops/Controls/District/Model Health),
   Swing Watch "acknowledged" home, Events & Tags duplicates
 - [Notes 62 queue](notes-62-queue.md) — SAGE capability audit, Event Tags panel, 1382ms click bug, 1.2M% chart bug
-- [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions
+- [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions.
+  Its "complete metric listing, generated from the registry" ask is ✅ RESOLVED (2026-10-22) —
+  `METRIC_PROVENANCE` now auto-generates an entry for every real `METRIC_SOURCES` chain; see that
+  file's own entry for the full account. SMG B2B/EPB2B definitions remain open.
 - [Notes 60 queue](notes-60-queue.md) — large triage: shared panel design system + cycle-agnostic engine spines,
   concrete bugs, new capabilities, naming
 - [Notes 59](notes-59-online-reputation.md) — online reputation/social analytics: Google/FB/Yelp/Reddit/3PO
