@@ -245,18 +245,27 @@ reads as a decision rather than an oversight. Adding a chain for any of them req
 
 ### Remaining step — route compute6wk through the resolver
 
-The 15 resolvable fields should read via `metricSeries`/`metricAvg` instead of raw arrays.
-⚠️ This CHANGES DISPLAYED NUMBERS (auto-first instead of manual-only) — which is the point,
-but it is a core engine touched by every store card, so it wants its own careful pass
-rather than being tacked onto another change.
+✅ **RESOLVED — re-verified live against the code 2026-10-22, do not re-raise.** All of this
+has shipped: `compute6wk` (`src/engine/forecast.js`) now reads every one of its resolvable
+fields via `metricAvg`/`metricSeries` (the shared `M()` helper, plus `kvsu` directly) instead
+of raw `ds.opsRows`/`ctrlRows`/`laborRows` arrays — `avg6()` itself was removed entirely
+2026-09-07 once its last caller migrated (see the `obs6()`-removal comment just above
+`compute6wk` in that file, which names this same history). Both bugs named below were fixed
+in the same mass-review pass (notes 70, 2026-10-13): the `_cov` coverage map now counts via
+`metricSeries()`'s own `_ok(v, mode)` zero-handling instead of a raw manual-rows-only scan
+(`obs6`, also removed), and `_cov` — not a bare `0` — is what the scorecards gate on, so an
+absent metric reads as absent rather than a passing green zero. `hasPettyCash`/
+`depositVsSalesRatio`/`t2w`/`avgCheck`/`weeklySales` still read the raw per-store row index
+(`opsL`/`ctrlL`/`laborL`) — these are compound/day-matched computations (a ratio across two
+fields, a trailing-window trend, a store-specific adaptive baseline) with no single
+`METRIC_SOURCES` chain to swap in, not an oversight of this migration.
 
-Two things to fix in the same pass:
-- `avg6` **skips zeros** (`v !== 0`), which is wrong for `mode:'any'` metrics like cash
-  over/short, T-Reds, discounts and OT where 0 is a legitimate reading. `metricSeries`
-  already handles this correctly via `_ok(v, mode)`.
-- `avg6` returns **0 for "no data"**, which is why the scorecard graded absent metrics as
-  passing green (fixed at the presentation layer in v4.888 via the `_cov` map; the engine
-  should stop producing the ambiguity in the first place).
+Two things that still needed fixing in that same pass, now closed:
+- ~~`avg6` **skips zeros** (`v !== 0`), which is wrong for `mode:'any'` metrics like cash
+  over/short, T-Reds, discounts and OT where 0 is a legitimate reading.~~ `metricSeries`
+  handles this correctly via `_ok(v, mode)`, and `avg6` no longer exists to get it wrong.
+- ~~`avg6` returns **0 for "no data"**, which is why the scorecard graded absent metrics as
+  passing green.~~ Fixed by the `_cov` map (mass-review notes 70, 2026-10-13) — see above.
 
 ## SUGGESTED ORDER
 
