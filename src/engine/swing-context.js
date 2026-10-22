@@ -19,6 +19,8 @@
 // "worth looking at", and the UI must not phrase it as an explanation.
 
 import { metricAvg, METRIC_SOURCES } from './metric-source.js';
+import { STORE_NAMES, getStoreOrg } from '../constants.js';
+import { callSageOnce } from '../lib/sage-client.js';
 
 export const LEAD_DAYS = 45;
 
@@ -143,4 +145,54 @@ export function metricContextFor(ds, { loc, from, to } = {}) {
     out.push({ key, label, during, before, delta, worse, duringFmt: fmt(during), beforeFmt: fmt(before) });
   }
   return out;
+}
+
+// ── AI scour (Notes 58 #4, the 4th and last requirement) ─────────────────────
+// Requirements 1-3 (detect, click-ack, local-metric/news context above) all shipped.
+// This is the one explicitly deferred by this file's own 2026-09-22 comment: "Wiring an
+// AI-driven cause search... is a separate, more judgment-laden piece, not done here."
+// On demand (a button, not auto-fired on every swing — this costs a real API call), it
+// routes through the same sage-chat web-search pattern `lookupMissEvent` (engine/why.js)
+// already proved out for forecast-miss lookups: hand Claude what's already been found
+// (news + the store's own metric context) and ask it to use web search for whatever
+// those two mechanical scans couldn't catch — a closed road with no news coverage, a
+// competitor promo, a local event calendar entry. Same standing rule as the rest of this
+// file: candidates only, never a claimed cause.
+export async function aiScourForSwing(item, { context = [], metricContext = [] } = {}, setResult) {
+  const s = item?.swing || {};
+  const loc = item?.loc;
+  const storeName = STORE_NAMES[loc] || loc || 'this store';
+  const region = getStoreOrg(loc) === 'emerald' ? 'Florida Panhandle' : 'south-central Oklahoma';
+  const dirWord = s.direction === 'down' ? 'decline' : 'swing';
+
+  const newsLines = context.length
+    ? context.slice(0, 5).map(n => `- ${n.title} (${n.whenRelative})`).join('\n')
+    : '(none found by the local-news scan)';
+  const metricLines = metricContext.length
+    ? metricContext.map(m => `- ${m.label}: ${m.beforeFmt} -> ${m.duringFmt}${m.worse ? ' (worse)' : ''}`).join('\n')
+    : '(no other operational metric moved alongside it)';
+
+  const prompt = `${storeName} (McDonald's, ${region}) had a sustained sales ${dirWord}: `
+    + `${(s.pct || 0).toFixed(1)}% vs LY${s.guestPct != null ? `, ${(s.guestPct).toFixed(1)}% guest count` : ''}, `
+    + `over ${s.run || '?'} consecutive weeks (${s.from} -> ${s.to}).\n\n`
+    + `Already checked, for reference — don't just repeat these:\n`
+    + `Local news/road/weather scan found:\n${newsLines}\n\n`
+    + `This store's own other operational metrics during the window:\n${metricLines}\n\n`
+    + `Use web search to look for anything those two checks could have missed — road closures, `
+    + `construction, weather, a nearby competitor opening or running a promotion, a local event, `
+    + `a school calendar change, a plant/employer layoff or closure — near ${storeName} around `
+    + `and shortly before ${s.from}. List 2-4 candidates ranked by plausibility, each framed as `
+    + `"worth checking", never as a confirmed cause. If nothing turns up beyond what's already `
+    + `listed above, say so plainly rather than padding the answer.`;
+
+  try {
+    setResult({ loading: true, text: '', error: null });
+    const text = await callSageOnce(
+      [{ role: 'user', content: prompt }],
+      'You are a McDonald\'s district analytics assistant. Use web search to find out what happened. Report candidates, never claim certainty.',
+    );
+    setResult({ loading: false, text: text || 'No analysis generated.', error: null });
+  } catch (e) {
+    setResult({ loading: false, text: '', error: 'AI scour failed: ' + e.message });
+  }
 }

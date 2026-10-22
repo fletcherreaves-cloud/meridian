@@ -4419,9 +4419,12 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
 - [Notes 67 queue](notes-67-queue.md) — IA/navigation reorganization (URL-view conversion, section
   regrouping into Reports/Inventory & Food Cost/Forecasting & Labor Projections/Analysis/HR),
-  right-side-modal exception list, two concrete bugs (Food Cost date-selector defaults to May
-  2026, DT History 15+ sec load), and the security-build directive that spawned
-  [plan-security-loss-prevention.md](plan-security-loss-prevention.md).
+  right-side-modal exception list, and the security-build directive that spawned
+  [plan-security-loss-prevention.md](plan-security-loss-prevention.md). **Its own three concrete
+  bugs (Food Cost date-selector defaults to May 2026, DT History 15+ sec load, Forecast Audit
+  greyed out) are ✅ RESOLVED (dispatch-88.md, PR #632, 2026-08-24) — re-verified live
+  2026-10-22, do not re-chase.** The IA/navigation reorg itself is still open (needs owner
+  judgment calls, not a freelance-work item).
 - **⭐ [Panel decisions 2026-08-10](decisions-panel-inventory-2026-08-10.md)** — owner's keep/merge/retire
   call on all 97 panels; **the input the UI/UX redesign scopes from.** Carries the standing rule that
   RETIRE means harvest-then-remove, never delete-on-sight.
@@ -4437,8 +4440,12 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   ratings + reviews per location, local news, community-sentiment source tracing. Key constraint:
   **prominence beats recency** (what is displayed as current matters, even if old)
 - [Notes 58](notes-58-queue.md) — Inventory Control weekly-count rules (Food+Condiment every week,
-  floating mid-month Paper count); per-item variance charts; Items Recounted tile blank;
-  ⚠️ **absolute must** — one-directional swing alarm w/ click-ack + auto-compiled cause report (store 10422)
+  floating mid-month Paper count); per-item variance charts; Items Recounted tile blank.
+  Its own ⚠️ **absolute must** — a one-directional swing alarm w/ click-ack + auto-compiled
+  cause report + AI scour (store 10422) — is ✅ **RESOLVED (all 4 parts, re-verified
+  2026-10-22, do not re-chase)**: detect/click-ack/news+metric context shipped across earlier
+  dispatches (`swing-feed.js`/`SwingAlarm.js`/`swing-context.js`); the AI-scour piece
+  (`aiScourForSwing`) shipped this session. See that file's own §4 for the full account.
 - [Notes 32](notes-32-queue.md) — Perf-Review target auto-fill + per-metric sourcing; 1:1 Checkpoint;
   One-Pager round-2 (weekly Opportunity blow-up fix, cascade focus, R2P/TPPH).
 - [Notes 31](notes-31-queue.md) — One-Pager v2 (metricSeries range bug, FOB anomaly, range compare,

@@ -130,6 +130,25 @@ returns. Harmless, but dead.
 
 ## 4. ⚠️ ABSOLUTE MUST — one-directional swing alarm
 
+✅ **RESOLVED 2026-10-22 — all four requirements below now shipped; do not re-chase.**
+Re-measured against the real code before writing this, per the standing "measure, don't
+reason" rule: (1) detect, (2) click-ack, and (3) preemptively compile a cross-metric/news
+report were ALL already shipped across earlier dispatches — `src/engine/swing-feed.js` +
+`src/components/SwingAlarm.js` (the blocking critical-swing modal, Supabase-persisted
+acknowledgement with a who/when audit trail) and `src/engine/swing-context.js`'s
+`newsContextFor`/`metricContextFor` (local-news ranking + this store's own labor%/OEPE
+before-vs-during comparison, both rendered in the modal, both framed as "worth checking,"
+never as a confirmed cause). Only (4), "use AI to scour for anything missed," was still open —
+`swing-context.js`'s own 2026-09-22 comment explicitly flagged it as deferred. It shipped this
+session: `aiScourForSwing` (same file) routes through the sage-chat web-search pattern
+`engine/why.js`'s `lookupMissEvent` already proved out, on a user click inside the critical-swing
+modal (not auto-fired — a real API call per use), handing Claude the news/metric context already
+found and asking it to scour for what those two mechanical checks could not catch. 6 new
+render-level tests (`src/__tests__/dispatch-swing-alarm-ai-scour-2026-10-22.test.js`) mount the
+real `SwingAlarm` component and drive the full button→loading→result/clear/error cycle. This
+file's own index entry in `memory/MEMORY.md` had never been updated to reflect items 1-3 shipping
+either — same stale-doc pattern as the Notes 67 correction right above this one in `MEMORY.md`.
+
 Owner's words: *"any metric, especially sales or guest counts, taking a massive
 one-directional swing — especially if the wrong way — needs to light up the app. There
 needs to be no reason it is not surfaced and made aware."*
