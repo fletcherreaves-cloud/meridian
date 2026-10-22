@@ -4431,14 +4431,18 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - [Notes 63 queue](notes-63-queue.md) — multi-user startup-load architecture answer, Needs Attention
   structural gap (no sales-decline detector — Atoka), Food Cost Panel RLS root cause, EOM Change
   Monitor qty-variance + case-conversion, scoring-system revisit (Ops/Controls/District/Model Health),
-  Swing Watch "acknowledged" home, Events & Tags duplicates
+  Swing Watch "acknowledged" home, Events & Tags duplicates. Its EOM Change Monitor item is now
+  ✅ RESOLVED IN FULL (2026-10-22) — steps 3-4, which this file had marked "NOT done," shipped in a
+  later pass the doc was never updated for; see that file's own entry.
 - [Notes 62 queue](notes-62-queue.md) — SAGE capability audit, Event Tags panel, 1382ms click bug, 1.2M% chart bug
 - [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions.
   Its "complete metric listing, generated from the registry" ask is ✅ RESOLVED (2026-10-22) —
   `METRIC_PROVENANCE` now auto-generates an entry for every real `METRIC_SOURCES` chain; see that
   file's own entry for the full account. SMG B2B/EPB2B definitions remain open.
 - [Notes 60 queue](notes-60-queue.md) — large triage: shared panel design system + cycle-agnostic engine spines,
-  concrete bugs, new capabilities, naming
+  concrete bugs, new capabilities, naming. Its "route compute6wk through the resolver" item is
+  ✅ RESOLVED (re-verified 2026-10-22) — `forecast.js`'s `compute6wk` reads its resolvable fields
+  via `metricAvg`/`metricSeries` now, `avg6()` was removed entirely; see that file's own entry.
 - [Notes 59](notes-59-online-reputation.md) — online reputation/social analytics: Google/FB/Yelp/Reddit/3PO
   ratings + reviews per location, local news, community-sentiment source tracing. Key constraint:
   **prominence beats recency** (what is displayed as current matters, even if old)
