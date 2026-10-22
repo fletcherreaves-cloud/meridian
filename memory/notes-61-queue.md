@@ -188,9 +188,19 @@ the client.
   last-year lookup). All four periods populate; 26/27 stores calibrate.
 - **SMG/VOICE metric definitions.** Owner supplied OSAT: `count(5 ratings) ÷ count(all ratings)`
   — only a 5 counts. Need to determine B2B, EPB2B and the rest, then add all to Metric Lineage.
-- **Complete listing of every metric we have access to.** Owner wants it to help wire data and
-  design new things. Should be generated from the registry, not hand-written — and is a natural
-  first deliverable of the Resolver.
+- ✅ **RESOLVED 2026-10-22 — "Complete listing of every metric we have access to."** Owner wanted
+  it to help wire data and design new things, generated from the registry, not hand-written.
+  Measured before building: `METRIC_PROVENANCE` (`engine/metric-provenance.js`, backs the Metric
+  Lineage panel) was itself still entirely hand-written and covered only 16 of the resolver's 92
+  real chains (`METRIC_SOURCES`, `engine/metric-source.js`). Fixed by making the registry
+  auto-generate an entry for every `METRIC_SOURCES` key that has no hand-curated one — a
+  `DS_FIELD_META` table (which of the 15 underlying ds-field streams is which QSRSoft/LifeLenz
+  table) plus a `humanizeMetricKey()` labeler, so a metric added to the resolver (one line, per
+  that file's own standing rule) gets a Metric Lineage entry automatically, not as a second
+  manual step. Hand-curated entries (the field-reconciled OEPE/R2P/TPPH math, OSAT/EAP's exact
+  FullScale definitions, etc.) still win on a key collision — this doesn't touch or demote them.
+  18 tests (`src/__tests__/metric-provenance.test.js`), full suite + build green. The adjacent
+  SMG/VOICE B2B/EPB2B definitions bullet above is NOT part of this and remains open.
 
 ## Deferred by the owner (captured so they are not lost)
 
