@@ -279,7 +279,9 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const salesVsExp = (()=>{
    const _p=labor?.projSales>0?labor.projSales:darProjSales||
      (()=>{const _t=typeof DEFAULT_TARGETS!=='undefined'?DEFAULT_TARGETS[locStr]:null;
-           const _m=_t?.tJuneProj||_t?.tOperatorProj||_t?.tMayProj||0;
+           // #194: tMayProj dropped -- zero writers anywhere in src/ (confirmed by grep),
+           // same dead-fallback shape as tQSRSoftProj's retirement in this same issue.
+           const _m=_t?.tJuneProj||_t?.tOperatorProj||0;
            return _m>0?Math.round(_m/30):0;})();
    const _s=labor?.sales>0?labor.sales:darSales;
    return _p>0&&_s>0?(((_s-_p)/_p)*100):null;
@@ -333,7 +335,9 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
       if(labor?.projSales>0) return labor.projSales;
       if(darProjSales>0) return darProjSales;
       const tgt = typeof DEFAULT_TARGETS!=='undefined' ? DEFAULT_TARGETS[locStr] : null;
-      const monthly = tgt?.tJuneProj || tgt?.tOperatorProj || tgt?.tMayProj || 0;
+      // #194: tMayProj dropped -- zero writers anywhere in src/ (confirmed by grep), same
+      // dead-fallback shape as tQSRSoftProj's retirement in this same issue.
+      const monthly = tgt?.tJuneProj || tgt?.tOperatorProj || 0;
       return monthly>0 ? Math.round(monthly/30) : null;
     })(),
     gc:         labor?.gc>0 ? labor.gc : (labor?.actualGC>0 ? labor.actualGC : (glimpse?.gc>0 ? glimpse.gc : (cash?.gc>0 ? cash.gc : null))),
