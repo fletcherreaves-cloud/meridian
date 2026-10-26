@@ -1146,7 +1146,7 @@ export function metricSumRatio(ds, locs, range, key) {
       n++;
     }
   }
-  return n && denSum > 0 ? { value: numSum / denSum, n } : null;
+  return n && denSum > 0 ? { value: numSum / denSum, n, numSum, denSum } : null;
 }
 
 // Every METRIC_SOURCES key whose derive declares a real [numerator, denominator] pair — the set

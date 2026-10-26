@@ -42,7 +42,7 @@ const PT_SCORE_KEY   = 'mf_period_scoreboard';
 // importing this whole (large, otherwise lazy-loaded) panel module — that mistake
 // cost ~25KB gzip on the main entry chunk the first time it was tried. Imported above.
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
-import { metricAvg, metricRate, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError, ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries, metricSumRatio, ensureLazyFill, isLazyFillPending, isLazyFillError, ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
@@ -59,6 +59,21 @@ export function weightedLaborTarget(items, weightField) {
   let tS = 0, tV = 0;
   for (const it of (items || [])) {
     const v = resolveLaborTarget(it.tgt);
+    const w = it[weightField];
+    if (v != null && v > 0 && w > 0) { tS += w; tV += v * w; }
+  }
+  return tS > 0 ? tV / tS : 0;
+}
+
+// Issue #175: same shape as weightedLaborTarget above, generalized to any plain numeric
+// it.tgt[tgtField] (tTpph/tOepe aren't labor%, so resolveLaborTarget doesn't apply) weighted
+// by it[weightField]. Callers must weight the target by the SAME basis the corresponding
+// ACTUAL was rolled up by (hours for TPPH, DT transactions for OEPE — see metricSumRatio's
+// derive.inputs for each) so actual and target stay comparable apples-to-apples.
+export function weightedTarget(items, tgtField, weightField) {
+  let tS = 0, tV = 0;
+  for (const it of (items || [])) {
+    const v = it.tgt && it.tgt[tgtField];
     const w = it[weightField];
     if (v != null && v > 0 && w > 0) { tS += w; tV += v * w; }
   }
@@ -1778,6 +1793,15 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         // range is complete — and closes the gap on 'custom'.
         const tpph       = metricRate(ds,loc,range,'tpph');
         const oepe       = metricRate(ds,loc,range,'oepe');
+        // Issue #175: the per-store weight for a cross-store TPPH/OEPE rollup must be the
+        // SAME basis metricSumRatio already summed to produce this store's own tpph/oepe
+        // value (Σhours for TPPH, ΣdtTransCnt for OEPE — metricSumRatio's denSum) — not
+        // sales, which has no relationship to either ratio. A store whose ratio fell back to
+        // metricAvg (metricSumRatio returned null — no day resolved both legs) gets weight 0
+        // and is naturally excluded from the weighted group figures below, same as a store
+        // with no tgt.tTpph/tOepe set.
+        const tpphWeight = metricSumRatio(ds,loc,range,'tpph')?.denSum || 0;
+        const oepeWeight = metricSumRatio(ds,loc,range,'oepe')?.denSum || 0;
         // otHrs now auto-first via metric-source.js (2026-08-06) — matches laborPct/tpph/oepe/
         // cashOS above, which already routed through metricAvg; this one was still raw
         // lRows/cRows-only with no auto (opsLaborRows) backstop.
@@ -1801,7 +1825,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
           if(baseFoodPct==null) baseFoodPct=snap?.fobPct??null;
           if(totFoodPct==null)  totFoodPct=snap?.pLFoodPct??null;
         }
-        return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
+        return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,tpphWeight,oepeWeight,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
           storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
       });
       const totSales=storeData.reduce((a,s)=>a+s.sales,0);          // full current (display)
@@ -1810,9 +1834,14 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
       const vsLY    =totLY>0?(totMatchedCur-totLY)/totLY:null;      // apples-to-apples
       const wAvg=f=>{let tS=0,tV=0;for(const s of storeData){if(s[f]!=null&&s.sales>0){tS+=s.sales;tV+=s[f]*s.sales;}}return tS>0?tV/tS:null;};
       const simAvg=f=>{const v=storeData.map(s=>s[f]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+      // Issue #175: tpph/oepe were simAvg (a straight mean of each store's own ratio) — the
+      // group ACTUAL belongs to the same Σ/Σ family metricRate already gives a single store;
+      // metricRate/metricSumRatio already accept an array of locs, so passing the whole
+      // group's loc list here gives the true cross-store Σnumerator/Σdenominator rollup
+      // instead of weighting every store equally regardless of its hours/transaction volume.
       return{op:g.op,state:g.state,sups:g.sups,storeCount:g.locs.length,
         totSales,totLY,vsLY,
-        laborPct:wAvg('laborPct'),tpph:simAvg('tpph'),oepe:simAvg('oepe'),
+        laborPct:wAvg('laborPct'),tpph:metricRate(ds,g.locs,range,'tpph'),oepe:metricRate(ds,g.locs,range,'oepe'),
         otHrs:simAvg('otHrs'),cashOS:simAvg('cashOS'),
         baseFoodPct:wAvg('baseFoodPct'),totFoodPct:wAvg('totFoodPct'),
         stores:storeData};
@@ -1987,14 +2016,16 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         sortedOps.length===0?div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'11px'}},'No data for selected period.'):
         sortedOps.map((op)=>{
           const isExp=!!expanded[op.op];
-          // tTpph/tOepe deliberately stay simple (unweighted) means: op.tpph/op.oepe are
-          // themselves simAvg (unweighted, above), so a sales-weighted target here would
-          // introduce a NEW mismatch rather than fix one — weightedLaborTarget (module scope)
-          // is only correct for tLabor because op.laborPct it's compared against is wAvg.
+          // Issue #175: op.tpph/op.oepe are now the group's true Σ/Σ rollup (metricRate over
+          // g.locs, above), so the target must be weighted the same way — by each store's
+          // own contribution to that Σ/Σ (tpphWeight/oepeWeight = metricSumRatio's denSum,
+          // i.e. Σhours / ΣdtTransCnt), not an unweighted per-store mean. Mirrors
+          // weightedLaborTarget's reasoning for tLabor exactly, just generalized (tTpph/
+          // tOepe aren't labor%, so resolveLaborTarget doesn't apply — see weightedTarget).
           const distTgt=op.stores.length?{
             tLabor:weightedLaborTarget(op.stores,'sales'),
-            tTpph: op.stores.reduce((a,s)=>a+(s.tgt.tTpph||0),0)/op.stores.length,
-            tOepe: op.stores.reduce((a,s)=>a+(s.tgt.tOepe||0),0)/op.stores.length,
+            tTpph: weightedTarget(op.stores,'tTpph','tpphWeight'),
+            tOepe: weightedTarget(op.stores,'tOepe','oepeWeight'),
           }:{};
           return div({key:op.op,style:{marginBottom:10,border:'.5px solid var(--bdr)',borderRadius:'var(--rl)',overflow:'hidden'}},
             // Summary bar
@@ -2146,6 +2177,11 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // OperatorSummaryPanel above (every entry ends on lastClosed except 'custom', which
       // lets the user pick today as the end date).
       const tpph      = metricRate(ds,loc,range,'tpph');
+      // Issue #175: same weight basis as OperatorSummaryPanel's tpphWeight — Σhours
+      // (metricSumRatio's denSum for 'tpph'), the exact denominator this store's own tpph
+      // ratio above was summed over. 0 (and so excluded by weightedTarget) when the ratio
+      // fell back to metricAvg (no day resolved both legs).
+      const tpphWeight = metricSumRatio(ds,loc,range,'tpph')?.denSum || 0;
       const avgRate   = metricAvg(ds,loc,range,'avgRate');
       const actVsNeed = metricAvg(ds,loc,range,'actVsNeed');
       const otHrs     = metricAvg(ds,loc,range,'otHrs');
@@ -2194,7 +2230,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       const hasAnyMetric = [laborPct,tpph,avgRate,actVsNeed,otHrs,actHrs,salMgrHrs,otCost,crewHrs]
         .some(v=>v!=null) || totalSales>0;
       if(!lRows.length&&!cRows.length&&!hasAnyMetric) return null;
-      return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
+      return{loc,days,laborPct,tpph,tpphWeight,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
         otCost,totalSales,tgt,
         storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
     }).filter(Boolean);
@@ -2205,7 +2241,10 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     if(!locStats.length) return null;
     const wA=f=>{let tS=0,tV=0,n=0;locStats.forEach(s=>{if(s[f]!=null&&s.totalSales>0){tS+=s.totalSales;tV+=s[f]*s.totalSales;n++;}});return n&&tS>0?tV/tS:null;};
     const sA=f=>{const v=locStats.map(s=>s[f]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-    return{laborPct:wA('laborPct'),tpph:sA('tpph'),otHrs:sA('otHrs'),avgRate:sA('avgRate'),actVsNeed:sA('actVsNeed'),
+    // Issue #175: district tpph is now the true Σhours-weighted rollup (metricRate over every
+    // included store's loc), not a straight mean of each store's own ratio — same fix as
+    // OperatorSummaryPanel's group tpph above, same reasoning.
+    return{laborPct:wA('laborPct'),tpph:metricRate(ds,locStats.map(s=>s.loc),range,'tpph'),otHrs:sA('otHrs'),avgRate:sA('avgRate'),actVsNeed:sA('actVsNeed'),
       otCost:locStats.reduce((a,s)=>a+(s.otCost||0),0),
       // #303: otCost sums s.otCost||0, which is correct for a SUM (a store with no data
       // contributes 0, same as a store with genuine $0 OT) but loses the "every store's data
@@ -2215,7 +2254,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       otCostKnown:locStats.some(s=>s.otCost!=null),
       totalSales:locStats.reduce((a,s)=>a+(s.totalSales||0),0),
       storeCount:locStats.length};
-  },[locStats]);
+  },[locStats,ds,range]);
 
   // ── Planning vs Execution split (#210) ──────────────────────────────────
   // Always the latest COMPLETE Wed-Tue pay week per store — independent of this panel's own
@@ -2236,14 +2275,14 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
 
   // ── District avg targets ── Derived from locStats (already has totalSales + tgt per loc)
   // rather than activeLocs/settings directly, since weightedLaborTarget's weight has to come
-  // from the same per-store sales figure dist.laborPct (wA, above) used. tTpph deliberately
-  // stays a simple (unweighted) mean: dist.tpph above is itself sA (unweighted), so a weighted
-  // target here would introduce a NEW mismatch, not fix one — see weightedLaborTarget's own
-  // header comment (module scope) for the full #164 finding-2 reasoning.
+  // from the same per-store sales figure dist.laborPct (wA, above) used. Issue #175: dist.tpph
+  // above is now the true Σhours-weighted rollup, so tTpph is weighted the same way — by each
+  // store's own tpphWeight (Σhours, the exact basis dist.tpph was summed over) — instead of
+  // the unweighted per-store mean this used to be (which matched the old unweighted dist.tpph,
+  // but not the fixed one).
   const distTgt = uM(()=>{
     if(!locStats.length) return{tLabor:0,tTpph:0};
-    const tT=locStats.map(s=>s.tgt.tTpph||0).filter(v=>v>0);
-    return{tLabor:weightedLaborTarget(locStats,'totalSales'), tTpph:tT.length?tT.reduce((a,b)=>a+b,0)/tT.length:0};
+    return{tLabor:weightedLaborTarget(locStats,'totalSales'), tTpph:weightedTarget(locStats,'tTpph','tpphWeight')};
   },[locStats]);
 
   // ── DOW breakdown ──
