@@ -75,4 +75,24 @@ describe('#367 DI Compare initial week anchor is stable across every day of the 
     const m = container.textContent.match(/Week of ([A-Za-z]+ \d{1,2}, \d{4})/);
     expect(m[1]).toBe('Aug 12, 2026'); // the Wednesday before this week's Wed (Aug 19)
   });
+
+  // #367's own verification bar, named explicitly as a gap in the 2026-08-30 follow-up: "a
+  // Wednesday-only test passes with the [hardcoded] constant still in place." The code fix
+  // threads settings?.weekStartDay through to weekStartOf as a real parameter rather than
+  // always defaulting to 3 (Wednesday) -- this proves that parameter is live, not vestigial,
+  // by changing it away from the default and confirming the panel follows it.
+  it('follows settings.weekStartDay when changed away from the default (Wednesday) -- proves the hardcoded 3 is really gone', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-20T09:00:00')); // Thursday
+    await act(async () => {
+      root.render(React.createElement(DialedInComparisonReport, {
+        ...baseProps, settings: { weekStartDay: 1 }, // Monday
+      }));
+    });
+    const m = container.textContent.match(/Week of ([A-Za-z]+ \d{1,2}, \d{4})/);
+    expect(m).toBeTruthy();
+    const weekStartDate = new Date(m[1] + ' 12:00:00');
+    expect(weekStartDate.getDay()).toBe(1); // Monday, not the default Wednesday
+    expect(m[1]).toBe('Aug 10, 2026'); // the Monday before this week's Monday (Aug 17)
+  });
 });
