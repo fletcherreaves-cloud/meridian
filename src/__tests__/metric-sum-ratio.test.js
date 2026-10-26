@@ -70,6 +70,14 @@ describe('metricSumRatio -- laborPct (laborDollar / sales)', () => {
     expect(Math.abs(mean - sum.value)).toBeGreaterThan(0.1);
   });
 
+  it('exposes the raw numSum/denSum alongside value (issue #175 -- a caller that needs the per-store weight, not just the ratio, no longer has to re-sum the legs itself)', () => {
+    const ds = fixture();
+    const sum = metricSumRatio(ds, '1', range, 'laborPct');
+    expect(sum.numSum).toBe(450);
+    expect(sum.denSum).toBe(2100);
+    expect(sum.numSum / sum.denSum).toBeCloseTo(sum.value, 10);
+  });
+
   it('excludes a day where only one leg resolves, rather than treating a missing input as zero', () => {
     const ds = fixture();
     // Add a 3rd day with sales but no laborDollar at all.
