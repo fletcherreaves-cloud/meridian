@@ -284,7 +284,21 @@ async function probeStore(token, nsn) {
 }
 
 async function runProbe() {
-  const token = await resolveEbosToken();
+  // Issue #1555/#1554: resolveEbosToken() used to accept a stale QSRSOFT_EBOS_TOKEN
+  // unconditionally -- always present in CI, so once SSO fails the ladder handed back an
+  // unverified static token and never tried Playwright. `verify` confirms a real, cheap
+  // probe actually authenticates before the token is trusted. probeWindowOnce reports a
+  // bad auth as a returned {status} rather than a thrown AUTH_FAILED (this script's own
+  // convention, since a 403 here can also legitimately mean "retention cutoff"), so this
+  // verify checks the status code directly instead of reusing the AUTH_FAILED-string match
+  // every other script's verify callback uses.
+  const verifyEbosToken = async (t) => {
+    try {
+      const r = await probeWindowOnce(t, PROBE_STORES[0], daysAgo(7), today());
+      return r.status !== 401 && r.status !== 403;
+    } catch { return true; } // an unrelated throw shouldn't block the run on this probe
+  };
+  const token = await resolveEbosToken(verifyEbosToken);
   if (!token) { console.error('[invhist-pull] ✗ no eBOS token'); process.exit(1); }
   console.log(`[probe] stores [${PROBE_STORES.join(', ')}] — widening-window retention probe, ${today()} UTC`);
 
