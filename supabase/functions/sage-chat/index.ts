@@ -11,6 +11,7 @@ import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.j
 import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_NOTE } from './forecast-snapshots-agg.js';
 import { fetchAllRows } from './paginate.js';
 import { applyStreamEvent } from './stream-events.js';
+import { appendFinalRoundNudge } from './final-round-nudge.js';
 import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
 import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
 import { aggregateSmgFullscale, SMG_STANDARDS, SMG_NOTE } from './smg-agg.js';
@@ -1157,6 +1158,11 @@ Deno.serve(async (req: Request) => {
 
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
           const isLastRound = round === MAX_TOOL_ROUNDS;
+
+          // See final-round-nudge.js for why this is needed (confirmed live, owner report,
+          // 2026-10-27): stripping tools alone doesn't stop the model from narrating a plan
+          // instead of answering.
+          conversationMessages = appendFinalRoundNudge(conversationMessages, isLastRound);
 
           const { stopReason, assistantContent, toolUses } = await streamAnthropicCall(
             conversationMessages,
