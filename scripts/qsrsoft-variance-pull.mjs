@@ -23,11 +23,13 @@
 //   GET /api/inv/{nsn}/raw_info/{rawItemId}?start_date=&end_date=     (same WRIN set, dispatch #184)
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth — same eBOS ladder as scripts/qsrsoft-onhand-pull.mjs, tried in order:
-//   QSRSOFT_EBOS_TOKEN → getFreshToken() (SSO exchange) → QSRSOFT_USERNAME/PASSWORD (Playwright)
-//   Dispatch #82 / memory/project-qsrsoft-cognito-auth-312.md: the SSO exchange used to read a
-//   static QSRSOFT_COGNITO_TOKEN/QSRSOFT_TOKEN -- both the same ~1h-TTL Cognito ID token, stale
-//   ~23/24 hours as a stored secret. Now mints one fresh per run instead.
+// Auth — scripts/lib/ebos-auth.mjs's shared resolveEbosToken() ladder (fresh SSO exchange →
+// static QSRSOFT_EBOS_TOKEN fallback, verified against a real probe before being trusted
+// (issue #1555/#1554) → Playwright last resort). Used to carry its own duplicated ~115-line
+// copy of this ladder -- removed in favor of the shared one (same migration
+// qsrsoft-onhand-pull.mjs got under issue #1539); see that lib's header for why an UNVERIFIED
+// static token (always present in CI as a persistent GitHub Secret) was silently skipping
+// Playwright on every run once SSO started failing.
 // Optional:
 //   VARIANCE_PERIOD=YYYY-MM  — override the period (default: current month UTC)
 //   VARIANCE_STORES=3708,... — subset of NSNs (default: all 27)
@@ -41,11 +43,10 @@
 // Token refresh: v3.myqsrsoft.com → Inventory → Variance Stat → DevTools → Network →
 //   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN.
 
-import { chromium } from 'playwright';
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
-import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+import { EBOS_BASE, resolveEbosToken } from './lib/ebos-auth.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
@@ -53,8 +54,6 @@ import {
 } from '../src/engine/eom-parsers.js';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 
-const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
-const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
 const FORCE       = process.env.VARIANCE_FORCE === '1';
 
@@ -124,124 +123,13 @@ function periodRange(period) {
   return { first, last };
 }
 
-// ── eBOS auth ladder (mirrors qsrsoft-onhand-pull.mjs) ────────────────────────
-// The exchange host api.sso.myqsrsoft.com authenticates with the COGNITO ID token
-// (RS256, iss=cognito-idp.us-east-1…, token_use=id, ~1h TTL) in x-auth-token — NOT
-// the api.reports.myqsrsoft.com reporting token. It returns the short-lived eBOS
-// token used for prod.ebos.qsrsoft.com/api/inv calls.
-async function getEbosTokenViaSso(cognitoToken) {
-  const url = `https://api.sso.myqsrsoft.com/token/ebosByOrg?orgId=${EBOS_ORG_ID}`;
-  const resp = await fetch(url, {
-    headers: {
-      'X-Auth-Token': cognitoToken, 'Accept': 'application/json',
-      'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-    },
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    console.log(`[auth] SSO exchange HTTP ${resp.status}${DEBUG && body ? ` — ${body.slice(0, 200)}` : ''}`);
-    return null;
-  }
-  const data = await resp.json();
-  const tok = data.token || data.accessToken || data.access_token || data.ebosByOrg
-      || data.ebosToken || data.x_auth_token || data.xAuthToken || (typeof data === 'string' ? data : null) || null;
-  if (!tok && DEBUG) console.log('[auth] SSO exchange OK but no token field — keys:', Object.keys(data || {}).join(', '));
-  return tok;
-}
-async function getEbosTokenViaPlaywright() {
-  const u = process.env.QSRSOFT_USERNAME, p = process.env.QSRSOFT_PASSWORD;
-  if (!u || !p) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
-  const fs = await import('node:fs');
-  try { fs.mkdirSync('screenshots', { recursive: true }); } catch {}
-  const shot = async (page, name) => { try { await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true }); console.log(`[pw] 📸 ${name}`); } catch (e) { console.log(`[pw] screenshot ${name} failed: ${e.message}`); } };
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' });
-  const page = await context.newPage();
-  let ebosToken = null;
-  const grab = (t, where) => { if (!ebosToken && t && t.length > 40) { ebosToken = t; console.log(`[pw] ✓ captured eBOS token from ${where}`); } };
-  // Widen capture: any *.ebos.qsrsoft.com request header, and any response body carrying an HS256 token.
-  page.on('request', req => { if (req.url().includes('ebos.qsrsoft.com')) grab(req.headers()['x-auth-token'], 'request header'); });
-  page.on('response', async resp => {
-    if (ebosToken) return;
-    const url = resp.url();
-    if (!/sso\.myqsrsoft|ebos\.qsrsoft|token/i.test(url)) return;
-    try { const body = await resp.text(); const m = body.match(/eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9[\w.\-]+/); if (m) grab(m[0], `response ${url.slice(0, 80)}`); } catch {}
-  });
-  try {
-    console.log('[pw] goto v3.myqsrsoft.com …');
-    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});
-    console.log(`[pw] landed at: ${page.url()} — title: "${await page.title().catch(() => '?')}"`);
-    await shot(page, '01-landing');
-    // Dump the actual form controls present so we can see the real login UI (Cognito Hosted UI, SAML, custom…)
-    const controls = await page.evaluate(() => {
-      const inputs = [...document.querySelectorAll('input')].map(i => ({ name: i.name, id: i.id, type: i.type, ph: i.placeholder }));
-      const btns = [...document.querySelectorAll('button, input[type=submit], a[role=button]')].map(b => ({ t: (b.innerText || b.value || '').trim().slice(0, 30), id: b.id, type: b.type }));
-      return { url: location.href, inputs, btns };
-    }).catch(e => ({ err: e.message }));
-    console.log('[pw] form controls:', JSON.stringify(controls).slice(0, 900));
-
-    const userSel = 'input[name="username"], input[name="email"], input[type="email"], #username, #email';
-    const passSel = 'input[name="password"], input[type="password"], #password';
-    const foundUser = await page.waitForSelector(userSel, { timeout: 20000 }).then(() => true).catch(() => false);
-    if (!foundUser) { console.log('[pw] ✗ no username field found — login UI not recognized'); await shot(page, '02-no-login'); }
-    else {
-      console.log('[pw] filling credentials (char-by-char for React/Amplify)…');
-      // Locators (not ElementHandles) — pressSequentially types char-by-char so Amplify's
-      // controlled inputs fire onChange (page.fill can leave the form "empty").
-      const userLoc = page.locator(userSel).first();
-      const passLoc = page.locator(passSel).first();
-      await userLoc.click({ clickCount: 3 }); await userLoc.pressSequentially(u, { delay: 12 });
-      await passLoc.click({ clickCount: 3 }).catch(() => {}); await passLoc.pressSequentially(p, { delay: 12 }).catch(() => {});
-      await shot(page, '02-filled');
-      // Click the EXACT "Sign in" button — not "Sign in with McD eID" / "Email Link"
-      const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
-      const clicked = await signIn.click({ timeout: 8000 }).then(() => true).catch(() => false);
-      if (!clicked) { console.log('[pw] exact Sign in button not clickable — pressing Enter in password'); await passLoc.press('Enter').catch(() => {}); }
-      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 2500));
-      const stillLogin = await page.$(passSel).then(Boolean);
-      const errText = await page.evaluate(() => {
-        const hit = [...document.querySelectorAll('[role=alert], .amplify-alert, [class*=error], [class*=Error], [data-amplify-error]')]
-          .map(e => (e.innerText || '').trim()).filter(Boolean);
-        return hit.slice(0, 3);
-      }).catch(() => []);
-      console.log(`[pw] post-login at: ${page.url()} — title: "${await page.title().catch(() => '?')}" — stillOnLogin: ${stillLogin}${errText.length ? ` — page messages: ${JSON.stringify(errText)}` : ''}`);
-      await shot(page, '03-post-login');
-    }
-    // Trigger an eBOS request by navigating to inventory pages
-    for (const url of ['https://v3.myqsrsoft.com/inventory/variance', 'https://v3.myqsrsoft.com/inventory', 'https://v3.myqsrsoft.com/']) {
-      if (ebosToken) break;
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 5000));
-    }
-    if (!ebosToken) await shot(page, '04-no-token');
-  } catch (e) { console.error('[auth] Playwright error:', e.message); } finally { await browser.close(); }
-  if (!ebosToken) console.error('[auth] ✗ Playwright could not capture an eBOS token (see screenshots artifact + form-controls dump above)');
-  return ebosToken;
-}
-async function resolveEbosToken() {
-  // Prefer minting a FRESH eBOS token via the SSO exchange — eBOS tokens are
-  // very short-lived, so a stored QSRSOFT_EBOS_TOKEN is almost always stale by
-  // the time CI runs. The static token is a last-ditch fallback, not the default.
-  // The exchange needs the COGNITO ID token; dispatch #82 replaced the static
-  // QSRSOFT_COGNITO_TOKEN/QSRSOFT_TOKEN read (stale ~23/24 hours as a stored
-  // secret, per memory/project-qsrsoft-cognito-auth-312.md) with a fresh mint.
-  try {
-    const cognito = await getFreshToken();
-    const t = await getEbosTokenViaSso(cognito);
-    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
-    console.log('[auth] SSO exchange did not return a token — trying fallbacks');
-  } catch (e) {
-    console.log(`[auth] getFreshToken() failed (${e.message}) — trying fallbacks`);
-  }
-  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
-  if (envToken) { console.log('[auth] falling back to static QSRSOFT_EBOS_TOKEN (may be stale)'); return envToken; }
-  const t = await getEbosTokenViaPlaywright();
-  if (!t) { console.error('[variance-pull] ✗ no eBOS token'); process.exit(1); }
-  return t;
-}
+// ── eBOS auth ──────────────────────────────────────────────────────────────────
+// resolveEbosToken() (fresh SSO exchange → static QSRSOFT_EBOS_TOKEN fallback, now
+// VERIFIED via a real probe before being trusted (issue #1555/#1554) → Playwright last
+// resort) now comes from the shared scripts/lib/ebos-auth.mjs. This script used to carry
+// its own ~115-line duplicate of the exact same ladder (it was in fact the ORIGINAL copy
+// that lib was extracted from, per that file's own header comment) -- removed in favor of
+// the one shared copy, same migration qsrsoft-onhand-pull.mjs got under issue #1539.
 
 // ── Fetch one endpoint for one store ──────────────────────────────────────────
 async function ebosGet(token, nsn, path) {
@@ -482,9 +370,19 @@ async function main() {
     return;
   }
   console.log(`[variance-pull] mode=${mode}`);
-  const token = await resolveEbosToken();
   const periods = periodsToRun();
   if (periods.length > 1) console.log(`[variance-pull] backfill ${periods.length} periods: ${periods.join(', ')}`);
+  // Issue #1555/#1554 (2026-10-27, live): resolveEbosToken() used to accept a stale
+  // QSRSOFT_EBOS_TOKEN unconditionally -- always present in CI, so once SSO failed the
+  // ladder handed back an unverified static token and never tried Playwright at all. The
+  // `verify` callback runs ONE real, cheap probe (this run's first period, first store)
+  // against each candidate before trusting it.
+  const verifyEbosToken = async (t) => {
+    try { await ebosGet(t, STORE_NSNS[0], `stat_variance/monthly/${periodRange(periods[0]).first}`); return true; }
+    catch (e) { return !String(e.message).startsWith('AUTH_FAILED'); }
+  };
+  const token = await resolveEbosToken(verifyEbosToken);
+  if (!token) { console.error('[variance-pull] ✗ no eBOS token'); process.exit(1); }
   let worstCode = 0;
   for (const period of periods) {
     const { authFailed, code } = await runPeriod(period, token);

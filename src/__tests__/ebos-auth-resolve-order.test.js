@@ -75,3 +75,76 @@ describe('ebos-auth.mjs resolveEbosToken() -- priority order (issue #1539)', () 
     expect(token).toBeNull();
   });
 });
+
+// Issue #1555/#1554 (2026-10-26/27): the static QSRSOFT_EBOS_TOKEN was accepted on nothing
+// more than "the env var is non-empty" -- a stale-but-present secret (always true in CI) meant
+// Playwright, the one path that actually still worked that day, was never attempted. The
+// optional `verify` callback this fix adds lets a caller confirm each rung before trusting it.
+describe('ebos-auth.mjs resolveEbosToken(verify) -- optional verification (issue #1555/#1554)', () => {
+  let fetchSpy;
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...ORIG_ENV };
+    delete process.env.QSRSOFT_EBOS_TOKEN;
+    delete process.env.QSRSOFT_USERNAME;
+    delete process.env.QSRSOFT_PASSWORD;
+  });
+  afterEach(() => {
+    process.env = { ...ORIG_ENV };
+    vi.restoreAllMocks();
+  });
+
+  it('omitting verify preserves the old unconditional-accept behavior exactly (no new callers broken)', async () => {
+    fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'fresh-sso-token' }) }));
+    global.fetch = fetchSpy;
+    const { resolveEbosToken } = await import('../../scripts/lib/ebos-auth.mjs');
+    expect(await resolveEbosToken()).toBe('fresh-sso-token');
+  });
+
+  it('a SSO token that fails verification is rejected, falling through to the static token', async () => {
+    process.env.QSRSOFT_EBOS_TOKEN = 'static-token';
+    fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'fresh-sso-token' }) }));
+    global.fetch = fetchSpy;
+    const { resolveEbosToken } = await import('../../scripts/lib/ebos-auth.mjs');
+    const verify = vi.fn(async (t) => t !== 'fresh-sso-token'); // reject only the SSO token
+    const token = await resolveEbosToken(verify);
+    expect(verify).toHaveBeenCalledWith('fresh-sso-token');
+    expect(token).toBe('static-token');
+  });
+
+  it('a static token that fails verification is rejected, falling through to Playwright -- this is the exact #1555/#1554 bug', async () => {
+    process.env.QSRSOFT_EBOS_TOKEN = 'stale-static-token';
+    // QSRSOFT_USERNAME/PASSWORD deliberately absent -- Playwright's own guard returns null,
+    // so the observable proof here is "verify was actually called on the static token and it
+    // did NOT short-circuit back out as a success", not a real browser capture.
+    fetchSpy = vi.fn(async () => ({ ok: false, status: 403, text: async () => '' })); // SSO fails too
+    global.fetch = fetchSpy;
+    const { resolveEbosToken } = await import('../../scripts/lib/ebos-auth.mjs');
+    const verify = vi.fn(async () => false); // the stale static token never verifies
+    const token = await resolveEbosToken(verify);
+    expect(verify).toHaveBeenCalledWith('stale-static-token');
+    expect(token).toBeNull(); // Playwright has no credentials configured in this test
+  });
+
+  it('a verify callback that throws is treated as a failed verification, not an unhandled rejection', async () => {
+    process.env.QSRSOFT_EBOS_TOKEN = 'static-token';
+    fetchSpy = vi.fn(async () => ({ ok: false, status: 403, text: async () => '' }));
+    global.fetch = fetchSpy;
+    const { resolveEbosToken } = await import('../../scripts/lib/ebos-auth.mjs');
+    const verify = vi.fn(async () => { throw new Error('probe network error'); });
+    const token = await resolveEbosToken(verify);
+    expect(token).toBeNull();
+  });
+
+  it('a verified token is accepted and the ladder stops there', async () => {
+    process.env.QSRSOFT_EBOS_TOKEN = 'static-token';
+    fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'fresh-sso-token' }) }));
+    global.fetch = fetchSpy;
+    const { resolveEbosToken } = await import('../../scripts/lib/ebos-auth.mjs');
+    const verify = vi.fn(async () => true);
+    const token = await resolveEbosToken(verify);
+    expect(token).toBe('fresh-sso-token');
+    expect(verify).toHaveBeenCalledTimes(1); // never reached the static token -- SSO already verified
+  });
+});
