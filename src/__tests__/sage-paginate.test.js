@@ -129,8 +129,8 @@ describe('sage-chat: fetchAllRows call sites impose a total order', () => {
     // dispatch #90), forecast_snapshots, glimpse, qsr_cash_sheet (opsCash auto-first discount
     // sourcing, dispatch-111.md), ctrl_rows, qsr_raw_item_detail (query_eom_recount_impact,
     // dispatch-226.md), smg_fullscale (query_smg), qsr_forms_completion (query_forms,
-    // backlog survey 2026-09-20)
-    expect(calls.length).toBe(11);
+    // backlog survey 2026-09-20), qsr_punch_times (query_staffing_presence, 2026-10-27)
+    expect(calls.length).toBe(12);
   });
 
   it.each(calls.map((c, i) => [i, c]))('call %i orders its query', (_i, call) => {

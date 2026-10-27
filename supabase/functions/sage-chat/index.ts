@@ -12,6 +12,8 @@ import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_N
 import { fetchAllRows } from './paginate.js';
 import { applyStreamEvent } from './stream-events.js';
 import { appendFinalRoundNudge } from './final-round-nudge.js';
+import { aggregateDailyActivity, DAILY_ACTIVITY_NOTE } from './daily-activity-agg.js';
+import { aggregateStaffingPresence, STAFFING_PRESENCE_NOTE } from './staffing-presence.js';
 import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
 import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
 import { aggregateSmgFullscale, SMG_STANDARDS, SMG_NOTE } from './smg-agg.js';
@@ -75,11 +77,11 @@ const TOOLS = [
   {
     name: 'query_daily_activity',
     description: `Query live QSRSoft daily activity data from Meridian's database.
-Use for any question about: sales performance, drive-thru (DT) speed, daily tracking,
-store comparisons, pacing vs projection, or recent trends.
-Returns aggregated results per store.
+Use for any question about: sales performance, drive-thru (DT) speed, OEPE, kitchen (KVS) speed, front-counter (R2P) speed, daily tracking, store comparisons, pacing vs projection, or recent trends.
+Returns aggregated results per store, including oepe_avg_sec/kvs_avg_sec/r2p_avg_sec (the same formulas the in-app panels use -- see each result's note field).
 Date fields are YYYY-MM-DD. For "today" use today's date. For "yesterday" subtract 1 day.
-DT speed is reported in seconds (avg service time per car). Target: <200s green, 200-240s amber, >240s red.`,
+DT speed (dt_avg_sec) is a simpler raw metric; prefer oepe_avg_sec for a real drive-thru-speed question. Target: <200s green, 200-240s amber, >240s red.
+By default this covers the WHOLE business day. For a question about a specific part of the day (closing shift, "after 4pm", dinner, breakfast, etc.), pass hour_slot_min/hour_slot_max to scope every returned figure to just that window -- do not try to approximate a daypart question with the whole-day numbers.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -95,6 +97,14 @@ DT speed is reported in seconds (avg service time per car). Target: <200s green,
           type: 'array',
           items: { type: 'string' },
           description: 'Store loc IDs to filter (e.g. ["29760","32525"]). Omit for all 27 stores.',
+        },
+        hour_slot_min: {
+          type: 'string',
+          description: `Optional: restrict to a time-of-day window, inclusive lower bound. hour_slot values run "05:00" through "28:00", each naming the END of that hourly block (e.g. "06:00" = the 5am-6am block), covering the 4am-to-4am business day. Common windows: "night"/closing/after 4pm -> hour_slot_min "17:00" (omit hour_slot_max); dinner peak (5-7pm clock time) -> hour_slot_min "18:00", hour_slot_max "19:00"; breakfast/lunch -- ask the user for their exact definition rather than guessing, this app has no single agreed boundary for those yet.`,
+        },
+        hour_slot_max: {
+          type: 'string',
+          description: 'Optional: restrict to a time-of-day window, inclusive upper bound. Same hour_slot convention as hour_slot_min. Omit for no upper bound (i.e. "from hour_slot_min through close").',
         },
       },
       required: ['start_date'],
@@ -146,6 +156,38 @@ Returns per-store: OT $ total, OT hours total, and Act-vs-Need hours/day (negati
           type: 'array',
           items: { type: 'string' },
           description: 'Store loc IDs to filter. Omit for all stores.',
+        },
+      },
+      required: ['start_date'],
+    },
+  },
+  {
+    name: 'query_staffing_presence',
+    description: `Query role-level staffing presence from raw QSRSoft clock punches (qsr_punch_times) -- who WORKED, classified by role (GM / DM-AM / Swing-Shift-Manager / crew-other), never by name.
+Use for questions about: which role actually covers closing/night shifts, whether GMs or DMs are working more mid or closing shifts, staffing coverage by part of the day, shift counts/hours by role.
+This is the ONLY tool that can answer a staffing-PRESENCE question (who was on shift) -- query_lifelenz_labor and query_labor_summary answer scheduled-vs-needed HOURS, not who/what role actually worked.
+CRITICAL, confirmed repeatedly in this district: GM and most DM/AM roles are commonly salaried-exempt and do not use the time clock at all. A zero or near-zero gm_shifts/dm_am_shifts result does NOT mean no GM/DM was present -- say so explicitly, never report it as "no GM worked" or imply absence.
+This tool NEVER returns a name or an identifiable id -- only role-level, store-level counts (shifts, hours, distinct-people counts). Never state or imply anything about a specific named individual from this data, even if the user names one -- report only the aggregate.
+By default covers the whole day. Pass after_local_hour to scope to shifts that STARTED at or after that local clock hour (e.g. 16 for "after 4pm"/closing) -- hours reported are each shift's FULL duration, not clipped to the window.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (inclusive). Required.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (inclusive). Defaults to start_date.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for all stores.',
+        },
+        after_local_hour: {
+          type: 'number',
+          description: 'Optional: only count shifts that STARTED at or after this local clock hour (0-23, America/Chicago -- every store in this district shares one timezone). E.g. 16 for "after 4pm"/closing shifts. Omit for the whole day.',
         },
       },
       required: ['start_date'],
@@ -455,11 +497,13 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const startDate = (input.start_date as string) || today;
     const endDate   = (input.end_date   as string) || startDate;
     const locs      = input.locs as string[] | undefined;
+    const hourSlotMin = input.hour_slot_min as string | undefined;
+    const hourSlotMax = input.hour_slot_max as string | undefined;
 
     const { data, error } = await fetchAllRows(() => {
       let q = sb
         .from('qsr_daily_activity')
-        .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt')
+        .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt')
         .gte('dt', startDate)
         .lte('dt', endDate)
         // Full PK order (loc, dt, hour_slot) -- required for offset paging, see paginate.js.
@@ -475,37 +519,17 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       // fix as qsr_raw_item_detail/qsr_forms_completion below, which already padded correctly
       // -- propagated here and to every other unpadded `.in('loc', locs)` site in this file.
       if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0'))); // restricted users always query all → scoped below
+      // Daypart filter (2026-10-27): hour_slot is the table's own time-of-day axis. Owner-
+      // confirmed convention (same session that surfaced this gap): hour_slot is the END of each
+      // hourly block, "05:00" through "28:00" for the 4am-to-4am business day.
+      if (hourSlotMin) q = q.gte('hour_slot', hourSlotMin);
+      if (hourSlotMax) q = q.lte('hour_slot', hourSlotMax);
       return q;
     });
     if (error) return `Database error: ${error.message}`;
-    if (!data?.length) return `No sales data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}. The data may not be available yet for this date range.`;
+    if (!data?.length) return `No sales data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}${hourSlotMin || hourSlotMax ? ' in the requested time-of-day window' : ''}. The data may not be available yet for this date range.`;
 
-    // Aggregate by store
-    const byStore: Record<string, {
-      sales: number; proj: number; dtMs: number; dtTrans: number; days: Set<string>;
-    }> = {};
-
-    for (const row of data) {
-      if (!byStore[row.loc]) byStore[row.loc] = { sales: 0, proj: 0, dtMs: 0, dtTrans: 0, days: new Set() };
-      const s = byStore[row.loc];
-      s.sales += row.product_sales || 0;
-      s.proj  += row.proj_sales_dollars || 0;
-      if ((row.dt_trans_cnt || 0) > 0) {
-        s.dtMs    += row.dt_untilserve || 0;
-        s.dtTrans += row.dt_trans_cnt;
-      }
-      s.days.add(row.dt);
-    }
-
-    const stores = Object.entries(byStore).map(([loc, s]) => ({
-      loc,
-      name:       STORE_NAMES[loc] || `Store ${loc}`,
-      sales:      Math.round(s.sales),
-      qsr_proj:   Math.round(s.proj),
-      vs_proj_pct: s.proj > 0 ? +((s.sales / s.proj - 1) * 100).toFixed(1) : null,
-      dt_avg_sec: s.dtTrans > 0 ? Math.round(s.dtMs / s.dtTrans / 1000) : null,
-      days:       s.days.size,
-    })).sort((a, b) => b.sales - a.sales);
+    const stores = aggregateDailyActivity(data, STORE_NAMES);
 
     const totalSales = stores.reduce((s, r) => s + r.sales, 0);
     const totalProj  = stores.reduce((s, r) => s + r.qsr_proj, 0);
@@ -513,13 +537,14 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const sc = applyScope(stores, allowed);
     return JSON.stringify({
       date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
+      ...(hourSlotMin || hourSlotMax ? { hour_slot_window: `${hourSlotMin || '05:00'}-${hourSlotMax || '28:00'}` } : {}),
       district_total_sales:    totalSales,
       district_total_proj:     totalProj,
       district_vs_proj_pct:    totalProj > 0 ? +((totalSales / totalProj - 1) * 100).toFixed(1) : null,
       district_store_count:    stores.length,
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
-      note: 'sales = product_sales (net sales). dt_avg_sec = seconds per car. Target <200s.',
+      note: DAILY_ACTIVITY_NOTE,
     });
   }
 
@@ -612,6 +637,59 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: LABOR_SUMMARY_NOTE,
+    });
+  }
+
+  if (name === 'query_staffing_presence') {
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = (input.start_date as string) || today;
+    const endDate   = (input.end_date   as string) || startDate;
+    const locs      = input.locs as string[] | undefined;
+    const afterLocalHour = input.after_local_hour != null ? Number(input.after_local_hour) : null;
+
+    // A shift starting late on endDate can run past midnight -- pull one extra day of end_date_time
+    // so that shift's hours aren't silently truncated, same reasoning as any other window query
+    // over a table keyed on instants rather than whole days.
+    const endDateExclusive = new Date(endDate + 'T00:00:00Z');
+    endDateExclusive.setUTCDate(endDateExclusive.getUTCDate() + 2);
+    const pullUntil = endDateExclusive.toISOString().slice(0, 10);
+
+    // PII: select ONLY what staffing-presence.js's aggregation needs. employee_name is NEVER
+    // selected here, full stop -- see staffing-presence.js's own header comment for why.
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('qsr_punch_times')
+        .select('loc,start_date_time,end_date_time,job_title_code,geid')
+        .eq('punch_type', 'shift')
+        .gte('start_date_time', startDate)
+        .lt('start_date_time', pullUntil)
+        // No single-column primary key to order on here; (loc, start_date_time, geid) is a
+        // practical total order for this table -- see paginate.js for why offset paging needs one.
+        .order('loc').order('start_date_time').order('geid');
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(parseInt(l, 10)).padStart(7, '0')));
+      return q;
+    });
+    if (error) return `Database error: ${error.message}`;
+    if (!data?.length) return `No staffing punch data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}.`;
+
+    // Drop anything past the real end_date's business-day close (the extra pull day above exists
+    // only so a late-starting shift isn't cut off mid-shift, not to include a whole extra day).
+    const closeBound = new Date(endDateExclusive);
+    const rows = data.filter((r: any) => !r.start_date_time || new Date(r.start_date_time) < closeBound);
+
+    const stores = aggregateStaffingPresence(rows, STORE_NAMES, afterLocalHour);
+    if (!stores.length) {
+      return `No shifts found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}${afterLocalHour != null ? ` starting at or after ${afterLocalHour}:00 local` : ''}.`;
+    }
+
+    const sc = applyScope(stores, allowed);
+    return JSON.stringify({
+      date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
+      ...(afterLocalHour != null ? { after_local_hour: afterLocalHour } : {}),
+      district_store_count: stores.length,
+      stores: sc.stores,
+      ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
+      note: STAFFING_PRESENCE_NOTE,
     });
   }
 
@@ -1154,7 +1232,14 @@ Deno.serve(async (req: Request) => {
     async start(controller) {
       try {
         let conversationMessages = [...messages];
-        const MAX_TOOL_ROUNDS = 3;
+        // Raised from 3 (owner-approved, 2026-10-27): a genuinely complex question -- multiple
+        // states/stores analyzed separately, several time windows, several metrics each --
+        // plausibly needs more than the 4 total model calls 3 allowed for. 8 (9 total calls) is a
+        // deliberate middle ground: real headroom for that shape of question, still bounded so a
+        // single turn can't run away in cost/latency. See final-round-nudge.js for the companion
+        // fix that makes the LAST round actually produce an answer instead of more narration,
+        // regardless of this number.
+        const MAX_TOOL_ROUNDS = 8;
 
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
           const isLastRound = round === MAX_TOOL_ROUNDS;
