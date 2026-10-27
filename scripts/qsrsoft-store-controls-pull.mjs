@@ -68,7 +68,15 @@ async function upsert(row) {
 }
 
 async function main() {
-  const token = await resolveEbosToken();
+  // Issue #1510/#1555/#1554: resolveEbosToken() used to accept a stale QSRSOFT_EBOS_TOKEN
+  // unconditionally -- always present in CI, so once SSO fails the ladder handed back an
+  // unverified static token and never tried Playwright. `verify` confirms this store's
+  // real request actually authenticates before the token is trusted.
+  const verifyEbosToken = async (t) => {
+    try { await getStorewideControls(t, STORE_NSNS[0]); return true; }
+    catch (e) { return !String(e.message).startsWith('AUTH_FAILED'); }
+  };
+  const token = await resolveEbosToken(verifyEbosToken);
   console.log(`[store-controls] pulling ${STORE_NSNS.length} store(s)…`);
 
   let saved = 0, authFailed = false;

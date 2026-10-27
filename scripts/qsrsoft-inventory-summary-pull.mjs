@@ -127,7 +127,15 @@ async function upsert(rows) {
 }
 
 async function main() {
-  const token = await resolveEbosToken();
+  // Issue #1509/#1555/#1554: resolveEbosToken() used to accept a stale QSRSOFT_EBOS_TOKEN
+  // unconditionally -- always present in CI, so once SSO fails the ladder handed back an
+  // unverified static token and never tried Playwright. `verify` confirms this store's
+  // real request actually authenticates before the token is trusted.
+  const verifyEbosToken = async (t) => {
+    try { await getInventorySummary(t, STORE_NSNS[0], START_DATE, END_DATE); return true; }
+    catch (e) { return !String(e.message).startsWith('AUTH_FAILED'); }
+  };
+  const token = await resolveEbosToken(verifyEbosToken);
   const windowDays = inclusiveDaySpan(START_DATE, END_DATE);
   console.log(`[inventory-summary] window ${START_DATE}..${END_DATE} (${windowDays}d) · period ${PERIOD} · ${STORE_NSNS.length} stores`);
 

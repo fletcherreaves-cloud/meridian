@@ -136,8 +136,25 @@ async function upsert(rows) {
 }
 
 async function main() {
-  const token = await resolveEbosToken();
   const date = resolveDate();
+  // Issue #1506/#1555/#1554: resolveEbosToken() used to accept a stale QSRSOFT_EBOS_TOKEN
+  // unconditionally -- always present in CI, so once SSO fails the ladder handed back an
+  // unverified static token and never tried Playwright. `verify` confirms a real (read-only
+  // -- deliberately getMenuItemActivityCost, never the POST postMenuItemActivity) request
+  // actually authenticates before the token is trusted. catalogLookup is a pure Supabase
+  // read (no eBOS token needed), so it's safe to call ahead of token resolution just to get
+  // a real storeMenuitemId to probe with; a store whose catalog hasn't landed yet can't be
+  // probed at all, so that case is treated as "can't tell, don't block the run on it."
+  const verifyEbosToken = async (t) => {
+    try {
+      const catalog0 = await catalogLookup(supabase, withRetry, pad7(STORE_NSNS[0]));
+      const first = catalog0.values().next().value;
+      if (!first) return true;
+      await getMenuItemActivityCost(t, STORE_NSNS[0], { storeMenuitemId: first.storeMenuitemId, date });
+      return true;
+    } catch (e) { return !String(e.message).startsWith('AUTH_FAILED'); }
+  };
+  const token = await resolveEbosToken(verifyEbosToken);
   const cutoff = isoDaysAgo(WINDOW_DAYS);
   console.log(`[menu-item-activity] date ${date} · trailing-${WINDOW_DAYS}d item-selection cutoff ${cutoff} · ${STORE_NSNS.length} stores`);
 
