@@ -810,7 +810,18 @@ async function main() {
     console.log('[onhand-pull] weekly-count-day: no store expected to count today — skipping this run');
     return;
   }
-  let token = await resolveEbosToken();
+  // Issue #1555 (2026-10-27, live): resolveEbosToken() used to accept a stale
+  // QSRSOFT_EBOS_TOKEN unconditionally -- the secret is always present in CI, so once SSO
+  // failed (as it was that day, HTTP 403) the ladder handed back an unverified static token
+  // and never tried Playwright at all, even with QSRSOFT_USERNAME/PASSWORD set. The `verify`
+  // callback (scripts/lib/ebos-auth.mjs) runs ONE real, cheap probe -- this store's/type's
+  // actual on-hand request -- against each candidate before trusting it, so a rung that
+  // can't really authenticate is rejected instead of assumed good.
+  const verifyEbosToken = async (t) => {
+    try { await fetchOnHand(t, targetNsns[0], dateStr, TYPES[0]); return true; }
+    catch (e) { return !String(e.message).startsWith('AUTH_FAILED'); } // a non-auth error (e.g. 404 for a closed store) doesn't mean the TOKEN is bad
+  };
+  let token = await resolveEbosToken(verifyEbosToken);
   if (!token) { console.error('[onhand-pull] ✗ no eBOS token'); process.exit(1); }
   const prevStatus = await loadExistingStatus(period);
   console.log(`[onhand-pull] mode=${mode} · date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${targetNsns.length} stores`);

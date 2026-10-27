@@ -118,19 +118,56 @@ export async function getEbosTokenViaPlaywright() {
   return ebosToken;
 }
 
+// Issue #1555/#1554 (2026-10-26/27, live): a stale static QSRSOFT_EBOS_TOKEN was accepted
+// unconditionally and returned to the caller on nothing more than "the env var is non-empty" —
+// no check that it actually still authenticates. SSO exchange is failing with a 403 right now
+// (a separate, broader credential issue, not fixed here), which means every run was falling
+// straight to that unverified static token and then dying on the FIRST real API call with
+// AUTH_FAILED — the exact shape qsrsoft-onhand-pull.mjs's #1539 fix was supposed to prevent,
+// just one rung further down the ladder. Confirmed from the live job logs for both run #1260
+// (onhand-pull) and run #172 (ebos-pull, which has its own separate, NOT-shared copy of this
+// bug — see qsrsoft-variance-pull.mjs for a second one): "falling back to static
+// QSRSOFT_EBOS_TOKEN (may be stale)" immediately followed by "auth failed", with Playwright
+// never attempted even though QSRSOFT_USERNAME/PASSWORD were set.
+//
+// Fix: an optional `verify` callback — `async (token) => boolean`, the caller's own cheap real
+// probe (one lightweight request against the exact endpoint shape it's about to hammer 27
+// times) — lets each rung be CONFIRMED before being trusted, not just assumed. A rung that
+// fails verification is treated the same as one that returned no token at all: the ladder
+// continues to the next rung instead of handing back a token nobody checked. Omitting `verify`
+// (as every existing caller before this fix did) preserves the exact old behavior byte-for-byte
+// — this is purely additive, never a forced behavior change on a caller that hasn't opted in.
+async function _verified(token, verify, label) {
+  if (!token) return null;
+  if (!verify) { console.log(`[auth] ✓ ${label}`); return token; }
+  try {
+    if (await verify(token)) { console.log(`[auth] ✓ ${label} (verified)`); return token; }
+  } catch (e) {
+    console.log(`[auth] ${label} — verification threw (${e.message}), treating as invalid`);
+    return null;
+  }
+  console.log(`[auth] ${label} failed verification — trying next fallback`);
+  return null;
+}
+
 // The full ladder: SSO exchange (fresh, preferred) → static QSRSOFT_EBOS_TOKEN (may be stale) →
 // Playwright (last resort, mints fresh). Returns the token, or null if every rung failed — the
-// caller decides how to log/exit, since that message is naturally script-specific.
-export async function resolveEbosToken() {
+// caller decides how to log/exit, since that message is naturally script-specific. Playwright
+// itself is never passed through `verify` — it's the last rung, so there's nothing left to fall
+// back to even if its capture also turns out stale; the caller's own AUTH_FAILED handling (every
+// consumer already has one) is the backstop for that case, same as before this fix.
+export async function resolveEbosToken(verify) {
   try {
     const cognito = await getFreshToken();
     const t = await getEbosTokenViaSso(cognito);
-    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
-    console.log('[auth] SSO exchange did not return a token — trying fallbacks');
+    const ok = await _verified(t, verify, 'eBOS token via SSO exchange (fresh)');
+    if (ok) return ok;
+    if (!t) console.log('[auth] SSO exchange did not return a token — trying fallbacks');
   } catch (e) {
     console.log(`[auth] getFreshToken() failed (${e.message}) — trying fallbacks`);
   }
-  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
-  if (envToken) { console.log('[auth] falling back to static QSRSOFT_EBOS_TOKEN (may be stale)'); return envToken; }
+  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim() || null;
+  const okEnv = await _verified(envToken, verify, 'static QSRSOFT_EBOS_TOKEN (may be stale)');
+  if (okEnv) return okEnv;
   return getEbosTokenViaPlaywright();
 }
