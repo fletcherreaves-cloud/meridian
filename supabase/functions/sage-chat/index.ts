@@ -10,6 +10,7 @@ import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-ag
 import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.js';
 import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_NOTE } from './forecast-snapshots-agg.js';
 import { fetchAllRows } from './paginate.js';
+import { applyStreamEvent } from './stream-events.js';
 import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
 import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
 import { aggregateSmgFullscale, SMG_STANDARDS, SMG_NOTE } from './smg-agg.js';
@@ -1043,7 +1044,7 @@ async function streamAnthropicCall(
   const decoder = new TextDecoder();
   let buf = '';
 
-  let stopReason = 'end_turn';
+  const streamState = { stopReason: 'end_turn' };
   const contentByIdx = new Map<number, Record<string, unknown>>();
   const toolUses: Array<{ id: string; name: string }> = [];
 
@@ -1062,76 +1063,16 @@ async function streamAnthropicCall(
 
       try {
         const ev = JSON.parse(raw);
-
-        if (ev.type === 'content_block_start') {
-          const cb = ev.content_block || {};
-          const block: Record<string, unknown> = { type: cb.type };
-          if (cb.type === 'text')     { block.text = ''; }
-          if (cb.type === 'thinking') { block.thinking = ''; }
-          // tool_use (client-run, round-tripped through runTool) AND server_tool_use (web_search
-          // -- runs on Anthropic's infrastructure, resolves within this same streamed response)
-          // both stream their input as input_json_delta events. Accumulate each on ITS OWN
-          // content-block object, keyed by ev.index -- not a single shared "last tool_use
-          // pushed" array, which silently corrupted one tool's input with another's partial_json
-          // bytes the moment a server tool and a client tool streamed in parallel in one turn.
-          if (cb.type === 'tool_use' || cb.type === 'server_tool_use') {
-            block.id   = cb.id;
-            block.name = cb.name;
-            block.input = {};
-            block._inputJson = '';
-          }
-          // web_search_tool_result (mass-review notes 70, 2026-10-13) -- the RESULT block
-          // Anthropic emits right after a server_tool_use web_search call, carrying the actual
-          // search hits (or an error). Unlike tool_use/server_tool_use above, this block arrives
-          // WHOLE in this one content_block_start event (cb.tool_use_id/cb.content), never
-          // streamed via input_json_delta -- so it was falling through to the generic `{type:
-          // cb.type}` default and losing both required fields. Harmless on a normal turn (this
-          // block is never replayed), but fatal on a pause_turn resume: the branch below replays
-          // `assistantContent` verbatim as the next request's conversation history, and Anthropic
-          // rejects a web_search_tool_result missing tool_use_id/content with HTTP 400
-          // invalid_request_error ("messages.N.content.M.web_search_tool_result... Field
-          // required") -- exactly the error a multi-search query (pause_turn is web_search's own
-          // internal search-loop continuing) was hitting. Captured directly from cb since there's
-          // no delta/accumulation step for this block type.
-          if (cb.type === 'web_search_tool_result') {
-            block.tool_use_id = cb.tool_use_id;
-            block.content = cb.content;
-          }
-          if (cb.type === 'tool_use') toolUses.push({ id: cb.id, name: cb.name });
-          contentByIdx.set(ev.index, block);
+        // applyStreamEvent is the extracted, Deno/Node-agnostic reducer (stream-events.js) --
+        // same code path src/__tests__/sage-stream-events.test.js exercises directly.
+        const result = applyStreamEvent(ev, contentByIdx, toolUses, streamState);
+        if (result?.textDelta) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: result.textDelta })}\n\n`));
         }
-
-        else if (ev.type === 'content_block_delta') {
-          const block = contentByIdx.get(ev.index);
-          const delta = ev.delta || {};
-          if (delta.type === 'text_delta' && delta.text) {
-            if (block) block.text = ((block.text as string) || '') + delta.text;
-            // Forward to SSE client immediately
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta.text })}\n\n`));
-          }
-          if (delta.type === 'thinking_delta' && block) {
-            block.thinking = ((block.thinking as string) || '') + (delta.thinking || '');
-          }
-          if (delta.type === 'input_json_delta' && block) {
-            block._inputJson = ((block._inputJson as string) || '') + (delta.partial_json || '');
-          }
-        }
-
-        else if (ev.type === 'content_block_stop') {
-          const block = contentByIdx.get(ev.index);
-          if ((block?.type === 'tool_use' || block?.type === 'server_tool_use') && block._inputJson != null) {
-            try { block.input = JSON.parse(block._inputJson as string); } catch { block.input = {}; }
-            delete block._inputJson;
-          }
-        }
-
-        else if (ev.type === 'message_delta') {
-          stopReason = ev.delta?.stop_reason || stopReason;
-        }
-
       } catch { /* malformed SSE event — skip */ }
     }
   }
+  const stopReason = streamState.stopReason;
 
   const assistantContent = Array.from(contentByIdx.entries())
     .sort(([a], [b]) => a - b)
