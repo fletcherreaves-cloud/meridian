@@ -1272,8 +1272,16 @@ Deno.serve(async (req: Request) => {
 
           if (stopReason !== 'tool_use' || !toolUses.length) break;
 
-          // Execute each tool call and emit status events
-          const toolResults: unknown[] = [];
+          // Execute every tool call in this round CONCURRENTLY, not one at a time -- the system
+          // prompt tells the model it can call multiple tools simultaneously for a question that
+          // spans domains, and awaiting them serially threw that away. (Investigated and ruled
+          // out as the cause of a separate failure mode on 2026-10-27 -- see memory/
+          // finding-sage-cpu-time-limit-2026-10-27.md: the real constraint is the Edge Function's
+          // CPU-time budget, not Postgres connection-pool contention, and this parallelism doesn't
+          // change total CPU seconds spent, only how latency is distributed.)
+          // tool_result blocks must still be returned in the SAME order as their tool_use blocks
+          // (the Anthropic API matches them positionally within the turn), so emit status events
+          // up front in order, run everything in parallel, then reassemble in order.
           for (const tu of toolUses) {
             const label = tu.name === 'query_daily_activity'    ? 'sales & DT data'
                         : tu.name === 'query_lifelenz_labor'   ? 'labor schedules'
@@ -1285,14 +1293,16 @@ Deno.serve(async (req: Request) => {
                         : tu.name === 'search_project_memory'  ? 'project memory'
                         : tu.name.replace(/_/g, ' ');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Querying ${label}…` })}\n\n`));
+          }
 
+          const toolResults: unknown[] = await Promise.all(toolUses.map(async (tu: any) => {
             try {
               const result = await runTool(tu.name, tu.input as Record<string, unknown>, scope.allowed, scope.role);
-              toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
+              return { type: 'tool_result', tool_use_id: tu.id, content: result };
             } catch (e) {
-              toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${e}`, is_error: true });
+              return { type: 'tool_result', tool_use_id: tu.id, content: `Error: ${e}`, is_error: true };
             }
-          }
+          }));
 
           // Thinking blocks require a `signature` field to replay — strip them.
           // Tool_use blocks are all that's needed for the tool-result turn.

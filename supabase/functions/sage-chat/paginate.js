@@ -29,16 +29,37 @@
 // concurrent insert or an autovacuum mid-read is exactly what reshuffles a seq scan. The app-side
 // reader of qsr_daily_activity already orders for this reason (src/lib/supabase.js:1706).
 // `src/__tests__/sage-paginate.test.js` asserts every fetchAllRows call site in index.ts orders.
-export async function fetchAllRows(buildQuery, pageSize = 1000) {
+//
+// Pages are fetched in CONCURRENT batches, not one at a time (dispatch #SAGE-perf, 2026-10-27,
+// owner report "SAGE never finishes" on a complex multi-window question). Measured live against
+// production: a district-wide 90-day query_daily_activity pull is 59 pages and took 10.7s fully
+// serial; a wide-range query_staffing_presence pull hit 120 pages and took 43.2s. A genuinely
+// complex question (90-day + YTD + last-year, several metrics) needs several such calls in one
+// turn, and the sum blew past whatever external connection/timeout limit silently kills the
+// stream (~85-95s observed, no JS exception, no error event -- just a dead connection and no
+// [DONE]). Serial pagination was the actual bottleneck, not the round budget or the prompt --
+// raising MAX_TOOL_ROUNDS (v5.591) made this failure mode reachable MORE easily, not less.
+// Firing `concurrency` range requests at once cuts wall-clock roughly by that factor, since each
+// page's cost here is network round-trip latency, not query execution time. A batch can overshoot
+// past the true end of data (fires pages that return empty) -- bounded waste of at most
+// `concurrency - 1` empty requests, far cheaper than serializing everything.
+export async function fetchAllRows(buildQuery, pageSize = 1000, concurrency = 6) {
   const all = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
-    if (error) return { data: all, error };
-    if (!data?.length) break;
-    all.push(...data);
-    if (data.length < pageSize) break;
-    offset += pageSize;
+    const batch = Array.from({ length: concurrency }, (_, i) =>
+      buildQuery().range(offset + i * pageSize, offset + (i + 1) * pageSize - 1));
+    const results = await Promise.all(batch);
+
+    let exhausted = false;
+    for (const { data, error } of results) {
+      if (error) return { data: all, error };
+      if (!data?.length) { exhausted = true; break; }
+      all.push(...data);
+      if (data.length < pageSize) { exhausted = true; break; }
+    }
+    if (exhausted) break;
+    offset += concurrency * pageSize;
   }
   return { data: all, error: null };
 }
