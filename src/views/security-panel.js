@@ -61,11 +61,11 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&
 
 // ── Pure logic — exported and tested independently of any rendering ─────────────────────────────
 
-// admin/owner/area_supervisor always allowed, matching security_findings' RLS exactly. manager
-// allowed ONLY when the caller has already confirmed org_config.gm_identity_reveal_enabled (loaded
-// separately, async -- this function itself makes no network call, so it can be used as a pure
-// gate both for the initial "should I even bother checking" decision and the final verdict once
-// that flag is in). Everything else (vp/do/om/gm/sm_am_dm/undefined) is denied.
+// admin/owner/area_supervisor always allowed, matching security_findings' RLS exactly. gm and
+// manager allowed ONLY when the caller has already confirmed org_config.gm_identity_reveal_enabled
+// (loaded separately, async -- this function itself makes no network call, so it can be used as a
+// pure gate both for the initial "should I even bother checking" decision and the final verdict
+// once that flag is in). Everything else (vp/do/om/sm_am_dm/undefined) is denied.
 // ⚠️ CORRECTED (RBAC audit, 2026-09-16) -- this used to check the literal string 'supervisor' and
 // exclude 'owner' entirely, on the assumption (from an earlier, pre-dispatch-#148 CLAUDE.md draft)
 // that profiles.role only carried 3 real values (admin/supervisor/manager). The live DB constraint
@@ -78,9 +78,18 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&
 // policy (supabase/schema-security-findings-role-fix.sql) is updated in the same pass -- see this
 // function's own "must never be looser than that policy" rule above, still true, now against the
 // corrected policy.
+// ⚠️ CORRECTED AGAIN (owner decision, 2026-10-28) -- 'gm' used to be lumped in with every other
+// denied role, which was wrong: the whole point of org_config.gm_identity_reveal_enabled is to let
+// a GM see real names. The two existing 'manager'-role accounts are the owner's own, kept in this
+// same gated branch deliberately (his explicit "let me still override access in settings" -- the
+// toggle is that override, and narrowing this to 'gm' alone would have silently revoked access his
+// own accounts already had). 'gm' is now named explicitly rather than falling through to the
+// catch-all deny, which is the actual fix: going forward a real GM account is recognized by its own
+// role id, not mistaken for one of the other manager-ladder tiers (sm_am_dm/om/do/vp), which still
+// correctly fall through to denied here.
 export function securityPanelAccess(userRole, gmRevealEnabled) {
   if (userRole === 'admin' || userRole === 'owner' || userRole === 'area_supervisor') return 'allowed';
-  if (userRole === 'manager') return gmRevealEnabled ? 'allowed' : 'denied';
+  if (userRole === 'manager' || userRole === 'gm') return gmRevealEnabled ? 'allowed' : 'denied';
   return 'denied';
 }
 
@@ -1083,7 +1092,7 @@ export function SecurityPanel({ userRole, onClose }) {
       // check (and drifted from it, still checking the stale 'supervisor' string after the
       // exported function was corrected) -- call the real one instead of re-deriving it.
       if (securityPanelAccess(userRole, false) === 'allowed') { if (!cancelled) setPermState('allowed'); return; }
-      if (userRole !== 'manager') { if (!cancelled) setPermState('denied'); return; }
+      if (userRole !== 'manager' && userRole !== 'gm') { if (!cancelled) setPermState('denied'); return; }
       const enabled = await loadGmIdentityRevealEnabled();
       if (!cancelled) setPermState(securityPanelAccess(userRole, enabled));
     })();

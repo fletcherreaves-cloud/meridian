@@ -65,12 +65,15 @@ describe('securityPanelAccess() — matches security_findings\' RLS tier exactly
     expect(securityPanelAccess('owner', false)).toBe('allowed');
     expect(securityPanelAccess('area_supervisor', false)).toBe('allowed');
   });
-  it('manager is allowed ONLY when gmRevealEnabled is true', () => {
+  it('manager and gm are both allowed ONLY when gmRevealEnabled is true (owner decision, 2026-10-28)', () => {
     expect(securityPanelAccess('manager', true)).toBe('allowed');
     expect(securityPanelAccess('manager', false)).toBe('denied');
+    expect(securityPanelAccess('gm', true)).toBe('allowed');
+    expect(securityPanelAccess('gm', false)).toBe('denied');
   });
   it('every other role (including undefined, and the stale pre-dispatch-#148 "supervisor" string) is denied', () => {
-    expect(securityPanelAccess('gm', true)).toBe('denied');
+    expect(securityPanelAccess('sm_am_dm', true)).toBe('denied');
+    expect(securityPanelAccess('om', true)).toBe('denied');
     expect(securityPanelAccess(undefined, true)).toBe('denied');
     expect(securityPanelAccess('supervisor', true)).toBe('denied'); // real id is 'area_supervisor'
   });
