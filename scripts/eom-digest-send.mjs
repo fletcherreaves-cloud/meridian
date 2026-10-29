@@ -44,9 +44,17 @@
 //                           configured send hour (see loadDigestConfig()/hourGatePasses()
 //                           below, dispatch #217) — used by the on-demand "Generate Report"
 //                           panel action, which always passes an explicit DIGEST_LEVEL too.
-//   DIGEST_LEVEL=district|patch|org|all — which level(s) to send. When unset, defaults to
-//                           the org_config-configured levels (loadDigestConfig(), dispatch
-//                           #217) rather than a hardcoded district+patch — see levelsToRun().
+//   DIGEST_LEVEL=district|patch|org|operator|store|all — which level(s) to send. When unset,
+//                           defaults to the org_config-configured levels (loadDigestConfig(),
+//                           dispatch #217) rather than a hardcoded district+patch — see
+//                           levelsToRun(). 'all' does NOT include 'store' -- a per-store blast
+//                           to all 27 is never implied by "send everything", only an explicit
+//                           DIGEST_LEVEL=store (see ALL_LEVELS below).
+//   DIGEST_LOC=0003708[,0005183,...] — restrict to just these store(s) (7-char zero-padded or
+//                           not, both accepted), filtering buildStoreRows()'s output before any
+//                           grouping. Owner req 2026-10-29: "resend a digest report to just one
+//                           location" — used by the EOM Dashboard's Store-level "Email" action,
+//                           which always passes exactly one loc.
 //   DIGEST_PERIOD=YYYY-MM — override the period (default: current month)
 //   DIGEST_DATE=YYYY-MM-DD— override the business date queried (default: today UTC)
 //   QSRSOFT_DEBUG=1
@@ -76,10 +84,26 @@ import { sendDigestEmail } from './lib/eom-digest-notify.mjs';
 const DEBUG = process.env.QSRSOFT_DEBUG === '1';
 const FORCE = process.env.DIGEST_FORCE === '1';
 const LEVEL_ARG = (process.env.DIGEST_LEVEL || '').trim().toLowerCase();
+// 2026-10-29 (owner req) — "resend to just one location": a comma-separated loc list that, when
+// set, filters buildStoreRows()'s output down to just those stores before any grouping. Primarily
+// for DIGEST_LEVEL=store (one group per store already), but works with any level the same way a
+// narrower patch/org scope would -- it's a pre-filter on the input, not a new grouping concept.
+const LOC_ARG = (process.env.DIGEST_LOC || '').trim();
+export function filterRowsByLoc(rows, locArg) {
+  if (!locArg) return rows;
+  const wanted = new Set(locArg.split(',').map(s => s.trim()).filter(Boolean).map(s => s.padStart(7, '0')));
+  return rows.filter(r => wanted.has(r.loc));
+}
 // dispatch #224 Task 3 — 'operator' joins district/patch/org as a real on-demand + scheduled
 // level, matching .github/workflows/eom-digest-send.yml's `level` input and buildEomDigest()'s
 // new level branch (src/engine/eom-digest.js).
 const ALL_LEVELS = ['district', 'patch', 'org', 'operator'];
+// 'store' is explicitly selectable (DIGEST_LEVEL=store) but deliberately NOT part of ALL_LEVELS
+// / the scheduled-config level set — 2026-10-29 owner req is "just one location", and DIGEST_LOC
+// is what actually narrows it there; without that guard, DIGEST_LEVEL=all or a saved schedule
+// naming every configured level would silently blast an individual email to every one of the 27
+// stores, which nobody asked for.
+const EXPLICIT_LEVELS = [...ALL_LEVELS, 'store'];
 // Default source is now the loaded org_config, not a hardcoded literal (dispatch #217) — but
 // DIGEST_LEVEL, when explicitly set, still wins unconditionally. This is what the on-demand
 // panel send relies on (it always passes an explicit level via trigger-dar-sync's `digest`
@@ -88,7 +112,7 @@ const ALL_LEVELS = ['district', 'patch', 'org', 'operator'];
 // a module-scope "loaded config" variable, so tests can call it directly with a fixture.
 export function levelsToRun(config = DEFAULT_EOM_DIGEST_CONFIG) {
   if (LEVEL_ARG === 'all') return ALL_LEVELS;
-  if (ALL_LEVELS.includes(LEVEL_ARG)) return [LEVEL_ARG];
+  if (EXPLICIT_LEVELS.includes(LEVEL_ARG)) return [LEVEL_ARG];
   const levels = config && Array.isArray(config.levels) && config.levels.length ? config.levels : null;
   return levels || DEFAULT_EOM_DIGEST_CONFIG.levels;
 }
@@ -314,8 +338,9 @@ async function main() {
   const gotLiveOrg = await bootstrapLiveOrg();
   if (DEBUG) console.log('[eom-digest-send] live org bootstrap:', gotLiveOrg ? 'OK' : 'fell back to seed');
 
-  const rows = await buildStoreRows(period, new Date());
-  console.log(`[eom-digest-send] ${rows.length}/${STORE_NSNS.length} stores have data for ${period}`);
+  const allRows = await buildStoreRows(period, new Date());
+  const rows = filterRowsByLoc(allRows, LOC_ARG);
+  console.log(`[eom-digest-send] ${rows.length}/${STORE_NSNS.length} stores have data for ${period}${LOC_ARG ? ` (filtered to loc=${LOC_ARG})` : ''}`);
   if (!rows.length) { console.log('[eom-digest-send] nothing to send'); return; }
 
   let sent = 0, failed = 0;

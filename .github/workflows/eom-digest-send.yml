@@ -19,7 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       level:
-        description: 'Which level(s) to send: district, patch, org, operator, all, or blank for the default (district + patch)'
+        description: 'Which level(s) to send: district, patch, org, operator, store, all, or blank for the default (district + patch). "all" never includes store.'
+        required: false
+        default: ''
+      loc:
+        description: 'Restrict to just these store(s), comma-separated (e.g. 0003708) — owner req 2026-10-29: resend a digest for just one location. Only meaningful with level=store.'
         required: false
         default: ''
       force:
@@ -73,6 +77,7 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DIGEST_LEVEL:              ${{ github.event.inputs.level  || '' }}
+          DIGEST_LOC:                ${{ github.event.inputs.loc    || '' }}
           DIGEST_FORCE:              ${{ github.event.inputs.force  || '0' }}
           DIGEST_PERIOD:             ${{ github.event.inputs.period || '' }}
           DIGEST_DATE:               ${{ github.event.inputs.date   || '' }}

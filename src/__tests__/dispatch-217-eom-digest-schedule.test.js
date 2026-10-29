@@ -20,7 +20,7 @@
 // closes. A raw `process.env.X = process.env.X || 'dummy'` assignment used to sit here — that was
 // itself the leak source, and removing the need for it removes the leak at its origin.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { hourGatePasses } from '../../scripts/eom-digest-send.mjs';
+import { hourGatePasses, filterRowsByLoc } from '../../scripts/eom-digest-send.mjs';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 
 // levelsToRun() reads process.env.DIGEST_LEVEL into a module-scope constant AT IMPORT TIME
@@ -81,6 +81,30 @@ describe('levelsToRun(config) — dispatch #217: config-sourced default, DIGEST_
     const mod = await import('../../scripts/eom-digest-send.mjs');
     expect(mod.levelsToRun({ levels: ['org'], sendHourUtc: 23 })).toEqual(['org']);
   });
+
+  // 2026-10-29 (owner req: "resend a digest report to just one location") — 'store' joins the
+  // explicitly-selectable levels, but deliberately stays OUT of 'all' and the config-sourced
+  // default so a saved schedule or DIGEST_LEVEL=all never silently fires 27 individual emails.
+  it('DIGEST_LEVEL="store" (the on-demand panel\'s Store-tab send) wins over the config unconditionally', async () => {
+    process.env.DIGEST_LEVEL = 'store';
+    vi.resetModules();
+    const mod = await import('../../scripts/eom-digest-send.mjs');
+    expect(mod.levelsToRun({ levels: ['district', 'patch'], sendHourUtc: 23 })).toEqual(['store']);
+  });
+
+  it('DIGEST_LEVEL="all" never includes "store" — a per-store blast is never implied by "send everything"', async () => {
+    process.env.DIGEST_LEVEL = 'all';
+    vi.resetModules();
+    const mod = await import('../../scripts/eom-digest-send.mjs');
+    expect(mod.levelsToRun({ levels: ['district'], sendHourUtc: 23 })).not.toContain('store');
+  });
+
+  it('with DIGEST_LEVEL unset, a config that (hypothetically) named "store" is still honored — the guard is only against "all"/no-config-set, not against an operator deliberately saving it', async () => {
+    delete process.env.DIGEST_LEVEL;
+    vi.resetModules();
+    const mod = await import('../../scripts/eom-digest-send.mjs');
+    expect(mod.levelsToRun({ levels: ['store'], sendHourUtc: 23 })).toEqual(['store']);
+  });
 });
 
 describe('hourGatePasses — dispatch #217 new hour-gate, realistic timestamp fixtures', () => {
@@ -106,5 +130,39 @@ describe('hourGatePasses — dispatch #217 new hour-gate, realistic timestamp fi
   });
   it('defaults sendHourUtc to the DEFAULT_EOM_DIGEST_CONFIG value (23) matching #215\'s original 6pm CT cron when no explicit hour is configured', () => {
     expect(hourGatePasses(DEFAULT_EOM_DIGEST_CONFIG.sendHourUtc, new Date('2026-08-29T23:00:00Z'))).toBe(true);
+  });
+});
+
+// 2026-10-29 (owner req: "resend a digest report to just one location") — DIGEST_LOC filters
+// buildStoreRows()'s output down to just the named store(s) before any grouping.
+describe('filterRowsByLoc — dispatch: DIGEST_LOC narrows the send to just the named store(s)', () => {
+  const ROWS = [
+    { loc: '0003708', name: 'Ardmore-Broadway' },
+    { loc: '0005183', name: 'Chickasha' },
+    { loc: '0006178', name: 'Chipley-St Rd 77' },
+  ];
+
+  it('an empty/unset loc arg is a no-op — every row passes through unchanged', () => {
+    expect(filterRowsByLoc(ROWS, '')).toEqual(ROWS);
+  });
+
+  it('a single 7-char zero-padded loc keeps only that row', () => {
+    expect(filterRowsByLoc(ROWS, '0005183')).toEqual([ROWS[1]]);
+  });
+
+  it('an unpadded loc still matches — padStart(7,\'0\') normalizes it the same way buildStoreRows\' own rows are keyed', () => {
+    expect(filterRowsByLoc(ROWS, '5183')).toEqual([ROWS[1]]);
+  });
+
+  it('a comma-separated list keeps every named store, in the ORIGINAL rows order (not the arg\'s order)', () => {
+    expect(filterRowsByLoc(ROWS, '6178,3708')).toEqual([ROWS[0], ROWS[2]]);
+  });
+
+  it('whitespace around comma-separated locs is tolerated', () => {
+    expect(filterRowsByLoc(ROWS, ' 3708 , 6178 ')).toEqual([ROWS[0], ROWS[2]]);
+  });
+
+  it('a loc with no matching row yields an empty array, not a throw', () => {
+    expect(filterRowsByLoc(ROWS, '9999999')).toEqual([]);
   });
 });

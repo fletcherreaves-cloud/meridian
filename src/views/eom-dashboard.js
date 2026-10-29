@@ -2349,7 +2349,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // scope/patch picker every other mode in this panel already has (this file's own documented
   // reason not to swap it for the shared LocationSelector — see the comment above locationSlot)
   // rather than adding a second location control, per the panel-contract's scope requirement.
-  const digestAutoLevel = patch ? 'patch' : (scope !== 'all' ? 'org' : 'district');
+  // 2026-10-29 (owner req: "resend a digest report to just one location") — narrowing the shared
+  // LocationSelector all the way to a single store (oneStore) now defaults the digest to the new
+  // 'store' level, same as narrowing to a patch already defaults to 'patch'.
+  const digestAutoLevel = oneStore ? 'store' : (patch ? 'patch' : (scope !== 'all' ? 'org' : 'district'));
   const digest = useMemo(() => buildEomDigest(digestStoreRows, { level: digestOpen ? digestLevel : digestAutoLevel, period }),
     [digestStoreRows, digestLevel, digestAutoLevel, period, digestOpen]);
   const openDigest = useCallback(() => {
@@ -2367,12 +2370,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const sendDigest = useCallback(async () => {
     setDigestSending(true); setDigestMsg(null);
     try {
-      const r = await triggerSync('digest', { level: digestLevel });
+      // 'store' level needs an explicit loc list -- the send re-pulls fresh server-side and has
+      // no other way to know which store(s) "this view" means. Every other level is unaffected
+      // (the server always re-groups ALL stores at that level regardless of what's on screen).
+      const inputs = { level: digestLevel };
+      if (digestLevel === 'store') inputs.loc = digestStoreRows.map(r => r.loc).join(',');
+      const r = await triggerSync('digest', inputs);
       if (r && r.error) setDigestMsg({ ok: false, text: `✗ ${r.error}` });
       else setDigestMsg({ ok: true, text: `✓ Digest send started — ${digest.groups.length} email(s) going to the owner's own address (test phase — see Data Manager for delivery details).` });
     } catch (e) { setDigestMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
     finally { setDigestSending(false); }
-  }, [digestLevel, digest.groups.length]);
+  }, [digestLevel, digest.groups.length, digestStoreRows]);
   const toggleSchedLevel = useCallback((k) => {
     setSchedLevels(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
   }, []);
@@ -3971,11 +3979,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       return h(ModalShell, { title: `📧 EOM Digest — ${scopeLabel()}`, onClose: () => setDigestOpen(false), maxWidth: 720, closeOnBackdrop: true },
         div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' } },
           div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-            levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market'), levelTab('operator', 'Operator')),
+            levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market'), levelTab('operator', 'Operator'), levelTab('store', 'Store')),
           h('button', {
             onClick: sendDigest, disabled: digestSending || digest.groups.length === 0,
             style: { marginLeft: 'auto', ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399', cursor: digestSending ? 'wait' : 'pointer' },
-            title: 'Send one email per group at this level (Data Manager -> EOM Digest workflow) — separate from viewing above, always explicit',
+            title: digestLevel === 'store'
+              ? 'Send one email per store currently in scope — narrow the location filter above to one store first to send just that one location.'
+              : 'Send one email per group at this level (Data Manager -> EOM Digest workflow) — separate from viewing above, always explicit',
           }, digestSending ? '📧 Sending…' : `📧 Email ${digest.groups.length} group${digest.groups.length === 1 ? '' : 's'}`)),
         digestMsg ? div({ style: { fontSize: '11px', color: digestMsg.ok ? '#4ade80' : 'var(--crit)', marginBottom: '10px' } }, digestMsg.text) : null,
         div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${period} · scope: ${scopeLabel()} · view updates live from data already on screen; nothing is emailed until you click Send.`),
