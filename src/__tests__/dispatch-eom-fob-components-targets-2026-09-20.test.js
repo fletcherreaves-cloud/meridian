@@ -18,11 +18,21 @@
 // 3708's real DEFAULT_TARGETS (constants.js) has tCompWaste:0.002 -- the mocked FOB row below
 // gives it a 0.8% actual Completed-Waste rate, 0.6pp over target (over the check's 0.25pp band),
 // so "Completed Waste over target" should appear. Before this fix it never did, for any store.
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, afterAll, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { periodKey } from '../engine/eom-inventory.js';
+
+// Pinned at module scope, before PERIOD below -- this test's own "today's date is outside the
+// last-3-days EOM close window" comment (see the 'it' below) was only true on the day it was
+// written (2026-09-20). eom-dashboard.js's defaultModeFor() switches the panel's default tab to
+// Scoreboard once the real wall-clock date enters the last 3 days of the month, and once that
+// happened (2026-10-29) this test's expected "🔬 Diagnose" button -- which only renders in the
+// year-round EOM Count table, not Scoreboard -- stopped existing. Pinning removes the dependency
+// on which day this suite happens to run, rather than re-describing "today" every time it drifts.
+vi.setSystemTime(new Date(2026, 8, 25, 12)); // Sep 25 2026 -- NOT the EOM close window
+afterAll(() => vi.useRealTimers());
 
 const PERIOD = periodKey(new Date());
 
@@ -87,8 +97,9 @@ describe('EOM Diagnose modal -- fob-components check now actually fires against 
     ({ container, root } = mountRoot());
     await renderPanel(root);
 
-    // Default mode here (today's date is outside the last-3-days EOM close window that would
-    // switch this panel to Scoreboard) is the year-round "EOM Count" table, whose "🔬 Diagnose"
+    // Default mode here (the pinned system time above is outside the last-3-days EOM close
+    // window that would switch this panel to Scoreboard) is the year-round "EOM Count" table,
+    // whose "🔬 Diagnose"
     // button calls the SAME openDiag()->buildDiagResult() path as Scoreboard's "📋 Report" button.
     // Not actually disabled: r.components.sales is truthy from the mocked FOB row even though
     // hasDiagData (variance/waste/transfers) is empty -- disabled only requires ONE of the two.
