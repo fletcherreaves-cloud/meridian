@@ -183,15 +183,22 @@ function rollupGroup(key, label, stores, { period, asOf } = {}) {
   };
 }
 
-// buildEomDigest(storeRows, { level, period, asOf }) — level: 'patch' | 'org' | 'operator' | 'district'.
-// 'district' rolls every row into ONE group; 'patch'/'org'/'operator' group by the store's own
-// `patch`/`org`/`operator` field (a store with a null/blank value lands under UNASSIGNED_KEY,
-// never dropped).
+// buildEomDigest(storeRows, { level, period, asOf }) — level: 'patch' | 'org' | 'operator' |
+// 'district' | 'store'. 'district' rolls every row into ONE group; 'patch'/'org'/'operator'
+// group by the store's own `patch`/`org`/`operator` field (a store with a null/blank value
+// lands under UNASSIGNED_KEY, never dropped); 'store' gives every row its OWN group, one per
+// store — the "resend to just one location" level (owner req, 2026-10-29), keyed by `loc` and
+// labeled with the store's own name rather than a patch/org/operator label.
 export function buildEomDigest(storeRows, { level, period, asOf = new Date() } = {}) {
   const rows = Array.isArray(storeRows) ? storeRows : [];
 
   if (level === 'district') {
     return { level, period: period || null, groups: [rollupGroup('district', 'District', rows, { period, asOf })] };
+  }
+
+  if (level === 'store') {
+    const groups = rows.map(s => rollupGroup(String(s.loc), s.name || String(s.loc), [s], { period, asOf }));
+    return { level, period: period || null, groups };
   }
 
   const field = level === 'org' ? 'org' : level === 'operator' ? 'operator' : 'patch';

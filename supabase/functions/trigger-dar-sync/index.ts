@@ -32,9 +32,11 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   // dispatch #215 Task 4 — on-demand EOM roll-up digest send (Data Manager / EOM Dashboard's
   // "📧 Generate Report" -> Send action). force:'1' so a manual click sends regardless of the
   // count-window gate scripts/eom-digest-send.mjs's scheduled run otherwise respects, matching
-  // the onhand/variance entries' own force:'1' pattern above. Inputs must stay in sync with
-  // .github/workflows/eom-digest-send.yml's own `workflow_dispatch.inputs` block.
-  digest: { file: 'eom-digest-send.yml', label: 'EOM Digest Report', inputs: { level: '', force: '1', period: '', date: '', debug: '0' } },
+  // the onhand/variance entries' own force:'1' pattern above. `loc` added 2026-10-29 (owner req:
+  // "resend a digest report to just one location") -- the EOM Dashboard's Store-level send
+  // passes exactly one loc here. Inputs must stay in sync with .github/workflows/eom-digest-
+  // send.yml's own `workflow_dispatch.inputs` block.
+  digest: { file: 'eom-digest-send.yml', label: 'EOM Digest Report', inputs: { level: '', loc: '', force: '1', period: '', date: '', debug: '0' } },
   // dispatch #228 — on-demand "regenerate with fresh data and resend" for the per-store EOM
   // count-completion notification (email/SMS/push, dispatch #209/#211/#216) — distinct from the
   // `digest` entry above, which resends the roll-up digest, not the per-store fire-once

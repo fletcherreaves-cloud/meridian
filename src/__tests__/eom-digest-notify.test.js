@@ -103,6 +103,24 @@ describe('recipientsFor', () => {
     const got = await recipientsFor('patch', 'Mary Ratliff', [{ loc: '0006178', operator: 'Jacob Thorley' }]);
     expect(got).toContain(CONTACTS.supervisors['Mary Ratliff'].email);
   });
+
+  // 2026-10-29 (owner req: "resend a digest report to just one location") — level: 'store'.
+  // groupKey here is just that store's own loc (buildEomDigest's 'store' branch), not a
+  // supervisor name, so the supervisor has to come from the store's own `patch` field instead.
+  it("store level resolves that one store's own GM + its patch's supervisor + leadership — the actual owner request", async () => {
+    const got = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley', operator: 'Jacob Thorley' }]);
+    expect(got).toEqual(expect.arrayContaining([
+      ...ABOVE,
+      CONTACTS.supervisors['Brad Denley'].email,
+      STORE_STAFF['6178'].gmEmail,
+      ...CONTACTS.operators['Jacob Thorley'].emails,
+    ]));
+  });
+
+  it('store level with no stores passed falls back to leadership only, same as any other level given nothing to look up', async () => {
+    const got = await recipientsFor('store', '0006178');
+    expect(got).toEqual(expect.arrayContaining(ABOVE));
+  });
 });
 
 describe('buildDigestEmailContent', () => {
@@ -110,6 +128,12 @@ describe('buildDigestEmailContent', () => {
     const { subject } = buildDigestEmailContent(GROUP, 'patch');
     expect(subject).toContain('Patch');
     expect(subject).toContain('Mary Ratliff');
+  });
+
+  it('subject names "Store" for a store-level group (2026-10-29)', () => {
+    const { subject } = buildDigestEmailContent({ ...GROUP, label: 'Ardmore-Broadway' }, 'store');
+    expect(subject).toContain('Store');
+    expect(subject).toContain('Ardmore-Broadway');
   });
 
   it('renders the headline verbatim (number + decision, per the standing UI-voice rule)', () => {

@@ -77,6 +77,42 @@ describe('buildEomDigest — district level', () => {
   });
 });
 
+// 2026-10-29 (owner req: "resend a digest report to just one location") — one group per store,
+// not per patch/org/operator/district.
+describe('buildEomDigest — store level', () => {
+  const rows = [
+    store('1', { name: 'Ardmore-Broadway', patch: 'Zukarr Eaves', food: complete(), condiment: complete() }),
+    store('2', { name: 'Chickasha', patch: 'Mary', food: inProgress(0.6), condiment: notStarted() }),
+  ];
+
+  it('gives every store its OWN group, keyed by loc and labeled by its own name', () => {
+    const d = buildEomDigest(rows, { level: 'store', period: '2026-08', asOf: new Date('2026-08-29') });
+    expect(d.groups).toHaveLength(2);
+    const g1 = d.groups.find(g => g.key === '1');
+    const g2 = d.groups.find(g => g.key === '2');
+    expect(g1.label).toBe('Ardmore-Broadway');
+    expect(g1.storeCount).toBe(1);
+    expect(g2.label).toBe('Chickasha');
+    expect(g2.storeCount).toBe(1);
+  });
+
+  it("a group's own stores array holds exactly that one store — no sibling store's data leaks in", () => {
+    const d = buildEomDigest(rows, { level: 'store', period: '2026-08' });
+    const g1 = d.groups.find(g => g.key === '1');
+    expect(g1.stores).toHaveLength(1);
+    expect(g1.stores[0].loc).toBe('1');
+  });
+
+  it('falls back to the loc itself as the label when a store has no name', () => {
+    const d = buildEomDigest([store('5', { name: null, food: complete(), condiment: complete() })], { level: 'store' });
+    expect(d.groups[0].label).toBe('5');
+  });
+
+  it('an empty rows array yields zero groups, not an error', () => {
+    expect(buildEomDigest([], { level: 'store' }).groups).toEqual([]);
+  });
+});
+
 describe('buildEomDigest — patch grouping', () => {
   const rows = [
     store('1', { name: 'S1', patch: 'Mary', food: complete(), condiment: complete() }),

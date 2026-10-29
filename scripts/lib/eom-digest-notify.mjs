@@ -15,7 +15,8 @@ const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUP
 const CLASS_ORDER = ['food', 'condiment', 'paper', 'nonproduct'];
 const CLASS_LABELS = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
 // dispatch #224 Task 3 — 'operator' joins district/patch/org as a real digest level.
-const LEVEL_LABELS = { district: 'District', org: 'Market', patch: 'Patch', operator: 'Operator' };
+// 2026-10-29 — 'store' joins them too (owner req: resend a digest for just one location).
+const LEVEL_LABELS = { district: 'District', org: 'Market', patch: 'Patch', operator: 'Operator', store: 'Store' };
 
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString('en-US');
 
@@ -51,7 +52,16 @@ export async function recipientsFor(level, groupKey, stores = []) {
   const subs = await loadDigestSubscriberEmails(supabase, 'eom_digest');
 
   let roleBased;
-  if (level === 'patch' && stores.length) {
+  if (level === 'store' && stores.length) {
+    // One store IS the group -- there's no separate supervisor-name groupKey to pass in (groupKey
+    // here is just that store's own loc, eom-digest.js's buildEomDigest 'store' branch). The
+    // store's own `patch` field already carries its live supervisor's NAME (see
+    // scripts/eom-digest-send.mjs's buildStoreRows: `patch: supervisorOf(u)`), same convention
+    // the 'patch' branch below relies on via its externally-passed groupKey -- reuse the SAME
+    // getReportRecipients('patch', ...) routing (supervisor + operator + leadership), just fed
+    // this one store instead of a whole patch's worth.
+    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: s.patch })), {});
+  } else if (level === 'patch' && stores.length) {
     // Every store in a patch shares its one supervisor -- groupKey IS that supervisor's name;
     // getReportRecipients()'s 'patch' scope reads stores[0].sup plus each store's own .operator.
     roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: groupKey })), {});
