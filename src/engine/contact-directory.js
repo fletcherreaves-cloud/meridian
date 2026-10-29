@@ -21,7 +21,14 @@ export const CONTACTS = {
   aboveStore: [
     { name: 'Molly Mcgill', email: 'Molly@mcdok.com', role: 'Above Store' },
     { name: 'Hugh Bonner', email: 'Hugh@mcdok.com', role: 'Above Store' },
-    { name: 'Fletcher Reaves', email: 'Fletcher@mcdok.com', role: 'Above Store' },
+    // fletcher.reaves@mcreaves.com, NOT fletcher@mcdok.com -- confirmed 2026-10-29 as the
+    // address actually registered on the Resend account. Resend's sandbox sender
+    // (onboarding@resend.dev) can only deliver to that exact address, so this one entry has to
+    // match it byte-for-byte or the EOM digest's one working delivery -- the copy the owner's
+    // own copy/paste stopgap depends on -- silently 403s like every other recipient already
+    // does. Matches resend-notify.mjs's EMAIL_TO, which every other automated alert in this app
+    // already sends to successfully.
+    { name: 'Fletcher Reaves', email: 'fletcher.reaves@mcreaves.com', role: 'Above Store' },
   ],
   operators: {
     'Ryan Thorley': { emails: ['Ryan@mcdok.com', 'Ryan@emeraldarches.com'], org: 'MCDOK/EA' },
@@ -36,6 +43,10 @@ export const CONTACTS = {
     'Steven Vaughn': { email: 'Steven@mcdok.com' },
     'Amanda Estrada': { email: 'Amanda@mcdok.com' },
     'Brad Denley': { email: 'Brad@emeraldarches.com' },
+    // FL patch supervisor (Chipley/Defuniak/Bonifay/Mossy Head) -- confirmed by the owner
+    // 2026-10-29, closing the gap PR #1571 flagged (her patch's digests previously had no
+    // supervisor to resolve at all).
+    'Mary Ratliff': { email: 'mary@emeraldarches.com' },
   },
 };
 
