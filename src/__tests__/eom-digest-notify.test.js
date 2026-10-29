@@ -17,8 +17,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.stubEnv('VITE_SUPABASE_URL', '');
 vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
 const { recipientsFor, buildDigestEmailContent, sendDigestEmail } = await import('../../scripts/lib/eom-digest-notify.mjs');
-import { EMAIL_TO } from '../../scripts/lib/resend-notify.mjs';
 import { buildEomDigest } from '../engine/eom-digest.js';
+import { CONTACTS, STORE_STAFF } from '../engine/contact-directory.js';
 
 const GROUP = {
   key: 'Mary Ratliff', label: 'Mary Ratliff', storeCount: 4,
@@ -41,17 +41,62 @@ const GROUP = {
 };
 
 // 2026-09-01 — recipientFor() (singular, always the owner's email) was replaced by recipientsFor()
-// (plural, real subscribers from email_digest_subscriptions, falling back to [EMAIL_TO] only when
-// nobody has subscribed). This session has no real Supabase configured (safeCreateClient degrades
-// to null), so loadDigestSubscriberEmails() always returns [] here — the fallback path is exactly
-// what these tests exercise; the real-subscribers path is exercised in
-// email-digest-subscriptions.test.js against a mocked client.
+// (plural, real subscribers from email_digest_subscriptions). 2026-10-29 (owner req) — level/
+// groupKey/stores now drive REAL role-based routing (contact-directory.js's getReportRecipients()
+// + STORE_STAFF), additive with any opt-in subscribers. This session has no real Supabase
+// configured (safeCreateClient degrades to null), so loadDigestSubscriberEmails() always returns
+// [] here — these tests exercise the role-based routing path; email-digest-subscriptions.test.js
+// covers the subscriber-loading function itself against a mocked client.
+const ABOVE = CONTACTS.aboveStore.map(c => c.email); // Molly, Hugh, Fletcher — every level includes these
+
 describe('recipientsFor', () => {
-  it('falls back to [EMAIL_TO] for every (level, groupKey) when nobody has subscribed (no real Supabase configured here)', async () => {
-    expect(await recipientsFor('district', 'district')).toEqual([EMAIL_TO]);
-    expect(await recipientsFor('patch', 'Mary Ratliff')).toEqual([EMAIL_TO]);
-    expect(await recipientsFor('org', 'emerald')).toEqual([EMAIL_TO]);
-    expect(await recipientsFor('patch', 'Brad Denley')).toEqual([EMAIL_TO]);
+  it('district level (and any level given no stores) resolves to district-wide leadership', async () => {
+    // 'district' hits recipientsFor()'s unconditional else branch, which is the SAME
+    // getReportRecipients('all', ...) every other unmatched level falls back to -- that
+    // branch returns leadership AND every operator (not just ABOVE), so this asserts the
+    // real set rather than re-deriving a narrower one.
+    const allOps = Object.values(CONTACTS.operators).flatMap(o => o.emails);
+    const expected = [...new Set([...ABOVE, ...allOps])];
+    const got = await recipientsFor('district', 'district');
+    expect(got).toEqual(expect.arrayContaining(expected));
+    expect(got.length).toBe(expected.length);
+  });
+
+  it("org level resolves to leadership + that org's own operators", async () => {
+    const mcdok = await recipientsFor('org', 'mcdok');
+    expect(mcdok).toEqual(expect.arrayContaining([...ABOVE, 'Gary@mcdok.com']));
+    const emerald = await recipientsFor('org', 'emerald');
+    expect(emerald).toEqual(expect.arrayContaining([...ABOVE, 'Jacob@emeraldarches.com']));
+  });
+
+  it("operator level resolves to that operator's own email(s) + leadership", async () => {
+    const got = await recipientsFor('operator', 'Ryan Thorley');
+    expect(got).toEqual(expect.arrayContaining([...ABOVE, 'Ryan@mcdok.com', 'Ryan@emeraldarches.com']));
+  });
+
+  it("patch level with no stores passed falls back to leadership only (can't resolve a supervisor with nothing to look up)", async () => {
+    const got = await recipientsFor('patch', 'Brad Denley');
+    expect(got).toEqual(expect.arrayContaining(ABOVE));
+  });
+
+  it("patch level WITH stores resolves to the supervisor + every listed store's GM + leadership — the actual owner request", async () => {
+    const stores = [
+      { loc: '0006178', name: 'Chipley-St Rd 77', operator: 'Jacob Thorley' },
+      { loc: '0006838', name: 'Defuniak Springs', operator: 'Jacob Thorley' },
+    ];
+    const got = await recipientsFor('patch', 'Brad Denley', stores);
+    expect(got).toEqual(expect.arrayContaining([
+      ...ABOVE,
+      CONTACTS.supervisors['Brad Denley'].email,
+      STORE_STAFF['6178'].gmEmail,
+      STORE_STAFF['6838'].gmEmail,
+      ...CONTACTS.operators['Jacob Thorley'].emails,
+    ]));
+  });
+
+  it('a store loc that is zero-padded in the group (as eom-digest.js carries it) still resolves its GM — loc normalization', async () => {
+    const got = await recipientsFor('patch', 'Brad Denley', [{ loc: '0006178', operator: null }]);
+    expect(got).toContain(STORE_STAFF['6178'].gmEmail);
   });
 });
 
@@ -240,18 +285,32 @@ describe('sendDigestEmail — Resend API request shape', () => {
   beforeEach(() => { originalFetch = global.fetch; process.env.RESEND_API_KEY = 'test-key-123'; });
   afterEach(() => { global.fetch = originalFetch; delete process.env.RESEND_API_KEY; vi.restoreAllMocks(); });
 
-  it('POSTs to the Resend API with the group\'s subject/html to the owner\'s email', async () => {
+  it('POSTs to the Resend API once per resolved recipient, with the group\'s subject/html', async () => {
+    // 2026-10-29 -- recipientsFor() now does real role-based routing (see the 'recipientsFor'
+    // describe block above), so a group with stores resolves to more than just EMAIL_TO. Gives
+    // GROUP a stores array here (GROUP itself stays stores:[] for the other describe blocks,
+    // which only exercise buildDigestEmailContent) so the resolved set is small and deterministic:
+    // Mary Ratliff has no CONTACTS.supervisors entry (the known, flagged gap), so her patch's
+    // supervisor slot resolves to nothing -- leaving leadership + the one store's GM + operator.
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     global.fetch = fetchMock;
 
-    const ok = await sendDigestEmail(GROUP, 'patch');
+    const group = { ...GROUP, stores: [{ loc: '0006178', name: 'Chipley-St Rd 77', operator: 'Jacob Thorley' }] };
+    const expectedRecipients = [...new Set([
+      ...ABOVE,
+      STORE_STAFF['6178'].gmEmail,
+      ...CONTACTS.operators['Jacob Thorley'].emails,
+    ])];
+
+    const ok = await sendDigestEmail(group, 'patch');
 
     expect(ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
+    expect(fetchMock).toHaveBeenCalledTimes(expectedRecipients.length);
+    const [url, firstOpts] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.resend.com/emails');
-    const body = JSON.parse(opts.body);
-    expect(body.to).toEqual([EMAIL_TO]);
+    const toValues = fetchMock.mock.calls.map(([, opts]) => JSON.parse(opts.body).to[0]);
+    expect(toValues).toEqual(expect.arrayContaining(expectedRecipients));
+    const body = JSON.parse(firstOpts.body);
     expect(body.subject).toContain('Mary Ratliff');
     expect(body.html).toContain(GROUP.headline);
   });

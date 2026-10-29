@@ -7,6 +7,7 @@
 import { postResend, EMAIL_TO, fobComponentsTableHtml } from './resend-notify.mjs';
 import { safeCreateClient } from './safe-supabase-client.mjs';
 import { loadDigestSubscriberEmails } from './email-digest-subscriptions.mjs';
+import { getReportRecipients, CONTACTS, STORE_STAFF } from '../../src/engine/contact-directory.js';
 
 const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -20,17 +21,59 @@ const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocal
 // dispatch #215 Task 3 (v1) had EVERY (level, group) resolve to the owner's own email — necessary
 // bootstrap given Resend's sandbox-sender restriction and no per-user contact registry existing
 // yet. 2026-09-01 (owner req, verbatim: "allow anyone to sign up or opt in to whichever reports
-// they want emailed to them") — that registry now exists (email_digest_subscriptions,
-// scripts/lib/email-digest-subscriptions.mjs) and this resolves to every real subscriber's email
-// for the 'eom_digest' digest, falling back to [EMAIL_TO] only when nobody has subscribed yet (so
-// this never silently sends to zero people mid-rollout, before anyone has opted in). Renamed from
-// recipientFor (singular) to recipientsFor: the return shape changed from one string to an array,
-// and a caller reading `const to = recipientFor(...)` would misread an array as one address.
-// `level`/`groupKey` stay unused — subscriptions aren't level-scoped in v1, every subscriber gets
-// every level's digest; narrowing that is a future refinement, not asked for here.
-export async function recipientsFor(level, groupKey) {
+// they want emailed to them") added opt-in subscriptions (email_digest_subscriptions,
+// scripts/lib/email-digest-subscriptions.mjs) on top, but `level`/`groupKey` stayed unused — every
+// subscriber got every level's digest, and nobody got a digest automatically just by being the
+// relevant GM/supervisor for it.
+//
+// 2026-10-29 (owner req, verbatim: "automatically send the email digests to the stores and
+// supervisor over it as well as the owner (operator) and hugh... I want to be able to send those
+// emails directly to them") — `level`/`groupKey` are used now. For every level, the group's own
+// stores' GMs are included (reusing STORE_STAFF, src/engine/contact-directory.js -- real GM
+// emails already on file for all 27 stores, nothing new to collect), plus the role-appropriate
+// leadership via getReportRecipients() (the SAME scope-based routing already live elsewhere in
+// this app -- not a second lookup). CONTACTS.aboveStore (Hugh Bonner + Fletcher Reaves + Molly
+// Mcgill) is returned by every getReportRecipients() branch, so "owner and hugh" is covered at
+// every level without special-casing; Molly rides along too since this reuses the SAME
+// above-store list the rest of the app already treats as one unit, not three individually-opted
+// roles -- flag to the owner if that's not what he wants for EOM specifically.
+//
+// Explicit opt-in subscribers are additive, not replaced: the Sep 1 "anyone can opt in" feature
+// still works exactly as before, union'd on top of the new automatic routing, so someone outside
+// a patch's own stores/supervisor/leadership can still subscribe to see it.
+//
+// `stores` (new 3rd param, defaults to [] for callers that only have level+groupKey — e.g. this
+// file's own existing tests) should be the group's `stores` array (eom-digest.js's rollupGroup()
+// shape: { loc, patch, operator, ... } per store) whenever the caller has it; sendDigestEmail()
+// below always passes it.
+export async function recipientsFor(level, groupKey, stores = []) {
   const subs = await loadDigestSubscriberEmails(supabase, 'eom_digest');
-  return subs.length ? subs : [EMAIL_TO];
+
+  let roleBased;
+  if (level === 'patch' && stores.length) {
+    // Every store in a patch shares its one supervisor -- groupKey IS that supervisor's name;
+    // getReportRecipients()'s 'patch' scope reads stores[0].sup plus each store's own .operator.
+    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: groupKey })), {});
+  } else if (level === 'org') {
+    const scope = groupKey === 'mcdok' ? 'MCDOK' : groupKey === 'emerald' ? 'Emerald Arches' : null;
+    roleBased = scope ? getReportRecipients(scope, [], {}) : getReportRecipients('all', [], {});
+  } else if (level === 'operator') {
+    const opEmails = CONTACTS.operators[groupKey]?.emails || [];
+    roleBased = [...new Set([...opEmails, ...CONTACTS.aboveStore.map(c => c.email)])];
+  } else {
+    // 'district' (one group, everyone) and any unrecognized level -- district-wide leadership.
+    roleBased = getReportRecipients('all', [], {});
+  }
+
+  // "The stores" half of the request: every store in this group gets the same email its own
+  // supervisor/leadership does, since the body already carries that store's own detail
+  // (storeSectionHtml, below) alongside its patch-/org-/district-mates'.
+  const gmEmails = stores
+    .map(s => STORE_STAFF[String(parseInt(s.loc, 10))]?.gmEmail)
+    .filter(Boolean);
+
+  const automatic = [...new Set([...roleBased, ...gmEmails])];
+  return subs.length ? [...new Set([...automatic, ...subs])] : automatic;
 }
 
 // dispatch #224 Task 6 — one store's full FOB+components table + recount-opportunities list,
@@ -100,7 +143,7 @@ ${group.stores && group.stores.length ? `<h3 style="margin:20px 0 4px;border-top
 
 export async function sendDigestEmail(group, level) {
   const { subject, html } = buildDigestEmailContent(group, level);
-  const recipients = await recipientsFor(level, group.key);
+  const recipients = await recipientsFor(level, group.key, group.stores || []);
   const results = await Promise.all(recipients.map(to => postResend({ to, subject, html })));
   return results.every(Boolean);
 }
