@@ -15,11 +15,24 @@
 // iframe, see src/utils/print-html.js) -- not an isolated call to buildFobReport()/
 // buildStoreFobReport(). A revert of the `v.hasDollars` -> `v.dolDiff != null` fix, or of the
 // case-pack suffix wiring, fails this.
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { periodKey } from '../engine/eom-inventory.js';
+
+// Pinned BEFORE PERIOD below, not in beforeEach -- this file computes PERIOD (and the FOB fixture
+// date derived from it) at module scope, so a per-test pin would be too late. Without this, the
+// real wall clock decides PERIOD *and* eom-dashboard.js's defaultModeFor()'s mode (scoreboard vs.
+// progress) -- when "today" drifted into the last 3 days of the month (2026-10-29), defaultModeFor
+// switched the panel's default tab to Scoreboard, which renders a SECOND on-screen
+// "Ardmore-Broadway" span (the Scoreboard checklist row) ahead of the FOB Report modal's own one
+// in DOM order. The test below picks the FIRST span matching that name, so it silently clicked the
+// wrong element and "the on-screen expanded store row" assertion failed with no code change at
+// all -- a pure test-fragility bug (ambiguous querySelectorAll match), not a product regression.
+// Pinned mid-month so this suite's behavior no longer depends on which day the test happens to run.
+vi.setSystemTime(new Date(2026, 8, 25, 12)); // Sep 25 2026 -- NOT the EOM close window
+afterAll(() => vi.useRealTimers());
 
 const PERIOD = periodKey(new Date());
 
