@@ -25,7 +25,12 @@
 
 // ── Job-title-code -> review-role classification (plan doc decision #5, measured 2026-08-26) ──
 export const GM_JOB_CODES    = [45, 641];
-export const DM_AM_JOB_CODES = [845, 846, 10001, 20107];
+// 10002 ("DEPT MGR II W/ CREW PUNCHES") added 2026-10-29 -- missing here since this list's
+// original derivation (dispatch #150), found while the Night-Shift Performance Plan report
+// tried to test GM/DM floor-presence against real punch data and got an undercount. Confirmed
+// as a real DM/AM-tier code, not a guess: people-reports.js's independent `shiftMgr` bucket
+// (647, 845, 846, 10001, 10002, 20107) already includes it.
+export const DM_AM_JOB_CODES = [845, 846, 10001, 10002, 20107];
 export const SM_JOB_CODES    = [647];
 
 // Exact "Active" (not substring -- "Inactive" contains "active"), and no termination date --
