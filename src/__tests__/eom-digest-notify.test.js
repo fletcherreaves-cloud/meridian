@@ -98,6 +98,11 @@ describe('recipientsFor', () => {
     const got = await recipientsFor('patch', 'Brad Denley', [{ loc: '0006178', operator: null }]);
     expect(got).toContain(STORE_STAFF['6178'].gmEmail);
   });
+
+  it("Mary Ratliff's FL patch resolves her own email now that she's on file (closed 2026-10-29 — PR #1571 flagged this as a gap)", async () => {
+    const got = await recipientsFor('patch', 'Mary Ratliff', [{ loc: '0006178', operator: 'Jacob Thorley' }]);
+    expect(got).toContain(CONTACTS.supervisors['Mary Ratliff'].email);
+  });
 });
 
 describe('buildDigestEmailContent', () => {
@@ -110,6 +115,19 @@ describe('buildDigestEmailContent', () => {
   it('renders the headline verbatim (number + decision, per the standing UI-voice rule)', () => {
     const { html } = buildDigestEmailContent(GROUP, 'patch');
     expect(html).toContain(GROUP.headline);
+  });
+
+  it('omits the recipients block when no recipients are given (the default)', () => {
+    const { html } = buildDigestEmailContent(GROUP, 'patch');
+    expect(html).not.toContain('Intended recipients');
+  });
+
+  it('renders a copyable recipients list when recipients are given (the copy/paste stopgap, owner req 2026-10-29)', () => {
+    const recipients = ['a@mcdok.com', 'b@emeraldarches.com'];
+    const { html } = buildDigestEmailContent(GROUP, 'patch', recipients);
+    expect(html).toContain('Intended recipients (2)');
+    expect(html).toContain('a@mcdok.com');
+    expect(html).toContain('b@emeraldarches.com');
   });
 
   it('renders per-class completion counts for all four classes', () => {
@@ -290,14 +308,15 @@ describe('sendDigestEmail — Resend API request shape', () => {
     // describe block above), so a group with stores resolves to more than just EMAIL_TO. Gives
     // GROUP a stores array here (GROUP itself stays stores:[] for the other describe blocks,
     // which only exercise buildDigestEmailContent) so the resolved set is small and deterministic:
-    // Mary Ratliff has no CONTACTS.supervisors entry (the known, flagged gap), so her patch's
-    // supervisor slot resolves to nothing -- leaving leadership + the one store's GM + operator.
+    // Mary Ratliff's patch now has a real CONTACTS.supervisors entry (the gap PR #1571 flagged,
+    // closed the same day) -- so her own email joins leadership + the one store's GM + operator.
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     global.fetch = fetchMock;
 
     const group = { ...GROUP, stores: [{ loc: '0006178', name: 'Chipley-St Rd 77', operator: 'Jacob Thorley' }] };
     const expectedRecipients = [...new Set([
       ...ABOVE,
+      CONTACTS.supervisors['Mary Ratliff'].email,
       STORE_STAFF['6178'].gmEmail,
       ...CONTACTS.operators['Jacob Thorley'].emails,
     ])];
@@ -313,6 +332,10 @@ describe('sendDigestEmail — Resend API request shape', () => {
     const body = JSON.parse(firstOpts.body);
     expect(body.subject).toContain('Mary Ratliff');
     expect(body.html).toContain(GROUP.headline);
+    // The copy/paste stopgap (owner req, 2026-10-29): the one copy that does land should carry
+    // the full resolved recipient list, ready to paste into a To/Bcc field, until Resend's
+    // sandbox-sender restriction is lifted by a verified domain.
+    expectedRecipients.forEach(r => expect(body.html).toContain(r));
   });
 
   it('warns and resolves false without throwing when RESEND_API_KEY is missing', async () => {

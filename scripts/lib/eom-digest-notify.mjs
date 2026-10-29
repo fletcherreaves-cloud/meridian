@@ -8,6 +8,7 @@ import { postResend, EMAIL_TO, fobComponentsTableHtml } from './resend-notify.mj
 import { safeCreateClient } from './safe-supabase-client.mjs';
 import { loadDigestSubscriberEmails } from './email-digest-subscriptions.mjs';
 import { getReportRecipients, CONTACTS, STORE_STAFF } from '../../src/engine/contact-directory.js';
+import { escapeHtml } from '../../src/utils/fmt.js';
 
 const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -106,9 +107,23 @@ ${recountHtml}
 }
 
 // One roll-up GROUP (buildEomDigest()'s per-group shape, src/engine/eom-digest.js) -> one email.
-export function buildDigestEmailContent(group, level) {
+//
+// `recipients` (owner req, 2026-10-29: "create a way for me to copy the context that's actually
+// emailed to me currently... so I can just paste in the emails and email it out myself") -- while
+// Resend's sandbox sender can only deliver to the owner's own address, every other recipient
+// recipientsFor() resolves to silently 403s. Rendering the full resolved list INSIDE the one copy
+// that does land (the owner's) turns that copy into a stopgap: open it, select the monospace
+// list, paste into To/Bcc, forward the rest of the body. No separate tool or UI needed -- it's
+// already the exact content being emailed, just made copyable. Harmless once a domain is
+// verified and every recipient starts receiving their own copy directly (optional to remove then,
+// not required to).
+export function buildDigestEmailContent(group, level, recipients = []) {
   const levelLabel = LEVEL_LABELS[level] || level;
   const subject = `Meridian — ${levelLabel} EOM Digest: ${group.label}`;
+  const recipientsBlock = recipients.length ? `<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border:1px dashed #f5bc00;border-radius:8px;font-size:11.5px;color:#555">
+<strong>📬 Intended recipients (${recipients.length})</strong> — Resend's sandbox sender can currently only deliver this one copy, to you. Copy the list below into your email client's To/Bcc field and forward/paste the rest of this message to send it yourself; once a real sending domain is verified with Resend, every recipient gets their own copy automatically and this block goes away.<br>
+<span style="font-family:ui-monospace,Menlo,monospace">${recipients.map(escapeHtml).join(', ')}</span>
+</div>` : '';
 
   const classRows = CLASS_ORDER.map(k => {
     const c = group.completion[k];
@@ -127,6 +142,7 @@ export function buildDigestEmailContent(group, level) {
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:600px">
 <h2 style="margin:0 0 4px">${levelLabel} EOM Digest — ${group.label}</h2>
+${recipientsBlock}
 <p style="margin:0 0 16px;color:#555">${group.storeCount} store${group.storeCount === 1 ? '' : 's'}${group.daysLeft != null ? ` · ${group.daysLeft} day${group.daysLeft === 1 ? '' : 's'} left in the count window` : ''}</p>
 <p style="margin:0 0 12px;font-weight:600">${group.headline}</p>
 <table style="border-collapse:collapse;margin-bottom:16px">${classRows}</table>
@@ -142,8 +158,8 @@ ${group.stores && group.stores.length ? `<h3 style="margin:20px 0 4px;border-top
 }
 
 export async function sendDigestEmail(group, level) {
-  const { subject, html } = buildDigestEmailContent(group, level);
   const recipients = await recipientsFor(level, group.key, group.stores || []);
+  const { subject, html } = buildDigestEmailContent(group, level, recipients);
   const results = await Promise.all(recipients.map(to => postResend({ to, subject, html })));
   return results.every(Boolean);
 }
