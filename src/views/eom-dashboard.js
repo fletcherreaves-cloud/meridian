@@ -4003,6 +4003,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         // variant even for a large District group).
         g.stores.length ? div({ style: { marginTop: '8px' } }, g.stores.map(s => storeRow(g, s))) : null);
       return h(ModalShell, { title: `📧 EOM Digest — ${scopeLabel()}`, onClose: () => setDigestOpen(false), maxWidth: 720, closeOnBackdrop: true },
+        // owner req 2026-10-30 ("oh, you mean on the main screen. Can we include that in the pop
+        // up window?") — the SAME shared LocationSelector locationSlot (PanelChrome, above) uses,
+        // a second instance here driven by the identical scope/patch/oneStore state via
+        // locSelValue/onLocSelChange. No separate state, no sync logic needed -- both instances
+        // are just two rendered views of one controlled value, so narrowing to a store here (or
+        // on the main screen, modal open or not) immediately re-scopes digestStoreRows -> digest
+        // -> this whole modal, live, without closing it first.
+        div({ style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' } },
+          span({ style: { fontSize: '11px', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Scope'),
+          h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locSelValue, onChange: onLocSelChange, mode: 'progressive' })),
         div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' } },
           div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
             levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market'), levelTab('operator', 'Operator'), levelTab('store', 'Store')),
@@ -4010,7 +4020,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             onClick: sendDigest, disabled: digestSending || digest.groups.length === 0,
             style: { marginLeft: 'auto', ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399', cursor: digestSending ? 'wait' : 'pointer' },
             title: digestLevel === 'store'
-              ? 'Send one email per store currently in scope — narrow the location filter above to one store first to send just that one location.'
+              ? 'Send one email per store currently in scope — narrow Scope above to one store first to send just that one location.'
               : 'Send one email per group at this level (Data Manager -> EOM Digest workflow) — separate from viewing above, always explicit',
           }, digestSending ? '📧 Sending…' : `📧 Email ${digest.groups.length} group${digest.groups.length === 1 ? '' : 's'}`)),
         digestMsg ? div({ style: { fontSize: '11px', color: digestMsg.ok ? '#4ade80' : 'var(--crit)', marginBottom: '10px' } }, digestMsg.text) : null,
