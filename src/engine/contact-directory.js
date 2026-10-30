@@ -97,6 +97,39 @@ export function getReportRecipients(scope, stores, settings) {
   return above;
 }
 
+// resolveDigestRecipients(level, groupKey, stores) — the EOM digest's own per-(level,group)
+// role-based + GM routing (owner req 2026-10-29: "if I wanted to resend a digest report to just
+// one location" + the follow-up "make the pre-determined email group selectable... unselect that
+// person"). Extracted out of scripts/lib/eom-digest-notify.mjs's recipientsFor() so the EOM
+// Dashboard panel (browser) can compute the SAME resolved list recipientsFor() would, to show a
+// checkable recipients list BEFORE sending -- recipientsFor() itself stays Node-only (it layers
+// the opt-in-subscribers DB read, email_digest_subscriptions, on top of this), but everything
+// this function touches (getReportRecipients/STORE_STAFF/CONTACTS above) was already browser-safe.
+// Pure, synchronous, no DB -- intentionally does NOT include opt-in subscribers (those are a
+// separate, self-service list; this function is only the automatic routing a viewer can see and
+// choose to exclude from one send).
+export function resolveDigestRecipients(level, groupKey, stores = []) {
+  let roleBased;
+  if (level === 'store' && stores.length) {
+    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: s.patch })), {});
+  } else if (level === 'patch' && stores.length) {
+    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: groupKey })), {});
+  } else if (level === 'org') {
+    const scope = groupKey === 'mcdok' ? 'MCDOK' : groupKey === 'emerald' ? 'Emerald Arches' : null;
+    roleBased = scope ? getReportRecipients(scope, [], {}) : getReportRecipients('all', [], {});
+  } else if (level === 'operator') {
+    const opEmails = CONTACTS.operators[groupKey]?.emails || [];
+    roleBased = [...new Set([...opEmails, ...CONTACTS.aboveStore.map(c => c.email)])];
+  } else {
+    // 'district' (one group, everyone) and any unrecognized level -- district-wide leadership.
+    roleBased = getReportRecipients('all', [], {});
+  }
+  const gmEmails = stores
+    .map(s => STORE_STAFF[String(parseInt(s.loc, 10))]?.gmEmail)
+    .filter(Boolean);
+  return [...new Set([...roleBased, ...gmEmails])];
+}
+
 // #363 — sup/supEmail dropped (were a frozen loc->supervisor-name literal, the same class of
 // staleness bug SUPERVISOR_PATCHES had above — this table's copy happened to still agree
 // with the live org, but nothing kept it that way). pipeline.js resolves sup/supEmail LIVE

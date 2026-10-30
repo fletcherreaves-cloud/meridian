@@ -20,7 +20,7 @@
 // closes. A raw `process.env.X = process.env.X || 'dummy'` assignment used to sit here — that was
 // itself the leak source, and removing the need for it removes the leak at its origin.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { hourGatePasses, filterRowsByLoc } from '../../scripts/eom-digest-send.mjs';
+import { hourGatePasses, filterRowsByLoc, parseExcludeEmails } from '../../scripts/eom-digest-send.mjs';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 
 // levelsToRun() reads process.env.DIGEST_LEVEL into a module-scope constant AT IMPORT TIME
@@ -164,5 +164,21 @@ describe('filterRowsByLoc — dispatch: DIGEST_LOC narrows the send to just the 
 
   it('a loc with no matching row yields an empty array, not a throw', () => {
     expect(filterRowsByLoc(ROWS, '9999999')).toEqual([]);
+  });
+});
+
+// 2026-10-30 (owner req: "make the pre-determined email group selectable... unselect that
+// person") — DIGEST_EXCLUDE's parser, mirroring filterRowsByLoc's own comma-split/trim shape.
+describe('parseExcludeEmails — dispatch: DIGEST_EXCLUDE drops named addresses from every group', () => {
+  it('an empty/unset arg parses to an empty array', () => {
+    expect(parseExcludeEmails('')).toEqual([]);
+  });
+
+  it('a single address parses to a one-element array', () => {
+    expect(parseExcludeEmails('a@mcdok.com')).toEqual(['a@mcdok.com']);
+  });
+
+  it('a comma-separated list parses to each address, whitespace tolerated', () => {
+    expect(parseExcludeEmails(' a@mcdok.com , b@emeraldarches.com ')).toEqual(['a@mcdok.com', 'b@emeraldarches.com']);
   });
 });

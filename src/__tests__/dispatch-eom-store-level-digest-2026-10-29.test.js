@@ -84,6 +84,14 @@ async function openDigestModal(container) {
   await act(async () => { genBtn.click(); await Promise.resolve(); await Promise.resolve(); });
 }
 
+// 2026-10-30 — the modal now ALSO has a "📬 Recipients" checklist (its own checkboxes), so a bare
+// container-wide checkbox query picks up both groups. Scope to just the "⚙️ Scheduled send" box.
+function schedCheckboxes(container) {
+  const heading = [...container.querySelectorAll('div')].find(d => d.textContent.trim() === '⚙️ Scheduled send');
+  expect(heading, '⚙️ Scheduled send heading not found').toBeTruthy();
+  return [...heading.parentElement.querySelectorAll('input[type="checkbox"]')];
+}
+
 describe('EOM Digest modal — Store level (owner req 2026-10-29: resend to just one location)', () => {
   let container, root;
   beforeEach(() => { triggerSync.mockClear(); ({ container, root } = mountRoot()); });
@@ -103,7 +111,7 @@ describe('EOM Digest modal — Store level (owner req 2026-10-29: resend to just
   it('"Store" does NOT appear in the ⚙️ Scheduled send checkboxes — a saved schedule must never silently blast every store daily', async () => {
     await renderPanel(root);
     await openDigestModal(container);
-    const boxLabels = [...container.querySelectorAll('input[type="checkbox"]')].map(b => b.closest('label').textContent);
+    const boxLabels = schedCheckboxes(container).map(b => b.closest('label').textContent);
     expect(boxLabels).toEqual(['District', 'Patch', 'Market', 'Operator']);
     expect(boxLabels).not.toContain('Store');
   });

@@ -7,7 +7,7 @@
 import { postResend, EMAIL_TO, fobComponentsTableHtml } from './resend-notify.mjs';
 import { safeCreateClient } from './safe-supabase-client.mjs';
 import { loadDigestSubscriberEmails } from './email-digest-subscriptions.mjs';
-import { getReportRecipients, CONTACTS, STORE_STAFF } from '../../src/engine/contact-directory.js';
+import { resolveDigestRecipients } from '../../src/engine/contact-directory.js';
 import { escapeHtml } from '../../src/utils/fmt.js';
 
 const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -44,47 +44,29 @@ const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocal
 // still works exactly as before, union'd on top of the new automatic routing, so someone outside
 // a patch's own stores/supervisor/leadership can still subscribe to see it.
 //
-// `stores` (new 3rd param, defaults to [] for callers that only have level+groupKey — e.g. this
+// `stores` (3rd param, defaults to [] for callers that only have level+groupKey — e.g. this
 // file's own existing tests) should be the group's `stores` array (eom-digest.js's rollupGroup()
 // shape: { loc, patch, operator, ... } per store) whenever the caller has it; sendDigestEmail()
-// below always passes it.
-export async function recipientsFor(level, groupKey, stores = []) {
+// below always passes it. The actual role-based + GM resolution lives in
+// resolveDigestRecipients() (src/engine/contact-directory.js) now, not here — pulled out so the
+// EOM Dashboard panel (browser) can compute the SAME list to show a checkable recipients preview
+// before sending (owner req 2026-10-30: "make the pre-determined email group selectable...
+// unselect that person"); this function layers the opt-in-subscribers DB read and the exclude
+// filter on top, since those two genuinely need to stay Node/DB-side (or, for exclude, are just
+// as easy to apply here as duplicate in the browser).
+//
+// `excludeEmails` (4th param, defaults to []) — owner-chosen addresses to drop from the FINAL
+// list, applied after both the automatic routing AND opt-in subscribers (so unchecking someone in
+// the preview also overrides their own subscription for this one send, not just the automatic
+// routing — the owner's "unselect that person" request is "don't send to them this time",
+// without qualification). Case-insensitive; matches whatever the UI collected in its checklist.
+export async function recipientsFor(level, groupKey, stores = [], excludeEmails = []) {
   const subs = await loadDigestSubscriberEmails(supabase, 'eom_digest');
-
-  let roleBased;
-  if (level === 'store' && stores.length) {
-    // One store IS the group -- there's no separate supervisor-name groupKey to pass in (groupKey
-    // here is just that store's own loc, eom-digest.js's buildEomDigest 'store' branch). The
-    // store's own `patch` field already carries its live supervisor's NAME (see
-    // scripts/eom-digest-send.mjs's buildStoreRows: `patch: supervisorOf(u)`), same convention
-    // the 'patch' branch below relies on via its externally-passed groupKey -- reuse the SAME
-    // getReportRecipients('patch', ...) routing (supervisor + operator + leadership), just fed
-    // this one store instead of a whole patch's worth.
-    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: s.patch })), {});
-  } else if (level === 'patch' && stores.length) {
-    // Every store in a patch shares its one supervisor -- groupKey IS that supervisor's name;
-    // getReportRecipients()'s 'patch' scope reads stores[0].sup plus each store's own .operator.
-    roleBased = getReportRecipients('patch', stores.map(s => ({ ...s, sup: groupKey })), {});
-  } else if (level === 'org') {
-    const scope = groupKey === 'mcdok' ? 'MCDOK' : groupKey === 'emerald' ? 'Emerald Arches' : null;
-    roleBased = scope ? getReportRecipients(scope, [], {}) : getReportRecipients('all', [], {});
-  } else if (level === 'operator') {
-    const opEmails = CONTACTS.operators[groupKey]?.emails || [];
-    roleBased = [...new Set([...opEmails, ...CONTACTS.aboveStore.map(c => c.email)])];
-  } else {
-    // 'district' (one group, everyone) and any unrecognized level -- district-wide leadership.
-    roleBased = getReportRecipients('all', [], {});
-  }
-
-  // "The stores" half of the request: every store in this group gets the same email its own
-  // supervisor/leadership does, since the body already carries that store's own detail
-  // (storeSectionHtml, below) alongside its patch-/org-/district-mates'.
-  const gmEmails = stores
-    .map(s => STORE_STAFF[String(parseInt(s.loc, 10))]?.gmEmail)
-    .filter(Boolean);
-
-  const automatic = [...new Set([...roleBased, ...gmEmails])];
-  return subs.length ? [...new Set([...automatic, ...subs])] : automatic;
+  const automatic = resolveDigestRecipients(level, groupKey, stores);
+  const all = subs.length ? [...new Set([...automatic, ...subs])] : automatic;
+  if (!excludeEmails.length) return all;
+  const excluded = new Set(excludeEmails.map(e => String(e).toLowerCase()));
+  return all.filter(e => !excluded.has(e.toLowerCase()));
 }
 
 // dispatch #224 Task 6 — one store's full FOB+components table + recount-opportunities list,
@@ -167,8 +149,8 @@ ${group.stores && group.stores.length ? `<h3 style="margin:20px 0 4px;border-top
   return { subject, html };
 }
 
-export async function sendDigestEmail(group, level) {
-  const recipients = await recipientsFor(level, group.key, group.stores || []);
+export async function sendDigestEmail(group, level, excludeEmails = []) {
+  const recipients = await recipientsFor(level, group.key, group.stores || [], excludeEmails);
   const { subject, html } = buildDigestEmailContent(group, level, recipients);
   const results = await Promise.all(recipients.map(to => postResend({ to, subject, html })));
   return results.every(Boolean);

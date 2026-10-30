@@ -55,6 +55,10 @@
 //                           grouping. Owner req 2026-10-29: "resend a digest report to just one
 //                           location" — used by the EOM Dashboard's Store-level "Email" action,
 //                           which always passes exactly one loc.
+//   DIGEST_EXCLUDE=a@x.com[,b@y.com,...] — drop these email(s) from EVERY group's resolved
+//                           recipients this run. Owner req 2026-10-30: "make the pre-determined
+//                           email group selectable... unselect that person" — used by the EOM
+//                           Dashboard's recipients checklist, whichever boxes got unchecked.
 //   DIGEST_PERIOD=YYYY-MM — override the period (default: current month)
 //   DIGEST_DATE=YYYY-MM-DD— override the business date queried (default: today UTC)
 //   QSRSOFT_DEBUG=1
@@ -93,6 +97,13 @@ export function filterRowsByLoc(rows, locArg) {
   if (!locArg) return rows;
   const wanted = new Set(locArg.split(',').map(s => s.trim()).filter(Boolean).map(s => s.padStart(7, '0')));
   return rows.filter(r => wanted.has(r.loc));
+}
+// 2026-10-30 (owner req: "make the pre-determined email group selectable... unselect that
+// person") — a comma-separated email list to drop from EVERY group's resolved recipients this
+// run, passed straight through to sendDigestEmail()/recipientsFor()'s own exclude filter.
+const EXCLUDE_ARG = (process.env.DIGEST_EXCLUDE || '').trim();
+export function parseExcludeEmails(excludeArg) {
+  return excludeArg ? excludeArg.split(',').map(s => s.trim()).filter(Boolean) : [];
 }
 // dispatch #224 Task 3 — 'operator' joins district/patch/org as a real on-demand + scheduled
 // level, matching .github/workflows/eom-digest-send.yml's `level` input and buildEomDigest()'s
@@ -343,11 +354,12 @@ async function main() {
   console.log(`[eom-digest-send] ${rows.length}/${STORE_NSNS.length} stores have data for ${period}${LOC_ARG ? ` (filtered to loc=${LOC_ARG})` : ''}`);
   if (!rows.length) { console.log('[eom-digest-send] nothing to send'); return; }
 
+  const excludeEmails = parseExcludeEmails(EXCLUDE_ARG);
   let sent = 0, failed = 0;
   for (const level of levelsToRun(config)) {
     const digest = buildEomDigest(rows, { level, period, asOf: new Date() });
     for (const group of digest.groups) {
-      const ok = await sendDigestEmail(group, level);
+      const ok = await sendDigestEmail(group, level, excludeEmails);
       if (ok) sent++; else failed++;
       console.log(`[eom-digest-send] ${level}/${group.key}: ${ok ? '✓ sent' : '✗ FAILED'} — ${group.headline}`);
     }

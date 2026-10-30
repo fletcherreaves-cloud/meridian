@@ -26,6 +26,10 @@ on:
         description: 'Restrict to just these store(s), comma-separated (e.g. 0003708) — owner req 2026-10-29: resend a digest for just one location. Only meaningful with level=store.'
         required: false
         default: ''
+      exclude:
+        description: 'Drop these email(s), comma-separated, from every group''s resolved recipients this run — owner req 2026-10-30: make the pre-determined email group selectable.'
+        required: false
+        default: ''
       force:
         description: 'Send even outside the active count window (1 = on) — used by the on-demand "Generate Report" panel action'
         required: false
@@ -77,8 +81,9 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DIGEST_LEVEL:              ${{ github.event.inputs.level  || '' }}
-          DIGEST_LOC:                ${{ github.event.inputs.loc    || '' }}
-          DIGEST_FORCE:              ${{ github.event.inputs.force  || '0' }}
+          DIGEST_LOC:                ${{ github.event.inputs.loc     || '' }}
+          DIGEST_EXCLUDE:            ${{ github.event.inputs.exclude || '' }}
+          DIGEST_FORCE:              ${{ github.event.inputs.force   || '0' }}
           DIGEST_PERIOD:             ${{ github.event.inputs.period || '' }}
           DIGEST_DATE:               ${{ github.event.inputs.date   || '' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}

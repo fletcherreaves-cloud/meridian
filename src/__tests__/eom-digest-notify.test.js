@@ -121,6 +121,32 @@ describe('recipientsFor', () => {
     const got = await recipientsFor('store', '0006178');
     expect(got).toEqual(expect.arrayContaining(ABOVE));
   });
+
+  // 2026-10-30 (owner req: "make the pre-determined email group selectable... unselect that
+  // person") — the 4th `excludeEmails` param, applied as the FINAL step.
+  describe('excludeEmails (4th param)', () => {
+    it('drops exactly the named address(es), leaving everyone else untouched', async () => {
+      const got = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley', operator: 'Jacob Thorley' }], [STORE_STAFF['6178'].gmEmail]);
+      expect(got).not.toContain(STORE_STAFF['6178'].gmEmail);
+      expect(got).toEqual(expect.arrayContaining([CONTACTS.supervisors['Brad Denley'].email, ...ABOVE]));
+    });
+
+    it('is case-insensitive — matches regardless of the casing either side used', async () => {
+      const got = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley' }], [STORE_STAFF['6178'].gmEmail.toUpperCase()]);
+      expect(got).not.toContain(STORE_STAFF['6178'].gmEmail);
+    });
+
+    it('an empty/omitted exclude list changes nothing — the normal, nobody-unchecked path', async () => {
+      const withEmpty = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley' }], []);
+      const withNone = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley' }]);
+      expect(withEmpty).toEqual(withNone);
+    });
+
+    it('excluding an address that was never going to be in this group has no effect', async () => {
+      const got = await recipientsFor('store', '0006178', [{ loc: '0006178', patch: 'Brad Denley' }], ['nobody-here@example.com']);
+      expect(got).toContain(STORE_STAFF['6178'].gmEmail);
+    });
+  });
 });
 
 describe('buildDigestEmailContent', () => {

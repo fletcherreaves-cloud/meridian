@@ -85,6 +85,16 @@ async function openDigestModal(container) {
   await act(async () => { genBtn.click(); await Promise.resolve(); await Promise.resolve(); });
 }
 
+// 2026-10-30 — the modal now ALSO has a "📬 Recipients" checklist (its own checkboxes, one per
+// resolved email address), so a bare container-wide checkbox query picks up both groups. Scope
+// to just the "⚙️ Scheduled send" box's own checkboxes -- the heading div is a text-only leaf,
+// its parent is the whole section.
+function schedCheckboxes(container) {
+  const heading = [...container.querySelectorAll('div')].find(d => d.textContent.trim() === '⚙️ Scheduled send');
+  expect(heading, '⚙️ Scheduled send heading not found').toBeTruthy();
+  return [...heading.parentElement.querySelectorAll('input[type="checkbox"]')];
+}
+
 describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () => {
   let container, root;
   beforeEach(() => { loadEomDigestConfig.mockClear(); saveEomDigestConfig.mockClear(); ({ container, root } = mountRoot()); });
@@ -107,7 +117,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     // The loaded config's checked state actually reflects the real stored row — District and
     // Market checked, Patch unchecked (proves it isn't silently reset to the ['district','patch']
     // default while a real row exists).
-    const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+    const boxes = schedCheckboxes(container);
     expect(boxes.length).toBe(4); // District/Patch/Market/Operator — dispatch #224 added the 4th
     const checkedLabels = boxes.filter(b => b.checked).map(b => b.closest('label').textContent);
     expect(checkedLabels).toEqual(['District', 'Market']);
@@ -117,7 +127,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     loadEomDigestConfig.mockResolvedValueOnce({ levels: ['district', 'patch'], sendHourUtc: 23 });
     await renderPanel(root);
     await openDigestModal(container);
-    const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+    const boxes = schedCheckboxes(container);
     const checkedLabels = boxes.filter(b => b.checked).map(b => b.closest('label').textContent);
     expect(checkedLabels).toEqual(['District', 'Patch']);
     // Several <select>s exist elsewhere in this panel (period/date/patch pickers) — the hour
@@ -132,7 +142,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     await renderPanel(root);
     await openDigestModal(container);
 
-    const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+    const boxes = schedCheckboxes(container);
     const orgBox = boxes.find(b => b.closest('label').textContent === 'Market');
     await act(async () => { orgBox.click(); }); // check Market on, in addition to district+patch
 
@@ -155,7 +165,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     // controls don't share state. Confirm the schedule checkboxes reflect ONLY the loaded
     // schedule config (Market checked, District/Patch unchecked) even though a view tab reads
     // "District" highlighted elsewhere on the same screen.
-    const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+    const boxes = schedCheckboxes(container);
     const checkedLabels = boxes.filter(b => b.checked).map(b => b.closest('label').textContent);
     expect(checkedLabels).toEqual(['Market']);
   });
@@ -164,7 +174,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     loadEomDigestConfig.mockResolvedValueOnce({ levels: ['district'], sendHourUtc: 23 });
     await renderPanel(root);
     await openDigestModal(container);
-    const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+    const boxes = schedCheckboxes(container);
     const districtBox = boxes.find(b => b.closest('label').textContent === 'District');
     await act(async () => { districtBox.click(); }); // uncheck the only checked level
     const saveBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Save schedule');
