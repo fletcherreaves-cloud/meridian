@@ -39,6 +39,7 @@ import {
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { metricSeries, metricSumRatio } from '../engine/metric-source.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
+import { resolveDigestRecipients } from '../engine/contact-directory.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
@@ -1948,6 +1949,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [digestLevel, setDigestLevel] = useState('district');
   const [digestSending, setDigestSending] = useState(false);
   const [digestMsg, setDigestMsg] = useState(null);
+  // owner req 2026-10-30: "make the pre-determined email group selectable... unselect that
+  // person" — a Set of addresses the owner has unchecked out of the resolved recipients list for
+  // THIS open/level, reset whenever either changes so a stale exclusion from a previous view
+  // never silently carries into a different group's send.
+  const [excludedEmails, setExcludedEmails] = useState(() => new Set());
   // dispatch #224 Task 5 — which store's FOB+components table / recount-opportunities list is
   // expanded within the currently-open rollup group. Keyed `${group.key}|${loc}` so expanding a
   // store in one group doesn't also expand the same loc's row in a different group card.
@@ -2355,6 +2361,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const digestAutoLevel = oneStore ? 'store' : (patch ? 'patch' : (scope !== 'all' ? 'org' : 'district'));
   const digest = useMemo(() => buildEomDigest(digestStoreRows, { level: digestOpen ? digestLevel : digestAutoLevel, period }),
     [digestStoreRows, digestLevel, digestAutoLevel, period, digestOpen]);
+  // owner req 2026-10-30: the SAME resolution sendDigestEmail() would do server-side
+  // (resolveDigestRecipients(), src/engine/contact-directory.js), computed here so the modal can
+  // show a checkable preview before anything is sent. One flat deduped list across every group
+  // about to be sent at this level/scope -- excluding someone removes them from whichever
+  // specific group(s) they'd actually appear in (recipientsFor()'s own exclude filter runs
+  // per-group), so this doesn't need to track exclusions per-group separately.
+  const digestRecipients = useMemo(() =>
+    [...new Set(digest.groups.flatMap(g => resolveDigestRecipients(digestLevel, g.key, g.stores)))].sort(),
+    [digest.groups, digestLevel]);
+  useEffect(() => { setExcludedEmails(new Set()); }, [digestLevel, digestOpen]);
+  const toggleExcluded = useCallback((email) => {
+    setExcludedEmails(prev => {
+      const next = new Set(prev);
+      next.has(email) ? next.delete(email) : next.add(email);
+      return next;
+    });
+  }, []);
   const openDigest = useCallback(() => {
     setDigestLevel(digestAutoLevel); setDigestMsg(null); setDigestOpen(true);
     // Load the real stored schedule config fresh on every open (dispatch #217) — never trust
@@ -2375,12 +2398,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       // (the server always re-groups ALL stores at that level regardless of what's on screen).
       const inputs = { level: digestLevel };
       if (digestLevel === 'store') inputs.loc = digestStoreRows.map(r => r.loc).join(',');
+      // owner req 2026-10-30: "make the pre-determined email group selectable... unselect that
+      // person" -- whichever boxes got unchecked in the recipients preview below.
+      if (excludedEmails.size) inputs.exclude = [...excludedEmails].join(',');
       const r = await triggerSync('digest', inputs);
       if (r && r.error) setDigestMsg({ ok: false, text: `✗ ${r.error}` });
       else setDigestMsg({ ok: true, text: `✓ Digest send started — ${digest.groups.length} email(s) going to the owner's own address (test phase — see Data Manager for delivery details).` });
     } catch (e) { setDigestMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
     finally { setDigestSending(false); }
-  }, [digestLevel, digest.groups.length, digestStoreRows]);
+  }, [digestLevel, digest.groups.length, digestStoreRows, excludedEmails]);
   const toggleSchedLevel = useCallback((k) => {
     setSchedLevels(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
   }, []);
@@ -3989,6 +4015,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
           }, digestSending ? '📧 Sending…' : `📧 Email ${digest.groups.length} group${digest.groups.length === 1 ? '' : 's'}`)),
         digestMsg ? div({ style: { fontSize: '11px', color: digestMsg.ok ? '#4ade80' : 'var(--crit)', marginBottom: '10px' } }, digestMsg.text) : null,
         div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${period} · scope: ${scopeLabel()} · view updates live from data already on screen; nothing is emailed until you click Send.`),
+        // 📬 Recipients (owner req 2026-10-30: "make the pre-determined email group selectable...
+        // unselect that person") — the SAME role-based+GM list sendDigest() would resolve,
+        // shown as a checklist so a specific address can be dropped from THIS send without
+        // touching the underlying routing rules. Everyone defaults to checked; the Send button's
+        // title doesn't change, but Send only passes an `exclude` input when something's
+        // unchecked, matching the normal-case "nobody excluded" path exactly as before.
+        digestRecipients.length ? div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' } },
+          div({ style: { fontWeight: 700, fontSize: '12px', color: 'var(--text)', marginBottom: '8px' } },
+            `📬 Recipients (${digestRecipients.length - excludedEmails.size}/${digestRecipients.length})`),
+          div({ style: { display: 'flex', flexWrap: 'wrap', gap: '6px 14px', maxHeight: '140px', overflowY: 'auto' } },
+            digestRecipients.map(email => h('label', {
+              key: email,
+              style: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: excludedEmails.has(email) ? 'var(--text3)' : 'var(--text2)', cursor: 'pointer', textDecoration: excludedEmails.has(email) ? 'line-through' : 'none' },
+            },
+              h('input', { type: 'checkbox', checked: !excludedEmails.has(email), onChange: () => toggleExcluded(email) }),
+              email))),
+          excludedEmails.size ? div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginTop: '6px' } }, 'Unchecked addresses are dropped from this send only — nothing about who automatically qualifies is changed.') : null) : null,
         // ⚙️ Scheduled send (dispatch #217) — which levels the DAILY auto email includes + what
         // hour it sends. Deliberately separate from the level tabs above: those pick what THIS
         // MODAL is showing you right now; this picks what goes out automatically every day,
