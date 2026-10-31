@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCountTiming, fmtDurationHMS } from '../engine/eom-item-journey.js';
+import { computeCountTiming, computeCountSessions, fmtDurationHMS } from '../engine/eom-item-journey.js';
 
 const item = (events) => ({ wrin: 'w', history: events });
 
@@ -84,6 +84,53 @@ describe('computeCountTiming — last count date, start→end', () => {
     expect(r.hasTimes).toBe(false);
     expect(r.durationMs).toBe(0);
     expect(r.countDate).toBe('2026-07-31');
+  });
+});
+
+describe('computeCountSessions — every distinct count day, not just the final one', () => {
+  it('returns one session per distinct day, chronological, each with its own began/ended/duration', () => {
+    const items = [
+      { wrin: 'a', history: [{ isCount: true, dt: '2026-07-08', tm: '7:00 AM' }, { isCount: true, dt: '2026-07-08', tm: '7:40 AM' }] },
+      { wrin: 'b', history: [{ isCount: true, dt: '2026-07-15', tm: '8:00 AM' }] },
+      { wrin: 'c', history: [{ isCount: true, dt: '2026-07-31', tm: '9:00 AM' }, { isCount: true, dt: '2026-07-31', tm: '9:00 AM' }] },
+    ];
+    const sessions = computeCountSessions(items);
+    expect(sessions.map(s => s.countDate)).toEqual(['2026-07-08', '2026-07-15', '2026-07-31']);
+    expect(sessions[0].durationMs).toBe(40 * 60 * 1000);
+    expect(sessions[0].bulkSubmit).toBe(false);
+    expect(sessions[2].bulkSubmit).toBe(true);   // both counts at 9:00 AM -- bulk-submitted session
+  });
+
+  it('a true weekly-trained store shows several real-duration, non-bulk sessions a period', () => {
+    const at = (dt, tm) => ({ isCount: true, dt, tm });
+    const items = [
+      { wrin: 'food1', history: [at('2026-07-01', '6:00 AM'), at('2026-07-08', '6:05 AM'), at('2026-07-15', '6:10 AM'), at('2026-07-22', '6:00 AM')] },
+      { wrin: 'food2', history: [at('2026-07-01', '7:15 AM'), at('2026-07-08', '7:20 AM'), at('2026-07-15', '7:25 AM'), at('2026-07-22', '7:10 AM')] },
+    ];
+    const sessions = computeCountSessions(items);
+    expect(sessions).toHaveLength(4);
+    expect(sessions.every(s => s.bulkSubmit === false)).toBe(true);
+    expect(sessions.every(s => s.durationMs > 0)).toBe(true);
+  });
+
+  it('a store submitting everything at once shows one bulk session, not several spread out', () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({ wrin: `w${i}`, history: [{ isCount: true, dt: '2026-07-31', tm: '10:00 PM' }] }));
+    const sessions = computeCountSessions(items);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].bulkSubmit).toBe(true);
+    expect(sessions[0].nCounts).toBe(12);
+  });
+
+  it('returns [] when there are no timestamped count events', () => {
+    expect(computeCountSessions([{ wrin: 'a', history: [{ isCount: false, dt: '2026-07-31' }] }])).toEqual([]);
+    expect(computeCountSessions([])).toEqual([]);
+  });
+
+  it('does not carry computeCountTiming-only fields like nDays/nCountsTotal', () => {
+    const sessions = computeCountSessions([{ wrin: 'a', history: [{ isCount: true, dt: '2026-07-31', tm: '9:00 AM' }] }]);
+    expect(sessions[0].nDays).toBeUndefined();
+    expect(sessions[0].nCountsTotal).toBeUndefined();
+    expect(sessions[0].nCounts).toBe(1);
   });
 });
 

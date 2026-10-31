@@ -42,13 +42,13 @@ const tmMin = (tm) => {
   return h * 60 + mm;
 };
 
-// Count-timing metric (owner req #45): from a store's raw-item count history, when did the store's
-// EOM count BEGIN and END, and how long did it take. began = earliest count-event timestamp across
-// all items, ended = latest, duration = the span. Also nDays (a multi-day count) + nCounts.
-// `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
-export function computeCountTiming(rawItems = []) {
+// Every timestamped count event across a store's raw items, as flat `{when, dayT, dt, tm,
+// hasTime}` stamps (`when` = ms incl. time-of-day for ordering; `dayT` = ms at midnight, for
+// day-grouping) — the shared first step both computeCountTiming and computeCountSessions build
+// on, so the two can never read the underlying history differently.
+function collectCountStamps(rawItems) {
   const stamps = [];
-  const itemLastDate = [];   // each item's MOST RECENT count date (one per item)
+  const itemLastDate = [];   // each item's MOST RECENT count date (one per item) — computeCountTiming's nDays only
   for (const it of (rawItems || [])) {
     let itemLatest = null;
     for (const h of (it.history || [])) {
@@ -60,15 +60,17 @@ export function computeCountTiming(rawItems = []) {
     }
     if (itemLatest) itemLastDate.push(itemLatest.dt);
   }
-  if (!stamps.length) return null;
-  // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
-  // recorded time that day. Mid-cycle count days telescope out of the EOM result; the meaningful
-  // count is the final one, and its start→end is the actual time spent counting.
-  const lastDayT = Math.max(...stamps.map(s => s.dayT));
-  const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
-  const b = onLast[0], e = onLast[onLast.length - 1];
-  const hasTimes = onLast.some(s => s.hasTime);
-  const timed = onLast.filter(s => s.hasTime);
+  return { stamps, itemLastDate };
+}
+
+// One day's worth of count stamps (already filtered to a single `dayT`, sorted by `when`) -> the
+// began/ended/duration + bulk-submit read shared by computeCountTiming (the final day only) and
+// computeCountSessions (every day) — one implementation so the two can never disagree on what
+// "bulk-submitted" means.
+function summarizeDaySession(dayStamps) {
+  const b = dayStamps[0], e = dayStamps[dayStamps.length - 1];
+  const hasTimes = dayStamps.some(s => s.hasTime);
+  const timed = dayStamps.filter(s => s.hasTime);
   const byTime = new Map();
   for (const s of timed) byTime.set(s.when, (byTime.get(s.when) || 0) + 1);
   const nDistinctTimes = byTime.size;
@@ -85,7 +87,7 @@ export function computeCountTiming(rawItems = []) {
   // them later — e.g. Ada: 28 items @ 11:43, McCrispy Strips + Lemons @ 12:16). Both skew variance
   // for items in active use during the count. See project-inventory-integrity-detection.
   const bulkSubmit = hasTimes && (
-    (onLast.length >= 2 && allSame) ||
+    (dayStamps.length >= 2 && allSame) ||
     (timed.length >= 5 && domFrac >= 0.8 && !allSame)
   );
   return {
@@ -93,7 +95,30 @@ export function computeCountTiming(rawItems = []) {
     began: b.when, beganTm: b.tm,
     ended: e.when, endedTm: e.tm,
     durationMs: Math.max(0, e.when - b.when),
-    nCountsLastDay: onLast.length,
+    nCounts: dayStamps.length,
+    nDistinctTimes,
+    bulkSubmit, allSame,
+    domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging
+    hasTimes,   // false → date only (no time recorded, duration unknown)
+  };
+}
+
+// Count-timing metric (owner req #45): from a store's raw-item count history, when did the store's
+// EOM count BEGIN and END, and how long did it take. began = earliest count-event timestamp across
+// all items, ended = latest, duration = the span. Also nDays (a multi-day count) + nCounts.
+// `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
+export function computeCountTiming(rawItems = []) {
+  const { stamps, itemLastDate } = collectCountStamps(rawItems);
+  if (!stamps.length) return null;
+  // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
+  // recorded time that day. Mid-cycle count days telescope out of the EOM result; the meaningful
+  // count is the final one, and its start→end is the actual time spent counting.
+  const lastDayT = Math.max(...stamps.map(s => s.dayT));
+  const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
+  const day = summarizeDaySession(onLast);
+  return {
+    ...day,
+    nCountsLastDay: day.nCounts,
     nCountsTotal: stamps.length,
     // "Counted over N days" = distinct EFFECTIVE count dates within the FINAL ~3-day EOM session
     // (each item's MOST RECENT count, restricted to the last 3 days ending at the final count).
@@ -105,11 +130,27 @@ export function computeCountTiming(rawItems = []) {
       const inWin = itemLastDate.filter(dt => { const t = ts(dt); return t != null && t >= (lastDayT - WIN); });
       return new Set(inWin).size || 1;
     })(),
-    nDistinctTimes,
-    bulkSubmit, allSame,
-    domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging
-    hasTimes,   // false → date only (no time recorded, duration unknown)
   };
+}
+
+// Count-timing metric, per-session (Count Timing Report, owner req 2026-10-31: "allow me to
+// select monthly and/or weekly counts to be able to display the past trend of whether the stores
+// are performing inventory as trained or if they are submitting all at once"). Unlike
+// computeCountTiming (the FINAL day only, for the EOM diagnosis), this returns EVERY distinct
+// count day found in `rawItems`' history, chronological — one session per calendar day with any
+// count activity, each shaped like computeCountTiming's own return (minus `nDays`, which is a
+// final-count-specific EOM concept that doesn't generalize to an arbitrary historical session).
+// A store counting weekly, spread across a shift, shows ~4 sessions/period each with a real
+// multi-hour duration and `bulkSubmit:false`; a store cramming everything in at the end shows
+// few sessions, most `bulkSubmit:true`. Returns [] when no timestamped count events exist.
+export function computeCountSessions(rawItems = []) {
+  const { stamps } = collectCountStamps(rawItems);
+  if (!stamps.length) return [];
+  const byDay = new Map();
+  for (const s of stamps) { const arr = byDay.get(s.dayT); if (arr) arr.push(s); else byDay.set(s.dayT, [s]); }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, dayStamps]) => summarizeDaySession(dayStamps.slice().sort((a, b) => a.when - b.when)));
 }
 
 // "2h 15m 30s" / "45m 0s" from a millisecond duration (count-duration display; H:M:S per owner).
