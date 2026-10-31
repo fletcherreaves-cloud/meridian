@@ -12,11 +12,19 @@
 // Per "would this verification still pass if reverted?": these fixtures carry ONLY an auto
 // stream (qsrActSummaryRows / qsrFobRows) and explicitly NO ds.laborRows/opsRows/ctrlRows at
 // all -- under the old code `joined` would always be empty ([]), so a revert fails this.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import { computeAllCorrelations, computeMetricAverages } from '../views/analytics.js';
 
 const d = s => new Date(s + 'T00:00:00');
 const LOC = '3708'; // Ardmore-Broadway, real STORE_NAMES entry
+
+// computeMetricAverages (unlike computeAllCorrelations, which uses full history) windows to a
+// trailing 90 days ending on the last closed business day. Pinned so the DAYS fixture below
+// (2026-08-01..08-12) always falls fully inside that window -- on the real wall clock, the
+// window's start crept past 2026-08-01 once "today" passed ~2026-10-29, silently dropping that
+// day from the average and failing the "resolves a predictor average" test below.
+vi.setSystemTime(new Date(2026, 8, 1, 12)); // Sep 1 2026 -- well inside the 90-day window
+afterAll(() => vi.useRealTimers());
 
 // A clear negative relationship: slower drive-thru (higher OEPE) tracks lower sales.
 const DAYS = [

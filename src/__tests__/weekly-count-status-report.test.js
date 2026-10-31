@@ -72,8 +72,14 @@ describe('WeeklyCountStatusPanel', () => {
   });
 
   it('shows a new-item badge when a brand-new WRIN is pending, without blocking Complete status', async () => {
-    const curP = new Date().toISOString().slice(0, 7);
-    const prevP = new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().slice(0, 7);
+    const now = new Date();
+    const curP = now.toISOString().slice(0, 7);
+    // Day forced to 1 before subtracting a month -- new Date().setMonth(getMonth()-1) overflows
+    // into the WRONG month whenever today's day-of-month doesn't exist in the prior month (e.g.
+    // Oct 31 -> Sep has only 30 days -> rolls forward into October again), which collapsed prevP
+    // onto curP and made every row read as "new" instead of just the one seeded as new. Same safe
+    // pattern the drift-sample test below (line ~100) already uses.
+    const prevP = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
     // Prior period has the same 30 items (none new there); current period adds one more.
     _onHandByPeriod[prevP] = fullStoreRows('3708', { lastCounted: null });
     _onHandByPeriod[curP] = fullStoreRows('3708', { lastCounted: today, newWrin: true });
