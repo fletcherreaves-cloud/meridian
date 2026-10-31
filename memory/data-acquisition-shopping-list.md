@@ -314,6 +314,41 @@ For each report, in DevTools → Network, with the report actually loaded:
 
 ---
 
+## M. HME Timer — drive-thru line-abandonment ("cars pulling out of line")
+
+Owner request, 2026-10-31, surfaced while reviewing the Night-Shift Performance Plan's Oklahoma
+drive-thru-speed-vs-transactions question: *"I need to try and get access to our HME Timer
+system. It could and should provide some valuable reporting insights to cars that pull out of
+line. This is generally an indication of lost sales due to poor service, but notably can be for
+other reasons."*
+
+**Why this matters, tied directly to live analysis work:** two separate tests this session (a
+cross-store comparison of OEPE vs. transaction trend, then a within-store weekly fixed-effects
+version) both failed to find a usable signal linking DT speed to lost transactions —
+`qsr_daily_activity`'s OEPE/transaction-count fields can't distinguish "a slow store loses
+guests" from confounds (customers already anchored to a store's known baseline pace; busy weeks
+being mechanically both slower and busier at once). **A direct line-abandonment count is a much
+cleaner signal than inferring it from aggregate speed/volume correlations** — a car that actually
+leaves the line is a measured lost sale (modulo the owner's own caveat that abandonment can have
+causes other than slow service: a car realizing it's in the wrong line, impatience unrelated to
+pace that day, etc.).
+
+**Status: access only, nothing built.** HME (Hospitality Management Experts/Solutions) is the
+drive-thru timer hardware vendor used in-store for OEPE measurement — this would be a **separate
+vendor portal/API from QSRSoft**, same pattern as SMG VOICE (C) and PACE/Propel (D) above: a
+distinct auth path, not an extension of the existing QSRSoft two-path pull.
+
+**Nothing to probe yet — this is blocked on the owner getting account/API access first**, same
+blocking shape as EcoSure (E). Once access exists: confirm (1) whether line-abandonment/"cars
+lost" is a reportable field at all (HME's own reporting may only expose timer/OEPE data, not
+abandonment specifically — don't assume), (2) grain (per-car event vs. a daily count), (3)
+whether it's already captured for day parts the way OEPE is, so night-specific abandonment can be
+isolated the same way the rest of this report slices by `hour_slot`.
+
+
+
+---
+
 # ADDENDUM 2026-08-15 — two endpoints arrived ready to build
 
 Both were captured by the owner on 2026-08-15 and measured against the real payloads. Full schema,
