@@ -3761,6 +3761,31 @@ export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
   return { saved: true };
 }
 
+// ── Custom location groups (owner req, 2026-11-01) ──────────────────────────────────────────
+// "a selected group of restaurants of user choice" -- an ad hoc, user-named, saveable set of
+// stores, same org_config key/blob pattern as eom_digest_config just above (shared, not
+// per-user; admin/area_supervisor write, per schema.sql's "config: admin/supervisor write"
+// policy -- same tier that already owns supervisorGroups/operators). Shape:
+// { groups: [{id,name,locs,createdAt,updatedAt}] } -- the pure CRUD lives in
+// src/engine/location-groups.js (addLocationGroup/updateLocationGroup/removeLocationGroup),
+// this is just the round trip, same split every other org_config consumer in this file uses.
+export async function loadCustomLocationGroups() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('org_config')
+    .select('data').eq('key', 'custom_location_groups').maybeSingle();
+  if (error) { console.warn('[supabase] loadCustomLocationGroups:', error.message); return []; }
+  return Array.isArray(data?.data?.groups) ? data.data.groups : [];
+}
+
+export async function saveCustomLocationGroups(groups) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const payload = { groups: Array.isArray(groups) ? groups : [] };
+  const { error } = await supabase.from('org_config')
+    .upsert({ key: 'custom_location_groups', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) { console.warn('[supabase] saveCustomLocationGroups:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
 // ── Weekly Inventory Count Day fallback (owner-directed, 2026-09-01) ─────────────────────────
 // Real, owner-entered per-store weekly count day, imported from Organization_Structure.xlsx's
 // Locations sheet (parseOrgStructureCountDays(), src/parsers/index.js) on every org-structure

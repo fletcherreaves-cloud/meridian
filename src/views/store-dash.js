@@ -286,22 +286,50 @@ const TT = {backgroundColor:'#1a2332',titleColor:'#e2e8f0',bodyColor:'#94a3b8',b
 const AX = {ticks:{color:'#64748b',font:{size:9}},grid:{color:'rgba(255,255,255,.04)'}};
 const LEG = {position:'bottom',labels:{color:'#94a3b8',boxWidth:10,font:{size:10}}};
 
-function SalesChart({dayRows, tgt}) {
+// Matches each dayRows row to LifeLenz's own forecast for the same (loc, date) out of
+// ds.schedRows — already loaded app-wide (App.js's loadLifeLenzSchedule()), no new fetch.
+// Same lookup convention as lifelenz.js's computeLifeLenzAdjustment/runAccuracy (String(loc)
+// + dKey(date) match on fcstSales/adjFcstSales) — that panel's own "Accuracy" mode already
+// treats ds.schedRows as the reference LifeLenz number for PAST dates too (not the lead-time-
+// matched lifelenz_forecast_captures table, which has no UI consumer yet), so this overlay is
+// consistent with the one existing precedent rather than inventing a new convention.
+function lifeLenzSeries(dayRows, schedRows, loc) {
+  if(!schedRows||!schedRows.length||!loc) return null;
+  const byDk = new Map();
+  schedRows.forEach(r=>{ if(String(r.loc)===String(loc)&&r.date) byDk.set(dKey(r.date), r); });
+  let anyPast = false, anyVal = false;
+  const data = dayRows.map(r=>{
+    const row = byDk.get(dKey(r.date));
+    const v = row ? (row.adjFcstSales>0?row.adjFcstSales:row.fcstSales) : null;
+    if(v>0){ anyVal = true; if(!r.isFuture) anyPast = true; return Math.round(v); }
+    return null;
+  });
+  return anyVal ? {data, anyPast} : null;
+}
+
+function SalesChart({dayRows, tgt, schedRows, loc}) {
   const ref = useRef(null);
+  const lfz = lifeLenzSeries(dayRows, schedRows, loc);
   useChart(ref, canvas => {
     if(!dayRows||!dayRows.length) return null;
     const labels = dayRows.map(r => DOW_BASE[r.date.getDay()]+' '+r.date.toLocaleDateString('en-US',{month:'numeric',day:'numeric'}));
-    return new Chart(canvas, {type:'bar', data:{labels, datasets:[
-      {label:'LY Sales', data:dayRows.map(r=>Math.round(r.lyAdj)||0), backgroundColor:'rgba(100,116,139,.45)', borderColor:'rgba(100,116,139,.7)', borderWidth:.5, order:3},
-      {label:'Goal',     data:dayRows.map(r=>Math.round(r.goal)||0),  backgroundColor:'rgba(74,222,128,.15)',  borderColor:'rgba(74,222,128,.5)',  borderWidth:.5, order:2},
+    const datasets = [
+      {label:'LY Sales', data:dayRows.map(r=>Math.round(r.lyAdj)||0), backgroundColor:'rgba(100,116,139,.45)', borderColor:'rgba(100,116,139,.7)', borderWidth:.5, order:4},
+      {label:'Goal',     data:dayRows.map(r=>Math.round(r.goal)||0),  backgroundColor:'rgba(74,222,128,.15)',  borderColor:'rgba(74,222,128,.5)',  borderWidth:.5, order:3},
       {label:'AI Forecast', data:dayRows.map(r=>Math.round(r.forecast)||0), type:'line', borderColor:'#f59e0b', backgroundColor:'transparent', borderWidth:2.5, pointStyle:'diamond', pointRadius:5, order:1, tension:.3},
       {label:'Actual',   data:dayRows.map(r=>r.actual>0?Math.round(r.actual):null), type:'line', borderColor:'#60a5fa', backgroundColor:'transparent', borderWidth:2, pointRadius:4, order:0, tension:.3, spanGaps:false},
-    ]},
+    ];
+    if(lfz) datasets.push({label:'LifeLenz Forecast', data:lfz.data, type:'line', borderColor:'#c084fc', backgroundColor:'transparent', borderWidth:2, borderDash:[5,3], pointStyle:'rectRot', pointRadius:3.5, order:2, tension:.3, spanGaps:false});
+    return new Chart(canvas, {type:'bar', data:{labels, datasets},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:LEG, tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: $${Math.round(c.raw||0).toLocaleString()}`}}},
       scales:{x:{...AX},y:{...AX,ticks:{...AX.ticks,callback:v=>'$'+Math.round(v/1000)+'K'}}}}});
-  }, [dayRows]);
-  return div({style:{height:180}}, h('canvas',{ref}));
+  }, [dayRows, lfz]);
+  return div({},
+    div({style:{height:180}}, h('canvas',{ref})),
+    lfz&&lfz.anyPast && div({style:{fontSize:'9px',color:'var(--text3)',marginTop:4,lineHeight:1.4}},
+      'LifeLenz Forecast on past dates is their most recently reported number for that date (LifeLenz continuously updates it as the date approaches) — not a point-in-time snapshot of what was known in advance.'),
+  );
 }
 
 function OpsRadar({perf, tgt}) {
@@ -3638,7 +3666,7 @@ export {
   copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths,
   PEAK_SLICES, normSlice, analyzePeaks,
   mdToNodes,
-  useChart, TT, AX, LEG, SalesChart, OpsRadar, TrendChart,
+  useChart, TT, AX, LEG, SalesChart, lifeLenzSeries, OpsRadar, TrendChart,
   wxIcon, ForecastRow, ForecastTable,
   Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, generatePlan, ActionPlanTab,
   StoreCard, DistrictGrid, OrgView, ExportDropdown, LeaderboardPanel, RankingTab,

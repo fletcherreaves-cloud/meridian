@@ -131,6 +131,21 @@ rule):**
   opportunistically alongside close button / date picker / location selector / routing, even
   though (unlike those four) it doesn't yet have a dedicated shared component to convert to —
   just `overflowX:'auto'` on the actual scroll container, verified at a real mobile viewport.
+  **Update 2026-11-01 — the same overflow bug hit a CONTROL ROW, not a table, and now has a
+  shared fix for that shape too.** Owner, from a phone screenshot of Inventory Control: band 3
+  (the Reports/Scans/Monitor/Pulls action menus + the view tabs) ran wider than the viewport and
+  simply extended off the right edge, uncontrollable — on a `flex` row, `overflowX:'auto'` alone
+  is a no-op unless the flex item also gets `minWidth: 0` (a flex item defaults to
+  `min-width: auto`, which refuses to shrink below its own content width and is exactly what let
+  the row blow out instead of clipping-and-scrolling). `src/components/PanelChrome.js`'s band 3 now
+  carries this fix (`overflowX:'auto'` + `minWidth:0` + `WebkitOverflowScrolling:'touch'` on each
+  of the `actions`/`tabs` wrapper divs, scrolling independently so one group doesn't steal scroll
+  room from the other) — **this is the pattern to reach for first**, for any other panel's
+  overflowing control row, same as `ExportDropdown`/`RoutePanelShell`/`LocationSelector` are
+  reached for first rather than hand-rolled. Only 2 panels (`eom-dashboard.js`, `eom-supervisor.js`)
+  use `PanelChrome` as of this fix — most panels still hand-roll their own control-row markup, so
+  this fix alone doesn't reach them; migrating a panel onto `PanelChrome` is itself one of the
+  opportunistic things worth doing when already touching that panel's chrome.
 - **Print/export — added 2026-08-25, owner-stated: "let's add print export options anytime we
   build something unless there truly is no need for it."** A sixth opportunistic check, same
   posture as the other five: when a dispatch already touches a panel that shows tabular/

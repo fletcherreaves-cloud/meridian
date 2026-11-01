@@ -1,6 +1,8 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB } from '../constants.js';
+import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB, getStoreOrg, operatorOf, supervisorGroups } from '../constants.js';
+import { buildGroupSections, summarizeGroup, addLocationGroup, updateLocationGroup, removeLocationGroup } from '../engine/location-groups.js';
+import { LocationGroupPicker } from '../components/LocationGroupPicker.js';
 import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
@@ -13,7 +15,7 @@ import { ModelHealthBadge } from './model-health-badge.js';
 import { LocationIntelligence, liComputeAll, liBuildRoadmap } from '../features/location-intel.js';
 import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline } from './store-cockpit.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
-import { supabase } from '../lib/supabase.js';
+import { supabase, loadCustomLocationGroups, saveCustomLocationGroups } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
@@ -1972,6 +1974,16 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
   const [wkProgress, setWkProgress]= useState(0);
   const [opsChartType, setOpsChartType]= useState('radar');
   const [showCharts, setShowCharts]   = useState(false);
+  // Performance Summary grouping (owner req, 2026-11-01) -- replaces the 3 fixed Supervisor/
+  // Operator/Organization sections below with one selectable grouping. customGroups loaded
+  // lazily here (not App.js startup), same pattern eom_digest_config already uses -- only the
+  // panel that actually renders this tile needs it.
+  const [groupMode, setGroupMode] = useState('patch');
+  const [customGroups, setCustomGroups] = useState([]);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  useEffect(()=>{ loadCustomLocationGroups().then(setCustomGroups).catch(()=>{}); },[]);
+  const saveGroups = async (next) => { setCustomGroups(next); await saveCustomLocationGroups(next).catch(()=>{}); };
   const {p, t} = store;
   const today = new Date();
 
@@ -2350,7 +2362,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             ),
             opsChartType==='radar'?h(OpsRadar,{perf:p,tgt:t}):h(OpsBarChart,{perf:p,tgt:t})
           ),
-          div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t})),
+          div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t,schedRows:ds?.schedRows,loc:store.loc})),
           div({className:'chart-box',style:{gridColumn:'1/-1'}},
             div({className:'chart-title'},'6-Week Performance — T2W & T6W Trend'),h(TrendChart,{dayRows:wk}))
         )
@@ -2460,63 +2472,43 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         );
       })(),
 
-      // Supervisor Performance Summary
-      settings.supervisorGroups&&Object.keys(settings.supervisorGroups||{}).length>0&&(()=>{
-        const groups=settings.supervisorGroups||{};
-        return div({style:{marginBottom:12}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'👔 Supervisor Performance Summary'),
-          div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
-            Object.entries(groups).map(([name,locs])=>{
-              const groupStores=(allStores||[]).filter(s=>locs.includes(s.loc));
-              if(!groupStores.length) return null;
-              const totalSales=groupStores.reduce((a,s)=>a+(s.pSales||0),0);
-              const avgOps=groupStores.reduce((a,s)=>a+(s.opsScore||0),0)/groupStores.length;
-              const trends=groupStores.filter(s=>s.p&&s.p.t2w!=null);
-              const avgTrend=trends.length?trends.reduce((a,s)=>a+s.p.t2w,0)/trends.length:null;
-              return div({key:name,
-                style:{flex:'1 1 200px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
-                  borderRadius:'var(--rl)',padding:'12px 14px'}},
-                div({style:{fontSize:'11px',fontWeight:700,marginBottom:8}},name),
-                div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
-                  [{l:'Stores',v:groupStores.length,c:'var(--text)'},
-                   {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
-                   {l:'Ops Score',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'var(--warn)':'var(--crit)'},
-                   {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
-                    c:avgTrend!=null?(avgTrend>=0?'#10b981':'var(--crit)'):'var(--text3)'}
-                  ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
-                    div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
-                    div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'12px'}},k.v)
-                  ))
-                )
-              );
-            })
-          )
-        );
-      })(),
-
-      // Operator Performance Summary
+      // Performance Summary — owner req 2026-11-01: "move the total company performance off of
+      // the individual location tiles... give that a tile of its own that could be dynamically
+      // viewed by selecting the grouping." Replaces the three fixed sections above (Supervisor/
+      // Operator/Organization Performance Summary — each was the same Stores/4-Wk Sales/Ops
+      // Score/T2W Trend card shape computed independently over a different split) with ONE
+      // selectable grouping, plus a 5th mode for the owner's "selected group of restaurants of
+      // user choice" (QSRSoft-style saveable custom groups, src/engine/location-groups.js).
+      // 'State' and 'Organization' collapse to one mode ('organization') — for this fleet they
+      // are the same 1:1 partition (MCDOK=Oklahoma, Emerald Arches=Florida, constants.js's
+      // getStoreOrg/CLAUDE.md's own canonical mapping), so a separate 'state' pill would render
+      // byte-identical groups under a different label.
       (()=>{
-        const opGroups={};
-        (allStores||[]).forEach(s=>{
-          const op=(INV_ORG_COORDS[s.loc]||{}).op;
-          if(!op) return;
-          if(!opGroups[op]) opGroups[op]=[];
-          opGroups[op].push(s);
+        const GROUP_MODES=[{id:'location',label:'📍 Location'},{id:'patch',label:'🌀 Patch'},{id:'operator',label:'🏢 Operator'},{id:'organization',label:'🗺️ Organization'},{id:'custom',label:'🔧 Custom Group'}];
+        const sections=buildGroupSections(groupMode,allStores,{
+          supervisorGroupsLive:supervisorGroups(),
+          operatorGroupsFn:(loc)=>operatorOf(loc),
+          getStoreOrgFn:(loc)=>getStoreOrg(loc),
+          customGroups,
         });
-        if(!Object.keys(opGroups).length) return null;
-        const renderGroupCard=(name,groupStores,accent)=>{
-          const totalSales=groupStores.reduce((a,s)=>a+(s.pSales||0),0);
-          const avgOps=groupStores.reduce((a,s)=>a+(s.opsScore||0),0)/groupStores.length;
-          const trends=groupStores.filter(s=>s.p&&s.p.t2w!=null);
-          const avgTrend=trends.length?trends.reduce((a,s)=>a+s.p.t2w,0)/trends.length:null;
-          return div({key:name,
+        const renderCard=(sec)=>{
+          const {n,totalSales,avgOps,avgTrend}=summarizeGroup(sec.stores);
+          return div({key:sec.key,
             style:{flex:'1 1 200px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
-              borderLeft:accent?'3px solid '+accent:'',borderRadius:'var(--rl)',padding:'12px 14px'}},
-            div({style:{fontSize:'11px',fontWeight:700,marginBottom:8}},name),
+              borderRadius:'var(--rl)',padding:'12px 14px'}},
+            div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+              div({style:{fontSize:'11px',fontWeight:700}},sec.name),
+              groupMode==='custom'&&div({style:{display:'flex',gap:4}},
+                btn({title:'Edit group',style:{fontSize:'10px',background:'none',border:'none',color:'var(--text3)',cursor:'pointer'},
+                  onClick:()=>{setEditingGroup(customGroups.find(g=>g.id===sec.key)||null);setGroupPickerOpen(true);}},'✎'),
+                btn({title:'Delete group',style:{fontSize:'10px',background:'none',border:'none',color:'var(--text3)',cursor:'pointer'},
+                  onClick:()=>saveGroups(removeLocationGroup(customGroups,sec.key))},'🗑'),
+              ),
+            ),
             div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
-              [{l:'Stores',v:groupStores.length,c:'var(--text)'},
+              [{l:'Stores',v:n,c:'var(--text)'},
                {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
-               {l:'Ops Score',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'var(--warn)':'var(--crit)'},
+               {l:'Ops Score',v:avgOps!=null?Math.round(avgOps)+'/100':'—',c:avgOps!=null?(avgOps>=80?'#10b981':avgOps>=65?'var(--warn)':'var(--crit)'):'var(--text3)'},
                {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
                 c:avgTrend!=null?(avgTrend>=0?'#10b981':'var(--crit)'):'var(--text3)'}
               ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
@@ -2527,53 +2519,31 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
           );
         };
         return div({style:{marginBottom:12}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'🏢 Operator Performance Summary'),
-          div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
-            Object.entries(opGroups).map(([name,stores])=>renderGroupCard(name,stores,null))
-          )
-        );
-      })(),
-
-      // Oklahoma & Florida Org Sections
-      (()=>{
-        const okStores=(allStores||[]).filter(s=>(INV_ORG_COORDS[s.loc]||{}).state!=='FL');
-        const flStores=(allStores||[]).filter(s=>(INV_ORG_COORDS[s.loc]||{}).state==='FL');
-        if(!okStores.length&&!flStores.length) return null;
-        const orgCard=(label,emoji,stores,accent)=>{
-          if(!stores.length) return null;
-          const totalSales=stores.reduce((a,s)=>a+(s.pSales||0),0);
-          const avgOps=stores.reduce((a,s)=>a+(s.opsScore||0),0)/stores.length;
-          const trends=stores.filter(s=>s.p&&s.p.t2w!=null);
-          const avgTrend=trends.length?trends.reduce((a,s)=>a+s.p.t2w,0)/trends.length:null;
-          const topStore=stores.slice().sort((a,b)=>(b.pSales||0)-(a.pSales||0))[0];
-          return div({style:{flex:'1 1 280px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
-              borderTop:'3px solid '+accent,borderRadius:'var(--rl)',padding:'14px 16px'}},
-            div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
-              div({style:{fontSize:'18px'}},emoji),
-              div(null,
-                div({style:{fontSize:'12px',fontWeight:700}},label),
-                div({style:{fontSize:'10px',color:'var(--text3)'}},stores.length+' store'+(stores.length!==1?'s':''))
-              )
-            ),
-            div({style:{display:'flex',gap:12,flexWrap:'wrap',marginBottom:8}},
-              [{l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
-               {l:'Avg Ops',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'var(--warn)':'var(--crit)'},
-               {l:'Avg T2W',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
-                c:avgTrend!=null?(avgTrend>=0?'#10b981':'var(--crit)'):'var(--text3)'},
-               {l:'Top Store',v:topStore?(STORE_NAMES[topStore.loc]||topStore.loc).split('-').pop().trim():'—',c:'var(--text2)'}
-              ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
-                div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
-                div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'11px'}},k.v)
-              ))
+          div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:8}},
+            div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)'}},'📊 Performance Summary'),
+            div({style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+              GROUP_MODES.map(m=>btn({key:m.id,
+                style:{padding:'4px 10px',borderRadius:'var(--r)',border:'.5px solid '+(groupMode===m.id?'rgba(245,158,11,.4)':'var(--bdr)'),
+                  background:groupMode===m.id?'var(--adim)':'transparent',color:groupMode===m.id?'var(--amber)':'var(--text2)',
+                  fontSize:'10px',fontWeight:groupMode===m.id?700:400,cursor:'pointer'},
+                onClick:()=>setGroupMode(m.id)},m.label)),
+              groupMode==='custom'&&btn({style:{fontSize:'10px'},className:'btn btn-sm',
+                onClick:()=>{setEditingGroup(null);setGroupPickerOpen(true);}},'➕ New Group'),
             )
-          );
-        };
-        return div({style:{marginBottom:12}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'🗺️ Organization Breakdown'),
-          div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
-            orgCard('MCDOK — Oklahoma','🤠',okStores,'#FFC72C'),
-            orgCard('Emerald Arches — Florida','🌴',flStores,'#10b981')
-          )
+          ),
+          sections.length
+            ? div({style:{display:'flex',gap:8,flexWrap:'wrap'}},sections.map(renderCard))
+            : div({style:{fontSize:'10px',color:'var(--text3)'}},
+                groupMode==='custom'?'No custom groups saved yet — click "➕ New Group" to build one.':'No data for this grouping.'),
+          groupPickerOpen&&h(LocationGroupPicker,{
+            stores:allStores,invOrgCoords:INV_ORG_COORDS,storeNames:STORE_NAMES,editGroup:editingGroup,
+            onClose:()=>setGroupPickerOpen(false),
+            onSave:async({id,name,locs})=>{
+              const next=id?updateLocationGroup(customGroups,id,{name,locs}):addLocationGroup(customGroups,{name,locs});
+              await saveGroups(next);
+              setGroupPickerOpen(false);
+            },
+          }),
         );
       })()
     ),

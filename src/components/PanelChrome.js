@@ -31,9 +31,18 @@ export function PanelChrome({ location, dateControl, exportSlot, actions, tabs }
       dateControl != null && div({ style: { display: 'flex', alignItems: 'center', gap: 8 } }, dateControl),
       exportSlot != null && div({ style: { marginLeft: 'auto' } }, exportSlot),
     ),
+    // Owner req (2026-11-01): on a phone, this row (Reports/Scans/Monitor/Pulls action menus +
+    // the view tabs) was wider than the viewport and simply ran off the right edge with no way
+    // to reach what was cut off. `minWidth: 0` is the actual fix -- a flex item defaults to
+    // `min-width: auto`, which refuses to shrink below its own content width and is exactly what
+    // let the row blow out past 100% instead of clipping to the viewport and scrolling; without
+    // it, `overflowX: 'auto'` alone is a no-op. Each of the two groups scrolls independently so a
+    // long action-menu list doesn't steal scroll room from the tabs, or vice versa. This is now
+    // the app's standard pattern for an overflowing band — reach for it on any other panel's
+    // control row before reinventing a scroll fix, not just Inventory Control's.
     hasBand3 && div({ style: _bandStyle },
-      actions != null && div({ style: { display: 'flex', alignItems: 'center', gap: 8 } }, actions),
-      tabs != null && div({ style: { display: 'flex', gap: 4, marginLeft: 'auto' } }, tabs),
+      actions != null && div({ style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' } }, actions),
+      tabs != null && div({ style: { display: 'flex', gap: 4, marginLeft: 'auto', minWidth: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' } }, tabs),
     ),
   );
 }

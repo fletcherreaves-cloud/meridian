@@ -161,11 +161,18 @@ export function DateRangeControl({ presets = DATE_RANGE_PRESETS, value, onChange
 // that never moves when Settings reassigns a store. This is the single shared entry point every
 // LocationSelector consumer (Crew Schedule Lookup and 8+ other panels) builds its Patch tier
 // from, so fixing it here reaches all of them at once.
-export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
+// `customGroups` (owner req, 2026-11-01): [{id,name,locs}] saved ad hoc groups ("a selected
+// group of restaurants of user choice" — src/engine/location-groups.js owns the CRUD, this just
+// exposes them as a 4th tier alongside State/Patch, filtered to locs that are actually in
+// `stores` so a group referencing a now-removed/renamed store doesn't surface a dangling id.
+// Optional and additive — every existing caller that doesn't pass it gets byte-identical
+// behavior (tree.groups is simply []).
+export function buildLocationHierarchy(stores, invOrgCoords, storeNames, customGroups) {
   const locs = (stores || [])
     .map((s) => String(s.loc))
     .filter((l) => /^\d+$/.test(l))
     .sort((a, b) => Number(a) - Number(b));
+  const locSet = new Set(locs);
 
   const byState = {};
   const byPatch = {};
@@ -179,8 +186,11 @@ export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
 
   const states = Object.keys(byState).sort().map((id) => ({ id, label: id, locs: byState[id] }));
   const patches = Object.keys(byPatch).sort().map((id) => ({ id, label: id, locs: byPatch[id] }));
+  const groups = (customGroups || [])
+    .map((g) => ({ id: g.id, label: g.name, locs: (g.locs || []).filter((l) => locSet.has(String(l))) }))
+    .filter((g) => g.locs.length);
 
-  return { locs, states, patches, storeLabel: (l) => (storeNames?.[l] ? l + ' — ' + storeNames[l] : l) };
+  return { locs, states, patches, groups, storeLabel: (l) => (storeNames?.[l] ? l + ' — ' + storeNames[l] : l) };
 }
 
 // Pure: a LocationSelector {level,id} value <-> the single flat string an HTML <select> option
@@ -212,10 +222,10 @@ export function parseLocationSelectorOptionValue(raw) {
 // 'full' and 'store' modes; 'progressive' already condenses one tier at a time and keeps its
 // pill rendering regardless of `variant` (no caller currently combines the two, and a cascading-
 // select version of 'progressive' is a separate, bigger change, not a two-line add).
-export function LocationSelector({ stores, invOrgCoords, storeNames, value, onChange, mode = 'full', variant = 'pills' }) {
+export function LocationSelector({ stores, invOrgCoords, storeNames, customGroups, value, onChange, mode = 'full', variant = 'pills' }) {
   const tree = React.useMemo(
-    () => buildLocationHierarchy(stores, invOrgCoords, storeNames),
-    [stores, invOrgCoords, storeNames],
+    () => buildLocationHierarchy(stores, invOrgCoords, storeNames, customGroups),
+    [stores, invOrgCoords, storeNames, customGroups],
   );
   const pick = (level, id) => onChange?.({ level, id });
 
@@ -302,6 +312,9 @@ export function LocationSelector({ stores, invOrgCoords, storeNames, value, onCh
     ...tree.patches.map((p) => btn({
       key: 'pt-' + p.id, style: _pillStyle(value?.level === 'patch' && value?.id === p.id), onClick: () => pick('patch', p.id),
     }, p.label)),
+    ...(tree.groups || []).map((g) => btn({
+      key: 'gr-' + g.id, style: _pillStyle(value?.level === 'group' && value?.id === g.id), onClick: () => pick('group', g.id),
+    }, '🔧 ' + g.label)),
     ...tree.locs.map((l) => btn({
       key: 'lc-' + l, style: _pillStyle(value?.level === 'store' && value?.id === l), onClick: () => pick('store', l),
     }, tree.storeLabel(l))),
@@ -315,6 +328,7 @@ export function locationSelectorLocs(value, tree) {
   if (!value || value.level === 'all') return tree.locs;
   if (value.level === 'state') return (tree.states.find((s) => s.id === value.id) || {}).locs || [];
   if (value.level === 'patch') return (tree.patches.find((p) => p.id === value.id) || {}).locs || [];
+  if (value.level === 'group') return (tree.groups || []).find((g) => g.id === value.id)?.locs || [];
   if (value.level === 'store') return value.id ? [value.id] : [];
   return tree.locs;
 }
