@@ -33,6 +33,16 @@
 # reported success. At-A-Glance's freshness check used to pool every feed into one Math.max
 # (so one dead feed stayed invisible while any other was current); that pooling bug is fixed —
 # see stream-freshness.js and CLAUDE.md's "Adding a new automated pull" rule, item 2.
+#
+# PUSH NOTIFICATION (added 2026-11-01, see memory/proactive-sync-notifications.md): a silent
+# GitHub issue is not proactive — it only surfaces to someone who happens to open the repo. The
+# owner found the QSRSoft McDelivery Pull failure from a manual screenshot, not from this
+# watcher, despite McDelivery already being on the list below. So on a workflow's FIRST failure
+# this now also sends an immediate email + SMS (same Resend API / AT&T email-to-SMS gateway as
+# scripts/lib/resend-notify.mjs's existing EOM-count notifications — reused directly inline here
+# since this job has no checkout/npm step to import that .mjs from). Continued-failure comments
+# (already throttled to 1/12h above) also send an email, but no repeat SMS — stay informed
+# without spamming the phone for something already known to be down. Recovery sends email only.
 
 name: Sync Failure Watch
 
@@ -103,8 +113,36 @@ jobs:
     steps:
       - name: Open, update, or close the sync-failure issue
         uses: actions/github-script@v7
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         with:
           script: |
+            // Mirrors scripts/lib/resend-notify.mjs's postResend()/EMAIL_TO/SMS_TO exactly —
+            // duplicated inline rather than imported because this job has no checkout/npm step
+            // (keeping it that way on purpose: this watcher fires on every one of ~45 workflows'
+            // completions, so adding checkout+npm ci here would multiply CI minutes for no
+            // benefit over 3 small helper functions). If resend-notify.mjs's constants ever
+            // change, update both places.
+            const RESEND_URL  = 'https://api.resend.com/emails';
+            const RESEND_FROM = 'Meridian <onboarding@resend.dev>';
+            const EMAIL_TO    = 'fletcher.reaves@mcreaves.com';
+            const SMS_TO      = '3346722598@txt.att.net'; // AT&T email-to-SMS gateway
+            async function postResend({ to, subject, html, text }) {
+              const apiKey = process.env.RESEND_API_KEY;
+              if (!apiKey) { core.warning('[notify] RESEND_API_KEY not set — skipping send to ' + to); return false; }
+              const payload = { from: RESEND_FROM, to: [to], subject };
+              if (html) payload.html = html; else payload.text = text;
+              try {
+                const resp = await fetch(RESEND_URL, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload),
+                });
+                if (!resp.ok) { core.warning(`[notify] Resend API returned ${resp.status} for ${to}`); return false; }
+                return true;
+              } catch (e) { core.warning(`[notify] Resend send to ${to} threw: ${e.message}`); return false; }
+            }
+
             const run       = context.payload.workflow_run;
             const wfName    = run.name;
             const failed    = run.conclusion === 'failure';
@@ -133,7 +171,7 @@ jobs:
 
             if (failed) {
               if (!existing) {
-                await github.rest.issues.create({
+                const created = await github.rest.issues.create({
                   ...context.repo,
                   title,
                   labels: [LABEL],
@@ -150,6 +188,15 @@ jobs:
                     `fallback had also stopped working.` + footer,
                 });
                 core.notice(`Opened sync-failure issue for ${wfName}`);
+                const issueUrl = created.data.html_url;
+                const subject = `🔴 Meridian sync failure: ${wfName}`;
+                const html = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px">` +
+                  `<p><strong>${wfName}</strong> just failed its scheduled run.</p>` +
+                  `<p><a href="${run.html_url}">Job log</a> · <a href="${issueUrl}">Tracking issue</a></p>` +
+                  `<p style="color:#555">Started: ${run.run_started_at}</p></div>`;
+                const smsBody = `Meridian: ${wfName} FAILED. ${run.html_url}`;
+                await postResend({ to: EMAIL_TO, subject, html });
+                await postResend({ to: SMS_TO, subject: 'Meridian', text: smsBody.length > 300 ? smsBody.slice(0, 297) + '...' : smsBody });
                 return;
               }
               // Throttle: only comment if nothing has been added recently.
@@ -170,6 +217,15 @@ jobs:
                 body: `Still failing — ${runLink}. **${daysDown} days** since the first failure.` + footer,
               });
               core.notice(`Commented on #${existing.number} for ${wfName}`);
+              // Email only on the throttled continued-failure path — no repeat SMS for
+              // something already known to be down.
+              await postResend({
+                to: EMAIL_TO,
+                subject: `🔴 Meridian sync still failing: ${wfName} (${daysDown}d)`,
+                html: `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px">` +
+                  `<p><strong>${wfName}</strong> is still failing — <strong>${daysDown} days</strong> since the first failure.</p>` +
+                  `<p><a href="${run.html_url}">Latest job log</a> · <a href="${existing.html_url}">Tracking issue</a></p></div>`,
+              });
               return;
             }
 
@@ -183,6 +239,13 @@ jobs:
                   `A green run means the workflow completed, **not** that it wrote rows. ` +
                   `If this was a long outage, check the job log for the actual upsert counts ` +
                   `and confirm the backfill covered the gap.` + footer,
+              });
+              await postResend({
+                to: EMAIL_TO,
+                subject: `✅ Meridian sync recovered: ${wfName}`,
+                html: `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px">` +
+                  `<p><strong>${wfName}</strong> recovered — <a href="${run.html_url}">run #${run.run_number}</a> succeeded after <strong>${daysDown} days</strong>.</p>` +
+                  `<p style="color:#555">A green run means it completed, not that it wrote rows — check the job log if this was a long outage.</p></div>`,
               });
               await github.rest.issues.update({
                 ...context.repo, issue_number: existing.number,
