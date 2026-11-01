@@ -10,6 +10,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { PanelChrome } from '../components/PanelChrome.js';
+import { ActionMenu } from '../components/PanelControls.js';
 
 const h = React.createElement;
 
@@ -35,6 +36,45 @@ describe('PanelChrome — band 3 (actions + tabs) scrolls instead of overflowing
     expect(actionsWrap.style.minWidth).toBe('0');
     expect(tabsWrap.style.overflowX).toBe('auto');
     expect(tabsWrap.style.minWidth).toBe('0');
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  // Regression (owner screenshot, same day): a Reports▾ dropdown's own items ended up "in a
+  // scrollable window that does not expand down" -- root cause was `overflowX:'auto'` set with
+  // no explicit `overflowY`, which the CSS spec computes as `auto` on the visible-by-default Y
+  // axis too, clipping ActionMenu's absolutely-positioned dropdown (a descendant of this same
+  // wrapper) into the wrapper's own small box instead of letting it overlay the page below.
+  it('overflowY is pinned to "visible" on both wrapper groups, so only the X axis ever clips/scrolls', async () => {
+    const { container, root } = mountRoot();
+    await act(async () => {
+      root.render(h(PanelChrome, {
+        actions: h('button', null, 'Reports ▾'),
+        tabs: h('button', null, 'Scoreboard'),
+      }));
+    });
+    const divs = [...container.querySelectorAll('div')];
+    const actionsWrap = divs.find(d => d.textContent === 'Reports ▾');
+    const tabsWrap = divs.find(d => d.textContent === 'Scoreboard');
+    expect(actionsWrap.style.overflowY).toBe('visible');
+    expect(tabsWrap.style.overflowY).toBe('visible');
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('a real ActionMenu rendered as the actions slot still opens and shows its items (not swallowed by the wrapper)', async () => {
+    const { container, root } = mountRoot();
+    await act(async () => {
+      root.render(h(PanelChrome, {
+        actions: h(ActionMenu, { label: 'Reports', items: [{ label: 'Summary', onClick: () => {} }, { label: 'Detail', onClick: () => {} }] }),
+      }));
+    });
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
+    expect(toggle).toBeTruthy();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const items = [...container.querySelectorAll('button')].map(b => b.textContent);
+    expect(items).toContain('Summary');
+    expect(items).toContain('Detail');
     act(() => { root.unmount(); });
     container.remove();
   });
