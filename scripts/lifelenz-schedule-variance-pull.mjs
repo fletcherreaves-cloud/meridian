@@ -215,15 +215,24 @@ async function pollAsyncReports(token, ids, { maxAttempts = 15, intervalMs = 400
   return { resolved, stillPending: pending };
 }
 
+// Measured live 2026-11-01 (dispatch run 41349875190): the report `url` is a pre-signed link
+// that rejects the X-Auth-Token header with HTTP 412 (Precondition Failed), not 401/403 as
+// originally guessed -- all 28/28 stores hit this identically, so it's a consistent rejection
+// of the extra header, not a flake. Retries bare on ANY non-ok status now, not just 401/403,
+// and logs the response body on a genuine failure so the next surprise is diagnosable without
+// another live dispatch.
 async function downloadReport(token, report) {
   if (report.error) throw new Error(`report generation error: ${report.error}`);
   if (!report.url) throw new Error(`report has no url (status=${report.status})`);
   let resp = await fetch(report.url, { headers: { 'X-Auth-Token': token } });
-  if (resp.status === 401 || resp.status === 403) {
-    if (DEBUG) console.log('[download] auth header rejected by report url, retrying bare');
+  if (!resp.ok) {
+    if (DEBUG) console.log(`[download] header'd request got HTTP ${resp.status}, retrying bare`);
     resp = await fetch(report.url);
   }
-  if (!resp.ok) throw new Error(`download HTTP ${resp.status}`);
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`download HTTP ${resp.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+  }
   return await resp.text();
 }
 
