@@ -559,3 +559,52 @@ check consults ALONGSIDE the existing role check, not instead of it (role stays 
 per-user is an override layer on top — fails closed the same way the role system already does).
 Scope the first version to panel VISIBILITY only (hide/show in nav), not a parallel permission
 system for in-panel actions — that's a much bigger surface and not what was asked for.
+
+**§A is still open** — the work below is a related but separate feature (custom location groups
++ a consolidated grouping tile), not the `'full'` vs `'progressive'` mode-consistency sweep this
+section describes. Don't mark §A done from the entry below.
+
+## Shipped 2026-11-01 — custom location groups + consolidated "Performance Summary" tile
+
+Owner, from a screenshot of the District View Enterprise Overview (Sales Momentum Rank/Forecast
+Accuracy Leaderboard/Supervisor Performance Summary/Operator Performance Summary/Organization
+Breakdown) plus two QSRSoft screenshots of its own Locations/Patches multi-select picker: *"let's
+move the total company performance off of the individual location tiles under district tile view.
+Maybe give that a tile of its own that could be dynamically viewed by selecting the grouping to
+see whether one location, a patch, operator, state, organization or a selected group of
+restaurants of user choice. For the selecting groups of restaurants by user choice, we should
+incorporate that throughout the app as well."*
+
+- **Replaced** the three fixed, near-duplicate Supervisor/Operator/Organization Performance
+  Summary sections in `store-analytics.js`'s `StoreDash` Enterprise Overview with ONE
+  "📊 Performance Summary" tile, grouping-mode pills: Location / Patch / Operator / Organization /
+  Custom Group. `'State'` and `'Organization'` deliberately collapse to one mode — for this
+  fleet they're the same 1:1 partition (MCDOK=Oklahoma, Emerald Arches=Florida), so a separate
+  `'state'` pill would render byte-identical groups under a second label. Fixed a real latent
+  bug in the same pass: the old Operator section read the STATIC `INV_ORG_COORDS[loc].op`
+  directly; the new one uses the live `operatorOf()` resolver (same dispatch #139 pattern the
+  Patch tier already used) — confirmed live in testing that `INV_ORG_COORDS['3708'].sup` (static
+  seed, "Robert Spencer") actually disagrees with `supervisorGroups()` (live, "Zukarr Eaves") for
+  at least one real store, so this wasn't a no-op fix.
+- **New**: `src/engine/location-groups.js` — pure CRUD (`addLocationGroup`/`updateLocationGroup`/
+  `removeLocationGroup`) + the grouping math (`buildGroupSections`/`summarizeGroup`) that both the
+  new tile and any future consumer share.
+- **New**: `src/components/LocationGroupPicker.js` — QSRSoft-style modal (Locations tab:
+  checkboxes + search + "All"; Patches tab: toggle a whole existing patch at once; name + save).
+- **Persistence**: `org_config` key `custom_location_groups` (shared, not per-user — same
+  table/RLS tier `supervisorGroups`/`operators`/`eom_digest_config` already use, admin/
+  area_supervisor write). `loadCustomLocationGroups`/`saveCustomLocationGroups` in
+  `src/lib/supabase.js`. Owner confirmed (AskUserQuestion, 2026-11-01): saveable & named, not
+  ad hoc/session-only — "matches what QSRSoft's 'Patches' tab implies."
+- **"Incorporate throughout the app"**: `LocationSelector`/`buildLocationHierarchy`
+  (`PanelControls.js`) extended with an optional `customGroups` prop and a `'group'` value level
+  — fully additive/backward-compatible (every existing caller that doesn't pass `customGroups`
+  is unaffected; a saved group shows as a 🔧-prefixed pill alongside State/Patch once a caller
+  does). Only the new Performance Summary tile passes `customGroups` today — wiring it into
+  other existing `LocationSelector` consumers is opportunistic future work (this codebase's
+  standing "bring it into line when you're already touching that panel" convention), not a sweep
+  done in this pass.
+- Tests: `dispatch-location-groups-2026-11-01.test.js` (16), `dispatch-location-selector-
+  custom-groups-2026-11-01.test.js` (8), `dispatch-performance-summary-tile-2026-11-01.test.js`
+  (7) — the last renders the real `StoreDash` Enterprise Overview, not just the engine function,
+  per this file's own "would this still pass if reverted" standing rule.
