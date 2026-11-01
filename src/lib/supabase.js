@@ -3004,6 +3004,14 @@ function _qsrActFromSummed(loc, dt, v) {
     _kvsH: v.healthy_count || 0, _kvsU: v.unhealthy_count || 0,
     _mfyTime: v.mfy_untilserve || 0, _mfyCnt: v.mfy_trans_cnt || 0,
     _isQsrAct: true,
+    // refreshed_at (owner req, 2026-11-01 — "can we simply add time of the most recent data"
+    // for the At A Glance Movers strip): real wall-clock write time of this row, set by
+    // scripts/qsrsoft-dar-pull.mjs's refreshRollup() on every pull (confirmed live,
+    // 2026-11-01: a current row read 2026-11-01T19:17:05Z, matching the ~2pm CT intraday DAR
+    // slot). Only on qsr_daily_activity_rollup -- the hourly fallback table (qsr_daily_activity)
+    // has no such column (confirmed live, 42703), so a row built from that path simply has no
+    // refreshedAt and the Movers strip falls back to date-only, same as before this change.
+    refreshedAt: v.refreshed_at ? new Date(v.refreshed_at) : null,
   };
 }
 
