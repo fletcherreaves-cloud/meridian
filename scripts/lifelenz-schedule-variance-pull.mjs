@@ -252,60 +252,69 @@ function parseCsvLine(line) {
 }
 
 // We requested an explicit `columns` list in a known order, so the header row should name those
-// columns verbatim (by `member` or `shortTitle` -- unconfirmed which). Matches by exact member
-// name first; any column that doesn't match falls back to its POSITIONAL slot in our own
-// COLUMNS request (the server returning columns in the order we asked for is the most likely
-// failure-safe assumption if the header text itself turns out to differ from `member`).
-// Measured live 2026-11-01 (dispatch run 41350595837, after the download fix): line 0 of a
-// real downloaded CSV is NOT the column header -- it parsed as a single cell, ["Schedule
-// Variance"], the report's own title. Every other LifeLenz report this repo already pulls
-// (attendance_report, labor_analysis_actuals_report) has exactly this metadata-row-then-
-// header-row shape (Row 0 = title/metadata, Row 1 = real header, Row 2+ = data), so this tries
-// line 1 as the header first (informed by that proven sibling shape, not a blind third guess),
-// falling back to line 0 for a report that turns out not to carry a title row after all.
-// Neither candidate has been confirmed against a row that actually HAS data yet (every store in
-// the validating dispatch had zero edits in its window) -- DEBUG logs the raw first 3 lines on
-// a lookup failure so the next real-data sighting is diagnosable without another guess.
+// columns verbatim by `member` name (e.g. "occurred_at") -- WRONG, measured live 2026-11-01
+// (dispatch run 41351238819, window_days=30, finally caught the real empty-report shape). The
+// real file is THREE lines of metadata before any data, and the header uses HUMAN-READABLE
+// labels, not the raw column members we requested:
+//   Schedule Variance
+//   Date Range,10/02/2026 - 11/01/2026
+//   Store Name,Scheduled Shift,Assignee,Original Value,Adjusted Value,Actioned By,Actioned At,Hours Variance,Cost Variance
+// So `columns` in the trigger request controls which data fields come back, but NOT what the
+// CSV calls them in its own header row. Two earlier guesses (member-name match at row 0, then
+// row 1) were both wrong for this reason, not a flake -- this scans every line (not a fixed
+// index, in case a location/employee filter line is ever inserted) for the one whose cells
+// exact-match the real human labels below, so a shift in metadata-row COUNT doesn't break this
+// again. Falls back to the raw member names too, in case a different report view ever serves
+// those instead. Still genuinely unconfirmed: real DATA row content (every store had zero edits
+// even across a 30-day window) -- the header row itself is now measured, not the data shape.
+const HEADER_LABELS = {
+  shiftId:       ['scheduled shift', 'scheduled_shifts_scheduled_shift_id'],
+  employeeName:  ['assignee', 'employees_employee_name'],
+  originalValue: ['original value', 'original_value'],
+  updatedValue:  ['adjusted value', 'updated_value'],
+  editedBy:      ['actioned by', 'schedule_event_actors_employee_name'],
+  occurredAt:    ['actioned at', 'occurred_at'],
+  hoursVariance: ['hours variance', 'scheduled_hours_variance'],
+  costVariance:  ['cost variance', 'cost_variance'],
+};
 function parseScheduleVarianceCSV(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
 
   const tryHeaderAt = (idx) => {
-    if (idx >= lines.length) return null;
     const headerCells = parseCsvLine(lines[idx]).map(h => h.trim());
-    const exactIdxOf = colName => headerCells.findIndex(h => h.toLowerCase() === colName.toLowerCase());
-    // Gate columns (editedBy/occurredAt) decide whether THIS ROW is the header at all, so they
-    // must match by exact name -- no positional fallback here. Positional fallback only kicks
-    // in below, for the remaining columns, once this row is already confirmed to be the real
-    // header; using it for the gate too would make ANY row with the right column COUNT look
-    // like a header (caught live: tryHeaderAt(1) was spuriously matching a real DATA row before
-    // this fix, because the positional fallback always resolves to *some* index).
-    const editedByIdx = exactIdxOf('schedule_event_actors_employee_name');
-    const occurredAtIdx = exactIdxOf('occurred_at');
-    if (editedByIdx < 0 || occurredAtIdx < 0) return null;
-    const idxOf = colName => {
-      const exact = exactIdxOf(colName);
-      if (exact >= 0) return exact;
-      const fallback = COLUMNS.indexOf(colName);
-      return fallback >= 0 && fallback < headerCells.length ? fallback : -1;
+    const exactIdxOf = labels => {
+      for (const label of labels) {
+        const i = headerCells.findIndex(h => h.toLowerCase() === label.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
     };
+    // Gate columns decide whether THIS ROW is the header at all -- both must resolve by exact
+    // label match (no positional guessing), or a metadata/title row with the right column COUNT
+    // could be mistaken for the header (measured live: this exact failure mode, twice, before
+    // this fix).
+    const editedByIdx = exactIdxOf(HEADER_LABELS.editedBy);
+    const occurredAtIdx = exactIdxOf(HEADER_LABELS.occurredAt);
+    if (editedByIdx < 0 || occurredAtIdx < 0) return null;
     const C = {
-      employeeName: idxOf('employees_employee_name'),
-      originalValue: idxOf('original_value'),
-      updatedValue: idxOf('updated_value'),
+      employeeName: exactIdxOf(HEADER_LABELS.employeeName),
+      originalValue: exactIdxOf(HEADER_LABELS.originalValue),
+      updatedValue: exactIdxOf(HEADER_LABELS.updatedValue),
       editedBy: editedByIdx,
       occurredAt: occurredAtIdx,
-      hoursVariance: idxOf('scheduled_hours_variance'),
-      costVariance: idxOf('cost_variance'),
-      shiftId: idxOf('scheduled_shifts_scheduled_shift_id'),
+      hoursVariance: exactIdxOf(HEADER_LABELS.hoursVariance),
+      costVariance: exactIdxOf(HEADER_LABELS.costVariance),
+      shiftId: exactIdxOf(HEADER_LABELS.shiftId),
     };
     return { C, headerRowIdx: idx, headerCells };
   };
 
-  const found = tryHeaderAt(1) || tryHeaderAt(0);
+  let found = null;
+  for (let i = 0; i < Math.min(lines.length, 10) && !found; i++) found = tryHeaderAt(i);
   if (!found) {
-    console.warn('[parse] could not locate edited_by/occurred_at columns at row 0 or row 1 — header shape drifted, not guessing.');
-    if (DEBUG) console.log('[parse] raw first 3 lines:', JSON.stringify(lines.slice(0, 3)));
+    console.warn('[parse] could not locate the header row in the first 10 lines — shape drifted, not guessing.');
+    if (DEBUG) console.log('[parse] raw first 5 lines:', JSON.stringify(lines.slice(0, 5)));
     return [];
   }
   const { C, headerRowIdx } = found;
