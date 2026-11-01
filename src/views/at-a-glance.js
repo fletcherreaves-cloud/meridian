@@ -112,7 +112,7 @@ function buildAtAGlancePrintHtml({ scopeStr, rangeStr, ruleComment, dataAge, lat
   if (moversStrip && (moversStrip.up.length || moversStrip.down.length || moversStrip.slowDT.length)) {
     const moverRows = (label, list, fmtV) => list.length ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${escH(label)}</div>` +
       list.map(r=>`<div style="font-size:12px;padding:3px 0">${escH(STORE_NAMES[r.loc]||r.loc)} <b>${fmtV(r)}</b></div>`).join('') + `</div>` : '';
-    moversHtml = (moversStrip.up.length||moversStrip.down.length ? `<div style="font-size:10px;color:#6b7280;margin-bottom:8px">Sales vs LY · as of ${moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${moversStrip.behind} of ${moversStrip.total} stores behind LY</div>`:'') +
+    moversHtml = (moversStrip.up.length||moversStrip.down.length ? `<div style="font-size:10px;color:#6b7280;margin-bottom:8px">Sales vs LY · as of ${moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}${moversStrip.refreshedAt?' · updated '+moversStrip.refreshedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''} · ${moversStrip.behind} of ${moversStrip.total} stores behind LY</div>`:'') +
       moverRows('▲ Up vs LY', moversStrip.up, r=>(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%') +
       moverRows('▼ Down vs LY', moversStrip.down, r=>r.salesVsLYPct.toFixed(2)+'%') +
       moverRows('🚗 Slowest DT', moversStrip.slowDT, r=>Math.round(r.dt)+'s');
@@ -1442,7 +1442,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const down=ly.slice(-3).reverse().filter(r=>r.salesVsLYPct<0);
     // DT until-serve: sum(µs)/sum(cars)/1000 = avg seconds per car (matches DT panel).
     const dt=day.map(r=>({loc:r.loc,dt:r._dtCars>0?r._dtTotal/r._dtCars/1000:null})).filter(r=>r.dt!=null&&r.dt>0&&r.dt<1200).sort((a,b)=>b.dt-a.dt);
-    return {date:new Date(maxMs),up,down,slowDT:dt.slice(0,2),
+    // refreshedAt (owner req, 2026-11-01): the real wall-clock time the DAR rollup last wrote
+    // this day's rows (supabase.js's _qsrActFromSummed) -- null on the rare hourly-fallback
+    // path, which has no such column. Max across today's rows, not any one store's, since a
+    // pull writes every store in one run.
+    const refreshedMs=Math.max(0,...day.filter(r=>r.refreshedAt).map(r=>r.refreshedAt.getTime()));
+    return {date:new Date(maxMs),refreshedAt:refreshedMs>0?new Date(refreshedMs):null,up,down,slowDT:dt.slice(0,2),
       behind:ly.filter(r=>r.salesVsLYPct<0).length,total:ly.length};
   }),[ds?.qsrActSummaryRows?.length,allLocs]);
 
@@ -2371,8 +2376,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',
           display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
         span({style:{fontWeight:700,color:'var(--amber)',whiteSpace:'nowrap'}},'📊 Today’s Movers'),
-        span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'}},
-          'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+        span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'},
+            title:moversStrip.refreshedAt?'Data pulled '+moversStrip.refreshedAt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Pull time unavailable for this data path'},
+          'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+            +(moversStrip.refreshedAt?' · updated '+moversStrip.refreshedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'')),
         (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
         ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
           '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%')),
