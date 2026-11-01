@@ -513,3 +513,49 @@ against the actual source rows for an item like `SALT PACKETS`/`PEPPER PACKETS/B
 (some items might genuinely report in cases, others in eaches, same source feed). Also audit
 whether this is a blanket `usagePerDay` issue (affecting Usage/Day display too, not just excess
 calcs) or isolated to the Overstock excess math.
+
+## Queued 2026-11-01 — two pre-beta cleanup items (owner: "I am really, really close to letting a
+## few key people have login credentials and would like to clean up a few things first")
+
+Both explicitly asked to be queued, not built now. Logged so they survive to whichever session
+picks them up.
+
+### A. Location-selector mode consistency sweep (dropdown vs. full-list)
+
+Owner: *"we also need to sweep the app for consistency of our location picker as well. Some
+places it is a dropdown, others it is just all listed out and in the latter it is very cluttered
+looking."* Confirmed by grep (2026-11-01), not assumed — `LocationSelector` (`PanelControls.js`)
+is already used in exactly two modes, split roughly like this:
+
+| mode | panels | shape |
+|---|---|---|
+| `'full'` | `eom-dashboard.js`, `visit-readiness.js`, `weekly-count-status-report.js`, plus the two new reports this session (`count-timing-report.js`, `missed-count-report.js`) | every state/patch/store pill rendered flat, all at once — this is the "cluttered" shape the owner is describing |
+| `'progressive'` | `crew-schedule-panel.js`, `customer-complaints.js`, `event-impact.js`, `events-panel.js`, `news-panel.js`, `schedule-retention.js`, `security-panel.js`, `smg-voice.js`, `store-assessments.js`, `targets-editor.js`, `top-bottom-performers.js`, plus the EOM Digest modal's inline Scope selector added 2026-10-30 | drills down one level at a time (All → State → Patch → Store) — the cleaner shape |
+
+`eom-dashboard.js` itself uses BOTH modes in different places (full for its own main header, progressive for the Digest modal's inline selector) — this isn't hypothetical drift, it's visible within one file.
+
+**Next step when picked up:** decide which mode is the standard (progressive reads like the better default for a new/less-technical user; full is faster for a power user who knows exactly which store they want — may be worth keeping full as an *opt-in* density setting rather than eliminating it), then sweep the 5 `'full'`-mode panels to match. Don't just flip the mode prop blindly — confirm `'full'` doesn't exist in those 5 specifically because something about their workflow needs direct single-click access (e.g. a report meant to be handed around and reused quickly) before converting it.
+
+### B. Per-user panel access restriction (not just per-role)
+
+Owner: *"I will also want to look at our ability to restrict any panel for any user I chose."*
+Confirmed by grep (2026-11-01): **no per-user override mechanism exists today, at any layer.**
+Access control is 100% role-based — `src/engine/permissions.js`'s `hasPermission(roleId, permKey)`
+gates nav/panels via `panel-registry.js`'s `perm:` field, and RLS scopes data via
+`accessible_locs`/`public.my_locs()` — both keyed on the user's **role**, never on an individual
+user id. There is no `panel_overrides`/`userOverride`/`panelOverride` table, column, or function
+anywhere in the codebase (checked `permissions.js`, `panel-registry.js`, `schema.sql`).
+
+So every GM, every Supervisor, etc. currently sees the identical panel set as every other user of
+that same role — fine while the only real users are the owner and a handful of trusted insiders
+who all effectively need everything, but a real constraint the moment outside operators get
+logins and the owner wants to hand one of them, say, every panel EXCEPT Pay Rate History or
+Security.
+
+**Next step when picked up:** this is a real schema addition, not a UI toggle — needs a
+per-user allow/deny table (e.g. `profiles` gains a `panel_overrides` jsonb column, or a separate
+`user_panel_access (profile_id, panel_id, allowed)` table) that `hasPermission`'s panel-visibility
+check consults ALONGSIDE the existing role check, not instead of it (role stays the default,
+per-user is an override layer on top — fails closed the same way the role system already does).
+Scope the first version to panel VISIBILITY only (hide/show in nav), not a parallel permission
+system for in-panel actions — that's a much bigger surface and not what was asked for.

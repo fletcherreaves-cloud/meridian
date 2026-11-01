@@ -282,8 +282,24 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
 // still active right now and will deactivate later; those items need a normal current count, not
 // verify-and-clear treatment (confirmed live: they show active:true in the large majority of cases).
 const _DEACTIVATED_DESCR_RE = /\((?:Deactivated|Obsolete)\)/i;
-function isDeactivatedByDescr(descr) {
+export function isDeactivatedByDescr(descr) {
   return _DEACTIVATED_DESCR_RE.test(String(descr || ''));
+}
+
+// The "bulk count day" for a set of rows -- the single calendar date most of them share, ties
+// broken toward the more recent date. Shared by diagnoseIncompleteCount's lateBulk coaching flag
+// (below) and computeMissedCountItems's per-class-group anchor date (further below), so the two
+// can't independently drift on what "the store's current count date" means.
+function modeCountedDate(rows, { classes = null, periodStart = null } = {}) {
+  const tally = {};
+  for (const r of rows) {
+    if (classes && !classes.has(normClass(r.cls))) continue;
+    const d = countedDate(r); if (!d || (periodStart && d < periodStart)) continue;
+    const iso = d.toISOString().slice(0, 10); tally[iso] = (tally[iso] || 0) + 1;
+  }
+  let best = null, bestN = -1;
+  for (const iso of Object.keys(tally)) { if (tally[iso] > bestN || (tally[iso] === bestN && iso > best)) { bestN = tally[iso]; best = iso; } }
+  return best;
 }
 
 // ── Incomplete-count diagnosis ────────────────────────────────────────────────
@@ -426,15 +442,7 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   // (the mode day) landed on the last calendar day, flag it "late" — a soft coaching note, not a gap
   // (the count IS done, just off the intended schedule). Prior-period (stale) counts are ignored.
   const lastIso = periodStart ? lastDayOfPeriod(period).toISOString().slice(0, 10) : null;
-  const timingClasses = new Set(['food', 'condiment', 'paper']);
-  const fcDayTally = {};
-  for (const r of rows) {
-    if (!timingClasses.has(normClass(r.cls))) continue;
-    const d = countedDate(r); if (!d || (periodStart && d < periodStart)) continue;
-    const iso = d.toISOString().slice(0, 10); fcDayTally[iso] = (fcDayTally[iso] || 0) + 1;
-  }
-  let fcBulkDay = null, fcBulkN = -1;
-  for (const iso of Object.keys(fcDayTally)) { if (fcDayTally[iso] > fcBulkN || (fcDayTally[iso] === fcBulkN && iso > fcBulkDay)) { fcBulkN = fcDayTally[iso]; fcBulkDay = iso; } }
+  const fcBulkDay = modeCountedDate(rows, { classes: new Set(EARLY_CLASSES), periodStart });
   const lateBulk = !!(lastIso && fcBulkDay && fcBulkDay === lastIso);
 
   // Roll up by class so the message to the store is "Food: 12 items left ($430)". `count`/
@@ -462,6 +470,57 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     lateBulk,
     lateBulkDay: fcBulkDay,
   };
+}
+
+// Owner req (2026-11-01): "a report to list out by location any items missed on the current
+// count... All current counts should have the same count date, therefore if a date for last
+// counted or last submitted is different or blank or n/a that would indicate it was not
+// physically counted on the current count cycle." A deliberately DIFFERENT, stricter lens than
+// diagnoseIncompleteCount's window-based uncounted/early/stale read above: this asks "does this
+// item's own count date match the exact day this store's current count actually happened on,"
+// not "was it counted somewhere inside the last few days of the period." The two can disagree —
+// an item counted the day before the store's bulk count reads 'early' (lenient) to
+// diagnoseIncompleteCount but "missed on the current count" (strict) here; both are legitimate
+// reads of the same data, answering different questions.
+//
+// Non-Product's anchor is NOT a mode of its own counts — it's due on a SPECIFIC calendar day (the
+// period's last day, see lastDayOfPeriod's own comment), so using that date directly is more
+// correct than deriving a mode from however many Non-Product items happen to be counted so far.
+// `onHandRows` = ONE store's rows (same calling convention as diagnoseIncompleteCount — the
+// caller loops per store). `asOfOverride` ('YYYY-MM-DD') lets a user force a specific count date
+// for BOTH class groups when the auto-detected mode isn't the one they mean (date-selectable, per
+// the owner's own ask) — omit it to use the auto-detected anchors.
+export function computeMissedCountItems(onHandRows, { period, asOfOverride = null } = {}) {
+  const rows = Array.isArray(onHandRows) ? onHandRows : [];
+  const periodStart = /^\d{4}-\d{2}$/.test(period || '') ? new Date(period + '-01T00:00:00') : null;
+  const earlyAnchor = asOfOverride || modeCountedDate(rows, { classes: new Set(EARLY_CLASSES), periodStart });
+  const lateAnchor = asOfOverride || (periodStart ? lastDayOfPeriod(period).toISOString().slice(0, 10) : null);
+  const anchor = { early: earlyAnchor, late: lateAnchor };
+
+  const items = [];
+  for (const r of rows) {
+    // Same exclusion diagnoseIncompleteCount makes — a confirmed-deactivated item isn't part of
+    // "did the store miss this on the current count," it's the separate obsolete/discontinued story.
+    const confirmedDeactivated = r.active === false || isDeactivatedByDescr(r.descr || r.desc);
+    if (confirmedDeactivated) continue;
+    const grp = LATE_CLASSES.includes(normClass(r.cls)) ? 'late' : 'early';
+    const expected = anchor[grp];
+    if (!expected) continue;   // no real count yet this cycle for this class group — nothing to compare against
+    const d = countedDate(r);
+    const actual = d ? d.toISOString().slice(0, 10) : null;
+    if (actual === expected) continue;   // counted on the current count date — not missed
+    const reason = actual == null ? 'no count date on file'
+      : actual < expected ? `counted ${actual}, before this count (${expected})`
+      : `counted ${actual}, after this count (${expected})`;
+    items.push({
+      loc: r.loc, wrin: r.wrin, descr: r.descr || r.desc, cls: normClass(r.cls),
+      lastCounted: r.lastCounted ? new Date(r.lastCounted).toISOString().slice(0, 10) : null,
+      lastSubmitted: r.lastSubmitted ? new Date(r.lastSubmitted).toISOString().slice(0, 10) : null,
+      actualDate: actual, expectedDate: expected, classGroup: grp, reason,
+      onHandAmt: Number(r.onHandAmt) || 0,
+    });
+  }
+  return { items, anchor };
 }
 
 // ── Variance follow-ups ───────────────────────────────────────────────────────

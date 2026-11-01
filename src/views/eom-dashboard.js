@@ -40,6 +40,7 @@ import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, f
 import { metricSeries, metricSumRatio } from '../engine/metric-source.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
 import { CountTimingReportModal } from './count-timing-report.js';
+import { MissedCountReportModal } from './missed-count-report.js';
 import { resolveDigestRecipients } from '../engine/contact-directory.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
@@ -1908,6 +1909,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [riddleOpen, setRiddleOpen] = useState(false);   // 🔬 FOB Root-Cause Analysis modal
   const [fobRepOpen, setFobRepOpen] = useState(false);   // 📊 FOB Report modal
   const [countTimingOpen, setCountTimingOpen] = useState(false); // ⏱ Count Timing Report modal
+  const [missedCountOpen, setMissedCountOpen] = useState(false); // 🗓 Missed on Current Count modal
   const [fobRepStore, setFobRepStore] = useState(null);  // loc expanded in the report
   const [riddleStore, setRiddleStore] = useState(null);  // loc expanded to its harmful recount items
   const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
@@ -3446,6 +3448,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         { label: '🔬 FOB Analysis', onClick: () => { setRiddleStore(null); setRiddleOpen(true); }, disabled: rows.length === 0, title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.' },
         { label: '📊 FOB Report', onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0, title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.' },
         { label: '⏱ Count Timing Report', onClick: () => setCountTimingOpen(true), disabled: rows.length === 0, title: 'When each store\'s count began, ended, and how long it took, sortable — latest count, this period\'s sessions, or a monthly trend. Spot whether a store is counting as trained (spread out) or bulk-submitting (rushed/from memory).' },
+        { label: '🗓 Missed on Current Count', onClick: () => setMissedCountOpen(true), disabled: rows.length === 0, title: 'Items whose own last-counted/last-submitted date doesn\'t match this store\'s current count date — blank, early, or just different. Grouped by location then class, date-selectable, ready to send to stores.' },
         { label: '📣 Message all', onClick: openBulk, disabled: rows.length === 0, title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).' },
         { label: '📧 Generate Report', onClick: openDigest, disabled: rows.length === 0, title: 'Roll up the current scope\'s count completion + FOB(vs target) to Patch / Market / District — view it here immediately, or send it as email(s) from the same panel.' },
         { label: '🔗 Manage Share Links', onClick: openLinks, title: 'List every read-only share link created for this period — view count, last viewed, acknowledged, and revoke.' },
@@ -3570,7 +3573,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         location: mystoreMode ? undefined : locationSlot,
         dateControl: dateControlSlot,
         exportSlot: (printableMode || mystoreMode) ? undefined : exportSlotContent,
-        actions: (printableMode || mystoreMode) ? undefined : actionsSlot,
+        // Owner req (2026-11-01): "let's keep them visible no matter which panel is currently
+        // being used" — the Reports/Scans/Monitor/Pulls action menus used to hide for every
+        // printableMode tab (Supervisor Rollup + the 4 report tabs), which is exactly where the
+        // new Count Timing Report / Missed on Current Count entries became unreachable. Export
+        // CSV still only makes sense for the 4-tab onhand-shaped rows (left as-is); actions
+        // itself doesn't depend on that data shape, so only mystoreMode (a locked single store,
+        // where district-wide Reports/Scans/Monitor/Pulls genuinely don't apply) still hides it.
+        actions: mystoreMode ? undefined : actionsSlot,
         tabs: tabsSlot,
       })),
 
@@ -4110,6 +4120,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // ⏱ Count Timing Report modal (owner req 2026-10-31) — district-wide, sortable "last count
     // began/ended/duration" + bulk-submit read, with a this-period-sessions and monthly-trend mode.
     countTimingOpen && h(CountTimingReportModal, { stores, rawDetail, period, onClose: () => setCountTimingOpen(false) }),
+    // 🗓 Missed on Current Count modal (owner req 2026-11-01) — store-relative "does this item's
+    // own count date match the store's current count date" check, grouped by location then class.
+    missedCountOpen && h(MissedCountReportModal, { stores, onHand, period, onClose: () => setMissedCountOpen(false) }),
     // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
     riddleOpen && (() => {
       const R = riddle;
