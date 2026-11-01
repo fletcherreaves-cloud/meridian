@@ -256,34 +256,63 @@ function parseCsvLine(line) {
 // name first; any column that doesn't match falls back to its POSITIONAL slot in our own
 // COLUMNS request (the server returning columns in the order we asked for is the most likely
 // failure-safe assumption if the header text itself turns out to differ from `member`).
+// Measured live 2026-11-01 (dispatch run 41350595837, after the download fix): line 0 of a
+// real downloaded CSV is NOT the column header -- it parsed as a single cell, ["Schedule
+// Variance"], the report's own title. Every other LifeLenz report this repo already pulls
+// (attendance_report, labor_analysis_actuals_report) has exactly this metadata-row-then-
+// header-row shape (Row 0 = title/metadata, Row 1 = real header, Row 2+ = data), so this tries
+// line 1 as the header first (informed by that proven sibling shape, not a blind third guess),
+// falling back to line 0 for a report that turns out not to carry a title row after all.
+// Neither candidate has been confirmed against a row that actually HAS data yet (every store in
+// the validating dispatch had zero edits in its window) -- DEBUG logs the raw first 3 lines on
+// a lookup failure so the next real-data sighting is diagnosable without another guess.
 function parseScheduleVarianceCSV(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
-  const headerCells = parseCsvLine(lines[0]).map(h => h.trim());
-  const idxOf = colName => {
-    const exact = headerCells.findIndex(h => h.toLowerCase() === colName.toLowerCase());
-    if (exact >= 0) return exact;
-    const fallback = COLUMNS.indexOf(colName);
-    return fallback >= 0 && fallback < headerCells.length ? fallback : -1;
+
+  const tryHeaderAt = (idx) => {
+    if (idx >= lines.length) return null;
+    const headerCells = parseCsvLine(lines[idx]).map(h => h.trim());
+    const exactIdxOf = colName => headerCells.findIndex(h => h.toLowerCase() === colName.toLowerCase());
+    // Gate columns (editedBy/occurredAt) decide whether THIS ROW is the header at all, so they
+    // must match by exact name -- no positional fallback here. Positional fallback only kicks
+    // in below, for the remaining columns, once this row is already confirmed to be the real
+    // header; using it for the gate too would make ANY row with the right column COUNT look
+    // like a header (caught live: tryHeaderAt(1) was spuriously matching a real DATA row before
+    // this fix, because the positional fallback always resolves to *some* index).
+    const editedByIdx = exactIdxOf('schedule_event_actors_employee_name');
+    const occurredAtIdx = exactIdxOf('occurred_at');
+    if (editedByIdx < 0 || occurredAtIdx < 0) return null;
+    const idxOf = colName => {
+      const exact = exactIdxOf(colName);
+      if (exact >= 0) return exact;
+      const fallback = COLUMNS.indexOf(colName);
+      return fallback >= 0 && fallback < headerCells.length ? fallback : -1;
+    };
+    const C = {
+      employeeName: idxOf('employees_employee_name'),
+      originalValue: idxOf('original_value'),
+      updatedValue: idxOf('updated_value'),
+      editedBy: editedByIdx,
+      occurredAt: occurredAtIdx,
+      hoursVariance: idxOf('scheduled_hours_variance'),
+      costVariance: idxOf('cost_variance'),
+      shiftId: idxOf('scheduled_shifts_scheduled_shift_id'),
+    };
+    return { C, headerRowIdx: idx, headerCells };
   };
-  const C = {
-    employeeName: idxOf('employees_employee_name'),
-    originalValue: idxOf('original_value'),
-    updatedValue: idxOf('updated_value'),
-    editedBy: idxOf('schedule_event_actors_employee_name'),
-    occurredAt: idxOf('occurred_at'),
-    hoursVariance: idxOf('scheduled_hours_variance'),
-    costVariance: idxOf('cost_variance'),
-    shiftId: idxOf('scheduled_shifts_scheduled_shift_id'),
-  };
-  if (C.editedBy < 0 || C.occurredAt < 0) {
-    console.warn('[parse] could not locate edited_by/occurred_at columns — header shape drifted, not guessing. Header was:', JSON.stringify(headerCells));
+
+  const found = tryHeaderAt(1) || tryHeaderAt(0);
+  if (!found) {
+    console.warn('[parse] could not locate edited_by/occurred_at columns at row 0 or row 1 — header shape drifted, not guessing.');
+    if (DEBUG) console.log('[parse] raw first 3 lines:', JSON.stringify(lines.slice(0, 3)));
     return [];
   }
+  const { C, headerRowIdx } = found;
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
   const rows = [];
   const seqByGroup = new Map();
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerRowIdx + 1; i < lines.length; i++) {
     const r = parseCsvLine(lines[i]);
     const editedBy = r[C.editedBy];
     const occurredAt = r[C.occurredAt];

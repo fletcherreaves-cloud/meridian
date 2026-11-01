@@ -62,6 +62,34 @@ describe('parseScheduleVarianceCSV', () => {
   });
 });
 
+describe('parseScheduleVarianceCSV — title-row shape (measured live 2026-11-01)', () => {
+  // Confirmed live (dispatch run 41350595837, after the download fix): the real downloaded CSV
+  // is NOT header-first like the synthetic fixture above -- line 0 is a report title
+  // ("Schedule Variance"), matching every other LifeLenz report this repo already pulls
+  // (metadata/title row, then header, then data). The real header's exact cell TEXT at row 1
+  // (member names vs. human shortTitle labels) is still unconfirmed -- every store had zero
+  // edits in the validating window, so no real data row has been seen yet. This fixture tests
+  // only what's confirmed: a title row must not be mistaken for the header, and the real header
+  // (assumed here to echo the requested member names, matching every other LifeLenz CSV report)
+  // is found at row 1, not row 0.
+  const TITLE_ROW_CSV = `Schedule Variance
+locations_location_name,scheduled_shifts_scheduled_shift_id,employees_employee_name,original_value,updated_value,schedule_event_actors_employee_name,occurred_at,scheduled_hours_variance,cost_variance
+0003708 - ARDMORE-BROADWAY,shift-001,Jordan Lee,2026-10-25 09:00,2026-10-25 08:00,Pat Rivera,2026-10-24 19:12:00,1.0,8.50
+`;
+
+  it('does not mistake the title row for the header, and finds the real header at row 1', () => {
+    const rows = parseScheduleVarianceCSV(TITLE_ROW_CSV);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].edited_by).toBe('Pat Rivera');
+    expect(rows[0].employee_name).toBe('Jordan Lee');
+  });
+
+  it('a title-only CSV with no data rows at all parses as empty, not a crash', () => {
+    const titleOnly = 'Schedule Variance\nlocations_location_name,scheduled_shifts_scheduled_shift_id,employees_employee_name,original_value,updated_value,schedule_event_actors_employee_name,occurred_at,scheduled_hours_variance,cost_variance\n';
+    expect(parseScheduleVarianceCSV(titleOnly)).toEqual([]);
+  });
+});
+
 describe('locFromName', () => {
   it('extracts and zero-pads the store number from a schedule name', () => {
     expect(locFromName('0003708 - ARDMORE-BROADWAY')).toBe('0003708');
