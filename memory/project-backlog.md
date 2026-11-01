@@ -652,3 +652,38 @@ live; only the forecasting/projections half is still the gap.
    `new-store-ramp.js`'s own design note — don't fabricate one; surface it as an input the owner
    sets (likely near `DEFAULT_TARGETS['44689']`, itself still a verbatim 18213 copy flagged as a
    placeholder, not an owner-reviewed target).
+
+## Queued 2026-11-01 — admin-authored mass-communication banner/alert
+
+Owner, explicitly queued, not built now, prompted by today's LifeLenz outage: *"I will need a way
+to send out mass communication via a splash screen or popup for future use for when similar
+things happen and i discover them so i can let the users know it in progress of being updated or
+fixed. Kind of like a bulletin alert or form."* The direct reference point he gave is the live
+LIFELENZ app's own banner (the MFA notice: a dismissible bar, pinned top, with a close button) —
+same shape as what he's asking for here, aimed at Meridian's own users.
+
+**Confirmed by grep: no such mechanism exists today.** Meridian already has 3 banner components
+(`App.js`'s `DataPolicyBanner`, `features/session.js`'s `SessionBanner`, `shell.js`'s
+`DataErrorBanner`) but every one is **client-side and hardcoded** — fixed copy baked into the
+component, triggered by local session/data-load state, dismissed via `localStorage`. None of them
+is admin-AUTHORED or server-driven; there's no way for the owner to push new text out to users on
+demand without a code deploy.
+
+**Next step when picked up — the shape, not a full spec:**
+- **Storage**: a shared `org_config` key (e.g. `'system_announcement'`), same admin-write/
+  authenticated-read RLS tier `custom_location_groups`/`eom_digest_config`/`supervisorGroups`
+  already use — no new table needed. Shape: `{active, message, severity, createdAt, expiresAt?,
+  dismissible}` at minimum; `expiresAt` matters so a stale "fixing X" notice doesn't outlive the
+  fix if someone forgets to turn it off.
+- **Authoring UI**: a simple admin-only form (Settings, alongside the other org-wide config
+  editors like EOM Digest's schedule config) — write the message, pick severity, set/clear
+  active. Not a big build; reuses the same load/save round-trip pattern as every other org_config
+  consumer in `src/lib/supabase.js`.
+- **Display**: a new banner component following the existing 3's visual convention (fixed
+  position, dismissible via localStorage keyed by message content/id so a NEW message re-shows
+  even if an old one was dismissed) — mounted once near the app root (`App.js`), loaded on
+  startup alongside the other org_config batch reads (`loadOrgConfigs`).
+- **Scope question to settle when building, not now**: all users, or RBAC/location-scoped (e.g.
+  only OK stores if only OK is affected)? Owner's phrasing ("let the users know") reads as
+  all-users by default; a scoped version is a bigger, separate design question — don't build it
+  unasked.
