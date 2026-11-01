@@ -2350,7 +2350,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             ),
             opsChartType==='radar'?h(OpsRadar,{perf:p,tgt:t}):h(OpsBarChart,{perf:p,tgt:t})
           ),
-          div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t})),
+          div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t,schedRows:ds?.schedRows,loc:store.loc})),
           div({className:'chart-box',style:{gridColumn:'1/-1'}},
             div({className:'chart-title'},'6-Week Performance — T2W & T6W Trend'),h(TrendChart,{dayRows:wk}))
         )
