@@ -15,7 +15,7 @@ metadata:
 
 ## How the Sync Works (complete sequence)
 
-1. **Auth** — reads `LIFELENZ_TOKEN` env var (GitHub Secret). Cloudflare blocks headless Playwright from GH Actions IPs on both `admin.lifelenz.com` and `idm.lifelenz.com`, so token bypass is the only working approach. Token is validated (rejects only 401/403, not 404).
+1. **Auth** — reads `LIFELENZ_TOKEN` env var (GitHub Secret). Token is validated (rejects only 401/403/422, not 404). When it's expired, falls through to `getAuthTokenDirect()` (a direct GraphQL `SignIn` POST — see **2026-11-01 finding** below) and then, as a last resort, a Playwright-driven real login at `admin.lifelenz.com/us01/auth/login`.
 
 2. **Schedule discovery** — `GET https://us01-connect.lifelenz.com/api/admin/businesses/{businessId}/schedules`  
    - Returns JSON:API format: `{ data: [{ id, type: "schedules", attributes: { schedule_name, schedule_status, ... } }] }`  
@@ -47,7 +47,7 @@ metadata:
 - `X-Auth-Token: {token}`
 - `X-Business-Id: 01979dbf-a166-759b-8702-aba9915c578e`
 - `X-Lifelenz-Device: webadmin`
-- `X-Version: 1.75.21`
+- `X-Version: 1.78.11` (bumped 2026-11-01 — was still 1.75.21 from before LifeLenz's Oct 29 redesign; confirmed against a real captured live request)
 
 ---
 
@@ -97,3 +97,32 @@ Token lifespan: unknown, but observed to last multiple days. The sync only fails
 **Trigger for revisiting:** next `LIFELENZ_TOKEN` expiry (roughly monthly — last two expiries were ~Sept 9-11 and ~Sept 26-30, so expect the next one around late October 2026). A reminder is scheduled for 2026-10-21 to bring this back up before that window.
 
 **Third occurrence, 2026-10-15 to -17 — same signature, re-measured, owner re-confirmed status quo.** `LifeLenz Daily Sync` failed 3 consecutive scheduled runs (Oct 15/16/17); data hit 85.4h old before being caught. Checked the Oct 17 job log directly: `LIFELENZ_TOKEN` rejected 422 → falls through to the `idm.lifelenz.com` fallback → every endpoint (ROPC all 4 client_ids, 4 IDM JSON login paths, the real Playwright `/connect/authorize` nav) returns an instant 500 with empty body, identical to the two prior occurrences above — not re-diagnosed as new. Not yet fixed as of this note — still needs a manual `LIFELENZ_TOKEN` refresh (DevTools → Network → any `us01-connect.lifelenz.com` request → copy `X-Auth-Token` → update the GitHub Secret). **Owner decision, asked directly:** keep doing manual refreshes for now; the on-site-device and residential-proxy options stay logged above for later, not actioned this round. Do not re-propose them unprompted next time this recurs — just do the manual refresh and note the occurrence here.
+
+---
+
+## ✅ RESOLVED 2026-11-01 — the ⚠️ OPEN ISSUE above (WAF/IP-block theory) is SUPERSEDED. The fallback chain was pointed at a dead OAuth2 flow LifeLenz retired, not blocked by IP. Fixed in `scripts/lifelenz-pull.mjs`; do not re-raise the residential-proxy/on-site-device options above for this specific failure mode.
+
+**Fourth occurrence, 2026-11-01** — `LifeLenz Daily Sync` run #161 failed: `LIFELENZ_TOKEN` rejected (422) → fallback chain → every `idm.lifelenz.com` endpoint **404**, not the previous occurrences' 500. That status-code change was the tell that this isn't the same WAF-block pattern recurring — it's something structural.
+
+**Measured directly, not inferred (three independent confirmations):**
+1. **Every `idm.lifelenz.com` path 404s identically, from two separate networks** (GitHub Actions *and* a completely different sandbox/IP) — `/.well-known/openid-configuration`, `/connect/token`, `/connect/authorize`, `/api/auth/login`, and a deliberately nonexistent control path all return the identical `content-length: 0`, `x-cache: Error from cloudfront`. A WAF blocking one bad actor's IP doesn't explain two unrelated networks getting the same empty response on a URL that was never real in the first place (the control path) — this is CloudFront reporting no working origin behind the whole distribution for the OLD path set, not a targeted block.
+2. **`admin.lifelenz.com` itself is healthy and was redeployed 2026-10-29** (LIFELENZ app version 1.78.11, per its own build metadata) — 2 days before the first 404 occurrence. New Reports UI (Compliance/Labor/Payroll/Scheduling/Time & Attendance categories) confirmed live by the owner.
+3. **Owner's own live DevTools session, logged in and working fine:** searching the Network panel for `authorize` across the whole session turned up **zero real requests** (only unrelated minified-JS text matches like `view.unauthorized_title`). Searching for `token` showed the real, current mechanism is unchanged in SHAPE: `sessionStorage.getItem("authToken")`, sent as an `X-AUTH-TOKEN` header on every `us01-connect.lifelenz.com` call — exactly what `LIFELENZ_TOKEN` already is. Owner also confirmed directly: login is still plain username+password on LifeLenz's own page, not SSO, "for now" (so the fallback stays scriptable — this is not an MFA/SSO lockout).
+
+**The real current login flow** (captured directly, via a headless-browser probe hitting the live site with no cookies, independently cross-confirmed by the owner's own captured `AsyncReports` cURL showing the unchanged `us01-connect.lifelenz.com` data-layer shape):
+- Real login page: `https://admin.lifelenz.com/us01/auth/login` — plain email/password form (`#email`/`#password` input ids), with "Log in with SSO" offered only as an alternate, not the default.
+- Real submission: `POST https://idm.lifelenz.com/external/graphql?SignIn` — a GraphQL mutation, NOT the old OAuth2 ROPC/authorize-code flow. `idm.lifelenz.com` itself is NOT dead — only its old `/connect/*` OAuth2 surface is; `/external/graphql` works fine.
+  ```graphql
+  mutation SignIn($username: String!, $credential: String!) {
+    signIn(email: $username, credential: $credential) { authToken }
+  }
+  ```
+  `credential` = the password, **base64-encoded** (confirmed: submitting a test password through the real form showed the exact base64 of what was typed in the captured request body).
+- Response shape: `{"data":{"signIn":{"authToken":"..."}}}` on success; `{"errors":[{"extensions":{"code":"AUTHENTICATION_ERROR","reason":"invalidUserOrPassword"}}],"data":null}` on failure — verified directly against the live endpoint with a deliberately wrong password (a clean, well-formed GraphQL error, not a 404, confirming the endpoint/shape itself is correct).
+- That `authToken` is the same credential as `LIFELENZ_TOKEN` / `X-Auth-Token` always was — nothing about the DOWNSTREAM API shape changed, only how you obtain a fresh one.
+
+**Fixed:** `getAuthTokenDirect()` now POSTs the `SignIn` mutation directly (fast, no browser) instead of probing the dead OIDC-discovery/ROPC/IDM-JSON-login paths. The Playwright fallback (`getAuthToken()`) now navigates to the real login page instead of the dead `/connect/authorize` URL, and captures `authToken` straight out of the `SignIn` response body (the old flow's auth-code-redirect-and-exchange logic is gone — the real flow is an in-page XHR, not an OAuth redirect). `apiHeaders()`'s `X-Version` bumped from the stale `1.75.21` to the live `1.78.11`.
+
+**Immediate unblock for this occurrence:** owner manually refreshed `LIFELENZ_TOKEN` from DevTools (same runbook as always — that part never changed), confirmed working via a clean scheduled re-run (run #162, succeeded in 5m22s). The script fix above is for the NEXT time the token expires, so the fallback doesn't die against dead endpoints again.
+
+**Owner, verbatim, on the MFA note seen in the live LIFELENZ banner:** *"restaurant managers will be required to use multi-factor authentication (MFA) to access LIFELENZ" starting 11/09* — owner is confirming what that means for their own credentials. **Open risk, not yet resolved:** if MFA becomes mandatory for the `LIFELENZ_USERNAME`/`LIFELENZ_PASSWORD` service account the Playwright fallback uses (not just human GM logins), the fallback becomes fully unusable — no way for a script to answer an MFA prompt unattended. Worth confirming with LifeLenz whether service/integration accounts are exempt. If not, the only paths left are (a) manual `LIFELENZ_TOKEN` refresh becoming the sole mechanism (status quo, just without the automated self-heal), or (b) a scripted MFA bypass (e.g. a long-lived API key/service-account credential LifeLenz issues separately) if LifeLenz offers one — don't assume one exists without asking them directly.
