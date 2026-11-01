@@ -547,11 +547,16 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
             opSup$ != null ? varMoneyStr(opSup$) : '—'),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
         ),
-        // $ Amount row
+        // $ Amount row — owner directive 2026-08-04 (re-confirmed 2026-11-01): ONLY Food Over
+        // Base, Crew Labor, and Op Supplies are shaded (colored red/amber/green) — those are the
+        // only three boxes totalShaded actually sums. Total Food Cost and OT $ are informational
+        // figures shown in this same row but must render in the neutral `muted` color, not
+        // colShaded — coloring them the same way as the 3 counted boxes falsely implied they
+        // were part of the total too, which is exactly the "so close" mismatch the owner flagged.
         h('tr', { style: { background: 'rgba(245,158,11,.06)', borderTop: '1px solid rgba(245,158,11,.2)' } },
           h('td', { style: { ...C.td, ...C.tdL, fontWeight: 700, color: '#f59e0b' } }, '$ Amount'),
           h('td', { style: C.td }, '—'),
-          h('td', { style: { ...C.td, color: colShaded(fcVar$), fontWeight: 700 } }, fcVar$ != null ? varMoneyStr(fcVar$) : '—'),
+          h('td', { style: { ...C.td, color: muted, fontWeight: 700 } }, fcVar$ != null ? varMoneyStr(fcVar$) : '—'),
           h('td', { style: { ...C.td, color: colShaded(fobVar$), fontWeight: 700 } }, fobVar$ != null ? varMoneyStr(fobVar$) : '—'),
           // Reads laborAdjAmt (destructured above), NOT data.laborVar$ — computeRollup() never sets
           // laborVar$ on the rollup object (only laborAdjAmt, which holds the identical value at the
@@ -560,10 +565,13 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           // 2026-09-01, alongside the $ Amount rounding fix, "need to fix ... rollups as well") — the
           // per-store cards happened to work because laborVar$ IS present on computeStoreEOM's return.
           h('td', { style: { ...C.td, color: colShaded(laborAdjAmt), fontWeight: 700 } }, laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—'),
-          h('td', { style: { ...C.td, color: colShaded(otDollar), fontWeight: 700 } },
+          h('td', { style: { ...C.td, color: muted, fontWeight: 700 } },
             forPrint
               ? (otDollar != null ? varMoneyStr(otDollar) : '—')
-              : h(EditCell, { value: otDollar, placeholder: 'OT $', onChange: v => onManualChange('otDollar', v), style: { color: amber } })
+              // EditCell carries its OWN inline color (independent of the td's), so this needs
+              // the same muted fix or the live/editable view would still show OT $ in amber —
+              // only the print path would have looked correct.
+              : h(EditCell, { value: otDollar, placeholder: 'OT $', onChange: v => onManualChange('otDollar', v), style: { color: muted } })
           ),
           h('td', { style: { ...C.td, color: colShaded(opSup$), fontWeight: 700 } }, opSup$ != null ? varMoneyStr(opSup$) : '—'),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
@@ -790,12 +798,15 @@ function eomBlockHtml(data, { isRollup, label } = {}) {
     + td(opSup$ != null ? varMoneyStr(opSup$) : '—', opSup$ != null ? colorAttr(opSup$, colPctVar) : '')
     + td('—')
     + `</tr>`;
+  // Same owner directive as the live render above: only Food Over Base / Crew Labor / Op
+  // Supplies are shaded (colShaded) — Total Food Cost and OT $ render in the neutral `muted`
+  // color so the print version can't visually imply they're part of the total either.
   html += `<tr class="s-amt"><td class="s-lbl">$ Amount</td>`
     + td('—')
-    + td(fcVar$ != null ? varMoneyStr(fcVar$) : '—', colorAttr(fcVar$, colShaded))
+    + td(fcVar$ != null ? varMoneyStr(fcVar$) : '—', colorAttr(fcVar$, () => muted))
     + td(fobVar$ != null ? varMoneyStr(fobVar$) : '—', colorAttr(fobVar$, colShaded))
     + td(laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—', colorAttr(laborAdjAmt, colShaded))
-    + td(otDollar != null ? varMoneyStr(otDollar) : '—', colorAttr(otDollar, colShaded))
+    + td(otDollar != null ? varMoneyStr(otDollar) : '—', colorAttr(otDollar, () => muted))
     + td(opSup$ != null ? varMoneyStr(opSup$) : '—', colorAttr(opSup$, colShaded))
     + td('—')
     + `</tr>`;
