@@ -93,117 +93,64 @@ function chunkDateRange(start, end, maxDays = 21) {
 }
 
 // ── Step 1a: Try direct REST login (no browser needed) ───────────────────
+// Rewritten 2026-11-01 (dispatch: idm.lifelenz.com's old OAuth2/OIDC endpoints are DEAD).
+// Measured directly, two independent networks (GitHub Actions + a separate sandbox): every
+// idm.lifelenz.com path -- /.well-known/openid-configuration, /connect/token, /connect/authorize,
+// /api/auth/login, and a deliberately nonexistent control path -- returns an identical 404,
+// content-length 0, "x-cache: Error from cloudfront", i.e. the whole old OAuth2 surface this
+// function used to probe is gone, not just one endpoint. admin.lifelenz.com itself is healthy and
+// was redeployed 2026-10-29 (LIFELENZ app version 1.78.11) -- a real LifeLenz-side auth migration,
+// not a network block (owner independently confirmed via DevTools: zero /authorize network calls
+// anywhere in a live session; login is still direct username+password, not SSO, "for now").
+//
+// The REAL current login, captured directly off the live login page with a headless-browser
+// probe (admin.lifelenz.com/us01/auth/login -- a normal email/password form) and independently
+// confirmed by the owner's own DevTools capture of a live, working us01-connect.lifelenz.com API
+// call carrying an X-Auth-Token header: the form POSTs a GraphQL `SignIn` mutation straight to
+// idm.lifelenz.com/external/graphql (NOT the old /connect/* OAuth2 surface -- that subdomain
+// itself is fine, it's specifically the old paths that are gone), with the password base64-
+// encoded as `credential`, and returns `{data:{signIn:{authToken}}}` on success --
+// `{errors:[{code:"AUTHENTICATION_ERROR", reason:"invalidUserOrPassword", ...}]}` on failure
+// (verified against the real endpoint with a deliberately wrong password -- a clean, well-formed
+// GraphQL error, not a 404, confirming the endpoint/request shape itself is correct). That
+// authToken is exactly what every us01-connect.lifelenz.com call already expects as X-Auth-Token
+// -- the credential SHAPE never changed, only how you obtain one.
 async function getAuthTokenDirect() {
-  // Login page is a Next.js SPA that delegates to idm.lifelenz.com (OAuth2/OIDC).
-  // Try OIDC discovery first, then known token endpoint patterns.
   const IDM_BASE = 'https://idm.lifelenz.com';
   const u = process.env.LIFELENZ_USERNAME;
   const p = process.env.LIFELENZ_PASSWORD;
-
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
-  // Step 1: OIDC discovery — find the token endpoint
-  let tokenEndpoint = `${IDM_BASE}/connect/token`; // standard OIDC default
+  const query = `mutation SignIn($username: String!, $credential: String!) {
+    signIn(email: $username, credential: $credential) {
+      authToken
+    }
+  }`;
+  const credential = Buffer.from(p || '', 'utf8').toString('base64');
+
   try {
-    const discovery = await fetch(`${IDM_BASE}/.well-known/openid-configuration`, {
-      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
+    const r = await fetch(`${IDM_BASE}/external/graphql?SignIn`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', 'User-Agent': UA, 'Accept': '*/*',
+        'X-Lifelenz-Device': 'webadmin', 'X-Version': '1.78.11',
+      },
+      body: JSON.stringify({ operationName: 'SignIn', variables: { username: u, credential }, query }),
     });
-    console.log('[auth-direct] OIDC discovery →', discovery.status);
-    if (discovery.ok) {
-      const cfg = await discovery.json();
-      console.log('[auth-direct] OIDC config:', JSON.stringify(cfg).slice(0, 400));
-      if (cfg.token_endpoint) tokenEndpoint = cfg.token_endpoint;
+    console.log('[auth-direct] SignIn →', r.status);
+    const data = await r.json().catch(() => null);
+    if (data?.errors) {
+      console.log('[auth-direct] SignIn error:', JSON.stringify(data.errors).slice(0, 300));
+      return null;
     }
+    const tok = data?.data?.signIn?.authToken;
+    if (tok) { console.log('[auth-direct] got authToken via SignIn mutation'); return tok; }
+    console.log('[auth-direct] SignIn responded but no authToken present:', JSON.stringify(data)?.slice(0, 300));
+    return null;
   } catch (e) {
-    console.log('[auth-direct] discovery error:', e.message);
+    console.log('[auth-direct] SignIn fetch error:', e.message);
+    return null;
   }
-
-  // Step 2: Try OAuth2 Resource Owner Password Credentials flow
-  // Also try the login page config to extract the actual client_id
-  let clientId = 'lifelenz-workforce';  // common default; will be overridden if found in page config
-  try {
-    const loginPage = await fetch('https://admin.lifelenz.com/us01/auth/login', {
-      headers: { 'User-Agent': UA },
-    });
-    const html = await loginPage.text();
-    // Extract client_id from the embedded Next.js config JSON
-    const cidMatch = html.match(/"clientId"\s*:\s*"([^"]+)"/)
-                  || html.match(/"client_id"\s*:\s*"([^"]+)"/);
-    if (cidMatch) { clientId = cidMatch[1]; console.log('[auth-direct] clientId from page:', clientId); }
-    // Log the idm servers config block
-    const idmMatch = html.match(/"idm"\s*:\s*(\{[^}]+\})/);
-    if (idmMatch) console.log('[auth-direct] idm config:', idmMatch[1]);
-  } catch (e) {
-    console.log('[auth-direct] page config extraction error:', e.message);
-  }
-
-  console.log('[auth-direct] token endpoint:', tokenEndpoint, '| clientId:', clientId);
-
-  // Try ROPC with several scope/client_id combos
-  const attempts = [
-    { grant_type: 'password', username: u, password: p, client_id: clientId, scope: 'openid profile email' },
-    { grant_type: 'password', username: u, password: p, client_id: 'workforce-web', scope: 'openid profile' },
-    { grant_type: 'password', username: u, password: p, client_id: 'lifelenz-admin', scope: 'openid profile' },
-    { grant_type: 'password', username: u, password: p, client_id: 'web', scope: 'openid profile' },
-    // Also try the connect API directly with JSON
-    null,
-  ];
-
-  for (const attempt of attempts) {
-    if (!attempt) {
-      // JSON POST fallback to IDM auth endpoint
-      for (const path of ['/api/auth/login', '/auth/login', '/api/v1/login', '/api/users/sign_in']) {
-        try {
-          const r = await fetch(`${IDM_BASE}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'User-Agent': UA, 'Accept': 'application/json' },
-            body: JSON.stringify({ username: u, password: p, email: u }),
-          });
-          console.log('[auth-direct] IDM JSON', path, '→', r.status);
-          if (r.ok) {
-            const data = await r.json().catch(() => null);
-            if (DEBUG) console.log('[auth-direct] IDM JSON body:', JSON.stringify(data)?.slice(0, 300));
-            const tok = data?.access_token || data?.token || data?.authToken || data?.id_token;
-            if (tok) { console.log('[auth-direct] got token from IDM JSON'); return tok; }
-          }
-        } catch (e) { console.log('[auth-direct] IDM JSON error:', e.message); }
-      }
-      continue;
-    }
-
-    try {
-      const body = new URLSearchParams(attempt);
-      const r = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA, 'Accept': 'application/json' },
-        body: body.toString(),
-      });
-      console.log('[auth-direct] ROPC', tokenEndpoint, 'client_id=' + attempt.client_id, '→', r.status);
-      if (r.ok) {
-        const data = await r.json().catch(() => null);
-        if (DEBUG) console.log('[auth-direct] ROPC body:', JSON.stringify(data)?.slice(0, 300));
-        // OIDC returns access_token; LifeLenz API needs X-Auth-Token — try both
-        const tok = data?.access_token || data?.id_token;
-        if (tok) {
-          // Try using the access_token as X-Auth-Token against the workforce API
-          const apiResp = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
-            headers: { 'X-Auth-Token': tok, 'Authorization': `Bearer ${tok}`, 'Accept': 'application/json' },
-          });
-          console.log('[auth-direct] workforce API with OIDC token →', apiResp.status);
-          if (apiResp.ok) return tok;
-          const apiToken = apiResp.headers.get('x-auth-token');
-          if (apiToken) { console.log('[auth-direct] workforce API returned new token'); return apiToken; }
-        }
-      } else if (DEBUG) {
-        const errBody = await r.text().catch(() => '');
-        console.log('[auth-direct] ROPC error body:', errBody.slice(0, 200));
-      }
-    } catch (e) {
-      console.log('[auth-direct] ROPC error:', e.message);
-    }
-  }
-
-  return null;
 }
 
 // ── Step 1b: Playwright browser login (fallback) ──────────────────────────
@@ -251,17 +198,6 @@ async function getAuthToken() {
   const { mkdirSync } = await import('fs');
   try { mkdirSync(screenshotDir, { recursive: true }); } catch {}
 
-  // Capture auth code from redirect back to admin.lifelenz.com
-  let authCode = null;
-  let codeVerifier = null;
-  page.on('request', req => {
-    const url = req.url();
-    if (url.includes('admin.lifelenz.com') && url.includes('code=')) {
-      const code = new URL(url).searchParams.get('code');
-      if (code) { authCode = code; console.log('[auth] captured auth code from redirect'); }
-    }
-  });
-
   // Diagnostics added 2026-09-11 (dispatch: the Playwright fallback landing on a completely
   // empty <html><head></head><body></body></html> even after the full selector-wait timeout --
   // not "SPA still hydrating" but nothing being served at all). None of this changes behavior;
@@ -276,18 +212,13 @@ async function getAuthToken() {
   page.on('pageerror', err => { consoleMsgs.push(`[pageerror] ${err.message}`); });
 
   try {
-    // Go directly to IDM (backend identity server — not Cloudflare protected like admin.lifelenz.com)
-    const CLIENT_ID   = '63acf6b91f6c301188a20e18';
-    const REDIRECT_URI = 'https://admin.lifelenz.com/us01/auth/callback';
-    const IDM_AUTH_URL = 'https://idm.lifelenz.com/connect/authorize?' + new URLSearchParams({
-      client_id:     CLIENT_ID,
-      redirect_uri:  REDIRECT_URI,
-      response_type: 'code',
-      scope:         'openid profile email offline_access',
-      state:         'meridian-sync',
-    });
-    console.log('[auth] navigating to IDM authorize:', IDM_AUTH_URL);
-    const navResp = await page.goto(IDM_AUTH_URL, { waitUntil: 'networkidle', timeout: 45000 });
+    // Real login page (2026-11-01 — the old idm.lifelenz.com/connect/authorize OAuth2 flow this
+    // used to navigate to is dead, see getAuthTokenDirect()'s header comment for the full
+    // measurement). admin.lifelenz.com/us01/auth/login is a normal email/password SPA page,
+    // confirmed live via a direct headless-browser probe.
+    const LOGIN_URL = 'https://admin.lifelenz.com/us01/auth/login';
+    console.log('[auth] navigating to login page:', LOGIN_URL);
+    const navResp = await page.goto(LOGIN_URL, { waitUntil: 'networkidle', timeout: 45000 });
     if (navResp) {
       const h = navResp.headers();
       console.log('[auth] nav response status:', navResp.status(), navResp.statusText());
@@ -342,41 +273,34 @@ async function getAuthToken() {
     await page.fill(userSel, process.env.LIFELENZ_USERNAME);
     await page.fill(passSel, process.env.LIFELENZ_PASSWORD);
     await page.screenshot({ path: `${screenshotDir}/02-filled.png` });
+
+    // The real flow (2026-11-01) is an SPA form submit — a GraphQL SignIn mutation POSTed to
+    // idm.lifelenz.com/external/graphql, with authToken in the JSON response BODY (not a header
+    // and not a page navigation/redirect — see getAuthTokenDirect()'s header comment for the full
+    // measurement). Wait for that specific response and read authToken straight out of it; the
+    // request/response header listeners above and the sessionStorage scan below still run as
+    // backups in case the response shape changes again.
+    const signInPromise = page.waitForResponse(
+      resp => resp.url().includes('/external/graphql') && resp.url().includes('SignIn'),
+      { timeout: 20000 }
+    ).catch(() => null);
+
     await page.click(subSel);
 
-    // Wait for redirect back to admin.lifelenz.com (OAuth callback) or away from login
-    await page.waitForFunction(
-      () => window.location.href.includes('admin.lifelenz.com') ||
-            !window.location.href.includes('idm.lifelenz.com'),
-      { timeout: 20000 }
-    );
-    console.log('[auth] redirected, current URL:', page.url());
-
-    // Exchange auth code for tokens if captured
-    if (authCode && !authToken) {
-      console.log('[auth] exchanging auth code for tokens…');
-      const tokenResp = await fetch('https://idm.lifelenz.com/connect/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type:   'authorization_code',
-          code:         authCode,
-          client_id:    '63acf6b91f6c301188a20e18',
-          redirect_uri: 'https://admin.lifelenz.com/us01/auth/callback',
-        }).toString(),
-      });
-      console.log('[auth] token exchange →', tokenResp.status);
-      if (tokenResp.ok) {
-        const tokens = await tokenResp.json().catch(() => null);
-        if (DEBUG) console.log('[auth] tokens:', JSON.stringify(tokens)?.slice(0, 200));
-        if (tokens?.access_token) authToken = tokens.access_token;
-      }
+    const signInResp = await signInPromise;
+    if (signInResp) {
+      const body = await signInResp.json().catch(() => null);
+      const tok = body?.data?.signIn?.authToken;
+      if (tok && !authToken) { authToken = tok; console.log('[auth] captured authToken from SignIn response body'); }
+      else if (body?.errors) console.error('[auth] SignIn failed:', JSON.stringify(body.errors).slice(0, 300));
+    } else {
+      console.log('[auth] no SignIn response observed within timeout');
     }
+    console.log('[auth] current URL after submit:', page.url());
     await page.screenshot({ path: `${screenshotDir}/03-post-login.png` });
 
-    // Trigger an API call so we can capture the token from the request headers
-    // Navigate to any data page that fires an API request
-    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    // Let any follow-on API calls settle so the header/storage capture paths above have a chance too.
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
 
     // If still not captured via events, try localStorage / sessionStorage
     if (!authToken) {
@@ -419,12 +343,14 @@ async function getAuthToken() {
 
 // ── Common headers for all us01-connect.lifelenz.com API calls ───────────
 // Captured from DevTools: these headers are required alongside X-Auth-Token.
+// X-Version bumped 2026-11-01 to match the live app (1.78.11, confirmed via a real captured
+// us01-connect.lifelenz.com request) -- this was still the pre-redesign 1.75.21.
 function apiHeaders(token, scheduleId = null) {
   const h = {
     'X-Auth-Token':      token,
     'X-Business-Id':     BUSINESS_ID,
     'X-Lifelenz-Device': 'webadmin',
-    'X-Version':         '1.75.21',
+    'X-Version':         '1.78.11',
     'Accept':            'application/json',
     'Content-Type':      'application/json',
   };
