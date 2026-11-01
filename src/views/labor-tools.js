@@ -13,6 +13,7 @@ import { computeInsights, normLoc } from '../engine/insights.js';
 import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
 import { detectAropJumps, payRaiseImpact, PAY_EVENT_TYPES, AROP_WINDOW_DAYS } from '../engine/pay-events.js';
 import { PayEventModal } from './pay-event-modal.js';
+import { storeScheduleDisciplineSummary, editorBreakdown } from '../engine/schedule-discipline.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
 // apply-winners, manual override, reset), push the whole blob to Supabase as a
@@ -3013,4 +3014,115 @@ function PayEventsReportPanel({ stores, ds, onPayEventSaved }) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };
+// ── Schedule Discipline (2026-11-01) — LifeLenz Data Explorer "Schedule Variance" ──────────────
+// Always rendered embedded (a SchedulingHubPanel/RoutePanelShell tab, never a standalone
+// overlay) — same panel-contract reasoning as PayEventsReportPanel just above: no second
+// hand-rolled backdrop branch to maintain.
+//
+// Edits made to a published schedule — who made them, how many, and what they cost — surfaced
+// as a real per-store/per-editor view rather than left sitting in a table nobody reads. Voice-
+// by-role: the window selector + store table state the number AND let an operator act (which
+// store, which editor, how much $) without hiding the exact figures behind a plain-language
+// summary line.
+function ScheduleDisciplinePanel({ ds }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [windowDays, setWindowDays] = uSt(14);
+  const allRows = ds?.scheduleVarianceRows || [];
+
+  const windowed = uM(() => {
+    if (!allRows.length) return [];
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - windowDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return allRows.filter(r => r.occurredAt && String(r.occurredAt).slice(0, 10) >= cutoffStr);
+  }, [allRows, windowDays]);
+
+  const storeSummary = uM(() => storeScheduleDisciplineSummary(windowed), [windowed]);
+  const editors = uM(() => editorBreakdown(windowed), [windowed]);
+  const recent = uM(() => [...windowed].sort((a, b) => (b.occurredAt || '').localeCompare(a.occurredAt || '')).slice(0, 50), [windowed]);
+
+  const hrs = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(1) + 'h';
+  const dol = v => v == null ? '—' : (v > 0 ? '+' : v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('en-US');
+  const dolColor = v => v > 0 ? '#f59e0b' : v < 0 ? '#10b981' : 'var(--text2)';
+
+  const totalEdits = windowed.length;
+  const totalCost = windowed.reduce((a, r) => a + (r.costVariance || 0), 0);
+
+  const OUTER = { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '14px 16px' };
+
+  if (!allRows.length) {
+    return div({ style: OUTER },
+      div({ style: { fontSize: '10px', color: 'var(--text3)' } },
+        'No schedule-edit data yet. This tab reads LifeLenz\'s Data Explorer "Schedule Variance" report, synced daily by scripts/lifelenz-schedule-variance-pull.mjs — give the first sync a day to populate.'));
+  }
+
+  return div({ style: OUTER },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } },
+      div({ style: { fontSize: '9px', color: 'var(--text3)', lineHeight: 1.6, flex: 1 } },
+        'Edits made to a published schedule — a store that keeps editing after publish, especially adding cost, is a planning-discipline signal, not a neutral one. Each edit carries who made it and the $ impact.'),
+      sel({ value: windowDays, onChange: e => setWindowDays(parseInt(e.target.value, 10)),
+        style: { background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '10px', padding: '4px 8px', flexShrink: 0 } },
+        opt({ value: 7 }, 'Last 7 days'), opt({ value: 14 }, 'Last 14 days'), opt({ value: 30 }, 'Last 30 days')),
+    ),
+
+    div({ style: { display: 'flex', gap: 16, marginBottom: 14, fontSize: '10px' } },
+      div(null, span({ style: { color: 'var(--text3)' } }, 'Total edits: '), span({ style: { fontWeight: 700, color: 'var(--text)' } }, totalEdits)),
+      div(null, span({ style: { color: 'var(--text3)' } }, 'Net cost impact: '), span({ style: { fontWeight: 700, color: dolColor(totalCost) } }, dol(totalCost))),
+    ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '📝 By Store (' + storeSummary.length + ')'),
+    !storeSummary.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No schedule edits in this window.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 560 } },
+          thead(null, tr(null,
+            ...['Store', 'Edits', 'Hours Δ', 'Cost Δ', 'Last Edit'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...storeSummary.map((s, i) => tr({ key: s.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(s.loc)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.editCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, hrs(s.hoursVarianceSum)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: dolColor(s.costVarianceSum) } }, dol(s.costVarianceSum)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, s.lastEditAt ? String(s.lastEditAt).slice(0, 16).replace('T', ' ') : '—'),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '👤 By Editor (' + editors.length + ')'),
+    !editors.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No schedule edits in this window.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 560 } },
+          thead(null, tr(null,
+            ...['Editor', 'Edits', 'Store(s)', 'Cost Δ'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...editors.map((e, i) => tr({ key: e.editedBy, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, e.editedBy),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, e.editCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontSize: '8.5px' } }, e.locs.map(l => sNameC(l)).join(', ')),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: dolColor(e.costVarianceSum) } }, dol(e.costVarianceSum)),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🕐 Recent Edits (' + recent.length + (windowed.length > recent.length ? ' of ' + windowed.length : '') + ')'),
+    !recent.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'No schedule edits in this window.')
+      : div({ style: { overflowX: 'auto' } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 760 } },
+          thead(null, tr(null,
+            ...['When', 'Store', 'Employee', 'Edited By', 'Before → After', 'Cost Δ'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 4 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...recent.map((r, i) => tr({ key: r.loc + '|' + r.editedBy + '|' + r.occurredAt + '|' + i, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' } }, r.occurredAt ? String(r.occurredAt).slice(0, 16).replace('T', ' ') : '—'),
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(r.loc)),
+            td({ style: { padding: '5px 8px', color: 'var(--text2)', fontSize: '8.5px' } }, r.employeeName || '—'),
+            td({ style: { padding: '5px 8px', color: 'var(--text2)', fontSize: '8.5px' } }, r.editedBy),
+            td({ style: { padding: '5px 8px', color: 'var(--text3)', fontSize: '8.5px' } }, (r.originalValue || '—') + ' → ' + (r.updatedValue || '—')),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: dolColor(r.costVariance) } }, dol(r.costVariance)),
+          )))
+        )
+      ),
+  );
+}
+
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, ScheduleDisciplinePanel, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };

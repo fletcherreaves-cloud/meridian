@@ -687,3 +687,52 @@ demand without a code deploy.
   only OK stores if only OK is affected)? Owner's phrasing ("let the users know") reads as
   all-users by default; a scoped version is a bigger, separate design question — don't build it
   unasked.
+
+## Shipped 2026-11-01 — Schedule Discipline (LifeLenz Data Explorer "Schedule Variance")
+
+Owner asked to build out the LifeLenz Data Explorer finding (the Lakehouse report API fully
+mapped earlier this same session, see `memory/lifelenz-session.md`'s "New Data Explorer"
+section) and come up with good uses for the data. Built end to end, real (not a stub):
+
+- **`scripts/lifelenz-schedule-variance-pull.mjs`** (new, daily workflow
+  `lifelenz-schedule-variance-pull.yml`) pulls LifeLenz's Schedule Variance report — a shift-
+  EDIT audit trail: who edited a published schedule, what value changed, when, and the
+  hours/cost impact. Uses the confirmed trigger→poll→download Lakehouse flow
+  (`GetReportDataCsvAsync` → `AsyncReports` poll → CSV download). Direct-token-only auth
+  (`LIFELENZ_TOKEN`), matching `lifelenz-attendance-pull.mjs`'s own precedent/reasoning for not
+  duplicating the Playwright fallback a third time. Also runs a read-only `GetReportMeta`
+  discovery pass for the other 4 Data Explorer tiles' best-guess reportKeys, logged but not
+  acted on.
+- **`lifelenz_schedule_variance`** table (new, `supabase/schema-lifelenz-schedule-variance.sql`)
+  — same tenant+accessible_locs RLS and "names stored directly" precedent as
+  `lifelenz_punch_edits`.
+- **`src/engine/schedule-discipline.js`** (new) — pure aggregation functions:
+  `dailyScheduleVariance` (per-(loc,date), feeds Signals), `storeScheduleDisciplineSummary`,
+  `editorBreakdown`.
+- **Schedule Discipline tab** (`ScheduleDisciplinePanel`, `src/views/labor-tools.js`) — new tab
+  in the Labor & Scheduling hub, same tab-in-hub treatment as Pay Events: per-store summary
+  (edits/hours/cost, sorted by cost impact), per-editor breakdown, recent-edits drill-down with
+  the real before→after values. Windowed (7/14/30 days).
+  Three new rendered/unit test files (parser, engine, real-component render), 682/682 test
+  files passing, build within budget.
+- **Signals**: `scheduleEditCount` / `scheduleCostVariance` added to `signal-registry.js`'s
+  `labor` metric group (source: `scheduleVarianceDailyRows`), so the Scanner auto-correlates it
+  against every other metric already covered.
+- **Watched**: added to `sync-failure-watch.yml`, `stream-freshness.js` (`dateField:
+  'occurredAt'`), and `scripts/lib/scheduled-pull-registry.mjs` — all three required (the
+  scheduled-pull-registry test caught the third one missing).
+
+**What's honestly NOT done, and why:** the real downloaded-CSV content has never been seen —
+only the column NAMES were confirmed (owner-captured request curl), not real row values. The
+parser, the `AsyncReportStatusEnum` completion check (lenient by design — treats a populated
+`url`/`error` as done rather than trusting an unconfirmed status string), and the download-URL
+auth-header handling are all defensive-but-unverified. **Live `workflow_dispatch` validation
+with `debug=1` is required before this is trusted** — same discipline as the LifeLenz auth fix
+earlier this session. If the real shape differs, the header-name-first/positional-fallback CSV
+parser and the lenient poll completion check are the two places to check first.
+
+The other 4 Data Explorer tiles (Compliance Audit, Employee Performance, Payroll Readiness,
+Time Punch Activity Log) are **not built** — their real column schemas were never captured
+(only Compliance Audit is confirmed to exist as a report at all). The discovery pass in the new
+pull script logs whichever of the 4 best-guess reportKeys actually resolve; read that job log
+before guessing at a build for any of them.

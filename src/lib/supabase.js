@@ -1362,6 +1362,35 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
   }));
 }
 
+// ── Schedule Variance (2026-11-01) — LifeLenz Data Explorer's shift-EDIT audit trail ──────────
+// Raw per-edit rows (one row = one schedule-value change). Same broad "names visible"
+// tenant+loc RLS as loadLifeLenzShiftAssignments, same precedent (dispatch #125/#126).
+// Aggregated daily/per-editor rollups for Signals + the Schedule Discipline panel are computed
+// client-side from these raw rows by src/engine/schedule-discipline.js, not pre-aggregated here
+// — the raw rows themselves are also what the panel's drill-down table shows.
+export async function loadLifeLenzScheduleVariance({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_schedule_variance').select('*').order('occurred_at', { ascending: false }).range(from, to);
+    if (start) q = q.gte('occurred_at', start);
+    if (end) q = q.lte('occurred_at', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_schedule_variance');
+  return (data || []).map(r => ({
+    loc:               r.loc,
+    scheduledShiftId:  r.scheduled_shift_id,
+    employeeName:      r.employee_name,
+    originalValue:     r.original_value,
+    updatedValue:      r.updated_value,
+    editedBy:          r.edited_by,
+    occurredAt:        r.occurred_at,
+    hoursVariance:     r.hours_variance,
+    costVariance:      r.cost_variance,
+    updatedAt:         r.updated_at,
+  }));
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's
