@@ -215,15 +215,26 @@ async function pollAsyncReports(token, ids, { maxAttempts = 15, intervalMs = 400
   return { resolved, stillPending: pending };
 }
 
+// Measured live twice now (dispatch runs 41349875190, 41350299009). First guess (the header
+// being rejected) was wrong -- the real error, now visible in the response body, is
+// {"code":"API_VERSION","detail":"malformed API version: \"\""} HTTP 412: the download url
+// wants the SAME X-Version header every other LifeLenz call sends (lakehouseHeaders()), which
+// the original X-Auth-Token-only request never included. The "retry bare" fallback made it
+// worse (zero headers, same 412, for the same real reason). Fixed: use the full header set
+// first; the auth-only fallback stays only as a second attempt in case the url is ever a truly
+// bare pre-signed link for some other report type.
 async function downloadReport(token, report) {
   if (report.error) throw new Error(`report generation error: ${report.error}`);
   if (!report.url) throw new Error(`report has no url (status=${report.status})`);
-  let resp = await fetch(report.url, { headers: { 'X-Auth-Token': token } });
-  if (resp.status === 401 || resp.status === 403) {
-    if (DEBUG) console.log('[download] auth header rejected by report url, retrying bare');
-    resp = await fetch(report.url);
+  let resp = await fetch(report.url, { headers: lakehouseHeaders(token) });
+  if (!resp.ok) {
+    if (DEBUG) console.log(`[download] full-header request got HTTP ${resp.status}, retrying with X-Auth-Token only`);
+    resp = await fetch(report.url, { headers: { 'X-Auth-Token': token } });
   }
-  if (!resp.ok) throw new Error(`download HTTP ${resp.status}`);
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`download HTTP ${resp.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+  }
   return await resp.text();
 }
 
@@ -241,38 +252,76 @@ function parseCsvLine(line) {
 }
 
 // We requested an explicit `columns` list in a known order, so the header row should name those
-// columns verbatim (by `member` or `shortTitle` -- unconfirmed which). Matches by exact member
-// name first; any column that doesn't match falls back to its POSITIONAL slot in our own
-// COLUMNS request (the server returning columns in the order we asked for is the most likely
-// failure-safe assumption if the header text itself turns out to differ from `member`).
+// columns verbatim by `member` name (e.g. "occurred_at") -- WRONG, measured live 2026-11-01
+// (dispatch run 41351238819, window_days=30, finally caught the real empty-report shape). The
+// real file is THREE lines of metadata before any data, and the header uses HUMAN-READABLE
+// labels, not the raw column members we requested:
+//   Schedule Variance
+//   Date Range,10/02/2026 - 11/01/2026
+//   Store Name,Scheduled Shift,Assignee,Original Value,Adjusted Value,Actioned By,Actioned At,Hours Variance,Cost Variance
+// So `columns` in the trigger request controls which data fields come back, but NOT what the
+// CSV calls them in its own header row. Two earlier guesses (member-name match at row 0, then
+// row 1) were both wrong for this reason, not a flake -- this scans every line (not a fixed
+// index, in case a location/employee filter line is ever inserted) for the one whose cells
+// exact-match the real human labels below, so a shift in metadata-row COUNT doesn't break this
+// again. Falls back to the raw member names too, in case a different report view ever serves
+// those instead. Still genuinely unconfirmed: real DATA row content (every store had zero edits
+// even across a 30-day window) -- the header row itself is now measured, not the data shape.
+const HEADER_LABELS = {
+  shiftId:       ['scheduled shift', 'scheduled_shifts_scheduled_shift_id'],
+  employeeName:  ['assignee', 'employees_employee_name'],
+  originalValue: ['original value', 'original_value'],
+  updatedValue:  ['adjusted value', 'updated_value'],
+  editedBy:      ['actioned by', 'schedule_event_actors_employee_name'],
+  occurredAt:    ['actioned at', 'occurred_at'],
+  hoursVariance: ['hours variance', 'scheduled_hours_variance'],
+  costVariance:  ['cost variance', 'cost_variance'],
+};
 function parseScheduleVarianceCSV(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
-  const headerCells = parseCsvLine(lines[0]).map(h => h.trim());
-  const idxOf = colName => {
-    const exact = headerCells.findIndex(h => h.toLowerCase() === colName.toLowerCase());
-    if (exact >= 0) return exact;
-    const fallback = COLUMNS.indexOf(colName);
-    return fallback >= 0 && fallback < headerCells.length ? fallback : -1;
+
+  const tryHeaderAt = (idx) => {
+    const headerCells = parseCsvLine(lines[idx]).map(h => h.trim());
+    const exactIdxOf = labels => {
+      for (const label of labels) {
+        const i = headerCells.findIndex(h => h.toLowerCase() === label.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    // Gate columns decide whether THIS ROW is the header at all -- both must resolve by exact
+    // label match (no positional guessing), or a metadata/title row with the right column COUNT
+    // could be mistaken for the header (measured live: this exact failure mode, twice, before
+    // this fix).
+    const editedByIdx = exactIdxOf(HEADER_LABELS.editedBy);
+    const occurredAtIdx = exactIdxOf(HEADER_LABELS.occurredAt);
+    if (editedByIdx < 0 || occurredAtIdx < 0) return null;
+    const C = {
+      employeeName: exactIdxOf(HEADER_LABELS.employeeName),
+      originalValue: exactIdxOf(HEADER_LABELS.originalValue),
+      updatedValue: exactIdxOf(HEADER_LABELS.updatedValue),
+      editedBy: editedByIdx,
+      occurredAt: occurredAtIdx,
+      hoursVariance: exactIdxOf(HEADER_LABELS.hoursVariance),
+      costVariance: exactIdxOf(HEADER_LABELS.costVariance),
+      shiftId: exactIdxOf(HEADER_LABELS.shiftId),
+    };
+    return { C, headerRowIdx: idx, headerCells };
   };
-  const C = {
-    employeeName: idxOf('employees_employee_name'),
-    originalValue: idxOf('original_value'),
-    updatedValue: idxOf('updated_value'),
-    editedBy: idxOf('schedule_event_actors_employee_name'),
-    occurredAt: idxOf('occurred_at'),
-    hoursVariance: idxOf('scheduled_hours_variance'),
-    costVariance: idxOf('cost_variance'),
-    shiftId: idxOf('scheduled_shifts_scheduled_shift_id'),
-  };
-  if (C.editedBy < 0 || C.occurredAt < 0) {
-    console.warn('[parse] could not locate edited_by/occurred_at columns — header shape drifted, not guessing. Header was:', JSON.stringify(headerCells));
+
+  let found = null;
+  for (let i = 0; i < Math.min(lines.length, 10) && !found; i++) found = tryHeaderAt(i);
+  if (!found) {
+    console.warn('[parse] could not locate the header row in the first 10 lines — shape drifted, not guessing.');
+    if (DEBUG) console.log('[parse] raw first 5 lines:', JSON.stringify(lines.slice(0, 5)));
     return [];
   }
+  const { C, headerRowIdx } = found;
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
   const rows = [];
   const seqByGroup = new Map();
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerRowIdx + 1; i < lines.length; i++) {
     const r = parseCsvLine(lines[i]);
     const editedBy = r[C.editedBy];
     const occurredAt = r[C.occurredAt];
