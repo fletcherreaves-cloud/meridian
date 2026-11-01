@@ -59,6 +59,7 @@ on:
       - LifeLenz Attendance Pull
       - LifeLenz Daily Sync
       - LifeLenz People Skills Sync
+      - LifeLenz Schedule Variance Pull
       - Local News RSS Pull
       - QSRSoft Historical Backfill
       - QSRSoft Cash Anomaly Check

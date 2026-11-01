@@ -75,6 +75,12 @@ export const STREAMS = [
   // `date` field. See scripts/lifelenz-attendance-pull.mjs / supabase/schema-lifelenz-
   // attendance.sql (2026-09-06).
   { key: 'lifelenzAttendance', label: 'LifeLenz Attendance',    dsField: 'lifelenzAttendanceRows', cadenceDays: 1 },
+  // New Data Explorer "Schedule Variance" pull (2026-11-01) -- rows key on `occurredAt`
+  // (camelCased from occurred_at), not 'date', hence the dateField override. A store with
+  // zero edits in the pull window legitimately has no new rows that day, same as every other
+  // event-log-shaped stream here -- staleDays reads off the MOST RECENT edit across all
+  // stores, not a per-store completeness check.
+  { key: 'scheduleVariance', label: 'LifeLenz Schedule Variance', dsField: 'scheduleVarianceRows', dateField: 'occurredAt', cadenceDays: 1 },
   // Closed 2026-09-13 -- previously a documented gap (memory/backlog-open-2026-09-06.md):
   // QSRSoft Inventory Summary Pull runs daily and is already watched in
   // sync-failure-watch.yml, but the table was fetched panel-locally by InventoryIntelligence

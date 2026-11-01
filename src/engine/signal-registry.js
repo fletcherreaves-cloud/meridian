@@ -52,6 +52,17 @@ export const METRIC_CATEGORIES = [
       { key: 'avgRate',     label: 'Avg Wage Rate ($/hr)',      source: 'laborRows',  field: 'avgRate',        granularity: ['daily','monthly'], better: null,     unit: '$/hr' },
       { key: 'otHrs',       label: 'OT Hours',                  source: 'laborRows',  field: 'otHrs',          granularity: ['daily','monthly'], better: 'lower',  unit: 'hrs', aggregate: 'sum' },
       { key: 'schedGap',    label: 'Schedule Gap vs Ideal (hrs)',source: 'schedRows',  field: 'schVsIdealDiff', granularity: ['daily','monthly'], better: null,     unit: 'hrs' },
+      // 2026-11-01 — LifeLenz Data Explorer "Schedule Variance" (scripts/lifelenz-schedule-
+      // variance-pull.mjs). source is the per-(loc,date) aggregate src/engine/schedule-
+      // discipline.js's dailyScheduleVariance() computes from the raw edit-event rows (App.js
+      // wires it into ds.scheduleVarianceDailyRows), not the raw rows themselves -- same
+      // one-row-per-(loc,date) shape every other metric here expects. aggregate:'sum' matches
+      // otHrs/otDollar above: these are COUNT/dollar totals for the day, not something to
+      // average. better:'lower' — frequent, costly post-publish schedule edits are a planning-
+      // discipline signal, not a neutral one (src/engine/schedule-discipline.js's own header has
+      // the full reasoning).
+      { key: 'scheduleEditCount', label: 'Schedule Edits (post-publish)', source: 'scheduleVarianceDailyRows', field: 'editCount', granularity: ['daily','monthly'], better: 'lower', unit: 'edits', aggregate: 'sum' },
+      { key: 'scheduleCostVariance', label: 'Schedule Edit Cost Impact ($)', source: 'scheduleVarianceDailyRows', field: 'costVarianceSum', granularity: ['daily','monthly'], better: 'lower', unit: '$', aggregate: 'sum' },
       // ── 2026-10-15 (Reports-redesign Phase 1 catalog audit) ──────────────────────────────
       // The 15 entries below all have real metric-source.js chains (confirmed by the full-file
       // audit backing memory/project-reports-redesign.md) but never had a registry label --
