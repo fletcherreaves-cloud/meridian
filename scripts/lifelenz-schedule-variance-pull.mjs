@@ -215,19 +215,21 @@ async function pollAsyncReports(token, ids, { maxAttempts = 15, intervalMs = 400
   return { resolved, stillPending: pending };
 }
 
-// Measured live 2026-11-01 (dispatch run 41349875190): the report `url` is a pre-signed link
-// that rejects the X-Auth-Token header with HTTP 412 (Precondition Failed), not 401/403 as
-// originally guessed -- all 28/28 stores hit this identically, so it's a consistent rejection
-// of the extra header, not a flake. Retries bare on ANY non-ok status now, not just 401/403,
-// and logs the response body on a genuine failure so the next surprise is diagnosable without
-// another live dispatch.
+// Measured live twice now (dispatch runs 41349875190, 41350299009). First guess (the header
+// being rejected) was wrong -- the real error, now visible in the response body, is
+// {"code":"API_VERSION","detail":"malformed API version: \"\""} HTTP 412: the download url
+// wants the SAME X-Version header every other LifeLenz call sends (lakehouseHeaders()), which
+// the original X-Auth-Token-only request never included. The "retry bare" fallback made it
+// worse (zero headers, same 412, for the same real reason). Fixed: use the full header set
+// first; the auth-only fallback stays only as a second attempt in case the url is ever a truly
+// bare pre-signed link for some other report type.
 async function downloadReport(token, report) {
   if (report.error) throw new Error(`report generation error: ${report.error}`);
   if (!report.url) throw new Error(`report has no url (status=${report.status})`);
-  let resp = await fetch(report.url, { headers: { 'X-Auth-Token': token } });
+  let resp = await fetch(report.url, { headers: lakehouseHeaders(token) });
   if (!resp.ok) {
-    if (DEBUG) console.log(`[download] header'd request got HTTP ${resp.status}, retrying bare`);
-    resp = await fetch(report.url);
+    if (DEBUG) console.log(`[download] full-header request got HTTP ${resp.status}, retrying with X-Auth-Token only`);
+    resp = await fetch(report.url, { headers: { 'X-Auth-Token': token } });
   }
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
