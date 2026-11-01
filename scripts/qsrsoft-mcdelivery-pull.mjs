@@ -228,16 +228,22 @@ async function fetchViaPlaywright(period) {
     if (!token) { console.error('[auth] ✗ could not capture a reporting token'); await snap('mcdelivery-error.png'); return null; }
     console.log(`[auth] ✓ token captured (${token.length} chars) — fetching mcdelivery…`);
 
-    // Retry a bare "Failed to fetch" up to 2 extra times (2026-09-13, #1231) -- measured live:
+    // Retry a bare "Failed to fetch" up to 4 extra times (2026-09-13, #1231; widened 2026-11-01
+    // after measuring this exact failure shape recur live on 2026-10-11 and 2026-10-24 -- still
+    // exhausting the previous 2-extra-attempt budget on both occasions) -- measured live:
     // a manual re-run of this exact workflow, same day, succeeded outright with no code change,
     // and the same generic-TypeError symptom was also seen (and also recovered on retry) on two
     // OTHER independent QSRSoft pull scripts the same day. A bare fetch() TypeError carries no
     // HTTP status and no diagnosable reason to page JS by design (CORS denial, DNS hiccup, and a
     // transient network blip are indistinguishable to script) -- but it has been observed
-    // transient here, which a short retry is the correct, minimal response to. A real HTTP
-    // error (never a TypeError) still returns immediately, unretried.
+    // transient here, which a longer retry is the correct, minimal response to. A real HTTP
+    // error (never a TypeError) still returns immediately, unretried. This mitigates the symptom;
+    // it does not root-cause WHY this one endpoint throws a bare TypeError more than its QSRSoft
+    // siblings -- that's still open. The new sync-failure-watch notification (memory/
+    // proactive-sync-notifications.md) means a run that exhausts even this wider retry budget is
+    // no longer invisible, which is the actual fix for "minimize downtime" here.
     let result, lastErr;
-    for (let attempt = 0; attempt <= 2; attempt++) {
+    for (let attempt = 0; attempt <= 4; attempt++) {
       result = await page.evaluate(async ({ url, tok }) => {
         try {
           const r = await fetch(url, {
@@ -250,9 +256,10 @@ async function fetchViaPlaywright(period) {
       }, { url: buildUrl(period), tok: token });
       if (!result.error) break;
       lastErr = result.error;
-      if (result.error !== 'Failed to fetch' || attempt === 2) break;
-      console.log(`[mcdelivery] fetch attempt ${attempt + 1} failed ("Failed to fetch") -- retrying in 3s…`);
-      await wait(3000);
+      if (result.error !== 'Failed to fetch' || attempt === 4) break;
+      const backoffMs = 3000 * (attempt + 1); // 3s, 6s, 9s, 12s
+      console.log(`[mcdelivery] fetch attempt ${attempt + 1} failed ("Failed to fetch") -- retrying in ${backoffMs / 1000}s…`);
+      await wait(backoffMs);
     }
 
     await snap('mcdelivery-final.png');
@@ -292,7 +299,18 @@ async function main() {
   if (found < STORE_NSNS.length) console.warn(`[mcdelivery] ⚠ only ${found}/${STORE_NSNS.length} stores in response`);
   const saved = await upsert(rows);
   console.log(`[mcdelivery] ✓ ${saved} store rows upserted to mcdelivery_monthly for ${period}`);
-  if (!saved) process.exit(1);
+  // Measured 2026-11-01: a brand-new period's 3PO delivery data has a reporting lag — the API
+  // legitimately returns 200 with an empty resp[] for every store on day 1-2 of the month (seen
+  // live 2026-10-01 and 2026-11-01, both auth paths working fine, zero stores back). That is not
+  // a pull failure, so don't treat it as one; a day this early with zero rows is expected, not
+  // alarming. Past day 2, zero rows is still the real "something broke" signal and stays fatal.
+  if (!saved) {
+    if (days <= 2) {
+      console.log(`[mcdelivery] 0 rows on day ${days} of the period — known reporting lag for a brand-new month, not a failure. Will backfill on tomorrow's run.`);
+      return;
+    }
+    process.exit(1);
+  }
 }
 
 main().catch(err => { console.error('[mcdelivery] FATAL:', err); process.exit(1); });
