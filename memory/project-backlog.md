@@ -608,3 +608,47 @@ incorporate that throughout the app as well."*
   custom-groups-2026-11-01.test.js` (8), `dispatch-performance-summary-tile-2026-11-01.test.js`
   (7) — the last renders the real `StoreDash` Enterprise Overview, not just the engine function,
   per this file's own "would this still pass if reverted" standing rule.
+
+## Queued 2026-11-01 — wire 44689 (Lindsay relocation) into Monthly Projections
+
+Owner, explicitly queued, not built now: *"Need to wire in 44689 (New Lindsay Location for
+projections). Use our research from before on monthly projections to guide and model please."*
+
+**The research already exists and already shipped — this is a wiring gap, not a from-scratch
+build.** v5.558 (2026-10-14) added 44689 (the new freestanding Lindsay build replacing 18213,
+"Supervisor and GM and Owner assignments stay the same," projected open 11/14–11/15/26) to
+`STORE_NAMES`/`STORE_COORDS`/`INV_ORG_COORDS`/`STORE_KB`/`supervisorGroups`/`operators`/`doGroups`,
+and purpose-built `src/engine/new-store-ramp.js` for exactly this: a comparable-store ramp-
+blending forecast (owner's own read, `STORE_KB['44689']`: *"volume similar to Tishomingo
+[43380]... adjusted for inflation... Ponce de Leon [43701]... less comparable"*). It pulls each
+comparable's real sales trajectory from its own first trading day, expresses it as a fraction of
+its own mature run-rate (so differently-sized stores blend by SHAPE not dollars), blends by
+weight, then applies that shape to a caller-supplied mature-weekly-sales assumption — 13 tests,
+all passing, but **explicitly shipped as standalone: "not wired into the automatic nightly Model
+Assignment backtest... callable today, UI surface is follow-up work once real open-date data
+exists."** That follow-up never happened.
+
+**Re-verified live today (2026-11-01), not assumed stale:** the one blocker v5.558 flagged (the
+live Supabase `org_config` write for `supervisorGroups`/`operators`/`doGroups` — code-side seed
+only at ship time) **is resolved** — confirmed via a direct service-role read, `supervisorGroups`
+live today already lists `'44689'` under Krystiana Langford. So the org-structure half is fully
+live; only the forecasting/projections half is still the gap.
+
+**Next step when picked up:**
+1. Confirm 44689's real opening date (was "exact dates not final" as of 10-14; today is ~2 weeks
+   out from the projected 11/14-11/15 window — may be confirmed by now, check before building).
+2. Wire `src/engine/new-store-ramp.js`'s `projectNewStoreSales`/`blendRampShapes` into whatever
+   Monthly Projections / Smart Targets actually reads for 44689's forecast once it has sales
+   history under `storeAgeDays()<400` (`forecastDay`'s existing `noLYData` branch in
+   `src/engine/forecast.js` already calls `fetchRampSales` for a young store, but that's a
+   DIFFERENT, simpler same-DOW trailing approach — not the comparable-store blend engine).
+   Decide whether `fetchRampSales` should call into `new-store-ramp.js`'s blend for 44689
+   specifically (comparables keyed by loc), or whether the comparable-blend is a separate,
+   owner-facing "new store forecast" UI surface (e.g. a tile/panel for the pre-opening planning
+   window where there's no own-store history yet at all) — the current engine's `comparables` and
+   `matureWeeklySales` are caller-supplied, not auto-derived, so a UI decision on where that input
+   comes from is real design work, not just an import.
+3. `matureWeeklySales` for 44689 is still *"a judgment call only the owner can make"* per
+   `new-store-ramp.js`'s own design note — don't fabricate one; surface it as an input the owner
+   sets (likely near `DEFAULT_TARGETS['44689']`, itself still a verbatim 18213 copy flagged as a
+   placeholder, not an owner-reviewed target).
