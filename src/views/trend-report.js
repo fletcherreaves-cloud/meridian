@@ -333,7 +333,7 @@ export function TrendReportPanel({ ds, onClose }) {
         value: metric.key, onChange: e => setMetricKey(e.target.value),
         style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 11, padding: '5px 8px' },
       }, ...TREND_REPORT_METRICS.map(m => h('option', { key: m.key, value: m.key }, m.label))),
-      viewMode === 'detail' && h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scopeValue, onChange: setScopeValue }),
+      viewMode === 'detail' && h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scopeValue, onChange: setScopeValue, variant: 'dropdown' }),
       viewMode === 'detail' && div({ style: { display: 'flex', gap: 4 } },
         ...RANK_MODES.map(rm => btn({ key: rm.id, style: _pillStyle(rankMode === rm.id), onClick: () => setRankMode(rm.id) }, rm.label))),
       btn({

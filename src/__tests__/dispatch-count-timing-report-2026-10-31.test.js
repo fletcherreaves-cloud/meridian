@@ -134,7 +134,10 @@ describe('Count Timing Report (owner req 2026-10-31)', () => {
     await renderPanel(root);
     await openReport(container);
     const card = modalCard(container);
-    const select = [...card.querySelectorAll('select')][0];
+    // Find the MODE select by its known option values, not position -- the Location selector
+    // (2026-11-02 dropdown rollout) now also renders as a <select> in this same control row, so
+    // a positional [0] index is no longer reliable.
+    const select = [...card.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === 'sessions'));
     await act(async () => { select.value = 'sessions'; select.dispatchEvent(new Event('change', { bubbles: true })); });
     const ardmoreRows = [...card.querySelectorAll('tbody tr')].filter(r => r.textContent.includes('Ardmore-Broadway'));
     expect(ardmoreRows.length).toBe(3);
@@ -148,11 +151,17 @@ describe('Count Timing Report (owner req 2026-10-31)', () => {
     await renderPanel(root);
     await openReport(container);
     const card = modalCard(container);
-    const okBtn = [...card.querySelectorAll('button')].find(b => b.textContent === 'OK');
-    expect(okBtn, 'OK state pill not found').toBeTruthy();
-    await act(async () => { okBtn.click(); });
-    // mode:'full' renders the WHOLE address book as navigable pills regardless of selection
-    // (e.g. "Chipley-St Rd 77" still appears as a pill label) -- only the table body itself is
+    // Location selector here renders as variant:'dropdown' (2026-11-02 rollout) -- a single
+    // <select> with an optgroup per state, not a pill per state.
+    const locSelect = [...card.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === 'state:OK'));
+    expect(locSelect, 'Location dropdown with an OK state option not found').toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(locSelect, 'state:OK');
+      locSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // mode:'full' renders the WHOLE address book as navigable <option>s regardless of selection
+    // (e.g. "Chipley-St Rd 77" still appears as an option label) -- only the table body itself is
     // expected to narrow, so scope the assertion there, not the whole modal card.
     const tbody = card.querySelector('tbody');
     expect(tbody.textContent).toContain('Ardmore-Broadway');

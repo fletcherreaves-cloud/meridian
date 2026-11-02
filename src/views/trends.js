@@ -131,7 +131,7 @@ export function TrendExplorerPanel({ ds, onClose }) {
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       h(MetricSelect, { value: metricKey, onChange: setMetricKey, label: 'Metric' }),
-      h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'store',
+      h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'store', variant: 'dropdown',
         value: storeLoc ? { level: 'store', id: storeLoc } : { level: 'all', id: null },
         onChange: v => setStoreLoc(v.id || null) }),
       h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),

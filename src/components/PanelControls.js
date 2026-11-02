@@ -246,6 +246,13 @@ export function LocationSelector({ stores, invOrgCoords, storeNames, customGroup
         ...tree.states.map((s) => h('option', { key: 'st-' + s.id, value: `state:${s.id}` }, s.label))) : null,
       tree.patches.length ? h('optgroup', { label: 'By Patch' },
         ...tree.patches.map((p) => h('option', { key: 'pt-' + p.id, value: `patch:${p.id}` }, p.label))) : null,
+      // Custom saved groups (2026-11-01 — see buildLocationHierarchy's own comment). Missing
+      // from this branch until now: the pill-mode render below already includes a group pill
+      // per tree.groups, so a panel converted to variant:'dropdown' while also passing
+      // customGroups would have silently lost group access with no error — caught during the
+      // 2026-11-02 LocationSelector dropdown rollout, before any live caller combined the two.
+      tree.groups?.length ? h('optgroup', { label: 'Groups' },
+        ...tree.groups.map((g) => h('option', { key: 'gr-' + g.id, value: `group:${g.id}` }, '🔧 ' + g.label))) : null,
       ...tree.states.map((s) => h('optgroup', { key: 'stores-' + s.id, label: s.label + ' Stores' },
         ...s.locs.map((l) => h('option', { key: 'lc-' + l, value: `store:${l}` }, tree.storeLabel(l))))),
     );

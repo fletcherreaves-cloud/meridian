@@ -75,7 +75,7 @@ export function OpportunityDollars({ stores, ds, onClose, onSelectStore }) {
         onClick: () => setWindowMode(w.id),
       }, w.label))),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
+      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' })),
     div({ 'data-testid': 'opportunity-headline', style: { padding: 14, borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' } },
       div(null,
         div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } },

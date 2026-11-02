@@ -140,9 +140,15 @@ describe('Missed on Current Count report (owner req 2026-11-01)', () => {
     await renderPanel(root);
     await openReport(container);
     const card = modalCard(container);
-    const flBtn = [...card.querySelectorAll('button')].find(b => b.textContent === 'FL');
-    expect(flBtn, 'FL state pill not found').toBeTruthy();
-    await act(async () => { flBtn.click(); });
+    // Location selector here renders as variant:'dropdown' (2026-11-02 rollout) -- a single
+    // <select> with an optgroup per state, not a pill per state.
+    const locSelect = [...card.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === 'state:FL'));
+    expect(locSelect, 'Location dropdown with an FL state option not found').toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(locSelect, 'state:FL');
+      locSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     expect(card.textContent).toContain('Nothing missed in the current scope');
   });
 });

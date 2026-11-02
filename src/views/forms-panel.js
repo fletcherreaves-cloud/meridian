@@ -316,7 +316,7 @@ export function FormsCompletionPanel({ onClose, stores, userRole }) {
     // Location selector (dispatch #101 part 3) -- All -> State -> Patch -> Store, the shared
     // control per feedback-selector-ui-standard.md.
     div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
-      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope }),
+      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' }),
     ),
     div({ style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
       dataState === 'loading' && div({ style: { padding: '40px 20px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading form completions…'),

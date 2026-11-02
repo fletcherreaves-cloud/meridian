@@ -126,7 +126,7 @@ export function MissedCountReportModal({ stores, onHand, period, onClose }) {
   const doCsv = () => downloadCsv(reportCSV(grouped, period), `missed-count-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-${period}.csv`);
 
   const headerRow = div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full' }),
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown' }),
     div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
       span({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'Force count date:'),
       h('input', {

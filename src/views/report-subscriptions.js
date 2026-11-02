@@ -148,6 +148,7 @@ export function ReportSubscriptionsBody({ onLaunch }) {
   const scopeSelect = () => h(LocationSelector, {
     stores: _stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
+    variant: 'dropdown',
   });
 
   // Body only -- no shell of its own (Reports Hub Phase 3, 2026-10-16). The save/sync indicator

@@ -844,11 +844,11 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               // split). By Hour now carries two bars per row (Avg DT + Trans) instead of one, so
               // it needs more room; rebalanced to a ~3:2 split rather than the old ~2:1.
               div({ style:{ flex:'3 1 380px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
-                borderRadius:'var(--r)', overflow:'hidden' }},
+                borderRadius:'var(--r)', overflow:'hidden', overflowX:'auto' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
                   fontSize:'10px', fontWeight:800, color:'var(--text)' }},
                   `Store Ranking — ${shortLabel} — ${sorted.length} stores`),
-                h('table', { style:{ width:'100%', borderCollapse:'collapse' }},
+                h('table', { style:{ width:'max-content', minWidth:'100%', borderCollapse:'collapse' }},
                   h('thead', null,
                     h('tr', null,
                       h('th', { style:{ ...thS('name'), textAlign:'left', cursor:'default' }}, 'Store'),
@@ -895,10 +895,10 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
 
               // Hour-of-day breakdown
               div({ style:{ flex:'2 1 300px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
-                borderRadius:'var(--r)', overflow:'hidden' }},
+                borderRadius:'var(--r)', overflow:'hidden', overflowX:'auto' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
                   fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `By Hour — ${shortLabel} — ` + trendLabel),
-                h('table', { style:{ width:'100%', borderCollapse:'collapse' }},
+                h('table', { style:{ width:'max-content', minWidth:'100%', borderCollapse:'collapse' }},
                   h('thead', null,
                     h('tr', null,
                       h('th', { style:{ ...thS('hour'), textAlign:'left', cursor:'default' }}, 'Hour'),

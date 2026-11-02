@@ -250,7 +250,7 @@ export function FormsReviewsPanel({ onClose, stores }) {
       }, `Using ${customRange.s} → ${customRange.e} — Clear`),
     ),
     div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
-      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope }),
+      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' }),
     ),
     div({ style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
       dataState === 'loading' && div({ style: { padding: '40px 20px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading review forms…'),

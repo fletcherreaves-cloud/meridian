@@ -103,3 +103,65 @@ describe('LocationSelector (mode=full) renders a pill per saved group and fires 
     container.remove();
   });
 });
+
+// 2026-11-02 regression coverage: the variant:'dropdown' + mode:'full' branch was built before
+// customGroups existed and never got a matching options update when the groups tier shipped —
+// caught during that same day's LocationSelector dropdown rollout (no live caller combines the
+// two yet, so this was a latent gap, not a live bug) rather than invented speculatively.
+describe('LocationSelector (mode=full, variant=dropdown) — groups optgroup', () => {
+  it('renders a "Groups" optgroup with one <option> per saved group', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(React.createElement(LocationSelector, {
+        stores: STORES, invOrgCoords: INV, storeNames: NAMES, mode: 'full', variant: 'dropdown',
+        customGroups: [{ id: 'g1', name: 'MRG Restaurants', locs: ['3708', '6178'] }],
+        value: { level: 'all', id: null }, onChange: () => {},
+      }));
+    });
+    const groupOption = [...container.querySelectorAll('option')].find(o => o.textContent.includes('MRG Restaurants'));
+    expect(groupOption).toBeTruthy();
+    expect(groupOption.value).toBe('group:g1');
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('with no customGroups passed, no "Groups" optgroup renders (unaffected existing behavior)', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(React.createElement(LocationSelector, {
+        stores: STORES, invOrgCoords: INV, storeNames: NAMES, mode: 'full', variant: 'dropdown',
+        value: { level: 'all', id: null }, onChange: () => {},
+      }));
+    });
+    expect([...container.querySelectorAll('optgroup')].some(g => g.label === 'Groups')).toBe(false);
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('selecting a group option fires onChange({level:"group", id})', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let lastValue = null;
+    act(() => {
+      root.render(React.createElement(LocationSelector, {
+        stores: STORES, invOrgCoords: INV, storeNames: NAMES, mode: 'full', variant: 'dropdown',
+        customGroups: [{ id: 'g1', name: 'MRG Restaurants', locs: ['3708', '6178'] }],
+        value: { level: 'all', id: null }, onChange: (v) => { lastValue = v; },
+      }));
+    });
+    const select = container.querySelector('select');
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, 'group:g1');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(lastValue).toEqual({ level: 'group', id: 'g1' });
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+});
