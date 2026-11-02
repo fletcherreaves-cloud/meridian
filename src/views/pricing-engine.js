@@ -659,7 +659,7 @@ function CrossStoreTab({ itemRows, crossStore, wide }) {
       div({ style: { fontSize: 36 } }, '🏬'),
       div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, 'Select 2+ Stores to Compare'),
       div({ style: { fontSize: 10, textAlign: 'center', maxWidth: 380, lineHeight: 1.7 } },
-        'Use the location selector above to pick a district, patch, or state — this tab compares the same item\'s price/cost/margin across every store in scope.'));
+        'Use the location selector above to pick a district, patch, state, or any custom combination of stores — this tab compares the same item\'s price/cost/margin across every store in scope.'));
   }
 
   return div({ style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' } },
@@ -1066,7 +1066,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     .slice(0, 15), [displayRows]);
 
   const scopeLabel = scope.level === 'all' ? 'District' : scope.level === 'store'
-    ? (sNameC(scope.id) || scope.id) : (tree.storeLabel ? scope.id : scope.id);
+    ? (sNameC(scope.id) || scope.id) : scope.level === 'multi'
+    ? `Custom (${scopedLocs.length} store${scopedLocs.length === 1 ? '' : 's'})`
+    : (tree.storeLabel ? scope.id : scope.id);
 
   const heroLine = scopeTotals.blendedPct == null ? null
     : `${scopeLabel} blended margin ${fPc(scopeTotals.blendedPct)} — ${scopeTotals.belowThreshold ? scopeTotals.belowThreshold + ' item' + (scopeTotals.belowThreshold === 1 ? '' : 's') + ` below ${Math.round(MARGIN_CONCERN_PCT * 100)}%, chase those first` : `no items below ${Math.round(MARGIN_CONCERN_PCT * 100)}%, margins look healthy`}`;
@@ -1187,7 +1189,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
         'Through ' + maxDate.toISOString().slice(0, 10)),
     ),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' })),
+      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown', multi: true })),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
       ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }, { id: 'price-impact', label: '💥 Price Impact' }, { id: 'menu-prices', label: '🏷️ Menu Prices' }].map(t => btn({
         key: t.id, className: 'btn btn-sm',

@@ -222,12 +222,103 @@ export function parseLocationSelectorOptionValue(raw) {
 // 'full' and 'store' modes; 'progressive' already condenses one tier at a time and keeps its
 // pill rendering regardless of `variant` (no caller currently combines the two, and a cascading-
 // select version of 'progressive' is a separate, bigger change, not a two-line add).
-export function LocationSelector({ stores, invOrgCoords, storeNames, customGroups, value, onChange, mode = 'full', variant = 'pills' }) {
+// multi: true (owner ask, 2026-11-02 — "multi-select any combination of locations for
+// reporting and viewing") turns the control into an arbitrary-subset picker instead of the
+// single-pick hierarchy above. Orthogonal to `mode`/`variant` — it overrides rendering before
+// either is consulted, but still reads the same `tree` (and so still respects `mode:'store'` by
+// hiding the State/Patch bulk-toggle row, since a store-only panel's hierarchy has no state/patch
+// tiers worth toggling in bulk).
+// value: {level:'all', id:null} (everything, unchanged meaning) | {level:'multi', ids:[...]} — an
+// EXPLICIT list of loc strings, length 0 included. Deliberately never collapses an empty `ids` back
+// to 'all' (those are different things for a report: "nothing in scope" vs "every store") — the
+// caller decides what an empty selection means for its own filtering, same as it already must for
+// value===null today.
+// onChange receives the same shape. Bulk toggles (State/Patch pills, or clicking an individual
+// store) all go through one toggle function so "is this group fully selected" and "what happens on
+// click" can never drift apart.
+export function LocationSelector({ stores, invOrgCoords, storeNames, customGroups, value, onChange, mode = 'full', variant = 'pills', multi = false }) {
   const tree = React.useMemo(
     () => buildLocationHierarchy(stores, invOrgCoords, storeNames, customGroups),
     [stores, invOrgCoords, storeNames, customGroups],
   );
   const pick = (level, id) => onChange?.({ level, id });
+
+  if (multi) {
+    const ids = value?.level === 'multi' ? (value.ids || []) : [];
+    const isAll = value?.level === 'all';
+    const toggleLocs = (locs) => {
+      const allIn = locs.every((l) => ids.includes(l));
+      const next = allIn ? ids.filter((l) => !locs.includes(l)) : [...new Set([...ids, ...locs])];
+      onChange?.({ level: 'multi', ids: next });
+    };
+
+    if (variant === 'dropdown') {
+      // A "quick add" <select> alongside the store checklist -- the dropdown variant exists for
+      // compactness, so losing the one-click whole-state/whole-patch pick that the single-select
+      // dropdown has (every tier flattened into one <select>) would be a real regression for a
+      // caller that chose dropdown specifically to avoid a wall of pills. Picking an entry here
+      // bulk-toggles that group through the same toggleLocs used by the pills variant, then resets
+      // back to its placeholder -- it's an action, not a persistent selection of its own.
+      const quickAdd = (e) => {
+        const raw = e.target.value;
+        e.target.value = '';
+        if (!raw) return;
+        const i = raw.indexOf(':');
+        const level = raw.slice(0, i), id = raw.slice(i + 1);
+        const group = level === 'state' ? tree.states.find((s) => s.id === id)
+          : level === 'patch' ? tree.patches.find((p) => p.id === id)
+          : (tree.groups || []).find((g) => g.id === id);
+        if (group) toggleLocs(group.locs);
+      };
+      return div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        h('select', {
+          multiple: true, value: ids,
+          onChange: (e) => onChange?.({ level: 'multi', ids: [...e.target.selectedOptions].map((o) => o.value) }),
+          style: { ..._selectStyle, minHeight: 72, minWidth: 160 },
+        },
+          mode === 'store'
+            ? tree.locs.map((l) => h('option', { key: l, value: l }, tree.storeLabel(l)))
+            : tree.states.map((s) => h('optgroup', { key: 'st-' + s.id, label: s.label },
+                ...s.locs.map((l) => h('option', { key: l, value: l }, tree.storeLabel(l))))),
+        ),
+        mode !== 'store' && (tree.states.length || tree.patches.length || tree.groups?.length)
+          ? h('select', { value: '', onChange: quickAdd, title: 'Add/remove a whole group at once', style: _selectStyle },
+              h('option', { value: '' }, '+ Add group…'),
+              tree.states.length ? h('optgroup', { label: 'By State' },
+                ...tree.states.map((s) => h('option', { key: 'qst-' + s.id, value: `state:${s.id}` }, s.label))) : null,
+              tree.patches.length ? h('optgroup', { label: 'By Patch' },
+                ...tree.patches.map((p) => h('option', { key: 'qpt-' + p.id, value: `patch:${p.id}` }, p.label))) : null,
+              tree.groups?.length ? h('optgroup', { label: 'Groups' },
+                ...tree.groups.map((g) => h('option', { key: 'qgr-' + g.id, value: `group:${g.id}` }, '🔧 ' + g.label))) : null,
+            )
+          : null,
+        btn({ style: _pillStyle(isAll), onClick: () => onChange?.({ level: 'all', id: null }) }, 'All'),
+        btn({ style: _pillStyle(!isAll && !ids.length), onClick: () => onChange?.({ level: 'multi', ids: [] }) }, 'Clear'),
+        span({ style: { fontSize: 10, color: 'var(--text3)' } }, isAll ? 'All stores' : `${ids.length} selected`),
+      );
+    }
+
+    return div({ style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        btn({ style: _pillStyle(isAll), onClick: () => onChange?.({ level: 'all', id: null }) }, 'All Locations'),
+        btn({ style: _pillStyle(!isAll && !ids.length), onClick: () => onChange?.({ level: 'multi', ids: [] }) }, 'None'),
+        mode !== 'store' ? tree.states.map((s) => btn({
+          key: 'st-' + s.id, style: _pillStyle(s.locs.every((l) => ids.includes(l))), onClick: () => toggleLocs(s.locs),
+        }, s.label)) : null,
+        mode !== 'store' ? tree.patches.map((p) => btn({
+          key: 'pt-' + p.id, style: _pillStyle(p.locs.every((l) => ids.includes(l))), onClick: () => toggleLocs(p.locs),
+        }, p.label)) : null,
+        mode !== 'store' ? (tree.groups || []).map((g) => btn({
+          key: 'gr-' + g.id, style: _pillStyle(g.locs.every((l) => ids.includes(l))), onClick: () => toggleLocs(g.locs),
+        }, '🔧 ' + g.label)) : null,
+      ),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        ...tree.locs.map((l) => btn({
+          key: 'lc-' + l, style: _pillStyle(ids.includes(l)), onClick: () => toggleLocs([l]),
+        }, tree.storeLabel(l))),
+      ),
+    );
+  }
 
   if (variant === 'dropdown' && mode === 'store') {
     return h('select', {
@@ -337,6 +428,11 @@ export function locationSelectorLocs(value, tree) {
   if (value.level === 'patch') return (tree.patches.find((p) => p.id === value.id) || {}).locs || [];
   if (value.level === 'group') return (tree.groups || []).find((g) => g.id === value.id)?.locs || [];
   if (value.level === 'store') return value.id ? [value.id] : [];
+  // multi (2026-11-02) — an explicit, arbitrary loc list from the `multi:true` picker. Filtered
+  // against tree.locs so a stale id (a removed/renamed store lingering in saved state) doesn't
+  // leak a loc nothing else in the app currently knows about — same defensiveness `group` already
+  // has for the same reason.
+  if (value.level === 'multi') return (value.ids || []).filter((id) => tree.locs.includes(id));
   return tree.locs;
 }
 

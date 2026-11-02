@@ -30,3 +30,11 @@ The pill/chip button style (small rounded pills, selected = accent border + tint
 - Use `var(--accent)` tint for selected state; neutral `var(--bdr)` border for unselected
 
 **See also:** [[project-meridian]] for org data structure, `stores` prop pattern in App.js
+
+**Multi-select addendum (2026-11-02, owner ask: "multi-select any combination of locations for
+reporting and viewing"):** the hierarchy above is still the default — single-pick only. For a
+reporting/comparison panel where an arbitrary cross-cutting combination of stores genuinely makes
+sense (not every panel needs this — most drill-downs and single-store tools don't), pass
+`multi: true` to `LocationSelector` instead of building a separate control. Full design, value
+shape, and current rollout status: `memory/panel-contract.md`'s "`multi:true`: arbitrary
+multi-store selection" section.
