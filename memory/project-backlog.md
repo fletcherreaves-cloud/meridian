@@ -736,3 +736,59 @@ Time Punch Activity Log) are **not built** — their real column schemas were ne
 (only Compliance Audit is confirmed to exist as a report at all). The discovery pass in the new
 pull script logs whichever of the 4 best-guess reportKeys actually resolve; read that job log
 before guessing at a build for any of them.
+
+## ✅ Shipped 2026-11-02 — Compliance Audit (second Data Explorer build, v5.599)
+
+Owner-queued next after Schedule Discipline (same session, same "build out the Data Explorer
+findings" directive). All 4 remaining reportKeys were confirmed REAL via dispatch run
+41349875190's discovery pass (full real column schemas captured, not guessed — see
+`memory/lifelenz-session.md`'s "BUILT 2026-11-01" section); Compliance Audit was built first of
+the 3 still-open ones (`employee_performance_report`/`payroll_readiness_report` remain
+unbuilt — `time_punch_activity_report` is flagged there as likely overlapping
+`lifelenz_punch_edits` and needs a side-by-side comparison before ever building a pull against
+it).
+
+**New table**: `lifelenz_compliance_audit` (`supabase/schema-lifelenz-compliance-audit.sql`) —
+NOT YET APPLIED to production Supabase (same as every schema-*.sql in this repo; owner applies
+manually via the SQL Editor). 15 of the 42 real columns are promoted to real table columns
+(the ones the panel/Signals actually need — `compliance_warning_id`, `employee_name`, `geid`,
+`shift_date`, `category`, `title`, `description`, `source`, `cost_penalty`, `hour_penalty`,
+`warning_time`, `is_dismissed`, `dismissal_reason`, `dismissed_by`, `dismissed_on`); everything
+else the live `GetReportMeta` call discovers lands in a `raw` JSONB column, same "avoids a
+300-column schema" precedent `qsr_cash_sheet`/`qsr_labor_summary` already use.
+
+**Architecturally different from Schedule Variance's pull**: Schedule Variance hardcodes its
+9-column `columns` request from a captured curl. Compliance Audit has 42 columns and only a
+*representative* subset was ever captured by hand, so
+`scripts/lifelenz-compliance-audit-pull.mjs` calls `GetReportMeta(reportKey)` live at runtime to
+get the real, complete column list AND each column's human-readable display label, then builds
+both the trigger's `columns` request and the CSV header→member map from that live response
+(`buildLabelMap`) — no hand-typed label guess for all 42 fields, unlike Schedule Variance's
+`HEADER_LABELS` map. This also means the parser is self-correcting if the report's own labels
+ever change.
+
+**New "good use" consumer**:
+- `src/engine/compliance-audit.js` — `storeComplianceSummary`/`dailyComplianceAudit`/
+  `categoryBreakdown`/`employeeViolationSummary`, same shape as `schedule-discipline.js`.
+- New "Compliance Audit" tab in the Labor & Scheduling hub (`ComplianceAuditPanel`,
+  `src/views/labor-tools.js`) — per-store, per-category, per-employee rollups + a
+  recent-violations drill-down, windowed 7/14/30 days, same template as Schedule Discipline's
+  own tab.
+- Signals: `complianceViolationCount`/`complianceCostPenalty` added to `signal-registry.js`'s
+  `labor` group so the Scanner auto-correlates it against every other metric.
+- Watched end to end: `sync-failure-watch.yml`, `stream-freshness.js`
+  (`dateField:'shiftDate'`), and `scripts/lib/scheduled-pull-registry.mjs` — its own parity test
+  (`scheduled-pull-registry.test.js`) passed on the first try this time (both files updated in
+  the same pass).
+
+**Honest gap, same as Schedule Variance at this stage**: NOT yet live-dispatch-validated.
+`groupBy`/`sortOrder` are a reasonable adaptation of the one real captured trigger example for
+this report (memory: `groupBy` on `locations_location_name`+`employees_employee_name`,
+`limit:20`, `GetReportDataTreeAsync`) — adapted here to `GetReportDataCsvAsync` (no limit) for a
+full export; `sortOrder` (by `shift_date` desc) is a sensible default, not captured live. Real
+CSV header shape/data content for this specific report has never been seen — the parser's
+dynamic label-map approach is designed to be robust to whatever shape it turns out to be, but
+that is still a design argument, not a measurement. **Run a `workflow_dispatch` with `debug=1`
+before trusting this in production**, same discipline as every prior LifeLenz Data Explorer
+build this session — the job log will show the real `GetReportMeta` column list and, on a
+parse failure, the raw CSV lines.

@@ -133,6 +133,7 @@ const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: 
 const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
 const PayEventsReportPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.PayEventsReportPanel })));
 const ScheduleDisciplinePanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ScheduleDisciplinePanel })));
+const ComplianceAuditPanel   = lazyPanel(() => _laborTools().then(m => ({ default: m.ComplianceAuditPanel })));
 const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
 const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
 const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
@@ -324,7 +325,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -362,6 +363,7 @@ import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave,
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores, annotateAutoFirstFlags } from '../engine/pipeline.js';
 import { supplementLaborWithSched } from '../engine/labor-supplement.js';
 import { dailyScheduleVariance } from '../engine/schedule-discipline.js';
+import { dailyComplianceAudit } from '../engine/compliance-audit.js';
 import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
@@ -471,6 +473,9 @@ const SCHED_TABS = [
   // 2026-11-01 — LifeLenz Data Explorer "Schedule Variance": who edited a published schedule,
   // what changed, and the hours/cost impact. Same tab-in-hub treatment as Pay Events above.
   { id: 'schedulediscipline', label: 'Schedule Discipline', icon: '📝', perm: 'analytics.store' },
+  // 2026-11-01 — LifeLenz Data Explorer "Compliance Audit": real labor-compliance violations
+  // (meal/rest break, minor-labor, etc.) with a $ cost/hours penalty. Same tab-in-hub treatment.
+  { id: 'complianceaudit', label: 'Compliance Audit', icon: '⚖️', perm: 'analytics.store' },
   { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
   { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
@@ -494,6 +499,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
     tab === 'analytics' ? h(LaborAnalyticsPanel, common) :
     tab === 'payevents' ? h(PayEventsReportPanel, common) :
     tab === 'schedulediscipline' ? h(ScheduleDisciplinePanel, common) :
+    tab === 'complianceaudit' ? h(ComplianceAuditPanel, common) :
     tab === 'scheduling' ? h(SchedulingPanel, common) :
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
@@ -1902,6 +1908,23 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${svRows.length} LifeLenz schedule-variance rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz schedule-variance load failed:',e);} };
+      const _stComplianceAudit = async () => {
+      try{
+        // LifeLenz Data Explorer "Compliance Audit" — see
+        // scripts/lifelenz-compliance-audit-pull.mjs / supabase/schema-lifelenz-compliance-audit.sql.
+        const caRows = await loadLifeLenzComplianceAudit();
+        if(caRows.length>0){
+          // complianceAuditDailyRows — per-(loc,date) aggregate (dailyComplianceAudit), the
+          // shape Signals' metric registry / stream-freshness actually read; raw caRows power
+          // the Compliance Audit panel's drill-down table, category and per-employee breakdowns.
+          const caDailyRows = dailyComplianceAudit(caRows);
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, complianceAuditRows: caRows, complianceAuditDailyRows: caDailyRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${caRows.length} LifeLenz compliance-audit rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz compliance-audit load failed:',e);} };
       const _stGradedVisits = async () => {
       try{
         // Graded visits — same Supabase source the Graded Visits panel uses, loaded into
@@ -2403,6 +2426,7 @@ function App() {
         _timedStage('T2 lifelenzJobHours', _stLifelenzJobHours, _t2Start),
         _timedStage('T2 lifelenzAttendance', _stLifelenzAttendance, _t2Start),
         _timedStage('T2 scheduleVariance', _stScheduleVariance, _t2Start),
+        _timedStage('T2 complianceAudit', _stComplianceAudit, _t2Start),
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
         _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),

@@ -1391,6 +1391,43 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs } = {}) {
   }));
 }
 
+// ── Compliance Audit (2026-11-01) — LifeLenz Data Explorer's labor-compliance-violation log ────
+// Raw per-violation rows. Same broad "names visible" tenant+loc RLS precedent as
+// loadLifeLenzScheduleVariance. Aggregated store/category/employee rollups for Signals + the
+// Compliance Audit panel are computed client-side from these raw rows by
+// src/engine/compliance-audit.js, not pre-aggregated here — the raw rows themselves are also
+// what the panel's drill-down table shows.
+export async function loadLifeLenzComplianceAudit({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_compliance_audit').select('*').order('shift_date', { ascending: false }).range(from, to);
+    if (start) q = q.gte('shift_date', start);
+    if (end) q = q.lte('shift_date', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_compliance_audit');
+  return (data || []).map(r => ({
+    loc:              r.loc,
+    complianceWarningId: r.compliance_warning_id,
+    employeeName:     r.employee_name,
+    geid:             r.geid,
+    shiftDate:        r.shift_date,
+    category:         r.category,
+    title:            r.title,
+    description:      r.description,
+    source:           r.source,
+    costPenalty:      r.cost_penalty,
+    hourPenalty:       r.hour_penalty,
+    warningTime:      r.warning_time,
+    isDismissed:      r.is_dismissed,
+    dismissalReason:  r.dismissal_reason,
+    dismissedBy:      r.dismissed_by,
+    dismissedOn:      r.dismissed_on,
+    raw:              r.raw,
+    updatedAt:        r.updated_at,
+  }));
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's
