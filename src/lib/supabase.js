@@ -3431,8 +3431,13 @@ async function _loadOpsTable(table, daysBack, extra) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
   try {
+    // Pass `table` as fetchAll's label (owner report 2026-11-02: a DATA INCOMPLETE banner named
+    // "a data table" — fetchAll's generic fallback for an unlabeled call). Without it, a page
+    // failure on ANY of the 5 tables this one function serves (qsr_cash_sheet/qsr_labor_summary/
+    // qsr_service_stats/qsr_sales_mix/qsr_peaks_sales) was indistinguishable from the others in
+    // the banner — same "which source actually failed" problem the banner exists to solve.
     const data = await fetchAll((from, to) => supabase.from(table).select('*')
-      .gte('dt', iso).order('dt', { ascending: false }).range(from, to));
+      .gte('dt', iso).order('dt', { ascending: false }).range(from, to), 1000, table);
     return (data || []).map(r => ({
       // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary already
       // does. Without it, every ops*Rows stream (opsCashRows/opsLaborRows/opsServiceRows/
