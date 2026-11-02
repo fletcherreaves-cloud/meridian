@@ -5556,6 +5556,15 @@ export async function loadEquipmentEntriesDirect(loc) {
     .select('*').eq('loc', String(loc)).order('submitted_at', { ascending: false }).range(from, to));
   return data || [];
 }
+// Every store's entries in one fetch, for the Equipment Results panel's cross-store rollup
+// (2026-11-02) -- engine/equipment-survey.js's buildEquipmentStoreSummary() groups by loc itself,
+// so this intentionally does NOT filter or pre-sort by store.
+export async function loadAllEquipmentEntriesDirect() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
+    .select('*').order('submitted_at', { ascending: false }).range(from, to));
+  return data || [];
+}
 // row: { instance_id?, loc, catalog_item_id?, manual_entry_text?, placement_zone?, serial_number?,
 //        cert_date?, action?, position_detail? } -- submitted_by/submitted_at are stamped here,
 // never trusted from the caller (same posture as every other write path in this file).

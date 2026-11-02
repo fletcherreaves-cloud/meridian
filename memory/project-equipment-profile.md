@@ -119,12 +119,47 @@ UHC (18 products' slot-temp/holding-time/tray-load, standardized across every UH
 staging cabinet (4 products). **61 product-settings rows total**, seeded from real PQRG tables,
 none fabricated — every row traces to a `sourcePage`.
 
-**Deliberately NOT built this pass (documented backlog, convert opportunistically next time one
-is touched, same standing rule as the LocationSelector rollout):** bake ovens (Hobart/Wells/
-Garland/Wells M4200 — biscuits/cookies/pies), egg cooker (Next Gen Egg Cooker), Q-ing/OnCue oven
-program codes (these are recipe-program codes, a different shape than "settings"), McCafé brewers
-(simple temp/hold-time only, lower stakes than the grill/fryer/combi-oven/toaster categories
-above).
+**Follow-up pass (2026-11-02, same day): espresso machines added, the rest confirmed structurally
+blocked, not just low-priority.** Re-read PQRG pp. 14-16 (bake ovens) and p. 80 (McCafé brewers)
+directly rather than trust memory before writing anything — and measured `equipment_catalog`'s
+live `type` column (service-role read) instead of assuming a type exists:
+
+- **Espresso machines (`espresso_1step`/`espresso_2step`) — buildable, added (7 rows).** The
+  catalog already has 4 1-step + 3 2-step models seeded (Phase 1's
+  `equipment-catalog-seed-beverage-mccafe.json`). PQRG gives one shared target, p. 80: "Brewer
+  Temperature 165°F to 175°F (taken from plain latte)" — brand-agnostic, same `matchType:'type'`
+  pattern as grill/fryer/UHC. Attached to all 7 espresso catalog rows.
+- **Bake ovens (Hobart/Wells "Non Flex", Garland Convection "Flex", Wells M4200 "Flex") — NOT
+  buildable, genuinely blocked, not just deferred.** `equipment_catalog` has **no `bake_oven` type
+  at all** — confirmed live, not assumed (the 15 real types as of this measurement: `abs`,
+  `blended_ice`, `combi_oven`, `espresso_1step`, `espresso_2step`, `fryer`, `grill`,
+  `juice_dispenser`, `prep_line`, `shake_sundae`, `staging_cabinet`, `steamer`,
+  `sweetener_creamer_dispenser`, `toaster`, `uhc` — no bake oven, no egg cooker). Creating new
+  catalog rows for these 3 bake-oven brands would need real model numbers from a real vendor
+  reference doc, the same bar every other catalog row was seeded against (Phase 1's own schema
+  comment: "every other equipment type... grows organically via a seed file [from a real
+  reference doc]... or the 'type it in, flag for review' path") — but the PQRG only names these
+  ovens generically ("Hobart/Wells 'Non Flex' Oven"), no model numbers, so fabricating a catalog
+  row from it would break that standard. Real PQRG data for Frozen Biscuits/Scratch Biscuits DOES
+  exist (pp. 14, 16 — e.g. Hobart/Wells: 1 tray 16 biscuits, 375°F, Middle(5), 5 min) and can be
+  seeded the moment a real bake-oven vendor reference doc lands and these 3 brands get a catalog
+  type, the same path every other equipment category in this project followed.
+- **Egg cooker (Next Gen Egg Cooker) — same blocker.** No `egg_cooker` catalog type exists.
+- **Q-ing/OnCue oven program codes — same blocker, plus a shape mismatch.** No catalog type for
+  these either, and separately: PQRG's Q-ing codes (e.g. code 55 = sausage burrito, code 97 =
+  McRib sauce) are per-RECIPE heating programs, not a physical unit's operating settings — closer
+  kin to the `equipment_catalog_consumables` shape (a lookup table) than to
+  `equipment_catalog_settings`. Worth its own design pass, not a drop-in to this feature.
+- **Hot-brewed coffee (drip) — same blocker.** No catalog type for a plain coffee brewer either
+  (only espresso machines, ABS, juice, sweetener/creamer dispensers are covered under beverage
+  equipment) — the "McCafé brewers" item in the original backlog note conflated these two; only
+  the espresso half had a catalog type to attach to.
+
+**Net: this backlog isn't "haven't gotten to it" — 4 of the original 4 named categories are
+blocked on catalog coverage that doesn't exist yet (and, for bake ovens/egg cooker/coffee
+brewers, on a real vendor reference doc this project doesn't have on hand), and the fifth
+(espresso) is now done.** Re-open only once a real bake-oven/egg-cooker/coffee-brewer vendor
+reference doc is available to seed the catalog types from.
 
 **Schema** (`supabase/schema-equipment-catalog-settings.sql`): a new sibling table to
 `equipment_catalog_consumables` — `equipment_catalog_settings(catalog_item_id, product,
@@ -163,3 +198,40 @@ Merging the PR itself is safe at any point — nothing auto-deploys the edge fun
 Actions workflow does it; confirmed by grep), and the Vercel frontend redeploy is backward
 compatible either way (the new client fields are silently ignored by the old, not-yet-redeployed
 edge function until step 3 runs).
+
+## Equipment Results panel (owner request 2026-11-02, same day)
+
+*"Can we add a link to the equipment survey as well as build out a landing panel for the results
+in the app?"* Both halves in one new authenticated `route:true` panel, `src/views/equipment-results.js`
+(`EquipmentResultsPanel`), registered `id:'equipment-results'` (icon 📋, `perm:'analytics.store'`,
+`section:'operations'`, same section as the public form's own home) — standard 3-point wiring in
+`panel-registry.js`/`App.js`, plus the usual `panel-registry.test.js`/`shell-nav-snapshot.test.js`
+ratchet updates for the new nav entry.
+
+- **Link management**: a `ManageLinksModal` sub-component — create/list/copy/revoke survey links,
+  mirroring EOM dashboard's existing share-link UI pattern (table of Label/Created/Views/Last
+  Viewed/Status/Revoke). The CRUD backend (`createEquipmentSurveyLink`/`loadEquipmentSurveyLinks`/
+  `revokeEquipmentSurveyLink`) already existed in `lib/supabase.js` from an earlier phase with
+  **zero UI consumer** — this is the first one. The header toolbar also has a one-click "Copy
+  Survey Link"/"Create Survey Link" button using whichever link is currently active, so the
+  common case (one shared link for everyone) never needs opening the modal.
+- **Cross-store results rollup**: `buildEquipmentStoreSummary()` (new, `engine/equipment-survey.js`)
+  groups ALL stores' `equipment_survey_entries` rows by `loc` (via the new
+  `loadAllEquipmentEntriesDirect()`, no loc filter) and reduces each store to
+  `{itemCount, reviewedCount, lastSubmittedAt, lastSubmittedBy}` using the same
+  `latestEntriesByInstance()` current-state definition every other consumer (public form, edge
+  function, Layout Planner) already shares — "how many items does this store have" can't drift
+  between panels. `lastSubmittedAt`/`lastSubmittedBy` reflect the most recent row regardless of
+  action (so a removal still counts as recent activity), while `itemCount`/`reviewedCount` are
+  current-state-only.
+- **Multi-select scoping**: the panel's `LocationSelector` runs with `multi:true` — the
+  2026-11-02 multi-select rollout's first real "reporting and viewing" consumer, letting an
+  owner/supervisor check a custom set of stores (a patch, an ad-hoc list) rather than only
+  all-or-one-store.
+- Tests: `buildEquipmentStoreSummary` pure-logic tests added to `equipment-survey.test.js`
+  (grouping, any-row-order input, removal-still-counts-as-activity, numeric loc sort, malformed
+  row handling). `equipment-results.test.js` covers the one other pure export,
+  `equipmentSurveyUrl`. Per this project's established precedent for a Supabase-on-mount panel
+  (`equipment-layout.test.js`'s own header comment), the network-loading component itself is not
+  rendered in tests — the pure logic it depends on is, the same scope split every other panel of
+  this shape in the repo already uses.

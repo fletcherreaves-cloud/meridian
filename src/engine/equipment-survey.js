@@ -86,6 +86,38 @@ export function buildEquipmentRollupText(storeLabel, rows) {
   return lines.join('\n');
 }
 
+// Multi-store rollup for the authenticated Equipment Results panel (2026-11-02 owner request:
+// "build out a landing panel for the results in the app"). Input is every equipment_survey_entries
+// row across every store, in ANY order (unlike latestEntriesByInstance, which needs newest-first
+// for ONE store) -- this groups by loc first and sorts each store's own rows itself, so the caller
+// doesn't have to pre-sort a cross-store fetch. `lastSubmittedAt`/`lastSubmittedBy` reflect the most
+// recent row for that store REGARDLESS of action (so a 'removed' edit still counts as recent
+// activity, matching what "last updated" means to a human) -- `itemCount`/`reviewedCount` are
+// computed from current (non-removed) state only, via the same latestEntriesByInstance() every
+// other consumer uses, so "how many items does this store have" never drifts from that definition.
+export function buildEquipmentStoreSummary(allEntriesAnyOrder) {
+  const byLoc = new Map();
+  for (const r of (allEntriesAnyOrder || [])) {
+    if (!r || !r.loc) continue;
+    if (!byLoc.has(r.loc)) byLoc.set(r.loc, []);
+    byLoc.get(r.loc).push(r);
+  }
+  const rows = [];
+  for (const [loc, rowsForLoc] of byLoc) {
+    const sorted = rowsForLoc.slice().sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''));
+    const current = latestEntriesByInstance(sorted);
+    const reviewedCount = current.filter(e => e.settings_reviewed).length;
+    rows.push({
+      loc,
+      itemCount: current.length,
+      reviewedCount,
+      lastSubmittedAt: sorted[0]?.submitted_at || null,
+      lastSubmittedBy: sorted[0]?.submitted_by || null,
+    });
+  }
+  return rows.sort((a, b) => a.loc.localeCompare(b.loc, undefined, { numeric: true }));
+}
+
 // Current GM (name + email) for a store as-of a date, from org_config's 'app_settings' blob's own
 // gmAssignments timeline shape ({loc, gm, gmEmail, start}) — the SAME live source
 // management.js's GmAssignmentsEditor writes to and src/features/morning-brief.js's whoIsGM()
