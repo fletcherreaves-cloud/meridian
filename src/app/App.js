@@ -134,6 +134,7 @@ const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: 
 const PayEventsReportPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.PayEventsReportPanel })));
 const ScheduleDisciplinePanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ScheduleDisciplinePanel })));
 const ComplianceAuditPanel   = lazyPanel(() => _laborTools().then(m => ({ default: m.ComplianceAuditPanel })));
+const EmployeePerformancePanel = lazyPanel(() => _laborTools().then(m => ({ default: m.EmployeePerformancePanel })));
 const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
 const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
 const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
@@ -325,7 +326,7 @@ const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.j
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -476,6 +477,10 @@ const SCHED_TABS = [
   // 2026-11-01 — LifeLenz Data Explorer "Compliance Audit": real labor-compliance violations
   // (meal/rest break, minor-labor, etc.) with a $ cost/hours penalty. Same tab-in-hub treatment.
   { id: 'complianceaudit', label: 'Compliance Audit', icon: '⚖️', perm: 'analytics.store' },
+  // 2026-11-02 — LifeLenz Data Explorer "Employee Performance": per-employee attendance %,
+  // drop/pickup/swap activity, discipline/commendations. Same tab-in-hub treatment, 3rd of the
+  // three Data Explorer tiles.
+  { id: 'employeeperformance', label: 'Employee Performance', icon: '🧑‍🤝‍🧑', perm: 'analytics.store' },
   { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
   { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
@@ -500,6 +505,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
     tab === 'payevents' ? h(PayEventsReportPanel, common) :
     tab === 'schedulediscipline' ? h(ScheduleDisciplinePanel, common) :
     tab === 'complianceaudit' ? h(ComplianceAuditPanel, common) :
+    tab === 'employeeperformance' ? h(EmployeePerformancePanel, common) :
     tab === 'scheduling' ? h(SchedulingPanel, common) :
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
@@ -1925,6 +1931,23 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${caRows.length} LifeLenz compliance-audit rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz compliance-audit load failed:',e);} };
+      const _stEmployeePerformance = async () => {
+      try{
+        // LifeLenz Data Explorer "Employee Performance" — see
+        // scripts/lifelenz-employee-performance-pull.mjs / supabase/schema-lifelenz-employee-performance.sql.
+        // No daily-aggregate sibling (unlike Schedule Variance/Compliance Audit) -- this report
+        // has no per-row date dimension at all, just a per-employee rolling-window scorecard
+        // (see that schema file's header); src/engine/employee-performance.js filters to the
+        // latest period_end itself wherever a "current" view is needed.
+        const epRows = await loadLifeLenzEmployeePerformance();
+        if(epRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, employeePerformanceRows: epRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${epRows.length} LifeLenz employee-performance rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz employee-performance load failed:',e);} };
       const _stGradedVisits = async () => {
       try{
         // Graded visits — same Supabase source the Graded Visits panel uses, loaded into
@@ -2427,6 +2450,7 @@ function App() {
         _timedStage('T2 lifelenzAttendance', _stLifelenzAttendance, _t2Start),
         _timedStage('T2 scheduleVariance', _stScheduleVariance, _t2Start),
         _timedStage('T2 complianceAudit', _stComplianceAudit, _t2Start),
+        _timedStage('T2 employeePerformance', _stEmployeePerformance, _t2Start),
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
         _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),

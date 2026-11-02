@@ -177,3 +177,47 @@ Store Name,Scheduled Shift,Assignee,Original Value,Adjusted Value,Actioned By,Ac
 Three metadata lines before the real header (title, then a date-range line, THEN the header — one more line than the title-row-only guess from the third dispatch), and the header uses **human-readable labels** ("Actioned By", "Actioned At", "Adjusted Value"...), not the raw `columns` member names (`schedule_event_actors_employee_name`, `occurred_at`, `updated_value`...) that were requested in the trigger. So `columns` in the `GetReportDataCsvAsync`/`GetReportDataTreeAsync` request controls which DATA fields come back, but not what the CSV calls them in its own header row — a real, useful finding for any future Data Explorer report built the same way (Compliance Audit, Employee Performance, Payroll Readiness all use the same trigger shape and almost certainly share this same metadata-then-human-header convention). The parser (`scripts/lifelenz-schedule-variance-pull.mjs`) now scans every line (not a fixed index) for the one matching the real human labels (`Actioned By`/`Actioned At` as the required gate columns), falling back to the raw member names in case a different view ever serves those. **Still not confirmed**: real DATA row content — every one of the 28 stores had zero schedule edits even across a 30-day window, so only the empty-report shape has been captured. A real edit will confirm the data-row parsing once one occurs (the daily scheduled pull will catch it once the table migration is applied).
 
 **Not yet confirmed**: whether `GetReportDataTreeAsync`/`GetReportDataCsvAsync` accept a MULTI-location filter (`operator:"in"` with several schedule GUIDs) to fetch all 27+ stores in one call instead of one trigger per store. The live dispatch triggered all 28 stores individually (28 separate `GetReportDataCsvAsync` calls) and that worked fine/fast (all resolved within 2 poll rounds), so there's no pressing need to find out — noting it only as a possible future efficiency improvement, not a gap.
+
+## ✅ BUILT 2026-11-02 — Employee Performance is live (3rd Data Explorer tile), and its real shape is fundamentally different from Schedule Variance/Compliance Audit
+
+Discovery probe (`scripts/lifelenz-employee-performance-meta-probe.mjs`, PR #1611, merged to `main`
+before dispatch per GitHub's workflow_dispatch-needs-default-branch quirk) ran live, GitHub
+Actions run `41371639603`, 2026-11-02. Confirmed:
+
+- **`employee_performance_report` has 30 real columns** (not the ~29 this file's earlier
+  representative list implied — measure, don't trust the earlier count, same lesson as every
+  other report here). Full member|shortTitle list captured verbatim in
+  `src/__tests__/lifelenz-employee-performance-pull.test.js`'s `META_COLUMNS` fixture.
+- **No per-row date/shift_date column at all.** Every column (`attendance_rate`,
+  `absent_count`, `scheduled_count`, etc.) is a COUNT or RATE aggregated across the ENTIRE
+  requested date range for that employee — one row per employee per store, for the whole window,
+  not one row per employee per day. This is the one genuinely open design question Compliance
+  Audit's own build didn't have to answer (that report has `shift_date` per row), and it decides
+  the whole table shape: there is no natural per-event id/date to key on.
+- **Resolved via the existing `lifelenz_attendance_summary` precedent**, not a new pattern:
+  that table already solved "a report with no per-row date, pulled daily" by keying on
+  `(loc, period_end)` — a rolling window whose end date advances by one day per run, so a daily
+  re-pull naturally produces a new trend point instead of clobbering history. `lifelenz_employee_
+  performance` does the same at the per-employee grain: `(loc, geid, period_end)`.
+- **Real captured data also confirmed**: two distinct identifier columns exist —
+  `employees_geid` ("Employee ID" in the UI, a human-facing numeric payroll number, same field
+  name `compliance_audit_report`'s own `geid` column already uses) vs. `employees_employee_id`
+  ("Employee Id", LifeLenz's own internal UUID for the employee record). `geid` is the natural
+  key component, not the UUID (kept as `lifelenz_employee_id` for cross-report joins). Real
+  values are not reproduced here or in the test fixtures (synthetic ids/names used throughout,
+  per the standing PII rule — a real employee's name/payroll number has no reason to live in
+  git history even though neither field is itself ssn/DOB/address). Also confirmed real: a blank rate
+  field (e.g. `attendance_rate` when `scheduled_count=0`) parses as an EMPTY CSV cell, not a
+  literal `0` — must parse as `null`, not `0`, or a brand-new employee with zero scheduled
+  shifts would misread as a 0% attendance failure.
+- All 30 columns are safe to promote per the standing PII rule — none are ssn/DOB/address/etc.
+  `employees_minor_age` is kept, same precedent `lifelenz_compliance_audit` already set.
+- **Deliberately NOT wired into Signals' metric registry** (unlike Schedule Variance/Compliance
+  Audit, which both got 2 new Signals metrics each). Signals' correlation engine (Scanner)
+  assumes independent daily observations; this report's rolling-window grain means adjacent
+  `period_end` values are ~13/14 overlapping, not independent — plugging it in as a daily metric
+  would risk spurious autocorrelation reading as a real "signal." Noted as a design decision, not
+  an oversight, in case a future session is tempted to "complete" the parity with its siblings.
+
+Full build writeup: `memory/project-backlog.md`'s "Shipped 2026-11-02 — Employee Performance"
+section.

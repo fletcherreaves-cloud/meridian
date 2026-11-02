@@ -792,3 +792,73 @@ that is still a design argument, not a measurement. **Run a `workflow_dispatch` 
 before trusting this in production**, same discipline as every prior LifeLenz Data Explorer
 build this session — the job log will show the real `GetReportMeta` column list and, on a
 parse failure, the raw CSV lines.
+
+## Shipped 2026-11-02 — Employee Performance (3rd LifeLenz Data Explorer tile)
+
+Third build against LifeLenz's Data Explorer, after Schedule Variance and Compliance Audit.
+Owner ask was explicit and sequenced: "Build Employee Performance next" (after confirming the
+app's EOM rollup method and shipping the Refresh-EOM-Data button), with a correction mid-build
+(the night-shift presentation doc's "by supervisor patch" table wrongly lumped all 7 Florida
+stores under one supervisor — fixed by querying Supabase's live `org_config` instead of
+`constants.js`'s stale hardcoded seed) handled first.
+
+**Measured live before writing any schema, not guessed**: a discovery-only probe
+(`scripts/lifelenz-employee-performance-meta-probe.mjs`) was merged to `main` first (GitHub's
+`workflow_dispatch` API only resolves a workflow by filename once it exists on the default
+branch — PR #1611), then dispatched (run `41371639603`) to call `GetReportMeta` and capture one
+real CSV before any table/pull-script design decision was locked in. See
+`memory/lifelenz-session.md`'s "BUILT 2026-11-02" section for the full finding — in short: 30
+real columns, confirmed via the live dispatch log, and (the one genuinely new design question
+this report posed) NO per-row date column at all, unlike its two siblings. Every column is a
+count/rate over the whole requested window per employee, so the table's grain and key had to be
+synthesized the way `lifelenz_attendance_summary` already does it (rolling `period_end`,
+advancing one day per daily run) — not copied from Compliance Audit/Schedule Variance's
+per-event-with-a-real-date shape.
+
+**Schema** (`supabase/schema-lifelenz-employee-performance.sql`): `lifelenz_employee_performance`,
+primary key `(loc, geid, period_end)`. All 30 real columns promoted directly — no `raw` JSONB
+bucket, unlike Compliance Audit's 42-column report with a long unused tail; this report's column
+count is small enough, and nearly every field (attendance %, drop/pickup/swap counts, discipline,
+commendations, leave days) is something the panel genuinely sorts/filters on. PII check: none of
+the 30 fields are ssn/DOB/address/etc.; `employees_minor_age` kept per the same precedent
+`lifelenz_compliance_audit` already set. Employee names stored in plain columns under ordinary
+tenant + `accessible_locs` RLS — not routed through the separate identity-reveal vault mechanism
+(`schema-identity-vault.sql`), which this codebase reserves for security/loss-prevention
+accusation contexts, a narrower category than an ordinary attendance scorecard; Compliance
+Audit (also a per-employee, named table) set the same precedent one build earlier.
+
+**Pull** (`scripts/lifelenz-employee-performance-pull.mjs`): same trigger→poll→download
+mechanism as its two siblings, including `stripReportPrefix()` from day one (not discovered the
+hard way this time) and the corrected outcome-tracker pattern (`totalParsed`/`totalSaved`
+tracked separately, a store only counts as "covered" once it actually wrote something) built in
+from the start rather than retrofitted after a live-dispatch false-success, which is how both
+Schedule Variance and Compliance Audit found that same bug the hard way one build earlier.
+`periodEnd` = yesterday (today may be partial), `periodStart = periodEnd - 13` (14-day rolling
+window, same default as Compliance Audit).
+
+**New "good use" consumer**:
+- `src/engine/employee-performance.js` — `latestPeriodEnd`/`latestPeriodRows` (every "current
+  state" function must first narrow to the single most recent `period_end` present, since the
+  raw table accumulates many overlapping rolling windows over time — summing across them would
+  double-count), `storePerformanceSummary`, and `lowAttendanceEmployees` — the concrete,
+  actionable surface per CLAUDE.md's "Voice by role" rule: who is below an 80% attendance floor
+  right now, with enough shifts scheduled that the number means something, not just a sortable
+  column a GM has to interpret themselves.
+- New "Employee Performance" tab in the Labor & Scheduling hub (`EmployeePerformancePanel`,
+  `src/views/labor-tools.js`) — per-store summary + the low-attendance flag list, same
+  tab-in-hub treatment as Schedule Discipline/Compliance Audit's own tabs.
+- **Deliberately NOT added to Signals' metric registry** — see `memory/lifelenz-session.md`'s
+  write-up for why (rolling-window overlap would violate the Scanner's independent-daily-
+  observation assumption). This is intentional, not a missed step; don't "complete the set" by
+  adding it without addressing that first.
+- Watched end to end: `sync-failure-watch.yml` ("LifeLenz Employee Performance Pull"),
+  `stream-freshness.js` (`key:'employeePerformance'`, `dateField:'periodEnd'`), and
+  `scripts/lib/scheduled-pull-registry.mjs` (`employeePerformance` key, matching
+  `stream-freshness.js`'s key exactly — its own parity test enforces this both directions).
+
+**Tests**: `src/__tests__/lifelenz-employee-performance-pull.test.js` (parser/label-map tests
+against the REAL captured column list AND a real CSV excerpt — not synthetic fixtures, unlike
+Compliance Audit's build, which had to synthesize labels since no real CSV had been captured
+yet), `src/__tests__/employee-performance.test.js` (engine), `src/__tests__/employee-performance-
+panel.test.js` (renders the real exported panel, not just the engine functions, per dispatch16's
+"would this verification still pass if reverted" rule).

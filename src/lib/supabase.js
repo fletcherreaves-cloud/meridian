@@ -1428,6 +1428,58 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs } = {}) {
   }));
 }
 
+// ── Employee Performance (2026-11-02) — LifeLenz Data Explorer's per-employee reliability/
+// performance scorecard ───────────────────────────────────────────────────────────────────────
+// Raw per-(loc,geid,period_end) rows -- one row per employee per rolling window, refreshed daily
+// (see supabase/schema-lifelenz-employee-performance.sql's header for why this report has no
+// per-row date column at all, unlike Schedule Variance/Compliance Audit). Same broad "names
+// visible" tenant+loc RLS precedent as those two. Aggregated store/employee rollups for Signals
+// + the Employee Performance panel are computed client-side from these raw rows by
+// src/engine/employee-performance.js, not pre-aggregated here.
+export async function loadLifeLenzEmployeePerformance({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_employee_performance').select('*').order('period_end', { ascending: false }).range(from, to);
+    if (start) q = q.gte('period_end', start);
+    if (end) q = q.lte('period_end', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_employee_performance');
+  return (data || []).map(r => ({
+    loc:                       r.loc,
+    geid:                      r.geid,
+    periodStart:               r.period_start,
+    periodEnd:                 r.period_end,
+    employeeName:              r.employee_name,
+    employeeNameLastFirst:     r.employee_name_last_first,
+    lifelenzEmployeeId:        r.lifelenz_employee_id,
+    employmentStatus:          r.employment_status,
+    employmentType:            r.employment_type,
+    minorAge:                  r.minor_age,
+    isSalaried:                r.is_salaried,
+    isManager:                 r.is_manager,
+    absentCount:               r.absent_count,
+    lateCount:                 r.late_count,
+    noPunchCount:              r.no_punch_count,
+    attendanceRate:            r.attendance_rate,
+    scheduledCount:            r.scheduled_count,
+    workedCount:               r.worked_count,
+    unscheduledCount:          r.unscheduled_count,
+    dropApprovedCount:         r.drop_approved_count,
+    dropRate:                  r.drop_rate,
+    pickupRequestCount:        r.pickup_request_count,
+    pickupApprovedCount:       r.pickup_approved_count,
+    totalWorkedHours:          r.total_worked_hours,
+    disciplinaryActionCount:   r.disciplinary_action_count,
+    commendationCount:         r.commendation_count,
+    leaveDaysRequested:        r.leave_days_requested,
+    leaveDaysApproved:         r.leave_days_approved,
+    swapApprovedCount:         r.swap_manager_approved_count,
+    swapRate:                  r.swap_rate,
+    updatedAt:                 r.updated_at,
+  }));
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's

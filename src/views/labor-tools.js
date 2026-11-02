@@ -15,6 +15,7 @@ import { detectAropJumps, payRaiseImpact, PAY_EVENT_TYPES, AROP_WINDOW_DAYS } fr
 import { PayEventModal } from './pay-event-modal.js';
 import { storeScheduleDisciplineSummary, editorBreakdown } from '../engine/schedule-discipline.js';
 import { storeComplianceSummary, categoryBreakdown, employeeViolationSummary } from '../engine/compliance-audit.js';
+import { latestPeriodEnd, storePerformanceSummary, lowAttendanceEmployees } from '../engine/employee-performance.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
 // apply-winners, manual override, reset), push the whole blob to Supabase as a
@@ -3250,4 +3251,69 @@ function ComplianceAuditPanel({ ds }) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, ScheduleDisciplinePanel, ComplianceAuditPanel, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };
+function EmployeePerformancePanel({ ds }) {
+  const { useMemo: uM } = React;
+  const allRows = ds?.employeePerformanceRows || [];
+  const asOf = uM(() => latestPeriodEnd(allRows), [allRows]);
+  const storeSummary = uM(() => storePerformanceSummary(allRows), [allRows]);
+  const lowAttendance = uM(() => lowAttendanceEmployees(allRows), [allRows]);
+
+  const pct1 = v => v == null ? '—' : v.toFixed(1) + '%';
+  const hrs = v => v == null ? '—' : v.toFixed(1) + 'h';
+
+  const OUTER = { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '14px 16px' };
+
+  if (!allRows.length) {
+    return div({ style: OUTER },
+      div({ style: { fontSize: '10px', color: 'var(--text3)' } },
+        'No employee-performance data yet. This tab reads LifeLenz\'s Data Explorer "Employee Performance" report, synced daily by scripts/lifelenz-employee-performance-pull.mjs — give the first sync a day to populate.'));
+  }
+
+  return div({ style: OUTER },
+    div({ style: { fontSize: '9px', color: 'var(--text3)', lineHeight: 1.6, marginBottom: 10 } },
+      'Per-employee reliability scorecard — attendance, drops/pickups/swaps, discipline and commendations — for the current rolling window' + (asOf ? ' (as of ' + asOf + ')' : '') + '. Richer than the store-only Attendance rollup: every row below is one employee, not a pooled store total.'),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '📊 By Store (' + storeSummary.length + ')'),
+    !storeSummary.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No current-window data.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 680 } },
+          thead(null, tr(null,
+            ...['Store', 'Employees', 'Avg Attendance %', 'Absences', 'Late', 'Discipline', 'Commendations', 'Hours Worked'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...storeSummary.map((s, i) => tr({ key: s.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(s.loc)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.employeeCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: s.avgAttendanceRate != null && s.avgAttendanceRate < 80 ? '#ef4444' : 'var(--text)' } }, pct1(s.avgAttendanceRate)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.totalAbsences),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.totalLate),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.totalDisciplinaryActions),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.totalCommendations),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, hrs(s.totalWorkedHours)),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🚩 Below 80% Attendance (' + lowAttendance.length + ')'),
+    !lowAttendance.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'No one below the attendance floor this window.')
+      : div({ style: { overflowX: 'auto' } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 620 } },
+          thead(null, tr(null,
+            ...['Store', 'Employee', 'Attendance %', 'Absences', 'Late', 'Scheduled', 'Worked'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 1 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...lowAttendance.map((r, i) => tr({ key: r.loc + '|' + r.geid, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(r.loc)),
+            td({ style: { padding: '5px 8px', color: 'var(--text2)', fontSize: '8.5px' } }, r.employeeName || '—'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: '#ef4444' } }, pct1(r.attendanceRate)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, r.absentCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, r.lateCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, r.scheduledCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, r.workedCount),
+          )))
+        )
+      ),
+  );
+}
+
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, ScheduleDisciplinePanel, ComplianceAuditPanel, EmployeePerformancePanel, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };

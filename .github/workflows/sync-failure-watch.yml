@@ -59,6 +59,7 @@ on:
       - LifeLenz Attendance Pull
       - LifeLenz Compliance Audit Pull
       - LifeLenz Daily Sync
+      - LifeLenz Employee Performance Pull
       - LifeLenz People Skills Sync
       - LifeLenz Schedule Variance Pull
       - Local News RSS Pull
