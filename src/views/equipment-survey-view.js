@@ -92,8 +92,35 @@ function StorePicker({ onPick }) {
   );
 }
 
+// ── PQRG reference settings panel (owner req 2026-11-02: "tie in settings for equipment...
+// references based on models selected that can be verified") — shown once a catalog model is
+// picked (or auto-matched from a photo), grouped by product since one equipment model can have a
+// different reference per thing it cooks (a combi oven's Bacon settings differ from its Folded
+// Eggs settings). needs_review rows (a catalog model that bundles two PQRG-named variants under
+// one row, e.g. "UTX-200 / CTX-200") are visibly flagged, never silently presented as certain. ─
+function ReferenceSettingsPanel({ items, reviewed, onReviewedChange, notes, onNotesChange }) {
+  if (!items.length) return null;
+  const anyNeedsReview = items.some((i) => i.needs_review);
+  return div({ style: { background: colors.surf2, border: `1px solid ${colors.bdr2}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' } },
+    div({ style: { fontSize: '12px', fontWeight: 700, color: colors.gold, marginBottom: '8px' } }, '📘 PQRG Reference Settings'),
+    anyNeedsReview && div({ style: { fontSize: '11px', color: colors.warn, marginBottom: '8px' } }, '⚠ Some entries below are an unconfirmed model match — see notes.'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' } },
+      ...items.map((it, i) => div({ key: i, style: { borderTop: i ? `1px solid ${colors.bdr}` : 'none', paddingTop: i ? '8px' : 0 } },
+        div({ style: { fontSize: '12.5px', fontWeight: 600 } }, it.product, it.setting_group ? span({ style: { color: colors.dim, fontWeight: 400 } }, ` — ${it.setting_group}`) : null),
+        div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
+          Object.entries(it.settings || {}).map(([k, v]) => `${k}: ${v}`).join(' · ')),
+        it.needs_review && it.review_note && div({ style: { fontSize: '10.5px', color: colors.warn, marginTop: '3px' } }, '⚠ ' + it.review_note),
+      ))),
+    div({ style: { borderTop: `1px solid ${colors.bdr}`, marginTop: '10px', paddingTop: '10px' } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: reviewed ? '8px' : 0 } },
+        h('input', { type: 'checkbox', checked: reviewed, onChange: e => onReviewedChange(e.target.checked) }),
+        span({ style: { fontSize: '12px' } }, "I checked this equipment's actual settings against the reference above")),
+      reviewed && h('input', { style: { ...inputStyle, marginBottom: 0 }, placeholder: 'Anything different from the reference? (optional)', value: notes, onChange: e => onNotesChange(e.target.value) })),
+  );
+}
+
 // ── Add/Edit equipment form ──────────────────────────────────────────────────────────────────
-function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing, onCancel, onSaved }) {
+function EquipmentForm({ token, loc, catalog, consumables, settings, submittedBy, editing, onCancel, onSaved }) {
   const [type, setType] = useState(editing?.type || '');
   const [manufacturer, setManufacturer] = useState(editing?.manufacturer || '');
   const [catalogItemId, setCatalogItemId] = useState(editing?.catalogItemId || '');
@@ -108,6 +135,8 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
   const [certDate, setCertDate] = useState(editing?.certDate || '');
   const [photoUrl, setPhotoUrl] = useState(editing?.photoUrl || null);
   const [aiExtraction, setAiExtraction] = useState(null);
+  const [settingsReviewed, setSettingsReviewed] = useState(editing?.settingsReviewed || false);
+  const [settingsReviewNotes, setSettingsReviewNotes] = useState(editing?.settingsReviewNotes || '');
   const [extracting, setExtracting] = useState(false);
   const [extractErr, setExtractErr] = useState('');
   const [saving, setSaving] = useState(false);
@@ -119,6 +148,7 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
   const models = useMemo(() => catalog.filter(c => c.type === type && c.manufacturer === manufacturer), [catalog, type, manufacturer]);
   const selectedItem = useMemo(() => catalog.find(c => c.id === catalogItemId) || null, [catalog, catalogItemId]);
   const itemConsumables = useMemo(() => selectedItem ? consumables.filter(cc => cc.catalog_item_id === selectedItem.id) : [], [consumables, selectedItem]);
+  const itemSettings = useMemo(() => selectedItem ? settings.filter(s => s.catalog_item_id === selectedItem.id) : [], [settings, selectedItem]);
   const needsSerial = manualMode || (selectedItem && selectedItem.needs_serial);
   const needsCertDate = manualMode || (selectedItem && selectedItem.needs_cert_date);
   const effectiveType = (manualMode ? manualType : (selectedItem?.type || type || '')).toLowerCase();
@@ -171,6 +201,7 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
         catalogItemId: finalCatalogItemId, manualEntryText,
         placementZone: placement || null, positionDetail, serialNumber: serial || null, certDate: certDate || null,
         action, submittedBy, photoUrl, aiExtraction,
+        settingsReviewed, settingsReviewNotes: settingsReviewNotes || null,
       };
       const r = await submitEquipmentEntry(token, entry);
       if (r?.error) { setErr(r.error); setSaving(false); return; }
@@ -192,6 +223,10 @@ function EquipmentForm({ token, loc, catalog, consumables, submittedBy, editing,
           h('option', { value: '' }, '— Select —'), ...models.map(m => h('option', { key: m.id, value: m.id }, m.model)))),
       itemConsumables.length > 0 && div({ style: { fontSize: '11.5px', color: colors.dim, marginBottom: '10px', background: colors.surf2, border: `1px solid ${colors.bdr2}`, borderRadius: '6px', padding: '8px 10px' } },
         'Correct consumables for this model: ', itemConsumables.map(c => `${c.label || c.consumable_type} (${c.wrin})`).join(' · ')),
+      h(ReferenceSettingsPanel, {
+        items: itemSettings, reviewed: settingsReviewed, onReviewedChange: setSettingsReviewed,
+        notes: settingsReviewNotes, onNotesChange: setSettingsReviewNotes,
+      }),
       h('button', { onClick: () => setManualMode(true), style: { background: 'none', border: 'none', color: colors.dim, fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', padding: 0, marginBottom: '14px' } }, "Not listed? Type it in →"),
     ),
 
@@ -346,6 +381,7 @@ function ReviewShare({ token, loc, submittedBy, entries, catalogById, onBack }) 
 function StoreDetail({ token, loc, submittedBy, onBack }) {
   const [catalog, setCatalog] = useState([]);
   const [consumables, setConsumables] = useState([]);
+  const [settings, setSettings] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -356,7 +392,7 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
     setLoading(true); setErr('');
     const [catRes, entRes] = await Promise.all([fetchEquipmentCatalog(token), fetchEquipmentEntries(token, loc)]);
     if (catRes?.error) setErr(catRes.error);
-    else { setCatalog(catRes.catalog || []); setConsumables(catRes.consumables || []); }
+    else { setCatalog(catRes.catalog || []); setConsumables(catRes.consumables || []); setSettings(catRes.settings || []); }
     if (!entRes?.error) setEntries(entRes.entries || []);
     setLoading(false);
   }, [token, loc]);
@@ -373,8 +409,8 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
     return page(
       h('button', { onClick: () => { setMode('list'); setEditingEntry(null); }, style: { background: 'none', border: 'none', color: colors.dim, fontSize: '13px', cursor: 'pointer', padding: 0, marginBottom: '14px' } }, '← Back'),
       h(EquipmentForm, {
-        token, loc, catalog, consumables, submittedBy,
-        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, positionDetail: editingEntry.position_detail, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url } : null,
+        token, loc, catalog, consumables, settings, submittedBy,
+        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, positionDetail: editingEntry.position_detail, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url, settingsReviewed: editingEntry.settings_reviewed, settingsReviewNotes: editingEntry.settings_review_notes } : null,
         onCancel: () => { setMode('list'); setEditingEntry(null); },
         onSaved: () => { setMode('list'); setEditingEntry(null); reload(); },
       }),
