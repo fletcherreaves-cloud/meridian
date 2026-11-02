@@ -857,8 +857,31 @@ window, same default as Compliance Audit).
   `stream-freshness.js`'s key exactly — its own parity test enforces this both directions).
 
 **Tests**: `src/__tests__/lifelenz-employee-performance-pull.test.js` (parser/label-map tests
-against the REAL captured column list AND a real CSV excerpt — not synthetic fixtures, unlike
-Compliance Audit's build, which had to synthesize labels since no real CSV had been captured
-yet), `src/__tests__/employee-performance.test.js` (engine), `src/__tests__/employee-performance-
-panel.test.js` (renders the real exported panel, not just the engine functions, per dispatch16's
-"would this verification still pass if reverted" rule).
+against the REAL captured column list and the real CSV's header/value shape — not a guessed
+label set, unlike Compliance Audit's build, which had to synthesize labels since no real CSV had
+been captured yet. The employee-identifying DATA in the fixture — names, GEIDs, LifeLenz UUIDs —
+is synthetic, not the real captured values: an initial push with the real captured employee
+names/ids got caught and blocked by this environment's own push classifier on exactly that
+grounds, fixed by amending the still-unpushed commit before anything reached the remote. Real
+identifying values are not reproduced in this repo anywhere, per the standing PII rule, even
+though neither field is itself ssn/DOB/address), `src/__tests__/employee-performance.test.js`
+(engine), `src/__tests__/employee-performance-panel.test.js` (renders the real exported panel,
+not just the engine functions, per dispatch16's "would this verification still pass if
+reverted" rule).
+
+**✅ Live-validated (GitHub Actions run 41373605140, 2026-11-02, `debug=1`) — parsing confirmed
+fully correct; the only remaining step is the owner applying the schema SQL, same stage
+Compliance Audit was at before its own SQL got applied.** Real `GetReportMeta` returned the
+same 30 columns as the discovery probe (matches exactly). All 28 stores triggered and resolved
+(2 poll rounds). 27 stores parsed real per-employee row counts (35–88 rows each); one store
+(Cherokee/4th St-Lindsay, OK) correctly reported "no employee rows in window" as a legitimate
+empty result, not a failure. Every one of the other 27 failed the SAME way — `Could not find the
+table 'public.lifelenz_employee_performance' in the schema cache` — because the table hasn't
+been created in production Supabase yet. The outcome-tracker correctly reported this as a real
+failure (`exit code 1`, `"zero rows saved across 28 requested unit(s) -- a quiet no-op, not a
+success"`), never a false "27/28 covered" success — the exact correctness this session's
+outcome-tracker fix (applied to Compliance Audit/Schedule Variance, and built into this pull
+from day one) exists to guarantee. **Next step, owner action required**: run
+`supabase/schema-lifelenz-employee-performance.sql` via the Supabase SQL Editor, then re-dispatch
+`lifelenz-employee-performance-pull.yml` to confirm real saves — do not re-diagnose the parser,
+it is already proven correct against live data.
