@@ -183,13 +183,26 @@ const PROMOTED_MEMBERS = {
   dismissed_on:               'dismissed_on',
 };
 
+// Measured live 2026-11-02 (dispatch run 41366151365): GetReportMeta's own columns[].member (and
+// .name, for most columns) come back FULLY QUALIFIED as "compliance_audit_report.<field>", not
+// bare. Passing that straight through as the trigger's `columns` array fails every single store
+// with "No exportable columns match the requested keys" -- the `columns` param wants BARE field
+// names (same as Schedule Variance's own hardcoded COLUMNS list), while groupBy/filters/sortOrder
+// want the qualified form. Stripping the prefix here, once, at the source, means every downstream
+// consumer (buildLabelMap, the trigger's columnMembers, PROMOTED_MEMBERS/GATE_MEMBERS matching)
+// works with bare names consistently, with no second place to remember this.
+function stripReportPrefix(m) {
+  const prefix = REPORT_KEY + '.';
+  return m && m.startsWith(prefix) ? m.slice(prefix.length) : m;
+}
+
 async function fetchReportMeta(token) {
   const data = await graphql(token, 'GetReportMeta', { businessId: BUSINESS_ID, reportKey: REPORT_KEY }, GET_REPORT_META_QUERY);
   const meta = data?.lakehouseReportMeta;
   if (!meta) throw new Error(`GetReportMeta returned null for reportKey=${REPORT_KEY} — report may have been renamed/removed`);
   const columns = meta.columns || [];
   if (!columns.length) throw new Error('GetReportMeta returned zero columns');
-  return columns; // [{name, member, shortTitle, ...}]
+  return columns.map(c => ({ ...c, member: stripReportPrefix(c.member), name: stripReportPrefix(c.name) })); // [{name, member, shortTitle, ...}], now bare
 }
 
 async function triggerReport(token, scheduleId, startDate, endDate, columnMembers) {
@@ -423,6 +436,8 @@ async function main() {
     }
   }
 
+  let totalSaved = 0;
+  let totalParsed = 0;
   if (!triggeredIds.length) {
     console.error('[lifelenz-compliance-audit-pull] ✗ no reports triggered — nothing to poll');
   } else {
@@ -433,7 +448,6 @@ async function main() {
       tracker.fail(ctx?.schedule.name || reportId, 'report never resolved within poll budget');
     }
 
-    let totalSaved = 0;
     for (const [reportId, report] of resolved) {
       const ctx = byReportId.get(reportId);
       if (!ctx) continue;
@@ -442,9 +456,23 @@ async function main() {
         const csvText = await downloadReport(token, report);
         const rows = parseComplianceAuditCSV(csvText, metaColumns);
         if (!rows.length) { console.log(`  ${schedule.name} (loc ${loc}): no violations in window`); coveredSchedules.add(schedule.id); continue; }
+        totalParsed += rows.length;
         const saved = await upsertRows(loc, rows);
         totalSaved += saved;
-        coveredSchedules.add(schedule.id);
+        // Measured live 2026-11-02 (dispatch run 41366962908): the table hadn't been applied to
+        // production Supabase yet, so EVERY upsert failed -- but coveredSchedules.add() fired
+        // unconditionally here regardless of whether the write actually succeeded, so the run
+        // printed "28/28 schedule(s) had at least one row upserted" and exited 0 despite saving
+        // ZERO real rows anywhere. A store is only "covered" when it actually wrote something; a
+        // parsed-but-unsaved row is a real write failure and must show up as one (both in the
+        // per-unit failure list AND in whether the run as a whole succeeds), not get silently
+        // absorbed into "coverage."
+        if (saved === 0) {
+          tracker.fail(schedule.name, `parsed ${rows.length} row(s) but saved 0 — upsert write failure`);
+        } else {
+          coveredSchedules.add(schedule.id);
+          if (saved < rows.length) tracker.fail(schedule.name, `upsert saved only ${saved}/${rows.length} parsed row(s)`);
+        }
         console.log(`  ${schedule.name} (loc ${loc}): ${rows.length} violation(s) parsed, ${saved} saved`);
       } catch (e) {
         console.warn(`  ${schedule.name} (loc ${loc}): ${e.message}`);
@@ -457,7 +485,13 @@ async function main() {
   logPartitionCoverage(coveredSchedules, allScheduleIds, { label: 'lifelenz-compliance-audit-pull', kind: 'schedule' });
   const code = tracker.finalize({
     requestedUnits,
-    totalSaved: coveredSchedules.size, // partition coverage is the meaningful denominator here — a store can legitimately have 0 violations and still count as covered
+    // totalParsed>0 means real rows existed to save -- use the REAL saved count so a genuine
+    // write failure (table missing, RLS misconfigured, etc.) correctly trips finalize()'s
+    // zero-rows-saved guard instead of being masked by coverage. Only fall back to
+    // coveredSchedules.size (partition coverage) when totalParsed is itself 0 -- a window with
+    // truly no violations anywhere is a legitimate empty result, not a failure, and summing a
+    // real zero in that case would false-positive.
+    totalSaved: totalParsed > 0 ? totalSaved : coveredSchedules.size,
     formatRerun: () => 're-run the whole workflow — no per-store rerun flag exists yet',
   });
   if (code) process.exit(code);
@@ -467,7 +501,7 @@ async function main() {
 // the dynamic label-map builder + CSV parser, guarded the same way
 // lifelenz-schedule-variance-pull.mjs is so importing this module's pure functions doesn't also
 // fire off a live LifeLenz pull.
-export { parseComplianceAuditCSV, buildLabelMap, locFromName };
+export { parseComplianceAuditCSV, buildLabelMap, locFromName, stripReportPrefix };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => {
     console.error('[lifelenz-compliance-audit-pull] fatal error:', err);
