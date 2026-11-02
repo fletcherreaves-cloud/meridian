@@ -723,7 +723,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   },
     // ── Scope + report options ──
     h('div', { style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-      h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full' }),
+      h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown' }),
       h('span', { style: { fontSize: 9.5, color: 'var(--text3)' } }, scopeLabel + ' · ' + (res.stores || []).length + ' with data'),
       h('span', { style: { flex: 1 } })),
 

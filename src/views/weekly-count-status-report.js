@@ -260,7 +260,7 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   const doCsv = () => downloadCsv(reportCSV(rows), `weekly-count-status-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-week-of-${dKey(weekStart)}.csv`);
 
   const headerRow = div({ style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full' }),
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown' }),
     h('input', {
       type: 'date', value: pickedDate, onChange: e => setPickedDate(e.target.value),
       title: 'Pick any day — the roster resolves to that day\'s whole calendar week',

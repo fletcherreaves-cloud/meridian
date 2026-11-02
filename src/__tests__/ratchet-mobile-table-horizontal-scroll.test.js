@@ -55,13 +55,13 @@ import { join } from 'node:path';
 
 const ROOTS = ['src/views', 'src/features'];
 
-// Measured fresh on this dispatch's own branch, 2026-08-25, AFTER fixing promo-roi.js's results
-// table (the only file this dispatch's scope permits changing — see dispatch-119.md item 3, "fix
-// Promo/Discount ROI only"). The two remaining hits are src/views/dt-speedofservice.js's Store
-// Ranking and By Hour tables (~line 511, ~554) — real instances of the same shape, left for
-// opportunistic fixing next time that panel is touched (memory/panel-contract.md's standing
-// rule), not fixed here per this dispatch's explicit "do not fix all candidate files" scope.
-const CEILING = 2;
+// Lowered to 0 on 2026-11-02 — the two remaining hits (src/views/dt-speedofservice.js's Store
+// Ranking and By Hour tables) were the "opportunistic fixing next time that panel is touched"
+// case this comment itself named; fixed as part of that day's app-wide horizontal-scroll sweep
+// (overflowX:'auto' added alongside the existing overflow:'hidden', table width changed from
+// '100%' to 'max-content'/minWidth:'100%', same reference fix as promo-roi.js). Re-measured
+// fresh on this branch AFTER that fix, not copied forward — per this file's own standing rule.
+const CEILING = 0;
 
 function enclosingBraces(text, pos) {
   let depth = 0, start = -1;
@@ -170,10 +170,6 @@ describe('R-mobile-scroll: a table\'s scroll wrapper must not leave overflowX at
     expect(hits.length).toBe(CEILING);
   });
 
-  it('sanity: the live count matches the two known dt-speedofservice.js instances (would false-pass if the detector broke)', () => {
-    const hits = findHits();
-    expect(hits.filter(h => h.startsWith('src/views/dt-speedofservice.js:')).length).toBe(2);
-  });
 
   // Detector self-tests — fixture-based, so the detector's own correctness doesn't depend on the
   // live tree ever containing (or continuing to contain) a real instance. The first fixture is

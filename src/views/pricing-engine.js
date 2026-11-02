@@ -1187,7 +1187,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
         'Through ' + maxDate.toISOString().slice(0, 10)),
     ),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
+      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' })),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
       ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }, { id: 'price-impact', label: '💥 Price Impact' }, { id: 'menu-prices', label: '🏷️ Menu Prices' }].map(t => btn({
         key: t.id, className: 'btn btn-sm',

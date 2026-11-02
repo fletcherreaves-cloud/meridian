@@ -169,7 +169,7 @@ export function ChecklistFillPanel({ onClose, stores, initialSlug }) {
         ? div({ style: { color: 'var(--text2)', fontSize: 13, padding: 24, textAlign: 'center' } }, 'Select a form to fill it in.')
         : div({},
             div({ style: { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 } },
-              h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'store', value: loc ? { level: 'store', id: loc } : { level: 'all', id: null }, onChange: v => setLoc(v.id || null) }),
+              h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'store', variant: 'dropdown', value: loc ? { level: 'store', id: loc } : { level: 'all', id: null }, onChange: v => setLoc(v.id || null) }),
               h('input', {
                 type: 'date', value: date, onChange: e => setDate(e.target.value),
                 style: { padding: '6px 9px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12 },

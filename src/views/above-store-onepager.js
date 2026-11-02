@@ -625,7 +625,13 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     // scope — LocationSelector (dispatch #160 item 3) replaces the hand-rolled All/OK/FL toggle
     // + patch <select> + store <select>; scope stays the plain string this component's own
     // locs/scopeLabel logic already reads, translated at the UI boundary only (scopeToSelectorValue
-    // / selectorValueToScope above).
+    // / selectorValueToScope above). Deliberately PILLS, not variant:'dropdown' -- dispatch #160's
+    // own test (dispatch-160-panel-contract.test.js) pins "button hierarchy... instead of the old
+    // dropdowns" as this panel's standing contract (the panel used to have exactly the clunky
+    // multi-<select> UI the 2026-11-02 dropdown rollout elsewhere replaces pills WITH, so
+    // reintroducing a dropdown here specifically would undo that fix, not extend it). Tried once
+    // during that rollout and reverted after the live test caught it -- do not re-attempt without
+    // revisiting dispatch #160's own reasoning first.
     div({ style: { padding: '8px 16px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
       h(LocationSelector, {
         stores: locSelectorStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,

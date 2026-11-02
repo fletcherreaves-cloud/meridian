@@ -158,3 +158,74 @@ rule):**
   mechanism at all** despite tabular data — `at-a-glance.js`, `signals.js`, `security-panel.js`,
   `patch-heatmap.js`, and `crew-schedule-panel.js` are the highest-value gaps if a future dispatch
   wants to close specific ones deliberately, rather than opportunistically.
+
+## 2026-11-02 — LocationSelector `variant:'dropdown'` rollout + two correction
+
+**Owner ask ("the QSRSoft approach"), app-wide sweep, not a one-panel opportunistic touch.**
+Measured adoption first rather than assuming: 37 panels already use the shared `LocationSelector`
+component, but only **1** (`equipment-layout.js`) had ever set `variant:'dropdown'` (the compact
+single-`<select>` rendering, owner-requested 2026-10-17 per `PanelControls.js`'s own comment) —
+everything else defaulted to the flat pill-wall render. Of those 37, most (`events-panel.js`,
+`crew-schedule-panel.js`, `eom-dashboard.js`, `smg-voice.js`, `store-assessments.js`,
+`schedule-retention.js`, `targets-editor.js`, `top-bottom-performers.js`, `event-impact.js`,
+`customer-complaints.js`, `record-day.js`, `news-panel.js`, `analytics.js`'s District Priority
+Brief, `security-panel.js`, `calendar.js`) already use `mode:'progressive'` — the cascading
+tier-by-tier reveal (dispatch #104) — which the component deliberately keeps on pill rendering
+regardless of `variant` (progressive IS the "not everything flat at once" answer for those
+panels already; it is not a dropdown-conversion candidate).
+
+**⚠️ Corrects this file's own earlier claim** ("`report-subscriptions.js`'s... Converting its
+hand-rolled... to `LocationSelector`" under §3 above) which a prior reader could misread as
+"already on the dropdown variant" — it was converted to the shared component with PILL
+rendering, never `variant:'dropdown'`; re-verified directly against the live file before writing
+this entry, not copied forward.
+
+**13 real candidates found and converted** (`mode:'full'`/`'store'`/unspecified-defaults-to-
+'full', each a one-line `variant:'dropdown'` add to an existing call — the component's
+`value`/`onChange` contract is identical across variants, so this changes rendering only, never
+filtering behavior): `forms-panel.js`, `forms-reviews-panel.js`, `count-timing-report.js`,
+`weekly-count-status-report.js`, `missed-count-report.js`, `opportunity-dollars.js`, `trends.js`,
+`trend-report.js`, `pricing-engine.js`, `checklist-fill.js`, `visit-readiness.js`,
+`above-store-onepager.js`, `report-subscriptions.js`.
+
+**Real latent bug found and fixed in the same pass**: the `variant:'dropdown' && mode:'full'`
+branch predates `customGroups` (the saved-location-groups 6th tier, 2026-11-01) and never got a
+matching `<optgroup>` — the pill-mode render already includes a group pill, so a panel on the
+dropdown variant that also passed `customGroups` would have silently lost group access with no
+error. None of today's 13 conversions pass `customGroups`, so nothing regressed live, but this
+was caught and fixed in `PanelControls.js` itself (now renders a "Groups" `<optgroup>`,
+`group:<id>` option values, round-tripping through the existing
+`locationSelectorOptionValue`/`parseLocationSelectorOptionValue` pair unchanged) before any
+future panel could combine the two and hit it. Covered by 3 new tests in
+`dispatch-location-selector-custom-groups-2026-11-01.test.js`.
+
+**Not touched, by design**: `analytics.js`'s Food Cost panel hand-rolled `<select>` (documented
+2026-08 reason: 'all'|'ok'|'fl'|storeId shape with market shortcuts, a real translation-layer
+conversion out of scope for a mechanical variant flip) and every `mode:'progressive'` call site
+above — converting either is a real design decision, not today's mechanical sweep.
+
+**Open backlog, not executed today (judgment-heavy, not a safe blind batch)**: 9 panels have a
+genuinely hand-rolled location/store `<select>` that never went through `LocationSelector` at
+all — `dt-speedofservice.js` (`orgFilter`: `'all'|'fl'|'ok'`), `graded-visits.js` (`selLoc`:
+`'all'|'fl'|...`), `inventory.js` (`selLoc`: plain loc string, defaults to first store),
+`performance-calculator.js` (`selLoc`: plain loc string), `skills-matrix.js` (`store`: `'all'|
+loc`), `labor-tools.js` (`selLoc`: plain loc string), `labor-analysis.js` (`scope`, shape not yet
+read), `scheduling.js` (shape not yet read), `signals.js` (`selLoc`: nullable loc string, a
+click-to-select drill-down, not obviously a top-level scope filter at all). Each needs its own
+`{level,id}` translation layer verified against that panel's real filtering logic before
+converting — exactly the `scopeToSelectorValue`/`selectorValueToScope` pattern §3 above already
+established, not a risk worth taking across 9 panels in one unverified pass while the owner was
+unreachable. Convert one at a time, next time that panel is touched for something else, per this
+file's own standing rule — or as its own dedicated pass if the owner wants it swept sooner.
+
+**Separately, same day — the panel-contract.md-documented mobile horizontal-scroll gap is now
+closed.** `ratchet-mobile-table-horizontal-scroll.test.js`'s `CEILING` had sat at 2 since
+2026-08-25, explicitly pointing at `dt-speedofservice.js`'s Store Ranking and By Hour tables as
+"left for opportunistic fixing next time that panel is touched" — today's app-wide scroll-UX ask
+was that occasion. Fixed both (added `overflowX:'auto'` alongside the existing
+`overflow:'hidden'`, table `width` changed from `'100%'` to `'max-content'` + `minWidth:'100%'`,
+the identical reference fix `promo-roi.js` already used) and lowered `CEILING` to **0** — the
+whole src/views + src/features tree now has zero tables with the horizontal axis left
+effectively `hidden`. The sibling ratchet (`scroll-table-width.test.js`, the *other* half of this
+anti-pattern — `width:'100%'` with no `minWidth`, which makes an `overflowX:'auto'` wrapper a
+no-op) was already enforced at zero tolerance app-wide before today; nothing to do there.

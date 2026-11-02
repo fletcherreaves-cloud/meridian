@@ -183,9 +183,17 @@ describe('FormsReviewsPanel — location scope', () => {
     expect(loadQsrFormsReviewsMock).toHaveBeenCalledTimes(1);
     expect(loadQsrFormsReviewsMock.mock.calls[0][0].locs).toEqual([STORE_B, STORE_A]);
 
-    const storeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes(STORE_B));
-    expect(storeBtn).toBeTruthy();
-    await act(async () => { storeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // LocationSelector here renders as variant:'dropdown' (2026-11-02 app-wide rollout) -- a
+    // single <select>, not a pill per store, so pick the store via its <option> value instead
+    // of a button click.
+    const select = container.querySelector('select');
+    const storeOption = [...select.querySelectorAll('option')].find(o => o.value === `store:${STORE_B}`);
+    expect(storeOption).toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, `store:${STORE_B}`);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     await flush(container);
     expect(loadQsrFormsReviewsMock).toHaveBeenCalledTimes(2);
     expect(loadQsrFormsReviewsMock.mock.calls[1][0].locs).toEqual([STORE_B]);

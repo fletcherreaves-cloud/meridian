@@ -237,7 +237,7 @@ export function CountTimingReportModal({ stores, rawDetail, period, onClose }) {
   const doCsv = () => downloadCsv(reportCSV(sorted, mode), `count-timing-${mode}-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}.csv`);
 
   const headerRow = div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full' }),
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown' }),
     h('select', {
       value: mode, onChange: e => setMode(e.target.value),
       style: { fontSize: 11, padding: '4px 8px', border: '.5px solid var(--bdr)', borderRadius: 6, background: 'var(--surf2)', color: 'var(--text)' },
