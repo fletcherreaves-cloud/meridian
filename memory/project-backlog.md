@@ -881,7 +881,15 @@ been created in production Supabase yet. The outcome-tracker correctly reported 
 failure (`exit code 1`, `"zero rows saved across 28 requested unit(s) -- a quiet no-op, not a
 success"`), never a false "27/28 covered" success — the exact correctness this session's
 outcome-tracker fix (applied to Compliance Audit/Schedule Variance, and built into this pull
-from day one) exists to guarantee. **Next step, owner action required**: run
-`supabase/schema-lifelenz-employee-performance.sql` via the Supabase SQL Editor, then re-dispatch
-`lifelenz-employee-performance-pull.yml` to confirm real saves — do not re-diagnose the parser,
-it is already proven correct against live data.
+from day one) exists to guarantee.
+
+**✅ RESOLVED 2026-11-02 — owner ran the schema SQL; re-dispatch (GitHub Actions run
+41443888556, `debug=1`) confirms real saves end to end. Do not re-raise this build as
+incomplete.** Same real `GetReportMeta` (30 columns), all 28 stores triggered/resolved (2 poll
+rounds). **1,421 real employee rows saved across 28/28 stores** — zero `"Could not find the
+table"` errors, zero write failures. Per-store parsed-vs-saved counts matched exactly everywhere
+(e.g. Duncan 88/88, Ada-Country Club 87/87, Ardmore-NEC Cooper/12th 65/65); the one legitimately
+empty store (Cherokee/4th St-Lindsay, OK) still correctly reports "no employee rows in window,"
+not a failure. `lifelenz_employee_performance` is live in production with real data. The
+Employee Performance build (3rd LifeLenz Data Explorer tile) is fully complete — nothing further
+to do here.
