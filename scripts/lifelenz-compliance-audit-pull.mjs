@@ -183,13 +183,26 @@ const PROMOTED_MEMBERS = {
   dismissed_on:               'dismissed_on',
 };
 
+// Measured live 2026-11-02 (dispatch run 41366151365): GetReportMeta's own columns[].member (and
+// .name, for most columns) come back FULLY QUALIFIED as "compliance_audit_report.<field>", not
+// bare. Passing that straight through as the trigger's `columns` array fails every single store
+// with "No exportable columns match the requested keys" -- the `columns` param wants BARE field
+// names (same as Schedule Variance's own hardcoded COLUMNS list), while groupBy/filters/sortOrder
+// want the qualified form. Stripping the prefix here, once, at the source, means every downstream
+// consumer (buildLabelMap, the trigger's columnMembers, PROMOTED_MEMBERS/GATE_MEMBERS matching)
+// works with bare names consistently, with no second place to remember this.
+function stripReportPrefix(m) {
+  const prefix = REPORT_KEY + '.';
+  return m && m.startsWith(prefix) ? m.slice(prefix.length) : m;
+}
+
 async function fetchReportMeta(token) {
   const data = await graphql(token, 'GetReportMeta', { businessId: BUSINESS_ID, reportKey: REPORT_KEY }, GET_REPORT_META_QUERY);
   const meta = data?.lakehouseReportMeta;
   if (!meta) throw new Error(`GetReportMeta returned null for reportKey=${REPORT_KEY} — report may have been renamed/removed`);
   const columns = meta.columns || [];
   if (!columns.length) throw new Error('GetReportMeta returned zero columns');
-  return columns; // [{name, member, shortTitle, ...}]
+  return columns.map(c => ({ ...c, member: stripReportPrefix(c.member), name: stripReportPrefix(c.name) })); // [{name, member, shortTitle, ...}], now bare
 }
 
 async function triggerReport(token, scheduleId, startDate, endDate, columnMembers) {
@@ -467,7 +480,7 @@ async function main() {
 // the dynamic label-map builder + CSV parser, guarded the same way
 // lifelenz-schedule-variance-pull.mjs is so importing this module's pure functions doesn't also
 // fire off a live LifeLenz pull.
-export { parseComplianceAuditCSV, buildLabelMap, locFromName };
+export { parseComplianceAuditCSV, buildLabelMap, locFromName, stripReportPrefix };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => {
     console.error('[lifelenz-compliance-audit-pull] fatal error:', err);

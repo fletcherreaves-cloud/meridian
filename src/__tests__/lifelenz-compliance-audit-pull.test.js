@@ -10,7 +10,26 @@
 // what the real labels are. Guarded by `if (import.meta.url === ...)` in the script itself, so
 // importing it here does not also fire off a live LifeLenz pull.
 import { describe, it, expect } from 'vitest';
-import { parseComplianceAuditCSV, buildLabelMap, locFromName } from '../../scripts/lifelenz-compliance-audit-pull.mjs';
+import { parseComplianceAuditCSV, buildLabelMap, locFromName, stripReportPrefix } from '../../scripts/lifelenz-compliance-audit-pull.mjs';
+
+// Regression test for dispatch run 41366151365 (live, 2026-11-02): GetReportMeta's own
+// columns[].member comes back FULLY QUALIFIED as "compliance_audit_report.<field>", not bare --
+// passing that straight into the trigger's `columns` array failed all 28 stores with "No
+// exportable columns match the requested keys". stripReportPrefix() is the fix; this locks it in
+// against the exact real member string the live dispatch returned.
+describe('stripReportPrefix', () => {
+  it('strips the real "compliance_audit_report." prefix GetReportMeta returns', () => {
+    expect(stripReportPrefix('compliance_audit_report.compliance_warning_id')).toBe('compliance_warning_id');
+    expect(stripReportPrefix('compliance_audit_report.locations_location_name')).toBe('locations_location_name');
+  });
+  it('leaves an already-bare member unchanged', () => {
+    expect(stripReportPrefix('compliance_warning_id')).toBe('compliance_warning_id');
+  });
+  it('passes through null/undefined without throwing', () => {
+    expect(stripReportPrefix(null)).toBeNull();
+    expect(stripReportPrefix(undefined)).toBeUndefined();
+  });
+});
 
 // Representative subset of the 42 real confirmed column members (memory/lifelenz-session.md),
 // each paired with a synthetic test-only display label. One extra member
