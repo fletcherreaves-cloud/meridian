@@ -893,3 +893,57 @@ empty store (Cherokee/4th St-Lindsay, OK) still correctly reports "no employee r
 not a failure. `lifelenz_employee_performance` is live in production with real data. The
 Employee Performance build (3rd LifeLenz Data Explorer tile) is fully complete — nothing further
 to do here.
+
+## Queued 2026-11-02 — large owner brain-dump ("I'll add more as I think of them")
+
+All explicitly "queue for later," not build-now. Tracked individually as tasks #61–70 in this
+session's own task list too. Full feasibility/phasing writeup for the two big ones (Yearly +
+Monthly Targets) is in `plan-targets-system-2026-11-02.md`.
+
+1. **Yearly Targets in-app builder + printable export.** Look matching the uploaded workbook,
+   flexible metrics/sections (SMG retiring, replacement TBD — maybe Google Reviews), day-part
+   TPPH targets (+ possibly other metrics), option to seed from Smart Targets or enter custom.
+2. **Monthly Targets converted to in-app** (currently Excel upload). Printable like current,
+   cascading flexible metric categories, easy to update for patch realignment + location
+   add/remove over time. Tied to #1 — see the dedicated plan file.
+3. **Sidebar nav condensed into expand/collapse sections** by current headers ("even later").
+4. **Role-based panel active/inactive toggles + delegated sub-role access** — a master/admin
+   setup, plus letting a role grant additional panel access to lower roles it's authorized to
+   manage. Overlaps the still-open §B above ("Per-user panel access restriction") — reconcile the
+   two asks (per-role-with-delegation vs. true per-user override) when picked up, don't build both
+   independently.
+5. **Knowledge base/help refresh + role-based interactive Getting Started tool** — covering core
+   usage, settings, and rearranging the AAG panel layout.
+6. **Bug: District View repeats the company rollup on every location's own page** — needs moving
+   to its own separate place, not shown per-location.
+7. **Bug: Home nav button doesn't work while a full-page panel is open** — has to be closed via
+   its own back arrow first. Owner called this "easy."
+8. **User setting for default landing panel** (Home, District View, or anything else).
+9. **AAG layout: move patch heat map + bullseye below the card tiles, above district
+   projections.**
+10. Continue exploring deeper Claude/MCP integration for SAGE — already tracked (task #60).
+11. **Multi-org/multi-user readiness + legal/IP protection**, ahead of "bringing on additional
+    users and possibly a whole different organization":
+    - Technical: see `project-multitenant-onboarding.md`'s 2026-11-02 correction — a NEW finding
+      (51 schema files' RLS still hardcode the owner's literal tenant UUID instead of
+      `current_tenant_id()`, including `schema-yearly-targets.sql`/`schema-target-overrides.sql`
+      and every security-findings/pay-rate/LifeLenz-punch table) is now the #1 priority fix before
+      a real second tenant, ahead of that file's other 4 already-known open items (org_config PK,
+      pull-script tenant stamping, signup tenant assignment, SAGE smoke-test).
+    - Per-user panel access (§B above, item 4 above) matters more with outside users.
+    - Secrets/access management review as more people need deploy/admin access
+      (`SUPABASE_SERVICE_ROLE_KEY`, GitHub secrets, who can push to `main`).
+    - No backup/disaster-recovery or data-retention policy documented anywhere in this repo —
+      worth establishing before more people depend on the data.
+    - Legal: no Terms of Use / EULA / Privacy Policy exist today. Given PII (names, pay rates,
+      schedules, disciplinary records) will flow through infrastructure the owner controls on
+      behalf of another business's employees, recommended before wider release: (a) a ToS/EULA
+      governing another operator's use (no ownership/IP transfer, data handling, liability
+      limits, termination), (b) a Privacy Policy covering what's collected/retained/who can see
+      it, (c) considering a Data Processing Agreement if another org's employee PII is involved,
+      (d) US copyright registration for the codebase (automatic protection exists on creation,
+      but registration is needed to sue for infringement and unlocks statutory damages — cheap
+      for software, worth it given the investment), (e) whether Meridian should operate under its
+      own legal entity separate from the restaurant-operating business, to contain liability.
+      Recommended: a real business/IP attorney for the actual documents — can help draft a first
+      pass for their review when picked up, not a substitute for counsel.
