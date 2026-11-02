@@ -1,0 +1,170 @@
+{
+  "sourceDoc": "Pocket Quality Reference Guide (PQRG)",
+  "groups": [
+    {
+      "matchType": "type",
+      "type": "grill",
+      "note": "Grill cook time/gap/temp are standardized McDonald's targets, not brand-specific -- applies to every grill catalog model.",
+      "products": [
+        { "product": "Bacon, Applewood Smoked", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "90 sec", "gapSetting": ".265", "targetRemovalTime": "12 sec", "maxRunSize": "8 strips", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min" }, "sourcePage": 2 },
+        { "product": "10:1 Meat (Regular)", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "42 sec start point", "gapSetting": "Stage 1: .225 for 20 sec, Stage 2: .290 for 22 sec (*Next Gen Taylor Grills: .245)", "targetRemovalTime": "18 sec", "maxRunSize": "6 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min" }, "sourcePage": 38 },
+        { "product": "Quarter Meat (Fresh)", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "68 sec start point", "gapSetting": ".395", "targetRemovalTime": "12 sec", "maxRunSize": "3 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min", "note": "Cook-to-order product only -- can NEVER be placed in the UHC." }, "sourcePage": 39 },
+        { "product": "Quarter Meat (Frozen)", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "136 sec start point", "gapSetting": ".400 for 20 sec", "removeGap": ".450", "targetRemovalTime": "12 sec", "maxRunSize": "4 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min", "note": "*Next Gen Taylor Grills (NGG) remove time is 126 sec -- differs from older grills. Used only in select markets." }, "sourcePage": 40 },
+        { "product": "McRib Patties", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "157 sec", "gapSetting": ".530", "targetRemovalTime": "12 sec", "maxRunSize": "6 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min" }, "sourcePage": 41 },
+        { "product": "Steak", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "158 sec start point", "gapSetting": ".530", "targetRemovalTime": "12 sec", "maxRunSize": "4 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min" }, "sourcePage": 5 },
+        { "product": "Sausage", "settingGroup": "Grill Times, Temperatures & Settings", "settings": { "cookTime": "88 sec start point", "gapSetting": ".350", "targetRemovalTime": "12 sec", "maxRunSize": "8 patties", "grillTemp": "Upper 425°F, Lower 365°F", "warmUpTime": "20 min" }, "sourcePage": 4 },
+        { "product": "Canadian Bacon", "settingGroup": "Cold Zone Times & Settings", "settings": { "cookTime": "8-10 sec per side", "maxRunSize": "8 slices" }, "sourcePage": 3 }
+      ]
+    },
+    {
+      "matchType": "type",
+      "type": "fryer",
+      "note": "Fryer temp/time/product-selector codes are standardized McDonald's targets, not brand-specific -- applies to every fryer catalog model.",
+      "products": [
+        { "product": "Hash Browns", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "3 min", "fryerTemp": "360°F", "fryerWarmUpTime": "45 min", "maxRunSize": "8 per basket", "productSelector": "HBR" }, "sourcePage": 12 },
+        { "product": "McNuggets & Spicy McNuggets", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "3 min 30 sec", "fryerTemp": "360°F", "fryerWarmUpTime": "45 min", "maxRunSize": "48 per basket (4 slotted segments)", "productSelector": "NUG" }, "sourcePage": 43 },
+        { "product": "McCrispy", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "6 min 55 sec", "fryerTemp": "360°F", "fryerWarmUpTime": "45 min", "maxRunSize": "4 filets, 1/2-size slotted basket", "productSelector": "CSPY" }, "sourcePage": 43 },
+        { "product": "McCrispy Strips", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "6 min (LOV only), 6 min 15 sec (all others)", "fryerTemp": "360°F", "fryerWarmUpTime": "45 min", "maxRunSize": "6 strips, 1/2-size open basket", "productSelector": "ChkStr" }, "sourcePage": 44 },
+        { "product": "McChicken & Hot 'n Spicy McChicken", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "3 min 30 sec", "fryerTemp": "360°F", "fryerWarmUpTime": "45 min", "maxRunSize": "6 patties, 1/2-size slotted basket", "productSelector": "McCh" }, "sourcePage": 45 },
+        { "product": "Filet-O-Fish", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "3 min 40 sec", "fryerTemp": "350°F", "fryerWarmUpTime": "45 min", "maxRunSize": "8 filets, 1/2-size filet basket", "productSelector": "FILT" }, "sourcePage": 46 },
+        { "product": "French Fries", "settingGroup": "Fryer Times, Temperatures & Settings", "settings": { "cookTime": "3 min 10 sec", "fryerTemp": "335°F", "fryerWarmUpTime": "45 min", "basket": "Full open basket" , "productSelector": "FRY" }, "sourcePage": 47 }
+      ]
+    },
+    {
+      "matchType": "manufacturer",
+      "type": "combi_oven",
+      "manufacturer": "Blodgett",
+      "products": [
+        { "product": "Bacon, Applewood Smoked", "settingGroup": "Combi Oven", "settings": { "minPerTray": "1 sheet (8 strips)", "maxPerTray": "2 sheets (16 strips)", "totalTrays": "Up to 5", "temp": "375°F", "cookTime": "4 min", "steam": "10%", "fanSpeed": "80%" }, "sourcePage": 2 },
+        { "product": "Folded Eggs (Simplified Breakfast)", "settingGroup": "Combi Oven", "settings": { "cookTime": "3 min 30 sec", "totalTrays": "3 (LRS lined)", "temp": "360°F", "steam": "90%", "fanSpeed": "60%" }, "sourcePage": 6 },
+        { "product": "Folded Eggs (Full Menu)", "settingGroup": "Combi Oven", "settings": { "minPerTray": "11", "maxPerTray": "12", "partialTray": { "minPerTray": "2", "maxPerTray": "10" }, "totalTrays": "Up to 3", "temp": "360°F", "cookTime": "3 min 30 sec", "steam": "90%", "fanSpeed": "60%" }, "sourcePage": 7 },
+        { "product": "Shell Eggs (Round), Original Egg Cup", "settingGroup": "Combi Oven", "settings": { "minPerTray": "8", "maxPerTray": "8", "totalTrays": "1-3 trays", "temp": "360°F", "cookTime": "4:15 (1-2 trays), 2:30 plus CT* (3-tray batch cook setting on controller)", "steam": "90%", "fanSpeed": "60%" }, "sourcePage": 10 },
+        { "product": "Chocolate Chip Cookies, Soft Baked", "settingGroup": "Combi Oven", "settings": { "temp": "375°F", "cookTime": "2 min 30 sec", "coolTimeOnTray": "6 min", "fanSpeed": "N/A", "steam": "No" }, "sourcePage": 71 },
+        { "product": "Pies, Apple", "settingGroup": "Combi Oven", "settings": { "partialTray": "4-6 pies, 10 min, no steam, fan 100%", "fullTray": "7-12 pies, 12 min, no steam, fan 100%", "temp": "375°F" }, "sourcePage": 72 }
+      ]
+    },
+    {
+      "matchType": "manufacturer",
+      "type": "combi_oven",
+      "manufacturer": "Convotherm",
+      "note": "PQRG does not distinguish Generation 1 vs Generation 2 settings -- same reference applies to both catalog rows.",
+      "products": [
+        { "product": "Bacon, Applewood Smoked", "settingGroup": "Combi Oven", "settings": { "minPerTray": "1 sheet (8 strips)", "maxPerTray": "2 sheets (16 strips)", "totalTrays": "Up to 5", "temp": "385°F", "cookTime": "4 min 15 sec", "cookMode": "Hot air", "fanSpeed": "100%", "crispAndTasty": "Level 3", "steam": "No" }, "sourcePage": 2 },
+        { "product": "Folded Eggs (Simplified Breakfast)", "settingGroup": "Combi Oven", "settings": { "cookTime": "3 min 30 sec", "totalTrays": "Up to 3", "temp": "360°F", "cookMode": "Combi", "fanSpeed": "50% (1/2 fan)", "crispAndTasty": "Level 0", "steam": "100%" }, "sourcePage": 7 },
+        { "product": "Folded Eggs (Full Menu)", "settingGroup": "Combi Oven", "settings": { "minPerTray": "2 per tray", "maxPerTray": "12 per tray", "totalTrays": "Up to 3", "temp": "360°F", "cookTime": "3 min 30 sec", "cookMode": "Combi", "fanSpeed": "50% (1/2 fan)", "crispAndTasty": "Level 0", "steam": "100%" }, "sourcePage": 7 },
+        { "product": "Shell Eggs (Round), Original Egg Cup", "settingGroup": "Combi Oven", "settings": { "minPerTray": "8", "maxPerTray": "8", "totalTrays": "1-3 trays", "temp": "360°F", "cookTime": "4:00 (1-2 trays), 4:05 (3-tray, plus CT*)", "cookMode": "Combi", "fanSpeed": "50% (1/2 fan)", "crispAndTasty": "Level 0", "steam": "100%" }, "sourcePage": 10 },
+        { "product": "Chocolate Chip Cookies, Soft Baked", "settingGroup": "Combi Oven", "settings": { "temp": "375°F", "cookTime": "2 min", "fanSpeed": "100%", "crispAndTasty": "Level 0", "steam": "No" }, "sourcePage": 71 },
+        { "product": "Pies, Apple", "settingGroup": "Combi Oven", "settings": { "partialTray": "10 min", "fullTray": "11 min", "temp": "375°F", "cookMode": "Hot air", "fanSpeed": "100%", "crispAndTasty": "Level 0" }, "sourcePage": 72 }
+      ]
+    },
+    {
+      "matchType": "model",
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "modelContains": "MT-12",
+      "products": [
+        { "product": "English Muffins / general toast", "settingGroup": "Toaster", "settings": { "warmUpTime": "20 min", "toastTime": "Adjust screw in back of toaster to achieve target toast" }, "sourcePage": 21 }
+      ]
+    },
+    {
+      "matchType": "model",
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "modelContains": "HCT-5H",
+      "needsReview": true,
+      "reviewNote": "Catalog row \"HCT-5H / HRT-5H\" bundles two model aliases. This reference is for Antunes Horizontal Radiant (HRT) specifically -- the PQRG does not give separate Horizontal Contact (HCT) settings.",
+      "products": [
+        { "product": "English Muffins (Horizontal Radiant)", "settingGroup": "Toaster", "settings": { "heaterA": "65%", "heaterB": "65%", "heaterC": "0%", "toasterColor": "750 (start point)" }, "sourcePage": 21 }
+      ]
+    },
+    {
+      "matchType": "model",
+      "type": "toaster",
+      "manufacturer": "Antunes",
+      "modelContains": "UTX-200",
+      "products": [
+        { "product": "English Muffins (Universal Toaster)", "settingGroup": "Toaster", "settings": { "speed": "178 to 184", "upperIR": "Range 80 to 84", "lowerIR": "Range 32 to 36" }, "sourcePage": 21 },
+        { "product": "Big Mac / Quarter / Regular / Potato Roll / McRib Buns (Universal Toaster)", "settingGroup": "Toaster — Bun Toasting", "settings": { "warmUpTime": "20 min", "bunSpeed": "5270 conveyor speed", "platenA": "540°F", "platenB": "540°F", "platenC": "490°F", "bunToastTime": "22 sec", "compressionSetting": "4 (starting point)" }, "sourcePage": 49 },
+        { "product": "Big Mac / Quarter / Regular / Potato Roll / McRib Buns (Club Toaster, same catalog family)", "settingGroup": "Toaster — Bun Toasting", "settings": { "warmUpTime": "20 min", "bunSpeed": "1700 conveyor speed", "lowerPlatenTemp": "560°F", "upperPlatenTemp": "560°F" }, "sourcePage": 50 }
+      ]
+    },
+    {
+      "matchType": "model",
+      "type": "toaster",
+      "manufacturer": "Prince Castle",
+      "modelContains": "340-URTG2L",
+      "products": [
+        { "product": "General toast (Universal Toaster)", "settingGroup": "Toaster", "settings": { "toastTime": "94 to 100 sec (start point)", "toastPower": "68%" }, "sourcePage": 21 },
+        { "product": "Buns (Universal Toaster)", "settingGroup": "Toaster — Bun Toasting", "settings": { "warmUpTime": "20 min", "bunSpeed": "20 sec", "platenTemp": "545°F", "clubTemp": "530°F", "compressionSetting": "24" }, "sourcePage": 50 }
+      ]
+    },
+    {
+      "matchType": "manufacturer",
+      "type": "toaster",
+      "manufacturer": "Prince Castle",
+      "needsReview": true,
+      "reviewNote": "PQRG names this \"Prince Castle Horizontal Toaster\" with no model number. Attached to the 340-URTG2L catalog row as the closest/general-purpose Prince Castle toaster match -- unconfirmed against CBT-MCD (Core Bun Toaster) or IRT-MCD (Infrared Toaster), which are more likely a different physical unit.",
+      "modelContains": "340-URTG2L",
+      "products": [
+        { "product": "General toast (Horizontal Toaster)", "settingGroup": "Toaster", "settings": { "toastTime": "56 to 94 sec (start point)", "toastPower": "68%" }, "sourcePage": 21 },
+        { "product": "Buns (Horizontal Toaster)", "settingGroup": "Toaster — Bun Toasting", "settings": { "toastTime": "22 sec", "platenTemp": "455°F", "clubSectionTemp": "500°F", "compressionSetting": "3 (starting point)" }, "sourcePage": 50 }
+      ]
+    },
+    {
+      "matchType": "model",
+      "type": "steamer",
+      "manufacturer": "Prince Castle",
+      "modelContains": "625",
+      "products": [
+        { "product": "Filet-O-Fish Buns / Best Burger Buns", "settingGroup": "Steamer", "settings": { "warmUpTime": "20 min", "steamCycleTime": "8 sec", "bunMax": "2, cut side down, heel close to handle", "lowerPlateTemp": "350°F" }, "sourcePage": 46 }
+      ]
+    },
+    {
+      "matchType": "manufacturer",
+      "type": "steamer",
+      "manufacturer": "Antunes",
+      "needsReview": true,
+      "reviewNote": "PQRG names this \"Antunes Table Top Steamer\" with no model number. Catalog has 2 Antunes steamer models (SS-400, UCS-2000) -- attached to both, unconfirmed which this is.",
+      "products": [
+        { "product": "Filet-O-Fish Buns / Best Burger Buns", "settingGroup": "Steamer", "settings": { "warmUpTime": "20 min", "steamCycleTime": "12 to 20 sec", "bunMax": "2, cut side down", "lowerPlateTemp": "400°F" }, "sourcePage": 46 }
+      ]
+    },
+    {
+      "matchType": "type",
+      "type": "uhc",
+      "note": "UHC slot temp/holding time/tray-load are standardized McDonald's targets per product, not brand-specific -- applies to every UHC catalog model.",
+      "products": [
+        { "product": "Canadian Bacon", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F or 185°F top/bottom", "holdingTime": "30 min", "maxPerTray": "16 total, 4 stacks, 4 high" }, "sourcePage": 3 },
+        { "product": "Sausage", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F, 185°F or 200°F top/bottom", "holdingTime": "60 min", "maxPerTray": "16 total, 4 stacks, 4 high w/liner" }, "sourcePage": 4 },
+        { "product": "Steak", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "30 min", "maxPerTray": "4 stacks, 1 high, 4 total w/liner" }, "sourcePage": 5 },
+        { "product": "Folded Eggs", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "20 min", "maxPerTray": "12 total, 6 stacks, 2 high, false bottom + Accu-Water" }, "sourcePage": 8 },
+        { "product": "Scrambled Eggs (Liquid)", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "20 min", "maxPerTray": "4 total, single layer, false bottom + Accu-Water" }, "sourcePage": 9 },
+        { "product": "Shell Eggs (Round)", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F/185°F/200°F top/bottom", "holdingTime": "20 min", "maxPerTray": "8 total, 4 stacks, 2 high, false bottom + Accu-Water" }, "sourcePage": 11 },
+        { "product": "English Muffins / Bagels / Buns (toasted)", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "15 to 20 min", "maxPerTray": "5 stacks, 1 high, 5 total, crown side up" }, "sourcePage": 21 },
+        { "product": "Sausage Burrito", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F or 185°F top/bottom", "holdingTime": "20 min", "maxPerTray": "6 burritos, single layer, w/liner" }, "sourcePage": 19 },
+        { "product": "Hotcakes", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "30 min", "maxPerTray": "4 orders (12 hotcakes) per fried-product-size tray" }, "sourcePage": 23 },
+        { "product": "McGriddles", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "20 min", "maxPerTray": "1-2 utility trays per 1/3-size UHC tray" }, "sourcePage": 25 },
+        { "product": "10:1 Meat (Regular)", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "10 min", "maxPerTray": "6 total, 2 stacks, 3 high, w/liner" }, "sourcePage": 38 },
+        { "product": "Quarter Meat (Fresh)", "settingGroup": "UHC Holding Instructions", "settings": { "note": "Cook-to-order product -- can NEVER be placed in the UHC." }, "sourcePage": 39 },
+        { "product": "Quarter Meat (Frozen)", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "10 min", "maxPerTray": "8 total, 4 stacks, 2 high, w/liner" }, "sourcePage": 40 },
+        { "product": "McRib Patties", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "175°F top/bottom", "holdingTime": "2 hrs", "maxPerTray": "6 total, 3 stacks, 2 high, with sauce" }, "sourcePage": 41 },
+        { "product": "McNuggets & Spicy McNuggets", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "200°F top/bottom", "holdingTime": "20 min", "maxPerTray": "48 single layer (1/2-size tray) or 24 single layer (1/3-size tray)" }, "sourcePage": 43 },
+        { "product": "McCrispy", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "185°F top/bottom", "holdingTime": "60 min", "maxPerTray": "4 total, single layer (1/3-size tray)" }, "sourcePage": 43 },
+        { "product": "McCrispy Strips", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "185°F top/bottom", "holdingTime": "45 min", "maxPerTray": "6 total, single layer (1/3-size tray)" }, "sourcePage": 44 },
+        { "product": "McChicken & Hot 'n Spicy McChicken", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "185°F or 200°F top/bottom", "holdingTime": "30 min", "maxPerTray": "9 single layer (1/2-size) or 6 single layer (1/3-size)" }, "sourcePage": 45 },
+        { "product": "Filet-O-Fish", "settingGroup": "UHC Holding Instructions", "settings": { "slotTemperature": "185°F top/bottom", "holdingTime": "30 min", "maxPerTray": "8 single layer (1/3-size tray)" }, "sourcePage": 46 }
+      ]
+    },
+    {
+      "matchType": "type",
+      "type": "staging_cabinet",
+      "note": "Staging cabinet temp/holding time are standardized McDonald's targets per product, not brand-specific.",
+      "products": [
+        { "product": "Folded Eggs", "settingGroup": "Staging Cabinet Holding", "settings": { "cabinetTemp": "180°F air / 186°F water", "holdingTime": "120 min", "maxPerInsert": "Small insert (yellow ring): 6 total, 2 stacks, 3 high, false bottom, no liner" }, "sourcePage": 8 },
+        { "product": "Scrambled Eggs (Liquid)", "settingGroup": "Staging Cabinet Holding", "settings": { "cabinetTemp": "160°F air / 186°F water", "holdingTime": "120 min", "maxPerInsert": "Small insert (green ring): single layer, false bottom, no liner" }, "sourcePage": 9 },
+        { "product": "Shell Eggs (Round)", "settingGroup": "Staging Cabinet Holding", "settings": { "cabinetTemp": "160°F air / 186°F water", "holdingTime": "120 min", "maxPerInsert": "Small insert (white ring): 8 total, 4 stacks, 2 high" }, "sourcePage": 10 },
+        { "product": "Sausage Burrito", "settingGroup": "Staging Cabinet Holding", "settings": { "cabinetTemp": "160°F air / 186°F water", "holdingTime": "120 min", "maxPerTray": "36 burritos", "recommendedShelf": "9-10" }, "sourcePage": 19 }
+      ]
+    }
+  ]
+}

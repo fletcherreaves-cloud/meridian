@@ -5527,6 +5527,15 @@ export async function loadEquipmentCatalogDirect() {
     .select('*').order('type', { ascending: true }).range(from, to));
   return data || [];
 }
+// PQRG reference settings per catalog item (2026-11-02) — same direct-read posture as the
+// catalog/entries functions above; equipment_catalog_settings carries the same "authenticated:
+// tenant read" RLS policy as equipment_catalog_consumables.
+export async function loadEquipmentCatalogSettingsDirect() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_catalog_settings')
+    .select('*').range(from, to));
+  return data || [];
+}
 export async function loadEquipmentEntriesDirect(loc) {
   if (!supabase || !loc) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
@@ -5550,6 +5559,8 @@ export async function saveEquipmentEntryDirect(row) {
     cert_date: row.cert_date || null,
     action: row.action || 'added',
     position_detail: row.position_detail ?? null,
+    settings_reviewed: !!row.settings_reviewed,
+    settings_review_notes: row.settings_review_notes || null,
     submitted_by: submittedBy,
     submitted_at: new Date().toISOString(),
   };

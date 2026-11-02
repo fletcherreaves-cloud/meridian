@@ -6,7 +6,12 @@
 // this function validates the token server-side (service role) and is the only gateway.
 //
 // Routes (token in the JSON body):
-//   { token }                              → { catalog, ok }  (full catalog, for the dropdown)
+//   { token }                              → { catalog, consumables, settings, ok }  (full
+//                                             catalog for the dropdown, plus its correct
+//                                             consumables and PQRG reference settings per item —
+//                                             2026-11-02, "tie in settings for equipment...
+//                                             references based on models selected that can be
+//                                             verified")
 //   { token, action:"entries", loc }       → current entries for one store (latest per instance_id,
 //                                             excluding any whose latest action is "removed")
 //   { token, action:"submit", entry }      → append one equipment_survey_entries row
@@ -104,6 +109,8 @@ Deno.serve(async (req) => {
         submitted_by: clean(e.submittedBy, 100) || null,
         photo_url: clean(e.photoUrl, 500) || null,
         ai_extraction: e.aiExtraction && typeof e.aiExtraction === 'object' ? e.aiExtraction : null,
+        settings_reviewed: !!e.settingsReviewed,
+        settings_review_notes: clean(e.settingsReviewNotes, 500) || null,
         position_detail: e.positionDetail && typeof e.positionDetail === 'object' ? {
           side: ['side1_right', 'side1_left', 'side2_right', 'side2_left'].includes(e.positionDetail.side) ? e.positionDetail.side : null,
           relative: ['same_as_grill', 'opposite_of_grill'].includes(e.positionDetail.relative) ? e.positionDetail.relative : null,
@@ -181,13 +188,16 @@ Deno.serve(async (req) => {
     }
 
     // Default: full catalog (for the dropdown) plus its consumables (so the form can show "this
-    // item takes WRIN X" context, useful even before Phase 1's cross-reference feature ships).
-    const [catR, conR] = await Promise.all([
+    // item takes WRIN X" context, useful even before Phase 1's cross-reference feature ships)
+    // and its PQRG reference settings (2026-11-02 — "tie in settings for equipment... references
+    // based on models selected that can be verified").
+    const [catR, conR, setR] = await Promise.all([
       sb.from('equipment_catalog').select('id,type,manufacturer,model,model_aliases,needs_serial,needs_cert_date,flagged'),
       sb.from('equipment_catalog_consumables').select('catalog_item_id,consumable_type,wrin,label'),
+      sb.from('equipment_catalog_settings').select('catalog_item_id,product,setting_group,settings,needs_review,review_note,source_doc,source_page'),
     ]);
     if (catR.error) return json({ error: 'lookup failed' }, 500);
-    return json({ ok: true, catalog: catR.data || [], consumables: conR.data || [] });
+    return json({ ok: true, catalog: catR.data || [], consumables: conR.data || [], settings: setR.data || [] });
   } catch (e) {
     return json({ error: String((e as Error)?.message || e) }, 500);
   }
