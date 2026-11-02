@@ -91,7 +91,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -422,8 +422,12 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:collapsed?'8px 4px':'8px'}},
 
       // ── Top: view switches, not panels -- no registry id, always visible ────────
-      navItem('Home',              '⌂', ()=>setView('command'),         view==='command'),
-      pi('analytics.district',    'District View',    '⊞', ()=>{setView('district');},   view==='district'),
+      // Owner-reported bug (2026-11-02): clicking Home/District View did nothing while a
+      // full-page route panel was open -- setView alone doesn't clear routePanel, and every
+      // view's render gate in App.js requires !routePanel (see the Escape-key precedent,
+      // App.js's `if(routePanel){goRoute(null);return;}`). goRoute?.(null) mirrors that.
+      navItem('Home',              '⌂', ()=>{setView('command'); goRoute?.(null);},         view==='command'&&!routePanel),
+      pi('analytics.district',    'District View',    '⊞', ()=>{setView('district'); goRoute?.(null);},   view==='district'&&!routePanel),
 
       // ── Section-driven body (dispatch #54 Job B) ─────────────────────────────
       // Every section except 'admin' renders in SECTIONS order; 'admin' is pulled out and

@@ -3532,6 +3532,7 @@ function App() {
     // ── LEFT SIDEBAR ─────────────────────────────────────────────
     h(AppSidebar,{
       view, setView,
+      routePanel, goRoute,
       selStore,
       stores, ds, settings,
       loadMsg,
