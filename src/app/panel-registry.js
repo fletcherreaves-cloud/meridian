@@ -343,6 +343,11 @@ export const PANELS = [
   // real use hasn't happened yet; section is 'operations' (its real future home) from day one
   // per this file's own promotion-is-a-one-field-flip convention.
   { id:'equipment-layout', label:'Layout Planner', icon:'🗺️', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:18 },
+  // Owner request 2026-11-02: "add a link to the equipment survey as well as build out a landing
+  // panel for the results in the app" -- the crew-walkthrough share link (create/list/revoke) plus
+  // a cross-store rollup of what's been logged (src/views/equipment-results.js). kind:'nav' (not
+  // test-kitchen) since this is the direct thing the owner asked to be real and findable now.
+  { id:'equipment-results', label:'Equipment Results', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },

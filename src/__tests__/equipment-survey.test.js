@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   latestEntriesByInstance, describeEquipmentEntry, buildEquipmentRollupRows,
   buildEquipmentRollupText, resolveStoreGM, placementLabel, sideLabel, relativeLabel,
+  buildEquipmentStoreSummary,
 } from '../engine/equipment-survey.js';
 
 const row = (instanceId, action, submittedAt, extra = {}) =>
@@ -151,5 +152,59 @@ describe('resolveStoreGM', () => {
   it('returns null when given no assignments at all', () => {
     expect(resolveStoreGM([], '3708', '2026-10-19')).toBeNull();
     expect(resolveStoreGM(null, '3708', '2026-10-19')).toBeNull();
+  });
+});
+
+// ── Equipment Results Panel (owner request 2026-11-02) ────────────────────────────────────────
+describe('buildEquipmentStoreSummary', () => {
+  it('groups by loc and reports itemCount/reviewedCount from current (non-removed) state only', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', settings_reviewed: true }),
+      row('b', 'added', '2026-10-02T00:00:00Z', { loc: '3708', settings_reviewed: false }),
+      row('c', 'added', '2026-10-01T00:00:00Z', { loc: '5183', settings_reviewed: false }),
+    ];
+    const out = buildEquipmentStoreSummary(rows);
+    expect(out).toEqual([
+      { loc: '3708', itemCount: 2, reviewedCount: 1, lastSubmittedAt: '2026-10-02T00:00:00Z', lastSubmittedBy: null },
+      { loc: '5183', itemCount: 1, reviewedCount: 0, lastSubmittedAt: '2026-10-01T00:00:00Z', lastSubmittedBy: null },
+    ]);
+  });
+
+  it('accepts rows in any order (not pre-sorted newest-first) and still resolves current state per store', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', serial_number: 'OLD' }),
+      row('a', 'corrected', '2026-10-05T00:00:00Z', { loc: '3708', serial_number: 'NEW' }),
+    ];
+    const out = buildEquipmentStoreSummary(rows);
+    expect(out).toEqual([{ loc: '3708', itemCount: 1, reviewedCount: 0, lastSubmittedAt: '2026-10-05T00:00:00Z', lastSubmittedBy: null }]);
+  });
+
+  it('lastSubmittedAt/lastSubmittedBy reflect the most recent row regardless of action, even a removal', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', submitted_by: 'A. Lopez' }),
+      row('a', 'removed', '2026-10-10T00:00:00Z', { loc: '3708', submitted_by: 'B. Reyes' }),
+    ];
+    const out = buildEquipmentStoreSummary(rows);
+    expect(out).toEqual([{ loc: '3708', itemCount: 0, reviewedCount: 0, lastSubmittedAt: '2026-10-10T00:00:00Z', lastSubmittedBy: 'B. Reyes' }]);
+  });
+
+  it('sorts stores numerically by loc, not lexicographically', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '20' }),
+      row('b', 'added', '2026-10-01T00:00:00Z', { loc: '3' }),
+      row('c', 'added', '2026-10-01T00:00:00Z', { loc: '100' }),
+    ];
+    const out = buildEquipmentStoreSummary(rows);
+    expect(out.map(r => r.loc)).toEqual(['3', '20', '100']);
+  });
+
+  it('ignores a malformed row with no loc rather than throwing', () => {
+    const rows = [{ instance_id: 'a', action: 'added', submitted_at: '2026-10-01T00:00:00Z' }];
+    expect(buildEquipmentStoreSummary(rows)).toEqual([]);
+  });
+
+  it('returns an empty array for no rows', () => {
+    expect(buildEquipmentStoreSummary([])).toEqual([]);
+    expect(buildEquipmentStoreSummary(null)).toEqual([]);
   });
 });

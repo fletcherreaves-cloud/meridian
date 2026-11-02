@@ -1344,7 +1344,9 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
     return q;
   }, 1000, 'lifelenz_shift_assignments');
   return (data || []).map(r => ({
-    loc:                  r.loc,
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment (same bug,
+    // same fix, same owner report 2026-11-02: duplicate/unresolved store entries).
+    loc:                  String(parseInt(r.loc, 10)),
     shiftId:               r.shift_id,
     date:                  r.date,
     shiftStart:            r.shift_start,
@@ -1378,7 +1380,13 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs } = {}) {
     return q;
   }, 1000, 'lifelenz_schedule_variance');
   return (data || []).map(r => ({
-    loc:               r.loc,
+    // Strip zero-padding ("0003708" → "3708") — same normalization loadLifeLenzSchedule/
+    // loadLifeLenzAttendance already apply. Without it this stream's loc disagrees with
+    // STORE_NAMES/allLocs/every other unpadded source, so any loc-keyed merge silently drops
+    // these rows and any store-list derived from ds.storeIds (dsAutoStoreIds) double-lists
+    // every store (padded + unpadded) instead of resolving one real entry per store (owner
+    // report 2026-11-02: "stores being listed 2x each -- by number and by name").
+    loc:               String(parseInt(r.loc, 10)),
     scheduledShiftId:  r.scheduled_shift_id,
     employeeName:      r.employee_name,
     originalValue:     r.original_value,
@@ -1407,7 +1415,9 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs } = {}) {
     return q;
   }, 1000, 'lifelenz_compliance_audit');
   return (data || []).map(r => ({
-    loc:              r.loc,
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment just above
+    // (same bug, same fix, same owner report 2026-11-02).
+    loc:              String(parseInt(r.loc, 10)),
     complianceWarningId: r.compliance_warning_id,
     employeeName:     r.employee_name,
     geid:             r.geid,
@@ -1446,7 +1456,9 @@ export async function loadLifeLenzEmployeePerformance({ start, end, locs } = {})
     return q;
   }, 1000, 'lifelenz_employee_performance');
   return (data || []).map(r => ({
-    loc:                       r.loc,
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment above (same
+    // bug, same fix, same owner report 2026-11-02).
+    loc:                       String(parseInt(r.loc, 10)),
     geid:                      r.geid,
     periodStart:               r.period_start,
     periodEnd:                 r.period_end,
@@ -1502,7 +1514,8 @@ export async function loadLifeLenzShiftPay({ start, end, locs } = {}) {
     return q;
   }, 1000, 'lifelenz_shift_pay');
   return (data || []).map(r => ({
-    loc: r.loc, shiftId: r.shift_id, earnings: r.earnings, seconds: r.seconds, updatedAt: r.updated_at,
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment above.
+    loc: String(parseInt(r.loc, 10)), shiftId: r.shift_id, earnings: r.earnings, seconds: r.seconds, updatedAt: r.updated_at,
   }));
 }
 
@@ -1517,7 +1530,8 @@ export async function loadEmployeePayRateChanges({ locs } = {}) {
     return q;
   }, 1000, 'employee_pay_rate_changes');
   return (data || []).map(r => ({
-    id: r.id, loc: r.loc, source: r.source, personKey: r.person_key,
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment above.
+    id: r.id, loc: String(parseInt(r.loc, 10)), source: r.source, personKey: r.person_key,
     employeeName: r.employee_name, jobTitle: r.job_title,
     priorRate: r.prior_rate, newRate: r.new_rate, effectiveDate: r.effective_date,
     detectedAt: r.detected_at,
@@ -3417,8 +3431,13 @@ async function _loadOpsTable(table, daysBack, extra) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
   try {
+    // Pass `table` as fetchAll's label (owner report 2026-11-02: a DATA INCOMPLETE banner named
+    // "a data table" — fetchAll's generic fallback for an unlabeled call). Without it, a page
+    // failure on ANY of the 5 tables this one function serves (qsr_cash_sheet/qsr_labor_summary/
+    // qsr_service_stats/qsr_sales_mix/qsr_peaks_sales) was indistinguishable from the others in
+    // the banner — same "which source actually failed" problem the banner exists to solve.
     const data = await fetchAll((from, to) => supabase.from(table).select('*')
-      .gte('dt', iso).order('dt', { ascending: false }).range(from, to));
+      .gte('dt', iso).order('dt', { ascending: false }).range(from, to), 1000, table);
     return (data || []).map(r => ({
       // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary already
       // does. Without it, every ops*Rows stream (opsCashRows/opsLaborRows/opsServiceRows/
@@ -5540,6 +5559,15 @@ export async function loadEquipmentEntriesDirect(loc) {
   if (!supabase || !loc) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
     .select('*').eq('loc', String(loc)).order('submitted_at', { ascending: false }).range(from, to));
+  return data || [];
+}
+// Every store's entries in one fetch, for the Equipment Results panel's cross-store rollup
+// (2026-11-02) -- engine/equipment-survey.js's buildEquipmentStoreSummary() groups by loc itself,
+// so this intentionally does NOT filter or pre-sort by store.
+export async function loadAllEquipmentEntriesDirect() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
+    .select('*').order('submitted_at', { ascending: false }).range(from, to));
   return data || [];
 }
 // row: { instance_id?, loc, catalog_item_id?, manual_entry_text?, placement_zone?, serial_number?,

@@ -345,9 +345,13 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // (a visual drag-and-drop store equipment layout tool) -- 'equipment-layout' (Layout
     // Planner) is a brand-new, real read/write panel wired to equipment_catalog/
     // equipment_survey_entries, route:true from day one (fifty-five -> fifty-six).
+    // 2026-11-02, owner: "add a link to the equipment survey as well as build out a landing
+    // panel for the results in the app" -- 'equipment-results' (Equipment Results) is a
+    // brand-new panel (survey-link create/list/revoke + a cross-store logged-equipment rollup),
+    // route:true and kind:'nav' from day one, the direct thing asked for (fifty-six -> fifty-seven).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'custom-reports', 'customer-complaints',
-      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
+      'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
       'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',

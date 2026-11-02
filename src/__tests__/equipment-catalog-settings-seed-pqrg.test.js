@@ -60,6 +60,14 @@ const CATALOG_FIXTURE = [
   row('uhc', 'Henny Penny', 'UHC-600 (Universal Holding Cabinet)'),
   // equipment-catalog-seed-staging-cabinet.json
   row('staging_cabinet', 'Moffat', 'Simplified Breakfast Staging Cabinet'),
+  // equipment-catalog-seed-beverage-mccafe.json (espresso only -- the rows this seed matches against)
+  row('espresso_1step', 'Franke', 'SB1200 (obsolete as of 2026, parts through 2029)'),
+  row('espresso_1step', 'Franke', 'FM850 (obsolete as of 2019, parts through 2029)'),
+  row('espresso_1step', 'Bunn', 'Sure-Tamp (obsolete as of 2/1/2023, parts through 2/1/2028)'),
+  row('espresso_1step', 'Melitta', 'CT8 (obsolete as of 2024, parts through 2029)'),
+  row('espresso_2step', 'Thermoplan', 'CTS'),
+  row('espresso_2step', 'Franke', 'S700'),
+  row('espresso_2step', 'WMF (SEB Professional)', '5000 S+'),
 ];
 
 describe('equipment-catalog-settings-seed-pqrg.json structure', () => {

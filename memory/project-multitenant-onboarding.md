@@ -86,3 +86,49 @@ a redesign.
 Nothing here contradicts `vision-and-roadmap.md`'s own roadmap, which already lists multi-tenant
 deployment as a later-stage item (P4) — this file is the concrete "what's actually left" version of
 that line, grounded in what's since shipped.
+
+## ⚠️ CORRECTION 2026-11-02 — a 5th open item, bigger than the other four, found while answering
+the owner's "bringing on a whole different organization" question
+
+The "already done" section above is still true for the **~70 tables the 2026-10-21 phase2 sweep
+actually touched** (`using(tenant_id = public.current_tenant_id())`, the dynamic function). But a
+direct grep done today (`grep -rl "tenant_id = '00000000-0000-0000-0000-000000000001'::uuid"
+supabase/*.sql`) found **51 OTHER schema files** — most added after the phase2 sweep, some before
+— whose RLS policy hardcodes the literal owner UUID instead of calling `current_tenant_id()`, and
+whose `tenant_id` COLUMN DEFAULT is the same hardcoded literal too. List (not exhaustive-checked
+beyond this grep, but grep is exact): `schema-yearly-targets.sql`, `schema-target-overrides.sql`,
+every `schema-security-rules*.sql` / `schema-security-findings*.sql` file, `schema-lifelenz-
+shift-assignments.sql`, `schema-lifelenz-attendance.sql`, `schema-lifelenz-punch-edits.sql`,
+`schema-lifelenz-forecast-captures.sql`, `schema-qsr-employee-tenure.sql`, `schema-qsr-punch-
+times.sql`, `schema-qsr-security-events.sql`, `schema-pay-events.sql`, `schema-coaching-cycles.sql`
++ `-notes.sql`, `schema-customer-complaints.sql`, `schema-store-assessments.sql`, plus the six
+tables this same session just built/touched (`schema-lifelenz-schedule-variance.sql`, `schema-
+lifelenz-compliance-audit.sql`, `schema-lifelenz-employee-performance.sql`, `schema-employee-pay-
+rate-changes.sql`, `schema-lifelenz-shift-pay.sql`, `schema-equipment-catalog-settings.sql`) — 51
+files total, see that grep for the complete list.
+
+**What this actually means in practice (worked through, not assumed):** these tables are not
+"leaky" in the sense of tenant #2 seeing tenant #1's rows through a mismatched check — the policy
+doesn't key off the real caller's tenant at all, so a tenant #2 query against one of these 51
+tables would never match the hardcoded literal and would correctly see nothing *as long as its
+own rows were correctly tagged with its own real tenant_id*. The real failure mode is the other
+direction: because the **column default** is also the hardcoded literal, any insert into one of
+these 51 tables that doesn't explicitly set `tenant_id` — which is every pull script, since they
+use the service-role key and (per open item #2 above) don't pass a tenant parameter at all today —
+lands tagged as **tenant #1's data**, visible in tenant #1's own views, regardless of which
+organization it actually came from. For a table like `schema-security-findings.sql` or `schema-
+employee-pay-rate-changes.sql`, that is a real cross-organization data-exposure risk, not a cosmetic
+gap — a second operator's security findings or payroll history could silently appear inside the
+owner's own security/pay-rate panels.
+
+**Not yet true today** (no second tenant exists), but this is now the **#1 priority fix** before
+any real second-organization onboarding — ahead of the four items already listed above, since
+those four are each one concrete, scoped task, while this one is "51 schema files share a
+copy-pasted pattern that predates/bypassed the phase2 standard." The fix itself is mechanical
+(replace the hardcoded literal with `public.current_tenant_id()` in both the column default and
+every policy in each file, same shape the phase2 sweep already proved out on ~70 other tables) —
+the discovery, not the fix, is the actual finding. Flagging it rather than fixing it unprompted:
+51 files is a large, easily-reviewable-but-not-trivially-small diff, and per this project's own
+"DDL needs the owner to run it in the SQL editor" constraint, correcting it still requires the
+owner's own action to apply — better to decide as one deliberate pass (possibly regenerating all
+51 at once) than discover mid-edit that some of the 51 have one-off differences worth preserving.
