@@ -20,6 +20,12 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   dar:      { file: 'qsrsoft-dar-pull.yml',  label: 'Daily Activity',    inputs: { days_back: '7',  days_recent: '1', force_full: '0', debug: '0' } },
   ebos:     { file: 'qsrsoft-ebos-pull.yml', label: 'eBOS Purchases',    inputs: { days_back: '30', days_recent: '2', force_full: '0', debug: '0' } },
   fob:      { file: 'qsrsoft-pull.yml',      label: 'FOB / P&L Cost',    inputs: { days_back: '30', days_recent: '2', debug: '0' } },
+  // EOM Supervisor Rollup / EOM Dashboard "🔄 Refresh EOM Data" button (owner req 2026-11-02:
+  // a Business Day Close finishing late left Product Net Sales/Cash +/- stale for several
+  // stores until a manual workflow_dispatch of fob+ops caught them up). Empty days_back/
+  // days_recent/start_date/end_date defer entirely to qsrsoft-ops-pull.yml's own defaults
+  // (45/14) -- same rolling-window re-pull a normal scheduled run does, just on demand.
+  ops:      { file: 'qsrsoft-ops-pull.yml', label: 'Operations Report (Cash/Labor/Service)', inputs: { days_back: '', days_recent: '', start_date: '', end_date: '', debug: '0' } },
   lifelenz: { file: 'lifelenz-pull.yml',     label: 'LifeLenz Schedule', inputs: { days_back: '7', safety_days: '3', days_fwd: '14', debug: '0' } },
   // EOM on-demand pulls (Notes 35). force:'1' so a manual button runs regardless of the
   // count-window / 8a–6p-CT gate the scheduled on-hand pull uses.
