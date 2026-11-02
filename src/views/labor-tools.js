@@ -14,6 +14,7 @@ import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary }
 import { detectAropJumps, payRaiseImpact, PAY_EVENT_TYPES, AROP_WINDOW_DAYS } from '../engine/pay-events.js';
 import { PayEventModal } from './pay-event-modal.js';
 import { storeScheduleDisciplineSummary, editorBreakdown } from '../engine/schedule-discipline.js';
+import { storeComplianceSummary, categoryBreakdown, employeeViolationSummary } from '../engine/compliance-audit.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
 // apply-winners, manual override, reset), push the whole blob to Supabase as a
@@ -3125,4 +3126,128 @@ function ScheduleDisciplinePanel({ ds }) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, ScheduleDisciplinePanel, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };
+function ComplianceAuditPanel({ ds }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [windowDays, setWindowDays] = uSt(14);
+  const allRows = ds?.complianceAuditRows || [];
+
+  const windowed = uM(() => {
+    if (!allRows.length) return [];
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - windowDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return allRows.filter(r => r.shiftDate && String(r.shiftDate).slice(0, 10) >= cutoffStr);
+  }, [allRows, windowDays]);
+
+  const storeSummary = uM(() => storeComplianceSummary(windowed), [windowed]);
+  const categories = uM(() => categoryBreakdown(windowed), [windowed]);
+  const employees = uM(() => employeeViolationSummary(windowed), [windowed]);
+  const recent = uM(() => [...windowed].sort((a, b) => (b.shiftDate || '').localeCompare(a.shiftDate || '')).slice(0, 50), [windowed]);
+
+  const dol = v => v == null ? '—' : (v > 0 ? '+' : v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('en-US');
+  const hrs = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(1) + 'h';
+  const pct = v => v == null ? '—' : (v * 100).toFixed(0) + '%';
+  const costColor = v => v > 0 ? '#ef4444' : 'var(--text2)';
+
+  const totalViolations = windowed.length;
+  const totalCost = windowed.reduce((a, r) => a + (r.costPenalty || 0), 0);
+  const totalDismissed = windowed.filter(r => r.isDismissed).length;
+
+  const OUTER = { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '14px 16px' };
+
+  if (!allRows.length) {
+    return div({ style: OUTER },
+      div({ style: { fontSize: '10px', color: 'var(--text3)' } },
+        'No compliance-audit data yet. This tab reads LifeLenz\'s Data Explorer "Compliance Audit" report, synced daily by scripts/lifelenz-compliance-audit-pull.mjs — give the first sync a day to populate.'));
+  }
+
+  return div({ style: OUTER },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } },
+      div({ style: { fontSize: '9px', color: 'var(--text3)', lineHeight: 1.6, flex: 1 } },
+        'Labor-compliance violations (meal/rest break, minor-labor-law, etc.) with a real dollar and hours penalty. A store racking up real-dollar penalties is a concrete, measurable risk and cost — a high dismissal rate alongside it is its own separate signal.'),
+      sel({ value: windowDays, onChange: e => setWindowDays(parseInt(e.target.value, 10)),
+        style: { background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '10px', padding: '4px 8px', flexShrink: 0 } },
+        opt({ value: 7 }, 'Last 7 days'), opt({ value: 14 }, 'Last 14 days'), opt({ value: 30 }, 'Last 30 days')),
+    ),
+
+    div({ style: { display: 'flex', gap: 16, marginBottom: 14, fontSize: '10px' } },
+      div(null, span({ style: { color: 'var(--text3)' } }, 'Total violations: '), span({ style: { fontWeight: 700, color: 'var(--text)' } }, totalViolations)),
+      div(null, span({ style: { color: 'var(--text3)' } }, 'Total cost penalty: '), span({ style: { fontWeight: 700, color: costColor(totalCost) } }, dol(totalCost))),
+      div(null, span({ style: { color: 'var(--text3)' } }, 'Dismissed: '), span({ style: { fontWeight: 700, color: 'var(--text)' } }, totalDismissed + ' (' + pct(totalViolations > 0 ? totalDismissed / totalViolations : 0) + ')')),
+    ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '⚖️ By Store (' + storeSummary.length + ')'),
+    !storeSummary.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No violations in this window.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 620 } },
+          thead(null, tr(null,
+            ...['Store', 'Violations', 'Cost Penalty', 'Hour Penalty', 'Dismissed', 'Last Violation'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...storeSummary.map((s, i) => tr({ key: s.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(s.loc)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, s.violationCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: costColor(s.costPenaltySum) } }, dol(s.costPenaltySum)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, hrs(s.hourPenaltySum)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, s.dismissedCount + ' (' + pct(s.dismissedRate) + ')'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontFamily: 'var(--mono)' } }, s.lastViolationAt ? String(s.lastViolationAt).slice(0, 10) : '—'),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '📂 By Category (' + categories.length + ')'),
+    !categories.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No violations in this window.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 480 } },
+          thead(null, tr(null,
+            ...['Category', 'Violations', 'Cost Penalty', 'Hour Penalty'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...categories.map((c, i) => tr({ key: c.category, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)' } }, c.category),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, c.violationCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: costColor(c.costPenaltySum) } }, dol(c.costPenaltySum)),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, hrs(c.hourPenaltySum)),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '👤 By Employee (' + employees.length + ')'),
+    !employees.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 16 } }, 'No violations in this window.')
+      : div({ style: { overflowX: 'auto', marginBottom: 16 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 520 } },
+          thead(null, tr(null,
+            ...['Employee', 'Violations', 'Store(s)', 'Cost Penalty'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 0 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...employees.map((e, i) => tr({ key: e.employeeName, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, e.employeeName),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, e.violationCount),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontSize: '8.5px' } }, e.locs.map(l => sNameC(l)).join(', ')),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: costColor(e.costPenaltySum) } }, dol(e.costPenaltySum)),
+          )))
+        )
+      ),
+
+    div({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🕐 Recent Violations (' + recent.length + (windowed.length > recent.length ? ' of ' + windowed.length : '') + ')'),
+    !recent.length
+      ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'No violations in this window.')
+      : div({ style: { overflowX: 'auto' } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 780 } },
+          thead(null, tr(null,
+            ...['Date', 'Store', 'Employee', 'Category', 'Title', 'Dismissed', 'Cost Δ'].map((l, i) =>
+              th({ key: i, style: { textAlign: i > 5 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+          tbody(null, ...recent.map((r, i) => tr({ key: r.loc + '|' + r.complianceWarningId + '|' + i, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+            td({ style: { padding: '5px 8px', color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' } }, r.shiftDate ? String(r.shiftDate).slice(0, 10) : '—'),
+            td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, sNameC(r.loc)),
+            td({ style: { padding: '5px 8px', color: 'var(--text2)', fontSize: '8.5px' } }, r.employeeName || '—'),
+            td({ style: { padding: '5px 8px', color: 'var(--text2)', fontSize: '8.5px' } }, r.category || '—'),
+            td({ style: { padding: '5px 8px', color: 'var(--text3)', fontSize: '8.5px' } }, r.title || r.description || '—'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontSize: '8.5px' } }, r.isDismissed ? 'Yes' : 'No'),
+            td({ style: { padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--mono)', color: costColor(r.costPenalty) } }, dol(r.costPenalty)),
+          )))
+        )
+      ),
+  );
+}
+
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, PayEventsReportPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, ScheduleDisciplinePanel, ComplianceAuditPanel, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };

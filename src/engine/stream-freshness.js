@@ -81,6 +81,7 @@ export const STREAMS = [
   // event-log-shaped stream here -- staleDays reads off the MOST RECENT edit across all
   // stores, not a per-store completeness check.
   { key: 'scheduleVariance', label: 'LifeLenz Schedule Variance', dsField: 'scheduleVarianceRows', dateField: 'occurredAt', cadenceDays: 1 },
+  { key: 'complianceAudit', label: 'LifeLenz Compliance Audit', dsField: 'complianceAuditRows', dateField: 'shiftDate', cadenceDays: 1 },
   // Closed 2026-09-13 -- previously a documented gap (memory/backlog-open-2026-09-06.md):
   // QSRSoft Inventory Summary Pull runs daily and is already watched in
   // sync-failure-watch.yml, but the table was fetched panel-locally by InventoryIntelligence

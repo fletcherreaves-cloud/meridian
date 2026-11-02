@@ -32,6 +32,7 @@ export const PULL_REGISTRY = {
   lifelenz:    { table: 'lifelenz_schedule',         dateCol: 'date', workflowFile: 'lifelenz-pull.yml', clampToToday: true },
   lifelenzAttendance: { table: 'lifelenz_attendance_summary', dateCol: 'period_end', workflowFile: 'lifelenz-attendance-pull.yml' },
   scheduleVariance: { table: 'lifelenz_schedule_variance', dateCol: 'occurred_at', workflowFile: 'lifelenz-schedule-variance-pull.yml' },
+  complianceAudit: { table: 'lifelenz_compliance_audit', dateCol: 'shift_date', workflowFile: 'lifelenz-compliance-audit-pull.yml' },
   // dateCol is updated_at (a timestamptz), not a DATE column -- qsr_inventory_summary's rows
   // are period(month)-keyed, not daily-dated (see stream-freshness.js's own comment on this
   // key), so the app-side freshness probe and this watchdog entry both read the same "when

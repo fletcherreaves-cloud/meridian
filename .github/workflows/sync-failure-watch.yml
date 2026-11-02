@@ -57,6 +57,7 @@ on:
       - Forecast Week Precompute
       - Hourly Projection Accuracy
       - LifeLenz Attendance Pull
+      - LifeLenz Compliance Audit Pull
       - LifeLenz Daily Sync
       - LifeLenz People Skills Sync
       - LifeLenz Schedule Variance Pull

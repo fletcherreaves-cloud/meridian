@@ -63,6 +63,12 @@ export const METRIC_CATEGORIES = [
       // the full reasoning).
       { key: 'scheduleEditCount', label: 'Schedule Edits (post-publish)', source: 'scheduleVarianceDailyRows', field: 'editCount', granularity: ['daily','monthly'], better: 'lower', unit: 'edits', aggregate: 'sum' },
       { key: 'scheduleCostVariance', label: 'Schedule Edit Cost Impact ($)', source: 'scheduleVarianceDailyRows', field: 'costVarianceSum', granularity: ['daily','monthly'], better: 'lower', unit: '$', aggregate: 'sum' },
+      // 2026-11-01 — LifeLenz Data Explorer "Compliance Audit": real labor-compliance violations
+      // (meal/rest break, minor-labor, etc.) with a $ cost/hours penalty. better:'lower' — more
+      // violations and more penalty $ are both strictly worse (src/engine/compliance-audit.js's
+      // own header has the full reasoning).
+      { key: 'complianceViolationCount', label: 'Compliance Violations', source: 'complianceAuditDailyRows', field: 'violationCount', granularity: ['daily','monthly'], better: 'lower', unit: 'violations', aggregate: 'sum' },
+      { key: 'complianceCostPenalty', label: 'Compliance Cost Penalty ($)', source: 'complianceAuditDailyRows', field: 'costPenaltySum', granularity: ['daily','monthly'], better: 'lower', unit: '$', aggregate: 'sum' },
       // ── 2026-10-15 (Reports-redesign Phase 1 catalog audit) ──────────────────────────────
       // The 15 entries below all have real metric-source.js chains (confirmed by the full-file
       // audit backing memory/project-reports-redesign.md) but never had a registry label --
