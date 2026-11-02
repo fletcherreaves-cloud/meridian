@@ -10,6 +10,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, supervisorGroups, operatorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
+import { EOMDataRefreshButton } from '../components/EOMDataRefreshButton.js';
 import { LocationSelector, ActionMenus, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus, loadEomPeriods,
@@ -3483,6 +3484,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
   const actionsSlot = h(React.Fragment, null,
     h(ActionMenus, { groups: actionGroups }),
+    // Owner req (2026-11-02, Elgin's late Business Day Close): re-pull FOB (Product Net Sales)
+    // + Operations Report (Cash +/-) on demand, same trigger-dar-sync mechanism the Data
+    // Manager's own Sync buttons use — see src/components/EOMDataRefreshButton.js. Shown for
+    // every EOM Dashboard mode/tab this actionsSlot already renders on (mystoreMode excludes
+    // the whole actions band already, at the PanelChrome call site below).
+    h(EOMDataRefreshButton, { compact: true }),
     lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c' } }, lockMsg) : null,
     pullMsg ? span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : 'var(--crit)', maxWidth: '260px' } }, pullMsg.text) : null,
   );
