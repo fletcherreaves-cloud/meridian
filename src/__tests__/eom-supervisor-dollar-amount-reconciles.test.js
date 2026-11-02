@@ -112,8 +112,10 @@ describe('EOM Supervisor Rollup — $ Amount row reconciles with the displayed +
     expect(cellAt(3, fcIdx)).toBe('$123.37');
 
     // Food Over Base: displayed variance rounds to +0.08%; $ Amount must match 0.08% x actual sales.
+    // Leading "Σ" is the "counted in Total of Shaded Boxes" marker (owner request 2026-11-02) --
+    // Food Over Base is one of the 3 cells actually summed, so it carries the badge.
     expect(cellAt(2, fobIdx)).toBe('+0.08%');
-    expect(cellAt(3, fobIdx)).toBe('$493.49');
+    expect(cellAt(3, fobIdx)).toBe('Σ$493.49');
 
     // Crew Labor: displayed variance rounds to +0.26%; $ Amount must match 0.26% x actual sales.
     expect(cellAt(2, laborIdx)).toBe('+0.26%');

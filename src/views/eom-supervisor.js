@@ -395,6 +395,27 @@ const colCash     = (v) => v == null ? muted : Math.abs(v) < 10 ? grn : Math.abs
 const colShaded   = (v) => v == null ? muted : v <= 0 ? grn : v <= 500 ? amber : red;
 const colPctImpact= (v) => v == null ? muted : v <= 0 ? grn : v <= 0.01 ? amber : red;
 
+// ── "Counted in Total of Shaded Boxes" marker (owner request 2026-11-02) ───────────────────────
+// totalShaded = fobVar$ + laborNewTotal + opSup$ (computeStoreEOM/computeRollup above) — exactly
+// 3 figures, out of 5 dollar figures visible in the $ Amount row + Crew Labor Adjustment box. The
+// red/amber/green colShaded() scale alone doesn't say WHICH cells are summed (Total Food Cost is
+// muted on purpose, per the 2026-11-01 fix, but that only tells a user what's excluded, not which
+// remaining cells are actually added together) — owner: "a new user... could visibly tell which
+// numbers are calculated to get the total." TOTAL_MARK_COLOR is deliberately a 4th color, outside
+// the red/amber/green variance scale, so it reads as "included in this sum" independent of
+// whether the figure itself is good/bad/neutral. Applied to exactly 3 places, both in the live
+// panel and the print HTML (eomBlockHtml) below: the $ Amount row's Food Over Base and Op
+// Supplies cells, and the Crew Labor Adjustment box's "New Total $" row -- that last one, not the
+// $ Amount row's own Crew Labor cell, because laborNewTotal (= laborAdjAmt + Transfers +
+// Unclocked Labor) is the figure actually summed, and the two differ whenever Transfers/Unclocked
+// are nonzero.
+const TOTAL_MARK_COLOR = '#2563eb';
+const totalMarkStyle = { boxShadow: `inset 0 0 0 2px ${TOTAL_MARK_COLOR}`, background: 'rgba(37,99,235,.08)', borderRadius: '3px' };
+const totalMarkBadge = () => h('span', {
+  style: { fontSize: '7px', fontWeight: 900, color: TOTAL_MARK_COLOR, verticalAlign: 'super', marginRight: '2px' },
+  title: 'Counted in "Total of Shaded Boxes"',
+}, 'Σ');
+
 // ── Inline editable cell ──────────────────────────────────────────────────────
 function EditCell({ value, onChange, prefix = '', placeholder = '—', style = {}, cls = '' }) {
   const [focused, setFocused] = uSt(false);
@@ -557,7 +578,8 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           h('td', { style: { ...C.td, ...C.tdL, fontWeight: 700, color: '#f59e0b' } }, '$ Amount'),
           h('td', { style: C.td }, '—'),
           h('td', { style: { ...C.td, color: muted, fontWeight: 700 } }, fcVar$ != null ? varMoneyStr(fcVar$) : '—'),
-          h('td', { style: { ...C.td, color: colShaded(fobVar$), fontWeight: 700 } }, fobVar$ != null ? varMoneyStr(fobVar$) : '—'),
+          h('td', { style: { ...C.td, ...totalMarkStyle, color: colShaded(fobVar$), fontWeight: 700 } },
+            totalMarkBadge(), fobVar$ != null ? varMoneyStr(fobVar$) : '—'),
           // Reads laborAdjAmt (destructured above), NOT data.laborVar$ — computeRollup() never sets
           // laborVar$ on the rollup object (only laborAdjAmt, which holds the identical value at the
           // per-store level: `const laborAdjAmt = laborVar$;` in computeStoreEOM). Reading data.laborVar$
@@ -573,7 +595,8 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
               // only the print path would have looked correct.
               : h(EditCell, { value: otDollar, placeholder: 'OT $', onChange: v => onManualChange('otDollar', v), style: { color: muted } })
           ),
-          h('td', { style: { ...C.td, color: colShaded(opSup$), fontWeight: 700 } }, opSup$ != null ? varMoneyStr(opSup$) : '—'),
+          h('td', { style: { ...C.td, ...totalMarkStyle, color: colShaded(opSup$), fontWeight: 700 } },
+            totalMarkBadge(), opSup$ != null ? varMoneyStr(opSup$) : '—'),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
         ),
       )
@@ -596,10 +619,13 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
         ['New Total $', null, colShaded(laborNewTotal), null, null, true],
       ].map(([lbl, val, col, field, curVal, isTot]) => h('div', { key: lbl, style: {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '2px 0', borderTop: isTot ? '1px solid var(--bdr)' : 'none',
+        padding: isTot ? '2px 4px' : '2px 0', borderTop: isTot ? '1px solid var(--bdr)' : 'none',
         marginTop: isTot ? '3px' : 0, paddingTop: isTot ? '4px' : '2px',
+        // "New Total $" (laborAdjAmt + Transfers + Unclocked Labor) is the exact Crew Labor
+        // figure summed into "Total of Shaded Boxes" below — see totalMarkStyle's comment above.
+        ...(isTot ? totalMarkStyle : {}),
       }},
-        h('span', { style: { fontSize: '10px', color: '#7da0c4' } }, lbl),
+        h('span', { style: { fontSize: '10px', color: '#7da0c4' } }, isTot && totalMarkBadge(), lbl),
         field
           ? (forPrint
               ? h('span', { style: { fontSize: '11px', fontFamily: 'monospace', fontWeight: 600, color: col } }, curVal != null ? varMoneyStr(curVal) : '—')
@@ -617,6 +643,10 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
                    color: colShaded(totalShaded) }
         }, varMoneyStr(totalShaded))
       ),
+      // Spells out exactly which 3 blue-marked (Σ) figures are summed -- the same info the
+      // highlighting conveys visually, in words, right next to the number it explains.
+      h('div', { style: { fontSize: '9px', color: TOTAL_MARK_COLOR, marginBottom: '4px' } },
+        totalMarkBadge(), 'Food Over Base + Crew Labor (New Total $) + Op Supplies'),
       h('div', { style: { fontSize: '10px', color: '#94b3cc', marginTop: '2px' } },
         '÷ Prod. Net Sales =',
         h('span', {
@@ -732,6 +762,10 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 .s-labor-lbl{font-weight:700;font-size:10px;color:#555;white-space:nowrap;text-align:left!important}
 .s-labor td{font-size:11px;padding:4px 8px;text-align:left}
 .s-total{font-size:11px;margin-top:6px}
+.s-tot-mark{box-shadow:inset 0 0 0 2px #2563eb!important;background:rgba(37,99,235,.08)!important;border-radius:3px}
+.s-tot-badge{font-size:7px;font-weight:900;color:#2563eb;vertical-align:super;margin-right:2px}
+.s-tot-formula{font-size:9px;color:#2563eb;margin-top:2px}
+.s-legend-mark{color:#2563eb;font-weight:600}
 @media print{.noprint{display:none}}</style></head><body>${bodyHtml}
 <script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`;
     // autoPrint:false -- the html's own onload script (above) already triggers the print dialog,
@@ -759,6 +793,10 @@ function eomBlockHtml(data, { isRollup, label } = {}) {
   } = data;
   const colorAttr = (v, fn) => v == null ? '' : ` style="color:${fn(v)}"`;
   const td = (content, colorStyle = '') => `<td${colorStyle}>${esc(content)}</td>`;
+  // "Counted in Total of Shaded Boxes" marker — print counterpart of totalMarkStyle/totalMarkBadge
+  // above (same 3 cells: Food Over Base, Op Supplies, Crew Labor Adjustment's New Total $). The
+  // .s-tot-mark/.s-tot-badge classes live in openPrintWindow's <style> block.
+  const tdM = (content, colorStyle = '') => `<td class="s-tot-mark"${colorStyle}><span class="s-tot-badge">Σ</span>${esc(content)}</td>`;
 
   let html = `<div class="s-block">`;
   html += `<div class="s-hdr"><b>${esc(label || name)}</b>`;
@@ -804,22 +842,25 @@ function eomBlockHtml(data, { isRollup, label } = {}) {
   html += `<tr class="s-amt"><td class="s-lbl">$ Amount</td>`
     + td('—')
     + td(fcVar$ != null ? varMoneyStr(fcVar$) : '—', colorAttr(fcVar$, () => muted))
-    + td(fobVar$ != null ? varMoneyStr(fobVar$) : '—', colorAttr(fobVar$, colShaded))
+    + tdM(fobVar$ != null ? varMoneyStr(fobVar$) : '—', colorAttr(fobVar$, colShaded))
     + td(laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—', colorAttr(laborAdjAmt, colShaded))
     + td(otDollar != null ? varMoneyStr(otDollar) : '—', colorAttr(otDollar, () => muted))
-    + td(opSup$ != null ? varMoneyStr(opSup$) : '—', colorAttr(opSup$, colShaded))
+    + tdM(opSup$ != null ? varMoneyStr(opSup$) : '—', colorAttr(opSup$, colShaded))
     + td('—')
     + `</tr>`;
   html += `</tbody></table>`;
 
-  // Crew Labor Adjustment mini-panel — same 4 fields as the live laborAdj sidebar.
+  // Crew Labor Adjustment mini-panel — same 4 fields as the live laborAdj sidebar. "New Total $"
+  // (not "$ Amount (Shaded)") is marked — it's the exact figure summed below, same reasoning as
+  // totalMarkStyle's comment in the live renderer above.
   html += `<table class="s-labor"><tbody><tr>`
     + `<td class="s-labor-lbl">Crew Labor Adjustment</td>`
     + `<td>$ Amount (Shaded): <b${colorAttr(laborAdjAmt, colShaded)}>${esc(laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—')}</b></td>`
     + `<td>Transfers: <b>${esc(laborXfers != null ? varMoneyStr(laborXfers) : '—')}</b></td>`
     + `<td>Unclocked Labor: <b>${esc(laborUnclk != null ? varMoneyStr(laborUnclk) : '—')}</b></td>`
-    + `<td>New Total $: <b${colorAttr(laborNewTotal, colShaded)}>${esc(varMoneyStr(laborNewTotal))}</b></td>`
+    + `<td class="s-tot-mark"><span class="s-tot-badge">Σ</span>New Total $: <b${colorAttr(laborNewTotal, colShaded)}>${esc(varMoneyStr(laborNewTotal))}</b></td>`
     + `</tr></tbody></table>`;
+  html += `<div class="s-tot-formula">Σ Food Over Base + Crew Labor (New Total $) + Op Supplies</div>`;
   html += `<div class="s-total">Total of Shaded Boxes: <b${colorAttr(totalShaded, colShaded)}>${esc(varMoneyStr(totalShaded))}</b>`
     + ` &nbsp;÷ Prod. Net Sales = <b${colorAttr(pctImpact, colPctImpact)}>${esc(pctImpact != null ? (pctImpact * 100).toFixed(2) + '% impact to P&L' : '—')}</b></div>`;
 
@@ -836,6 +877,9 @@ export function formatSupervisorHtml(rollup, storeData, { groupLabel, monthLabel
   const list = storeData || [];
   let html = `<h1>EOM Supervisor Summary — ${esc(groupLabel || 'All Stores')}</h1>`;
   html += `<div class="sub">${esc(monthLabel)} · ${list.length} location${list.length === 1 ? '' : 's'}</div>`;
+  // One-time legend for the whole printed document (not repeated per block) — same marker the
+  // live panel's bottom legend documents, explaining the Σ/blue-outline cells below.
+  html += `<div class="sub"><span class="s-legend-mark">Σ Blue outline = counted in "Total of Shaded Boxes" (Food Over Base + Crew Labor New Total $ + Op Supplies)</span></div>`;
   if (rollup) {
     html += eomBlockHtml(rollup, { isRollup: true, label: `SUPERVISOR PATCH TOTAL — ${groupLabel} — ${monthLabel}` });
   }
@@ -1141,6 +1185,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
       h('span', null, '✓ Green = at/under projection'),
       h('span', null, '⚠ Amber = slight variance'),
       h('span', null, '✗ Red = significant over-projection'),
+      h('span', { style: { color: TOTAL_MARK_COLOR, fontWeight: 600 } }, 'Σ Blue outline = counted in "Total of Shaded Boxes"'),
     ),
   );
 }
