@@ -1,0 +1,50 @@
+name: LifeLenz Employee Performance Pull
+
+# Third Data Explorer report (Lakehouse-backed, async) -- per-employee reliability/performance
+# scorecard: attendance %, drop/pickup/swap activity, worked hours, discipline/commendations,
+# leave days. No Playwright needed -- same direct-token-only precedent as LifeLenz Schedule
+# Variance Pull / LifeLenz Compliance Audit Pull / LifeLenz Attendance Pull (LIFELENZ_TOKEN
+# already works for every other LifeLenz GraphQL/REST call; see scripts/lifelenz-employee-
+# performance-pull.mjs's own header).
+
+on:
+  schedule:
+    # 10:10 UTC — same slot family as the other daily LifeLenz pulls, offset 5 min from
+    # Compliance Audit's 10:05 so the three Data Explorer pulls don't all trigger 27+ async
+    # reports at the exact same minute.
+    - cron: '10 10 * * *'
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: 'Rolling window size in days (default: 14)'
+        required: false
+        default: '14'
+      debug:
+        description: 'Verbose per-store logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run LifeLenz employee performance pull
+        run: node scripts/lifelenz-employee-performance-pull.mjs
+        env:
+          LIFELENZ_TOKEN:                                 ${{ secrets.LIFELENZ_TOKEN }}
+          VITE_SUPABASE_URL:                               ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:                       ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LIFELENZ_EMPLOYEE_PERFORMANCE_WINDOW_DAYS:       ${{ github.event.inputs.window_days || '14' }}
+          LIFELENZ_DEBUG:                                  ${{ github.event.inputs.debug || '0' }}
