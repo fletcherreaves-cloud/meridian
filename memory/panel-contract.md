@@ -229,3 +229,60 @@ whole src/views + src/features tree now has zero tables with the horizontal axis
 effectively `hidden`. The sibling ratchet (`scroll-table-width.test.js`, the *other* half of this
 anti-pattern — `width:'100%'` with no `minWidth`, which makes an `overflowX:'auto'` wrapper a
 no-op) was already enforced at zero tolerance app-wide before today; nothing to do there.
+
+### Follow-up, same day — the 9-panel backlog above is now cleared (8 converted, 1 flagged)
+
+Owner approved ("Yes, please") converting the 9-panel backlog listed above. Went panel by panel —
+read the real value shape and every consumer first, wrote the minimal `{level,id}` translation
+inline (never migrated the panel's persisted state shape), then ran that panel's own tests before
+moving on, same discipline as the original 13-panel batch.
+
+**8 converted to `mode:'full'`/`'store'`, `variant:'dropdown'`** (each a translation layer over
+the existing `'all'|'fl'|'ok'|'__patch__'+name|loc` or plain-loc shape, same pattern as §3's
+`scopeToSelectorValue`/`selectorValueToScope`): `inventory.js` (`selLoc`, plain loc, `mode:'store'`
+— no prior "All" option even though the filter already supported it), `performance-calculator.js`
+(`selLoc`, plain loc, `mode:'store'` — single-store what-if calculator, "All Locations" is new but
+harmless since the hook falls back to its own 140/22%/$10.50 defaults), `labor-tools.js` (THREE
+independent `selLoc` state variables in one file — `DARDaypartPanel` and `LaborAnalyticsPanel`
+converted, `mode:'store'`/`'full'` respectively; `StoreKBEditor`'s is a search+clickable-list UI,
+not a `<select>` at all — left alone, see exception below), `skills-matrix.js` (`store`,
+`mode:'full'` — incidentally fixes this panel's Patch tier reading the stale `supervisorGroups()`
+fallback, since `LocationSelector`'s own Patch tier resolves live via `supervisorOf()`),
+`dt-speedofservice.js` (`orgFilter`, `mode:'full'`), `graded-visits.js` (`selLoc`, `mode:'full'`
+— its separate `typeFilter` select left untouched, not a location control), `labor-analysis.js`
+(`scope`, `mode:'full'`), `signals.js`'s `CorrelationsTab` (`selLoc`, `mode:'store'` — picking
+"All Locations" falls back to the first store rather than an empty/undefined selection, since a
+per-store correlation series has no sane "all" reading).
+
+**2 extenuating circumstances found and left alone, as asked**:
+- **`StoreKBEditor`** (inside `labor-tools.js`) uses a search box + clickable store-list sidebar,
+  not a `<select>` — arguably better UX for a store-profile-editing context than a dropdown would
+  be. Not a gap; a different, legitimate pattern.
+- **`scheduling.js`**'s Scope selector has a genuinely different taxonomy than every other
+  converted panel: it groups by **Operator** (`settings.operators`) in addition to Supervisor/
+  Patch (`settings.supervisorGroups`), both read from `settings`, not from `invOrgCoords`/
+  `supervisorOf()`. `LocationSelector`'s `mode:'full'` has no Operator tier — converting would
+  silently drop that whole grouping, a real functionality loss, not a cosmetic swap. Left as its
+  own hand-rolled select; would need `LocationSelector` itself extended with a 5th tier to convert
+  safely, which is a bigger, separate change.
+- **`signals.js`**'s OTHER `selLoc` (inside the Signal Lab results-table component, ~line 1446) is
+  nullable and set only by clicking a result row (`setSelLoc(selLoc === r.loc ? null : r.loc)`) —
+  a drill-down, not a `<select>` and not a top-level scope filter. Not a conversion candidate,
+  same reasoning as `StoreKBEditor`.
+
+Test fallout was the same shape as the 13-panel batch: a handful of tests located the location
+`<select>` by a bare loc value (`o.value === '3708'`) or set `.value` to a bare loc directly —
+broken by the dropdown's `store:<loc>` prefix (`locationSelectorOptionValue`). Fixed in place
+(`dispatch-110-sos-panel.test.js`, `signals-correlations-tab-auto-first.test.js`); no test existed
+at all for `skills-matrix.js`, `labor-analysis.js`, `graded-visits.js`'s location select — nothing
+to fix there, syntax-check + the panel's other real tests were the verification.
+
+Full suite re-run clean after all 8 conversions: 690 test files / 6404 tests passed. Build clean,
+582.33 KB gzipped eager payload (unchanged — no new static imports, `LocationSelector` was already
+reachable from every touched panel's existing bundle via `PanelControls.js`).
+
+**LocationSelector dropdown-variant rollout is now complete across every panel with a genuine
+scope-filter `<select>`** — the only remaining hand-rolled location selects in the codebase are
+the 2 flagged exceptions above (`scheduling.js`'s Operator/Patch dual-taxonomy, and `analytics.js`'s
+Food Cost panel market-shortcut select from the prior pass) plus `mode:'progressive'` call sites,
+which keep pill rendering by design.

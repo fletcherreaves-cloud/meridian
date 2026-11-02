@@ -33,7 +33,8 @@
 // 280px-sidebar layout to a wrapping flex layout (panel-contract mobile-scroll check) since it no
 // longer has its own maxHeight/overflow container to lean on.
 import * as React from 'react';
-import { STORE_NAMES, sNameC, getKB } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS, sNameC, getKB } from '../constants.js';
+import { LocationSelector } from '../components/PanelControls.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addDR } from '../utils/date.js';
@@ -161,11 +162,17 @@ export function PerformanceCalculatorSection({ ds }) {
         div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Performance Calculator'),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},'Interactive what-if model: how metric improvements chain through throughput → GC → sales → labor → TPPH')
       ),
-      h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-        style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-          color:'var(--text)',fontSize:'9px',padding:'3px 6px'}},
-        LOCS.map(l=>h('option',{key:l,value:l},sNameC(l)))
-      ),
+      // 2026-11-02 — standardized onto the shared LocationSelector (mode:'store', so the full
+      // All/State/Patch hierarchy stays out of a panel that only ever models one store at a
+      // time). Picking "All Locations" falls back to this hook's own metricAvg(ds,'',...)
+      // defaults (140/22%/$10.50) rather than crashing -- harmless, if conceptually not a real
+      // use case for a single-store what-if calculator.
+      h(LocationSelector, {
+        stores: LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        mode: 'store', variant: 'dropdown',
+        value: selLoc ? { level: 'store', id: selLoc } : { level: 'all', id: null },
+        onChange: v => setSelLoc(v.level === 'store' ? v.id : ''),
+      }),
     ),
     div({style:{flex:1,display:'flex',flexWrap:'wrap',gap:0}},
       // Left: sliders

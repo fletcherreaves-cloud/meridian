@@ -45,9 +45,11 @@ describe('CorrelationsTab -- auto-first sourcing', () => {
     const ds = { loaded: true, qsrActSummaryRows };
     await act(async () => { root.render(React.createElement(CorrelationsTab, { ds })); });
 
+    // Store select is now LocationSelector's variant:'dropdown' (2026-11-02 rollout) -- store
+    // options carry a `store:` prefix (locationSelectorOptionValue), not the bare loc.
     const sel = container.querySelector('select');
     expect(sel, 'store <select> not found').toBeTruthy();
-    await act(async () => { sel.value = LOC; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { sel.value = 'store:' + LOC; sel.dispatchEvent(new Event('change', { bubbles: true })); });
 
     expect(container.textContent).not.toMatch(/No data for/);
     expect(container.textContent).toContain('Drive-Thru Speed (OEPE)');
@@ -61,7 +63,7 @@ describe('CorrelationsTab -- auto-first sourcing', () => {
     const ds = { loaded: true };
     await act(async () => { root.render(React.createElement(CorrelationsTab, { ds })); });
     const sel = container.querySelector('select');
-    await act(async () => { sel.value = LOC; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { sel.value = 'store:' + LOC; sel.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(container.textContent).toMatch(/No data for/);
   });
 });

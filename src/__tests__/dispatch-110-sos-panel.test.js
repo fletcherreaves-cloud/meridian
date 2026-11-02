@@ -182,10 +182,12 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     // BOTH of the old buggy deps constant: series.length stays 1 (avg mode is always exactly
     // one series) and weeks.join(',') stays the same two Mondays (both stores report the same
     // two weeks) -- the exact shape dispatch #110 describes. Only the series' VALUES change.
+    // Org filter is now LocationSelector's variant:'dropdown' (2026-11-02 rollout) -- store
+    // options carry a `store:` prefix (locationSelectorOptionValue), not the bare loc.
     const orgSelect = [...container.querySelectorAll('select')].find(s =>
-      [...s.querySelectorAll('option')].some(o => o.value === '3708'));
+      [...s.querySelectorAll('option')].some(o => o.value === 'store:3708'));
     expect(orgSelect).toBeTruthy();
-    await act(async () => { setSelectValue(orgSelect, '3708'); });
+    await act(async () => { setSelectValue(orgSelect, 'store:3708'); });
     await flush(container);
 
     const after = trendConfigs().slice(-1)[0];
@@ -209,8 +211,8 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     expect(before.data.datasets.filter(d => !d.isRef).length).toBe(2);
 
     const orgSelect = [...container.querySelectorAll('select')].find(s =>
-      [...s.querySelectorAll('option')].some(o => o.value === '5183'));
-    await act(async () => { setSelectValue(orgSelect, '5183'); });
+      [...s.querySelectorAll('option')].some(o => o.value === 'store:5183'));
+    await act(async () => { setSelectValue(orgSelect, 'store:5183'); });
     await flush(container);
 
     const after = trendConfigs().slice(-1)[0];

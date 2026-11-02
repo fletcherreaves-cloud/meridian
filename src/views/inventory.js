@@ -4,6 +4,7 @@ import { INV_ORG_COORDS, STORE_NAMES, sName, sNameC, whoRan } from '../constants
 import { INV_MASTER, classifyInvArea, parseInvUOM } from '../parsers/inventory-parse.js';
 import { loadQsrInventorySummary } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 // #? — invDist/invSameState/formatXferQty/rollupByWRIN/computeTransfers moved to
 // engine/inventory-transfers.js (Decisions Panel Inventory salvage #2/#3) so attention-feed.js
 // can reuse them without importing this 76KB view component — same split #214 already did for
@@ -420,10 +421,15 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
         style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,color:'#f59e0b',
           background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)',cursor:'help'}},
         '⚠ '+unrecognizedClasses.length+' unrecognized class'+(unrecognizedClasses.length!==1?'es':'')),
-      h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-        style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-          color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
-        locs.map(l=>h('option',{key:l,value:l},sNameC(l)))),
+      // 2026-11-02 — standardized onto the shared LocationSelector (was a hand-rolled <select>
+      // with no "All Locations" option at all, even though the filtering logic at `base` below
+      // already treats a falsy selLoc as unfiltered -- the UI simply never offered that state).
+      h(LocationSelector, {
+        stores: locs.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        mode: 'store', variant: 'dropdown',
+        value: selLoc ? { level: 'store', id: selLoc } : { level: 'all', id: null },
+        onChange: v => setSelLoc(v.level === 'store' ? v.id : ''),
+      }),
       div({style:{display:'flex',gap:2}},
         INV_CLASS_FILTERS.map(f=>btn({key:f.key,className:'btn btn-sm'+(classFilter===f.key?' btn-a':''),
           style:{fontSize:'8.5px',padding:'2px 7px'},onClick:()=>setClassFilter(f.key)},f.label))),

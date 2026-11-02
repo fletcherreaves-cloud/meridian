@@ -6,7 +6,8 @@
 // labor-analysis engine (dollar-weighted OK/FL/grand subtotals), and prints.
 // Config tab edits the "gathered" fixed-hours inputs (maintenance/prep/lobby/24hr).
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
+import { LocationSelector } from '../components/PanelControls.js';
 import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule, mergeAutoManualWeek } from '../engine/labor-analysis.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
@@ -330,11 +331,22 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
     printHtml(html);
   };
 
-  const scopeSelect = h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
-    h('option', { value: 'all' }, 'All Stores'), h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
-    h('optgroup', { label: '— Patches —' }, ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
-    h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
-    h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))));
+  const scopeSelect = h(LocationSelector, {
+    stores: ALL_LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+    mode: 'full', variant: 'dropdown',
+    value: scope === 'all' ? { level: 'all', id: null }
+      : scope === 'fl' ? { level: 'state', id: 'FL' }
+      : scope === 'ok' ? { level: 'state', id: 'OK' }
+      : scope.startsWith('__patch__') ? { level: 'patch', id: scope.slice(9) }
+      : { level: 'store', id: scope },
+    onChange: v => setScope(
+      v.level === 'all' ? 'all'
+        : v.level === 'state' ? (v.id === 'OK' ? 'ok' : 'fl')
+        : v.level === 'patch' ? '__patch__' + v.id
+        : v.level === 'store' ? v.id
+        : 'all'
+    ),
+  });
 
   const tabBtn = (id, label) => btn({ onClick: () => setTab(id), style: { padding: '4px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: tab === id ? 'var(--amber)' : 'var(--surf)', color: tab === id ? '#111' : 'var(--text2)', fontSize: 11, fontWeight: 700, cursor: 'pointer' } }, label);
 

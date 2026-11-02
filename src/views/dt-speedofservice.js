@@ -2,8 +2,8 @@
 import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { loadDtHistory } from '../lib/supabase.js';
-import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
-import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset } from '../components/PanelControls.js';
+import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
+import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset, LocationSelector } from '../components/PanelControls.js';
 // Dispatch #128 Part 1 -- the DT number below used to sum raw dt_untilserve/dt_trans_cnt
 // directly, which is NOT the reconciled OEPE-without-park formula (#183/#185, r=0.9958 against a
 // real QSRSoft Service report) that tOepe (the per-store target used in Part 2) was calibrated
@@ -729,21 +729,22 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     onBack: onClose,
     headerExtra: div({ style:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }},
       h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
-      h('select', { value:orgFilter, onChange:e=>setOrgFilter(e.target.value), style:selStyle },
-        h('option', { value:'all' }, 'All Stores'),
-        h('option', { value:'fl'  }, 'Florida'),
-        h('option', { value:'ok'  }, 'Oklahoma'),
-        h('optgroup', { label:'— Patches —' },
-          ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
-            h('option', { key:name, value:'__patch__'+name },
-              name.split(' ')[0] + ' Patch (' + locs.length + ' stores)'))),
-        h('optgroup', { label:'— Florida —' },
-          ...ALL_LOCS.filter(l =>  FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
-            .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
-        h('optgroup', { label:'— Oklahoma —' },
-          ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
-            .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
-      ),
+      h(LocationSelector, {
+        stores: ALL_LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        mode: 'full', variant: 'dropdown',
+        value: orgFilter === 'all' ? { level: 'all', id: null }
+          : orgFilter === 'fl' ? { level: 'state', id: 'FL' }
+          : orgFilter === 'ok' ? { level: 'state', id: 'OK' }
+          : orgFilter.startsWith('__patch__') ? { level: 'patch', id: orgFilter.slice(9) }
+          : { level: 'store', id: orgFilter },
+        onChange: v => setOrgFilter(
+          v.level === 'all' ? 'all'
+            : v.level === 'state' ? (v.id === 'OK' ? 'ok' : 'fl')
+            : v.level === 'patch' ? '__patch__' + v.id
+            : v.level === 'store' ? v.id
+            : 'all'
+        ),
+      }),
       // Dispatch #136 Part 1 -- Export (CSV/JSON, current station + on-screen sort) and Print
       // Report (full district document -- station/store/weekly-trend/daypart/hour tables, not
       // just a chart image). Hidden while loading/empty, matching this session's other panels.

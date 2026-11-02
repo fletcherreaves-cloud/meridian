@@ -1,13 +1,13 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, INV_ORG_COORDS } from '../constants.js';
 import { parseGradedVisit, parseEcoSureVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { oepeSeconds } from '../utils/oepe.js';
 import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
-import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
+import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -656,17 +656,22 @@ export function GradedVisitsPanel({ ds, onClose }) {
       types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
         h('option', { value: 'all' }, 'All Types'),
         types.map(t => h('option', { key: t, value: t }, t))),
-      h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px', colorScheme: 'dark' } },
-        h('option', { value: 'all' }, 'All Stores'),
-        h('option', { value: 'fl' }, 'Florida'),
-        h('option', { value: 'ok' }, 'Oklahoma'),
-        h('optgroup', { label: '— Patches —' },
-          ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
-            h('option', { key: name, value: '__patch__' + name }, name.split(' ')[0] + ' Patch (' + locs.length + ')'))),
-        h('optgroup', { label: '— Florida —' },
-          ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
-        h('optgroup', { label: '— Oklahoma —' },
-          ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+      h(LocationSelector, {
+        stores: ALL_LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        mode: 'full', variant: 'dropdown',
+        value: selLoc === 'all' ? { level: 'all', id: null }
+          : selLoc === 'fl' ? { level: 'state', id: 'FL' }
+          : selLoc === 'ok' ? { level: 'state', id: 'OK' }
+          : selLoc.startsWith('__patch__') ? { level: 'patch', id: selLoc.slice(9) }
+          : { level: 'store', id: selLoc },
+        onChange: v => setSelLoc(
+          v.level === 'all' ? 'all'
+            : v.level === 'state' ? (v.id === 'OK' ? 'ok' : 'fl')
+            : v.level === 'patch' ? '__patch__' + v.id
+            : v.level === 'store' ? v.id
+            : 'all'
+        ),
+      }),
       div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
         btn({
           onClick: () => setDateRange(null), title: 'Show every visit on file, regardless of date',
