@@ -1,0 +1,46 @@
+name: LifeLenz Employee Performance Meta Probe
+
+# Discovery-only, workflow_dispatch-only. Read-only: no Supabase writes, no table touched.
+# Captures the REAL, live GetReportMeta column list for reportKey='employee_performance_report'
+# (memory/lifelenz-session.md's existing ~29-field list is a representative subset, not a
+# claimed-complete member dump) and, with full_capture on, one real CSV for one store so the
+# actual row grain (per-employee-per-window vs. per-employee-per-day) is read from the log
+# instead of guessed — same discipline that caught Compliance Audit's member-prefix bug before
+# it shipped. See scripts/lifelenz-employee-performance-meta-probe.mjs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_capture:
+        description: 'Also trigger/poll/download one real CSV (not just GetReportMeta)'
+        required: false
+        type: boolean
+        default: true
+      store:
+        description: 'Schedule-name substring to probe (default: first active store schedule)'
+        required: false
+        default: ''
+      window_days:
+        description: 'Date-range window for the full-capture CSV (default: 14)'
+        required: false
+        default: '14'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probe Employee Performance report meta
+        run: node scripts/lifelenz-employee-performance-meta-probe.mjs
+        env:
+          LIFELENZ_TOKEN:              ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_EP_FULL_CAPTURE:    ${{ github.event.inputs.full_capture == 'true' && '1' || '' }}
+          LIFELENZ_EP_STORE:           ${{ github.event.inputs.store || '' }}
+          LIFELENZ_EP_WINDOW_DAYS:     ${{ github.event.inputs.window_days || '14' }}
