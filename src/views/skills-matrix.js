@@ -5,9 +5,10 @@
 // 1-5 rating in the cell (heat-mapped). The packed "SCHEDULE JOBS" string is
 // exploded by the parser; this renders it as "Skill Levels".
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, INV_ORG_COORDS } from '../constants.js';
 import { loadEmployeeSkills } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -234,12 +235,22 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
             covStats.crew ? span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, covStats.crew.toLocaleString() + ' crew · ' + covStats.storeCount + ' stores' + (covStats.updated ? ' · ' + covStats.updated : '')) : null),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'LifeLenz People List → skills matrix. Each station rated 1–5 (red→green). Click a station header to sort; ≥3 = proficient.')),
         h('input', { value: q, onChange: e => setQ(e.target.value), placeholder: 'Search name / title…', style: { ...selStyle, minWidth: 140 } }),
-        h('select', { value: store, onChange: e => setStore(e.target.value), style: selStyle },
-          h('option', { value: 'all' }, 'All Stores'),
-          h('optgroup', { label: '— Groups —' },
-            h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
-            ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
-          h('optgroup', { label: '— Stores —' }, ...stores.map(([loc, nm]) => h('option', { key: loc, value: loc }, nm + ' (' + locNum(loc) + ')')))),
+        h(LocationSelector, {
+          stores: stores.map(([loc]) => ({ loc })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+          mode: 'full', variant: 'dropdown',
+          value: store === 'all' ? { level: 'all', id: null }
+            : store === 'fl' ? { level: 'state', id: 'FL' }
+            : store === 'ok' ? { level: 'state', id: 'OK' }
+            : store.startsWith('__patch__') ? { level: 'patch', id: store.slice(9) }
+            : { level: 'store', id: store },
+          onChange: v => setStore(
+            v.level === 'all' ? 'all'
+              : v.level === 'state' ? (v.id === 'OK' ? 'ok' : 'fl')
+              : v.level === 'patch' ? '__patch__' + v.id
+              : v.level === 'store' ? v.id
+              : 'all'
+          ),
+        }),
         h('select', { value: sortBy, onChange: e => setSortBy(e.target.value), title: 'Sort rows', style: selStyle },
           h('option', { value: 'name' }, 'Sort: Name'), h('option', { value: 'role' }, 'Sort: Job Title')),
         h('select', { value: minRating, onChange: e => setMinRating(+e.target.value), title: 'Dim ratings below…', style: selStyle },

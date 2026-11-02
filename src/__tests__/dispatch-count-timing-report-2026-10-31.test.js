@@ -106,7 +106,9 @@ describe('Count Timing Report (owner req 2026-10-31)', () => {
     await renderPanel(root);
     await openReport(container);
     const card = modalCard(container);
-    expect(card.textContent).toContain('All Locations'); // LocationSelector present
+    // Scope selector is now multi:true (2026-11-02 "any combination of locations" rollout) --
+    // its "All stores" scope label replaces the old single-select's "All Locations" option text.
+    expect(card.textContent).toContain('All stores'); // LocationSelector present
     expect(card.textContent).toContain('Ardmore-Broadway');
     expect(card.textContent).toContain('Chipley');
     // Ardmore-Broadway's real spread-out session (6:00 -> 6:40 AM, 40m) reads as Spread out.

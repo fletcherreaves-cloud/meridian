@@ -229,3 +229,137 @@ whole src/views + src/features tree now has zero tables with the horizontal axis
 effectively `hidden`. The sibling ratchet (`scroll-table-width.test.js`, the *other* half of this
 anti-pattern — `width:'100%'` with no `minWidth`, which makes an `overflowX:'auto'` wrapper a
 no-op) was already enforced at zero tolerance app-wide before today; nothing to do there.
+
+### Follow-up, same day — the 9-panel backlog above is now cleared (8 converted, 1 flagged)
+
+Owner approved ("Yes, please") converting the 9-panel backlog listed above. Went panel by panel —
+read the real value shape and every consumer first, wrote the minimal `{level,id}` translation
+inline (never migrated the panel's persisted state shape), then ran that panel's own tests before
+moving on, same discipline as the original 13-panel batch.
+
+**8 converted to `mode:'full'`/`'store'`, `variant:'dropdown'`** (each a translation layer over
+the existing `'all'|'fl'|'ok'|'__patch__'+name|loc` or plain-loc shape, same pattern as §3's
+`scopeToSelectorValue`/`selectorValueToScope`): `inventory.js` (`selLoc`, plain loc, `mode:'store'`
+— no prior "All" option even though the filter already supported it), `performance-calculator.js`
+(`selLoc`, plain loc, `mode:'store'` — single-store what-if calculator, "All Locations" is new but
+harmless since the hook falls back to its own 140/22%/$10.50 defaults), `labor-tools.js` (THREE
+independent `selLoc` state variables in one file — `DARDaypartPanel` and `LaborAnalyticsPanel`
+converted, `mode:'store'`/`'full'` respectively; `StoreKBEditor`'s is a search+clickable-list UI,
+not a `<select>` at all — left alone, see exception below), `skills-matrix.js` (`store`,
+`mode:'full'` — incidentally fixes this panel's Patch tier reading the stale `supervisorGroups()`
+fallback, since `LocationSelector`'s own Patch tier resolves live via `supervisorOf()`),
+`dt-speedofservice.js` (`orgFilter`, `mode:'full'`), `graded-visits.js` (`selLoc`, `mode:'full'`
+— its separate `typeFilter` select left untouched, not a location control), `labor-analysis.js`
+(`scope`, `mode:'full'`), `signals.js`'s `CorrelationsTab` (`selLoc`, `mode:'store'` — picking
+"All Locations" falls back to the first store rather than an empty/undefined selection, since a
+per-store correlation series has no sane "all" reading).
+
+**2 extenuating circumstances found and left alone, as asked**:
+- **`StoreKBEditor`** (inside `labor-tools.js`) uses a search box + clickable store-list sidebar,
+  not a `<select>` — arguably better UX for a store-profile-editing context than a dropdown would
+  be. Not a gap; a different, legitimate pattern.
+- **`scheduling.js`**'s Scope selector has a genuinely different taxonomy than every other
+  converted panel: it groups by **Operator** (`settings.operators`) in addition to Supervisor/
+  Patch (`settings.supervisorGroups`), both read from `settings`, not from `invOrgCoords`/
+  `supervisorOf()`. `LocationSelector`'s `mode:'full'` has no Operator tier — converting would
+  silently drop that whole grouping, a real functionality loss, not a cosmetic swap. Left as its
+  own hand-rolled select; would need `LocationSelector` itself extended with a 5th tier to convert
+  safely, which is a bigger, separate change.
+- **`signals.js`**'s OTHER `selLoc` (inside the Signal Lab results-table component, ~line 1446) is
+  nullable and set only by clicking a result row (`setSelLoc(selLoc === r.loc ? null : r.loc)`) —
+  a drill-down, not a `<select>` and not a top-level scope filter. Not a conversion candidate,
+  same reasoning as `StoreKBEditor`.
+
+Test fallout was the same shape as the 13-panel batch: a handful of tests located the location
+`<select>` by a bare loc value (`o.value === '3708'`) or set `.value` to a bare loc directly —
+broken by the dropdown's `store:<loc>` prefix (`locationSelectorOptionValue`). Fixed in place
+(`dispatch-110-sos-panel.test.js`, `signals-correlations-tab-auto-first.test.js`); no test existed
+at all for `skills-matrix.js`, `labor-analysis.js`, `graded-visits.js`'s location select — nothing
+to fix there, syntax-check + the panel's other real tests were the verification.
+
+Full suite re-run clean after all 8 conversions: 690 test files / 6404 tests passed. Build clean,
+582.33 KB gzipped eager payload (unchanged — no new static imports, `LocationSelector` was already
+reachable from every touched panel's existing bundle via `PanelControls.js`).
+
+**LocationSelector dropdown-variant rollout is now complete across every panel with a genuine
+scope-filter `<select>`** — the only remaining hand-rolled location selects in the codebase are
+the 2 flagged exceptions above (`scheduling.js`'s Operator/Patch dual-taxonomy, and `analytics.js`'s
+Food Cost panel market-shortcut select from the prior pass) plus `mode:'progressive'` call sites,
+which keep pill rendering by design.
+
+### Same day, follow-up — `multi:true`: arbitrary multi-store selection (owner ask)
+
+**Owner ask, verbatim:** "Remember also, where applicable, I want to be able to multi-select any
+combination of locations for reporting and viewing." The existing `{level,id}` value shape is
+inherently single-pick — even `'state'`/`'patch'`/`'group'` only ever resolve to ONE pre-defined
+group's locs, never an arbitrary hand-picked combination that crosses state/patch lines (e.g.
+"just Ardmore + Chipley + Duncan"). This adds that as a new, orthogonal capability rather than a
+replacement for the single-pick modes — most panels (drill-downs, single-store calculators,
+single-store correlation views) have no use for it and keep their existing single-pick value
+shape untouched.
+
+**New prop: `multi:true`** on `LocationSelector` (`src/components/PanelControls.js`), independent
+of `mode`/`variant`. When set, it overrides rendering before either is consulted:
+- **value shape**: `{level:'all', id:null}` (unchanged meaning) or `{level:'multi', ids:[...]}` —
+  an EXPLICIT array of loc strings, length 0 included. **Deliberately never collapses an empty
+  `ids` back to `'all'`** (a report scoped to "nothing" and one scoped to "everything" are not the
+  same thing for a caller filtering rows by it) **and never auto-infers `'all'` just because every
+  individual store happens to be checked** (same reasoning, the other direction — the caller
+  decides what either edge case means for its own filtering).
+- **`locationSelectorLocs`** gained a matching `'multi'` branch — `value.ids` filtered against
+  `tree.locs` so a stale id (a removed/renamed store lingering in saved state) can't leak through,
+  same defensiveness `'group'` already has. Any caller that was already deriving its filtered loc
+  set via `locationSelectorLocs` (not reimplementing the switch itself) gets `multi` support for
+  free — no change needed on that side at all.
+- **pills variant**: "All Locations" / "None" toggle between the two levels; individual store
+  pills TOGGLE membership (click adds/removes, doesn't replace); State/Patch/Group pills become
+  bulk toggles — click adds every loc in that group not yet selected, or removes the whole group
+  if every one of its locs is already selected. One shared `toggleLocs()` so "is this group fully
+  selected" (the pill's active state) and "what clicking it does" can never drift apart.
+- **dropdown variant**: a native `<select multiple>` of individual stores (grouped by state via
+  `<optgroup>` unless `mode:'store'`), plus "All"/"Clear" buttons. **Also a "+ Add group…" quick-
+  add `<select>`** beside it (State/Patch/Group options, same encoding as the single-pick dropdown's
+  options) that bulk-toggles a whole group through the same `toggleLocs()` then resets itself — an
+  action, not a persisted selection. Without this second control, the dropdown variant would have
+  silently LOST the one-click whole-state/whole-patch pick the single-pick dropdown already has
+  (every tier flattened into one `<select>`) — caught before wiring any real panel to it, not after
+  (the first draft shipped without it, found reviewing the diff against the single-select
+  dropdown's own options before writing the first real consumer).
+- 16 tests, `src/__tests__/dispatch-location-selector-multi-2026-11-02.test.js` — `locationSelectorLocs`'s
+  new branch, every pill interaction above (including the state-pill bulk-add-then-bulk-remove
+  round trip), the native multi-select's grouped options + onChange shape, and the quick-add
+  select's own bulk-toggle + its `mode:'store'` omission.
+
+**First-wave wiring (3 panels, chosen as "genuine reporting/comparison" candidates, not a blind
+sweep)** — each a `multi:true` add to an existing `LocationSelector` call plus, where the panel's
+scope derivation goes through an intermediate string (`'all'|'ok'|'fl'|'grp:'+name`) rather than
+`locationSelectorLocs` directly, one new `if (locValue.level === 'multi') return ids...` branch
+ahead of that translation (the arbitrary combination has no single token to encode it as, so it
+bypasses the string entirely rather than extending it):
+- **`pricing-engine.js`**'s Cross-Store Compare tab — the flagship case. Its own empty-state copy
+  *already* told the owner to "pick a district, patch, or state" to compare item pricing across
+  stores; `scopedLocs` was already generic (computed via `locationSelectorLocs(scope, tree)`), so
+  this was a true one-line `multi:true` add with zero other code changes beyond a `scopeLabel`
+  case and the empty-state copy now also mentioning "any custom combination of stores."
+- **`count-timing-report.js`** and **`missed-count-report.js`** (both Reports▾ hub items,
+  `eom-dashboard.js`) — identical `locValue`→`scope` string→`locs` pattern in both files; added the
+  same `multi` bypass branch to each, plus a `scopeLabel` case. Fixed 2 tests that asserted the old
+  single-select's literal option text ("All Locations") or found a store option by a bare `state:`
+  value on what is now the quick-add select, not the main control — both still pass unchanged logic,
+  just updated to match the new control's actual text/shape.
+
+**Not wired today, deliberately — the rest of the backlog for whoever picks this up next:** every
+other panel using `LocationSelector` keeps its existing single-pick behavior. Genuine candidates
+worth auditing next, in rough priority order: the other Reports▾ hub items in `eom-dashboard.js`
+(`weekly-count-status-report.js`, `opportunity-dollars.js`, `trends.js`, `trend-report.js` — same
+`locValue`/`scope` pattern likely recurs), `analytics.js`'s District rollup/comparison views, and
+`visit-readiness.js`/`checklist-fill.js`'s own reporting surfaces. Per this file's own standing
+rule, convert opportunistically next time one of these is touched for something else, or as its
+own dedicated pass — not a mechanical sweep of all 94 panels in one go, which is exactly the risk
+the 2026-11-01/02 dropdown-variant work already found reason to avoid (test-interaction breakage,
+plus at least one real exception per sweep so far).
+
+Full suite re-run after this addition: 691 test files / 6420 tests passed. Build clean, 582.83 KB
+gzipped eager payload (+0.5 KB over the 9-panel-conversion commit's 582.33 KB, well within the
+850 KB budget — the new multi-select branch lives inside `PanelControls.js`, already in every
+touched panel's existing bundle).

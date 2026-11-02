@@ -9,7 +9,7 @@ import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-qua
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { intradayPace } from '../engine/tracking-to-plan.js';
-import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { f$ } from '../utils/fmt.js';
 // Correlations tab (dispatch #195, 2026-08-28) — merges the retired standalone "Metric
@@ -23,6 +23,7 @@ import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY 
 import { pearson, spearman, pValueFromR, benjaminiHochberg, SCANNER_DEFAULT_MIN_ABS_R, SCANNER_DEFAULT_ALPHA } from '../engine/correlation-stats.js';
 import { printHtml } from '../utils/print-html.js';
 import { ModalShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -2080,10 +2081,15 @@ export function CorrelationsTab({ ds }) {
     // ── Store + target selectors ─────────────────────────────────────────
     div({ style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)' } },
       span({ style: { fontSize: 10, color: 'var(--text3)', fontWeight: 500 } }, 'Store:'),
-      h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value),
-        style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '4px 8px' } },
-        LOCS.map(l => h('option', { key: l, value: l }, sNameC(l)))
-      ),
+      h(LocationSelector, {
+        stores: LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        mode: 'store', variant: 'dropdown',
+        value: { level: 'store', id: selLoc },
+        // No "All Stores" concept here -- correlations are inherently per-store. Picking
+        // LocationSelector's "All Locations" option falls back to the first store rather than
+        // an empty/undefined selLoc (there's no sane "all" reading for a single-store series).
+        onChange: v => setSelLoc(v.level === 'store' ? v.id : LOCS[0]),
+      }),
       span({ style: { fontSize: 10, color: 'var(--text3)', fontWeight: 500, marginLeft: 8 } }, 'What do you want to understand?'),
       ...CORR_TARGETS.map(t => btn({ key: t.id,
         style: { padding: '5px 14px', borderRadius: 'var(--r)', border: '.5px solid', fontSize: 11,

@@ -92,12 +92,18 @@ export function MissedCountReportModal({ stores, onHand, period, onClose }) {
     : locValue.level === 'store' ? locValue.id : 'all';
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const locs = useMemo(() => {
+    // multi (2026-11-02, owner ask -- "multi-select any combination of locations for reporting
+    // and viewing") is an explicit loc list straight off locValue, bypassing the scope-string
+    // translation entirely -- an arbitrary combination has no single state/patch/store token to
+    // encode it as.
+    if (locValue.level === 'multi') return (locValue.ids || []).map(l => unpad(l));
     if (String(scope).startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => unpad(l));
     return Object.keys(STORE_NAMES).filter(l =>
       scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
         : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
-  }, [scope, groups]);
-  const scopeLabel = scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
+  }, [scope, groups, locValue]);
+  const scopeLabel = locValue.level === 'multi' ? `Custom (${locs.length} store${locs.length === 1 ? '' : 's'})`
+    : scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
     : String(scope).startsWith('grp:') ? ('Patch ' + scope.slice(4)) : (sName(scope) || scope);
 
   const byLoc = useMemo(() => groupByLoc(onHand), [onHand]);
@@ -126,7 +132,7 @@ export function MissedCountReportModal({ stores, onHand, period, onClose }) {
   const doCsv = () => downloadCsv(reportCSV(grouped, period), `missed-count-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-${period}.csv`);
 
   const headerRow = div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown' }),
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown', multi: true }),
     div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
       span({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'Force count date:'),
       h('input', {

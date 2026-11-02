@@ -50,6 +50,7 @@ import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 // #164 triage finding 2: a district/operator/patch labor-% TARGET must be sales-weighted the
 // same way its corresponding ACTUAL is (both call sites below weight their actual laborPct by
@@ -184,11 +185,14 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'DAR Daypart Analytics'),
           div({style:{fontSize:'9px',color:'var(--text3)'}},'Hourly OEPE, GC, and Sales from Daily Activity Reports — peak identification, capacity analysis')
         ),
-        h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-          style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text)',fontSize:'9px',padding:'3px 6px'}},
-          LOCS.map(l=>h('option',{key:l,value:l},sNameC(l)))
-        ),
+        // 2026-11-02 — standardized onto the shared LocationSelector (mode:'store' -- this
+        // panel's own DAR row-filter only ever targets one real store at a time).
+        h(LocationSelector, {
+          stores: LOCS.map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+          mode: 'store', variant: 'dropdown',
+          value: selLoc ? { level: 'store', id: selLoc } : { level: 'all', id: null },
+          onChange: v => setSelLoc(v.level === 'store' ? v.id : ''),
+        }),
         ...['heatmap','daypart','capacity'].map(v=>
           btn({key:v,className:'btn btn-sm',
             style:{fontSize:'8.5px',background:view===v?'var(--adim)':'transparent',
@@ -2875,13 +2879,24 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'👷 Labor Analytics'),
         div({style:{display:'flex',flexDirection:'column',gap:1}},
           div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Location'),
-          h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-            style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',padding:'3px 8px',maxWidth:215}},
-            h('option',{value:'all'},'All Locations ('+allLocs.length+')'),
-            h('option',{value:'ok'},'MCDOK — OK ('+okLocs.length+')'),
-            h('option',{value:'fl'},'Emerald Arches — FL ('+flLocs.length+')'),
-            allLocs.map(l=>h('option',{key:l,value:l},sNameC(l)))
-          )
+          // 2026-11-02 — standardized onto the shared LocationSelector. selLoc stays the plain
+          // 'all'|'ok'|'fl'|storeId string every other read in this component already uses,
+          // translated at the UI boundary only (same scopeToSelectorValue/selectorValueToScope
+          // pattern report-subscriptions.js/above-store-onepager.js established).
+          h(LocationSelector, {
+            stores: (stores || []).filter(s => /^\d+$/.test(s.loc)), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+            mode: 'full', variant: 'dropdown',
+            value: selLoc === 'all' ? { level: 'all', id: null }
+              : selLoc === 'ok' ? { level: 'state', id: 'OK' }
+              : selLoc === 'fl' ? { level: 'state', id: 'FL' }
+              : { level: 'store', id: selLoc },
+            onChange: v => setSelLoc(
+              v.level === 'all' ? 'all'
+                : v.level === 'state' ? (v.id === 'OK' ? 'ok' : 'fl')
+                : v.level === 'store' ? v.id
+                : 'all'
+            ),
+          })
         ),
         dist&&span({style:{fontSize:'9px',padding:'3px 10px',borderRadius:99,background:'var(--surf2)',border:'.5px solid var(--bdr)',color:'var(--text2)'}},
           dist.storeCount+' stores'+(dist.totalSales>0?'  ·  $'+(dist.totalSales/1000).toFixed(0)+'K sales':'')
