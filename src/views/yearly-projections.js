@@ -18,7 +18,7 @@
 //     — this panel previously never displayed it at all (owner-reported gap).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
-import { loadDailySales } from '../lib/supabase.js';
+import { loadDailySales, saveYearlyTargets } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
@@ -181,42 +181,85 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const secFmt = v => v == null ? '—' : Math.round(v) + 's';
 const pct2Fmt = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const numFmt = (d) => v => v == null ? '—' : v.toFixed(d);
+// kind drives the in-app editor's input<->stored-value conversion (owner request 2026-11-03,
+// task #61) -- 'pct' fields are stored as fractions (0.28) but a store-dash.js-style target
+// editor should let someone type "28" (percent), same convention monthly_targets fields already
+// use elsewhere in the app. 'sec'/'num' fields are stored and typed in the same unit, no
+// conversion needed.
 const YEARLY_CATS = [
   { key: 'ops', label: 'Service & Ops', icon: '⚡', fields: [
-    { k: 'tOepe', l: 'OEPE PACE', fmt: secFmt, agg: 'avg' },
-    { k: 'tPark', l: 'Park %', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tKvst', l: 'KVS PACE', fmt: secFmt, agg: 'avg' },
-    { k: 'tKvsu', l: 'KVS Usage', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tR2p', l: 'R2P PACE', fmt: secFmt, agg: 'avg' },
+    { k: 'tOepe', l: 'OEPE PACE', fmt: secFmt, agg: 'avg', kind: 'sec' },
+    { k: 'tPark', l: 'Park %', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tKvst', l: 'KVS PACE', fmt: secFmt, agg: 'avg', kind: 'sec' },
+    { k: 'tKvsu', l: 'KVS Usage', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tR2p', l: 'R2P PACE', fmt: secFmt, agg: 'avg', kind: 'sec' },
   ]},
   { key: 'csat', label: 'CSAT', icon: '⭐', fields: [
-    { k: 'tOsat', l: 'Voice OSAT', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tOsatB2B', l: 'OSAT B2B', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tVoiceEAD', l: 'Execute As Designed', fmt: pct2Fmt, agg: 'avg' },
-    { k: 't1800Contacts', l: '1-800 Contacts', fmt: numFmt(0), agg: 'avg' },
+    { k: 'tOsat', l: 'Voice OSAT', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tOsatB2B', l: 'OSAT B2B', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tVoiceEAD', l: 'Execute As Designed', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 't1800Contacts', l: '1-800 Contacts', fmt: numFmt(0), agg: 'avg', kind: 'num' },
   ]},
   { key: 'digital', label: 'Digital', icon: '📱', fields: [
-    { k: 'tDigAppPct', l: 'App % of Sales', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tDigAppGCRD', l: 'App GC/R/D', fmt: numFmt(2), agg: 'avg' },
-    { k: 'tMcdGCRD', l: 'McDelivery GC/R/D', fmt: numFmt(2), agg: 'avg' },
-    { k: 'tMcdWait', l: 'McDelivery Wait', fmt: numFmt(1), agg: 'avg' },
-    { k: 'tMcdStars', l: 'McDelivery Stars', fmt: numFmt(2), agg: 'avg' },
+    { k: 'tDigAppPct', l: 'App % of Sales', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tDigAppGCRD', l: 'App GC/R/D', fmt: numFmt(2), agg: 'avg', kind: 'num' },
+    { k: 'tMcdGCRD', l: 'McDelivery GC/R/D', fmt: numFmt(2), agg: 'avg', kind: 'num' },
+    { k: 'tMcdWait', l: 'McDelivery Wait', fmt: numFmt(1), agg: 'avg', kind: 'num' },
+    { k: 'tMcdStars', l: 'McDelivery Stars', fmt: numFmt(2), agg: 'avg', kind: 'num' },
   ]},
   { key: 'people', label: 'People', icon: '👥', fields: [
-    { k: 'tCrewStaffing', l: 'Crew Staffing', fmt: numFmt(0), agg: 'sum' },
-    { k: 'tShiftLeaders', l: 'Shift Leaders', fmt: numFmt(0), agg: 'sum' },
-    { k: 'tManagers', l: 'GM/DM/Swing Mgr', fmt: numFmt(0), agg: 'sum' },
-    { k: 'tHeadcount', l: 'Total Headcount', fmt: numFmt(0), agg: 'sum' },
-    { k: 'tToShiftLeader', l: 'Shift Leader T/O (TTM)', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tToCrew090', l: '0-90 Crew T/O', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tToCrewYTD', l: 'YTD Crew T/O', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tCrewStaffing', l: 'Crew Staffing', fmt: numFmt(0), agg: 'sum', kind: 'num' },
+    { k: 'tShiftLeaders', l: 'Shift Leaders', fmt: numFmt(0), agg: 'sum', kind: 'num' },
+    { k: 'tManagers', l: 'GM/DM/Swing Mgr', fmt: numFmt(0), agg: 'sum', kind: 'num' },
+    { k: 'tHeadcount', l: 'Total Headcount', fmt: numFmt(0), agg: 'sum', kind: 'num' },
+    { k: 'tToShiftLeader', l: 'Shift Leader T/O (TTM)', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tToCrew090', l: '0-90 Crew T/O', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tToCrewYTD', l: 'YTD Crew T/O', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
   ]},
   { key: 'labor', label: 'Labor & FOB', icon: '💰', fields: [
-    { k: 'tTpph', l: 'TPPH', fmt: numFmt(2), agg: 'avg' },
-    { k: 'tLabor', l: 'Labor %', fmt: pct2Fmt, agg: 'avg' },
-    { k: 'tFOBTarget', l: 'FOB Target', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tTpph', l: 'TPPH', fmt: numFmt(2), agg: 'avg', kind: 'num' },
+    { k: 'tLabor', l: 'Labor %', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
+    { k: 'tFOBTarget', l: 'FOB Target', fmt: pct2Fmt, agg: 'avg', kind: 'pct' },
   ]},
 ];
+const toEditValue = (kind, v) => v == null ? '' : kind === 'pct' ? String(+(v * 100).toFixed(4)) : String(v);
+const fromEditValue = (kind, s) => {
+  const n = parseFloat(s);
+  if (Number.isNaN(n)) return null;
+  return kind === 'pct' ? n / 100 : n;
+};
+
+// Click-to-edit cell (owner request 2026-11-03, task #61: in-app Yearly Targets editor,
+// replacing Excel-upload-only entry). Same interaction shape as labor-allocation.js's
+// TargetTpphCell -- click to reveal an input, commit on blur/Enter, Escape to cancel -- so the
+// whole app has one click-to-edit convention, not a bespoke one per panel.
+function EditableTargetCell({ loc, field, value, onSave }) {
+  const { useState } = React;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  if (!editing) {
+    return h('td', {
+      style: { ...{ padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' }, cursor: 'pointer' },
+      title: 'Click to set ' + field.l + ' for this store',
+      onClick: () => { setDraft(toEditValue(field.kind, value)); setEditing(true); },
+    }, field.fmt(value));
+  }
+  const commit = () => {
+    setEditing(false);
+    if (draft === '') { onSave(loc, field.k, null); return; }
+    const v = fromEditValue(field.kind, draft);
+    if (v != null) onSave(loc, field.k, v);
+  };
+  return h('td', { style: { padding: '3px 6px', textAlign: 'right' } },
+    h('input', {
+      type: 'number', step: field.kind === 'pct' ? '0.01' : field.kind === 'sec' ? '1' : '0.01',
+      autoFocus: true, value: draft,
+      onChange: e => setDraft(e.target.value),
+      onBlur: commit,
+      onKeyDown: e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setEditing(false); },
+      style: { width: 64, fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right', background: 'var(--surf2)', border: '1px solid var(--amber)', borderRadius: 4, padding: '2px 4px' },
+    }));
+}
 
 // One store's annual figures. curMonth/dayFrac describe "today" within `year`.
 function computeStoreYear(tgtByMonth, actByMonth, year, thisYear, curMonth, dayFrac) {
@@ -263,6 +306,12 @@ function aggregate(rows) {
 function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
   const { useState, useMemo, useEffect } = React;
   const [cat, setCat] = useState(YEARLY_CATS[0].key);
+  // Task #61 (owner request 2026-11-03) -- in-app edits, layered over the cloud-loaded/session
+  // byLoc below rather than replacing it, same "optimistic local update, fire-and-forget persist"
+  // shape labor-allocation.js's TargetTpphCell/handleSaveTarget already use. Reset per year so a
+  // stale edit from a prior year's view doesn't bleed into this one.
+  const [edits, setEdits] = useState({});
+  useEffect(() => { setEdits({}); }, [year]);
 
   const byLoc = useMemo(() => {
     const fromCloud = (ds && ds.allYearlyTargets && ds.allYearlyTargets[year]) || {};
@@ -274,8 +323,18 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
     return merged;
   }, [ds, year, thisYear]);
 
-  const rows = useMemo(() => ALL_LOCS.map(locNum).filter(loc => byLoc[loc] && Object.keys(byLoc[loc]).length > 0)
-    .sort((a, b) => storeNm(a).localeCompare(storeNm(b))), [byLoc]);
+  // effectiveByLoc is what the table actually renders from -- byLoc with any in-app edits this
+  // session applied on top, so a saved cell reflects the new value immediately without waiting
+  // for ds.allYearlyTargets to round-trip through a reload.
+  const effectiveByLoc = useMemo(() => {
+    if (!Object.keys(edits).length) return byLoc;
+    const merged = { ...byLoc };
+    for (const loc of Object.keys(edits)) merged[loc] = { ...(merged[loc] || {}), ...edits[loc] };
+    return merged;
+  }, [byLoc, edits]);
+
+  const rows = useMemo(() => ALL_LOCS.map(locNum).filter(loc => effectiveByLoc[loc] && Object.keys(effectiveByLoc[loc]).length > 0)
+    .sort((a, b) => storeNm(a).localeCompare(storeNm(b))), [effectiveByLoc]);
   // ok/fl must be memoized off `rows` -- a plain filter() here produced a fresh array
   // reference every render, which the onExportReady effect below depends on, which set
   // parent state every render, which re-rendered this component: an infinite loop that
@@ -286,17 +345,29 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
 
   const active = YEARLY_CATS.find(c => c.key === cat) || YEARLY_CATS[0];
   const catAgg = (locs, field) => {
-    const vals = locs.map(l => byLoc[l] && byLoc[l][field.k]).filter(v => v != null && !Number.isNaN(v));
+    const vals = locs.map(l => effectiveByLoc[l] && effectiveByLoc[l][field.k]).filter(v => v != null && !Number.isNaN(v));
     if (!vals.length) return null;
     return field.agg === 'sum' ? vals.reduce((a, b) => a + b, 0) : vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+
+  // Task #61 -- commits one field for one store: optimistic local state first, then persists
+  // the WHOLE current row (saveYearlyTargets upserts a full row per loc/year, so a partial
+  // object would null out every other field) with source:'override' so it's distinguishable
+  // from an 'upload'-sourced row. Fire-and-forget, same convention as every other inline-edit
+  // cell in the app -- a transient save failure surfaces on the next Excel re-upload/reload, not
+  // as its own error UI.
+  const handleSaveField = (loc, fieldKey, value) => {
+    setEdits(prev => ({ ...prev, [loc]: { ...(prev[loc] || {}), [fieldKey]: value } }));
+    const fullRow = { ...(effectiveByLoc[loc] || {}), [fieldKey]: value };
+    saveYearlyTargets({ [loc]: fullRow }, year, 'override').catch(() => {});
   };
 
   // Dispatch #147 -- lift the currently-active category's full data up to the parent panel for
   // print/export, since this component owns the category-tab state (same lifting pattern
   // signals.js uses for its Scanner/LiveOps tabs via onExportReady).
   useEffect(() => {
-    onExportReady?.(rows.length ? { active, rows, byLoc, ok, fl } : null);
-  }, [active, rows, byLoc, ok, fl, onExportReady]);
+    onExportReady?.(rows.length ? { active, rows, byLoc: effectiveByLoc, ok, fl } : null);
+  }, [active, rows, effectiveByLoc, ok, fl, onExportReady]);
 
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
@@ -324,12 +395,12 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
         h('tbody', null,
           ...rows.map(loc => h('tr', { key: loc },
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + loc)),
-            ...active.fields.map(f => h('td', { key: f.k, style: td }, f.fmt((byLoc[loc] || {})[f.k]))))),
+            ...active.fields.map(f => h(EditableTargetCell, { key: f.k, loc, field: f, value: (effectiveByLoc[loc] || {})[f.k], onSave: handleSaveField })))),
           [['Oklahoma', ok], ['Florida', fl], ['Grand Total', rows]].map(([label, locs]) => locs.length ? h('tr', { key: label, style: { background: 'rgba(245,188,0,.06)' } },
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 800, fontFamily: 'inherit', color: 'var(--amber)' } }, label + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '(' + locs.length + ')')),
             ...active.fields.map(f => h('td', { key: f.k, style: { ...td, fontWeight: 800 } }, f.fmt(catAgg(locs, f))))) : null)))),
     div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-      'Values are the per-store annual targets from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets, persisted to the yearly_targets Supabase table). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc).')
+      'Click any store\'s value to edit it in place — saves straight to the yearly_targets table (source: "override"), no re-upload needed. Values otherwise come from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc). The Excel upload still works and stays the fastest way to set a whole year at once; in-app edits are for one-off corrections.')
   );
 }
 

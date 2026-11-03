@@ -7,7 +7,64 @@ metadata:
 
 # Yearly + Monthly Targets — in-app build, feasibility & phasing
 
-**Status: queued, not started.** Owner asked explicitly for a feasibility read and a recommended
+## ✅ #3 (Yearly Targets in-app editor + printable export) SHIPPED 2026-11-03 — owner-authorized
+("Pick up #61/#62 Targets editor scope"). Do not re-scope or re-build; see below for exactly what
+landed and what didn't.
+
+**The printable-export half was ALREADY DONE before this pass started** — a stale-plan trap this
+file itself would have walked into if it had re-derived from scratch rather than re-reading the
+real code: dispatch #147 (undated in this file, found live in `src/views/yearly-projections.js`)
+already added a full 🖨 Print Report + ⬇ Export toolbar to BOTH the Sales Pace and Target
+Categories views, sharing formatters between the live table and the print HTML exactly the way
+this plan's #3 recommended (reusing `eom-supervisor.js`'s dual-render shape) — it just wasn't
+flagged as satisfying this ask when this plan was written the day before.
+
+**What was actually missing, and what this pass built:** the Target Categories view was
+READ-ONLY — its only input path was a full Excel re-upload (`parseYearlyTargets`), even to fix
+one wrong number for one store. `src/views/yearly-projections.js`'s `TargetCategoriesView` now
+has a click-to-edit cell (`EditableTargetCell`, same click→input→commit-on-blur/Enter→Escape-
+cancels interaction shape as `labor-allocation.js`'s `TargetTpphCell`) on every per-store value in
+every category tab. Percent fields (`kind:'pct'`) convert the typed percent back to the stored
+fraction (type "5", stored as 0.05) so data entry matches how a human reads the workbook, not the
+internal representation. Saves go straight to `saveYearlyTargets({[loc]: fullRow}, year,
+'override')` — note `source:'override'` is NOT a new parameter added for this; `saveYearlyTargets`
+(`src/lib/supabase.js`) already had this exact signature with a `source='upload'` default and a
+comment naming a "Planning > Yearly manual-override editor (store-dash.js)" as its intended
+'override' caller — that editor never got built (its PREDECESSOR was retired at dispatch #107
+Part 3, a different, incompatible field taxonomy; see store-dash.js's own header comment there),
+so the parameter sat unused until this pass. The real home ended up being
+`yearly-projections.js` (where the category data already lives/renders), not `store-dash.js` as
+that old comment assumed. A full row is always sent on save (never a partial field), since
+`saveYearlyTargets` upserts a whole row per `(loc, year)` — a partial object would silently null
+out every other column for that store.
+
+Excel upload is untouched and stays the primary bulk-entry path (a whole year, all stores, one
+upload) — in-app editing is explicitly for one-off corrections between uploads, matching this
+app's standing "manual upload stays, in-app edit is additive" convention. Edits are optimistic +
+fire-and-forget (same convention as every other inline-edit cell in the app, e.g. the daypart TPPH
+target cell built earlier this same session) — a transient save failure surfaces on the next
+reload/re-upload, not its own error UI.
+
+4 new tests, `dispatch-61-yearly-targets-editor-2026-11-03.test.js`, mounting the REAL
+`YearlyProjectionsPanel` (not an isolated `EditableTargetCell` unit test): commit saves the full
+row with `source:'override'`; a percent field's typed value converts to the stored fraction;
+Escape cancels without saving; the Excel-upload empty-state/hint is unchanged.
+
+**Deliberately NOT done in this pass** (would need an explicit owner ask first):
+- No finer edit-permission gate was added — editing is available to anyone who can open the
+  Planning hub at all (`analytics.store`), matching `UnifiedTargetsPanel`'s own existing
+  precedent (that panel has no separate edit-permission either).
+- Adding a brand-new store with NO prior-year data at all still requires the Excel upload — the
+  in-app editor only edits an EXISTING row's fields, it doesn't create a wholly new store/year row
+  from nothing. Scoped out as an edge case; flag if this turns out to matter in practice.
+- #62 (Monthly Targets in-app conversion) — not started; per this file's own original sequencing,
+  follows the same shape once this Yearly build is proven in use, not built in parallel.
+- #4 (fully configurable metric categories) — unaffected by this pass, still the "architecturally
+  biggest piece," out of scope per this file's own original scoping.
+
+---
+
+**Status (original, below): queued, not started.** Owner asked explicitly for a feasibility read and a recommended
 path, so this is that — not a build log.
 
 ## What already exists (read before any of this is built — avoids re-deriving or duplicating)
