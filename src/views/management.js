@@ -479,9 +479,13 @@ function RoleAssignmentsEditor({ S, onUpdate }) {
 function StoreStatusEditor({ S, onUpdate }) {
   const today = new Date().toISOString().slice(0, 10);
   const lifecycle = S.storeLifecycle || {};
+  const openDates = S.storeOpenDates || {};
   const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), storeLifecycle: next });
+  const saveOpen = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), storeOpenDates: next });
   const [store, setStore] = useState('');
   const [closeDate, setCloseDate] = useState(today);
+  const [newStore, setNewStore] = useState('');
+  const [openDate, setOpenDate] = useState(today);
 
   const apply = () => {
     const loc = String(parseInt(store.trim(), 10)); if (!loc || loc === 'NaN') { alert('Enter a store ID'); return; }
@@ -496,8 +500,21 @@ function StoreStatusEditor({ S, onUpdate }) {
   const reopen = (loc) => { const next = { ...lifecycle }; delete next[loc]; save(next); };
   const rows = Object.entries(lifecycle).sort((a, b) => (STORE_NAMES[a[0]] || a[0]).localeCompare(STORE_NAMES[b[0]] || b[0]));
 
+  const applyOpen = () => {
+    const loc = String(parseInt(newStore.trim(), 10)); if (!loc || loc === 'NaN') { alert('Enter a store ID'); return; }
+    if (!openDate) { alert('Pick an opening date (or use the ✕ on an existing row to clear it)'); return; }
+    saveOpen({ ...openDates, [loc]: openDate });
+    setNewStore('');
+  };
+  const editOpenDate = (loc, val) => {
+    if (!val) { const next = { ...openDates }; delete next[loc]; saveOpen(next); return; }
+    saveOpen({ ...openDates, [loc]: val });
+  };
+  const clearOpen = (loc) => { const next = { ...openDates }; delete next[loc]; saveOpen(next); };
+  const openRows = Object.entries(openDates).sort((a, b) => (STORE_NAMES[a[0]] || a[0]).localeCompare(STORE_NAMES[b[0]] || b[0]));
+
   return div({ className: 'set-sec' },
-    div({ className: 'set-sec-t' }, 'Store Status (closed/retired stores)'),
+    div({ className: 'set-sec-t' }, 'Store Status (closed/retired + new/opening stores)'),
     div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
       'Set a store\'s last day of operation ahead of time, or on the day itself — either way, it automatically drops out of Smart Targets\' roster once that date is reached, with no need to remember to flip anything on the day. A closed store\'s history stays fully visible everywhere else (Store Dashboard, Analytics, drilldowns) — this only stops it from being counted as a currently-operating store. Clear the date (✕) to reopen/undo.'),
     div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Closed / closing'),
@@ -516,7 +533,31 @@ function StoreStatusEditor({ S, onUpdate }) {
     div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
       inp({ className: 'set-inp', placeholder: 'Store ID', value: store, onChange: e => setStore(e.target.value), style: { flex: '0 0 110px' } }),
       inp({ className: 'set-inp', type: 'date', value: closeDate, onChange: e => setCloseDate(e.target.value), title: 'Last day of operation', style: { flex: '0 0 140px' } }),
-      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')));
+      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')),
+
+    // Opening side (owner-reported 2026-11-03: new-store 44689 showing up with a real sales
+    // target on the October Pace-to-Target view, weeks before its planned November open). A
+    // store with no opening date set behaves exactly as before — always eligible — so this is
+    // opt-in per new store, same as the closing side above.
+    div({ style: { fontWeight: 700, fontSize: 12.5, margin: '18px 0 4px', borderTop: '.5px solid var(--bdr)', paddingTop: 12 } }, 'New / opening stores'),
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'Set a brand-new store\'s FIRST day of operation ahead of time, and it stays out of Pace-to-Target / Monthly Projections for any month before that date — even if it already has a sales target entered — then appears automatically once the viewed month reaches the open date. Clear the date (✕) once the store is fully live and this no longer matters.'),
+    openRows.length
+      ? div({ style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+          openRows.map(([loc, date]) => div({ key: loc, style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5 } },
+            span({ style: { minWidth: 160, fontWeight: 600 } }, loc + ' — ' + (STORE_NAMES[loc] || loc)),
+            inp({ className: 'set-inp', type: 'date', defaultValue: date, key: loc + date, onBlur: e => editOpenDate(loc, e.target.value), title: 'First day of operation', style: { width: 140 } }),
+            date > today
+              ? span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'Not yet open')
+              : span({ style: { fontSize: 10, color: 'var(--good,#10b981)', fontWeight: 600 } }, 'Open'),
+            btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => clearOpen(loc) }, '✕ Clear'))))
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, '— no pending-open stores —'),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Add a new store'),
+    div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      inp({ className: 'set-inp', placeholder: 'Store ID', value: newStore, onChange: e => setNewStore(e.target.value), style: { flex: '0 0 110px' } }),
+      inp({ className: 'set-inp', type: 'date', value: openDate, onChange: e => setOpenDate(e.target.value), title: 'First day of operation', style: { flex: '0 0 140px' } }),
+      btn({ className: 'btn btn-sm btn-a', onClick: applyOpen }, 'Apply')));
 }
 
 // Generic name→store-list group editor — mirrors the 'operators' section's add/rename/remove-row

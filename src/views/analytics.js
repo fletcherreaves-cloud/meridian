@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, supervisorOf } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, supervisorOf, isStoreNotYetOpenOn } from '../constants.js';
 import { dKey, addD, dowOf, dFmt, nDK, weekStartOf } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
@@ -8369,9 +8369,21 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
   }, [period.year, period.month, dsCoversMonthStart, monthStartIso]);
 
   // MTD actual must be PRODUCT sales (same basis as tProdSales) from the COMPLETE
-  // auto/emailed streams — not manual labor, which lags and undercounts. Priority
-  // per (loc,date): emailed sales_ledger > DAR product sales; manual labor
-  // (computeMonthActuals) only fills locs the auto streams don't cover.
+  // auto/emailed streams — not manual labor, which lags and undercounts, and not NET sales,
+  // which is a different basis than the target it's compared against. Priority per (loc,date):
+  // DAR/qsrActSummary product sales > emailed sales_ledger (net sales, fallback only); manual
+  // labor (computeMonthActuals) only fills locs neither auto stream covers.
+  //
+  // CORRECTED 2026-11-03 (owner-reported): MTD Actual on the Actuals vs Target pace table was
+  // reading Net Sales, not Product Sales. Root cause was this priority order — the 2026-10-06
+  // fix below put the emailed sales_ledger leg (all_net_sales, NET sales) at the HIGHEST
+  // priority (3), ahead of qsrActSummary's real product_sales-derived leg (priority 2), on the
+  // reasoning that all_net_sales was "close enough" (~1% off) to use as a fresher substitute.
+  // That reasoning is wrong for a panel that compares actual against a Product-Sales target
+  // (tProdSales): a consistently-wrong basis, even a close one, is not the same number the
+  // target is measuring, and the two legs are now swapped so the real product-sales leg wins
+  // whenever both are available for a given (loc,date) — sales_ledger drops back to being a
+  // same-day-freshness fallback only, used when DAR/qsrActSummary hasn't landed yet.
   const actuals = useMemo(()=>{
     const ym = period.year + '-' + String(period.month).padStart(2,'0');
     const inMonth = d => { if(!d) return null; const iso=(d instanceof Date?d:new Date(d)).toISOString().slice(0,10); return iso.slice(0,7)===ym?iso:null; };
@@ -8380,16 +8392,12 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     const onDemand = onDemandSales && onDemandSales.period===(period.year+'-'+period.month) ? onDemandSales : null;
     const ledgerRows = onDemand ? onDemand.ledger : (ds&&ds.salesLedgerRows||[]);
     const qsrActRows = onDemand ? onDemand.qsrAct : (ds&&ds.qsrActSummaryRows||[]);
-    // FIX (2026-10-06): this read r.prodSales, a field loadSalesLedger() never actually sets
-    // (it only sets .sales/.allNetSales from the sales_ledger_daily table's all_net_sales
-    // column — there's no separate "product sales" column in that table) — so this entire
-    // priority-3 leg was silently a no-op for every row, every month, always falling through
-    // to qsrActSummaryRows alone. all_net_sales is ~1% above true product sales (confirmed
-    // against the same August data: $318,831 vs $315,035 for one store) — close enough to use
-    // as the fresher-but-slightly-less-precise leg the original "freshest wins" priority intended,
-    // rather than a leg that silently never contributed at all.
-    for(const r of ledgerRows) put(r.loc, inMonth(r.date), r.sales, 3);
-    for(const r of qsrActRows) put(r.loc, inMonth(r.date), r.sales, 2); // qsrActSummary.sales = Σ product_sales
+    // loadSalesLedger() has no product-sales column to read (sales_ledger_daily only carries
+    // all_net_sales — see loadSalesLedger in lib/supabase.js) so this leg is NET sales, ~1%
+    // above true product sales (confirmed against August data: $318,831 vs $315,035 for one
+    // store) — kept only as a same-day fallback, never preferred over the real product-sales leg.
+    for(const r of ledgerRows) put(r.loc, inMonth(r.date), r.sales, 2);
+    for(const r of qsrActRows) put(r.loc, inMonth(r.date), r.sales, 3); // qsrActSummary.sales = Σ product_sales — real basis, preferred
     const byLoc={}; let maxIso=null;
     for(const k of Object.keys(cell)){ const [loc,iso]=k.split('|'); byLoc[loc]=(byLoc[loc]||0)+cell[k].sales; if(!maxIso||iso>maxIso) maxIso=iso; }
     // Last-resort fill for locs with no auto product-sales coverage.
@@ -8413,9 +8421,16 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
   const money = v => v==null ? '—' : '$'+Math.round(v).toLocaleString();
   const pctCol = v => v==null ? 'var(--text3)' : v>=0 ? '#10b981' : v<-3 ? '#ef4444' : '#f59e0b';
 
+  // Drop a store that hasn't opened yet as of the END of the VIEWED period (owner-reported
+  // 2026-11-03: new-store 44689 showing up with a real sales target on the October pace view,
+  // weeks before its planned November open — see storeOpenDates in constants.js). Checked
+  // against the period being viewed, not "today", so stepping ‹ › back to a pre-open month
+  // excludes the store and stepping › forward past its open date includes it again.
+  const periodEndAsOf = new Date(period.year, period.month, 0);
+  const openLocs = (locs||[]).filter(loc => !isStoreNotYetOpenOn(loc, settings?.storeOpenDates, periodEndAsOf));
   const rowData = groupView==='flat'
-    ? locs.map(loc=>({label:storeName(loc)+' ('+loc+')',tgt:(effMt[loc]||{}).tProdSales||0,act:(actuals.byLoc?.[loc]||{}).sales||0}))
-    : (()=>{ const gm = groupView==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}); const ls=new Set(locs);
+    ? openLocs.map(loc=>({label:storeName(loc)+' ('+loc+')',tgt:(effMt[loc]||{}).tProdSales||0,act:(actuals.byLoc?.[loc]||{}).sales||0}))
+    : (()=>{ const gm = groupView==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}); const ls=new Set(openLocs);
         return Object.entries(gm).map(([g,gs])=>{const gl=gs.map(String).filter(l=>ls.has(l));if(!gl.length)return null;
           let tgt=0,act=0; gl.forEach(loc=>{tgt+=(effMt[loc]||{}).tProdSales||0; act+=(actuals.byLoc?.[loc]||{}).sales||0;});
           return {label:g+' ('+gl.length+')',tgt,act};}).filter(Boolean); })();
