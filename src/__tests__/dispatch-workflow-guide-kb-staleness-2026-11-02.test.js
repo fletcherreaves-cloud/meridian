@@ -6,11 +6,23 @@
 // modal and forecast.js's KB_ARTICLES. Per "would this verification still pass if reverted?",
 // these mount the real exported components and read the rendered text -- they fail against the
 // pre-fix copy, which really did render the stale names/paths.
+//
+// 2026-11-03 correction (surfaced while scoping task #62, Monthly Targets in-app editor): this
+// file's own original fix (below) pointed "Lock the weekly/monthly projection" at "Planning ->
+// Monthly tab" as an alternate path to Test Kitchen's Projections grid. That was wrong the day it
+// was written -- Planning -> Monthly tab is MonthlyProjectionsPanel, the monthly TARGETS editor
+// (a different Supabase table, monthly_targets, from locked_projections), and it has no
+// lock/double-click-override mechanic at all; only Test Kitchen's Projections grid
+// (ProjectionWorkflow, routePanel==='proj') does. Re-fixed here to stop claiming Planning ->
+// Monthly tab is a locking path, in both the Workflow Guide modal and the locked_projections KB
+// article; see memory/plan-targets-system-2026-11-02.md's "#62 SHIPPED" section for the full
+// finding.
 import { describe, it, expect, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { KnowledgeBasePanel } from '../engine/forecast.js';
+import { WorkflowGuidePanel } from '../app/App.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,10 +44,11 @@ function openArticle(matchText) {
 }
 
 describe('Knowledge Base — locked_projections article no longer sends users to a demoted panel as if it were a plain sidebar item', () => {
-  it('points to Planning + names the real Test Kitchen panels, not "Forecasting > Projections"', () => {
+  it('names Test Kitchen -> Projections as the only lock path, not Planning -> Monthly tab (a separate Targets editor with no lock mechanic)', () => {
     mount();
     openArticle('How to lock projections, what happens when you do');
-    expect(container.textContent).toContain('Planning → Monthly tab');
+    expect(container.textContent).toContain('Test Kitchen → ▦ Projections');
+    expect(container.textContent).not.toContain('Open Planning → Monthly tab (the day-to-day path)');
     expect(container.textContent).not.toContain('Forecasting > Projections');
     expect(container.textContent).not.toContain('Forecasting > Proj vs Actuals');
   });
@@ -48,12 +61,60 @@ describe('Knowledge Base — locked_projections article no longer sends users to
   });
 });
 
+describe('Knowledge Base — planning_hub article no longer claims the Monthly/Yearly Targets tabs have a lock/double-click-override mechanic', () => {
+  it('Monthly section describes click-to-edit + Excel upload, not double-click-override-and-lock', () => {
+    mount();
+    openArticle('One panel, five tabs, covering every projection and target workflow');
+    expect(container.textContent).toContain('Click any store\'s cell to edit it in place');
+    expect(container.textContent).toContain('This tab has no lock or double-click-override mechanic');
+    expect(container.textContent).not.toContain('AI-generated forecasts you review, override (double-click a cell), and lock');
+  });
+
+  it('Yearly section no longer claims "same locked/override mechanics as Monthly"', () => {
+    mount();
+    openArticle('One panel, five tabs, covering every projection and target workflow');
+    expect(container.textContent).not.toContain('same locked/override mechanics as Monthly');
+    expect(container.textContent).toContain('No lock mechanic here either');
+  });
+
+  it('names Test Kitchen -> Projections as the real place sales projections get locked', () => {
+    mount();
+    openArticle('One panel, five tabs, covering every projection and target workflow');
+    expect(container.textContent).toContain('Test Kitchen → ▦ Projections');
+  });
+});
+
 describe('Knowledge Base — smart_targets article points to its real current home', () => {
   it('says Planning → Smart Targets tab, not the retired standalone sidebar entry', () => {
     mount();
     openArticle('Data-driven target generation that analyzes your historical performance');
     expect(container.textContent).toContain('Planning → Smart Targets tab');
     expect(container.textContent).not.toContain('Sidebar → 🎯 Smart Targets');
+  });
+});
+
+describe('Workflow Guide modal — WEEKLY/MONTHLY "lock the projection" steps no longer claim Planning -> Monthly tab can lock', () => {
+  function mountGuide() {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root.render(React.createElement(WorkflowGuidePanel, {
+      userRole: 'owner', orgRoles: undefined, onClose: () => {}, onStartTour: () => {},
+    })));
+  }
+
+  it('weekly lock step points to Test Kitchen Projections, not Planning -> Monthly tab', () => {
+    mountGuide();
+    expect(container.textContent).toContain('1. Lock the weekly projection');
+    expect(container.textContent).toContain('Open ▦ Projections in ⚗ Test Kitchen');
+    expect(container.textContent).not.toContain('Open Planning → Monthly tab (or ▦ Projections');
+  });
+
+  it('monthly lock step points to the Test Kitchen Projections grid, not Planning -> Monthly tab', () => {
+    mountGuide();
+    expect(container.textContent).toContain('1. Lock the monthly projection');
+    expect(container.textContent).toContain('Open the Test Kitchen Projections grid');
+    expect(container.textContent).not.toContain('Open Planning → Monthly tab and set the period to Month');
   });
 });
 
