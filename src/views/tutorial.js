@@ -70,7 +70,7 @@ const STEPS = [
   {
     icon: '📋',
     title: 'Step 8 — Performance Reviews',
-    body: 'Performance Reviews let you complete structured quarterly reviews for each GM. Score them across 6 KPI dimensions, write development notes, and generate a printable PDF review form.',
+    body: 'Performance Reviews let you complete structured quarterly reviews for each GM. Score them across weighted categories (Running Great Restaurants, Sales Drivers, Profitability, People Staffing & Retention by default, plus Administration — fully customizable per org), write development notes, and generate a printable PDF review form.',
     tip: 'OSAT scores auto-fill from Guest Voice data if FullScale reports are loaded.',
     highlight: 'perf-reviews',
   },
