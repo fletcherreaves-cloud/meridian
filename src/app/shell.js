@@ -91,7 +91,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -217,6 +217,11 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // (hasPermission() itself denies every permission for an unrecognized role). Don't drop the
   // `perm` prop at this call site without also reconsidering this fallback.
   const can = perm || (() => true);
+  // Owner request 2026-11-02: "role-based panel active/inactive toggles." Same fail-OPEN-when-
+  // omitted tier as `can` above (App.js always passes a real one, bound to
+  // isPanelEnabledForRole(id, userRole, orgRoles)) -- finer-grained than `can`/perm keys, which
+  // several panels share, so disabling one panel for a role can't accidentally hide its siblings.
+  const panelOk = panelEnabled || (() => true);
   // pis = stable (always visible), pi = experimental (hidden when betaMode=true)
   const pis = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
   const pi  = (permKey, ...args) => (!permKey || can(permKey)) && !betaMode ? navItem(...args) : null;
@@ -230,11 +235,13 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // navP = pis()-equivalent (always visible if permitted); navPBeta = pi()-equivalent (also
   // hidden when betaMode is on, same as every Test Kitchen item).
   const navP = (id, extra) => {
+    if (!panelOk(id)) return null;
     const p = PANEL_BY_ID[id];
     const { onClick, active, badge, disabled } = extra || {};
     return pis(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
   };
   const navPBeta = (id, extra) => {
+    if (!panelOk(id)) return null;
     const p = PANEL_BY_ID[id];
     const { onClick, active, badge, disabled } = extra || {};
     return pi(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
@@ -324,20 +331,20 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     const items = [];
     for (const s of SECTIONS) {
       for (const p of panelsForSection(s.id, can)) {
-        if (seen.has(p.id) || (betaMode && BETA_HIDDEN_EXTRAS.has(p.id))) continue;
+        if (seen.has(p.id) || (betaMode && BETA_HIDDEN_EXTRAS.has(p.id)) || !panelOk(p.id)) continue;
         seen.add(p.id);
         items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: s.label });
       }
     }
     if (!betaMode) {
       for (const p of testKitchenPanels(can)) {
-        if (seen.has(p.id)) continue;
+        if (seen.has(p.id) || !panelOk(p.id)) continue;
         seen.add(p.id);
         items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: 'Test Kitchen' });
       }
     }
     return items;
-  }, [can, betaMode]);
+  }, [can, betaMode, panelOk]);
   const navResults = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return [];
@@ -473,12 +480,12 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       // of which (Optional) previously had no header/label at all.
       ...(navStyle==='classic' ? [
         ...(renderTestKitchen() || []),
-        ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+        ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
           .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
       ] : (() => {
         const items=[
           ...(renderTestKitchen() || []),
-          ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+          ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
             .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
         ].filter(Boolean);
         if(!items.length) return [];

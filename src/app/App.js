@@ -331,7 +331,7 @@ import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTarge
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
-import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
+import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 // RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
@@ -3398,6 +3398,9 @@ function App() {
 
   // Permission helper — used by AppSidebar, AppTopbar, and modal gates
   const perm = (key) => hasPermission(userRole, key, orgRoles);
+  // Owner request 2026-11-02: "role-based panel active/inactive toggles" — finer-grained than
+  // perm() above (several panels share one perm key; this is one specific panel id per role).
+  const panelEnabled = (id) => isPanelEnabledForRole(id, userRole, orgRoles);
 
   // Render
   // ── anyModalOpen  (v4.212 — performance) ────────────────────────────────
@@ -3549,6 +3552,7 @@ function App() {
       perm,
       betaMode,
       panelVis,
+      panelEnabled,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
       onOpenModal: (modal) => {
         if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),setLeaderboardMode('ranking'),goRoute('ranking'));
@@ -3763,7 +3767,10 @@ function App() {
         sessionBanner,
         onClearSession: handleClearSession,
         userRole,
-        onOpenAdmin: perm('users.manage.all') ? () => setShowAdminPanel(true) : null,
+        // Owner request 2026-11-02: 'users.manage.lower' holders (e.g. a DO) can now also open
+        // this -- AdminPanel itself scopes what they see to roles strictly below their own
+        // (canManageRole), never a blanket admin view.
+        onOpenAdmin: (perm('users.manage.all')||perm('users.manage.lower')) ? () => setShowAdminPanel(true) : null,
         betaMode,
         onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
@@ -4084,7 +4091,7 @@ function App() {
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
     // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
@@ -4127,7 +4134,7 @@ function App() {
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
     // routePanel==='ranking' in the main content area above.
-    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
+    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles,userRole}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
