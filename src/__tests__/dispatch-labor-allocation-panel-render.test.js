@@ -30,9 +30,13 @@ vi.mock('../lib/supabase.js', () => ({
   // test's data load, not just skip the new tab.
   loadVlhStoreConfigs: vi.fn(),
   loadVlhGuideHours: vi.fn(),
+  // Owner-decided 2026-11-02 (Targets system item #2) -- same "add a default empty resolve
+  // here rather than let Promise.all reject" rule as the VLH mocks above.
+  loadDaypartTpphTargets: vi.fn(),
+  saveDaypartTpphTarget: vi.fn(),
 }));
 
-import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours } from '../lib/supabase.js';
+import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours, loadDaypartTpphTargets, saveDaypartTpphTarget } from '../lib/supabase.js';
 import { LaborAllocationPanel } from '../views/labor-allocation.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -92,6 +96,8 @@ describe('LaborAllocationPanel renders District/By Store/Overnight (backlog item
     root = createRoot(container);
     loadVlhStoreConfigs.mockResolvedValue({});
     loadVlhGuideHours.mockResolvedValue([]);
+    loadDaypartTpphTargets.mockResolvedValue({});
+    saveDaypartTpphTarget.mockResolvedValue({ saved: true });
   });
   afterEach(() => {
     act(() => { root.unmount(); });
@@ -156,6 +162,48 @@ describe('LaborAllocationPanel renders District/By Store/Overnight (backlog item
     // fraction since 6am is exactly the Breakfast/Late-Night boundary) -- "on target" or a named
     // over/under verdict, never the na/no-config placeholder this fixture's config rules out.
     expect(container.textContent).not.toContain('no store_labor_config row');
+  });
+
+  // Owner-decided 2026-11-02 (Targets system item #2): per-store, per-daypart TPPH target,
+  // editable inline, compared against the already-computed actual TPPH. Verifies through the
+  // real panel (not loadDaypartTpphTargets/saveDaypartTpphTarget in isolation) per this file's
+  // own "would this still pass if reverted" rule.
+  it('By Store tab shows actual TPPH and a pre-loaded target, and editing the target persists it', async () => {
+    loadDailyActivityRange.mockResolvedValue(buildRows());
+    loadStoreLaborConfig.mockResolvedValue(STORE_LABOR_CONFIG);
+    loadDaypartTpphTargets.mockResolvedValue({ 5: { Breakfast: 4.5 } });
+
+    await act(async () => {
+      root.render(React.createElement(LaborAllocationPanel, { ds: {}, stores: [], settings: {}, onClose: NOOP, embedded: true }));
+      await new Promise(r => setTimeout(r, 0));
+    });
+    const storeTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'By Store');
+    await act(async () => { storeTabBtn.click(); });
+
+    // Store 5's Breakfast target (4.50) pre-loaded from the mock, store 9 has none yet.
+    expect(container.textContent).toContain('4.50');
+    expect(container.textContent).toContain('— set —');
+
+    // Click store 9's "— set —" cell to edit, type a value, blur to commit.
+    const setCell = [...container.querySelectorAll('td')].find(td => td.textContent === '— set —');
+    expect(setCell, '"— set —" cell not found').toBeTruthy();
+    await act(async () => { setCell.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const targetInput = container.querySelector('input[type="number"]');
+    expect(targetInput, 'target input not found after clicking "— set —"').toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(targetInput, '5.25');
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Separate act() so React flushes the onChange-driven `draft` state update (and re-attaches
+    // onBlur with the fresh closure) BEFORE blur fires -- dispatching both in one tick reads the
+    // stale pre-edit `draft` inside commit(). React's onBlur is implemented on the native
+    // 'focusout' event (which bubbles, unlike plain 'blur') for its root-level delegation to see it.
+    await act(async () => {
+      targetInput.dispatchEvent(new Event('focusout', { bubbles: true }));
+    });
+    expect(saveDaypartTpphTarget).toHaveBeenCalledWith('9', 'Breakfast', 5.25);
+    expect(container.textContent).toContain('5.25');
   });
 
   it('renders the empty-data placeholder (not a crash) when the 90-day fetch resolves with zero rows -- the real shape a fresh session sees before cloud data lands', async () => {
