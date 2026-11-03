@@ -39,7 +39,7 @@ function renderNavTexts(permFn) {
     // dedicated test file (nav-regroup-v2.test.js).
     settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
     onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: permFn || (() => true),
-    betaMode: false, panelVis: {},
+    betaMode: false, panelVis: {}, initialCollapsed: false,
   };
   const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, props));
   return html.replace(/<[^>]+>/g, '|').split('|')

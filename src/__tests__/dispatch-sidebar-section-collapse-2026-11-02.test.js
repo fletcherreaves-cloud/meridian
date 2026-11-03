@@ -26,7 +26,7 @@ function mountSidebar(settingsOverride = {}, extra = {}) {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
       settings: { districtName: 'Test', ...settingsOverride }, onOpenModal, onLoadFiles: () => {},
       onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-      betaMode: false, panelVis: {}, ...extra,
+      betaMode: false, panelVis: {}, initialCollapsed: false, ...extra,
     }));
   });
   return { container, root, onOpenModal };
@@ -34,6 +34,9 @@ function mountSidebar(settingsOverride = {}, extra = {}) {
 
 // A real kind:'nav' panel in the 'operations' section -- not Test Kitchen, not Deep Dive.
 const OPS_PANEL = PANEL_BY_ID['graded-visits'];
+// A real kind:'nav' panel in the 'reports' section -- used to tell "header still rendered" (the
+// section label text, always present) apart from "its panels are actually visible".
+const REPORTS_PANEL = PANEL_BY_ID['above-store'];
 
 const byText = (container, text) =>
   [...container.querySelectorAll('div')].find(d => d.textContent.includes(text) && d.textContent.trim().length < text.length + 20);
@@ -68,6 +71,21 @@ describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)'
     expect(container.textContent).toMatch(/Reports/);
   });
 
+  it('accordion (owner request 2026-11-03): re-opening a section auto-collapses every other section', () => {
+    const { container } = mountSidebar();
+    expect(container.textContent).toContain(REPORTS_PANEL.label);
+    const opsHeader = byText(container, 'Operations');
+    // Collapse Operations first (matches the test above) -- Reports' own panel stays visible.
+    act(() => { opsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toContain(REPORTS_PANEL.label);
+    // Re-opening Operations should now collapse Reports' panel (and every other section)
+    // automatically -- the header label itself still renders (collapsed sections keep their
+    // header, only their items hide), so assert on the PANEL label, not the section name.
+    act(() => { opsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    expect(container.textContent).not.toContain(REPORTS_PANEL.label);
+  });
+
   it('classic mode never shows a clickable section header -- stays the flat pre-2026-10-07 render', () => {
     const { container } = mountSidebar({ navStyle: 'classic' });
     expect(container.textContent).toContain(OPS_PANEL.label);
@@ -86,7 +104,7 @@ describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)'
         view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
         settings: { districtName: 'Test' }, onOpenModal, onLoadFiles: () => {},
         onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-        betaMode: false, panelVis: {},
+        betaMode: false, panelVis: {}, initialCollapsed: false,
       }));
     });
     // Collapse the whole sidebar via its own toggle (the "M" logo button).

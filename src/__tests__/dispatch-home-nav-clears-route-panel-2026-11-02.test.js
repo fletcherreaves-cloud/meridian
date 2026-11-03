@@ -26,7 +26,7 @@ function mountSidebar(extraProps = {}) {
     routePanel: 'dicompare', goRoute: (id) => calls.goRouteArgs.push(id),
     selStore: '3708', stores: [], ds: {},
     settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
-    loadMsg: '', perm: () => true, betaMode: false, panelVis: {},
+    loadMsg: '', perm: () => true, betaMode: false, panelVis: {}, initialCollapsed: false,
     ...extraProps,
   };
   act(() => { root.render(h(AppSidebar, props)); });

@@ -27,7 +27,7 @@ function mountSidebar(settingsOverride = {}) {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
       settings: { districtName: 'Test', ...settingsOverride }, onOpenModal, onLoadFiles: () => {},
       onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-      betaMode: false, panelVis: {},
+      betaMode: false, panelVis: {}, initialCollapsed: false,
     }));
   });
   return { container, root, onOpenModal };
@@ -84,7 +84,7 @@ describe('AppSidebar nav regroup — v2 (default, no settings.navStyle field at 
         view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
         settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
         onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-        betaMode: true, panelVis: {},
+        betaMode: true, panelVis: {}, initialCollapsed: false,
       }));
     });
     expect(container.textContent).not.toMatch(/Deep Dive/);
