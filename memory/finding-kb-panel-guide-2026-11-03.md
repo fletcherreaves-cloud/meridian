@@ -75,3 +75,17 @@ trusting the existing onboarding copy, consistent with this repo's "measure, don
   labels (the same kind of staleness check this session already ran on `WORKFLOW_GUIDE_SECTIONS`/
   `tutorial.js`) was NOT done -- worth a follow-up pass given how much staleness turned up
   elsewhere in the onboarding copy today.
+
+## Added later the same day: `targets_editor` (task #75, after #61/#62 shipped)
+
+A real gap, not an oversight at the time -- when this batch was written, Monthly/Yearly Targets
+were still read-only (#61/#62 built the click-to-edit grids in the same session, right after this
+batch merged). Added one combined Panel Guide article, `targets_editor`, covering both grids:
+how in-app editing differs from Excel upload (full-row upsert, not a partial write), the real
+field/category lists for each (`PROJ_FIELDS`: Sales & Labor/Service/Food Cost/Other Costs;
+`YEARLY_CATS`: Service & Ops/CSAT/Digital/People/Labor & FOB), and -- given how many real
+stale-fact bugs this exact subject produced today, see
+`memory/plan-targets-system-2026-11-02.md`'s "Lock Week" correction -- an explicit statement that
+neither grid has a lock/override mechanic, with a pointer to the real one (Test Kitchen →
+Projections / the `locked_projections` article). Covered by
+`dispatch-kb-targets-editor-2026-11-03.test.js` (2 tests, mounting the real `KnowledgeBasePanel`).
