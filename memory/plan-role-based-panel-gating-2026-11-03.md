@@ -1,0 +1,221 @@
+# Draft: role-based panel gating, grounded in real GM/OM/Supervisor routines
+
+**Status: DRAFT ONLY — not yet applied to live `org_roles` config.** This is a recommendation for
+the owner to review and approve/edit before anything in Settings → Roles changes for a real,
+currently-working GM/Supervisor/OM. See "How to apply" at the bottom.
+
+**Source / provenance:** three PDFs the owner uploaded this session — "General Manager Routines
+2022," "Operations Mgr. Routines 2022," "Supervisor Routines 2022," dated 1/20/2022, documenting
+the daily/weekly/monthly job routines at **Murphy Family Restaurants**, a prior multi-unit McDonald's
+operator the owner worked for before Meridian. Logged here verbatim-in-substance because the
+uploaded files themselves live outside this repo (session scratch storage) and will not survive
+session end — this file is now the only durable copy. Per this repo's own standing rule
+("Performance reviews: do not hard-code org names"), that company's name is not to be repeated
+in any shipped code/output — it appears here once, for provenance, and nowhere else in this file
+or in any code this plan leads to.
+
+**Task:** #77 in this session's tracker. Triggered by the owner's own framing: "study and create
+a draft or plan of what panels should be gated to each role to best assist them in performing
+their job duties. Use the hierarchy in app where needed."
+
+---
+
+## 1. Mechanism this plugs into
+
+Meridian already has the exact mechanism this plan needs, built this session under task #64
+(owner request 2026-11-02, "role-based panel active/inactive toggles"):
+
+- **`src/engine/permissions.js`'s `isPanelEnabledForRole(panelId, roleId, roles)`** — reads an
+  **opt-OUT** array, `disabledPanels`, on a role object (same `org_config`/`org_roles` JSON blob
+  the Settings → Roles tab already persists — no new table, no schema change). A panel is visible
+  unless its id is named in that role's `disabledPanels`. Level-1 roles (`admin`, `owner`) always
+  bypass it.
+- This is **finer-grained** than the existing `PERMISSION_GROUPS`/`hasPermission` system
+  (`analytics.store`, `analytics.district`, etc.) — most panels share one perm key with several
+  siblings, so toggling a permission off hides a whole group, not one panel. `disabledPanels` lets
+  one specific panel be turned off for one specific role without touching its perm key or any
+  sibling panel.
+- **Important: a lot of this plan is already handled by the existing perm-key defaults** — see
+  §3's "already excluded" notes per role. `disabledPanels` is only needed for panels that pass the
+  coarse perm-key gate but still don't belong in that role's day-to-day nav, per their documented
+  routine.
+
+To apply this plan: edit the relevant role's `disabledPanels` array in Settings → Roles (admin.js's
+RolesTab), or seed `DEFAULT_ROLES` in `src/engine/permissions.js` directly for a built-in role.
+Both write to the same place.
+
+---
+
+## 2. Role-ladder mapping (routine role → Meridian `profiles.role` id)
+
+| Routine doc | Meridian role id | Scope (per CLAUDE.md's RBAC table) |
+|---|---|---|
+| General Manager | `gm` | Own store only |
+| Supervisor | `area_supervisor` | Patch-level (subset of stores) |
+| Operations Mgr. | `om` | — (between Supervisor and DO; "Review 11am Labor Report," "Supervisor Calendars due to Operation managers," multi-patch span) |
+| *(not in source docs — extended by hierarchy, per the owner's own "use the hierarchy in app where needed")* | `do`, `vp` | District-level / multi-district — broader than OM, not covered by a routines doc here. Recommendation below reasons from the existing scope definition only, not a documented routine. |
+| *(not in source docs)* | `sm_am_dm` | Bottom rung, one store, narrower than GM — the routines reference this tier only as attendees/subjects of a GM's or Supervisor's routine ("Monthly Restaurant Development / Results Day w/ DM's & Shift Managers," "Shift Verifications on new managers / opportunity shift runners"), never its own job description. Recommendation below is extrapolated downward from GM's, not sourced from a dedicated SM/AM/DM routines doc. |
+| *(not in source docs)* | `manager` | Pre-existing/default role, new-signup default — treated as a GM-equivalent baseline for this plan (closest existing routine), since nothing in the three docs or CLAUDE.md distinguishes its intended duties from `gm`'s. |
+
+---
+
+## 3. What each routine actually asks for, cross-walked to real Meridian panels
+
+Panel ids below are `panel-registry.js` ids (`PANELS` array), current as of this session. "Already
+excluded" means the role's existing `ROLE_PERMISSION_TEMPLATES` entry already hides it via a perm
+key — no `disabledPanels` entry is needed to achieve that; listed so the two layers aren't confused.
+
+### GM (`gm`) — own store, full-spectrum daily operator
+
+The GM routine is the most comprehensive of the three: it touches nearly every operational lever
+at the store level (food safety, cash, labor, food cost, customer complaints, equipment, PACE,
+performance reviews, scheduling). **Already excluded by `GM_PERMS`** (no `disabledPanels` entry
+needed): every `analytics.district`-gated panel (`above-store`, `operator-summary`, `top-bottom`,
+`trend-report`, `opportunity-dollars`), every `analytics.forecasting`-gated panel (`proj`, `pvsa`,
+`model-assign`, `dicompare`, `dialedin`, `lfz-gap`, `fcst-ref`, `forecast-audit`,
+`forecast-reports`, `fcst-accuracy`, `lifelenz-bridge`), `analytics.ai` (`aiscan`, `why-engine`),
+`payroll.view` (`pay-rate-history`), `settings.view` (`settings`, `panel-manager`),
+`security.auditLog` (`access-log`), `users.manage.*` (nothing panel-gated on this yet).
+
+**Direct matches — keep visible, these are literally the routine (no change needed):**
+
+| Routine line | Panel(s) |
+|---|---|
+| Previous Day Operations Report Review, "monitor sales, labor, service time" | Morning Brief / Daily Brief (`morning-brief`), the default dashboard |
+| Food Cost Review (QCR, Stat, Yield, Ending Inventory, Transfer Report), troubleshoot stat loss | `fob-analysis`, `fob-eom`, `eom-dashboard`, `count-cycle` |
+| Top 3-5 item daily inventory, waste posted correctly | `inventory`, `fob-analysis` |
+| Time Punch Review, OT monitoring | `crew-schedule` (now includes the Punches tab) |
+| Crew schedule review, Labor Analysis Report (projected labor %, peak hours, fixed labor guide) | `sched-hub`, `labor-analysis` (hub-tab) |
+| Op supply level / order / budget | `pace-target`, `monthly-proj` — Op Supply is a real target field (`tOpSupply`) already in the Pace/Projections rollup |
+| Validate safe, cashier tracking log, Safe/Cash Audits, Security Check | `security` |
+| Respond to Customer Complaints, complaint log | `customer-complaints` |
+| Check all equipment, fix-it list | `equipment-results`; arguably `equipment-layout` too (single-store floor plan tool, still test-kitchen) |
+| Performance Reviews (crew & manager) scheduled | `perf-reviews` |
+| Results to target: service times, OSAT and Complaints | `dt-sos`, `smg-voice` |
+| **PACE Action Plan** (explicitly named every month) | `visit-readiness` — this is a direct, strong match; Visit Readiness was literally built for PACE/CFV/RGRV/EcoSure readiness |
+| Graded visits / EcoSure contact | `graded-visits` |
+| SimpleThink fix-it-list / tech-needs submission | `task-queue` (closest existing analog — ticket/request queue) |
+| Food safety / checklist items | `checklist-fill`, `forms-completion`, `forms-print`, `forms-library`, `forms-reviews` |
+| Store One-Pager (single-store daily/weekly recap) | `one-pager` |
+| Weekly Count Status (part of the inventory cadence family) | `weekly-count-status` |
+
+**Candidates to add to `gm.disabledPanels`** — panels that pass the `analytics.store` gate (so
+they're visible today) but are not part of the GM's documented job, and read as analytical/
+strategic tooling aimed at a multi-store reviewer rather than single-store execution:
+
+| Panel id | Why it's a candidate to hide for GM |
+|---|---|
+| `pricing-engine` | Menu-price/margin modeling across items — a pricing/strategy tool, not in the GM routine at all (GM validates promo entry, doesn't model price-change ROI) |
+| `promo-roi` | ROI *modeling* for promos/discounts — distinct from "Promo's validated" (operational entry-checking, which stays visible via `fob-analysis`/Controls). Modeling reads as a Supervisor/OM-level analytical tool. |
+| `loc-intel` (Market Intelligence / weather) | Not referenced anywhere in the GM routine |
+| `trends` (Trend Explorer), `signals` (Signals/Scanner) | Deep correlation/signal-discovery tooling — the GM routine's data consumption is "review the report, act," not "run a correlation scan" |
+| `ranking` (Leaderboards) | Cross-store comparison — mildly motivating but not a GM duty; arguably belongs at Supervisor+ where patch-wide comparison is the actual job |
+| `conversion-efficiency`, `oil-efficiency` | Corporate Owner/Operator program tracking reports — these read as OM/DO/owner-level compliance tracking, not a line in the GM's own routine |
+| The six new Reports Hub deep-dive reports (`weather-impact`, `price-change-impact`, `item-velocity`, `channel-mix`, `labor-opportunity-cost`, `cash-variance-pattern`, `controls-food-cost-link`, `fob-reference-table`, `loss-prevention`, `custom-reports`) | None of these are named in the GM routine; they're Reports-Hub-era (Oct 2026) analytical deep-dives built for a multi-store reviewer diagnosing patterns, not a GM's daily/weekly checklist. Keeping the small set of direct-match panels above and hiding this whole newer analytical layer keeps a GM's nav close to their actual routine instead of ~15 extra report links they never open. |
+
+**Gaps found (not a panel-gating question, just worth noting):** the GM routine references several
+things Meridian has no panel for at all — Deposit Validation (Loomis vs. ISP), Green Book/Minor
+Book review, truck-order posting/credits with Martin Brower, McHire applications, payroll release.
+These are either external-system or physical-paperwork items outside Meridian's current scope —
+listed here for completeness, not proposed as new build work.
+
+### Supervisor (`area_supervisor`) — patch-level, GM's direct reviewer
+
+**Already excluded by `SUPERVISOR_PERMS`:** `analytics.forecasting` (same forecasting-hub list as
+GM above), `analytics.ai`, `settings.view`, `payroll.view`, `security.auditLog`,
+`users.manage.all`. **Already INCLUDED beyond GM** (via `analytics.district:true`): `above-store`,
+`operator-summary`, `top-bottom`, `trend-report`, `opportunity-dollars` — correct, matches "Monthly
+Patch Meeting," "review previous weeks," cross-store/patch comparison being the actual job.
+
+**Direct matches** — everything in the GM table above, PLUS patch-wide versions of the same
+things (the Supervisor routine is explicitly the GM routine's reviewer: "troubleshoot the weekly
+MTD Results w/ General Managers," "Supervisor should be working shoulder to shoulder w/
+restaurant w/ most opportunity," "Review Labor Analysis Report," "Review PACE Action Plan").
+Notably the Supervisor routine explicitly says **"Sales/Guest Count Projections approved by
+Supervisor before generating schedule"** — confirms `pace-target`/`monthly-proj`/`unified-targets`
+(all `analytics.store`-gated, already visible) are correctly in scope; it does NOT ask for
+forecast-model tuning (`proj`/`pvsa`/`model-assign`), so those staying hidden via
+`analytics.forecasting:false` is correct, not a gap.
+
+**Candidates to add to `area_supervisor.disabledPanels`:** none of the GM-level hide candidates
+apply here — a Supervisor's whole job is cross-store comparison and diagnosis, so `pricing-engine`,
+`promo-roi`, `trends`, `signals`, `ranking`, the Reports Hub deep-dives, `conversion-efficiency`,
+`oil-efficiency` are all plausibly real Supervisor tools (reconciling food cost/promo/pricing
+patterns across their patch is squarely "troubleshoot the weekly MTD Results"-shaped work). **No
+hide recommendations for this role** — the existing perm-key defaults already look right against
+the documented routine.
+
+### OM (`om`) — multi-patch, Supervisor's reviewer
+
+**Already identical to `SUPERVISOR_PERMS` plus `analytics.integrity:true`** (`OM_PERMS =
+{...SUPERVISOR_PERMS, 'analytics.integrity': true}`) — i.e. OM already inherits every panel a
+Supervisor sees, plus `analytics.integrity`-gated data-audit tooling. The OM routine confirms this
+is the right shape: "Review Operations report," "Review Headcount Report from Office," "Review
+Inventory Control Report from Office," "Review Labor Scheduling Report from Office" — all
+office/aggregate-report consumption, matching `analytics.district` scope. "Restaurant Visits" and
+"Scheduled Restaurant Visits" confirm `graded-visits`/`visit-readiness` relevance continues at
+this tier. "MB SYNC report," "Watch list," "Customer Complaint Recovery follow-up" all map to
+existing panels already visible at this tier.
+
+**No hide recommendations for this role either** — same reasoning as Supervisor: the OM routine
+is explicitly a reviewer/oversight role across a wider span, so the broader analytical surface is
+appropriate, not clutter.
+
+### DO / VP (`do`, `vp`) — not covered by a source routines doc; hierarchy-extended only
+
+No routines doc exists for these tiers in this batch. Per the owner's own instruction to "use the
+hierarchy in app where needed": `DO_PERMS`/`VP_PERMS` already sit one and two rungs above OM with
+a correspondingly broader perm set (`do` adds `payroll.view:true`; both already carry
+`analytics.district`/`analytics.forecasting`/full `security.view`). Nothing in the GM/Supervisor/
+OM routines suggests narrowing either tier further — if anything, a DO/VP needs the SAME or MORE
+surface than OM, not less. **No hide recommendations for `do` or `vp`** without a dedicated
+routines reference for those tiers; flagging this as a real gap if the owner has (or can get) a
+DO/VP routines doc from the same source, which would let this plan be completed properly rather
+than guessed at.
+
+### SM / AM / DM (`sm_am_dm`) — bottom rung, one store, narrower than GM
+
+Not its own documented routine either, but the ladder's logic plus `SM_AM_DM_PERMS`'s already-
+narrower defaults (`reviews.create:false`, `reviews.approve:false`, `data.upload:false`,
+`users.manage.lower:false`) point the same direction as GM's hide list, just further: a shift-
+level manager executes a shift, they don't run food-cost reconciliation or security audits.
+**Candidates to add to `sm_am_dm.disabledPanels`** — everything recommended hidden for `gm` above,
+PLUS (since this tier is explicitly shift-execution, not store-level reconciliation):
+
+| Panel id | Why |
+|---|---|
+| `fob-analysis`, `fob-eom`, `eom-dashboard`, `count-cycle`, `weekly-count-status` | Food cost reconciliation is a GM-and-up duty in every one of these routines; an SM/AM/DM runs a shift, not the monthly QCR |
+| `visit-readiness` | PACE Action Plan ownership sits with the GM ("Review PACE Action Plan – Update as needed" is a GM monthly routine item, never delegated down in any of the three docs) |
+| `security` | Safe/cash audits are a GM/Supervisor monthly routine, not a shift-level duty |
+| `perf-reviews` | `reviews.create:false` already blocks the write side; the panel itself is still visible today purely because `reviews.view:true` — reasonable to also keep it reachable (they can see their OWN review, which the perm comment for this role already documents as the intended scope), so **not** recommended for `disabledPanels` despite the narrower write permissions — flagging the distinction rather than over-hiding. |
+
+This tier's list is the least confident one in this plan — it's extrapolated two layers down from
+a GM routine, not sourced from an SM/AM/DM-specific document. Treat it as a starting point to
+adjust once real usage is observed, not a final answer.
+
+---
+
+## 4. Summary table — recommended `disabledPanels` to add per role
+
+| Role | Recommended additions to `disabledPanels` |
+|---|---|
+| `gm` | `pricing-engine`, `promo-roi`, `loc-intel`, `trends`, `signals`, `ranking`, `conversion-efficiency`, `oil-efficiency`, `weather-impact`, `price-change-impact`, `item-velocity`, `channel-mix`, `labor-opportunity-cost`, `cash-variance-pattern`, `controls-food-cost-link`, `fob-reference-table`, `loss-prevention`, `custom-reports` |
+| `area_supervisor` | none — existing perm-key defaults already match the documented routine |
+| `om` | none — existing perm-key defaults already match the documented routine |
+| `do`, `vp` | none proposed — no source routine to ground a recommendation; current (broader-than-OM) defaults look directionally correct already |
+| `sm_am_dm` | everything in the `gm` list above, plus `fob-analysis`, `fob-eom`, `eom-dashboard`, `count-cycle`, `weekly-count-status`, `visit-readiness`, `security` |
+| `manager` | treated as GM-equivalent in this plan; same list as `gm` if the owner wants it applied here too |
+
+`admin`/`owner` are level-1 and always bypass `disabledPanels` — nothing to configure there.
+
+---
+
+## 5. How to apply (when the owner approves)
+
+Nothing above has been written to `DEFAULT_ROLES` or any live `org_roles` config — this is a plan,
+not a change. To apply a role's recommended list: either (a) edit that role in Settings → Roles in
+the running app (writes straight to `org_config`, takes effect immediately, easiest to adjust/
+revert live), or (b) have a future session seed `disabledPanels` directly on the matching entry in
+`DEFAULT_ROLES` (`src/engine/permissions.js`) if the owner wants it as the shipped default for
+every org, not just a live per-org override. Recommend starting with (a) on this org only, watching
+whether any hidden panel turns out to still be needed, before considering (b).
