@@ -11,7 +11,7 @@
 // add to App.js's startup ds — same reasoning dt-speedofservice.js's loadDtHistory
 // already uses) rather than joining the global pipeline.
 import * as React from 'react';
-import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours } from '../lib/supabase.js';
+import { loadDailyActivityRange, loadStoreLaborConfig, loadVlhStoreConfigs, loadVlhGuideHours, loadDaypartTpphTargets, saveDaypartTpphTarget } from '../lib/supabase.js';
 import {
   DAYPARTS, allocationDistrict, allocationByStoreDaypart, overnightOpenness, overnightExcessByStore,
 } from '../engine/labor-standard.js';
@@ -109,7 +109,45 @@ function GuideDetailTable({ detail }) {
         td(r.rowsMissingGuide ? r.rowsMissingGuide.toLocaleString() : '—', 'right', r.rowsMissingGuide ? '#f59e0b' : 'var(--text3)'))))));
 }
 
-function PerStoreTable({ byStore, daypart }) {
+// TPPH-vs-target delta color: symmetric like guideColor above isn't right here (lower TPPH
+// is unambiguously worse, not "wrong either direction") -- green at/above target, amber a
+// little under, red well under.
+const tpphTargetColor = (actual, target) => {
+  if (actual == null || target == null || target <= 0) return 'var(--text3)';
+  const pct = (actual - target) / target;
+  return pct >= 0 ? '#10b981' : pct >= -0.1 ? '#f59e0b' : '#ef4444';
+};
+
+// Owner-decided 2026-11-02 (Targets system item #2): per-store, per-daypart TPPH target,
+// click-to-edit inline, same spirit as this app's other inline-edit cells. `targets` is
+// `{ [loc]: { [daypart]: targetTpph } }` (loadDaypartTpphTargets()'s own shape); `onSave`
+// persists one cell via saveDaypartTpphTarget and is expected to update local state itself.
+function TargetTpphCell({ loc, daypart, value, onSave }) {
+  const { useState } = React;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value == null ? '' : String(value));
+  if (!editing) {
+    return h('td', { style: { textAlign: 'right', padding: '5px 8px', fontSize: 11, fontFamily: 'var(--mono)', cursor: 'pointer' },
+      title: 'Click to set a TPPH target for this store/daypart',
+      onClick: () => { setDraft(value == null ? '' : String(value)); setEditing(true); } },
+      value == null ? h('span', { style: { color: 'var(--text3)' } }, '— set —') : value.toFixed(2));
+  }
+  const commit = () => {
+    const v = parseFloat(draft);
+    setEditing(false);
+    if (!isNaN(v) && v > 0) onSave(loc, daypart, v);
+  };
+  return h('td', { style: { textAlign: 'right', padding: '3px 6px' } },
+    h('input', {
+      type: 'number', step: '0.1', min: '0.1', autoFocus: true, value: draft,
+      onChange: e => setDraft(e.target.value),
+      onBlur: commit,
+      onKeyDown: e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setEditing(false); },
+      style: { width: 56, fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right', background: 'var(--surf2)', border: '1px solid var(--amber)', borderRadius: 4, padding: '2px 4px' },
+    }));
+}
+
+function PerStoreTable({ byStore, daypart, tpphTargets, onSaveTarget }) {
   const rows = Object.entries(byStore)
     .map(([loc, dps]) => ({ loc, ...(dps[daypart] || {}) }))
     .filter(r => r.cars != null)
@@ -117,14 +155,22 @@ function PerStoreTable({ byStore, daypart }) {
   if (!rows.length) return h('div', { style: { padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 11 } }, 'No data for this daypart in the loaded window.');
   return h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
     h('thead', null, h('tr', null,
-      th('Store', 'left'), th('Cars'), th('Gap'), th('Sched vs Guide'), th('Punched vs Sched'), th('Punched vs Guide'))),
-    h('tbody', null, rows.map(r => h('tr', { key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
-      td(sName(r.loc), 'left', 'var(--text)', false),
-      td((r.cars || 0).toLocaleString()),
-      td(fmtSignedHrs(r.gapHrs), 'right', gapColor(r.gapHrs)),
-      td(fmtRatio(r.scheduledVsGuide), 'right', guideColor(r.scheduledVsGuide)),
-      td(fmtRatio(r.punchedVsScheduled), 'right', guideColor(r.punchedVsScheduled)),
-      td(fmtRatio(r.punchedVsGuide), 'right', guideColor(r.punchedVsGuide))))));
+      th('Store', 'left'), th('Cars'), th('Gap'), th('Sched vs Guide'), th('Punched vs Sched'), th('Punched vs Guide'),
+      th('TPPH'), th('Target TPPH'), th('vs Target'))),
+    h('tbody', null, rows.map(r => {
+      const target = (tpphTargets[r.loc] || {})[daypart];
+      const delta = r.tpph != null && target != null ? r.tpph - target : null;
+      return h('tr', { key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+        td(sName(r.loc), 'left', 'var(--text)', false),
+        td((r.cars || 0).toLocaleString()),
+        td(fmtSignedHrs(r.gapHrs), 'right', gapColor(r.gapHrs)),
+        td(fmtRatio(r.scheduledVsGuide), 'right', guideColor(r.scheduledVsGuide)),
+        td(fmtRatio(r.punchedVsScheduled), 'right', guideColor(r.punchedVsScheduled)),
+        td(fmtRatio(r.punchedVsGuide), 'right', guideColor(r.punchedVsGuide)),
+        td(fmtTpph(r.tpph), 'right', tpphTargetColor(r.tpph, target)),
+        h(TargetTpphCell, { key: 'tgt-' + r.loc, loc: r.loc, daypart, value: target, onSave: onSaveTarget }),
+        td(delta == null ? '—' : (delta >= 0 ? '+' : '') + delta.toFixed(2), 'right', tpphTargetColor(r.tpph, target)));
+    })));
 }
 
 // Overnight: classify FIRST, then read the number that classification allows — mixing a
@@ -181,18 +227,28 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
   const [vlhGuideRows, setVlhGuideRows] = useState([]);
   const [daypart, setDaypart] = useState('Breakfast');
   const [tab, setTab] = useState('district'); // district | store | overnight | guide
+  const [tpphTargets, setTpphTargets] = useState({}); // { [loc]: { [daypart]: targetTpph } }
 
   useEffect(() => {
     setLoading(true);
     const { startDate, endDate } = dayKeyRange(DAYS_BACK);
-    Promise.all([loadDailyActivityRange(startDate, endDate), loadStoreLaborConfig(), loadVlhStoreConfigs(), loadVlhGuideHours()])
-      .then(([activityRows, cfg, vlhCfg, vlhGuide]) => {
+    Promise.all([loadDailyActivityRange(startDate, endDate), loadStoreLaborConfig(), loadVlhStoreConfigs(), loadVlhGuideHours(), loadDaypartTpphTargets()])
+      .then(([activityRows, cfg, vlhCfg, vlhGuide, tpphTgts]) => {
         setRows(activityRows || []); setStoreLaborConfig(cfg || {});
         setVlhStoreConfigs(vlhCfg || {}); setVlhGuideRows(vlhGuide || []);
+        setTpphTargets(tpphTgts || {});
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // Optimistic local update + fire-and-forget persist, same pattern RolesTab's togglePanel
+  // uses -- the UI reflects the edit immediately, a failed save is logged (saveDaypartTpphTarget
+  // already warns to console) rather than blocking the input.
+  const handleSaveTarget = (loc, dp, value) => {
+    setTpphTargets(prev => ({ ...prev, [loc]: { ...(prev[loc] || {}), [dp]: value } }));
+    saveDaypartTpphTarget(loc, dp, value).catch(() => {});
+  };
 
   // Perf instrumentation (backlog item G, gap 2) -- rows is up to 90 days x 27 stores x 24
   // hour_slots (~58k rows), and these 4 recompute on every `rows`/`storeLaborConfig` change.
@@ -229,7 +285,7 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
               border: '1px solid ' + (daypart === dp ? 'var(--amber)' : 'var(--bdr)'),
               background: daypart === dp ? 'rgba(245,188,0,.14)' : 'var(--surf2)',
               color: daypart === dp ? 'var(--amber)' : 'var(--text2)' } }, dp))),
-        h(PerStoreTable, { byStore, daypart }))
+        h(PerStoreTable, { byStore, daypart, tpphTargets, onSaveTarget: handleSaveTarget }))
     : tab === 'overnight' ? h(OvernightTable, { byStore, openness, excessByStore, storeLaborConfig })
     : h(GuideDetailTable, { detail: guideDetail });
 

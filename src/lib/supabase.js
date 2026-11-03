@@ -3978,6 +3978,35 @@ export async function saveWeeklyCountDayOverrides(overridesByLoc = {}) {
   return { saved: true, count: rows.length };
 }
 
+// ── Daypart TPPH targets (Targets system item #2, owner-decided 2026-11-02) ──────────────────
+// Per-store, per-daypart TPPH target — compared against the already-computed actual daypart
+// TPPH (labor-standard.js's allocationByStoreDaypart()/allocationDistrict(), wired into
+// labor-allocation.js). See schema-daypart-tpph-targets.sql's own header for why this is a
+// dedicated table rather than a target_overrides row or an org_config blob entry. Returns
+// `{ [loc]: { [daypart]: targetTpph } }`, degrading to {} like every other guarded read in this
+// file if the table doesn't exist yet (pending owner SQL-editor run) or Supabase isn't configured.
+export async function loadDaypartTpphTargets() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('daypart_tpph_targets').select('loc,daypart,target_tpph');
+  if (error) { console.warn('[supabase] loadDaypartTpphTargets:', error.message); return {}; }
+  const out = {};
+  for (const r of (data || [])) {
+    if (!out[r.loc]) out[r.loc] = {};
+    out[r.loc][r.daypart] = r.target_tpph;
+  }
+  return out;
+}
+
+// Single (loc, daypart, value) upsert -- matches the inline-edit-one-cell UI pattern (no bulk
+// save needed here, unlike saveWeeklyCountDayOverrides' whole-file-reimport case).
+export async function saveDaypartTpphTarget(loc, daypart, targetTpph) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const { error } = await supabase.from('daypart_tpph_targets')
+    .upsert({ loc, daypart, target_tpph: targetTpph, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id,loc,daypart' });
+  if (error) { console.warn('[supabase] saveDaypartTpphTarget:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
 // ── Email digest subscriptions (owner req, 2026-09-01) ────────────────────────────────────────
 // Self-serve per-user opt-in to the scheduled digest emails the system already sends (EOM
 // Digest, Weekly Cycle Digest — see src/engine/email-digest-catalog.js's EMAIL_DIGEST_CATALOG).

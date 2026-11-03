@@ -331,7 +331,7 @@ import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTarge
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
-import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole } from '../engine/permissions.js';
+import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole, getRoleById } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 // RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
@@ -753,6 +753,85 @@ function _logMfEventsWrite(label, obj) {
 // the same underlying components (EventCalendar/CalendarManagerPanel/EventImpactPanel, all
 // unchanged) under one route:true shell with five pills instead of a two-mode toggle. See that
 // file's own header for the exact scope of this pass.
+
+// ── Workflow Guide content (owner request 2026-11-02: "role-based ... Getting Started tool",
+// decided as "different content per role") ──────────────────────────────────────────────────
+// `maxLevel` is the LEAST senior role level (DEFAULT_ROLES' "lower = more authority" scale,
+// owner/admin=1 ... sm_am_dm=7) that still sees this section; omitted = every role sees it. The
+// WEEKLY/MONTHLY district-wide lock cadence and the dev/automation overview are OM-and-above
+// (level<=4) workflows a GM/AS/SM-AM-DM doesn't run; DAILY and the feature reference apply at
+// every level, so they carry no maxLevel at all.
+const WORKFLOW_GUIDE_SECTIONS = [
+  {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
+    {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
+    {t:'2. Check the Home Command Center',d:'Review At-a-Glance signal cards for district-level flags. Check the Projection Pulse for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
+    {t:'3. Review Priority Brief',d:'Click 🎯 Priority Brief for a tiered AI summary — Critical / Watch / Performance stores with specific coaching directives. Use this as your morning standup guide.'},
+    {t:'4. Spot-check a store',d:'Click any store in District View → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
+  ]},
+  {day:'WEEKLY (Every Wednesday — start of work week)',color:'#f59e0b',maxLevel:4,items:[
+    {t:'1. Lock the weekly projection',d:'Open Planning → Monthly tab (or ▦ Projections in ⚗ Test Kitchen for the full grid view). Review stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
+    {t:'2. Run Projection vs Actuals report',d:'◑ Proj vs Actuals (⚗ Test Kitchen) — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in DI Calibration.'},
+    {t:'3. Check DI Calibration for drifting stores',d:'⚗ Test Kitchen → ◎ DI Calibration (per-store). ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
+    {t:'4. Review Food Cost',d:'Open Food Cost from the sidebar (was "FOB Analysis"). Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
+    {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Letters to generate store-specific coaching letters for each manager.'},
+  ]},
+  {day:'MONTHLY (By the 15th of prior month)',color:'var(--crit)',maxLevel:4,items:[
+    {t:'1. Lock the monthly projection',d:'Open Planning → Monthly tab and set the period to Month (or the Test Kitchen Projections grid). Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
+    {t:'2. Calibrate all forecast models',d:'⚗ Test Kitchen → ◎ DI Calibration → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all stores.'},
+    {t:'3. Review channel mix',d:'Open 3PO Delivery → Overview tab (Channel Intel was folded into this panel). Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
+    {t:'4. Revenue review',d:'Open Revenue (Panel Manager → enable if hidden). District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
+    {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator group using the store groups or patch filter. Share with operators at monthly review meeting.'},
+  ]},
+  {day:'KEY FEATURES — Quick Reference',color:'#818cf8',items:[
+    {t:'Store KB',d:'Per-store operational notes and context tags. Use Quick Tags (single click) for common factors: GM in Training, Capacity Limited, Tourist Area, New Location, etc. Tags inform AI analysis, anomaly thresholds, and forecast warnings.'},
+    {t:'Shift Analysis tab',d:'Day-of-week ops metrics, channel mix heatmap, OEPE Revenue Opportunity, 3 Peaks × Labor Gap, and Competitive Impact. Click the nav pills at the top of the tab to scroll to each section. Load a 3 Peaks file to unlock peak-hour labor cross-reference.'},
+    {t:'Why Engine',d:'Explains WHY a metric moved. Select a store and metric, and the engine correlates the move against weather, labor, promo, DOW, and competitive signals. Surfaces the most likely root cause with confidence score. Enable from Panel Manager if not visible.'},
+    {t:'3PO Delivery (channel mix)',d:'Requires Operations Report (Sales sheet) to be loaded. Overview tab shows DT, Breakfast, MOP, Kiosk, and Delivery as % of total sales per store. Click a channel to see per-store ranking. Date range: 7/14/28/60 days.'},
+    {t:'Food Cost',d:'Food Over Base analysis with Root-Cause Priority Matrix. Ranked by dollar impact per (store, component) — location appears first, then component. Expand any row for per-store breakdown. Use Print button for PDF export.'},
+    {t:'Competitive Impact',d:'Tag competition events in the Calendar (competitor opening, promotion, closure) using the Competition event type. Shift Analysis → Competitive Impact then shows sales impact vs DOW baseline for those dates.'},
+  ]},
+  {day:'AS NEEDED — Automation Candidates',color:'#94a3b8',maxLevel:4,items:[
+    {t:'Auto-actions currently handled',d:'• Data loading: manual (drag-drop weekly) · • Calibration: auto when 10+ new points · • Signals: refresh on load · • Deadline alerts: live calculated · • Session restore: opt-in banner on return visit'},
+    {t:'Data freshness targets',d:'Operations Report: weekly minimum, daily for active projection periods · Labor Analysis: with every Operations Report · Register Audit: weekly · 3 Peaks: monthly · OpsTargets: when targets change'},
+    {t:'Future automation candidates',d:'• Weekly brief email Wednesdays · • Auto-lock reminder Sundays (T-10 days) · • Monthly alert on the 10th · • MAPE alert when accuracy drops >3 points week-over-week'},
+  ]},
+];
+
+// Exported (same pattern as PanelManagerPanel/TroubleshootingPanel just below in this file) so
+// it's directly testable without mounting the whole App() root -- reverting its role-filtering
+// wiring has to fail a real render test, not just a duplicated-logic unit test (CLAUDE.md's
+// "would this verification still pass if reverted" rule).
+export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour }) {
+  const myLevel = getRoleById(userRole, orgRoles)?.level ?? 1;
+  const sections = WORKFLOW_GUIDE_SECTIONS.filter(s => s.maxLevel == null || myLevel <= s.maxLevel);
+  return h(ModalShell,{
+    title:'📖 Meridian — Workflow Guide',
+    subtitle:sections.length!==WORKFLOW_GUIDE_SECTIONS.length
+      ?`Showing ${sections.length} of ${WORKFLOW_GUIDE_SECTIONS.length} sections — tailored to your role`:undefined,
+    onClose,maxWidth:800,zIndex:Z.nested,
+    bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
+    headerExtra:btn({
+      onClick:onStartTour,
+      style:{padding:'5px 12px',fontSize:11,fontWeight:700,
+        background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
+    },'▶ Start Tour')
+  },
+        ...sections.map((section,si)=>div({key:si,style:{marginBottom:20}},
+          div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:10,
+            padding:'6px 10px',background:section.color+'15',borderRadius:'var(--r)',
+            borderLeft:'3px solid '+section.color}},
+            div({style:{fontWeight:800,fontSize:'12px',color:section.color}},section.day)
+          ),
+          div({style:{paddingLeft:12}},
+            ...section.items.map((item,ii)=>div({key:ii,style:{marginBottom:12}},
+              div({style:{fontWeight:700,fontSize:'11px',color:'var(--text)',marginBottom:3}},
+                item.t),
+              div({style:{color:'var(--text2)',fontSize:'10px',lineHeight:1.6,
+                whiteSpace:'pre-line'}},item.d)
+            ))
+          )
+        )));
+}
 
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
@@ -4274,66 +4353,11 @@ function App() {
     },
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showWorkflow&&h(ModalShell,{
-      title:'📖 Meridian — Workflow Guide',
-      onClose:()=>setShowWorkflow(false),maxWidth:800,zIndex:Z.nested,
-      bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
-      headerExtra:btn({
-        onClick:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
-        style:{padding:'5px 12px',fontSize:11,fontWeight:700,
-          background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
-      },'▶ Start Tour')
-    },
-          ...[
-            {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
-              {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
-              {t:'2. Check the Home Command Center',d:'Review At-a-Glance signal cards for district-level flags. Check the Projection Pulse for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
-              {t:'3. Review Priority Brief',d:'Click 🎯 Priority Brief for a tiered AI summary — Critical / Watch / Performance stores with specific coaching directives. Use this as your morning standup guide.'},
-              {t:'4. Spot-check a store',d:'Click any store in District View → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
-            ]},
-            {day:'WEEKLY (Every Wednesday — start of work week)',color:'#f59e0b',items:[
-              {t:'1. Lock the weekly projection',d:'Open Planning → Monthly tab (or ▦ Projections in ⚗ Test Kitchen for the full grid view). Review stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
-              {t:'2. Run Projection vs Actuals report',d:'◑ Proj vs Actuals (⚗ Test Kitchen) — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in DI Calibration.'},
-              {t:'3. Check DI Calibration for drifting stores',d:'⚗ Test Kitchen → ◎ DI Calibration (per-store). ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
-              {t:'4. Review Food Cost',d:'Open Food Cost from the sidebar (was "FOB Analysis"). Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
-              {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Letters to generate store-specific coaching letters for each manager.'},
-            ]},
-            {day:'MONTHLY (By the 15th of prior month)',color:'var(--crit)',items:[
-              {t:'1. Lock the monthly projection',d:'Open Planning → Monthly tab and set the period to Month (or the Test Kitchen Projections grid). Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
-              {t:'2. Calibrate all forecast models',d:'⚗ Test Kitchen → ◎ DI Calibration → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all stores.'},
-              {t:'3. Review channel mix',d:'Open 3PO Delivery → Overview tab (Channel Intel was folded into this panel). Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
-              {t:'4. Revenue review',d:'Open Revenue (Panel Manager → enable if hidden). District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
-              {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator group using the store groups or patch filter. Share with operators at monthly review meeting.'},
-            ]},
-            {day:'KEY FEATURES — Quick Reference',color:'#818cf8',items:[
-              {t:'Store KB',d:'Per-store operational notes and context tags. Use Quick Tags (single click) for common factors: GM in Training, Capacity Limited, Tourist Area, New Location, etc. Tags inform AI analysis, anomaly thresholds, and forecast warnings.'},
-              {t:'Shift Analysis tab',d:'Day-of-week ops metrics, channel mix heatmap, OEPE Revenue Opportunity, 3 Peaks × Labor Gap, and Competitive Impact. Click the nav pills at the top of the tab to scroll to each section. Load a 3 Peaks file to unlock peak-hour labor cross-reference.'},
-              {t:'Why Engine',d:'Explains WHY a metric moved. Select a store and metric, and the engine correlates the move against weather, labor, promo, DOW, and competitive signals. Surfaces the most likely root cause with confidence score. Enable from Panel Manager if not visible.'},
-              {t:'3PO Delivery (channel mix)',d:'Requires Operations Report (Sales sheet) to be loaded. Overview tab shows DT, Breakfast, MOP, Kiosk, and Delivery as % of total sales per store. Click a channel to see per-store ranking. Date range: 7/14/28/60 days.'},
-              {t:'Food Cost',d:'Food Over Base analysis with Root-Cause Priority Matrix. Ranked by dollar impact per (store, component) — location appears first, then component. Expand any row for per-store breakdown. Use Print button for PDF export.'},
-              {t:'Competitive Impact',d:'Tag competition events in the Calendar (competitor opening, promotion, closure) using the Competition event type. Shift Analysis → Competitive Impact then shows sales impact vs DOW baseline for those dates.'},
-            ]},
-            {day:'AS NEEDED — Automation Candidates',color:'#94a3b8',items:[
-              {t:'Auto-actions currently handled',d:'• Data loading: manual (drag-drop weekly) · • Calibration: auto when 10+ new points · • Signals: refresh on load · • Deadline alerts: live calculated · • Session restore: opt-in banner on return visit'},
-              {t:'Data freshness targets',d:'Operations Report: weekly minimum, daily for active projection periods · Labor Analysis: with every Operations Report · Register Audit: weekly · 3 Peaks: monthly · OpsTargets: when targets change'},
-              {t:'Future automation candidates',d:'• Weekly brief email Wednesdays · • Auto-lock reminder Sundays (T-10 days) · • Monthly alert on the 10th · • MAPE alert when accuracy drops >3 points week-over-week'},
-            ]},
-          ].map((section,si)=>div({key:si,style:{marginBottom:20}},
-            div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:10,
-              padding:'6px 10px',background:section.color+'15',borderRadius:'var(--r)',
-              borderLeft:'3px solid '+section.color}},
-              div({style:{fontWeight:800,fontSize:'12px',color:section.color}},section.day)
-            ),
-            div({style:{paddingLeft:12}},
-              ...section.items.map((item,ii)=>div({key:ii,style:{marginBottom:12}},
-                div({style:{fontWeight:700,fontSize:'11px',color:'var(--text)',marginBottom:3}},
-                  item.t),
-                div({style:{color:'var(--text2)',fontSize:'10px',lineHeight:1.6,
-                  whiteSpace:'pre-line'}},item.d)
-              ))
-            )
-          ))
-    ),
+    showWorkflow&&h(WorkflowGuidePanel,{
+      userRole,orgRoles,
+      onClose:()=>setShowWorkflow(false),
+      onStartTour:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
+    }),
     showTroubleshoot&&h(TroubleshootingPanel,{onClose:()=>setShowTroubleshoot(false)}),
     // showBrief — Dispatch #205: moved to the routePanel gate in the main content area
     // (wrapped directly in RoutePanelShell there; see routePanel==='brief' — LocationBrief had
