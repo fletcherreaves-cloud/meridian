@@ -122,6 +122,18 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // -- same "convenience, not data" tier as `collapsed`/`expandedGroup` above.
   const [deepDiveOpen,setDeepDiveOpen]=React.useState(false);
   const navStyle = settings?.navStyle==='classic' ? 'classic' : 'v2';
+  // Owner request 2026-11-02: "condense sidebar nav into expand/collapse sections." v2-only --
+  // classic stays the exact flat pre-2026-10-07 render forever (shell-nav-snapshot.test.js's own
+  // baseline), same scoping the Deep Dive collapsible header already uses. Default is OPEN (a
+  // section only collapses once a user clicks its header) so v2's default look doesn't change —
+  // this adds a capability, it doesn't hide anything on first load. Session-local, not persisted,
+  // same "convenience, not data" tier as deepDiveOpen/collapsed/expandedGroup above.
+  const [collapsedSections,setCollapsedSections]=React.useState(()=>new Set());
+  const toggleSection = (id) => setCollapsedSections(prev=>{
+    const next=new Set(prev);
+    next.has(id)?next.delete(id):next.add(id);
+    return next;
+  });
 
   // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
   // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second
@@ -251,9 +263,22 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     const panels = panelsForSection(sectionId, can);
     if (!panels.length) return null;
     const meta = SECTIONS.find(s => s.id === sectionId);
+    const items = panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id]));
+    // Classic stays the flat pre-2026-10-07 render (no header click needed, ever); v2's icon-rail
+    // mode (`collapsed`, the whole sidebar narrowed to 48px) also stays flat -- navLabel already
+    // renders no icon of its own, so a clickable header there would have nothing to show.
+    if (navStyle !== 'v2' || collapsed) return [navLabel(meta.label), ...items];
+    const isCollapsed = collapsedSections.has(sectionId);
     return [
-      navLabel(meta.label),
-      ...panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id])),
+      div({key:'sec-hdr-'+sectionId, onClick:()=>toggleSection(sectionId),
+        style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,
+          padding:'4px 14px 2px',marginTop:8,cursor:'pointer'}},
+        span({style:{fontSize:'7px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.7px',
+          color:'var(--text3)'}}, meta.label),
+        span({style:{fontSize:9,color:'var(--text3)',
+          transform:'rotate('+(isCollapsed?0:180)+'deg)',transition:'transform .15s'}},'▾')
+      ),
+      !isCollapsed && div({key:'sec-items-'+sectionId, style:{display:'flex',flexDirection:'column',gap:1}}, ...items),
     ];
   };
 
