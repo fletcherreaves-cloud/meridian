@@ -132,3 +132,55 @@ the discovery, not the fix, is the actual finding. Flagging it rather than fixin
 "DDL needs the owner to run it in the SQL editor" constraint, correcting it still requires the
 owner's own action to apply — better to decide as one deliberate pass (possibly regenerating all
 51 at once) than discover mid-edit that some of the 51 have one-off differences worth preserving.
+
+## ✅ FIX WRITTEN 2026-11-03 (owner-authorized "knock this off the list preemptively") —
+`supabase/schema-fix-tenant-id-hardcode-2026-11-03.sql`, awaiting the owner's run
+
+Re-grepped live rather than trusting this file's own prose list above (which it explicitly
+flagged as possibly stale): the real count is **60 files** referencing the literal in some form,
+not 51. Of the extra 9: all are one-time `UPDATE ... WHERE tenant_id = '<literal>'` data-fix
+scripts (`schema-security-rules-phase1*.sql`, `-cash004-authority.sql`, `-min-stdev.sql`,
+`-plain-language.sql`) that correctly targeted the only tenant that has ever existed and have
+already run — nothing to fix there, not part of the 51/60 count either way. `schema-multitenant-
+phase1.sql`/`schema.sql`'s hardcoded defaults on `profiles`/`org_config` are **deliberate**
+bootstrap behavior (phase2-rls.sql's own comment: "profiles + org_config are handled specially
+... KEEP their default") — both tables' REAL RLS policies already correctly call
+`current_tenant_id()`, confirmed by reading phase2-rls.sql directly, so there was nothing broken
+there despite the column default also containing the literal.
+
+**The real scope ended up being 46 tables + 2 PII-reveal functions**, not a flat 51 — several
+tables' policies had been patched more than once by LATER files (role fixes, perf fixes) after
+their original creation, so the fix had to target each policy's CURRENT live text, not its
+original-file text. Two same-day-committed-file ties were resolved by reading content, not by
+timestamp: `security_rules: admin/supervisor write`'s live version is
+`schema-security-findings-rls-perf-fix.sql`'s perf-wrapped `(select get_my_role())` form (not
+`schema-security-rules.sql`'s original, slower, stale-role-list form); `qsr_security_events:
+gated read` and `security_findings: gated read`'s live versions are
+`schema-security-gm-role-fix-2026-10-28.sql`'s (later same day than its sibling
+`-supervisor-role-fix-2026-10-28.sql`, confirmed via `git log`'s second-level timestamps, and
+that file's own header comment explicitly states which policies were "already corrected" vs
+"still broken" at the time it was written — cross-checked against this, not assumed).
+
+One table turned out to be a **worse** shape than the other 45, found only because this pass
+read every table's current policies rather than just swapping the known literal:
+`org_assignment_audit` (schema-org-assignment-audit.sql) has **no tenant_id check in its
+policies at all**, only a role check — today a non-issue (one tenant), but once a second tenant
+exists this is a genuine cross-tenant READ LEAK (any admin/area_supervisor from ANY tenant would
+see every tenant's audit rows), not just the write-side mistagging risk the other 45 tables have.
+Fixed in the same migration by adding `tenant_id = public.current_tenant_id()` to its existing
+read/insert policies, not just a literal swap.
+
+Also fixed in the same pass, same root cause, discovered while tracing
+`qsr_security_events`/`security_findings`'s policy history: `reveal_employee_identity()` and
+`reveal_employee_identities_bulk()` (the two PII-reveal RPCs, `schema-security-gm-role-fix-
+2026-10-28.sql`) declare `v_tenant uuid := '00000000-...'::uuid` in their function bodies — same
+hardcoded-literal anti-pattern, just inside PL/pgSQL instead of a column default or a policy
+clause. Fixed to `v_tenant uuid := public.current_tenant_id();`, everything else in both
+functions (role list, gm/manager branch, NULL-safe reject path) preserved exactly.
+
+**Still not run** — this is a new file for the owner to execute in the Supabase SQL editor, same
+as every other DDL change in this repo. Once run, re-verify live the same way the throwaway-
+second-tenant-profile test already proved the ~70-table phase2 sweep works (set a test profile's
+`tenant_id` to something else, confirm these 46 tables' policies correctly resolve via
+`current_tenant_id()` rather than the dead literal) — don't just assume the SQL ran clean from a
+lack of an error message.
