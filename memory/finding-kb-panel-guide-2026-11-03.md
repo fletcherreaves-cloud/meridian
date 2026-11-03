@@ -153,3 +153,15 @@ halves of the panel (link management + cross-store rollup), the real placement-z
 (Front Counter/Drive Thru/McCafé Cell/BDAP Cell/Dessert Cell/Production Area/Prep Area/Back of
 House), the real PQRG-settings tie-in, and explicitly that a zero-item store just hasn't been
 walked yet. 2 tests (`dispatch-kb-equipment-results-2026-11-03.test.js`).
+
+## Added later the same day: `data_manager_guide` (task #75)
+
+A fourth gap, and arguably the highest-traffic one found all day -- Data Manager
+(`DataManagerPanel`, `src/views/analytics.js`) is step 1 of the in-app Workflow Guide's DAILY
+cadence ("Load fresh data") and had zero KB coverage. Added `data_manager_guide` describing the
+real manual-upload-vs-on-demand-Sync split (verified against the real `SYNC_LABEL` map -- dar/
+ebos/fob/lifelenz/secevents -- and the AUTO-badge/staleness-dot rendering in `analytics.js`, not
+guessed), the per-source coverage table, and the standing "auto/emailed-first, freshest-wins"
+sourcing rule from CLAUDE.md's Dev Rules (manual uploads fill gaps, never override auto/emailed
+data). Also notes the "Clear ALL stored data" action as a last resort, not routine. 2 tests
+(`dispatch-kb-data-manager-2026-11-03.test.js`).
