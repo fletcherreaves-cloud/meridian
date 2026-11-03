@@ -1,8 +1,13 @@
 # Draft: role-based panel gating, grounded in real GM/OM/Supervisor routines
 
-**Status: DRAFT ONLY — not yet applied to live `org_roles` config.** This is a recommendation for
-the owner to review and approve/edit before anything in Settings → Roles changes for a real,
-currently-working GM/Supervisor/OM. See "How to apply" at the bottom.
+**Status: GM slice APPLIED (owner-approved 2026-11-03, v5.612).** `gm`'s 18-panel trim (§4) is
+now live — both `DEFAULT_ROLES` in `src/engine/permissions.js` (the shipped default) and the
+live org's already-persisted `org_config.org_roles` row (read-modify-write via the same key the
+Settings → Roles UI writes to, every other role and every other field on `gm` left untouched,
+verified by re-reading the row after the write). `area_supervisor`/`om`/`do`/`vp`/`sm_am_dm`/
+`manager` are all still DRAFT ONLY — nothing applied for them yet; see §4 for what (if anything)
+is recommended per role, and "How to apply" at the bottom for how a future slice gets shipped the
+same way.
 
 **Source / provenance:** three PDFs the owner uploaded this session — "General Manager Routines
 2022," "Operations Mgr. Routines 2022," "Supervisor Routines 2022," dated 1/20/2022, documenting

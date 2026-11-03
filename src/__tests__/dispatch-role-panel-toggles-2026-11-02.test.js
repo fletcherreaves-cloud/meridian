@@ -28,7 +28,10 @@ describe('isPanelEnabledForRole (permissions.js)', () => {
   const roles = DEFAULT_ROLES.map(r => ({ ...r }));
 
   it('is true for any panel when no disabledPanels list exists on the role (default: everything visible)', () => {
-    expect(isPanelEnabledForRole('proj', 'gm', roles)).toBe(true);
+    // area_supervisor, not gm -- gm carries a real disabledPanels list as of 2026-11-03
+    // (memory/plan-role-based-panel-gating-2026-11-03.md), so it no longer demonstrates the
+    // "role with no list at all" case this test is naming.
+    expect(isPanelEnabledForRole('proj', 'area_supervisor', roles)).toBe(true);
   });
 
   it('is false for a panel id explicitly in the role\'s disabledPanels', () => {

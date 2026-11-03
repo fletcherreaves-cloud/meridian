@@ -267,7 +267,18 @@ export const DEFAULT_ROLES = [
   { id: 'do',              label: 'DO (District Ops)', level: 3, color: '#6366f1', system: true,  permissions: DO_PERMS },
   { id: 'om',              label: 'OM (Ops Manager)',  level: 4, color: '#0ea5e9', system: true,  permissions: OM_PERMS },
   { id: 'area_supervisor', label: 'AS (Area Supervisor)', level: 5, color: '#3b82f6', system: false, permissions: SUPERVISOR_PERMS },
-  { id: 'gm',              label: 'GM (General Manager)', level: 6, color: '#14b8a6', system: true,  permissions: GM_PERMS },
+  // disabledPanels (owner-approved 2026-11-03, memory/plan-role-based-panel-gating-2026-11-03.md)
+  // -- panels that pass the analytics.store gate (so they'd render by default) but read as
+  // multi-store/strategic analytical tooling never named in the real GM Routines doc that plan
+  // was built from (pricing/margin modeling, promo ROI modeling as opposed to promo-entry
+  // validation which stays visible via Food Cost, cross-store comparison/correlation tools, and
+  // the Reports Hub's newer analytical deep-dives). A GM with no panel named here behaves exactly
+  // as before this change -- this is purely a trim, not a new restriction mechanism.
+  { id: 'gm',              label: 'GM (General Manager)', level: 6, color: '#14b8a6', system: true,  permissions: GM_PERMS,
+    disabledPanels: ['pricing-engine', 'promo-roi', 'loc-intel', 'trends', 'signals', 'ranking',
+      'conversion-efficiency', 'oil-efficiency', 'weather-impact', 'price-change-impact',
+      'item-velocity', 'channel-mix', 'labor-opportunity-cost', 'cash-variance-pattern',
+      'controls-food-cost-link', 'fob-reference-table', 'loss-prevention', 'custom-reports'] },
   { id: 'sm_am_dm',        label: 'SM / AM / DM',      level: 7, color: '#84cc16', system: true,  permissions: SM_AM_DM_PERMS },
   // Pre-existing system/utility role -- kept exactly as it was (see file-header note).
   { id: 'manager',         label: 'Manager',          level: 3, color: '#22c55e', system: false, permissions: MANAGER_PERMS },
