@@ -136,3 +136,20 @@ CLAUDE.md's Panels & Modules table and the dispatch #231/EcoSure-replacement fin
 real "top risk drivers" + "last actual visit" fields the report renders. Explicitly notes
 food-safety status is kept OUT of the readiness composite by design. 2 tests
 (`dispatch-kb-visit-readiness-2026-11-03.test.js`), mounting the real `KnowledgeBasePanel`.
+
+## Added later the same day: `equipment_results_guide` (task #75)
+
+A third gap -- Equipment Results (`src/views/equipment-results.js`) shipped THIS SAME SESSION
+(tasks #56-58: PQRG equipment-settings reference, survey link management, results landing panel)
+and had zero KB coverage. Before writing anything, measured live (service-role REST, per
+"measure, don't reason") whether the feature's 3-step deploy sequence (SQL/seed/edge-function
+redeploy, documented in `memory/project-equipment-profile.md`) had actually run: confirmed
+`equipment_catalog_settings` at 240 real rows and `equipment_survey_entries.settings_reviewed`
+column exists (both steps 1-2 done), `equipment_survey_entries` itself at 0 rows (no crew
+walkthrough logged yet -- expected, not a bug, since this just shipped), `equipment_survey_links`
+at 1 row. Recorded in `project-equipment-profile.md` so this doesn't need re-measuring, and
+updated task #56's own status to reflect it. Added `equipment_results_guide` describing both
+halves of the panel (link management + cross-store rollup), the real placement-zone list
+(Front Counter/Drive Thru/McCafé Cell/BDAP Cell/Dessert Cell/Production Area/Prep Area/Back of
+House), the real PQRG-settings tie-in, and explicitly that a zero-item store just hasn't been
+walked yet. 2 tests (`dispatch-kb-equipment-results-2026-11-03.test.js`).
