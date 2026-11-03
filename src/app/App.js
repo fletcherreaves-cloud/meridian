@@ -342,7 +342,7 @@ import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { PANEL_BY_ID, PANELS, SECTIONS } from './panel-registry.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, DrawerShell, MinimizedDock, Z } from '../components/ModalShell.js';
-import { parseRoute, pushRoute, onRouteChange } from './routing.js';
+import { parseRoute, pushRoute, onRouteChange, readDefaultLandingPanel } from './routing.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor, metricContextFor } from '../engine/swing-context.js';
 // LocationIntelligence — dispatch #206: was a static top-level import; lazy-wrapped as part of
@@ -821,7 +821,11 @@ function App() {
       },
     });
   }, []);
-  const [view, setView]           = useState('command'); // command | district | store | org
+  // Owner request 2026-11-02: user-configurable default landing panel (Settings -> Appearance).
+  // readDefaultLandingPanel() fails safe to null (home) for an unset/invalid value -- a plain
+  // 'district' lands here on District View; a route:true panel id is handled below by
+  // routePanel's own initializer instead (view stays its 'command' default underneath it).
+  const [view, setView]           = useState(() => readDefaultLandingPanel()==='district' ? 'district' : 'command'); // command | district | store | org
   // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/
   // forecast-reports/proj/report, per panel-registry.js's route:true — forecast-reports
   // replaced the original fcst-accuracy/lifelenz-bridge pair, dispatch #106 Phase B). Layered
@@ -839,7 +843,13 @@ function App() {
     typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search || '').get('panel') : null;
   const [routePanel, setRoutePanel] = useState(() => {
     const search = typeof location !== 'undefined' ? location.search : '';
-    return legacyRouteParam(search) === 'count-cycle' ? 'eom-dashboard' : parseRoute(search);
+    if (legacyRouteParam(search) === 'count-cycle') return 'eom-dashboard';
+    const urlRoute = parseRoute(search);
+    if (urlRoute) return urlRoute; // a real URL always wins over the stored default
+    // Owner request 2026-11-02: default landing panel, when it names an actual route:true panel
+    // id -- readDefaultLandingPanel() never returns 'command'/'district' here since those are
+    // view values, handled by view's own initializer above, not a routePanel id.
+    return readDefaultLandingPanel();
   });
   const goRoute = (id) => { pushRoute(id); setRoutePanel(id); };
   React.useEffect(() => onRouteChange((id) => {

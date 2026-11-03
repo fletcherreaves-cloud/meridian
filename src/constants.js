@@ -113,6 +113,14 @@ const DEF_SETTINGS={
   // two separately-rendered blocks. 'classic' is the pre-2026-10-07 flat rendering, kept as a
   // one-setting revert (Settings -> Appearance) if the grouping doesn't land well live.
   navStyle:'v2',        // 'v2'|'classic'
+  // Owner request 2026-11-02: "give users a setting to decide which panel they see first."
+  // null = default behavior (Home). 'district' lands on District View. Any other value must be
+  // a route:true panel-registry id (App.js's routing.js readDefaultLandingPanel() validates
+  // this at read time, same "fail safe to null on an unrecognized id" rule parseRoute already
+  // uses for the URL ?panel= param) -- a stale id from an older build never silently breaks
+  // startup. A URL route always wins over this setting; this only decides where a plain visit
+  // (no ?panel= param) lands.
+  defaultLandingPanel:null, // null|'command'|'district'|<route:true panel id>
   weekStartDay:3, // 0=Sun 1=Mon 3=Wed (McDonald's standard)
   lyOutlierThreshold:30, // % deviation from DOW trimmed mean to auto-dampen LY value
   mode:'Projection',cascade:false,plusUp:0,tolerance:5,weeksBack:6,
