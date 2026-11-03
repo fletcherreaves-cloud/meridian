@@ -284,11 +284,27 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     const panels = panelsForSection(sectionId, can);
     if (!panels.length) return null;
     const meta = SECTIONS.find(s => s.id === sectionId);
-    const items = panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id]));
     // Classic stays the flat pre-2026-10-07 render (no header click needed, ever); v2's icon-rail
     // mode (`collapsed`, the whole sidebar narrowed to 48px) also stays flat -- navLabel already
-    // renders no icon of its own, so a clickable header there would have nothing to show.
-    if (navStyle !== 'v2' || collapsed) return [navLabel(meta.label), ...items];
+    // renders no icon of its own, so a clickable header there would have nothing to show. Neither
+    // has section-collapse state to auto-close, so items render with no extra wiring below.
+    if (navStyle !== 'v2' || collapsed) {
+      const items = panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id]));
+      return [navLabel(meta.label), ...items];
+    }
+    // Owner request 2026-11-03: "I want the menus themselves to auto collapse" -- picking a panel
+    // inside an expanded section closes that section back down, same as clicking its header would.
+    // Wraps each item's own onClick (default onOpenModal(p.id), or NAV_EXTRAS' override, e.g.
+    // attention's badge-carrying click) rather than replacing it, so nothing else about the item
+    // changes. navItem's own onClick is skipped entirely when the item is `disabled` (see its
+    // definition above), so a disabled item never collapses its section either -- it didn't
+    // navigate, nothing to collapse for.
+    const items = panels.map(p => {
+      const extra = NAV_EXTRAS[p.id];
+      const baseOnClick = extra?.onClick || (() => onOpenModal(p.id));
+      const wrapped = { ...extra, onClick: () => { baseOnClick(); setCollapsedSections(prev => new Set(prev).add(sectionId)); } };
+      return (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, wrapped);
+    });
     const isCollapsed = collapsedSections.has(sectionId);
     return [
       div({key:'sec-hdr-'+sectionId, onClick:()=>toggleSection(sectionId),
