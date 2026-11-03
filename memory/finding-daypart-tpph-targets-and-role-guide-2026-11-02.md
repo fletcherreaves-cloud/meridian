@@ -47,8 +47,14 @@ rows, not buried inside one config row":
   literal** — deliberately avoiding the exact anti-pattern
   `memory/project-multitenant-onboarding.md`'s 2026-11-02 correction flagged on 51 other schema
   files, including (ironically) `schema-weekly-count-day.sql` itself, this table's own closest
-  analog. **Needs the owner's own SQL-editor run once** (this session has no DDL execution path,
-  same as every other `schema-*.sql` file here).
+  analog.
+  ✅ **CONFIRMED LIVE 2026-11-03 — owner ran the SQL, do not re-raise as pending.** Verified via
+  service-role `curl` against `daypart_tpph_targets?select=loc,daypart,target_tpph`:
+  `200`/`content-range: */0` (table exists, zero rows — nobody has set a target through the UI
+  yet). Calibrated against a deliberately wrong column name on the same table, which correctly
+  returned `400`/`42703` ("column ... does not exist") rather than another silent `*/0` — the
+  same three-way-style check this repo's own "measure, don't reason" rule expects, so this is a
+  real confirmation, not a masked failure.
 - `loadDaypartTpphTargets()` / `saveDaypartTpphTarget()` (`src/lib/supabase.js`) — degrade to
   `{}`/`{saved:false}` like every other guarded read until that table exists.
 - `src/views/labor-allocation.js`'s "By Store" tab: new TPPH / Target TPPH / vs Target columns.
