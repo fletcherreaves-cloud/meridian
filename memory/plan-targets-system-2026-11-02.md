@@ -62,6 +62,74 @@ Escape cancels without saving; the Excel-upload empty-state/hint is unchanged.
 - #4 (fully configurable metric categories) — unaffected by this pass, still the "architecturally
   biggest piece," out of scope per this file's own original scoping.
 
+## ✅ #62 (Monthly Targets in-app editor) SHIPPED 2026-11-03 — same session, immediately after #61
+proved out. Do not re-scope or re-build; see below for exactly what landed, and a real finding
+about dead code discovered while scoping it.
+
+**Measured before building anything (per the "measure, don't reason" standing rule) — two
+candidate places already touched monthly targets, and only one of them was real:**
+
+1. **`MonthlyTargetManager`** (`src/views/store-dash.js`, ~40 fields across 10 categories --
+   Service & Ops/Labor/T-Reds Before/T-Reds After/Promos/Disc Coup/Drawer-POS-Refunds/Cash
+   Controls/Food Cost (FOB)/P&L-Supplies -- far MORE complete than Yearly's own category set) is a
+   genuinely orphaned dead end, confirmed two ways, not assumed: (a) nothing in the live UI ever
+   sets `modal==='targets'` (the one dispatcher that renders it) -- grepped every `onOpenModal`/
+   click-handler call site, zero hits; `panel-registry.js`'s own `targets` entry is `kind:'internal'`
+   with no route, so there is no nav path to it either. (b) Its storage, `mf_targets_v2`
+   (`src/engine/monthly-targets-v2.js`), is pure per-device `localStorage` -- never touches
+   Supabase at all. This is the SAME class of dead end dispatch #107 Part 3 already found and
+   explicitly retired for the analogous OLD Yearly editor ("Nothing downstream ever read it") --
+   left alone here, not retired, since removing ~40 fields' worth of still-physically-present code
+   is a separate cleanup with its own blast radius and wasn't what was asked. **If a future
+   dispatch is tempted to "fix" `MonthlyTargetManager` by wiring it to Supabase and adding a nav
+   button: don't -- the real, live, Supabase-backed grid already exists (#2 below) and is the
+   correct place to extend, not this one.**
+
+   The "double-click any cell to override, Lock Week/Lock Month" workflow described in
+   `WORKFLOW_GUIDE_SECTIONS` (App.js), `tutorial.js`, and the existing `locked_projections` KB
+   article all describe a lock/override mechanic that, as far as this pass's grep could find
+   (`onDoubleClick`/`dblclick`/`Lock Week`/`isLocked`/`_locked`), **only ever existed inside this
+   same orphaned `MonthlyTargetManager`/`mf_targets_v2` system** (`v2[ym]._locked`, read by
+   `MonthlyTargetManager`'s own `monthList` computation) -- the real, live, reachable
+   `MonthlyProjectionsPanel` grid (#2 below) has no lock/override UI of any kind. **This is a
+   separate, real stale-documentation finding, NOT fixed in this pass** (it's a documentation-
+   accuracy investigation in its own right, not in scope for "convert Monthly Targets to in-app" --
+   flag it as a follow-up, don't silently rewrite three onboarding-doc sources on a tangent).
+
+2. **`MonthlyProjectionsPanel`** (`src/views/analytics.js`, the REAL "Planning → Monthly tab" --
+   confirmed via `PlanningHubPanel`'s own `tab === 'monthly'` wiring in App.js) was already the
+   correct, live, Supabase-backed home: it already calls `listMonthlyTargetPeriods()`/
+   `loadMonthlyTargets()` and renders the full `PROJ_FIELDS` set (Sales & Labor/Service/Food
+   Cost/Other Costs -- all ~18 real `monthly_targets` columns, including `tProdSales` itself) in a
+   grid with per-store rows AND operator/supervisor rollups. It was simply READ-ONLY -- same gap
+   Yearly had, just already reading the right table instead of a dead localStorage bucket.
+
+**What this pass built:** `EditableProjCell` on every flat-view store-row cell in
+`MonthlyProjectionsPanel` (grouped/rollup rows stay plain text -- they're sums/averages across
+stores, not one store's real row) -- identical click→input→commit-on-blur/Enter→Escape-cancels
+shape to Yearly's `EditableTargetCell`. Percent fields (`kind:'pct'`) convert the typed percent
+back to the stored fraction; `kind:'sec'`/`'num'`/`'dollar'` fields are typed and stored in the
+same unit. Saves call `saveMonthlyTargets({[loc]: fullRow}, selPeriod.year, selPeriod.month)` --
+this function already existed field-for-field identical to `saveYearlyTargets` (it has no
+`source` parameter; every save sets `data_source: null`, correctly un-flagging a previously-
+reconstructed month, same as a real upload would). Always sends the full row, same upsert-
+replaces-the-whole-row reasoning as Yearly. `tProdSales` (Sales $) is editable here too -- there is
+no competing lock/override mechanism on the real live grid to conflict with (see the dead-end
+finding above), and Smart Targets' "Apply as Official" button remains the other real write path
+into this same field.
+
+3 new tests, `dispatch-62-monthly-targets-editor-2026-11-03.test.js`, mounting the REAL
+`MonthlyProjectionsPanel`: full-row save, percent-to-fraction conversion, Escape cancels. **Had to
+explicitly mock `listMonthlyTargetPeriods`/`loadMonthlyTargets`, not just `saveMonthlyTargets`** --
+this test environment has real Supabase credentials configured, so the panel's own period-
+discovery effect was making a genuine network round-trip on mount, which is slow/non-deterministic
+for a unit test and irrelevant to what the test actually verifies. Same stubbing pattern dispatch
+#107's own yearly-projections test already uses for `loadDailySales`.
+
+**Deliberately NOT done** (same reasoning as #61): no new edit-permission gate; adding a brand-new
+store/period with no prior data still needs the Excel upload; the stale "lock week" documentation
+across 3 files is flagged above, not fixed here; #4 (configurable metric categories) untouched.
+
 ---
 
 **Status (original, below): queued, not started.** Owner asked explicitly for a feasibility read and a recommended
