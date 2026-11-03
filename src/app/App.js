@@ -764,7 +764,7 @@ function _logMfEventsWrite(label, obj) {
 const WORKFLOW_GUIDE_SECTIONS = [
   {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
     {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
-    {t:'2. Check the Home Command Center',d:'Review At-a-Glance signal cards for district-level flags. Check the Projection Pulse for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
+    {t:'2. Check Home (At A Glance)',d:'Review At A Glance signal cards for district-level flags. Check the district projections section for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
     {t:'3. Review Priority Brief',d:'Click 🎯 Priority Brief for a tiered AI summary — Critical / Watch / Performance stores with specific coaching directives. Use this as your morning standup guide.'},
     {t:'4. Spot-check a store',d:'Click any store in District View → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
   ]},

@@ -27,8 +27,8 @@ const STEPS = [
   },
   {
     icon: '⌂',
-    title: 'Step 2 — Command Center',
-    body: 'The Command Center (home screen) shows district-level signals at a glance: which stores need attention, projection pulse for the coming week, and live performance indicators. Start here every morning.',
+    title: 'Step 2 — Home (At A Glance)',
+    body: 'Home — also called At A Glance — shows district-level signals at a glance: which stores need attention, projections for the coming week, and live performance indicators. Start here every morning.',
     tip: 'Red indicators on the left sidebar show stores with critical flags — click "⚠ Needs Attention" to see all.',
     highlight: 'command',
   },
@@ -48,8 +48,8 @@ const STEPS = [
   },
   {
     icon: '🥗',
-    title: 'Step 5 — FOB & Food Cost',
-    body: 'FOB Analysis shows food cost variance ranked by dollar impact. The Root-Cause Priority Matrix tells you WHICH store, WHICH component, and HOW MUCH — so you spend time where it matters most. FOB EOM Check gives end-of-month status.',
+    title: 'Step 5 — Food Cost',
+    body: 'Food Cost (was "FOB Analysis") shows food cost variance ranked by dollar impact. The Root-Cause Priority Matrix tells you WHICH store, WHICH component, and HOW MUCH — so you spend time where it matters most. Its End of Month mode tab gives end-of-month status.',
     tip: 'Click any row to expand per-store detail. Use Print for a PDF you can share.',
     highlight: 'fob',
   },
@@ -84,13 +84,13 @@ const STEPS = [
   {
     icon: '🧭',
     title: 'Step 10 — Intelligence & AI',
-    body: 'Beyond the daily workflow, Meridian has a planning + AI layer. Smart Targets learns a defensible sales / labor % / FOB target per store; Pace to Target and Yearly Projections track actuals vs those targets; Signals surfaces live operational alerts and correlations; and SAGE is a Claude-powered advisor you can ask anything about your district.',
+    body: 'Beyond the daily workflow, Meridian has a planning + AI layer. Smart Targets learns a defensible sales / labor % / FOB target per store; Pace and Yearly tabs (Planning) track actuals vs those targets; Signals surfaces live operational alerts and correlations; and SAGE is a Claude-powered advisor you can ask anything about your district.',
     tip: 'Ask SAGE a question, save it (📚 Prompts), even schedule it to run automatically — and turn any answer into a tracked task with the 🐞 Log button.',
   },
   {
     icon: '✅',
     title: 'You\'re Ready',
-    body: 'That\'s the core workflow. Data syncs automatically → Check the Command Center → Run the Priority Brief → Deep-dive any store. The sidebar has much more: Smart Targets, Pace to Target, Yearly Projections, Signals, SAGE, Labor Analysis, Scheduling, Delivery Mix, and more.',
+    body: 'That\'s the core workflow. Data syncs automatically → Check Home → Run the Priority Brief → Deep-dive any store. The sidebar has much more: Smart Targets, Pace and Yearly tabs, Signals, SAGE, Labor Analysis, Scheduling, 3PO Delivery, and more.',
     tip: 'This guide is always available from the "?" Help button in the top bar.',
   },
 ];
