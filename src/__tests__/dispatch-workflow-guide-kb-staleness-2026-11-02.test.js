@@ -132,3 +132,36 @@ describe('Knowledge Base — panel_index article no longer misclassifies optiona
     expect(container.textContent).toContain('Task Queue');
   });
 });
+
+describe('Knowledge Base — panel_index article, label/count drift found 2026-11-03 against the live panel-registry.js', () => {
+  it('says Events, not the retired "Events & Tags" label', () => {
+    mount();
+    openArticle('A live map of every Meridian panel');
+    expect(container.textContent).toContain('Events — promo / known-event calendar');
+    expect(container.textContent).not.toContain('Events & Tags — promo');
+  });
+
+  it('says Leaderboards, not "Rankings" (panel-registry.js label for id \'ranking\')', () => {
+    mount();
+    openArticle('A live map of every Meridian panel');
+    expect(container.textContent).toContain('Leaderboards');
+    expect(container.textContent).not.toContain('Rankings — rank stores');
+  });
+
+  it('says the Scheduling hub has 12 tabs, not 5, and names the 7 tabs the old count missed', () => {
+    mount();
+    openArticle('A live map of every Meridian panel');
+    expect(container.textContent).toContain('12 tabs');
+    expect(container.textContent).not.toContain('one hub, five tabs');
+    for (const tab of ['Pay Events', 'Schedule Discipline', 'Compliance Audit', 'Employee Performance', 'Labor Allocation', 'Training Retention', 'Retention Rollup']) {
+      expect(container.textContent).toContain(tab);
+    }
+  });
+
+  it('says Above-Store One-Pager, not the retired standalone "Leadership One-Pager" panel (dispatch #190)', () => {
+    mount();
+    openArticle('A live map of every Meridian panel');
+    expect(container.textContent).toContain('Above-Store One-Pager — district/operator rollup');
+    expect(container.textContent).not.toContain('Leadership One-Pager — weekly cascade review');
+  });
+});
