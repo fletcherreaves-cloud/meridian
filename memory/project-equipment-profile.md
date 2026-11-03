@@ -188,6 +188,17 @@ once a catalog model is selected (manually or via photo-match), grouped by produ
 test in `src/__tests__/equipment-survey-view-pqrg-settings.test.js` drives the actual view through
 NameGate → StorePicker → Add Equipment → model selection, not an isolated helper call.
 
+✅ **Activation CONFIRMED LIVE 2026-11-03** (measured, not assumed — service-role REST reads
+against the real Supabase instance, same credential/observation discipline as every other
+"is this live" claim in this repo): `equipment_catalog_settings` returns `content-range: 0-0/240`
+(step 1 SQL + step 2 seed both ran — more than the 61-row first slice, so the later espresso pass
+and/or further seeding landed too), and a `select` against `equipment_survey_entries` including
+`settings_reviewed` returns `200`/`[]` rather than a `42703` column-not-found error, confirming
+that column exists. `equipment_survey_entries` itself is at 0 rows (no crew walkthrough logged
+yet) and `equipment_survey_links` has 1 row (one link created). Step 3 (the edge function
+redeploy) was not independently re-verified by this measurement — not re-raised as open, just
+noted as the one step this specific pass didn't check.
+
 **Deploy sequencing (do this in order — the edge function change is NOT safe to deploy before the
 SQL runs, since its `insert()` now references the two new `equipment_survey_entries` columns):**
 1. Run `supabase/schema-equipment-catalog-settings.sql` in the Supabase SQL editor.
