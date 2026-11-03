@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups, latestEffective } from '../constants.js';
+import { PANELS } from '../app/panel-registry.js';
 import { logOrgAssignmentChange, logAppAccess } from '../lib/supabase.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -727,7 +728,24 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
               )
             )
           ),
-          div({className:'set-note'},'Grouped nav tucks forecasting/backtest/correlation tools under a collapsible "🔷 Deep Dive" section. Switch back to Classic any time — nothing is removed either way.')
+          div({className:'set-note'},'Grouped nav tucks forecasting/backtest/correlation tools under a collapsible "🔷 Deep Dive" section. Switch back to Classic any time — nothing is removed either way.'),
+          // Default landing panel (owner request 2026-11-02): "give users a setting to decide
+          // which panel they see first." Home/District View are the two reserved view-level
+          // values; everything else is a real route:true panel-registry id, same set routePanel's
+          // own URL mechanism already supports -- so this setting and a bookmarked `?panel=` link
+          // can never disagree about what's a valid destination.
+          div({style:{display:'flex',alignItems:'center',gap:10,marginTop:14,paddingTop:14,borderTop:'.5px solid var(--bdr)'}},
+            div({style:{fontSize:'10px',color:'var(--text2)',fontWeight:600}},'Default Landing Panel'),
+            sel({className:'set-inp',style:{fontSize:'10px',padding:'4px 8px'},
+              value:S.defaultLandingPanel||'command',
+              onChange:e=>set('defaultLandingPanel',e.target.value==='command'?null:e.target.value)},
+              opt({value:'command'},'⌂ Home'),
+              opt({value:'district'},'⊞ District View'),
+              ...PANELS.filter(p=>p.route).sort((a,b)=>a.label.localeCompare(b.label))
+                .map(p=>opt({key:p.id,value:p.id},(p.icon?p.icon+' ':'')+p.label))
+            )
+          ),
+          div({className:'set-note'},'Which panel you land on when you open the app. A shared link with its own panel always takes you there instead.')
         ),
         activeSection==='metrics'&&div({className:'set-sec'},
           div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},

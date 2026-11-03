@@ -463,7 +463,7 @@ export const PANELS = [
   // read: PGRST205). kind:'test-kitchen' per the standing rule -- every new panel starts here
   // regardless of who requested it, so promotion later is a one-field kind flip, nothing else.
   { id:'store-assessments', label:'Store Assessments', icon:'🗒️', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:14 },
-  { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
+  { id:'store-kb', label:'Store KB', icon:'📍', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   // Targets Editor (dispatch #132 item 3) -- company/state/patch/store override cascade for
   // Performance Review target fields that have no (or an adjustable) workbook source. Dispatch

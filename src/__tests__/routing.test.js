@@ -7,7 +7,7 @@
 // the pure query-param logic directly (parseRoute/isRoutePanelId/pushRoute/onRouteChange), same
 // pattern as the rest of src/app/ — dependency-free, testable without mounting React.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { isRoutePanelId, parseRoute, pushRoute, onRouteChange, currentRoute } from '../app/routing.js';
+import { isRoutePanelId, parseRoute, pushRoute, onRouteChange, currentRoute, readDefaultLandingPanel } from '../app/routing.js';
 
 describe('isRoutePanelId', () => {
   it('is true for each of the four registered route panels', () => {
@@ -98,5 +98,40 @@ describe('pushRoute + onRouteChange (jsdom/happy-dom History API)', () => {
     unsub();
     window.dispatchEvent(new PopStateEvent('popstate'));
     expect(calls).toBe(1);
+  });
+});
+
+describe('readDefaultLandingPanel (owner request 2026-11-02 -- default landing panel setting)', () => {
+  const KEY = 'mf_settings';
+  afterEach(() => { localStorage.removeItem(KEY); });
+
+  it('returns null when mf_settings is missing, unparseable, or has no defaultLandingPanel', () => {
+    localStorage.removeItem(KEY);
+    expect(readDefaultLandingPanel()).toBeNull();
+    localStorage.setItem(KEY, 'not json');
+    expect(readDefaultLandingPanel()).toBeNull();
+    localStorage.setItem(KEY, JSON.stringify({ theme: 'command' }));
+    expect(readDefaultLandingPanel()).toBeNull();
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: null }));
+    expect(readDefaultLandingPanel()).toBeNull();
+  });
+
+  it('returns the two reserved view values verbatim', () => {
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: 'command' }));
+    expect(readDefaultLandingPanel()).toBe('command');
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: 'district' }));
+    expect(readDefaultLandingPanel()).toBe('district');
+  });
+
+  it('returns a real route:true panel id', () => {
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: 'proj' }));
+    expect(readDefaultLandingPanel()).toBe('proj');
+  });
+
+  it('fails safe to null for a stale/renamed id or a non-route panel id -- same rule parseRoute uses', () => {
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: 'not-a-real-panel' }));
+    expect(readDefaultLandingPanel()).toBeNull();
+    localStorage.setItem(KEY, JSON.stringify({ defaultLandingPanel: 'settings' })); // real panel, but not route:true
+    expect(readDefaultLandingPanel()).toBeNull();
   });
 });

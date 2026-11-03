@@ -446,6 +446,25 @@ export function canManageRole(myRoleId, targetRoleId, roles) {
   return mine.level < target.level;
 }
 
+// ── Per-role panel visibility (owner request 2026-11-02 — "role-based panel active/inactive
+// toggles") ──────────────────────────────────────────────────────────────────────────────────
+// A DIFFERENT, finer-grained gate than PERMISSION_GROUPS/hasPermission: most panels share a
+// perm key with several siblings (e.g. several panels key off 'analytics.store'), so toggling a
+// permission off hides a whole group, not one panel. `disabledPanels` is an optional array on a
+// role object (same org_config/org_roles JSON blob RolesTab already persists -- no new table,
+// no schema change) naming panel-registry ids explicitly turned off for that role. Opt-OUT,
+// matching this app's existing default -- a panel is visible unless named here, same as every
+// kind:'nav' panel already being on by default (OPTIONAL_PANELS is the one existing opt-IN
+// list, and is a separate, device-local, non-role-scoped mechanism -- see shell.js/App.js's
+// panelVis). Same two early-exits as hasPermission (unknown role -> fail closed; level-1 -> full
+// bypass) so the two checks read as one consistent rule, not two different ones.
+export function isPanelEnabledForRole(panelId, roleId, roles) {
+  const role = getRoleById(roleId, roles || getOrgRoles());
+  if (!role) return false;
+  if (role.level <= 1) return true; // level-1 roles bypass all checks
+  return !(role.disabledPanels || []).includes(panelId);
+}
+
 // Default permissions for a brand-new role at a given level. Picks the closest built-in template
 // at or below the requested level (i.e. the least-privileged built-in that's still >= as
 // authoritative) so a new role dropped between two existing rungs gets a sane starting point --

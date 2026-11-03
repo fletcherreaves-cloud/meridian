@@ -5,13 +5,24 @@
 // Maybe give that a tile of its own that could be dynamically viewed by selecting the grouping to
 // see whether one location, a patch, operator, state, organization or a selected group of
 // restaurants of user choice." Replaces the three fixed Supervisor/Operator/Organization
-// Performance Summary sections in store-analytics.js's StoreDash Enterprise Overview with one
-// "📊 Performance Summary" tile that switches grouping via pills.
+// Performance Summary sections with one "📊 Performance Summary" tile that switches grouping via
+// pills.
 //
-// Renders the REAL StoreDash consumer (not buildGroupSections in isolation — that's already
-// covered by dispatch-location-groups-2026-11-01.test.js) per this repo's "would this
-// verification still pass if the change were reverted" standing rule: a test that only calls the
-// engine function could pass unchanged with the tile never wired into Overview's JSX.
+// ── 2026-11-02 UPDATE ──────────────────────────────────────────────────────────────────────────
+// Owner report: "in district view, the company rollups are still showing on each locations page.
+// Need to move or relocate it separately." The tile above (plus Revenue at Risk/District Forecast
+// Confidence/Sales Momentum Rank/MAPE Leaderboard) had been wired into store-analytics.js's
+// StoreDash -- the per-STORE page, rendered once per selected store, always defaulting to its
+// 'overview' tab -- so this genuinely district-wide content rendered on EVERY store's own page,
+// not once on District View. Moved to the new DistrictOverviewPanels component
+// (src/views/store-dash.js), rendered by DistrictGrid (the real top-level District View). This
+// file now renders DistrictOverviewPanels directly (not the full DistrictGrid, which also owns
+// sort/filter/store-card rendering unrelated to these assertions) per this repo's "would this
+// verification still pass if the change were reverted" standing rule: a test that only called
+// buildGroupSections directly (dispatch-location-groups-2026-11-01.test.js's own scope) could
+// pass unchanged even with the tile rendered in the wrong place, or not wired in at all. A
+// dedicated regression test below also renders the REAL StoreDash and asserts this content is
+// gone from it, which is the actual bug this update fixes.
 //
 // forecastRangeAsync settles synchronously (dispatch #208's own precedent — StoreDash's weekly-
 // forecast effect is irrelevant here). loadCustomLocationGroups/saveCustomLocationGroups are
@@ -39,6 +50,7 @@ vi.mock('../lib/supabase.js', async (importOriginal) => {
   };
 });
 
+import { DistrictOverviewPanels } from '../views/store-dash.js';
 import { StoreDash } from '../views/store-analytics.js';
 
 const NOOP = () => {};
@@ -59,21 +71,21 @@ function baseDs() {
   return { loaded: true, storeIds: ['3708', '6972', '6178'], laborRows: [], opsRows: [], records: {} };
 }
 
-function renderStoreDash(allStores) {
+function mountRoot() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const root = createRoot(container);
-  const dateRange = { s: new Date(2025, 0, 1), e: new Date(2025, 0, 31), label: 'Test Period' };
+  return { container, root: createRoot(container) };
+}
+
+function renderDistrictOverview(allStores, settings = { dialedInEnabled: false }) {
+  const { container, root } = mountRoot();
   act(() => {
-    root.render(React.createElement(StoreDash, {
-      store: allStores[0], ds: baseDs(), settings: { dialedInEnabled: false }, allStores,
-      onBack: NOOP, onNav: NOOP, dateRange, userEvents: {}, lockedProjections: {}, onUpdateSettings: NOOP,
-    }));
+    root.render(React.createElement(DistrictOverviewPanels, { allStores, settings }));
   });
   return { container, root };
 }
 
-describe('Performance Summary tile — grouping pills', () => {
+describe('Performance Summary tile — grouping pills (DistrictOverviewPanels, rendered from District View)', () => {
   let container, root;
   afterEach(async () => {
     if (root) await act(async () => { root.unmount(); });
@@ -89,7 +101,7 @@ describe('Performance Summary tile — grouping pills', () => {
   ];
 
   it('renders the "📊 Performance Summary" header with the three fixed sections gone (no more "Supervisor Performance Summary" / "Operator Performance Summary" / "Organization Breakdown" headers)', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); });
     expect(container.textContent).toContain('Performance Summary');
     expect(container.textContent).not.toContain('Supervisor Performance Summary');
@@ -98,7 +110,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('defaults to Patch mode and resolves each store to its LIVE supervisorGroups() patch (not a stale INV_ORG_COORDS[loc].sup read)', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); });
     // Measured live (not assumed from INV_ORG_COORDS's static seed, which disagrees for 3708 —
     // that static field is a coordinate-map fallback, not the source of truth; supervisorGroups()
@@ -112,7 +124,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('switching to Organization mode shows MCDOK and Emerald Arches cards with the right store counts', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); });
     const orgPill = [...container.querySelectorAll('button')].find(b => b.textContent.includes('🗺️ Organization'));
     expect(orgPill).toBeTruthy();
@@ -125,7 +137,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('switching to Operator mode groups by the live operator, not the old static INV_ORG_COORDS read', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); });
     const opPill = [...container.querySelectorAll('button')].find(b => b.textContent.includes('🏢 Operator'));
     await act(async () => { opPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -134,7 +146,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('switching to Location mode shows one card per store', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); });
     const locPill = [...container.querySelectorAll('button')].find(b => b.textContent.includes('📍 Location'));
     await act(async () => { locPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -144,7 +156,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('switching to Custom Group mode loads the saved group and shows it, with an edit/delete affordance', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     const customPill = [...container.querySelectorAll('button')].find(b => b.textContent.includes('🔧 Custom Group'));
     await act(async () => { customPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -155,7 +167,7 @@ describe('Performance Summary tile — grouping pills', () => {
   });
 
   it('"➕ New Group" opens the LocationGroupPicker modal, and saving a group calls saveCustomLocationGroups', async () => {
-    ({ container, root } = renderStoreDash(allStores));
+    ({ container, root } = renderDistrictOverview(allStores));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     const customPill = [...container.querySelectorAll('button')].find(b => b.textContent.includes('🔧 Custom Group'));
     await act(async () => { customPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -180,5 +192,44 @@ describe('Performance Summary tile — grouping pills', () => {
 
     expect(savedGroups).toBeTruthy();
     expect(savedGroups.some(g => g.name === 'Test Group' && g.locs.includes('3708'))).toBe(true);
+  });
+
+  it('allStores.length<=1 (or missing) renders nothing — a single-store context has no district overview to show', async () => {
+    ({ container, root } = renderDistrictOverview([store('3708')]));
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent.trim()).toBe('');
+  });
+});
+
+// ── Regression test for the 2026-11-02 bug fix itself ───────────────────────────────────────────
+describe('StoreDash (the per-store page) no longer renders the district-wide overview content', () => {
+  let container, root;
+  afterEach(async () => {
+    if (root) await act(async () => { root.unmount(); });
+    container?.remove();
+    container = null; root = null;
+  });
+
+  const allStores = [
+    store('3708', { pSales: 10000, opsScore: 80, p: { t2w: 0.04 } }),
+    store('6972', { pSales: 20000, opsScore: 90, p: { t2w: 0.06 } }),
+    store('6178', { pSales: 5000, opsScore: 70, p: { t2w: -0.02 } }),
+  ];
+
+  it('rendering StoreDash for one selected store, with multiple allStores, shows no "Performance Summary"/"Revenue at Risk"/"Sales Momentum Rank"/"Forecast Accuracy Leaderboard" content', async () => {
+    ({ container, root } = mountRoot());
+    const dateRange = { s: new Date(2025, 0, 1), e: new Date(2025, 0, 31), label: 'Test Period' };
+    await act(async () => {
+      root.render(React.createElement(StoreDash, {
+        store: allStores[0], ds: baseDs(), settings: { dialedInEnabled: false }, allStores,
+        onBack: NOOP, onNav: NOOP, dateRange, userEvents: {}, lockedProjections: {}, onUpdateSettings: NOOP,
+      }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain('Performance Summary');
+    expect(container.textContent).not.toContain('REVENUE AT RISK');
+    expect(container.textContent).not.toContain('Sales Momentum Rank');
+    expect(container.textContent).not.toContain('Forecast Accuracy Leaderboard');
+    expect(container.textContent).not.toContain('DISTRICT FORECAST CONFIDENCE');
   });
 });

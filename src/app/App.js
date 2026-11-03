@@ -331,7 +331,7 @@ import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTarge
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
-import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
+import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 // RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
@@ -342,7 +342,7 @@ import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { PANEL_BY_ID, PANELS, SECTIONS } from './panel-registry.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, DrawerShell, MinimizedDock, Z } from '../components/ModalShell.js';
-import { parseRoute, pushRoute, onRouteChange } from './routing.js';
+import { parseRoute, pushRoute, onRouteChange, readDefaultLandingPanel } from './routing.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor, metricContextFor } from '../engine/swing-context.js';
 // LocationIntelligence — dispatch #206: was a static top-level import; lazy-wrapped as part of
@@ -821,7 +821,11 @@ function App() {
       },
     });
   }, []);
-  const [view, setView]           = useState('command'); // command | district | store | org
+  // Owner request 2026-11-02: user-configurable default landing panel (Settings -> Appearance).
+  // readDefaultLandingPanel() fails safe to null (home) for an unset/invalid value -- a plain
+  // 'district' lands here on District View; a route:true panel id is handled below by
+  // routePanel's own initializer instead (view stays its 'command' default underneath it).
+  const [view, setView]           = useState(() => readDefaultLandingPanel()==='district' ? 'district' : 'command'); // command | district | store | org
   // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/
   // forecast-reports/proj/report, per panel-registry.js's route:true — forecast-reports
   // replaced the original fcst-accuracy/lifelenz-bridge pair, dispatch #106 Phase B). Layered
@@ -839,7 +843,13 @@ function App() {
     typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search || '').get('panel') : null;
   const [routePanel, setRoutePanel] = useState(() => {
     const search = typeof location !== 'undefined' ? location.search : '';
-    return legacyRouteParam(search) === 'count-cycle' ? 'eom-dashboard' : parseRoute(search);
+    if (legacyRouteParam(search) === 'count-cycle') return 'eom-dashboard';
+    const urlRoute = parseRoute(search);
+    if (urlRoute) return urlRoute; // a real URL always wins over the stored default
+    // Owner request 2026-11-02: default landing panel, when it names an actual route:true panel
+    // id -- readDefaultLandingPanel() never returns 'command'/'district' here since those are
+    // view values, handled by view's own initializer above, not a routePanel id.
+    return readDefaultLandingPanel();
   });
   const goRoute = (id) => { pushRoute(id); setRoutePanel(id); };
   React.useEffect(() => onRouteChange((id) => {
@@ -3388,6 +3398,9 @@ function App() {
 
   // Permission helper — used by AppSidebar, AppTopbar, and modal gates
   const perm = (key) => hasPermission(userRole, key, orgRoles);
+  // Owner request 2026-11-02: "role-based panel active/inactive toggles" — finer-grained than
+  // perm() above (several panels share one perm key; this is one specific panel id per role).
+  const panelEnabled = (id) => isPanelEnabledForRole(id, userRole, orgRoles);
 
   // Render
   // ── anyModalOpen  (v4.212 — performance) ────────────────────────────────
@@ -3532,12 +3545,14 @@ function App() {
     // ── LEFT SIDEBAR ─────────────────────────────────────────────
     h(AppSidebar,{
       view, setView,
+      routePanel, goRoute,
       selStore,
       stores, ds, settings,
       loadMsg,
       perm,
       betaMode,
       panelVis,
+      panelEnabled,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
       onOpenModal: (modal) => {
         if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),setLeaderboardMode('ranking'),goRoute('ranking'));
@@ -3752,7 +3767,10 @@ function App() {
         sessionBanner,
         onClearSession: handleClearSession,
         userRole,
-        onOpenAdmin: perm('users.manage.all') ? () => setShowAdminPanel(true) : null,
+        // Owner request 2026-11-02: 'users.manage.lower' holders (e.g. a DO) can now also open
+        // this -- AdminPanel itself scopes what they see to roles strictly below their own
+        // (canManageRole), never a blanket admin view.
+        onOpenAdmin: (perm('users.manage.all')||perm('users.manage.lower')) ? () => setShowAdminPanel(true) : null,
         betaMode,
         onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
@@ -4073,7 +4091,7 @@ function App() {
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
     // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
@@ -4116,7 +4134,7 @@ function App() {
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
     // routePanel==='ranking' in the main content area above.
-    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
+    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles,userRole}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
@@ -4271,28 +4289,28 @@ function App() {
               {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
               {t:'2. Check the Home Command Center',d:'Review At-a-Glance signal cards for district-level flags. Check the Projection Pulse for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
               {t:'3. Review Priority Brief',d:'Click 🎯 Priority Brief for a tiered AI summary — Critical / Watch / Performance stores with specific coaching directives. Use this as your morning standup guide.'},
-              {t:'4. Spot-check a store',d:'Click any store in the district grid → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
+              {t:'4. Spot-check a store',d:'Click any store in District View → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
             ]},
             {day:'WEEKLY (Every Wednesday — start of work week)',color:'#f59e0b',items:[
-              {t:'1. Lock the weekly projection',d:'Open Projections (📋 button). Review all 27 stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
-              {t:'2. Run Projection vs Actuals report',d:'📊 Proj vs Act — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in Dialed-In.'},
-              {t:'3. Check Dialed-In for drifting stores',d:'Any store dashboard → Dialed-In. ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
-              {t:'4. Review FOB Analysis',d:'Open FOB Analysis from the toolbar. Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
-              {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Coaching Letters to generate store-specific letters for each manager.'},
+              {t:'1. Lock the weekly projection',d:'Open Planning → Monthly tab (or ▦ Projections in ⚗ Test Kitchen for the full grid view). Review stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
+              {t:'2. Run Projection vs Actuals report',d:'◑ Proj vs Actuals (⚗ Test Kitchen) — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in DI Calibration.'},
+              {t:'3. Check DI Calibration for drifting stores',d:'⚗ Test Kitchen → ◎ DI Calibration (per-store). ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
+              {t:'4. Review Food Cost',d:'Open Food Cost from the sidebar (was "FOB Analysis"). Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
+              {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Letters to generate store-specific coaching letters for each manager.'},
             ]},
             {day:'MONTHLY (By the 15th of prior month)',color:'var(--crit)',items:[
-              {t:'1. Lock the monthly projection',d:'Open Projections → set Period to Month. Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
-              {t:'2. Calibrate all forecast models',d:'Dialed-In panel → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all 27 stores.'},
-              {t:'3. Review Channel Intelligence',d:'Open Channel Intel from the toolbar. Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
-              {t:'4. Revenue Intelligence Engine review',d:'Open Revenue Intel from toolbar. District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
-              {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator (Ryan, Gary, Rick/Kathy, Jacob) using the store groups or patch filter. Share with operators at monthly review meeting.'},
+              {t:'1. Lock the monthly projection',d:'Open Planning → Monthly tab and set the period to Month (or the Test Kitchen Projections grid). Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
+              {t:'2. Calibrate all forecast models',d:'⚗ Test Kitchen → ◎ DI Calibration → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all stores.'},
+              {t:'3. Review channel mix',d:'Open 3PO Delivery → Overview tab (Channel Intel was folded into this panel). Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
+              {t:'4. Revenue review',d:'Open Revenue (Panel Manager → enable if hidden). District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
+              {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator group using the store groups or patch filter. Share with operators at monthly review meeting.'},
             ]},
             {day:'KEY FEATURES — Quick Reference',color:'#818cf8',items:[
-              {t:'Store KB (📍)',d:'Per-store operational notes and context tags. Use Quick Tags (single click) for common factors: GM in Training, Capacity Limited, Tourist Area, New Location, etc. Tags inform AI analysis, anomaly thresholds, and forecast warnings.'},
+              {t:'Store KB',d:'Per-store operational notes and context tags. Use Quick Tags (single click) for common factors: GM in Training, Capacity Limited, Tourist Area, New Location, etc. Tags inform AI analysis, anomaly thresholds, and forecast warnings.'},
               {t:'Shift Analysis tab',d:'Day-of-week ops metrics, channel mix heatmap, OEPE Revenue Opportunity, 3 Peaks × Labor Gap, and Competitive Impact. Click the nav pills at the top of the tab to scroll to each section. Load a 3 Peaks file to unlock peak-hour labor cross-reference.'},
-              {t:'Why Engine',d:'Explains WHY a metric moved. Select a store and metric, and the engine correlates the move against weather, labor, promo, DOW, and competitive signals. Surfaces the most likely root cause with confidence score.'},
-              {t:'Channel Intelligence',d:'Requires Operations Report (Sales sheet) to be loaded. Shows DT, Breakfast, MOP, Kiosk, and Delivery as % of total sales per store. Click a channel to see per-store ranking. Date range: 7/14/28/60 days.'},
-              {t:'FOB Analysis',d:'Food Over Base analysis with Root-Cause Priority Matrix. Ranked by dollar impact per (store, component) — location appears first, then component. Expand any row for per-store breakdown. Use Print button for PDF export.'},
+              {t:'Why Engine',d:'Explains WHY a metric moved. Select a store and metric, and the engine correlates the move against weather, labor, promo, DOW, and competitive signals. Surfaces the most likely root cause with confidence score. Enable from Panel Manager if not visible.'},
+              {t:'3PO Delivery (channel mix)',d:'Requires Operations Report (Sales sheet) to be loaded. Overview tab shows DT, Breakfast, MOP, Kiosk, and Delivery as % of total sales per store. Click a channel to see per-store ranking. Date range: 7/14/28/60 days.'},
+              {t:'Food Cost',d:'Food Over Base analysis with Root-Cause Priority Matrix. Ranked by dollar impact per (store, component) — location appears first, then component. Expand any row for per-store breakdown. Use Print button for PDF export.'},
               {t:'Competitive Impact',d:'Tag competition events in the Calendar (competitor opening, promotion, closure) using the Competition event type. Shift Analysis → Competitive Impact then shows sales impact vs DOW baseline for those dates.'},
             ]},
             {day:'AS NEEDED — Automation Candidates',color:'#94a3b8',items:[

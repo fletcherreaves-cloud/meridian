@@ -91,7 +91,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -122,6 +122,18 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   // -- same "convenience, not data" tier as `collapsed`/`expandedGroup` above.
   const [deepDiveOpen,setDeepDiveOpen]=React.useState(false);
   const navStyle = settings?.navStyle==='classic' ? 'classic' : 'v2';
+  // Owner request 2026-11-02: "condense sidebar nav into expand/collapse sections." v2-only --
+  // classic stays the exact flat pre-2026-10-07 render forever (shell-nav-snapshot.test.js's own
+  // baseline), same scoping the Deep Dive collapsible header already uses. Default is OPEN (a
+  // section only collapses once a user clicks its header) so v2's default look doesn't change —
+  // this adds a capability, it doesn't hide anything on first load. Session-local, not persisted,
+  // same "convenience, not data" tier as deepDiveOpen/collapsed/expandedGroup above.
+  const [collapsedSections,setCollapsedSections]=React.useState(()=>new Set());
+  const toggleSection = (id) => setCollapsedSections(prev=>{
+    const next=new Set(prev);
+    next.has(id)?next.delete(id):next.add(id);
+    return next;
+  });
 
   // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
   // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second
@@ -205,6 +217,11 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   // (hasPermission() itself denies every permission for an unrecognized role). Don't drop the
   // `perm` prop at this call site without also reconsidering this fallback.
   const can = perm || (() => true);
+  // Owner request 2026-11-02: "role-based panel active/inactive toggles." Same fail-OPEN-when-
+  // omitted tier as `can` above (App.js always passes a real one, bound to
+  // isPanelEnabledForRole(id, userRole, orgRoles)) -- finer-grained than `can`/perm keys, which
+  // several panels share, so disabling one panel for a role can't accidentally hide its siblings.
+  const panelOk = panelEnabled || (() => true);
   // pis = stable (always visible), pi = experimental (hidden when betaMode=true)
   const pis = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
   const pi  = (permKey, ...args) => (!permKey || can(permKey)) && !betaMode ? navItem(...args) : null;
@@ -218,11 +235,13 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   // navP = pis()-equivalent (always visible if permitted); navPBeta = pi()-equivalent (also
   // hidden when betaMode is on, same as every Test Kitchen item).
   const navP = (id, extra) => {
+    if (!panelOk(id)) return null;
     const p = PANEL_BY_ID[id];
     const { onClick, active, badge, disabled } = extra || {};
     return pis(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
   };
   const navPBeta = (id, extra) => {
+    if (!panelOk(id)) return null;
     const p = PANEL_BY_ID[id];
     const { onClick, active, badge, disabled } = extra || {};
     return pi(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
@@ -251,9 +270,22 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     const panels = panelsForSection(sectionId, can);
     if (!panels.length) return null;
     const meta = SECTIONS.find(s => s.id === sectionId);
+    const items = panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id]));
+    // Classic stays the flat pre-2026-10-07 render (no header click needed, ever); v2's icon-rail
+    // mode (`collapsed`, the whole sidebar narrowed to 48px) also stays flat -- navLabel already
+    // renders no icon of its own, so a clickable header there would have nothing to show.
+    if (navStyle !== 'v2' || collapsed) return [navLabel(meta.label), ...items];
+    const isCollapsed = collapsedSections.has(sectionId);
     return [
-      navLabel(meta.label),
-      ...panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id])),
+      div({key:'sec-hdr-'+sectionId, onClick:()=>toggleSection(sectionId),
+        style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6,
+          padding:'4px 14px 2px',marginTop:8,cursor:'pointer'}},
+        span({style:{fontSize:'7px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.7px',
+          color:'var(--text3)'}}, meta.label),
+        span({style:{fontSize:9,color:'var(--text3)',
+          transform:'rotate('+(isCollapsed?0:180)+'deg)',transition:'transform .15s'}},'▾')
+      ),
+      !isCollapsed && div({key:'sec-items-'+sectionId, style:{display:'flex',flexDirection:'column',gap:1}}, ...items),
     ];
   };
 
@@ -299,20 +331,20 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     const items = [];
     for (const s of SECTIONS) {
       for (const p of panelsForSection(s.id, can)) {
-        if (seen.has(p.id) || (betaMode && BETA_HIDDEN_EXTRAS.has(p.id))) continue;
+        if (seen.has(p.id) || (betaMode && BETA_HIDDEN_EXTRAS.has(p.id)) || !panelOk(p.id)) continue;
         seen.add(p.id);
         items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: s.label });
       }
     }
     if (!betaMode) {
       for (const p of testKitchenPanels(can)) {
-        if (seen.has(p.id)) continue;
+        if (seen.has(p.id) || !panelOk(p.id)) continue;
         seen.add(p.id);
         items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: 'Test Kitchen' });
       }
     }
     return items;
-  }, [can, betaMode]);
+  }, [can, betaMode, panelOk]);
   const navResults = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return [];
@@ -422,8 +454,12 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:collapsed?'8px 4px':'8px'}},
 
       // ── Top: view switches, not panels -- no registry id, always visible ────────
-      navItem('Home',              '⌂', ()=>setView('command'),         view==='command'),
-      pi('analytics.district',    'District View',    '⊞', ()=>{setView('district');},   view==='district'),
+      // Owner-reported bug (2026-11-02): clicking Home/District View did nothing while a
+      // full-page route panel was open -- setView alone doesn't clear routePanel, and every
+      // view's render gate in App.js requires !routePanel (see the Escape-key precedent,
+      // App.js's `if(routePanel){goRoute(null);return;}`). goRoute?.(null) mirrors that.
+      navItem('Home',              '⌂', ()=>{setView('command'); goRoute?.(null);},         view==='command'&&!routePanel),
+      pi('analytics.district',    'District View',    '⊞', ()=>{setView('district'); goRoute?.(null);},   view==='district'&&!routePanel),
 
       // ── Section-driven body (dispatch #54 Job B) ─────────────────────────────
       // Every section except 'admin' renders in SECTIONS order; 'admin' is pulled out and
@@ -444,12 +480,12 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // of which (Optional) previously had no header/label at all.
       ...(navStyle==='classic' ? [
         ...(renderTestKitchen() || []),
-        ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+        ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
           .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
       ] : (() => {
         const items=[
           ...(renderTestKitchen() || []),
-          ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+          ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
             .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
         ].filter(Boolean);
         if(!items.length) return [];

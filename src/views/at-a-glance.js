@@ -2356,20 +2356,6 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // scroll listener lives here too, since this is the only element that scrolls.
     div({style:{flex:1,overflowY:'auto',padding:'12px 24px'},onScroll:handleAAGScroll},
 
-      // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
-      // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
-      // (empty cells array), so no separate loading guard is needed at this call site.
-      // #231 — does NOT take dateRange: every dimension is a fixed rolling window (see the
-      // component's own header comment), never the page's date-range selector. Used to be
-      // passed here and silently dropped inside the component — removed at both ends rather
-      // than left as a dead prop that looks live.
-      h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved, onPayEventSaved }),
-
-      // #274 — Bullseye: distribution-gestalt companion to the heatmap above (gestalt, not
-      // lookup — see the component's own header). Same plain-import pattern as PatchHeatmap:
-      // a tile embedded inline in the already-lazy-loaded At A Glance view, not a lazyPanel().
-      h(BullseyeTile, { stores, onOpenStore }),
-
       // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
       moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
         style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
@@ -2668,6 +2654,26 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             )
           );
         })())),
+
+        // Owner request 2026-11-02: moved here from the top of the page (above Today's Movers) —
+        // "drop the patch heat map and bullseye sections on AAG to below the card tiles but
+        // before the district projections." Wrapped in a gridColumn:'1 / -1' div (neither
+        // component takes a style prop itself) to keep them full-row-width (27-store heatmap/
+        // distribution view) even though they now live inside the auto-fill tile grid alongside
+        // the narrower cards — without it they'd be squeezed into one ~380px column like
+        // Intelligence Summary above, same as every other grid child here.
+        // #201 — Patch Heatmap: all 27 stores as a status grid. h(PatchHeatmap,...) returns null
+        // internally if stores hasn't loaded yet (empty cells array), so no separate loading
+        // guard is needed at this call site. #231 — does NOT take dateRange: every dimension is
+        // a fixed rolling window (see the component's own header comment), never the page's
+        // date-range selector.
+        div({ key: 'patch-heatmap', style: { gridColumn: '1 / -1' } },
+          h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved, onPayEventSaved })),
+
+        // #274 — Bullseye: distribution-gestalt companion to the heatmap above (gestalt, not
+        // lookup — see the component's own header).
+        div({ key: 'bullseye', style: { gridColumn: '1 / -1' } },
+          h(BullseyeTile, { stores, onOpenStore })),
 
         // ── PROJECTIONS SECTION ──
         secs.find(s=>s.id==='projections'&&s.on)&&_mark('build:projections',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},

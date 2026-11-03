@@ -1,9 +1,11 @@
 // @ts-nocheck
 import * as React from 'react';
 import { Chart } from 'chart.js/auto';
-import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
+import { addD, addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { businessDate } from '../engine/swing-feed.js';
-import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, EVENT_TYPES, INV_ORG_COORDS, supervisorOf, supervisorGroups } from '../constants.js';
+import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, EVENT_TYPES, INV_ORG_COORDS, supervisorOf, supervisorGroups, getStoreOrg, operatorOf } from '../constants.js';
+import { buildGroupSections, summarizeGroup, addLocationGroup, updateLocationGroup, removeLocationGroup } from '../engine/location-groups.js';
+import { LocationGroupPicker } from '../components/LocationGroupPicker.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
@@ -24,6 +26,7 @@ import { printHtml } from '../utils/print-html.js';
 import { RecordDayTab } from './record-day.js';
 import { TopBottomTab } from './top-bottom-performers.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { loadCustomLocationGroups, saveCustomLocationGroups } from '../lib/supabase.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -1955,6 +1958,212 @@ function StoreCard({store, onSelect, priceChange}) {
   );
 }
 
+// ── District Overview Panels — Revenue at Risk, District Forecast Confidence, Sales Momentum
+// Rank, MAPE Leaderboard, Performance Summary (owner req 2026-11-01: "give that a tile of its
+// own that could be dynamically viewed by selecting the grouping"). Moved here from StoreDash
+// 2026-11-02 — owner report: "in district view, the company rollups are still showing on each
+// locations page" (store-analytics.js's StoreDash, the per-STORE page) "need to move or
+// relocate it separately." This content is genuinely district-wide (computed over allStores,
+// never the one selected store), so it belongs on DistrictGrid (the real top-level District
+// View, rendered once) — not repeated on every individual store's own Overview tab, which is
+// what `tab==='overview'&&allStores&&allStores.length>1` in StoreDash was actually gating on
+// (StoreDash renders once PER SELECTED STORE, always defaulting to the 'overview' tab, so that
+// condition was true on every single store's page). Code itself is otherwise unchanged from the
+// StoreDash version — same formulas, same owner-approved Performance Summary grouping UI.
+function DistrictOverviewPanels({allStores, settings}) {
+  // Performance Summary grouping (owner req, 2026-11-01) -- replaces the 3 fixed Supervisor/
+  // Operator/Organization sections (each the same Stores/4-Wk Sales/Ops Score/T2W Trend card
+  // shape computed independently over a different split) with one selectable grouping.
+  // customGroups loaded lazily here (not App.js startup), same pattern eom_digest_config
+  // already uses -- only the panel that actually renders this tile needs it.
+  const [groupMode, setGroupMode] = useState('patch');
+  const [customGroups, setCustomGroups] = useState([]);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  useEffect(()=>{ loadCustomLocationGroups().then(setCustomGroups).catch(()=>{}); },[]);
+  const saveGroups = async (next) => { setCustomGroups(next); await saveCustomLocationGroups(next).catch(()=>{}); };
+
+  if (!allStores || allStores.length<=1) return null;
+
+  return div({style:{marginBottom:16}},
+
+    // Revenue at Risk widget
+    (()=>{
+      const today=new Date();
+      const next4wk=addD(today,28);
+      const districtStores=allStores.filter(s=>/^\d+$/.test(s.loc));
+      // #178 item 4b: this always rendered "+$0" / "0 of N locations" — s.t.tSales doesn't
+      // exist anywhere in DEFAULT_TARGETS (grepped, zero hits), so `tgt` always fell through
+      // to `weekSales` itself, making the gap identically 0 for every store, always. A
+      // second bug rode along: s.pSales/s.pLY (pipeline.js's buildStore) are ALREADY the
+      // trailing 28-day (4-week) matched total, not a single week's — the old `weekSales`
+      // name was a misnomer, and multiplying an already-4-week gap by 4 would have inflated
+      // "Revenue at Risk" 4x once a real target ever got wired in. Target is now the same
+      // Goal-column convention already used elsewhere (forecastDay's _goalOf): the matched
+      // 28-day LY total grown by the store's tGrowth. No ×4 — pSales/pLY already span the
+      // 4-week window this widget is titled for.
+      const goal28=s=>(s.pLY>0)?s.pLY*(1+((s.t&&s.t.tGrowth)||0.05)):(s.pSales||0);
+      const totalGap=districtStores.reduce((a,s)=>a+(goal28(s)-(s.pSales||0)),0);
+      const atRisk=districtStores.filter(s=>(s.pSales||0)<goal28(s)*0.97);
+      return div({style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}},
+        div({style:{flex:'1 1 200px',background:'rgba(239,68,68,.06)',border:'.5px solid rgba(239,68,68,.25)',
+          borderRadius:'var(--rl)',padding:'12px 16px'}},
+          div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700,letterSpacing:'.5px',marginBottom:4}},'⚠ REVENUE AT RISK — NEXT 4 WEEKS'),
+          div({style:{fontFamily:'var(--mono)',fontWeight:800,fontSize:'20px',color:totalGap>0?'var(--crit)':'#10b981'}},
+            totalGap>0?'-'+f$(Math.abs(Math.round(totalGap))):'+'+f$(Math.abs(Math.round(totalGap)))),
+          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:4}},
+            atRisk.length+' of '+districtStores.length+' locations running below target pace')
+        ),
+        div({style:{flex:'1 1 200px',background:'rgba(165,180,252,.06)',border:'.5px solid rgba(165,180,252,.25)',
+          borderRadius:'var(--rl)',padding:'12px 16px'}},
+          div({style:{fontSize:'9px',color:'#a5b4fc',fontWeight:700,letterSpacing:'.5px',marginBottom:4}},'📊 DISTRICT FORECAST CONFIDENCE'),
+          (()=>{
+            const calStores=districtStores.filter(s=>settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape!=null);
+            const avgMape=calStores.length?calStores.reduce((a,s)=>a+settings.dialedIn[s.loc].mape,0)/calStores.length:null;
+            return div(null,
+              div({style:{fontFamily:'var(--mono)',fontWeight:800,fontSize:'20px',color:avgMape!=null?(avgMape<6?'#10b981':avgMape<10?'var(--warn)':'var(--crit)'):'var(--text3)'}},
+                avgMape!=null?'±'+avgMape.toFixed(2)+'% MAPE':'Not Calibrated'),
+              div({style:{fontSize:'9px',color:'var(--text3)',marginTop:4}},
+                calStores.length+'/'+districtStores.length+' stores calibrated')
+            );
+          })()
+        )
+      );
+    })(),
+
+    // Sales Momentum Rank
+    div({style:{marginBottom:12}},
+      div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8,display:'flex',alignItems:'center',gap:6}},
+        '📈 Sales Momentum Rank',
+        div({style:{fontSize:'9px',color:'var(--text3)',fontWeight:400}},'2-wk trend vs prior 2-wk · all locations')),
+      div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:6}},
+        [...(allStores||[])].filter(s=>/^\d+$/.test(s.loc)&&s.p&&s.p.t2w!=null)
+          .sort((a,b)=>b.p.t2w-a.p.t2w)
+          .map((s,i)=>{
+            const arrow=s.p.t2w>0.02?'▲':s.p.t2w<-0.02?'▼':'→';
+            const col=s.p.t2w>0.02?'#10b981':s.p.t2w<-0.02?'var(--crit)':'var(--warn)';
+            const name=sName(s.loc);
+            return div({key:s.loc,
+              style:{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',
+                background:'var(--surf2)',borderRadius:'var(--r)',border:'.5px solid var(--bdr)',
+                borderLeft:'.5px solid '+col}},
+              div({style:{fontSize:'10px',color:'var(--text3)',minWidth:20,fontWeight:600}},i+1),
+              span({style:{fontSize:'12px',color:col}},[arrow]),
+              div({style:{flex:1,fontSize:'10px',color:'var(--text)'}},[name]),
+              div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:col}},
+                (s.p.t2w>=0?'+':'')+( s.p.t2w*100).toFixed(2)+'%')
+            );
+          })
+      )
+    ),
+
+    // MAPE Leaderboard (if calibrated)
+    settings.dialedInEnabled&&settings.dialedIn&&(()=>{
+      const calList=(allStores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape!=null);
+      if(!calList.length) return null;
+      const sorted=[...calList].sort((a,b)=>settings.dialedIn[a.loc].mape-settings.dialedIn[b.loc].mape);
+      return div({style:{marginBottom:12}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},
+          '🎯 Forecast Accuracy Leaderboard — MAPE (lower is better)'),
+        div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:6}},
+          sorted.map((s,i)=>{
+            const cal=settings.dialedIn[s.loc];
+            const col=cal.mape<6?'#10b981':cal.mape<10?'var(--warn)':'var(--crit)';
+            const name=sName(s.loc);
+            const recent=cal.recentMape!=null?cal.recentMape:null;
+            return div({key:s.loc,
+              style:{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',
+                background:'var(--surf2)',borderRadius:'var(--r)',border:'.5px solid var(--bdr)',
+                borderLeft:'.5px solid '+col}},
+              div({style:{fontSize:'10px',color:'var(--text3)',minWidth:20,fontWeight:600}},i+1),
+              div({style:{flex:1,fontSize:'10px',color:'var(--text)'}},[name]),
+              div({style:{textAlign:'right'}},
+                div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:col}},cal.mape.toFixed(2)+'%'),
+                recent!=null&&div({style:{fontSize:'8px',color:'var(--text3)'}},['4wk: '+recent.toFixed(2)+'%'])
+              )
+            );
+          })
+        )
+      );
+    })(),
+
+    // Performance Summary — owner req 2026-11-01: "move the total company performance off of
+    // the individual location tiles... give that a tile of its own that could be dynamically
+    // viewed by selecting the grouping." Replaces the three fixed sections above (Supervisor/
+    // Operator/Organization Performance Summary — each was the same Stores/4-Wk Sales/Ops
+    // Score/T2W Trend card shape computed independently over a different split) with ONE
+    // selectable grouping, plus a 5th mode for the owner's "selected group of restaurants of
+    // user choice" (QSRSoft-style saveable custom groups, src/engine/location-groups.js).
+    // 'State' and 'Organization' collapse to one mode ('organization') — for this fleet they
+    // are the same 1:1 partition (MCDOK=Oklahoma, Emerald Arches=Florida, constants.js's
+    // getStoreOrg/CLAUDE.md's own canonical mapping), so a separate 'state' pill would render
+    // byte-identical groups under a different label.
+    (()=>{
+      const GROUP_MODES=[{id:'location',label:'📍 Location'},{id:'patch',label:'🌀 Patch'},{id:'operator',label:'🏢 Operator'},{id:'organization',label:'🗺️ Organization'},{id:'custom',label:'🔧 Custom Group'}];
+      const sections=buildGroupSections(groupMode,allStores,{
+        supervisorGroupsLive:supervisorGroups(),
+        operatorGroupsFn:(loc)=>operatorOf(loc),
+        getStoreOrgFn:(loc)=>getStoreOrg(loc),
+        customGroups,
+      });
+      const renderCard=(sec)=>{
+        const {n,totalSales,avgOps,avgTrend}=summarizeGroup(sec.stores);
+        return div({key:sec.key,
+          style:{flex:'1 1 200px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
+            borderRadius:'var(--rl)',padding:'12px 14px'}},
+          div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+            div({style:{fontSize:'11px',fontWeight:700}},sec.name),
+            groupMode==='custom'&&div({style:{display:'flex',gap:4}},
+              btn({title:'Edit group',style:{fontSize:'10px',background:'none',border:'none',color:'var(--text3)',cursor:'pointer'},
+                onClick:()=>{setEditingGroup(customGroups.find(g=>g.id===sec.key)||null);setGroupPickerOpen(true);}},'✎'),
+              btn({title:'Delete group',style:{fontSize:'10px',background:'none',border:'none',color:'var(--text3)',cursor:'pointer'},
+                onClick:()=>saveGroups(removeLocationGroup(customGroups,sec.key))},'🗑'),
+            ),
+          ),
+          div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
+            [{l:'Stores',v:n,c:'var(--text)'},
+             {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
+             {l:'Ops Score',v:avgOps!=null?Math.round(avgOps)+'/100':'—',c:avgOps!=null?(avgOps>=80?'#10b981':avgOps>=65?'var(--warn)':'var(--crit)'):'var(--text3)'},
+             {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
+              c:avgTrend!=null?(avgTrend>=0?'#10b981':'var(--crit)'):'var(--text3)'}
+            ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
+              div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
+              div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'12px'}},k.v)
+            ))
+          )
+        );
+      };
+      return div({style:{marginBottom:12}},
+        div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:8}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)'}},'📊 Performance Summary'),
+          div({style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+            GROUP_MODES.map(m=>btn({key:m.id,
+              style:{padding:'4px 10px',borderRadius:'var(--r)',border:'.5px solid '+(groupMode===m.id?'rgba(245,158,11,.4)':'var(--bdr)'),
+                background:groupMode===m.id?'var(--adim)':'transparent',color:groupMode===m.id?'var(--amber)':'var(--text2)',
+                fontSize:'10px',fontWeight:groupMode===m.id?700:400,cursor:'pointer'},
+              onClick:()=>setGroupMode(m.id)},m.label)),
+            groupMode==='custom'&&btn({style:{fontSize:'10px'},className:'btn btn-sm',
+              onClick:()=>{setEditingGroup(null);setGroupPickerOpen(true);}},'➕ New Group'),
+          )
+        ),
+        sections.length
+          ? div({style:{display:'flex',gap:8,flexWrap:'wrap'}},sections.map(renderCard))
+          : div({style:{fontSize:'10px',color:'var(--text3)'}},
+              groupMode==='custom'?'No custom groups saved yet — click "➕ New Group" to build one.':'No data for this grouping.'),
+        groupPickerOpen&&h(LocationGroupPicker,{
+          stores:allStores,invOrgCoords:INV_ORG_COORDS,storeNames:STORE_NAMES,editGroup:editingGroup,
+          onClose:()=>setGroupPickerOpen(false),
+          onSave:async({id,name,locs})=>{
+            const next=id?updateLocationGroup(customGroups,id,{name,locs}):addLocationGroup(customGroups,{name,locs});
+            await saveGroups(next);
+            setGroupPickerOpen(false);
+          },
+        }),
+      );
+    })()
+  );
+}
+
 function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStore}) {
   // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
   const _rt0 = performance.now();
@@ -2046,6 +2255,11 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       div({style:{fontSize:'10px',color:'var(--text3)'}},
         'While waiting for data, the app shows projected numbers based on district averages and default targets.')
     ):null,
+
+    // District-wide overview — Revenue at Risk, Forecast Confidence, Sales Momentum, MAPE
+    // Leaderboard, Performance Summary. See DistrictOverviewPanels' own header comment above for
+    // why this lives here now (moved from StoreDash, owner report 2026-11-02).
+    h(DistrictOverviewPanels, {allStores: stores, settings}),
 
     // Sort/filter toolbar
     div({style:{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}},
@@ -3669,7 +3883,7 @@ export {
   useChart, TT, AX, LEG, SalesChart, lifeLenzSeries, OpsRadar, TrendChart,
   wxIcon, ForecastRow, ForecastTable,
   Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, generatePlan, ActionPlanTab,
-  StoreCard, DistrictGrid, OrgView, ExportDropdown, LeaderboardPanel, RankingTab,
+  StoreCard, DistrictGrid, DistrictOverviewPanels, OrgView, ExportDropdown, LeaderboardPanel, RankingTab,
   UnifiedTargetsPanel, MonthlyTargetManager, EventCalendar,
   OpsBarChart, CompareRadarChart, CompareLineChart,
 };

@@ -5,7 +5,9 @@ import {
   PERMISSION_GROUPS, DEFAULT_ROLES,
   getOrgRoles, saveOrgRoles, pushOrgRolesToSupabase,
   defaultPermissionsForLevel, makeRoleId,
+  hasPermission, canManageRole,
 } from '../engine/permissions.js';
+import { PANELS, SECTIONS } from '../app/panel-registry.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h    = React.createElement;
@@ -283,7 +285,7 @@ const COLOR_OPTIONS = [
   '#06b6d4','#f97316','#ec4899','#64748b','#10b981',
 ];
 
-function RolesTab({ orgRoles, setOrgRoles }) {
+function RolesTab({ orgRoles, setOrgRoles, userRole, fullAccess }) {
   const [expandedId,  setExpandedId]  = useState(null);
   const [editingId,   setEditingId]   = useState(null);
   const [editLabel,   setEditLabel]   = useState('');
@@ -295,7 +297,21 @@ function RolesTab({ orgRoles, setOrgRoles }) {
   const [newColor,    setNewColor]    = useState('#22c55e');
   const [saving,      setSaving]      = useState(false);
 
-  const sorted = [...orgRoles].sort((a,b)=>a.level-b.level);
+  // Owner request 2026-11-02: "delegated sub-role management." A 'users.manage.lower' holder
+  // (not full 'users.manage.all') only ever sees roles they strictly outrank (canManageRole --
+  // lower level number = more authority), so e.g. a DO can manage OM/AS/GM/SM-AM-DM but never
+  // another DO, a VP, or Owner/Admin. fullAccess skips the filter entirely (sees everything).
+  const canManage = (role) => fullAccess || (!!userRole && canManageRole(userRole, role.id, orgRoles));
+  const visibleRoles = fullAccess ? orgRoles : orgRoles.filter(canManage);
+  const sorted = [...visibleRoles].sort((a,b)=>a.level-b.level);
+
+  // Panels a role's toggle list can cover -- independently-navigable kinds only (same filter
+  // panel-registry.js's own panelsForSection/testKitchenPanels apply), grouped by section with
+  // Test Kitchen pulled into its own bucket, matching App.js's PanelManagerPanel categorization
+  // style (that one is per-device/localStorage; this one is per-role/Supabase).
+  const TOGGLABLE_PANELS = PANELS.filter(p => p.kind==='nav'||p.kind==='optional'||p.kind==='test-kitchen');
+  const panelGroupIds = [...new Set(TOGGLABLE_PANELS.map(p => p.kind==='test-kitchen' ? '__tk' : (p.section||'__other')))];
+  const panelGroupLabel = (gid) => gid==='__tk' ? '⚗ Test Kitchen' : (SECTIONS.find(s=>s.id===gid)||{}).label || 'Other';
 
   const persist = async (roles) => {
     setSaving(true);
@@ -311,6 +327,19 @@ function RolesTab({ orgRoles, setOrgRoles }) {
         ...r, permissions: { ...r.permissions, [permKey]: !r.permissions?.[permKey] }
       }
     );
+    persist(next);
+  };
+
+  // Owner request 2026-11-02: "role-based panel active/inactive toggles." disabledPanels is an
+  // opt-OUT array of panel-registry ids on the role object -- see isPanelEnabledForRole's own
+  // comment (permissions.js) for why this is finer-grained than the permission toggles above.
+  const togglePanel = (roleId, panelId) => {
+    const next = orgRoles.map(r => {
+      if (r.id !== roleId) return r;
+      const cur = r.disabledPanels || [];
+      const disabledPanels = cur.includes(panelId) ? cur.filter(id => id !== panelId) : [...cur, panelId];
+      return { ...r, disabledPanels };
+    });
     persist(next);
   };
 
@@ -368,10 +397,12 @@ function RolesTab({ orgRoles, setOrgRoles }) {
 
     div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}},
       div({style:{fontSize:11,color:TEXT3,lineHeight:1.6}},
-        'Roles are ordered by authority level (1 = highest). Level-1 roles bypass all permission checks.',
+        fullAccess
+          ? 'Roles are ordered by authority level (1 = highest). Level-1 roles bypass all permission checks.'
+          : 'Showing only roles you outrank -- you can manage their permissions and panel access, but not rename, add, or delete roles.',
         saving && span({style:{marginLeft:10,color:AMBER,fontSize:10}},'Saving…')
       ),
-      btn({onClick:()=>setShowAddForm(v=>!v),
+      fullAccess && btn({onClick:()=>setShowAddForm(v=>!v),
         style:{padding:'5px 12px',background:showAddForm?'transparent':AMBER,
           color:showAddForm?TEXT3:'#000',border:`1px solid ${showAddForm?BDR:AMBER}`,
           borderRadius:R,fontSize:11,fontWeight:700,cursor:'pointer'}},
@@ -379,7 +410,7 @@ function RolesTab({ orgRoles, setOrgRoles }) {
     ),
 
     // Add role form
-    showAddForm && div({style:{background:S2,borderRadius:R,border:`1px solid ${AMBER}44`,
+    fullAccess && showAddForm && div({style:{background:S2,borderRadius:R,border:`1px solid ${AMBER}44`,
       padding:14,display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}},
       div(null,
         div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Role name'),
@@ -456,11 +487,11 @@ function RolesTab({ orgRoles, setOrgRoles }) {
                 h(LevelBadge,{level:role.level}),
                 role.system && span({style:{fontSize:9,color:TEXT3,padding:'1px 5px',
                   borderRadius:4,border:`1px solid ${BDR}`,marginLeft:4}},'system'),
-                !isEditing&&btn({onClick:e=>{e.stopPropagation();startEdit(role);},
+                fullAccess&&!isEditing&&btn({onClick:e=>{e.stopPropagation();startEdit(role);},
                   style:{background:'none',border:'none',color:TEXT3,fontSize:11,
                     cursor:'pointer',padding:'2px 6px'}},
                   '✎ Edit'),
-                !role.system&&btn({onClick:e=>{e.stopPropagation();deleteRole(role.id);},
+                fullAccess&&!role.system&&btn({onClick:e=>{e.stopPropagation();deleteRole(role.id);},
                   style:{background:'none',border:'none',color:'#ef4444',fontSize:11,
                     cursor:'pointer',padding:'2px 6px'}},
                   'Delete'),
@@ -513,6 +544,51 @@ function RolesTab({ orgRoles, setOrgRoles }) {
                 )
               )
             )
+          ),
+
+          // Panel access (owner request 2026-11-02: "role-based panel active/inactive
+          // toggles") -- a SEPARATE, finer-grained gate than the permission groups above: most
+          // panels share a perm key with several siblings, so this can turn off one specific
+          // panel for a role without touching the rest of that permission group.
+          role.level>1 && div({style:{marginTop:16,paddingTop:14,borderTop:`1px solid ${BDR}`}},
+            div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+              div({style:{fontSize:11,color:TEXT3}},
+                '🧩 Panel access — turn specific panels off for this role. Off by default means visible; nothing is hidden until toggled here.'),
+              (role.disabledPanels||[]).length>0 && btn({
+                onClick:()=>persist(orgRoles.map(r=>r.id!==role.id?r:{...r,disabledPanels:[]})),
+                style:{background:'none',border:`1px solid ${BDR}`,color:TEXT3,
+                  borderRadius:R,padding:'3px 8px',fontSize:10,cursor:'pointer'}},
+                `Re-enable all (${(role.disabledPanels||[]).length} off)`)
+            ),
+            div({style:{display:'flex',flexDirection:'column',gap:14}},
+              ...panelGroupIds.map(gid => {
+                const panels = TOGGLABLE_PANELS.filter(p => (p.kind==='test-kitchen'?'__tk':(p.section||'__other'))===gid);
+                if (!panels.length) return null;
+                return div({key:gid},
+                  div({style:{fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',
+                    letterSpacing:'.5px',marginBottom:6}}, panelGroupLabel(gid)),
+                  div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:6}},
+                    ...panels.map(p => {
+                      const off = (role.disabledPanels||[]).includes(p.id);
+                      return div({key:p.id, onClick:()=>togglePanel(role.id,p.id),
+                        style:{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',
+                          borderRadius:R,background:off?'rgba(239,68,68,.08)':'transparent',
+                          border:`1px solid ${off?'#ef444433':BDR}`,cursor:'pointer',transition:'all .1s'}},
+                        div({style:{width:16,height:16,borderRadius:4,flexShrink:0,
+                          background:off?'transparent':role.color,
+                          border:`1.5px solid ${off?'#ef4444':role.color}`,
+                          display:'flex',alignItems:'center',justifyContent:'center',
+                          color:'#000',fontSize:10,fontWeight:700}},
+                          off?'':'✓'),
+                        span({style:{fontSize:11,flexShrink:0}}, p.icon),
+                        span({style:{fontSize:11,color:off?TEXT3:TEXT,whiteSpace:'nowrap',
+                          overflow:'hidden',textOverflow:'ellipsis'}}, p.label)
+                      );
+                    })
+                  )
+                );
+              })
+            )
           )
         )
       );
@@ -521,13 +597,19 @@ function RolesTab({ orgRoles, setOrgRoles }) {
 }
 
 // ── Main Panel ─────────────────────────────────────────────────────────────────
-export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRoles }) {
-  const [tab, setTab]           = useState('users');
+export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRoles, userRole }) {
   const [orgRoles, setOrgRoles] = useState(() => initRoles || getOrgRoles());
+  // Owner request 2026-11-02: "delegated sub-role management." App.js's own onOpenAdmin gate now
+  // also admits a 'users.manage.lower' holder (e.g. a DO), not just 'users.manage.all' -- this
+  // panel is what actually scopes what they can see/do once inside, via fullAccess below.
+  // Fails OPEN (fullAccess=true) when userRole is omitted, matching this panel's pre-existing
+  // behavior for any caller that hasn't been updated to pass it yet; every real caller does.
+  const fullAccess = !userRole || hasPermission(userRole, 'users.manage.all', orgRoles);
+  const [tab, setTab] = useState(fullAccess ? 'users' : 'roles');
 
   // Owner request 2026-10-17 (app_access_log) -- this panel only ever mounts once App.js's own
-  // perm('users.manage.all') gate has already passed (admin/owner only, the tightest permission
-  // in the system), so logging on mount needs no internal permState dance like Security's.
+  // perm('users.manage.all')||perm('users.manage.lower') gate has already passed, so logging on
+  // mount needs no internal permState dance like Security's.
   useEffect(() => { logAppAccess('panel_view', 'admin-panel').catch(() => {}); }, []);
 
   const handleSetRoles = (roles) => {
@@ -536,13 +618,14 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   };
 
   const tabs = [
-    { key:'users', label:'Users' },
+    ...(fullAccess ? [{ key:'users', label:'Users' }] : []),
     { key:'roles', label:'Roles & Permissions' },
   ];
 
   return h(ModalShell,{
     title:'User Management', icon:'👤', onClose, maxWidth:960, zIndex:Z.modal,
-    subtitle:'Manage users, roles, permissions, and store assignments',
+    subtitle: fullAccess ? 'Manage users, roles, permissions, and store assignments'
+      : 'Manage permissions and panel access for roles below your own',
     bodyStyle:{padding:20},
     subHeader: div({style:{display:'flex',gap:0,borderBottom:`1px solid ${BDR}`,flexShrink:0}},
       ...tabs.map(t => btn({key:t.key,onClick:()=>setTab(t.key),
@@ -553,7 +636,7 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
         t.label))
     ),
   },
-    tab==='users' && h(UsersTab,{orgRoles}),
-    tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles}),
+    tab==='users' && fullAccess && h(UsersTab,{orgRoles}),
+    tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles,userRole,fullAccess}),
   );
 }

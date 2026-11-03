@@ -88,3 +88,22 @@ export function onRouteChange(cb) {
 export function currentRoute() {
   return typeof location === 'undefined' ? null : parseRoute(location.search);
 }
+
+// ── Default landing panel (owner request 2026-11-02) ───────────────────────────────────────────
+// Reads settings.defaultLandingPanel directly from localStorage, synchronously, independent of
+// App.js's own full settings merge -- needed because App.js's [view]/[routePanel] useState
+// initializers run before its [settings] state exists (hook declaration order), the same reason
+// [settings] itself reads localStorage directly rather than waiting on a later effect. Returns
+// null for anything that isn't a real route:true panel id (or the two reserved view values
+// 'command'/'district') -- same "fail safe to null on an unrecognized id" rule parseRoute uses
+// for the URL ?panel= param, so a stale id from an older build (a panel renamed/removed since)
+// never silently breaks startup.
+export function readDefaultLandingPanel() {
+  let raw = null;
+  try {
+    const s = typeof localStorage !== 'undefined' ? localStorage.getItem('mf_settings') : null;
+    raw = s ? JSON.parse(s).defaultLandingPanel : null;
+  } catch { return null; }
+  if (raw === 'command' || raw === 'district') return raw;
+  return isRoutePanelId(raw) ? raw : null;
+}

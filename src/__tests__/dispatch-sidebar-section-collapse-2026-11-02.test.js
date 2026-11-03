@@ -1,0 +1,104 @@
+// @vitest-environment happy-dom
+// @ts-nocheck
+// Owner request 2026-11-02: "condense sidebar nav into expand/collapse sections." Extends the
+// SAME collapsible-header mechanism the Deep Dive section already uses (nav-regroup-v2.test.js)
+// to the ordinary SECTIONS-driven body, v2-only -- classic stays the exact flat pre-2026-10-07
+// render forever (shell-nav-snapshot.test.js's own baseline). Default is OPEN so v2's existing
+// default look is unchanged; a section only collapses once its header is clicked.
+import { describe, it, expect, vi } from 'vitest';
+import * as React from 'react';
+import { createRoot } from 'react-dom/client';
+import { act } from 'react';
+import { PANEL_BY_ID } from '../app/panel-registry.js';
+
+global.performance = global.performance || { now: () => 0 };
+
+const { AppSidebar } = await import('../app/shell.js');
+const h = React.createElement;
+
+function mountSidebar(settingsOverride = {}, extra = {}) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const onOpenModal = vi.fn();
+  act(() => {
+    root.render(h(AppSidebar, {
+      view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+      settings: { districtName: 'Test', ...settingsOverride }, onOpenModal, onLoadFiles: () => {},
+      onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+      betaMode: false, panelVis: {}, ...extra,
+    }));
+  });
+  return { container, root, onOpenModal };
+}
+
+// A real kind:'nav' panel in the 'operations' section -- not Test Kitchen, not Deep Dive.
+const OPS_PANEL = PANEL_BY_ID['graded-visits'];
+
+const byText = (container, text) =>
+  [...container.querySelectorAll('div')].find(d => d.textContent.includes(text) && d.textContent.trim().length < text.length + 20);
+
+describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)', () => {
+  it('v2 default: ordinary sections render open (unchanged default look) with their panels visible', () => {
+    const { container } = mountSidebar();
+    expect(container.textContent).toContain(OPS_PANEL.label);
+  });
+
+  it('clicking a section header collapses it, hiding its panels; clicking again re-expands', () => {
+    const { container, onOpenModal } = mountSidebar();
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    const header = byText(container, 'Operations');
+    expect(header, 'Operations section header not found').toBeTruthy();
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).not.toContain(OPS_PANEL.label);
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    // The panel is still reachable through onOpenModal once re-expanded.
+    const label = [...container.querySelectorAll('span')].find(s => s.textContent === OPS_PANEL.label);
+    act(() => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onOpenModal).toHaveBeenCalledWith(OPS_PANEL.id);
+  });
+
+  it('collapsing one section leaves other sections untouched', () => {
+    const { container } = mountSidebar();
+    const header = byText(container, 'Operations');
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).not.toContain(OPS_PANEL.label);
+    // Some other section's content (e.g. Reports) is still showing.
+    expect(container.textContent).toMatch(/Reports/);
+  });
+
+  it('classic mode never shows a clickable section header -- stays the flat pre-2026-10-07 render', () => {
+    const { container } = mountSidebar({ navStyle: 'classic' });
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    const header = byText(container, 'Operations');
+    // Classic's navLabel is a plain non-interactive div (no onClick), unlike v2's header.
+    expect(header && header.onclick).toBeFalsy();
+  });
+
+  it('collapsed (icon-rail) sidebar mode keeps the plain non-interactive header -- same as classic', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onOpenModal = vi.fn();
+    act(() => {
+      root.render(h(AppSidebar, {
+        view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+        settings: { districtName: 'Test' }, onOpenModal, onLoadFiles: () => {},
+        onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+        betaMode: false, panelVis: {},
+      }));
+    });
+    // Collapse the whole sidebar via its own toggle (the "M" logo button).
+    const logo = [...container.querySelectorAll('div')].find(d => d.title === 'Collapse sidebar');
+    expect(logo, 'sidebar collapse toggle not found').toBeTruthy();
+    act(() => { logo.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // Label text still renders (pre-existing navLabel behavior, unaffected by this change), but
+    // the header has no click handler -- nothing to toggle with no labels visible to click.
+    const header = byText(container, 'Operations');
+    expect(header, 'Operations label not found in icon-rail mode').toBeTruthy();
+    expect(header.onclick).toBeFalsy();
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+});
