@@ -86,6 +86,19 @@ describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)'
     expect(container.textContent).not.toContain(REPORTS_PANEL.label);
   });
 
+  it('owner request 2026-11-03: picking a panel in an expanded section auto-collapses that section', () => {
+    const { container, onOpenModal } = mountSidebar();
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    const label = [...container.querySelectorAll('span')].find(s => s.textContent === OPS_PANEL.label);
+    act(() => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // The click still navigates (pre-existing behavior)...
+    expect(onOpenModal).toHaveBeenCalledWith(OPS_PANEL.id);
+    // ...and the section it lived in is now collapsed, same as clicking its header would do.
+    expect(container.textContent).not.toContain(OPS_PANEL.label);
+    // Unaffected sections (e.g. Reports) are untouched by picking an Operations panel.
+    expect(container.textContent).toContain(REPORTS_PANEL.label);
+  });
+
   it('classic mode never shows a clickable section header -- stays the flat pre-2026-10-07 render', () => {
     const { container } = mountSidebar({ navStyle: 'classic' });
     expect(container.textContent).toContain(OPS_PANEL.label);
