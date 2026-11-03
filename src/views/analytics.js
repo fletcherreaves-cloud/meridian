@@ -21,7 +21,7 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, saveMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote } from '../lib/supabase.js';
 import { COACHING_METRICS, openCoachingCycles } from '../engine/coaching-loop.js';
 import { detectAropJumps } from '../engine/pay-events.js';
 import { PayEventModal } from './pay-event-modal.js';
@@ -7994,35 +7994,78 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
 }
 
 // ── Monthly Projections Panel ─────────────────────────────────────────────────
+// kind drives the in-app editor's input<->stored-value conversion (owner request 2026-11-03,
+// task #62 -- same convention yearly-projections.js's EditableTargetCell already uses for the
+// Yearly Targets editor). 'pct' fields are stored as fractions but typed as a plain percent;
+// 'sec'/'num'/'dollar' fields are stored and typed in the same unit.
 const PROJ_FIELDS = [
-  {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?v.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}):'—', dollar:true},
-  {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—'},
+  {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?v.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}):'—', dollar:true, kind:'dollar'},
+  {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—', kind:'num'},
   // Service targets (#40) — already carried per-store in DEFAULT_TARGETS/monthly_targets
   // (tOepe/tKvst/tKvsu/tR2p) but were never surfaced in this grid. rollupProj is fully
   // generic (sales-weighted avg for anything but tProdSales/tOpSupply) so no rollup change.
-  {g:'Service',       key:'tOepe',        l:'OEPE',       fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
-  {g:'Service',       key:'tKvst',        l:'KVS Time',   fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
-  {g:'Service',       key:'tKvsu',        l:'KVS Hlthy',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Service',       key:'tR2p',         l:'R2P',        fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
-  {g:'Food Cost',     key:'tFOBBase',     l:'Base Food',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tDiscCoupPct', l:'Disc Coup',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tCompWaste',   l:'Comp Wst',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tRawWaste',    l:'Raw Wst',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tCondiment',   l:'Condmt',     fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tEmpFood',     l:'Emp Food',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tStatLoss',    l:'Stat Loss',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tUnex',        l:'Unex Diff',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tFOBTarget',   l:'FOB Tgt',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Food Cost',     key:'tFOBTotal',    l:'Total Food', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Service',       key:'tOepe',        l:'OEPE',       fmt:v=>v!=null?v.toFixed(1)+'s':'—', kind:'sec'},
+  {g:'Service',       key:'tKvst',        l:'KVS Time',   fmt:v=>v!=null?v.toFixed(1)+'s':'—', kind:'sec'},
+  {g:'Service',       key:'tKvsu',        l:'KVS Hlthy',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Service',       key:'tR2p',         l:'R2P',        fmt:v=>v!=null?v.toFixed(1)+'s':'—', kind:'sec'},
+  {g:'Food Cost',     key:'tFOBBase',     l:'Base Food',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tDiscCoupPct', l:'Disc Coup',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tCompWaste',   l:'Comp Wst',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tRawWaste',    l:'Raw Wst',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tCondiment',   l:'Condmt',     fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tEmpFood',     l:'Emp Food',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tStatLoss',    l:'Stat Loss',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tUnex',        l:'Unex Diff',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tFOBTarget',   l:'FOB Tgt',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Food Cost',     key:'tFOBTotal',    l:'Total Food', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
   // Bonus Food Threshold (fob_bonus_base_pct) -- saved to monthly_targets (dispatch #164) but
   // never surfaced in this grid until the owner asked for it directly (2026-10-02), specifically
   // so it could be toggled off again -- see showProjBonusFood below.
-  {g:'Food Cost',     key:'tFOBBonusBase',l:'Bonus Food Thresh', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Other Costs',   key:'tPaperCost',   l:'Paper',      fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
-  {g:'Other Costs',   key:'tOpSupply',    l:'Op Supply',  fmt:v=>v!=null?'$'+(v||0).toLocaleString():'—', dollar:true},
+  {g:'Food Cost',     key:'tFOBBonusBase',l:'Bonus Food Thresh', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Other Costs',   key:'tPaperCost',   l:'Paper',      fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—', kind:'pct'},
+  {g:'Other Costs',   key:'tOpSupply',    l:'Op Supply',  fmt:v=>v!=null?'$'+(v||0).toLocaleString():'—', dollar:true, kind:'dollar'},
 ];
+const _projToEditValue = (kind, v) => v == null ? '' : kind === 'pct' ? String(+(v * 100).toFixed(4)) : String(v);
+const _projFromEditValue = (kind, s) => {
+  const n = parseFloat(s);
+  if (Number.isNaN(n)) return null;
+  return kind === 'pct' ? n / 100 : n;
+};
+
+// Click-to-edit cell for the Monthly Projections grid (owner request 2026-11-03, task #62: "in-
+// app Monthly Targets editor"). Same click->input->commit-on-blur/Enter->Escape-cancels shape as
+// yearly-projections.js's EditableTargetCell / labor-allocation.js's TargetTpphCell, so the whole
+// app has one click-to-edit convention. Flat-view rows only -- grouped rollup rows stay read-only
+// (they're sums/averages across stores, not a single store's real row).
+function EditableProjCell({loc, field, value, tdStyle, onSave}) {
+  const {useState} = React;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  if (!editing) {
+    return h('td', {
+      style: {...tdStyle, cursor: 'pointer'},
+      title: 'Click to set ' + field.l + ' for this store',
+      onClick: () => { setDraft(_projToEditValue(field.kind, value)); setEditing(true); },
+    }, field.fmt(value));
+  }
+  const commit = () => {
+    setEditing(false);
+    if (draft === '') { onSave(loc, field.key, null); return; }
+    const v = _projFromEditValue(field.kind, draft);
+    if (v != null) onSave(loc, field.key, v);
+  };
+  return h('td', {style: {padding: '3px 6px', textAlign: 'right'}},
+    h('input', {
+      type: 'number', step: field.kind === 'pct' ? '0.01' : field.kind === 'sec' ? '0.1' : '0.01',
+      autoFocus: true, value: draft,
+      onChange: e => setDraft(e.target.value),
+      onBlur: commit,
+      onKeyDown: e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setEditing(false); },
+      style: {width: 64, fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right', background: 'var(--surf2)', border: '1px solid var(--amber)', borderRadius: 4, padding: '2px 4px'},
+    }));
+}
 
 // Sales-weighted rollup of PROJ_FIELDS targets for a group of stores.
 // tProdSales is summed; tOpSupply is summed (dollar, not ratio); all others are weighted by
@@ -8472,7 +8515,29 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   // fetchedMt===null means "use ds data" (initial state, or period matches ds).
   // fetchedMt==={}  means "Supabase returned nothing for this period" — show empty,
   // NOT a fallback to ds data which may be a different month.
-  const mt = fetchedMt !== null ? fetchedMt : (ds&&ds.monthlyTargets) || {};
+  const mt0 = fetchedMt !== null ? fetchedMt : (ds&&ds.monthlyTargets) || {};
+  // Task #62 (owner request 2026-11-03) -- in-app edits layered over mt0, same "optimistic
+  // local update, fire-and-forget persist" shape yearly-projections.js's TargetCategoriesView
+  // uses for the Yearly Targets editor. Reset per period so a stale edit from a prior month
+  // doesn't bleed into this one.
+  const [edits, setEdits] = useState({});
+  useEffect(() => { setEdits({}); }, [selPeriod]);
+  const mt = useMemo(() => {
+    if (!Object.keys(edits).length) return mt0;
+    const merged = {...mt0};
+    for (const loc of Object.keys(edits)) merged[loc] = {...(merged[loc]||{}), ...edits[loc]};
+    return merged;
+  }, [mt0, edits]);
+  // Commits one field for one store: optimistic local state, then persists the WHOLE current
+  // row (saveMonthlyTargets upserts a full row per loc/year/month, so a partial object would
+  // null out every other column) -- fire-and-forget, same convention as every other inline-edit
+  // cell in the app.
+  const handleSaveProjField = (loc, fieldKey, value) => {
+    if (!selPeriod) return; // no known year/month to save against -- nothing to do yet
+    setEdits(prev => ({...prev, [loc]: {...(prev[loc]||{}), [fieldKey]: value}}));
+    const fullRow = {...(mt[loc]||{}), [fieldKey]: value};
+    saveMonthlyTargets({[loc]: fullRow}, selPeriod.year, selPeriod.month).catch(()=>{});
+  };
   const knownLocs = useMemo(()=>new Set((stores||[]).map(s=>String(s.loc))),[stores]);
   const locs = useMemo(()=>{
     const all = Object.keys(mt).filter(l=>l!=='__period').sort((a,b)=>+a-+b);
@@ -8546,11 +8611,13 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   // Build store row elements
   const storeRowEls = locs.map(loc=>{
     const t = mt[loc]||{};
+    // Task #62 -- flat-view cells are click-to-edit (EditableProjCell), writing straight to
+    // monthly_targets. Grouped/rollup views stay plain text (sums/averages, not one store's row).
     const dataCells = VISIBLE_FIELDS.map(f=>{
       const v = t[f.key];
-      const formatted = f.fmt(v);
-      return h('td',{key:f.key,style:{...tdS,textAlign:'right',
-        fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'}}, formatted);
+      return h(EditableProjCell, {key:f.key, loc, field:f, value:v,
+        tdStyle:{...tdS,textAlign:'right',fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'},
+        onSave:handleSaveProjField});
     });
     return h('tr',{key:loc},
       h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
