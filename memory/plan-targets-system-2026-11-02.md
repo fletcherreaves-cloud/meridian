@@ -50,11 +50,26 @@ path, so this is that — not a build log.
 
 ## The four distinct asks, by difficulty (easiest/most-reused-plumbing first)
 
-1. **Smart-Targets-assisted yearly sales target.** Smallest lift — the Targets Editor UI gains a
-   "suggest from Smart Targets" button on the sales field that pre-fills the computed Smart
-   Targets number (same engine, just surfaced as a suggestion instead of/alongside the manual
-   entry). Reuses the existing override-cascade system and the existing Smart Targets engine
-   as-is.
+✅ **CORRECTED 2026-11-02 (same day, re-measured before starting #1 below) — item #1's "smallest
+lift" framing was wrong on two counts, found by reading the actual code instead of building from
+this plan's own un-verified assumption (the exact trap CLAUDE.md's "measure, don't reason" rule
+warns about).** First: **`yearly_targets` has no sales column at all** — `parseYearlyTargets`
+(`src/parsers/index.js`) reads OEPE/Park/KVS/R2P/TPPH/Labor%/FOB%/OSAT only; the sales figure
+("Sales Projection" → `tProdSales`) lives in `monthly_targets` (`parseMonthlyTargets`), not
+yearly. Second, and bigger: **the "suggest from Smart Targets" capability this item describes
+is not a gap — it is ALREADY SHIPPED**, just not through the Targets Editor/`target_overrides`
+system this plan assumed it would extend. `src/views/smart-targets.js`'s Sales metric
+(`official: 'tProdSales', officialCol: 'sales_proj'`) has a live "Apply as Official" action that
+writes the computed Smart number (median of T3M/T6W/T3W) directly to the real `monthly_targets`
+row for that store/month — which Projections, the EOM Supervisor panel, and Pace-to-Target all
+already read. `tProdSales` is also confirmed absent from `TARGET_OVERRIDE_FIELDS`
+(`src/engine/target-overrides.js`) — sales was never part of that registry (which pairs each
+field with a `reviewKey` for Performance Review scoring; sales isn't a review-scored KPI the
+same way the FOB%/labor%/OSAT fields are). **Do not build a second "suggest" button for this —
+it exists and works.** What remains open, if anything, is discoverability/UX polish on the
+already-shipped flow, not a new engine or field.
+
+1. ~~Smart-Targets-assisted yearly sales target.~~ **Already shipped — see correction above.**
 2. **Day-part TPPH targets.** A genuinely new concept — every target today is one value per
    store per period, never split by daypart. Needs: (a) a decision on which dayparts (breakfast/
    lunch/dinner/late-night, matching the DAR's existing `hour_slot` bucketing conventions so it's
@@ -95,22 +110,25 @@ path, so this is that — not a build log.
 
 ## Recommended order, if/when this is picked up
 
-1. Extend the existing `target_overrides`/Targets Editor system (already cascading, already
-   patch-aware) rather than building a parallel system — add the Smart-Targets-suggest feature
-   (#1 above, cheap, high value) first to prove the pattern.
+1. ~~Add the Smart-Targets-suggest feature first to prove the pattern.~~ **Moot — already
+   shipped (see correction above).** Start directly with #2.
 2. Decide the daypart-TPPH shape (#2) — needs a real decision meeting, not just an engineering
    guess, since "which dayparts" and "measured against what" are business questions.
 3. Build the in-app Yearly Targets editor + print renderer (#3) on the EOM-Supervisor dual-render
    pattern, reusing the current `yearly_targets` row shape so the Excel-upload path keeps working
    as a fallback during the transition (matches this app's own "manual upload is last-resort
    fallback, never removed outright" standing convention).
-4. Only after 1–3 are real and in use: scope the metric-registry work (#4) as its own project,
+4. Only after 2–3 are real and in use: scope the metric-registry work (#4) as its own project,
    explicitly bounded to "new metrics appear in the editor + N generic views" rather than "every
    existing panel migrates," and revisit which existing panels are worth migrating onto it over
    time.
 5. Monthly Targets (the owner's second, explicitly-tied ask) follows the same shape as #3 once
    proven on Yearly — same dual-render pattern, same `monthly_targets` table, same registry if #4
    has landed by then.
+
+**Both #2 (daypart definitions) and #3 (the in-app editor itself — a multi-week build) are real
+open decisions/scope for the owner, not something to start unprompted** — flagged back to him
+rather than built speculatively.
 
 This is realistically a multi-phase initiative measured in weeks, not a single dispatch — sizing
 that plainly up front so the scope is set with eyes open, as asked.
