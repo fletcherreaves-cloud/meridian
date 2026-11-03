@@ -91,7 +91,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled, initialCollapsed=true}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -101,7 +101,13 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // This mark answers which, directly, instead of guessing further.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('AppSidebar', 'render+commit', performance.now() - _rt0); });
-  const [collapsed, setCollapsed] = React.useState(false);
+  // Owner request 2026-11-03: sidebar defaults to collapsed (48px, icon-only) on load; still
+  // session-local only, same "convenience, not data" tier as the comment below -- a user who
+  // expands it gets the full nav back for the rest of that session, nothing persisted.
+  // initialCollapsed is a test seam (real App.js call site never passes it, so production always
+  // gets the true default) -- lets tests that exercise nav content/clicks render pre-expanded
+  // instead of every one of them having to click the collapse toggle first.
+  const [collapsed, setCollapsed] = React.useState(initialCollapsed);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -129,11 +135,19 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // this adds a capability, it doesn't hide anything on first load. Session-local, not persisted,
   // same "convenience, not data" tier as deepDiveOpen/collapsed/expandedGroup above.
   const [collapsedSections,setCollapsedSections]=React.useState(()=>new Set());
-  const toggleSection = (id) => setCollapsedSections(prev=>{
-    const next=new Set(prev);
-    next.has(id)?next.delete(id):next.add(id);
-    return next;
-  });
+  // Owner request 2026-11-03: "when one section is expanded, the others auto collapse" --
+  // accordion behavior, at most one section open at a time from the moment any header is
+  // clicked. The all-open DEFAULT above is untouched (nothing has been "expanded" yet, so
+  // nothing collapses) -- this only changes what happens once a user starts clicking headers.
+  // Opening section `id` (it was in collapsedSections) collapses every OTHER real section
+  // (SECTIONS, not just the ones currently rendered -- a permission-filtered-out section has no
+  // header to click anyway, so including it here is harmless); closing an already-open section
+  // just adds it back, leaving whatever else is already collapsed untouched.
+  const toggleSection = (id) => setCollapsedSections(prev=>
+    prev.has(id)
+      ? new Set(SECTIONS.filter(s=>s.id!==id).map(s=>s.id))
+      : new Set(prev).add(id)
+  );
 
   // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
   // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second

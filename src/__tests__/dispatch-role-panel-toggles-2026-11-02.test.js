@@ -60,7 +60,7 @@ describe('AppSidebar — panelEnabled wiring (shell.js)', () => {
         view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
         settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal, onLoadFiles: () => {},
         onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-        betaMode: false, panelVis: {}, panelEnabled,
+        betaMode: false, panelVis: {}, panelEnabled, initialCollapsed: false,
       }));
     });
     return { container, root, onOpenModal };

@@ -32,7 +32,7 @@ function mountSidebar(props = {}) {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
       settings: { districtName: 'Test' }, onOpenModal, onLoadFiles: () => {},
       onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-      betaMode: false, panelVis: {}, ...props,
+      betaMode: false, panelVis: {}, initialCollapsed: false, ...props,
     }));
   });
   return { container, root, onOpenModal };

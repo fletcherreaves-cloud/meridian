@@ -35,7 +35,7 @@ function renderSidebar(selStore) {
     // that wiring has always been checked against.
     settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
     onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
-    betaMode: false, panelVis: {},
+    betaMode: false, panelVis: {}, initialCollapsed: false,
   };
   return ReactDOMServer.renderToStaticMarkup(h(AppSidebar, props));
 }
