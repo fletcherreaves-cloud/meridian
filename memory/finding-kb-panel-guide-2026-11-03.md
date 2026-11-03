@@ -124,3 +124,15 @@ stale-fact bugs this exact subject produced today, see
 neither grid has a lock/override mechanic, with a pointer to the real one (Test Kitchen →
 Projections / the `locked_projections` article). Covered by
 `dispatch-kb-targets-editor-2026-11-03.test.js` (2 tests, mounting the real `KnowledgeBasePanel`).
+
+## Added later the same day: `visit_readiness_guide` (task #75)
+
+Another real gap in the original 20-article batch -- Visit Readiness is a shipped, significant
+feature (v4.501, `src/engine/visit-readiness.js`) that was never covered. Added
+`visit_readiness_guide` matching the batch's house style, with the real sub-score weights
+(`READINESS_WEIGHTS`: Speed 35% / Accuracy 30% / Quality 20% / Leadership 15%, each read from
+the engine, not guessed), the real EcoSure-vs-waste/variance-proxy food-safety behavior (per
+CLAUDE.md's Panels & Modules table and the dispatch #231/EcoSure-replacement finding), and the
+real "top risk drivers" + "last actual visit" fields the report renders. Explicitly notes
+food-safety status is kept OUT of the readiness composite by design. 2 tests
+(`dispatch-kb-visit-readiness-2026-11-03.test.js`), mounting the real `KnowledgeBasePanel`.
