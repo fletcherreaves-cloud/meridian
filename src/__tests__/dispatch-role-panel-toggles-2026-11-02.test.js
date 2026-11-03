@@ -106,8 +106,14 @@ describe('AdminPanel / RolesTab — delegated sub-role management (admin.js)', (
 
   it('a full-access caller (users.manage.all, e.g. admin/owner) sees every role including itself', () => {
     const { container } = mount({ onClose: () => {}, orgRoles: DEFAULT_ROLES, setOrgRoles: () => {}, userRole: 'owner' });
-    for (const r of DEFAULT_ROLES) expect(container.textContent).toContain(r.label);
     expect(container.textContent).toContain('Users'); // Users tab present for full access
+    // The default 'users' tab needs live Supabase (not configured in this test, or in CI) to
+    // list actual accounts -- switch to Roles & Permissions, which lists roles from the
+    // `orgRoles` prop directly and needs no backend, to assert the real thing under test: that
+    // a full-access caller sees every role.
+    const rolesTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Roles & Permissions');
+    act(() => { rolesTabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    for (const r of DEFAULT_ROLES) expect(container.textContent).toContain(r.label);
   });
 
   it('a users.manage.lower caller (e.g. DO) sees only roles strictly below their own level, never peers or above', () => {
