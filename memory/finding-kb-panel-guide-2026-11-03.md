@@ -43,6 +43,43 @@ every draft was reviewed before being added. Two of those passes caught REAL sta
 beyond what the earlier Workflow Guide/tutorial audit (same day, see
 `memory/finding-daypart-tpph-targets-and-role-guide-2026-11-02.md`'s sibling commit) had found:
 
+## `panel_index` audit against live panel-registry.js labels (later the same day)
+
+Measured each of `panel_index`'s one-line bullets against the real `panel-registry.js` entry it
+names, per the "measure, don't reason" standing rule -- not a reasoning pass, an actual label-by-
+label diff. Found 4 real, confirmed drift bugs (fixed in the same pass, not just flagged):
+
+1. **"Events & Tags" -> "Events".** `panel-registry.js`'s `events` id's label is `'Events'`
+   (changelog 5.343.js: *"'Events & Tags' relabeled 'Events' in the sidebar, matching its now-
+   broader scope"*) -- `panel_index` still used the retired name.
+2. **"Rankings" -> "Leaderboards".** `panel-registry.js`'s `id:'ranking'` entry's real label is
+   `'Leaderboards'`; "Rankings" was never the live label.
+3. **Scheduling hub: "five tabs" -> 12 tabs.** `App.js`'s `SCHED_TABS` array has grown to 12
+   entries (Labor Analytics, Pay Events, Schedule Discipline, Compliance Audit, Employee
+   Performance, Scheduling, Schedule Summary, Labor Analysis, Labor Allocation, Training
+   Retention, Retention Rollup, Skills) -- `panel_index` still described the hub's original 5,
+   missing 7 real tabs entirely (3 of them added just this week: Schedule Discipline, Compliance
+   Audit, Employee Performance, per the LifeLenz Data Explorer work).
+4. **"Leadership One-Pager" -> retired, merged into "Above-Store One-Pager".** `panel-registry.js`
+   documents this directly: *"'leader-one-pager' (Leadership One-Pager) retired here (dispatch
+   #190, owner-approved 2026-08-10 decision list) -- merged into 'above-store' (Above-Store
+   One-Pager) ... behind a Rollup/Leadership scope selector."* `panel_index` still described it
+   as its own live standalone panel, three months after it stopped existing as one.
+
+**Deliberately bounded, not a full sweep:** checked every bullet for wrong/retired labels and
+undercounted tab lists -- real, provable drift. Did NOT attempt to add every `kind:'nav'` panel
+missing from `panel_index` entirely (e.g. `eom-dashboard`/"Inventory Control", `district-lens`,
+several Signal-Lab-style derived panels like `item-velocity`/`channel-mix`/`weather-impact`) --
+whether those genuinely belong in a one-line directory at this granularity is an editorial/scope
+call, not a measurable fact, and conflating "panel never mentioned" with "panel mislabeled" would
+have ballooned this into the full ~74-panel sweep that's explicitly deferred (see above). That
+gap audit is still open if someone wants to do it as its own pass.
+
+4 new tests in `dispatch-workflow-guide-kb-staleness-2026-11-02.test.js` (mounting the real
+`KnowledgeBasePanel`), one per fix above.
+
+## Earlier Panel Guide batch findings
+
 - **Why Engine** -- `App.js`'s Workflow Guide KEY FEATURES text said it "surfaces the most likely
   root cause with confidence score." The real mechanism (`diagnoseMiss()`, `src/engine/why.js`)
   returns a list of up to 7 independently-checked causes, each tagged PRIMARY/CONTRIBUTING/NOTE/
@@ -71,10 +108,8 @@ trusting the existing onboarding copy, consistent with this repo's "measure, don
   opens the panel without pre-selecting that article -- a real gap for a future "click here to
   jump straight to this panel's article" flow, not touched in this pass (out of scope: this pass
   is content, not the deep-link wiring).
-- A full audit of `panel_index`'s own one-line descriptions against current panel-registry.js
-  labels (the same kind of staleness check this session already ran on `WORKFLOW_GUIDE_SECTIONS`/
-  `tutorial.js`) was NOT done -- worth a follow-up pass given how much staleness turned up
-  elsewhere in the onboarding copy today.
+- ✅ **This audit WAS done later the same day** -- see "`panel_index` audit against live
+  panel-registry.js labels" above. It found real drift, not a clean bill of health.
 
 ## Added later the same day: `targets_editor` (task #75, after #61/#62 shipped)
 
