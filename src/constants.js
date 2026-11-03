@@ -208,6 +208,20 @@ const DEF_SETTINGS={
   // a full timeline, since a store closes once, not repeatedly). See isStoreClosedOn/activeStoreIds
   // below for the resolver, and src/engine/new-store-ramp.js for the companion new-store forecast.
   storeLifecycle:{},
+  // Opening-side counterpart to storeLifecycle above (owner-reported 2026-11-03: the Lindsay
+  // relocation's NEW store, 44689, was showing up in the October Pace-to-Target / Monthly
+  // Targets rosters with a real sales target weeks before it opens — "44689" has been in
+  // STORE_NAMES since the relocation was announced so every store-roster call site that reads
+  // STORE_NAMES directly, Targets Editor's scope picker and pace-to-target.js's ALL_LOCS among
+  // them, has had no way to know it isn't trading yet). storeLifecycle only ever covered the
+  // CLOSE side of a relocation (18213's last day); this is the symmetric OPEN side — a store's
+  // FIRST day of operation. Same deliberately-empty-by-default, settable-from-Settings pattern
+  // (Settings -> Store Status, same section as storeLifecycle) rather than a hardcoded date here
+  // — 44689's exact open day is still TBD per the storeLifecycle comment above, so this ships as
+  // {} and the owner sets '44689' once the date is confirmed, exactly as he'll set 18213's close
+  // date. See isStoreNotYetOpenOn below; wired into CurrentMonthPaceSection (analytics.js) so a
+  // store with no open date set behaves exactly as before (always eligible) until one is set.
+  storeOpenDates:{},
   // Metric activate/deactivate toggles (true = active in scoring)
   metricActive:{oepe:true,kvst:true,kvsu:true,park:true,tpph:true,labor:true,r2p:true,
     cashOS:true,tRedA:true,ot:true,refund:true,disc:true},
@@ -887,6 +901,14 @@ function activeStoreIds(ids, storeLifecycle, asOf) {
   const cutoff = _dstr(asOf || new Date());
   return (ids || []).filter(x => !isStoreClosedOn(typeof x === 'string' ? x : x.loc, storeLifecycle, cutoff));
 }
+// Opening-side counterpart to isStoreClosedOn, for storeOpenDates (see its DEF_SETTINGS comment
+// above). No open date set for a loc -> unknown/legacy store, treated as already open (same
+// "unknown = active" default isStoreClosedOn uses for a loc with no close date).
+function isStoreNotYetOpenOn(loc, storeOpenDates, asOf) {
+  const openDate = (storeOpenDates || {})[_unpadLoc(loc)];
+  if (!openDate) return false;
+  return _dstr(asOf) < openDate;
+}
 
 // ── Operator: live flat map (dispatch #224 Task 1) ────────────────────────────
 // Owner/operator groups mirror the SHAPE of supervisorGroups()/setLiveSupervisorGroups() above —
@@ -938,4 +960,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, latestEffective, seedAssignmentsFromGroups, isStoreClosedOn, activeStoreIds, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, latestEffective, seedAssignmentsFromGroups, isStoreClosedOn, activeStoreIds, isStoreNotYetOpenOn, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
