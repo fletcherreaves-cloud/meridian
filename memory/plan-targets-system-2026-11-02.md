@@ -130,6 +130,28 @@ for a unit test and irrelevant to what the test actually verifies. Same stubbing
 store/period with no prior data still needs the Excel upload; the stale "lock week" documentation
 across 3 files is flagged above, not fixed here; #4 (configurable metric categories) untouched.
 
+✅ **"Lock Week" stale-documentation follow-up FIXED 2026-11-03, same session** (was spawned as a
+suggested task, `task_1286bc32`, then picked up directly rather than left for later). **Correcting
+two things about the finding above when it was re-measured to actually fix it:**
+- **It's 2 files, not 3** — `tutorial.js` (`src/views/tutorial.js`) has no lock/double-click/
+  Planning-tab text at all; grepped and confirmed empty. The real two are `App.js`'s
+  `WORKFLOW_GUIDE_SECTIONS` (the WEEKLY/MONTHLY "Lock the ... projection" steps) and `forecast.js`'s
+  `locked_projections` KB article's "How to Lock" section.
+- **The lock/override mechanic these describe is NOT dead code** — it's `ProjectionWorkflow`
+  (`src/features/projections.js`, `routePanel==='proj'`, panel-registry id `proj`, label
+  "▦ Projections", `kind:'test-kitchen'`), a real, live, Supabase-backed feature
+  (`locked_projections` user setting) totally separate from the Targets system (`yearly_targets`/
+  `monthly_targets`) this whole file is about. The actual bug: both doc sources presented
+  "Planning → Monthly tab" (`MonthlyProjectionsPanel`, the Targets editor) as an **equivalent
+  alternate path** to Test Kitchen's Projections grid for locking — it isn't; `MonthlyProjectionsPanel`
+  has no lock/override of any kind. That framing was itself introduced by dispatch #74's 2026-11-02
+  Workflow-Guide/KB audit (which correctly fixed a *different* staleness in the same lines — the
+  Test-Kitchen-demotion issue — but, in doing so, wrote in the false "Planning → Monthly tab (or ...)"
+  equivalence). Rewrote both sources to name Test Kitchen → ▦ Projections as the only lock path and
+  explicitly say Planning → Monthly tab is the Targets editor with no lock mechanic. Updated
+  `dispatch-workflow-guide-kb-staleness-2026-11-02.test.js`'s own assertion (it had encoded the
+  stale claim as a *pass* condition) and added 2 new tests mounting the real `WorkflowGuidePanel`.
+
 ---
 
 **Status (original, below): queued, not started.** Owner asked explicitly for a feasibility read and a recommended
