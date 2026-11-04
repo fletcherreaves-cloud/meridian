@@ -5,6 +5,26 @@ our memory file... supercharge it and give it the backbone it needs while keepin
 enough to continue growing... we need to sort this out and find a way to differentiate it
 [product vs. tenant knowledge]." This is that spec.
 
+**Status: §3's mechanism APPLIED (owner-approved 2026-11-04).** `scope` column defined in both
+`supabase/schema-sage-memory-kb.sql` (fresh deployments) and `supabase/schema-sage-memory-kb-scope.sql`
+(the ALTER an already-deployed instance needs — **owner action required**, DDL is never run by an
+agent session, see that file). `scripts/sage-memory-ingest.mjs` reads a `scope:` frontmatter tag
+(defaults to `'tenant'`, the safe direction, for every file that doesn't have one — i.e. the whole
+pre-2026-11-04 corpus keeps ingesting exactly as before, nothing skipped). `search_project_memory`
+(sage-chat/index.ts) now returns a row when it's either the caller's own tenant (any scope) or
+explicitly `scope='product'`. **What's still open, and a real ordering requirement:** (a) the owner needs to run
+`schema-sage-memory-kb-scope.sql` in the Supabase SQL editor before `scope` exists as a real
+column on the live table. **This has to happen before `sage-chat` is next redeployed** (`supabase
+functions deploy sage-chat --no-verify-jwt`) — the updated `search_project_memory` query now
+references `scope` unconditionally, so deploying the new Edge Function code against a table that
+doesn't have that column yet would break memory search outright (a real SQL error, not a graceful
+no-op) until the migration runs. Nothing is at risk from merging this code change itself — Edge
+Function deploys are a separate, manual step in this repo (confirmed: no CI workflow deploys
+`supabase/functions/*`), so `main` can safely hold this code before the SQL has run; just don't
+run the deploy command until the migration is applied first. (b) §4's backlog-classification of
+the existing ~30 ingested files is still deliberately NOT done — no file carries `scope: product`
+yet, so nothing is actually shared across tenants today, by design, until someone tags a file.
+
 ## 1. What's actually there today (measured, not assumed)
 
 I went back and checked the real schema/code before designing anything new — my own earlier
