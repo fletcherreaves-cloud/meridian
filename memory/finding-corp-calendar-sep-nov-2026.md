@@ -1,12 +1,46 @@
 ---
 name: finding-corp-calendar-sep-nov-2026
-description: McDonald's corporate "What You Need to Know" newsletter — September-November 2026 dated calendar items (national promos, IT/NRBES compliance deadlines, training sessions, Price Round 3 timing). Source digest for deciding which items belong in Meridian's org_events calendar.
+description: McDonald's corporate "What You Need to Know"/"Field Brief" newsletter — September-November 2026 dated calendar items (national promos, IT/NRBES compliance deadlines, training sessions, Price Round 3 timing). Source digest for deciding which items belong in Meridian's org_events calendar.
 metadata:
   node_type: memory
   type: finding
 ---
 
 # Corporate calendar — Sept/Oct/Nov 2026 ("What You Need to Know" newsletter, sent to kathy.lopez-thorley@partners.mcd.com)
+
+## 2026-11-04 update: "Field Brief" edition (week of 11/2) — same newsletter series, new name
+
+Owner-forwarded PDF + live link. The corporate newsletter now publishes under "Field Brief"
+rather than "What You Need to Know" — same audience/purpose, not a new source to track
+separately. **The one item that actually matters and is NOT just calendar housekeeping is in
+`memory/lifelenz-session.md`'s 2026-11-04 entry: MFA becomes mandatory for QSRSoft (newly named
+alongside LifeLenz, which was already flagged), effective 2026-11-09 — a real risk to the
+automated pull scripts, not something resolved here.** Everything below is the rest of this
+edition, for completeness.
+
+- **Promo items already covered in `org_events`** (no new entry needed, cross-checked against
+  this file's own Rev 5 load above): Beverage All Store Sell (New Holiday Flavors, 11/3 — id
+  6147), Happy Meal #10/Pokémon (11/10–12/14 — id 6172, label format matches the existing
+  series), National Fried Chicken Sandwich Day (11/9 — id 6144), Monopoly wrap-up (ended 11/1,
+  matches the already-loaded 10/6–11/1 window exactly).
+- **Possibly NOT yet reconciled** — this edition's "Next 60 Days" calendar names **"QPC Taste &
+  Quality Advertising (with $8 QPC EVM)," 11/2–11/29** and **"Value Advertising: $5 SME EVM,"
+  11/2–11/22** — tier-named programs that may or may not map one-to-one onto the generic
+  "Generalists/Specialists/Foundation" rows already loaded from the OPNAD calendar (§ above).
+  Not reconciled this pass (the MFA risk took priority) — worth a quick diff against live
+  `org_events` before trusting either is fully represented.
+- **Side of bacon (11/10):** GMA/Kiosk display changes from 2 half-strips to 2 full slices —
+  operational/display standard only, not a Meridian data or forecast concern.
+- **GRNT Agreements — action due 2027-01-15:** all Owner/Operators must sign open agreements in
+  the Digital 360 Portal and confirm Bill of Materials/Letter of Agency per restaurant. Business
+  administration for the owner directly, not a Meridian build item.
+- **2026 Tuition Assistance deadline 12/31**, **NFLA Team Lead nominations due 11/17**, **Food
+  and Paper Memo 2026/2027 Outlook** (available 11/4 after Q3 earnings), **Operator AR
+  Statements now monthly** (started end of October) — all informational/administrative, no
+  Meridian action.
+- **Uber Eats/DoorDash delivery agreement Q&A** (service-level expectations post-switch,
+  opt-out-then-back-in requires a new 3PO agreement) — useful context if a McDelivery-related
+  data anomaly shows up, not an action item on its own.
 
 ## 2026-10-12 update: Rev 5 national calendar supersedes the Rev 2 PDF this file's 2026-10-01
 ## pass was built from — see `data/marketing-calendars/README.md` for the full detail

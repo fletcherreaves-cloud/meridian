@@ -99,8 +99,18 @@ export async function getFreshToken({ forceRemint = false } = {}) {
   }
 
   if (body?.ChallengeName) {
-    // Owner confirms MFA is off, per #312 — a challenge here is a surprise, not a
-    // condition this module is designed to satisfy (no code prompts for an MFA code).
+    // Owner confirmed MFA was off for this account, per #312 — a challenge here was a
+    // surprise at that time, and still is: no code here prompts for an MFA code, by
+    // design (an untested auto-answer path is worse than a loud failure). ⚠️ That
+    // assumption is now TIME-LIMITED: McDonald's corporate "Field Brief" (week of 11/2,
+    // 2026-11-04) names QSRSoft explicitly as requiring MFA "for applicable managers"
+    // effective 2026-11-09 — see memory/lifelenz-session.md's 2026-11-04 entry for the
+    // full corroboration (LifeLenz was already flagged; this is QSRSoft's first mention).
+    // If this account is swept in, every call here starts throwing on/after 11/9 and
+    // every one of this module's 19 callers falls to the Playwright fallback, which has
+    // the identical unattended-MFA problem. Throwing here is still the right behavior —
+    // do not add a silent MFA-bypass attempt — but don't re-read this comment as settled
+    // fact without checking whether that date has passed and whether this error is firing.
     throw new Error(`getFreshToken: unexpected challenge ${body.ChallengeName}`);
   }
   const code = body?.__type?.split('#').pop() || body?.code || `HTTP ${resp.status}`;

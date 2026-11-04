@@ -929,7 +929,7 @@ export async function loadSmgFullscale({ year, month } = {}) {
     if (year)  q = q.eq('year',  year);
     if (month) q = q.eq('month', month);
     return q.range(from, to);
-  });
+  }, 1000, 'smg_fullscale');
   // Normalize back to camelCase
   return (data || []).map(r => ({
     loc:            r.loc,
@@ -967,7 +967,7 @@ export async function loadCustomerComplaints() {
   // ('loc').order('hour_slot')).
   const data = await fetchAll((from, to) =>
     supabase.from('customer_complaints').select('*').order('incident_date', { ascending: false }).order('child_case_id', { ascending: false }).range(from, to)
-  );
+  , 1000, 'customer_complaints');
   return (data || []).map(r => ({
     childCaseId: r.child_case_id,
     parentCaseId: r.parent_case_id,
@@ -1040,7 +1040,7 @@ export async function loadVoicePerf() {
     .from('smg_voice_performance')
     .select('*')
     .order('period', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'smg_voice_performance');
   return data || [];
 }
 
@@ -1094,7 +1094,7 @@ export async function loadConversionEfficiency() {
     .from('conversion_efficiency')
     .select('*')
     .order('period', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'conversion_efficiency');
   return data || [];
 }
 
@@ -1152,7 +1152,7 @@ export async function loadOilEfficiency() {
     .from('oil_efficiency')
     .select('*')
     .order('period', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'oil_efficiency');
   return data || [];
 }
 
@@ -1187,7 +1187,7 @@ export async function loadVoiceDaypart() {
   const data = await fetchAll((from, to) => supabase
     .from('smg_voice_daypart').select('*')
     .order('period', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'smg_voice_daypart');
   return (data || []).map(r => ({ ...r, storeName: r.loc_name }));
 }
 
@@ -1250,7 +1250,7 @@ export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}
     .gte('date', fmt(start))
     .lte('date', fmt(end))
     .order('date', { ascending: false })
-    .range(lo, hi));
+    .range(lo, hi), 1000, 'lifelenz_schedule');
   if (!data || !data.length) return [];
   return data.map(r => ({
     // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary/
@@ -1307,7 +1307,7 @@ export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}
     .gte('week_start', fmt(start))
     .lte('week_start', fmt(end))
     .order('week_start', { ascending: false })
-    .range(lo, hi));
+    .range(lo, hi), 1000, 'lifelenz_job_hours');
   if (!data || !data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
@@ -2330,7 +2330,7 @@ export async function loadDarRows({ daysBack = 90 } = {}) {
     .from('dar_rows').select('*')
     .gte('date', cutoffStr)
     .order('date', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'dar_rows');
   if (!data.length) return [];
   return data.map(r => ({
     loc:    r.loc,
@@ -2598,7 +2598,7 @@ export async function saveSmgComments(rows) {
   try {
     const existing = new Set();
     const seen = await fetchAll((from, to) => supabase
-      .from('smg_comments').select('dedup_key').range(from, to));
+      .from('smg_comments').select('dedup_key').range(from, to), 1000, 'smg_comments');
     for (const r of (seen || [])) if (r && r.dedup_key) existing.add(r.dedup_key);
     if (existing.size) upsert = upsert.filter(r => !existing.has(r.dedup_key));
   } catch (e) {
@@ -2625,7 +2625,7 @@ export async function loadSmgComments({ daysBack = 365 } = {}) {
     .from('smg_comments').select('*')
     .gte('comment_date', cutoff)
     .order('comment_date', { ascending: false })
-    .range(from, to));
+    .range(from, to), 1000, 'smg_comments');
   // Keep dates as ISO strings (not Date objects) to match parser output — the
   // comment panel sorts and renders them as strings, and a Date here both
   // breaks localeCompare and prints as an ugly full datetime.
@@ -2715,7 +2715,7 @@ export async function loadDailyActivityRange(startDate, endDate) {
     .order('dt')
     .order('loc')
     .order('hour_slot')
-    .range(lo, hi));
+    .range(lo, hi), 1000, 'qsr_daily_activity');
 }
 
 // Single-store hourly range (dispatch #204, Store Cockpit Labor & Scheduling tab) — same
@@ -2734,7 +2734,7 @@ export async function loadDailyActivityRangeForStore(loc, startDate, endDate) {
     .lte('dt', endDate)
     .order('dt')
     .order('hour_slot')
-    .range(lo, hi));
+    .range(lo, hi), 1000, 'qsr_daily_activity');
 }
 
 // ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
@@ -2908,7 +2908,7 @@ export async function saveRosterStatistics(periodMonth, byLoc) {
 }
 export async function loadRosterStatistics() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('roster_statistics').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('roster_statistics').select('*').order('period_month').range(from, to), 1000, 'roster_statistics');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month,
     crewStaff: r.crew_staff, shiftStaff: r.shift_staff, gmdmStaff: r.gmdm_staff,
@@ -2930,7 +2930,7 @@ export async function saveRosterRoleCounts(periodMonth, byLoc) {
 }
 export async function loadRosterRoleCounts() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('roster_role_counts').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('roster_role_counts').select('*').order('period_month').range(from, to), 1000, 'roster_role_counts');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month,
     crew: r.crew, shiftMgr: r.shift_mgr, gm: r.gm, maintenance: r.maintenance, admin: r.admin, other: r.other, total: r.total,
@@ -2953,7 +2953,7 @@ export async function saveTurnoverMonthly(byLoc) {
 }
 export async function loadTurnoverMonthly() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('turnover_monthly').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('turnover_monthly').select('*').order('period_month').range(from, to), 1000, 'turnover_monthly');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month,
     hires: r.hires, rosterSize: r.roster_size, terms: r.terms, termsUnder90: r.terms_under_90,
@@ -2968,7 +2968,7 @@ export async function loadTurnoverMonthly() {
 // loaders return flat rows tagged with `month` for the review auto-populate lookup.
 export async function loadDigitalAppMonthly() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('digital_app_monthly').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('digital_app_monthly').select('*').order('period_month').range(from, to), 1000, 'digital_app_monthly');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month,
     appSales: r.app_sales, appGc: r.app_gc, appGcRd: r.app_gc_rd,
@@ -2978,7 +2978,7 @@ export async function loadDigitalAppMonthly() {
 
 export async function loadMcdeliveryMonthly() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('mcdelivery_monthly').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('mcdelivery_monthly').select('*').order('period_month').range(from, to), 1000, 'mcdelivery_monthly');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month, vendor: r.vendor,
     deliveryGc: r.delivery_gc, deliveryGcRd: r.delivery_gc_rd, posMcDeliveryGc: r.pos_mcdelivery_gc,
@@ -2994,7 +2994,7 @@ export async function loadMcdeliveryMonthly() {
 // GMs keep store-total). Speed metrics in seconds. Pull: qsrsoft-shift-manager-pull.
 export async function loadShiftManagerMonthly() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('shift_manager_monthly').select('*').order('period_month').range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('shift_manager_monthly').select('*').order('period_month').range(from, to), 1000, 'shift_manager_monthly');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), month: r.period_month, geid: r.geid, name: r.manager_name,
     numShifts: r.num_shifts, actualHours: r.actual_hours,
@@ -3031,7 +3031,7 @@ export async function loadEbosDaily(daysBack = 400) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
   const data = await fetchAll((from, to) => supabase.from('qsr_ebos_daily')
-    .select('loc,date,ops_purchases').gte('date', iso).order('date').range(from, to));
+    .select('loc,date,ops_purchases').gte('date', iso).order('date').range(from, to), 1000, 'qsr_ebos_daily');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), date: _mkDate(r.date), opsPurchases: r.ops_purchases ?? 0,
   }));
@@ -4540,7 +4540,7 @@ export async function loadInvCountSessions({ period } = {}) {
     let q = supabase.from('inv_count_sessions').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'inv_count_sessions');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), countDate: _fromISO(r.count_date), cls: r.cls, period: r.period,
     itemsCounted: r.items_counted, classTotal: r.class_total, covered: r.covered,
@@ -4555,7 +4555,7 @@ export async function loadQsrVarianceStat({ period } = {}) {
     let q = supabase.from('qsr_variance_stat').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_variance_stat');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
@@ -4572,7 +4572,7 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
   if (!supabase || !loc || !periods.length) return [];
   const data = await fetchAll((from, to) =>
     supabase.from('qsr_variance_stat').select('*')
-      .eq('loc', String(loc).padStart(7, '0')).in('period', periods).range(from, to));
+      .eq('loc', String(loc).padStart(7, '0')).in('period', periods).range(from, to), 1000, 'qsr_variance_stat');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     variance: r.variance, dolDiff: r.dol_diff, yield: r.yield_val,
@@ -4701,7 +4701,7 @@ export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = 
     rows = hit.rows;
   } else {
     const data = await fetchAll((from, to) => supabase.from('qsr_variance_stat')
-      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to));
+      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to), 1000, 'qsr_variance_stat');
     rows = (data || []).map(r => ({
       loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
       variance: r.variance, dolDiff: r.dol_diff,
@@ -4718,7 +4718,7 @@ export async function loadQsrWaste({ period } = {}) {
     let q = supabase.from('qsr_waste').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_waste');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm,
     type: r.wtype, amount: r.amount, manager: r.manager, source: r.wsource,
@@ -4733,7 +4733,7 @@ export async function loadQsrTransfers({ period } = {}) {
     let q = supabase.from('qsr_transfers').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_transfers');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, transferId: r.transfer_id, wrin: r.wrin, dir: r.dir,
     counterpartyNsn: r.counterparty, dt: r.busn_dt, status: r.status, lineAmt: r.line_amt,
@@ -4820,7 +4820,7 @@ export async function loadQsrInventorySummary({ period } = {}) {
     let q = supabase.from('qsr_inventory_summary').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_inventory_summary');
   return (data || []).map(r => ({
     loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
     uom: r.uom, caseSz: r.case_sz, cost: r.cost, startInv: r.start_inv,
@@ -4881,7 +4881,7 @@ export async function loadEomCountStatus({ period } = {}) {
     let q = supabase.from('eom_count_status').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'eom_count_status');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, itemsTotal: r.items_total, itemsCounted: r.items_counted,
     pctCounted: r.pct_counted, foodDone: r.food_done, condimentDone: r.condiment_done,
@@ -5059,7 +5059,7 @@ export async function loadEomSnapshots({ period, kind, loc, latestPerLoc } = {})
     if (kind) q = q.eq('kind', kind);
     if (loc) q = q.eq('loc', String(loc));
     return q;
-  });
+  }, 1000, 'eom_snapshots');
   let out = (data || []).map(r => ({
     id: r.id, loc: r.loc, period: r.period, kind: r.kind, label: r.label,
     takenAt: r.taken_at, takenBy: r.taken_by, fob: r.fob, count: r.count, items: r.items, meta: r.meta,
@@ -5396,7 +5396,7 @@ export async function loadEomSecondaryReview({ period } = {}) {
     let q = supabase.from('eom_secondary_review').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'eom_secondary_review');
   const m = {};
   for (const r of (data || [])) m[String(r.loc)] = { status: r.status, note: r.note, reviewedAt: r.reviewed_at };
   return m;
@@ -5419,7 +5419,7 @@ export async function loadEomShareLinks({ period } = {}) {
     let q = supabase.from('eom_share_links').select('token,loc,period,store_name,created_at,expires_at,revoked,view_count,last_viewed_at,acknowledged_at').order('created_at', { ascending: false }).range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'eom_share_links');
   return (data || []).map(r => ({ token: r.token, loc: r.loc, period: r.period, storeName: r.store_name, createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked, viewCount: r.view_count, lastViewedAt: r.last_viewed_at, acknowledgedAt: r.acknowledged_at }));
 }
 export async function revokeEomShareLink(token, revoked = true) {
@@ -5446,7 +5446,7 @@ export async function loadEomIntegrityFlags({ period } = {}) {
       let q = supabase.from('eom_integrity_flags').select('*').range(from, to);
       if (period) q = q.eq('period', period);
       return q;
-    });
+    }, 1000, 'eom_integrity_flags');
     return (data || []).map(r => ({ loc: r.loc, period: r.period, kind: r.kind, severity: r.severity, title: r.title, detail: r.detail, dollars: r.dollars, meta: r.meta }));
   } catch { return []; }   // table may not exist yet → fail-soft
 }
@@ -5461,7 +5461,7 @@ export async function loadEomCountStatusHistory({ loc, period } = {}) {
       if (loc) q = q.eq('loc', String(loc));
       if (period) q = q.eq('period', period);
       return q;
-    });
+    }, 1000, 'eom_count_status_history');
     return data || [];
   } catch { return []; }   // table may not exist yet → fail-soft
 }
@@ -5479,7 +5479,7 @@ export async function loadDataCompletenessIncidents() {
     const data = await fetchAll((from, to) => supabase.from('data_completeness_incidents')
       .select('id,loc,stream,date_start,date_end,classification,cause,recovery_status,detected_at')
       .eq('recovery_status', 'open').neq('classification', 'legitimate')
-      .order('detected_at').range(from, to));
+      .order('detected_at').range(from, to), 1000, 'data_completeness_incidents');
     return (data || []).map(r => ({
       id: r.id, loc: String(parseInt(r.loc, 10)), stream: r.stream,
       dateStart: r.date_start, dateEnd: r.date_end, classification: r.classification,
@@ -5507,7 +5507,7 @@ export async function createEquipmentSurveyLink(label) {
 export async function loadEquipmentSurveyLinks() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_survey_links')
-    .select('token,label,created_at,revoked,view_count,last_viewed_at').order('created_at', { ascending: false }).range(from, to));
+    .select('token,label,created_at,revoked,view_count,last_viewed_at').order('created_at', { ascending: false }).range(from, to), 1000, 'equipment_survey_links');
   return (data || []).map(r => ({ token: r.token, label: r.label, createdAt: r.created_at, revoked: r.revoked, viewCount: r.view_count, lastViewedAt: r.last_viewed_at }));
 }
 export async function revokeEquipmentSurveyLink(token, revoked = true) {
@@ -5572,7 +5572,7 @@ export async function extractEquipmentPlate(token, imageBase64, mediaType) {
 export async function loadEquipmentCatalogDirect() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_catalog')
-    .select('*').order('type', { ascending: true }).range(from, to));
+    .select('*').order('type', { ascending: true }).range(from, to), 1000, 'equipment_catalog');
   return data || [];
 }
 // PQRG reference settings per catalog item (2026-11-02) — same direct-read posture as the
@@ -5581,13 +5581,13 @@ export async function loadEquipmentCatalogDirect() {
 export async function loadEquipmentCatalogSettingsDirect() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_catalog_settings')
-    .select('*').range(from, to));
+    .select('*').range(from, to), 1000, 'equipment_catalog_settings');
   return data || [];
 }
 export async function loadEquipmentEntriesDirect(loc) {
   if (!supabase || !loc) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
-    .select('*').eq('loc', String(loc)).order('submitted_at', { ascending: false }).range(from, to));
+    .select('*').eq('loc', String(loc)).order('submitted_at', { ascending: false }).range(from, to), 1000, 'equipment_survey_entries');
   return data || [];
 }
 // Every store's entries in one fetch, for the Equipment Results panel's cross-store rollup
@@ -5596,7 +5596,7 @@ export async function loadEquipmentEntriesDirect(loc) {
 export async function loadAllEquipmentEntriesDirect() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('equipment_survey_entries')
-    .select('*').order('submitted_at', { ascending: false }).range(from, to));
+    .select('*').order('submitted_at', { ascending: false }).range(from, to), 1000, 'equipment_survey_entries');
   return data || [];
 }
 // row: { instance_id?, loc, catalog_item_id?, manual_entry_text?, placement_zone?, serial_number?,
@@ -5654,7 +5654,7 @@ export async function loadEomCountExceptions({ period } = {}) {
     let q = supabase.from('eom_count_exceptions').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'eom_count_exceptions');
   const m = {};
   for (const r of (data || [])) m[String(r.loc)] = { kind: r.kind, acceptedDate: r.accepted_date, approvedBy: r.approved_by, note: r.note, createdAt: r.created_at };
   return m;
@@ -5684,7 +5684,7 @@ export async function updateCoachingCycleResult(id, { result, verdict }) {
 }
 export async function loadCoachingCycles() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('coaching_cycles').select('*').order('coached_at', { ascending: false }).range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('coaching_cycles').select('*').order('coached_at', { ascending: false }).range(from, to), 1000, 'coaching_cycles');
   return (data || []).map(r => ({
     id: r.id, loc: String(r.loc), metric: r.metric, baseline: r.baseline,
     coachedAt: r.coached_at, note: r.note || '', reviewAt: r.review_at,
@@ -5698,7 +5698,7 @@ export async function loadCoachingCycles() {
 // header for why this is a separate table rather than a read-modify-write array column.
 export async function loadCoachingCycleNotes() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('coaching_cycle_notes').select('*').order('created_at', { ascending: true }).range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('coaching_cycle_notes').select('*').order('created_at', { ascending: true }).range(from, to), 1000, 'coaching_cycle_notes');
   return (data || []).map(r => ({
     id: r.id, cycleId: r.cycle_id, loc: String(r.loc), note: r.note,
     author: r.author || null, createdAt: r.created_at,
@@ -5721,7 +5721,7 @@ export async function addCoachingCycleNote({ cycleId, loc, note }) {
 // schema-pay-events.sql's header for why this is store-level, not per-employee.
 export async function loadPayEvents() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('pay_events').select('*').order('effective_date', { ascending: false }).range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('pay_events').select('*').order('effective_date', { ascending: false }).range(from, to), 1000, 'pay_events');
   return (data || []).map(r => ({
     id: r.id, loc: String(r.loc), raiseType: r.raise_type || 'other',
     amountPerHour: r.amount_per_hour, employeeLabel: r.employee_label || '',
@@ -5751,7 +5751,7 @@ export async function savePayEvent(ev) {
 // supabase/schema-custom-reports.sql hasn't been run yet.
 export async function loadCustomReports() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('custom_reports').select('*').order('updated_at', { ascending: false }).range(from, to));
+  const data = await fetchAll((from, to) => supabase.from('custom_reports').select('*').order('updated_at', { ascending: false }).range(from, to), 1000, 'custom_reports');
   return (data || []).map(r => ({
     id: r.id, name: r.name, metricKeys: Array.isArray(r.metric_keys) ? r.metric_keys : [],
     shared: !!r.shared, createdBy: r.created_by, createdByLabel: r.created_by_label || '',
@@ -5823,7 +5823,7 @@ export async function loadEomItemDisposition({ period, loc } = {}) {
       if (period) q = q.eq('period', period);
       if (loc) q = q.eq('loc', String(loc));
       return q;
-    });
+    }, 1000, 'eom_item_disposition');
     return (data || []).map(r => ({
       loc: r.loc, period: r.period, wrin: r.wrin, disposition: r.disposition, cls: r.cls,
       descr: r.descr, onHandAmt: r.on_hand_amt, note: r.note, decidedAt: r.decided_at,
