@@ -115,7 +115,17 @@ export const lazyPanel = (importFn) => {
 // spinner — so on the rare slow-network case where Suspense actually triggers, the content
 // area is briefly blank rather than flashing something jarring over the nav/topbar.
 const _ataglance = () => import('../views/at-a-glance.js');
-_ataglance();
+// Guarded to MODE!=='test': this prefetch is fire-and-forget (never awaited), which is fine in
+// a real browser -- it just resolves whenever and warms the module cache -- but under Vitest a
+// test file can finish and tear down its environment (happy-dom) before this one in-flight
+// import() settles, surfacing as an intermittent "EnvironmentTeardownError: Cannot load ... after
+// the environment was torn down" on whichever test file happens to import App.js fastest. Found
+// 2026-11-04: hit twice in one day on two unrelated PRs, always the same error, always cleared by
+// a re-run with no code change -- a real, reproducible test-infra race, not flaky test content.
+// import.meta.env.MODE (not process.env.VITEST) because this is Vite-bundled browser code; Vite
+// replaces MODE with a literal at build time, so this never references `process`, which the
+// shipped production bundle has no polyfill for.
+if (import.meta.env.MODE !== 'test') _ataglance();
 const _AtAGlanceInner = React.lazy(() => _ataglance().then(m => ({ default: m.AtAGlance })).catch((err) => {
   try {
     const KEY = 'meridian_chunk_reload_at';
