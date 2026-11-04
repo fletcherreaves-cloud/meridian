@@ -165,3 +165,74 @@ guessed), the per-source coverage table, and the standing "auto/emailed-first, f
 sourcing rule from CLAUDE.md's Dev Rules (manual uploads fill gaps, never override auto/emailed
 data). Also notes the "Clear ALL stored data" action as a last resort, not routine. 2 tests
 (`dispatch-kb-data-manager-2026-11-03.test.js`).
+
+## Added 2026-11-04: Graded Visits, Security, Customer Complaints, Crew Schedule, Labor Analysis,
+## Task Queue (task #75, next batch)
+
+Picked from `memory/plan-role-based-panel-gating-2026-11-03.md`'s §3 cross-walk of real GM/
+Supervisor job routines to live panels -- all six are named directly in that document, so this
+batch is traffic-prioritized the same way the first one was, not an arbitrary next-six pick.
+
+- **`graded_visits_guide`** -- read `src/views/graded-visits.js` directly rather than assume its
+  relationship to Visit Readiness: it is the REAL, already-happened CFV/RGR/EcoSure visit record
+  (80% CFV pass threshold, confirmed from the file's own `PASS` constant), not a second predictive
+  score. Visit Readiness's own "last actual visit" field is sourced from this exact table, so the
+  new article cross-references it explicitly rather than duplicating or contradicting it. Also
+  documents the real polymorphic `report_type` trap this file's own header comment warns about --
+  CFV/RGR's `modules` field is `{category:{pct}}`, EcoSure's is a completely different shape
+  (`pointsReceived`/`citedItems`/`sections`/`comments`) on the same column, which crashed the panel
+  once in production (2026-09-04) before the `.pct`-shape filter was added.
+- **`security_guide`** -- read `src/views/security-panel.js` and `src/engine/security-drilldown.js`
+  plus the `security_rules`/`security_findings` schema files rather than guess the rule taxonomy.
+  Confirmed the real subject-grouped (not rule-grouped) design and the real four-state verdict
+  mapping (`verdictState()`: flagged/clear/undetermined/hygiene -- undetermined is an HONEST
+  non-verdict, not a hidden "clear"), and the real, twice-corrected `securityPanelAccess()` gate
+  (admin/owner/area_supervisor always; `gm`/`manager` only with `org_config.gm_identity_reveal_enabled`
+  -- this function's own code comments record two real RBAC bugs fixed in it, 2026-09-16 and
+  2026-10-28, so the article states the CURRENT gate, not an earlier draft of it).
+- **`customer_complaints_guide`** -- read `src/views/customer-complaints.js` in full. Its own
+  footer text already states in-code that it does NOT recompute the Complaint Contacts/100K rate;
+  the new article states this up front so nobody mistakes this panel for a second source of that
+  number. Notes the real manual/on-demand capture scripts (`browser-complaints-bulk-capture.js` +
+  `import-complaints-history.mjs`) -- unlike the DAR/LifeLenz/FOB auto streams, there is no daily
+  pull for this source, so "no cases captured yet" for a store means stale capture, not zero
+  complaints.
+- **`crew_schedule_guide`** -- read `src/views/crew-schedule-panel.js`'s own extensive header
+  comments (dispatches #123/#125/#197) rather than guess the merge history. Documents the real,
+  deliberate non-sharing of employee identity between the Schedule tab (LifeLenz
+  `assignedEmploymentId`) and the Punches tab (QSRSoft `geid`) -- no crosswalk table exists, so a
+  selection in one tab doesn't carry to the other, which the article states explicitly rather than
+  implying one shared "employee picker." Also states the real dispatch #125 owner decision (names
+  render directly here, unlike Security's gated reveal) so the two panels' different RBAC postures
+  read as a deliberate distinction, not an inconsistency.
+- **`labor_analysis_guide`** -- read `src/views/labor-analysis.js` in full (407 lines). This panel
+  was previously only a one-line mention inside `scheduling_hub`'s article ("the weekly Fixed/
+  Floor/VLH plan from the LifeLenz sync") -- confirmed that one-liner doesn't duplicate the real
+  depth here (the dollar-weighted subtotal columns, the Config tab's fixed-hours inputs, the real
+  auto-first/manual-gap-fill-only source chip, the "Partial week" 95%-coverage tooltip, and the
+  printable per-store FLH worksheet with real McDonald's station codes) before deciding this
+  merited its own article rather than being a redundant add. Explicitly distinguishes this weekly
+  PLANNING tool from Scheduling Hub's own Labor Analytics tab (the day-to-day TPPH/labor%/OT read)
+  so the two aren't confused.
+- **`task_queue_guide`** -- read `src/views/task-queue.js`'s own header comment (dispatch #194)
+  rather than assume the merge was complete. Confirmed from the file's own comment that the
+  `tasks`/`feature_requests` table schema merge (`supabase/schema-tasks-feature-merge.sql`) is
+  still a ready-to-run migration awaiting the owner's DDL action, not yet applied -- the panel
+  already normalizes both tables into one shape client-side regardless, which the article
+  describes without overstating the migration's real status.
+
+No stale Workflow Guide / `tutorial.js` / `panel_index` wording was found for any of these six
+panels in this pass (checked `src/app/App.js`'s `WORKFLOW_GUIDE_SECTIONS`/tutorial text directly)
+-- unlike the `why_engine_guide`/`performance_reviews_guide` batch, which did catch real drift.
+`panel_index` itself omits Security/Customer Complaints/Crew Schedule entirely, same as it omits
+~70 other panels -- that is the already-documented, deliberately-deferred gap from the first
+batch (see "Left for a later pass" above), not new drift, so it was left alone rather than
+expanded as a side effect of this pass.
+
+12 new tests (2 per article, mounting the real `KnowledgeBasePanel`):
+`dispatch-kb-graded-visits-2026-11-04.test.js`, `dispatch-kb-security-2026-11-04.test.js`,
+`dispatch-kb-customer-complaints-2026-11-04.test.js`, `dispatch-kb-crew-schedule-2026-11-04.test.js`,
+`dispatch-kb-labor-analysis-2026-11-04.test.js`, `dispatch-kb-task-queue-2026-11-04.test.js`.
+
+Still open, same as before: the other ~68 panels not yet covered (`panel_index` still covers all
+of them at the one-line-directory level), and the `InfoIcon` rollout to more panel headers.
