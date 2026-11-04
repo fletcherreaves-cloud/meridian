@@ -83,6 +83,20 @@ export const STREAMS = [
   { key: 'scheduleVariance', label: 'LifeLenz Schedule Variance', dsField: 'scheduleVarianceRows', dateField: 'occurredAt', cadenceDays: 1 },
   { key: 'complianceAudit', label: 'LifeLenz Compliance Audit', dsField: 'complianceAuditRows', dateField: 'shiftDate', cadenceDays: 1 },
   { key: 'employeePerformance', label: 'LifeLenz Employee Performance', dsField: 'employeePerformanceRows', dateField: 'periodEnd', cadenceDays: 1 },
+  // ⚠️ LifeLenz Payroll Readiness (task #85, 2026-11-04) is DELIBERATELY NOT added to this
+  // array yet. This file's own standing invariant test (stream-freshness.test.js's "thresholds
+  // are per-stream cadence + grace, not the old hardcoded 14 days") requires cadenceDays to be
+  // exactly 1 (daily) unless dateField==='month' (cadenceDays 31) -- a strict binary with no
+  // middle tier. Payroll Readiness posts bi-weekly (~14-16 days), which fits neither bucket
+  // correctly: cadenceDays:1 would false-alarm "critical" on every normal pay-period gap (a real
+  // bug, not a test-passing nuisance), and cadenceDays:31/dateField:'month' doesn't match this
+  // stream's real per-row date shape either. Rather than force a wrong value into a real
+  // operational alert or loosen this invariant test unilaterally (outside this task's scope,
+  // and the kind of change that deserves the owner's own call), the entry is left out until
+  // either a third cadence tier is added here deliberately, or the real posting cadence is
+  // confirmed live and this gets revisited. ds.payrollReadinessRows is still loaded at startup
+  // (App.js) so a future freshness entry (or any other consumer) has real data to read.
+  //   { key: 'payrollReadiness', label: 'LifeLenz Payroll Readiness', dsField: 'payrollReadinessRows', dateField: 'payPeriodStart', cadenceDays: 16 },
   // Closed 2026-09-13 -- previously a documented gap (memory/backlog-open-2026-09-06.md):
   // QSRSoft Inventory Summary Pull runs daily and is already watched in
   // sync-failure-watch.yml, but the table was fetched panel-locally by InventoryIntelligence
