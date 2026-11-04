@@ -26,6 +26,10 @@ create table if not exists public.recommendation_ledger (
   recommendation_text  text not null,         -- human-readable, what was actually shown/said
   recommendation_value numeric,               -- the suggested number, when there is one
   context              jsonb not null default '{}',  -- inputs/window that produced it
+  dedupe_key           text not null,         -- e.g. 'sales_forecast:3708:tProdSales:2026-11' --
+                                               -- a real column (not a jsonb path) so Supabase's
+                                               -- upsert(..., {onConflict:'dedupe_key'}) works
+                                               -- directly against a plain unique constraint.
   status               text not null default 'open', -- 'open'|'accepted'|'overridden'|'ignored'|'graded'
   accepted_value       numeric,               -- what the user actually set, if different
   decided_at           timestamptz,
@@ -41,9 +45,11 @@ create index if not exists recommendation_ledger_source_status_idx
   on public.recommendation_ledger (source, status);
 create index if not exists recommendation_ledger_tenant_due_idx
   on public.recommendation_ledger (tenant_id, outcome_due_at);
--- One open/pending row per (loc, source, field, period) -- the exact dedup key the capture
--- points use to avoid logging a fresh row on every re-render of the same suggestion badge.
--- `context->>'dedupe_key'` is set by the capture call, not a separate column, so a future
--- source can define its own key shape without a migration.
-create index if not exists recommendation_ledger_dedupe_idx
-  on public.recommendation_ledger ((context->>'dedupe_key'));
+-- One row per (loc, source, field, period) -- the exact dedup key every capture point builds
+-- via src/engine/recommendation-ledger.js's dedupeKeyFor(), so logging a suggestion badge twice
+-- (e.g. a re-render) upserts the same row instead of creating a duplicate. A UNIQUE INDEX, not a
+-- named table constraint -- `add constraint ... if not exists` isn't valid Postgres syntax, but
+-- `create unique index if not exists` is, and PostgREST's upsert onConflict target works against
+-- either.
+create unique index if not exists recommendation_ledger_dedupe_key_unique
+  on public.recommendation_ledger (dedupe_key);

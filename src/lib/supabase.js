@@ -4312,6 +4312,79 @@ export async function saveSmartTargetAdjustment(loc, metricKey, { excludeDates =
   return { saved: 1, errors: [] };
 }
 
+// ── Recommendation Accuracy Ledger (task #80 follow-on, Phase 1, owner-approved 2026-11-04) ──
+// Generic recommendation→outcome→grade tracking. See memory/plan-recommendation-accuracy-
+// ledger-2026-11-04.md and supabase/schema-recommendation-ledger.sql -- the table is NOT yet
+// created in live Supabase (the owner's own action, per this repo's standing DDL rule), so
+// every function here fails soft, same "Table missing" pattern as saveSmartTargetAdjustment
+// above, rather than throwing and breaking the editor that calls it.
+//
+// Upserts one recommendation row, keyed by `dedupe_key` (src/engine/recommendation-ledger.js's
+// dedupeKeyFor) -- logging the same suggestion badge twice (a re-render) updates the same row
+// instead of creating a duplicate.
+export async function saveRecommendation(row) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  if (!row?.dedupe_key || !row?.source) return { saved: 0, errors: ['dedupe_key + source required'] };
+  const { error } = await supabase.from('recommendation_ledger')
+    .upsert(row, { onConflict: 'dedupe_key', ignoreDuplicates: false });
+  if (error) {
+    if ((error.message || '').includes('relation') || error.code === '42P01')
+      console.error('[recommendation_ledger] Table missing — run supabase/schema-recommendation-ledger.sql.');
+    else console.error('[recommendation_ledger] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: 1, errors: [] };
+}
+
+// The accept/override/ignore transition -- called from the same onSave path a hand-typed
+// override already takes, never a new UI affordance. `status` is 'accepted' or 'overridden'
+// (never 'ignored' here -- a suggestion that's never touched stays 'open' until the grading job
+// finds its outcome_due_at has passed and grades it anyway, same as an accepted one).
+export async function updateRecommendationOutcome(dedupeKey, { status, accepted_value } = {}) {
+  if (!supabase || !dedupeKey) return { saved: 0, errors: ['Supabase not configured or no dedupeKey'] };
+  const { error } = await supabase.from('recommendation_ledger')
+    .update({ status, accepted_value, decided_at: new Date().toISOString() })
+    .eq('dedupe_key', dedupeKey);
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[recommendation_ledger] outcome update error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: 1, errors: [] };
+}
+
+// Open (not-yet-decided) recommendations for a set of locs/one source -- used by the capture
+// wiring to avoid re-logging a suggestion that already has an open row for this exact
+// dedupe_key (a cheap existence check is done client-side against this, not a second query per
+// cell). Fails soft to [] if the table isn't created yet.
+export async function loadOpenRecommendations(locs, source) {
+  if (!supabase) return [];
+  let q = supabase.from('recommendation_ledger').select('*').in('status', ['open', 'accepted', 'overridden']);
+  if (source) q = q.eq('source', source);
+  if (locs?.length) q = q.in('loc', locs);
+  const { data, error } = await q;
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[recommendation_ledger] load error:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Rows whose outcome is now knowable but hasn't been graded yet -- the grading script's own
+// query. Fails soft to [] if the table isn't created yet.
+export async function loadDueForGrading() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('recommendation_ledger')
+    .select('*').lte('outcome_due_at', new Date().toISOString()).is('outcome_value', null);
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[recommendation_ledger] loadDueForGrading error:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
 // ── SAGE: saved prompt library ───────────────────────────────────────────────
 // Reusable prompts the owner saves for quick re-run. Fails soft to [] if the table
 // isn't created yet.

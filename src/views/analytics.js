@@ -23,7 +23,8 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, saveMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, saveMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote, saveRecommendation, updateRecommendationOutcome } from '../lib/supabase.js';
+import { dedupeKeyFor, outcomeDueAtForMonth, gradeOutcome } from '../engine/recommendation-ledger.js';
 import { COACHING_METRICS, openCoachingCycles } from '../engine/coaching-loop.js';
 import { detectAropJumps } from '../engine/pay-events.js';
 import { PayEventModal } from './pay-event-modal.js';
@@ -8578,6 +8579,23 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     setEdits(prev => ({...prev, [loc]: {...(prev[loc]||{}), [fieldKey]: value}}));
     const fullRow = {...(mt[loc]||{}), [fieldKey]: value};
     saveMonthlyTargets({[loc]: fullRow}, selPeriod.year, selPeriod.month).catch(()=>{});
+    // Recommendation Accuracy Ledger (task #80 follow-on) -- classify this save against
+    // whatever suggestion badge this field showed, if any. A field with no suggestion (or a
+    // period with no open ledger row, e.g. the table isn't created yet) is a harmless no-op --
+    // updateRecommendationOutcome matches zero rows and succeeds either way.
+    if (typeof value === 'number' && (fieldKey === 'tProdSales' || fieldKey === 'tCrewLabor' || fieldKey === 'tTpph')) {
+      const s = suggestionFor(loc, fieldKey);
+      if (s) {
+        const source = fieldKey === 'tProdSales' ? 'sales_forecast' : 'labor_tpph_forecast';
+        const periodKey = selPeriod.year + '-' + String(selPeriod.month).padStart(2, '0');
+        const key = dedupeKeyFor(source, loc, fieldKey, periodKey);
+        const { grade } = gradeOutcome(s.value, value, 0.02);
+        updateRecommendationOutcome(key, {
+          status: grade === 'within_tolerance' ? 'accepted' : 'overridden',
+          accepted_value: value,
+        }).catch(() => {});
+      }
+    }
   };
   const knownLocs = useMemo(()=>new Set((stores||[]).map(s=>String(s.loc))),[stores]);
   const locs = useMemo(()=>{
@@ -8640,6 +8658,41 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     }
     return null;
   };
+
+  // Recommendation Accuracy Ledger capture (task #80 follow-on, Phase 1, owner-approved
+  // 2026-11-04) -- logs each suggestion the two forecast models above actually produce, once
+  // per (loc, field, period, VALUE) so a value that genuinely changes (more data loading in)
+  // re-logs but an unchanged re-render doesn't spam. Fire-and-forget, fails soft (the table
+  // doesn't exist in live Supabase yet -- see supabase/schema-recommendation-ledger.sql's own
+  // header for the owner's run-it-when-ready action); never blocks or alters the suggestion
+  // badge itself, matching this file's own "never let a forecast glitch break the editor" rule.
+  const loggedSuggestionSigsRef = React.useRef(new Set());
+  useEffect(() => {
+    if (!selPeriod || !locs.length) return;
+    const periodKey = selPeriod.year + '-' + String(selPeriod.month).padStart(2, '0');
+    const outcomeDue = outcomeDueAtForMonth(selPeriod.year, selPeriod.month);
+    for (const loc of locs) {
+      for (const [fieldKey, source, modelVersion] of [
+        ['tProdSales', 'sales_forecast', 'owner-sales-forecast-v1'],
+        ['tCrewLabor', 'labor_tpph_forecast', 'owner-labor-tpph-forecast-v1'],
+        ['tTpph', 'labor_tpph_forecast', 'owner-labor-tpph-forecast-v1'],
+      ]) {
+        const s = suggestionFor(loc, fieldKey);
+        if (!s) continue;
+        const key = dedupeKeyFor(source, loc, fieldKey, periodKey);
+        const sig = key + ':' + s.value;
+        if (loggedSuggestionSigsRef.current.has(sig)) continue;
+        loggedSuggestionSigsRef.current.add(sig);
+        saveRecommendation({
+          dedupe_key: key, source, loc, model_version: modelVersion,
+          recommendation_text: 'Suggested ' + fieldKey + ': ' + s.value,
+          recommendation_value: s.value,
+          context: { field: fieldKey, period: periodKey },
+          outcome_due_at: outcomeDue,
+        }).catch(() => {});
+      }
+    }
+  }, [locs, selPeriod, salesForecastSuggestions, laborTpphSuggestions]);
 
   // Reconstructed-period flag (owner-requested 2026-10-02 backfill: "flag them clearly") —
   // any row whose target was reconstructed (not a real approved upload) carries a non-null
