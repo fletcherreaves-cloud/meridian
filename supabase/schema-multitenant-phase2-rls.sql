@@ -62,7 +62,10 @@ declare
     -- list. qsr_daily_activity (364k rows, hourly DAR all stores) + feature_requests
     -- (was wide-open auth.uid() policy) are the important ones. user_settings is handled
     -- SEPARATELY below (user-scoped, not tenant-scoped).
-    'qsr_daily_activity','feature_requests','session_notes','tasks','store_vlh_config'
+    'qsr_daily_activity','feature_requests','session_notes','tasks','store_vlh_config',
+    -- Added 2026-11-04 (Recommendation Accuracy Ledger, task #80 follow-on): see
+    -- schema-recommendation-ledger.sql for the table + run order.
+    'recommendation_ledger'
   ];
 begin
   foreach t in array tbls loop
