@@ -444,6 +444,19 @@ actual code — this note nearly caused a duplicate reimplementation.
 
 ## Dev Rules
 
+- **Self-maintenance sweeps + the release bar (owner-requested 2026-11-04, standing framework).**
+  A weekly scheduled task runs one rotating inconsistency sweep (`memory/sweep-dimensions.md` —
+  panel contract, data-sourcing standard, dead code, duplication, doc drift, settings hygiene, KB
+  accuracy) instead of relying only on opportunistic catches. Every finding routes through three
+  tiers: **Tier A** (low blast radius, reversible, matches an existing precedent) ships silently,
+  batched into one PR; **Tier B** (changes visible behavior/math) ships as its own flagged PR;
+  **Tier C** (schema/DDL, PII/credentials, a genuine product-judgment call, reversing a documented
+  decision) is NEVER applied unattended — it becomes a suggested task or a direct note to the
+  owner. Whatever ships, sweep-originated or not, clears `memory/release-bar.md`'s full checklist
+  (build clean, full suite, payload budget, panel contract, changelog, no DDL, self-reviewed)
+  before being called done. An unattended sweep never edits this file directly — a CLAUDE.md
+  change is proposed in the sweep's report for an interactive pass, never auto-applied, since
+  this is the single highest-blast-radius file in the repo.
 - **Regenerate the loader field map after touching a loader:** `node scripts/gen-loader-emits.mjs --write`.
   `src/__tests__/metric-chains.test.js` asserts every metric chain names a field its loader
   actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
