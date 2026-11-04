@@ -35,6 +35,7 @@ import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY 
 import { CoachingModal } from './coaching-modal.js';
 import { callSageOnce } from '../lib/sage-client.js';
 import { computeOwnerSalesForecast } from '../engine/owner-sales-forecast.js';
+import { computeLaborTpphForecast } from '../engine/owner-labor-tpph-forecast.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -8043,17 +8044,20 @@ const _projFromEditValue = (kind, s) => {
 // app has one click-to-edit convention. Flat-view rows only -- grouped rollup rows stay read-only
 // (they're sums/averages across stores, not a single store's real row).
 //
-// `suggestion` (task #80, tProdSales only): the owner's own ported sales-forecast model's
-// output for this store/period -- { forecastSales, reviewFlag, ... }. A SUGGESTED default
-// only, never auto-applied -- clicking it fills the normal edit flow (same onSave path a
-// hand-typed value takes) rather than writing silently, so every value in this column is
-// either a real approved number or a value the owner explicitly accepted.
+// `suggestion` (task #80): the owner's own ported forecast models' output for this store/period
+// -- a generic { value, reviewFlag?, tooltip } shape so both Phase 1 (tProdSales, Level+damped-
+// Momentum+shrink-to-fleet) and Phase 2 (tCrewLabor/tTpph, the simpler recency-weighted blend)
+// render through the same badge. A SUGGESTED default only, never auto-applied -- clicking it
+// fills the normal edit flow (same onSave path a hand-typed value takes) rather than writing
+// silently, so every value in this column is either a real approved number or a value the owner
+// explicitly accepted.
 function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion}) {
   const {useState} = React;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const hasSuggestion = suggestion && typeof suggestion.forecastSales === 'number' &&
-    !(typeof value === 'number' && Math.abs(value - suggestion.forecastSales) < 1);
+  const suggestionTolerance = field.kind === 'pct' ? 0.001 : field.kind === 'dollar' ? 1 : 0.05;
+  const hasSuggestion = suggestion && typeof suggestion.value === 'number' &&
+    !(typeof value === 'number' && Math.abs(value - suggestion.value) < suggestionTolerance);
   if (!editing) {
     return h('td', {
       style: {...tdStyle, cursor: 'pointer'},
@@ -8063,11 +8067,12 @@ function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion}) {
       field.fmt(value),
       hasSuggestion && div({style:{marginTop:2,fontSize:8,fontWeight:400,
         color: suggestion.reviewFlag ? '#f59e0b' : 'var(--text3)', whiteSpace:'nowrap'},
-        title: suggestion.reviewFlag
-          ? 'Owner forecast model: recent swing crosses the review threshold -- worth a look before accepting.'
-          : 'Owner forecast model: Level + damped Momentum + shrink-to-fleet (see memory/finding-owner-sales-forecast-model-2026-11-04.md). Click to accept.',
-        onClick: e => { e.stopPropagation(); onSave(loc, field.key, Math.round(suggestion.forecastSales * 100) / 100); }},
-        (suggestion.reviewFlag ? '⚠ ' : '→ ') + 'Suggested ' + field.fmt(suggestion.forecastSales))
+        title: suggestion.tooltip || 'Owner forecast model. Click to accept.',
+        onClick: e => { e.stopPropagation();
+          const decimals = field.kind === 'dollar' ? 2 : field.kind === 'pct' ? 6 : 2;
+          const mult = 10 ** decimals;
+          onSave(loc, field.key, Math.round(suggestion.value * mult) / mult); }},
+        (suggestion.reviewFlag ? '⚠ ' : '→ ') + 'Suggested ' + field.fmt(suggestion.value))
     );
   }
   const commit = () => {
@@ -8599,6 +8604,43 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     catch { return {}; } // never let a forecast glitch break the editor itself
   }, [ds, locs, selPeriod]);
 
+  // Task #80 Phase 2 (same workbook, same "model proposes, he overrides" shape as Phase 1
+  // above) -- his Labor %/TPPH recency-weighted blend (L3M 10%/L6W 20%/LM 30%/MTD 40%, no
+  // shrinkage/momentum step; see memory/finding-owner-sales-forecast-model-2026-11-04.md §2).
+  // Trailing windows only, independent of which future month is being targeted -- unlike the
+  // sales model this needs no whole-fleet pass, so it's computed straight from `ds`, no `asOf`
+  // override needed (defaults to now).
+  const laborTpphSuggestions = useMemo(() => {
+    if (!ds || !ds.loaded || !locs.length) return {};
+    try { return computeLaborTpphForecast(ds, locs) || {}; }
+    catch { return {}; } // never let a forecast glitch break the editor itself
+  }, [ds, locs]);
+
+  // Maps a PROJ_FIELDS key to the generic {value, reviewFlag, tooltip} shape EditableProjCell
+  // expects, pulling from whichever of the two forecast memos above actually covers that field.
+  // Returns null for every other field -- no suggestion badge renders there.
+  const suggestionFor = (loc, fieldKey) => {
+    if (fieldKey === 'tProdSales') {
+      const s = salesForecastSuggestions[loc];
+      if (!s || typeof s.forecastSales !== 'number') return null;
+      return { value: s.forecastSales, reviewFlag: s.reviewFlag, tooltip: s.reviewFlag
+        ? 'Owner forecast model: recent swing crosses the review threshold -- worth a look before accepting.'
+        : 'Owner forecast model: Level + damped Momentum + shrink-to-fleet (see memory/finding-owner-sales-forecast-model-2026-11-04.md). Click to accept.' };
+    }
+    if (fieldKey === 'tCrewLabor' || fieldKey === 'tTpph') {
+      const s = laborTpphSuggestions[loc];
+      const m = fieldKey === 'tCrewLabor' ? s?.laborPct : s?.tpph;
+      if (!m || typeof m.value !== 'number') return null;
+      const trendArrow = m.trend === 'up' ? ' ↑' : m.trend === 'down' ? ' ↓' : '';
+      return { value: m.value, reviewFlag: false,
+        tooltip: 'Owner forecast model: recency-weighted blend (L3M 10%/L6W 20%/LM 30%/MTD 40%' +
+          (fieldKey === 'tTpph' ? ', rounded up to the nearest 0.05' : '') +
+          ') -- see memory/finding-owner-sales-forecast-model-2026-11-04.md §2.' +
+          (trendArrow ? ' Trend: ' + m.trend + trendArrow : '') + ' Click to accept.' };
+    }
+    return null;
+  };
+
   // Reconstructed-period flag (owner-requested 2026-10-02 backfill: "flag them clearly") —
   // any row whose target was reconstructed (not a real approved upload) carries a non-null
   // _dataSource from loadMonthlyTargets/loadAllMonthlyTargets. Checked per-period (banner) and
@@ -8673,7 +8715,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       return h(EditableProjCell, {key:f.key, loc, field:f, value:v,
         tdStyle:{...tdS,textAlign:'right',fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'},
         onSave:handleSaveProjField,
-        suggestion: f.key==='tProdSales' ? salesForecastSuggestions[loc] : null});
+        suggestion: suggestionFor(loc, f.key)});
     });
     return h('tr',{key:loc},
       h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
