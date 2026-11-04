@@ -10,7 +10,7 @@ metadata:
 # Evaluating the first real detection run (2026-08-20)
 
 Phase 1/1b went live 2026-08-20 and the batch job produced its first real output:
-`10330 finding(s) upserted across 6 rule(s), 0 error(s)`. `memory/dispatch-42.md` covers the
+`10330 finding(s) upserted across 6 rule(s), 0 error(s)`. `memory/archive/dispatch-42.md` covers the
 *calibration* response to that run. **This file covers what the output actually says about the
 business**, which is a different and arguably more important question — and one nobody had asked
 yet, since every prior dispatch was building the machine rather than reading it.
@@ -94,7 +94,7 @@ original over-counted via a period fan-out — `store_count` read up to 108, whi
 periods, not 108 stores):
 **`memory/project-inventory-data-hygiene-2026-08-20.md`**.
 
-Consequences already applied: `dispatch-42.md` §2 now records this answer and scopes §4 to the
+Consequences already applied: `archive/dispatch-42.md` §2 now records this answer and scopes §4 to the
 minimal path (permissive materiality floors, no precise calibration against a known-biased
 measurement). The §5 exposure floor matters *more* under this result, since part of the effect is
 genuinely low-volume items rather than broken mapping, and the floor is what separates the two.

@@ -1,6 +1,6 @@
 # Dispatch #32 — Workstream C: pipeline contract, wired
 
-2026-08-19. `memory/dispatch-32.md` (re-verifying `memory/dispatch-25.md`, unchanged since) —
+2026-08-19. `memory/archive/dispatch-32.md` (re-verifying `memory/dispatch-25.md`, unchanged since) —
 Workstream C, the last of the seven workstreams to actually start. Both dispatches measured
 "2 of ~19 pull/write scripts have an assert-on-zero-rows guard," found by grepping for the exact
 inline shape in `qsrsoft-pmix-pull.mjs:444-447`.

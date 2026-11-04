@@ -1,6 +1,6 @@
 # Dispatch #36 — Security build Phase 0b: the substrate
 
-2026-08-19. `memory/dispatch-36.md`, on top of `memory/plan-security-loss-prevention.md` §1/§6/§7.
+2026-08-19. `memory/archive/dispatch-36.md`, on top of `memory/plan-security-loss-prevention.md` §1/§6/§7.
 Needs no QSRSoft access (pure schema/utility work) — not blocked on Phase 0a's still-open
 live-verification (`memory/dispatch35-register-audit-implementation.md`).
 

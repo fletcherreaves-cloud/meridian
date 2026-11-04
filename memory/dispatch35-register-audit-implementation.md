@@ -1,6 +1,6 @@
 # Dispatch #35 — Register Audit: implemented against the confirmed endpoint
 
-2026-08-19. `memory/dispatch-35.md`, on top of dispatch #34's live capture
+2026-08-19. `memory/archive/dispatch-35.md`, on top of dispatch #34's live capture
 (`memory/dispatch-34-phase0a-findings.md` Part 1). The last piece of Phase 0a
 (`memory/plan-security-loss-prevention.md`) — Phase 1 (cash-drawer variance + peer ranking)
 can start once this lands.

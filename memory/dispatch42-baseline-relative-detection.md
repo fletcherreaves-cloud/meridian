@@ -8,7 +8,7 @@ metadata:
 
 # Dispatch #42 — baseline-relative detection, implemented
 
-2026-08-20. `memory/dispatch-42.md` (widened same-day, after `main` was at `a8a6ea9` — #487
+2026-08-20. `memory/archive/dispatch-42.md` (widened same-day, after `main` was at `a8a6ea9` — #487
 landed 9,947 real `audit_rows`). Builds on the merged Phase 1/1b (dispatches #39/#40, PR #473).
 
 ## Part 1 — the z-score LOGIC_TYPE (§3)

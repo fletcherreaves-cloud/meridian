@@ -1,6 +1,6 @@
 # Dispatch #40 — Security build Phase 1b: inventory-domain TvA rule
 
-2026-08-20. `memory/dispatch-40.md`. Runs alongside dispatch #39's cash-domain rules
+2026-08-20. `memory/archive/dispatch-40.md`. Runs alongside dispatch #39's cash-domain rules
 (`memory/dispatch39-phase1-cash-rules.md`) in the SAME rules registry (dispatch #36), SAME
 interpreter (`src/engine/security-rules.js`, unmodified), SAME batch job
 (`scripts/security-rules-run.mjs`, extended not duplicated). No change to `security-rules.js`,

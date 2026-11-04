@@ -8,7 +8,7 @@ metadata:
 
 # Dispatch #43 — the Security panel, Phase 1 implemented
 
-2026-08-20. `memory/dispatch-43.md`. Owner-requested: *"We should build out the security panel
+2026-08-20. `memory/archive/dispatch-43.md`. Owner-requested: *"We should build out the security panel
 UI... an entire modal to house security events."* Before this, `security_findings` (dispatches
 #39/#40/#42) had zero references anywhere in `src/` — the batch job wrote findings, nothing read
 them. The only way to see one was a SQL query pasted into the Supabase console.

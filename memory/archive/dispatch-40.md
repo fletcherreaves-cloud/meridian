@@ -2,13 +2,13 @@
 
 **Board (2026-08-20), at time of writing:** Dispatch #39 (Phase 1, cash-domain rules) is merged
 as a brief, not yet implemented. Its own "TvA not buildable" claim was wrong and has been
-corrected in-place (`dispatch-39.md`'s correction note) — the owner pushed back same-day: *"We
+corrected in-place (`archive/dispatch-39.md`'s correction note) — the owner pushed back same-day: *"We
 need to fix the reason it can't be built. We definitely either already have what we need or can
 get it."* Correct. This dispatch is that follow-through: a real, buildable, store-level TvA rule
 against data Meridian is **already pulling today**, no new QSRSoft probe or recipe/BOM pull
 required to ship a first version.
 
-**Read before starting:** `memory/dispatch-39.md` (the cash-domain rules this dispatch runs
+**Read before starting:** `memory/archive/dispatch-39.md` (the cash-domain rules this dispatch runs
 alongside — same registry, same interpreter, do not duplicate any of it) and its correction note
 in full; `memory/plan-security-loss-prevention.md` §2.2 (the TvA method definition) and §1
 principle 1 (exposure normalization — never count raw events).
