@@ -4496,6 +4496,10 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - [Ops Score attribution: #183/#181/#164](labor-park-oepe-score-attribution.md) — worked
   four-stage before/after (baseline → OEPE fix → park removal → labor basis fix) showing which
   fix moves a store's Ops Score by how much and why. Synthetic performance numbers, real targets.
+- [Ops/Ctrl score redesign proposal](plan-ops-ctrl-score-redesign-2026-11-04.md) — owner asked
+  whether the scorecards serve other users or just him. Audited: already actual-vs-target banded
+  and already GM-visible, not freshness-penalized as suspected. Proposes blending in a damped
+  trend term (same shape as the sales-forecast model) — not yet built, owner's call on scope.
 
 ## 📈 Signals / Smart Targets / Accuracy
 - [Signals scanner](project-signals-scanner.md) — auto-correlation across metric pairs, guardrails.
