@@ -43,7 +43,10 @@ declare
     'qsr_transfers','qsr_variance_stat','qsr_waste','roster_role_counts',
     'roster_statistics','sales_ledger_daily','shift_manager_monthly','smart_target_adjustments',
     'smg_comments','smg_fullscale','smg_voice_daypart','smg_voice_performance',
-    'store_labor_config','tenant_stores','turnover_monthly'
+    'store_labor_config','tenant_stores','turnover_monthly',
+    -- Added 2026-11-04 (Recommendation Accuracy Ledger, task #80 follow-on): see
+    -- schema-recommendation-ledger.sql for the table + run order.
+    'recommendation_ledger'
   ];
 begin
   foreach t in array tbls loop
