@@ -1,0 +1,55 @@
+name: LifeLenz Payroll Readiness Pull
+
+# Fourth Data Explorer report pull (Lakehouse-backed, async) -- per-employee, per-pay-period
+# payroll pre-close audit: scheduled vs worked hours, hours/cost variance, earnings broken out
+# by type (regular/overtime/double/time-off/etc.). Same direct-token-only precedent as the other
+# Data Explorer pulls (no Playwright fallback here either).
+#
+# ⚠️ UNCONFIRMED beyond every prior Data Explorer pull -- see scripts/lifelenz-payroll-readiness-
+# pull.mjs's own header. The reportKey itself (payroll_readiness_report) is a naming-pattern
+# guess, never confirmed via a live GetReportMeta dispatch the way Compliance Audit/Employee
+# Performance both were before their pull scripts were written. First real run of this workflow
+# (manual dispatch or its first schedule) IS that confirmation -- read its job log before
+# trusting any data this writes.
+
+on:
+  schedule:
+    # 10:10 UTC -- same slot family as the other daily LifeLenz pulls, offset 5 min from
+    # Compliance Audit Pull (10:05) so the Data Explorer pulls don't all trigger their async
+    # reports in the same minute.
+    - cron: '10 10 * * *'
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: 'Rolling window size in days (default: 60)'
+        required: false
+        default: '60'
+      debug:
+        description: 'Verbose per-store logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run LifeLenz payroll readiness pull
+        run: node scripts/lifelenz-payroll-readiness-pull.mjs
+        env:
+          LIFELENZ_TOKEN:                           ${{ secrets.LIFELENZ_TOKEN }}
+          VITE_SUPABASE_URL:                         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:                 ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LIFELENZ_PAYROLL_READINESS_WINDOW_DAYS:    ${{ github.event.inputs.window_days || '60' }}
+          LIFELENZ_DEBUG:                            ${{ github.event.inputs.debug || '0' }}

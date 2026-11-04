@@ -1492,6 +1492,61 @@ export async function loadLifeLenzEmployeePerformance({ start, end, locs } = {})
   }));
 }
 
+// ── LifeLenz Data Explorer "Payroll Readiness" (task #85, 2026-11-04) ────────────────────────
+// Per-employee, per-pay-period payroll pre-close audit -- scheduled vs worked hours,
+// hours/cost variance, earnings broken out by type (regular/overtime/double/time-off/etc.).
+// See scripts/lifelenz-payroll-readiness-pull.mjs / supabase/schema-lifelenz-payroll-
+// readiness.sql. ⚠️ Unlike its siblings, this report's reportKey and field member names were
+// never live-confirmed before this pull was written (no LIFELENZ_TOKEN in the session that
+// built it) -- see the pull script's own header for the full caveat. Fails soft to [] if the
+// table isn't created yet, same pattern as every other LifeLenz loader.
+export async function loadLifeLenzPayrollReadiness({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_payroll_readiness').select('*').order('pay_period_start', { ascending: false }).range(from, to);
+    if (start) q = q.gte('pay_period_start', start);
+    if (end) q = q.lte('pay_period_start', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_payroll_readiness');
+  return (data || []).map(r => ({
+    // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment above (same
+    // bug, same fix, same owner report 2026-11-02).
+    loc:                    String(parseInt(r.loc, 10)),
+    geid:                   r.geid,
+    employeeName:            r.employee_name,
+    payPeriodStart:          r.pay_period_start,
+    payPeriodStatus:         r.pay_period_status,
+    scheduledHours:          r.scheduled_hours,
+    workedHours:             r.worked_hours,
+    totalWorkedHours:        r.total_worked_hours,
+    hoursVariance:           r.hours_variance,
+    costVariance:            r.cost_variance,
+    totalEarnings:           r.total_earnings,
+    regularEarnings:         r.regular_earnings,
+    overtimeEarnings:        r.overtime_earnings,
+    overtimeHours:           r.overtime_hours,
+    doubleEarnings:          r.double_earnings,
+    doubleHours:             r.double_hours,
+    timeOffEarnings:         r.time_off_earnings,
+    timeOffHours:            r.time_off_hours,
+    additionalEarnings:      r.additional_earnings,
+    additionalHours:         r.additional_hours,
+    miscEarnings:            r.misc_earnings,
+    miscHours:               r.misc_hours,
+    complianceEarnings:      r.compliance_earnings,
+    complianceHours:         r.compliance_hours,
+    differentialEarnings:    r.differential_earnings,
+    differentialHours:       r.differential_hours,
+    posterEmployeeName:      r.poster_employee_name,
+    approverEmployeeName:    r.approver_employee_name,
+    absentReasonText:        r.absent_reason_text,
+    timeOffTypeName:         r.time_off_type_name,
+    raw:                     r.raw,
+    updatedAt:               r.updated_at,
+  }));
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's
