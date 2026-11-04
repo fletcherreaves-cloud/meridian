@@ -1164,6 +1164,26 @@ const KB_ARTICLES = {
       '**ADMIN**\n- **Settings** — app settings.\n- **Panel Manager** — show/hide the optional/experimental sidebar panels (with a description of each).\n- **Changelog** — version history.\n- **Knowledge Base** — this reference.\n- **Metric Lineage** — a transparent registry of every metric that is calculated from other metrics: its exact formula, upstream inputs, and the source report/table, so any number can be verified against source.\n- **Data Manager** — uploads + on-demand Sync buttons.\n- **Save / Restore Session** · **Help**.',
   },
 
+  // ROLES & DEFAULT PERMISSIONS — task #78 (owner-queued "for later")
+  roles_and_permissions: {
+    title: 'Roles & Default Permissions',
+    category: 'App Guide',
+    summary: 'The 9 real roles, what each one can see, and how to change a user\'s role or store access.',
+    detail: '**The 9 real roles, most access to least** (`profiles.role`\'s DB CHECK constraint — these are the only 9 values that exist; a different string, including the literal word "developer" or "office_staff", matches nothing):\n\n' +
+      '- **Admin** (level 1) — full access, bypasses every permission check.\n' +
+      '- **Owner / Developer** (level 1) — the SAME top tier as Admin, not a separate rung above it.\n' +
+      '- **VP** (level 2) — multi-district.\n' +
+      '- **DO** (District Ops, level 3) — district-level.\n' +
+      '- **Manager** (level 3) — the pre-existing/default role; **every new signup lands here**, not at the top.\n' +
+      '- **OM** (Ops Manager, level 4).\n' +
+      '- **AS** (Area Supervisor, level 5) — patch-level, a subset of stores.\n' +
+      '- **GM** (General Manager, level 6) — own store only.\n' +
+      '- **SM / AM / DM** (level 7) — the lowest tier.\n\n' +
+      '**Two separate mechanisms decide what a role actually sees**, and they answer different questions. (1) **Which panels/actions** — `hasPermission(roleId, permKey)` checks a role against each panel\'s `perm:` requirement; an unrecognized role id gets ZERO permissions (fails closed), never full access. (2) **Which stores\' data** — Supabase Row-Level Security keyed off that user\'s `accessible_locs` list (`null` = every store; a real list = only those stores), enforced at the database layer on every query, not just hidden in the UI. A role answers "can this person open this panel"; `accessible_locs` answers "which stores\' numbers do they see once they\'re in it" — a GM and a DO can both open the same panel and see entirely different data.\n\n' +
+      '**To change a user\'s role, their store access, or which panels a role can see:** Settings → Admin (only visible if you hold `users.manage.all` or the delegated `users.manage.lower` permission — a supervisor with delegated access can manage roles below their own level, never their own or above). The Admin panel\'s **Users** tab sets a person\'s role from a dropdown and edits their `accessible_locs` inline — both take effect immediately, no redeploy. A separate **role editor** (same panel) sets which panels are enabled/disabled for an entire role at once via an opt-out list — toggle a panel off there and nobody at that role sees it, regardless of their individual `accessible_locs`.\n\n' +
+      '**To promote an experimental panel out of Test Kitchen:** that\'s a code change (`panel-registry.js`\'s `kind:` field), not a role setting — see Panel Index\'s Test Kitchen note, or ask Claude Code to flip it.',
+  },
+
   // MODEL HEALTH
   model_health: {
     title: 'Model Health Score',
