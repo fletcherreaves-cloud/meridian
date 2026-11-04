@@ -155,6 +155,17 @@ const DEF_SETTINGS={
     otT1:0,otT2:1,otT3:2,otT4:5,otPts:[8,7,5,2,0],
     refundT1:1,refundT2:2,refundT3:4,refundPts:[6,4,2,0],
     discT1:.04,discT2:.055,discT3:.07,discPts:[6,4,2,0],
+    // Trend-blend (task #80-adjacent, owner-requested 2026-11-04,
+    // memory/plan-ops-ctrl-score-redesign-2026-11-04.md): a store improving or declining
+    // shifts opsScoreBlended/ctrlScoreBlended (pipeline.js's computeTrendBlendedScore) away
+    // from the flat actual-vs-target base score (opsScore/ctrlScore, UNCHANGED, still what
+    // every sort/rollup/coaching threshold reads). trendDamp shrinks the raw 2wk-vs-4wk score
+    // delta (vel.opsScore/vel.ctrlScore, already computed in buildStore) before adding it in,
+    // same damping idea the sales-forecast model uses; trendCap bounds how far trend alone can
+    // move the number. UNLIKE the sales-forecast model's dials, these are NOT owner-fitted or
+    // backtested — first-pass defaults (half weight, max +/-8 points), explicitly tunable once
+    // real behavior is observed.
+    trendDamp:0.5, trendCap:8,
   },
   supervisorGroups:{
     // MCDOK — Oklahoma. Reassigned 2026-10-05 (owner-provided org chart): Zukarr Eaves

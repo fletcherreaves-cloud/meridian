@@ -282,6 +282,25 @@ function computeCtrlScore(p,sc){
   return max>0?+Math.min(100,score/max*100).toFixed(1):50; // zero coverage at all → neutral, matching computeOpsScore's own no-data fallback
 }
 
+// Trend-blended score (owner-requested 2026-11-04, memory/plan-ops-ctrl-score-redesign-
+// 2026-11-04.md): blends the flat actual-vs-target base score (computeOpsScore/computeCtrlScore,
+// UNCHANGED by this function) with a damped, capped contribution from the store's own score
+// trend -- vel.opsScore/vel.ctrlScore, buildStore's existing "2wk score minus 4wk score" delta.
+// A store improving moves above its flat base score; a store declining moves below it; a store
+// with no resolvable trend (vel===null, e.g. too little history, or the demo/synthetic data
+// path) returns the base score unchanged, never a fabricated trend.
+//
+// This is the ADDITIVE piece only -- opsScore/ctrlScore themselves are never touched, so every
+// existing sort/rollup/coaching-threshold consumer keeps reading exactly what it always has.
+// opsScoreBlended/ctrlScoreBlended are new, separate fields a caller opts into.
+function computeTrendBlendedScore(baseScore, trendDelta, sc) {
+  if (baseScore == null) return baseScore;
+  if (trendDelta == null || !Number.isFinite(trendDelta)) return baseScore;
+  const damp = sc?.trendDamp ?? 0.5, cap = sc?.trendCap ?? 8;
+  const contribution = [trendDelta * damp, -cap, cap].sort((a, b) => a - b)[1]; // clamp via MEDIAN(-cap, x*damp, cap)
+  return +Math.max(0, Math.min(100, baseScore + contribution)).toFixed(1);
+}
+
 function normalizeScores(stores,mode){
   if(!mode||mode==='absolute'||!stores||!stores.length)return stores;
   if(mode==='relative'){
@@ -522,6 +541,10 @@ function buildStore(loc,ds,settings){
     opsScore:+(computeOpsScore(p2,t,sc)-computeOpsScore(p4,t,sc)).toFixed(0),
     ctrlScore:+(computeCtrlScore(p2,sc)-computeCtrlScore(p4,sc)).toFixed(0),
   } : null;
+  // Trend-blended scores (owner-requested 2026-11-04) -- additive, computed right alongside
+  // vel since that's the trend signal they blend in. os/cs (the base scores) are untouched.
+  const osBlended=computeTrendBlendedScore(os, vel&&vel.opsScore, sc);
+  const csBlended=computeTrendBlendedScore(cs, vel&&vel.ctrlScore, sc);
   // Ends on the last CLOSED business day, not literal "now" (signature #4) — a still-filling
   // today would sum into pSales as a partial day while its LY match is a full historical day,
   // understating pSales relative to pLY and inflating every consumer of this pair: the
@@ -606,7 +629,7 @@ function buildStore(loc,ds,settings){
   for(const[op,locs] of Object.entries((settings.operators||DEF_SETTINGS.operators))){
     if(locs.includes(loc)){operator=op.replace(' (EA)','');break;}
   }
-  return{loc,name,t,p,p2,p4,vel,opsScore:os,ctrlScore:cs,pSales,pLY,findings,hasCrit,concern,strength,
+  return{loc,name,t,p,p2,p4,vel,opsScore:os,ctrlScore:cs,opsScoreBlended:osBlended,ctrlScoreBlended:csBlended,pSales,pLY,findings,hasCrit,concern,strength,
     city:sc2.city||'',state:sc2.state||'',addr:sc2.addr||'',org:sc2.org||'MCDOK',
     gm:staff.gm||'',gmEmail:staff.gmEmail||'',
     sup:supName,supEmail,
@@ -887,4 +910,4 @@ function mergeDS(existing, wb, type, filename) {
   return ds;
 }
 
-export { buildDS, mergeDS, buildStore, buildBrief, computeOpsScore, computeCtrlScore, normalizeScores };
+export { buildDS, mergeDS, buildStore, buildBrief, computeOpsScore, computeCtrlScore, computeTrendBlendedScore, normalizeScores };

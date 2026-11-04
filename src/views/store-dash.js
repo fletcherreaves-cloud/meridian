@@ -1065,6 +1065,22 @@ function Brief({store, rangeTotal, rangeLY}) {
 }
 
 // SECTION 12: SCORECARDS
+
+// Trend-blended score badge (owner-requested 2026-11-04, memory/plan-ops-ctrl-score-redesign-
+// 2026-11-04.md) — rendered next to the flat base score, never replacing it. `base` is the
+// unchanged actual-vs-target opsScore/ctrlScore every sort/rollup/coaching threshold still
+// reads; `blended` is pipeline.js's computeTrendBlendedScore output, which nudges that number
+// up or down by the store's own recent trend. Hidden when they're within half a point of each
+// other — a trend badge that always shows a near-identical number is noise, not signal.
+function trendBlendBadge(base, blended) {
+  if (base == null || blended == null || Math.abs(blended - base) < 0.5) return null;
+  const up = blended > base;
+  return span({style:{marginLeft:8,fontSize:'10px',fontFamily:'var(--mono)',fontWeight:600,
+    color: up ? '#10b981' : '#ef4444'},
+    title:'Trend-blended score: the flat '+base+'/100 actual-vs-target grade, adjusted by this store\'s own recent trend (damped, capped). Never replaces the base score — same actual-vs-target math everywhere else still uses '+base+'.'},
+    (up?'↑ ':'↓ ')+blended.toFixed(0)+' trend-blended');
+}
+
 function OpsScorecard({store, settings}) {
   const {p, p2, p4, t} = store;
   const q2 = p2||p; const q4 = p4||p; // fallback to 6wk if not computed
@@ -1165,7 +1181,8 @@ function OpsScorecard({store, settings}) {
       'OPERATIONAL METRICS',
       span({style:{fontSize:'9px',color:'var(--text3)',marginLeft:8,fontWeight:400}},'2-Wk = primary · ↑↓ vs 6-Wk trend'),
       span({style:{marginLeft:'auto',fontFamily:'var(--mono)',fontSize:'15px',color:gCol(store.opsScore)}},
-        store.opsScore+' / 100 · '+grade(store.opsScore)+' '+gLbl(store.opsScore))
+        store.opsScore+' / 100 · '+grade(store.opsScore)+' '+gLbl(store.opsScore)),
+      trendBlendBadge(store.opsScore, store.opsScoreBlended)
     ),
     tbl({className:'sc-tbl'},
       h('thead',null,
@@ -1286,7 +1303,8 @@ function CtrlScorecard({store}) {
       'CONTROLS INTEGRITY',
       span({style:{fontSize:'9px',color:'var(--text3)',marginLeft:8,fontWeight:400}},'2-Wk primary · ↑↓ vs 6-Wk'),
       span({style:{marginLeft:'auto',fontFamily:'var(--mono)',fontSize:'15px',color:gCol(store.ctrlScore)}},
-        store.ctrlScore+' / 100 · '+grade(store.ctrlScore)+' '+gLbl(store.ctrlScore))
+        store.ctrlScore+' / 100 · '+grade(store.ctrlScore)+' '+gLbl(store.ctrlScore)),
+      trendBlendBadge(store.ctrlScore, store.ctrlScoreBlended)
     ),
     groups.map((g,gi) =>
       div({key:gi, style:{marginBottom:8}},
