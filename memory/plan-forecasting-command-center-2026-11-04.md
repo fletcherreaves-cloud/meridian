@@ -117,8 +117,17 @@ produce the same numbers through a new pipe. Recommend against it.
   Labor%/TPPH recency blend the same way. Add the REVIEW-flag computation. This alone makes the
   existing Monthly Targets editor pre-fill with his own validated number instead of a blank cell,
   which is most of "transition this entirely to the app" on its own.
+  ✅ **Both halves of Phase 1 are now shipped** — the sales model (v5.614, `src/engine/owner-
+  sales-forecast.js`, task #80's own "Phase 1") and the Labor%/TPPH blend (v5.621, `src/engine/
+  owner-labor-tpph-forecast.js`, task #80's own "Phase 2" — a SEPARATE phase-numbering scheme
+  from this doc's, since this doc wrote both halves under its one Phase 1; don't confuse the two
+  when reading either). The REVIEW-flag computation shipped as part of the sales model
+  (`reviewFlag` on each store's forecast); the Labor%/TPPH blend has no equivalent flag (his
+  workbook doesn't compute one for that model either — only a display-only trend arrow, which
+  shipped too). What's genuinely still open from this Phase 1: nothing — proceed to Phase 2
+  below.
 - **Phase 2: the exception rail**, as its own small panel, reading Phase 1's flags — ships value
-  before the full landing page exists.
+  before the full landing page exists. Still not started.
 - **Phase 3: the unified landing page** (§4's three zones), reusing Phase 1/2 wholesale plus
   `ReportShell`/existing rollup panels.
 - **Phase 4: print/export options**, once the live shape is settled and there's something real to
