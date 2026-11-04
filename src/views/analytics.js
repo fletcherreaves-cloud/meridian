@@ -32,6 +32,7 @@ import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-d
 import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY } from '../engine/correlation-predictors.js';
 import { CoachingModal } from './coaching-modal.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { computeOwnerSalesForecast } from '../engine/owner-sales-forecast.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -8039,16 +8040,33 @@ const _projFromEditValue = (kind, s) => {
 // yearly-projections.js's EditableTargetCell / labor-allocation.js's TargetTpphCell, so the whole
 // app has one click-to-edit convention. Flat-view rows only -- grouped rollup rows stay read-only
 // (they're sums/averages across stores, not a single store's real row).
-function EditableProjCell({loc, field, value, tdStyle, onSave}) {
+//
+// `suggestion` (task #80, tProdSales only): the owner's own ported sales-forecast model's
+// output for this store/period -- { forecastSales, reviewFlag, ... }. A SUGGESTED default
+// only, never auto-applied -- clicking it fills the normal edit flow (same onSave path a
+// hand-typed value takes) rather than writing silently, so every value in this column is
+// either a real approved number or a value the owner explicitly accepted.
+function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion}) {
   const {useState} = React;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const hasSuggestion = suggestion && typeof suggestion.forecastSales === 'number' &&
+    !(typeof value === 'number' && Math.abs(value - suggestion.forecastSales) < 1);
   if (!editing) {
     return h('td', {
       style: {...tdStyle, cursor: 'pointer'},
       title: 'Click to set ' + field.l + ' for this store',
       onClick: () => { setDraft(_projToEditValue(field.kind, value)); setEditing(true); },
-    }, field.fmt(value));
+    },
+      field.fmt(value),
+      hasSuggestion && div({style:{marginTop:2,fontSize:8,fontWeight:400,
+        color: suggestion.reviewFlag ? '#f59e0b' : 'var(--text3)', whiteSpace:'nowrap'},
+        title: suggestion.reviewFlag
+          ? 'Owner forecast model: recent swing crosses the review threshold -- worth a look before accepting.'
+          : 'Owner forecast model: Level + damped Momentum + shrink-to-fleet (see memory/finding-owner-sales-forecast-model-2026-11-04.md). Click to accept.',
+        onClick: e => { e.stopPropagation(); onSave(loc, field.key, Math.round(suggestion.forecastSales * 100) / 100); }},
+        (suggestion.reviewFlag ? '⚠ ' : '→ ') + 'Suggested ' + field.fmt(suggestion.forecastSales))
+    );
   }
   const commit = () => {
     setEditing(false);
@@ -8564,6 +8582,20 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     return s ? s.name.slice(0,22) : '#'+loc;
   };
 
+  // Task #80 (owner-approved 2026-11-04, "let's port it") -- his own manual workbook's
+  // sales-forecast model (Level + damped/capped Momentum + shrink-to-fleet), ported verbatim
+  // from the real formulas in his Aug/Oct/Nov 2026 workbooks (memory/finding-owner-sales-
+  // forecast-model-2026-11-04.md), computed here from cloud data already auto-pulled -- no
+  // weekly export/upload required. A SUGGESTED default + REVIEW flag only; the existing
+  // click-to-edit cell below stays the one source of truth, exactly matching his own workflow
+  // (model proposes, he overrides the stores it flags). Whole-fleet pass, since the model's
+  // own shrink-to-fleet step needs every comp-store's forecast computed together.
+  const salesForecastSuggestions = useMemo(() => {
+    if (!ds || !ds.loaded || !selPeriod || !locs.length) return {};
+    try { return computeOwnerSalesForecast(ds, locs, selPeriod.year, selPeriod.month) || {}; }
+    catch { return {}; } // never let a forecast glitch break the editor itself
+  }, [ds, locs, selPeriod]);
+
   // Reconstructed-period flag (owner-requested 2026-10-02 backfill: "flag them clearly") —
   // any row whose target was reconstructed (not a real approved upload) carries a non-null
   // _dataSource from loadMonthlyTargets/loadAllMonthlyTargets. Checked per-period (banner) and
@@ -8632,7 +8664,8 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       const v = t[f.key];
       return h(EditableProjCell, {key:f.key, loc, field:f, value:v,
         tdStyle:{...tdS,textAlign:'right',fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'},
-        onSave:handleSaveProjField});
+        onSave:handleSaveProjField,
+        suggestion: f.key==='tProdSales' ? salesForecastSuggestions[loc] : null});
     });
     return h('tr',{key:loc},
       h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
