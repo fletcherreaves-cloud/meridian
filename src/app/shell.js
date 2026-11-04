@@ -130,16 +130,23 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   const navStyle = settings?.navStyle==='classic' ? 'classic' : 'v2';
   // Owner request 2026-11-02: "condense sidebar nav into expand/collapse sections." v2-only --
   // classic stays the exact flat pre-2026-10-07 render forever (shell-nav-snapshot.test.js's own
-  // baseline), same scoping the Deep Dive collapsible header already uses. Default is OPEN (a
-  // section only collapses once a user clicks its header) so v2's default look doesn't change —
-  // this adds a capability, it doesn't hide anything on first load. Session-local, not persisted,
-  // same "convenience, not data" tier as deepDiveOpen/collapsed/expandedGroup above.
-  const [collapsedSections,setCollapsedSections]=React.useState(()=>new Set());
+  // baseline), same scoping the Deep Dive collapsible header already uses.
+  //
+  // Default CHANGED 2026-11-03 (owner-reported: "side panel menus still opening expanded") --
+  // the original 2026-11-02 ship deliberately defaulted every section OPEN ("so v2's default
+  // look doesn't change"), on the theory this only ADDS a capability. Once the accordion
+  // (2026-11-03a, "expanding one collapses others") and auto-collapse-on-pick (2026-11-03b, this
+  // same day) both shipped, an all-open default stopped making sense next to them -- the whole
+  // point of "condense sidebar nav" was a condensed sidebar, and defaulting every section open
+  // meant a first-ever page load still showed the full uncondensed wall of links every time,
+  // which is exactly what was reported. Now starts with every section collapsed; a user opens
+  // one by clicking its header exactly as before, and the accordion/auto-collapse mechanics are
+  // unchanged. Still session-local, not persisted, same "convenience, not data" tier as
+  // deepDiveOpen/collapsed/expandedGroup above.
+  const [collapsedSections,setCollapsedSections]=React.useState(()=>new Set(SECTIONS.map(s=>s.id)));
   // Owner request 2026-11-03: "when one section is expanded, the others auto collapse" --
   // accordion behavior, at most one section open at a time from the moment any header is
-  // clicked. The all-open DEFAULT above is untouched (nothing has been "expanded" yet, so
-  // nothing collapses) -- this only changes what happens once a user starts clicking headers.
-  // Opening section `id` (it was in collapsedSections) collapses every OTHER real section
+  // clicked. Opening section `id` (it was in collapsedSections) collapses every OTHER real section
   // (SECTIONS, not just the ones currently rendered -- a permission-filtered-out section has no
   // header to click anyway, so including it here is harmless); closing an already-open section
   // just adds it back, leaving whatever else is already collapsed untouched.

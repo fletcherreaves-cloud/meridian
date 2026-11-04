@@ -4686,7 +4686,9 @@ in the "before you theorize" table because their absence has already cost real w
 - [capacity-and-onboarding-review.md](capacity-and-onboarding-review.md) — how many users can onboard today, and what must land first
 - [mac-session-todo-2026-08-06.md](mac-session-todo-2026-08-06.md) — items that require the owner at a Mac
 - [finding-padding-and-cash-hunt-2026-08-13.md](finding-padding-and-cash-hunt-2026-08-13.md)
-- [plan-role-based-panel-gating-2026-11-03.md](plan-role-based-panel-gating-2026-11-03.md) — DRAFT, not yet applied: GM/OM/Supervisor routines (prior operator, 2022) cross-walked to real panel-registry.js ids, with recommended `disabledPanels` per role using task #64's role-based panel toggle mechanism
+- [plan-role-based-panel-gating-2026-11-03.md](plan-role-based-panel-gating-2026-11-03.md) — GM slice APPLIED (v5.612): GM/OM/Supervisor routines (prior operator, 2022) cross-walked to real panel-registry.js ids, with recommended `disabledPanels` per role using task #64's role-based panel toggle mechanism
+- [plan-sage-managed-agents-pilot-2026-11-03.md](plan-sage-managed-agents-pilot-2026-11-03.md) — task #60: side-by-side vs. the hand-rolled sage-run.mjs scheduler, real pricing research, and the live measurement that changes the decision (zero scheduled prompts currently running) — recommendation: not yet, turn on real usage first
+- [plan-knowledge-backbone-2026-11-03.md](plan-knowledge-backbone-2026-11-03.md) — task #70: sage_memory_kb's tenant_id/RLS was already there but the one real reader (service-role client) bypassed it with no filter of its own (fixed same pass); the still-missing piece is a `scope` (product vs. tenant) classification, specced here but not yet built
 
 ### Owner notes queues
 - [notes-33-queue.md](notes-33-queue.md) · [notes-54-56-triage.md](notes-54-56-triage.md) · [notes-66-bullseye-and-state-of-business.md](notes-66-bullseye-and-state-of-business.md) · [notes-66-staged-experiments-and-risk.md](notes-66-staged-experiments-and-risk.md)

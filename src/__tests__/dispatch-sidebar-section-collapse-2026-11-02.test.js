@@ -3,8 +3,13 @@
 // Owner request 2026-11-02: "condense sidebar nav into expand/collapse sections." Extends the
 // SAME collapsible-header mechanism the Deep Dive section already uses (nav-regroup-v2.test.js)
 // to the ordinary SECTIONS-driven body, v2-only -- classic stays the exact flat pre-2026-10-07
-// render forever (shell-nav-snapshot.test.js's own baseline). Default is OPEN so v2's existing
-// default look is unchanged; a section only collapses once its header is clicked.
+// render forever (shell-nav-snapshot.test.js's own baseline).
+//
+// Default flipped 2026-11-03 (owner-reported: "side panel menus still opening expanded") --
+// originally shipped all-OPEN by default; now starts all-COLLAPSED (see shell.js's own comment
+// on collapsedSections for why). A section expands once its header is clicked (or, per the
+// accordion rule below, once ANOTHER section's header is clicked and this one gets auto-closed
+// back down -- same mechanism either way).
 import { describe, it, expect, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -42,45 +47,49 @@ const byText = (container, text) =>
   [...container.querySelectorAll('div')].find(d => d.textContent.includes(text) && d.textContent.trim().length < text.length + 20);
 
 describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)', () => {
-  it('v2 default: ordinary sections render open (unchanged default look) with their panels visible', () => {
+  it('v2 default (changed 2026-11-03): ordinary sections render COLLAPSED -- a condensed first look, panels hidden until opened', () => {
     const { container } = mountSidebar();
-    expect(container.textContent).toContain(OPS_PANEL.label);
+    // Section headers (names) are always visible, collapsed or not.
+    expect(container.textContent).toMatch(/Operations/);
+    // Their panels are not, until a header is clicked.
+    expect(container.textContent).not.toContain(OPS_PANEL.label);
+    expect(container.textContent).not.toContain(REPORTS_PANEL.label);
   });
 
-  it('clicking a section header collapses it, hiding its panels; clicking again re-expands', () => {
+  it('clicking a collapsed section header expands it, showing its panels; clicking again re-collapses', () => {
     const { container, onOpenModal } = mountSidebar();
-    expect(container.textContent).toContain(OPS_PANEL.label);
+    expect(container.textContent).not.toContain(OPS_PANEL.label);
     const header = byText(container, 'Operations');
     expect(header, 'Operations section header not found').toBeTruthy();
     act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).not.toContain(OPS_PANEL.label);
-    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(container.textContent).toContain(OPS_PANEL.label);
-    // The panel is still reachable through onOpenModal once re-expanded.
+    // The panel is reachable through onOpenModal while expanded.
     const label = [...container.querySelectorAll('span')].find(s => s.textContent === OPS_PANEL.label);
     act(() => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(onOpenModal).toHaveBeenCalledWith(OPS_PANEL.id);
   });
 
-  it('collapsing one section leaves other sections untouched', () => {
+  it('closing an already-open section leaves every other (already-collapsed) section untouched', () => {
     const { container } = mountSidebar();
     const header = byText(container, 'Operations');
-    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // open
+    expect(container.textContent).toContain(OPS_PANEL.label);
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // close
     expect(container.textContent).not.toContain(OPS_PANEL.label);
-    // Some other section's content (e.g. Reports) is still showing.
-    expect(container.textContent).toMatch(/Reports/);
+    // Reports was never touched -- stayed collapsed the whole time, same as the default.
+    expect(container.textContent).not.toContain(REPORTS_PANEL.label);
+    expect(container.textContent).toMatch(/Reports/); // the header label itself still renders
   });
 
-  it('accordion (owner request 2026-11-03): re-opening a section auto-collapses every other section', () => {
+  it('accordion (owner request 2026-11-03): opening a section auto-collapses every other open section', () => {
     const { container } = mountSidebar();
-    expect(container.textContent).toContain(REPORTS_PANEL.label);
+    const reportsHeader = byText(container, 'Reports');
     const opsHeader = byText(container, 'Operations');
-    // Collapse Operations first (matches the test above) -- Reports' own panel stays visible.
-    act(() => { opsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    act(() => { reportsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // open Reports
     expect(container.textContent).toContain(REPORTS_PANEL.label);
-    // Re-opening Operations should now collapse Reports' panel (and every other section)
-    // automatically -- the header label itself still renders (collapsed sections keep their
-    // header, only their items hide), so assert on the PANEL label, not the section name.
+    // Opening Operations should now collapse Reports automatically -- the header label itself
+    // still renders (collapsed sections keep their header, only their items hide), so assert on
+    // the PANEL label, not the section name.
     act(() => { opsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(container.textContent).toContain(OPS_PANEL.label);
     expect(container.textContent).not.toContain(REPORTS_PANEL.label);
@@ -88,15 +97,17 @@ describe('AppSidebar — section collapse/expand (v2, owner request 2026-11-02)'
 
   it('owner request 2026-11-03: picking a panel in an expanded section auto-collapses that section', () => {
     const { container, onOpenModal } = mountSidebar();
+    const opsHeader = byText(container, 'Operations');
+    act(() => { opsHeader.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); // open it first
     expect(container.textContent).toContain(OPS_PANEL.label);
     const label = [...container.querySelectorAll('span')].find(s => s.textContent === OPS_PANEL.label);
     act(() => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     // The click still navigates (pre-existing behavior)...
     expect(onOpenModal).toHaveBeenCalledWith(OPS_PANEL.id);
-    // ...and the section it lived in is now collapsed, same as clicking its header would do.
+    // ...and the section it lived in is now collapsed again, same as clicking its header would do.
     expect(container.textContent).not.toContain(OPS_PANEL.label);
-    // Unaffected sections (e.g. Reports) are untouched by picking an Operations panel.
-    expect(container.textContent).toContain(REPORTS_PANEL.label);
+    // Unaffected sections (e.g. Reports) stay exactly as they were (collapsed, the default).
+    expect(container.textContent).not.toContain(REPORTS_PANEL.label);
   });
 
   it('classic mode never shows a clickable section header -- stays the flat pre-2026-10-07 render', () => {

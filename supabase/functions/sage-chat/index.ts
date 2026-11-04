@@ -489,7 +489,13 @@ const NO_EXOGENOUS_SIGNAL: TagCoverage = { tagged: {}, covStart: {}, covEnd: {} 
 // `allowed` = the caller's accessible store set (null = full access). When set,
 // tools query ALL stores (for district context) but expose per-store detail only
 // for the caller's stores.
-async function runTool(name: string, input: Record<string, unknown>, allowed: Set<string> | null = null, role = 'admin'): Promise<string> {
+// `tenantId` (2026-11-03, memory/plan-knowledge-backbone-2026-11-03.md) -- the caller's own
+// profiles.tenant_id, threaded through so search_project_memory can scope its query to it
+// explicitly, rather than relying solely on sage_memory_kb's RLS policies, which this file's own
+// service-role client (SUPABASE_SERVICE_KEY, below) bypasses entirely. A no-op in today's
+// single-tenant deployment (every row shares the one tenant_id), but without it a future
+// second tenant's SAGE session would see every other tenant's memory_kb rows mixed in.
+async function runTool(name: string, input: Record<string, unknown>, allowed: Set<string> | null = null, role = 'admin', tenantId: string | null = null): Promise<string> {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   if (name === 'query_daily_activity') {
@@ -1069,6 +1075,12 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     // See index.ts:695's rbacBlock for the weaker, prompt-only pattern this deliberately does
     // NOT extend to personnel-adjacent content.
     if (!qualifiesForRestricted(role)) q = q.neq('sensitivity', 'restricted');
+    // Explicit tenant scoping (2026-11-03) -- this query runs on the service-role client, which
+    // bypasses sage_memory_kb's tenant_id RLS policies entirely (schema-sage-memory-kb.sql's own
+    // comment already flagged this as "defense in depth for any future non-service-role reader",
+    // but this IS the reader, and it had no filter of its own). A no-op today (one tenant), but
+    // without this a second tenant's SAGE session would see every tenant's rows mixed together.
+    if (tenantId) q = q.eq('tenant_id', tenantId);
 
     const { data, error } = await q.limit(80);
     if (error) {
@@ -1183,8 +1195,8 @@ Deno.serve(async (req: Request) => {
 
   // RBAC scope for the caller — derived server-side from their profile, never trusted
   // from the client. accessible_locs: null/empty = full access; array = restricted set.
-  let scope: { restricted: boolean; allowed: Set<string> | null; role: string; name: string } =
-    { restricted: false, allowed: null, role: 'admin', name: '' };
+  let scope: { restricted: boolean; allowed: Set<string> | null; role: string; name: string; tenantId: string | null } =
+    { restricted: false, allowed: null, role: 'admin', name: '', tenantId: null };
   try {
     const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
     const { data: { user }, error } = await sbAdmin.auth.getUser(token);
@@ -1193,12 +1205,13 @@ Deno.serve(async (req: Request) => {
       return new Response('Unauthorized', { status: 401, headers: CORS });
     }
     const { data: prof } = await sbAdmin
-      .from('profiles').select('role,accessible_locs,name').eq('id', user.id).single();
+      .from('profiles').select('role,accessible_locs,name,tenant_id').eq('id', user.id).single();
     const al = prof?.accessible_locs as string[] | null | undefined;
+    const tenantId = (prof?.tenant_id as string | null | undefined) || null;
     if (Array.isArray(al) && al.length) {
-      scope = { restricted: true, allowed: new Set(al.map(normLoc)), role: prof?.role || 'manager', name: prof?.name || '' };
+      scope = { restricted: true, allowed: new Set(al.map(normLoc)), role: prof?.role || 'manager', name: prof?.name || '', tenantId };
     } else {
-      scope = { restricted: false, allowed: null, role: prof?.role || 'admin', name: prof?.name || '' };
+      scope = { restricted: false, allowed: null, role: prof?.role || 'admin', name: prof?.name || '', tenantId };
     }
   } catch (e) {
     console.warn('[sage-chat] Auth check error:', e);
@@ -1297,7 +1310,7 @@ Deno.serve(async (req: Request) => {
 
           const toolResults: unknown[] = await Promise.all(toolUses.map(async (tu: any) => {
             try {
-              const result = await runTool(tu.name, tu.input as Record<string, unknown>, scope.allowed, scope.role);
+              const result = await runTool(tu.name, tu.input as Record<string, unknown>, scope.allowed, scope.role, scope.tenantId);
               return { type: 'tool_result', tool_use_id: tu.id, content: result };
             } catch (e) {
               return { type: 'tool_result', tool_use_id: tu.id, content: `Error: ${e}`, is_error: true };
