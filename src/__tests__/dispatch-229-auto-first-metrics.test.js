@@ -93,10 +93,18 @@ describe('extractMetricValues — auto-first fallback (the motivating live bug, 
   });
 
   it('monthly aggregation still honors the metric\'s own sum-vs-mean convention through the new path (otHrs is aggregate:"sum")', () => {
+    // Anchored to day-of-month 1 and 2 of the CURRENT month, not recent()'s days-ago offset --
+    // this test needs both rows in the SAME calendar month to produce one bucket, and recent(3)/
+    // recent(5) cross a month boundary (and so fail) on the 1st-4th of any month. Caught live:
+    // reproduced locally and in CI on 2026-11-04 (recent(5) landed in October while "today" was
+    // already November), confirmed unrelated to any code this dispatch touches -- byte-identical
+    // against origin/main -- so fixed here rather than re-running past it.
+    const now = new Date();
+    const inMonth = (day) => new Date(now.getFullYear(), now.getMonth(), day);
     const ds = {
       opsLaborRows: [
-        { loc: GOOD, date: recent(3), otHrs: 3 },
-        { loc: GOOD, date: recent(5), otHrs: 5 },
+        { loc: GOOD, date: inMonth(1), otHrs: 3 },
+        { loc: GOOD, date: inMonth(2), otHrs: 5 },
       ],
     };
     const out = extractMetricValues('otHrs', ds, 'monthly', GOOD);
