@@ -9,7 +9,9 @@ import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { LocationSelector } from '../components/PanelControls.js';
-import { RoutePanelShell } from '../components/ModalShell.js';
+import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
+import { TargetFieldConfigEditor } from '../components/TargetFieldConfigEditor.js';
+import { applyFieldConfig } from '../engine/target-field-config.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -8508,6 +8510,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const [sheetType,    setSheetType]    = useState('supervisor'); // 'operator' | 'supervisor'
   const [sheetGroup,   setSheetGroup]   = useState('');
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [fieldConfigOpen, setFieldConfigOpen] = useState(false); // "Customize Fields" editor
 
   // Load available periods on mount
   useEffect(()=>{
@@ -8618,10 +8621,15 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const showProjService    = settings?.showProjService    !== false;
   const showProjBonusLabor = settings?.showProjBonusLabor !== false;
   const showProjBonusFood  = settings?.showProjBonusFood  !== false;
-  const VISIBLE_FIELDS = PROJ_FIELDS.filter(f =>
+  const LEGACY_VISIBLE_FIELDS = PROJ_FIELDS.filter(f =>
     (f.g!=='Service' || showProjService) &&
     (f.key!=='tBonusLabor' || showProjBonusLabor) &&
     (f.key!=='tFOBBonusBase' || showProjBonusFood));
+  // Target field customization (owner-requested 2026-11-04) -- layered ON TOP of the legacy
+  // show/hide toggles above, never replacing them: those three stay the fast on/off chips they
+  // already were, while settings.monthlyTargetConfig (set via the "⚙️ Customize" editor below)
+  // handles hide/relabel/regroup for any field, including the three legacy-toggled ones.
+  const VISIBLE_FIELDS = applyFieldConfig(LEGACY_VISIBLE_FIELDS, settings?.monthlyTargetConfig);
 
   // Build column group spans
   const groups = [];
@@ -8831,6 +8839,11 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
               textDecoration:on?'none':'line-through'}},label);
         }))
       ),
+      btn({onClick:()=>setFieldConfigOpen(true),
+        title:'Hide, rename, or regroup any metric column on this grid',
+        style:{padding:'3px 8px',fontSize:11,borderRadius:4,cursor:'pointer',
+          background:'var(--surf)',color:'var(--text3)',border:'1px solid var(--bdr)'}},
+        '⚙️ Customize'),
       btn({onClick:()=>setMyStoresOnly(v=>!v),style:{
         padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
         background:myStoresOnly?'var(--accent)':'var(--surf)',
@@ -8979,7 +8992,15 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             ),
             tbody(null,...(groupView==='flat' ? storeRowEls : (groupedRows||[])))
           )
-        )
+        ),
+
+    fieldConfigOpen && h(TargetFieldConfigEditor, {
+      title: 'Customize Monthly Target Fields',
+      fields: PROJ_FIELDS.map(f=>({id:f.key, label:f.l, group:f.g, groupLabel:f.g})),
+      config: settings?.monthlyTargetConfig,
+      onClose: ()=>setFieldConfigOpen(false),
+      onSave: (cfg)=>onUpdateSettings&&onUpdateSettings({...settings, monthlyTargetConfig:cfg}),
+    })
   );
 }
 

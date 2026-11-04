@@ -20,6 +20,8 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import { loadDailySales, saveYearlyTargets } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
+import { applyCategoryConfig } from '../engine/target-field-config.js';
+import { TargetFieldConfigEditor } from '../components/TargetFieldConfigEditor.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -303,9 +305,15 @@ function aggregate(rows) {
 // Sales view's data model: ds.allYearlyTargets[year] (Supabase-persisted, Part 1),
 // with ds.targets (flattened "most recent year", may include a same-session upload
 // not yet round-tripped through Supabase) preferred for the current calendar year.
-function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
+function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onUpdateSettings }) {
   const { useState, useMemo, useEffect } = React;
-  const [cat, setCat] = useState(YEARLY_CATS[0].key);
+  // Target field customization (owner-requested 2026-11-04) -- "add or remove metrics and
+  // categories on monthly and yearly." applyCategoryConfig flattens/reapplies/regroups
+  // YEARLY_CATS into the exact same {key,label,icon,fields} shape every consumer below already
+  // expects, so this is a drop-in replacement, not a new shape to learn.
+  const CATS = useMemo(() => applyCategoryConfig(YEARLY_CATS, settings?.yearlyTargetConfig), [settings?.yearlyTargetConfig]);
+  const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
+  const [cat, setCat] = useState(CATS[0].key);
   // Task #61 (owner request 2026-11-03) -- in-app edits, layered over the cloud-loaded/session
   // byLoc below rather than replacing it, same "optimistic local update, fire-and-forget persist"
   // shape labor-allocation.js's TargetTpphCell/handleSaveTarget already use. Reset per year so a
@@ -343,7 +351,7 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
   const ok = useMemo(() => rows.filter(l => !FL_LOCS.has(l)), [rows]);
   const fl = useMemo(() => rows.filter(l => FL_LOCS.has(l)), [rows]);
 
-  const active = YEARLY_CATS.find(c => c.key === cat) || YEARLY_CATS[0];
+  const active = CATS.find(c => c.key === cat) || CATS[0];
   const catAgg = (locs, field) => {
     const vals = locs.map(l => effectiveByLoc[l] && effectiveByLoc[l][field.k]).filter(v => v != null && !Number.isNaN(v));
     if (!vals.length) return null;
@@ -379,14 +387,20 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
 
   return div(null,
     // Category sub-tabs
-    div({ style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' } },
-      YEARLY_CATS.map(c => h('button', {
+    div({ style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' } },
+      CATS.map(c => h('button', {
         key: c.key, onClick: () => setCat(c.key),
         style: { padding: '5px 12px', borderRadius: 99, border: '1px solid ' + (cat === c.key ? 'var(--amber)' : 'var(--bdr)'),
           background: cat === c.key ? 'rgba(245,188,0,.15)' : 'var(--surf)', color: cat === c.key ? 'var(--amber)' : 'var(--text2)',
           fontSize: 10.5, fontWeight: 700, cursor: 'pointer' } },
         c.icon + ' ' + c.label)
-      )),
+      ),
+      h('button', { onClick: () => setFieldConfigOpen(true),
+        title: 'Hide, rename, or regroup any metric/category on this grid',
+        style: { padding: '5px 12px', borderRadius: 99, border: '1px solid var(--bdr)',
+          background: 'var(--surf)', color: 'var(--text3)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', marginLeft: 'auto' } },
+        '⚙️ Customize'),
+    ),
     div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
       h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
         h('thead', null, h('tr', null,
@@ -400,11 +414,18 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 800, fontFamily: 'inherit', color: 'var(--amber)' } }, label + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '(' + locs.length + ')')),
             ...active.fields.map(f => h('td', { key: f.k, style: { ...td, fontWeight: 800 } }, f.fmt(catAgg(locs, f))))) : null)))),
     div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-      'Click any store\'s value to edit it in place — saves straight to the yearly_targets table (source: "override"), no re-upload needed. Values otherwise come from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc). The Excel upload still works and stays the fastest way to set a whole year at once; in-app edits are for one-off corrections.')
+      'Click any store\'s value to edit it in place — saves straight to the yearly_targets table (source: "override"), no re-upload needed. Values otherwise come from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc). The Excel upload still works and stays the fastest way to set a whole year at once; in-app edits are for one-off corrections.'),
+    fieldConfigOpen && h(TargetFieldConfigEditor, {
+      title: 'Customize Yearly Target Categories',
+      fields: YEARLY_CATS.flatMap(c => c.fields.map(f => ({ id: f.k, label: f.l, group: c.key, groupLabel: c.label }))),
+      config: settings?.yearlyTargetConfig,
+      onClose: () => setFieldConfigOpen(false),
+      onSave: (cfg) => onUpdateSettings && onUpdateSettings({ ...settings, yearlyTargetConfig: cfg }),
+    })
   );
 }
 
-export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded }) {
+export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded, onUpdateSettings }) {
   const { useState, useMemo, useEffect, useCallback } = React;
   const now = new Date();
   const thisYear = now.getFullYear();
@@ -526,7 +547,7 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
         view === 'targets'
-          ? h(TargetCategoriesView, { ds, year, thisYear, onExportReady: setTargetsData })
+          ? h(TargetCategoriesView, { ds, year, thisYear, onExportReady: setTargetsData, settings, onUpdateSettings })
           : [
         loading
           ? div({ key: 'load', style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + year + ' actuals…')

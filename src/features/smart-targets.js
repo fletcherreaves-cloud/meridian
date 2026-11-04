@@ -88,7 +88,14 @@ function roundTarget(v,tgtKey){
   return Math.round(v*100)/100;
 }
 
-function computeSmartTargets(loc, ds, settings, now){
+// Owner-requested 2026-11-04 ("let's expand the lookback periods available... pre-defined
+// options as well as a custom option"): the "Trend Target" reading has always been a fixed
+// 6W->12W->26W->52W fallback cascade (whichever has data first), with no way to pick a
+// specific window. `lookbackWeeks`, when given, computes a 5th window of exactly that many
+// weeks and prefers it as `recent` (falling back to the normal cascade only if THAT window
+// itself has no data for this store/metric) -- so the default cascade stays byte-for-byte
+// unchanged for every existing caller that doesn't pass it.
+function computeSmartTargets(loc, ds, settings, now, lookbackWeeks){
   if(!ds||!ds.loaded) return null;
   // #1221: was ds.targets[loc]||DEFAULT_TARGETS[loc] -- the #153/#167 defect-1 pattern
   // (ds.targets is {} on every cloud-load path). A Targets-panel/v2 override was silently
@@ -96,7 +103,11 @@ function computeSmartTargets(loc, ds, settings, now){
   const t=(settings&&settings.targets&&settings.targets[loc])||(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
   const today=new Date();
   const mk=(weeks)=>new Date(today-weeks*7*864e5);
-  const cut6w=mk(6),cut12w=mk(12),cut26w=mk(26),cut52w=mk(52),cutLY=mk(104);
+  const cut6w=mk(6),cut12w=mk(12),cut26w=mk(26),cut52w=mk(52);
+  const cutCustom = lookbackWeeks>0 ? mk(lookbackWeeks) : null;
+  // The row-inclusion bound below must reach at least as far back as cutCustom itself, or a
+  // lookback longer than the old fixed 104-week (2yr) ceiling would silently truncate.
+  const cutLY=mk(Math.max(104, lookbackWeeks||0));
   const results={};
 
   // ── Cloud fallbacks (auto/emailed) ──────────────────────────────────────────
@@ -134,10 +145,10 @@ function computeSmartTargets(loc, ds, settings, now){
     else if(metric.src==='ctrl')  { allRows=(ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);           if(!allRows.length) allRows=cloudCtrl().filter(r=>r.date&&r.date>cutLY); }
     else if(metric.src==='fob')   { allRows=(ds.fobRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);            if(!allRows.length) allRows=cloudFob().filter(r=>r.date&&r.date>cutLY); }
 
-    let vals6w=[],vals12w=[],vals26w=[],vals52w=[];
+    let vals6w=[],vals12w=[],vals26w=[],vals52w=[],valsCustom=[];
 
     if(metric.k==='salesGrowth'){
-      allRows.filter(r=>r.date>cut26w).forEach(function(r){
+      allRows.filter(r=>r.date>cut26w||(cutCustom&&r.date>cutCustom)).forEach(function(r){
         // Cloud rows carry salesVsLYPct directly; manual rows need an LY lookup.
         let g=null;
         if(typeof r.salesVsLYPct==='number') g=r.salesVsLYPct;
@@ -145,7 +156,9 @@ function computeSmartTargets(loc, ds, settings, now){
         if(g!=null){
           if(r.date>cut6w) vals6w.push(g);
           if(r.date>cut12w) vals12w.push(g);
-          vals26w.push(g); vals52w.push(g);
+          if(r.date>cut26w) vals26w.push(g);
+          if(r.date>cut52w) vals52w.push(g);
+          if(cutCustom&&r.date>cutCustom) valsCustom.push(g);
         }
       });
     } else {
@@ -156,12 +169,16 @@ function computeSmartTargets(loc, ds, settings, now){
         if(r.date>cut12w) vals12w.push(v);
         if(r.date>cut26w) vals26w.push(v);
         if(r.date>cut52w) vals52w.push(v);
+        if(cutCustom&&r.date>cutCustom) valsCustom.push(v);
       });
     }
 
     const avg6w=trimmedMean(vals6w),avg12w=trimmedMean(vals12w);
     const avg26w=trimmedMean(vals26w),avg52w=trimmedMean(vals52w);
-    const recent=avg6w||avg12w||avg26w||avg52w;
+    const avgCustom=cutCustom?trimmedMean(valsCustom):null;
+    // Unchanged default cascade when no custom window was picked; when one was, prefer it and
+    // only fall back to the cascade if the custom window itself turned up nothing.
+    const recent=cutCustom?(avgCustom!=null?avgCustom:(avg6w||avg12w||avg26w||avg52w)):(avg6w||avg12w||avg26w||avg52w);
 
     const slope=trendSlope(vals26w);
     const improving=metric.dir==='lower'?slope<-0.005:slope>0.005;
@@ -193,6 +210,7 @@ function computeSmartTargets(loc, ds, settings, now){
       }
     });
     const compBest=compVals.length?(metric.dir==='lower'?Math.min.apply(null,compVals):Math.max.apply(null,compVals)):null;
+    const recentLabel = cutCustom ? (lookbackWeeks+'W') : '6W'; // for reasoning text only — matches whichever window `recent` actually drew from
 
     // Proposed yearly: anchor at best sustained + stretch toward best comparable
     // EXCEPTION: salesGrowth uses a realistic growth framework (not bestSust+stretch which produces 30-46%)
@@ -211,7 +229,7 @@ function computeSmartTargets(loc, ds, settings, now){
         const baseCapped=Math.min(MAX_G,Math.max(MIN_G,base));
         const trendAdj=improving?2:declining?-1:0.5;
         proposedYearly=roundTarget(Math.min(MAX_G,Math.max(MIN_G,baseCapped+trendAdj)),metric.tgtKey);
-        yearlyReasoning='6W comp: '+(avg6w!=null?(avg6w>=0?'+':'')+avg6w.toFixed(2)+'%':'—')+
+        yearlyReasoning=recentLabel+' comp: '+(base!=null?(base>=0?'+':'')+base.toFixed(2)+'%':'—')+
           ' | Trend adj: '+(trendAdj>=0?'+':'')+trendAdj.toFixed(2)+'% | Cap: '+MAX_G+'%';
       } else {
         const anchor=bestSust!==null?bestSust:recent;
@@ -224,7 +242,7 @@ function computeSmartTargets(loc, ds, settings, now){
         proposedYearly=metric.dir==='lower'?
           Math.min(stretched,recent*1.10):Math.max(stretched,recent*0.90);
         proposedYearly=roundTarget(proposedYearly,metric.tgtKey);
-        yearlyReasoning='6W avg: '+metric.fmt(avg6w)+
+        yearlyReasoning=recentLabel+' avg: '+metric.fmt(recent)+
           ' | Best sustained 4W: '+metric.fmt(bestSust)+
           (compBest?' | Best comparable: '+metric.fmt(compBest):'')+
           ' | Trend: '+trendLabel;
@@ -235,14 +253,15 @@ function computeSmartTargets(loc, ds, settings, now){
     let proposedMonthly=null,monthlyReasoning='';
     if(recent!==null&&proposedYearly!==null){
       proposedMonthly=roundTarget(recent+(proposedYearly-recent)*0.18,metric.tgtKey);
-      monthlyReasoning='Current 6W: '+metric.fmt(recent)+
+      monthlyReasoning='Current '+recentLabel+': '+metric.fmt(recent)+
         ' → Monthly step (18% of gap): '+metric.fmt(proposedMonthly)+
         ' → Annual goal: '+metric.fmt(proposedYearly);
     }
 
     const confidence=vals12w.length>=20?'High':vals12w.length>=8?'Medium':'Low';
     results[metric.k]={
-      metric,avg6w,avg12w,avg26w,avg52w,recent,bestSust,compBest,
+      metric,avg6w,avg12w,avg26w,avg52w,avgCustom,lookbackWeeks:cutCustom?lookbackWeeks:null,
+      recent,bestSust,compBest,
       slope,trendLabel,trendColor,currentTarget,proposedMonthly,proposedYearly,
       yearlyReasoning,monthlyReasoning,confidence,sampleSize:vals12w.length
     };
@@ -270,6 +289,21 @@ function computeSmartTargets(loc, ds, settings, now){
 }
 
 // SMART TARGET PANEL — Interactive review/approve/export UI
+// Owner-requested 2026-11-04 lookback presets for the "Trend Target" reading — the window
+// `recent` draws from. `null` = the original default (6W, falling back to 12W/26W/52W
+// whichever has data first) — unchanged behavior for anyone who never touches this control.
+const LOOKBACK_PRESETS = [
+  {id:'default', l:'6W (default)', weeks:null},
+  {id:'2w',  l:'2W',          weeks:2},
+  {id:'4w',  l:'4W',          weeks:4},
+  {id:'6w',  l:'6W',          weeks:6},
+  {id:'13w', l:'13W (Qtr)',   weeks:13},
+  {id:'26w', l:'26W (6mo)',   weeks:26},
+  {id:'52w', l:'52W (1yr)',   weeks:52},
+  {id:'104w',l:'104W (2yr)',  weeks:104},
+  {id:'custom', l:'Custom…',  weeks:null},
+];
+
 function SmartTargetPanel({stores, ds, settings, onClose}) {
   const [mode,      setMode]      = React.useState('monthly'); // 'monthly'|'yearly'
   const [metricTab, setMetricTab] = React.useState('all');
@@ -279,6 +313,16 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
   const [approved,  setApproved]  = React.useState({});  // {loc_metric: true}
   const [computing, setComputing] = React.useState(false);
   const [gridData,  setGridData]  = React.useState(null);
+  const [lookbackPreset, setLookbackPreset] = React.useState('default');
+  const [customWeeks,    setCustomWeeks]    = React.useState(13);
+  // The actual value passed to computeSmartTargets — null for 'default' (preserves the
+  // original 6W->cascade behavior exactly), the preset's weeks otherwise, or the custom
+  // number when 'custom' is selected. Clamped to a sane 1-260 week range (5 years).
+  const lookbackWeeks = React.useMemo(()=>{
+    if(lookbackPreset==='custom') return Math.min(260,Math.max(1,parseInt(customWeeks,10)||13));
+    const p=LOOKBACK_PRESETS.find(x=>x.id===lookbackPreset);
+    return p?p.weeks:null;
+  },[lookbackPreset,customWeeks]);
 
   // Metrics visible in current tab
   const activeMetrics = React.useMemo(()=>{
@@ -303,11 +347,11 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
     setComputing(true);
     setTimeout(function(){
       const g={};
-      allLocs.forEach(function(loc){ g[loc]=computeSmartTargets(loc,ds,settings); });
+      allLocs.forEach(function(loc){ g[loc]=computeSmartTargets(loc,ds,settings,undefined,lookbackWeeks); });
       setGridData(g);
       setComputing(false);
     },50);
-  },[ds,settings,allLocs.join(',')]);
+  },[ds,settings,allLocs.join(','),lookbackWeeks]);
 
   const getVal = (loc,mk)=>{
     const key=loc+'_'+mk;
@@ -386,6 +430,31 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
         btn({className:'btn btn-sm',onClick:onClose},'✕')
       ),
 
+      // Lookback period (owner-requested 2026-11-04) — which window the "current" reading
+      // (avg6w by default) draws from. 'default' reproduces the original 6W->cascade behavior
+      // exactly; any other preset or a custom week count overrides it for every metric/store.
+      div({style:{padding:'6px 20px',borderBottom:'.5px solid var(--bdr)',
+        display:'flex',alignItems:'center',gap:8,flexShrink:0,background:'var(--surf)',flexWrap:'wrap'}},
+        span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px'}},'Lookback'),
+        div({style:{display:'flex',gap:3,flexWrap:'wrap'}},
+          LOOKBACK_PRESETS.map(p=>btn({key:p.id,onClick:()=>setLookbackPreset(p.id),
+            style:{padding:'3px 9px',fontSize:'8.5px',fontWeight:600,borderRadius:'var(--r)',
+              border:'.5px solid '+(lookbackPreset===p.id?'rgba(245,158,11,.5)':'var(--bdr)'),
+              background:lookbackPreset===p.id?'var(--adim)':'transparent',
+              color:lookbackPreset===p.id?'var(--amber)':'var(--text3)',cursor:'pointer'}},
+            p.l))
+        ),
+        lookbackPreset==='custom' && h('input',{type:'number',min:1,max:260,value:customWeeks,
+          onChange:e=>setCustomWeeks(e.target.value),
+          style:{width:54,fontSize:'9px',padding:'3px 6px',borderRadius:'var(--r)',
+            border:'.5px solid var(--bdr)',background:'var(--surf2)',color:'var(--text)'}}),
+        lookbackPreset==='custom' && span({style:{fontSize:'8px',color:'var(--text3)'}},'weeks back'),
+        span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},
+          lookbackPreset==='default'
+            ? '— "current" = 6W avg (falls back to 12W/26W/52W if 6W has no data)'
+            : '— "current" = plain average over the last '+lookbackWeeks+' week'+(lookbackWeeks===1?'':'s'))
+      ),
+
       // Legend
       div({style:{padding:'5px 20px',borderBottom:'.5px solid var(--bdr)',
         display:'flex',gap:16,fontSize:'8px',color:'var(--text3)',flexShrink:0}},
@@ -394,7 +463,7 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
         div(null,'✏️ Manually overridden'),
         div(null,'⚪ No data'),
         div({style:{marginLeft:'auto',fontStyle:'italic'}},
-          mode==='monthly'?'Proposed = current 6W avg + 18% step toward yearly goal'
+          mode==='monthly'?'Proposed = current '+(lookbackPreset==='default'?'6W':lookbackWeeks+'W')+' avg + 18% step toward yearly goal'
           :'Proposed = best sustained 4W + 30% stretch toward best comparable store')
       ),
 
@@ -525,10 +594,13 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
               textTransform:'uppercase',color:'var(--amber)',marginBottom:4}},
               (STORE_NAMES[selLoc]||selLoc)+' · '+selData.metric.label),
 
-            // Stat tiles
+            // Stat tiles — the lookback-window tile only appears when a non-default window is
+            // selected (owner-requested 2026-11-04), right alongside the two fixed reference
+            // windows that always show.
             ...[
               ['6W Avg', selData.metric.fmt(selData.avg6w), '#60a5fa'],
               ['12W Avg', selData.metric.fmt(selData.avg12w), '#94a3b8'],
+              ...(selData.lookbackWeeks ? [[selData.lookbackWeeks+'W Avg (selected)', selData.metric.fmt(selData.avgCustom), '#f5bc00']] : []),
               ['Best 4W', selData.metric.fmt(selData.bestSust), '#10b981'],
               ['Comparable Best', selData.metric.fmt(selData.compBest), '#f59e0b'],
               ['Current Target', selData.metric.fmt(selData.currentTarget), '#e2e8f0'],
@@ -536,7 +608,7 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
               display:'flex',justifyContent:'space-between',alignItems:'center',
               padding:'5px 8px',marginBottom:3,background:'var(--surf2)',
               borderRadius:'var(--r)'}},
-              span({style:{fontSize:'8px',color:'var(--text3)'}},'lbl'),
+              span({style:{fontSize:'8px',color:'var(--text3)'}},lbl),
               span({style:{fontSize:'9px',fontWeight:700,color:col,
                 fontFamily:'var(--mono)'}},val)
             )),
