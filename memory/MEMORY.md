@@ -4502,6 +4502,13 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - [Simple-models propagation](simple-models-propagation.md) — T3M/T6W/T3W family engine-wide.
 - [Smart Targets / graded / accuracy handoff](handoff-smarttargets-graded-accuracy.md) ·
   [Accuracy layer](project-accuracy-layer.md) · [Graded Visits PACE](project-graded-visits-pace.md)
+- [Owner's real sales-forecast model, reverse-engineered](finding-owner-sales-forecast-model-2026-11-04.md)
+  — his manual workbook runs a backtested Level+damped-momentum+shrinkage-to-fleet model (1.9pp MAE,
+  beats naive + his own prior model), plus a fixed recency-weighted blend for Labor%/TPPH. Entire
+  raw input already redundant with auto-pulled cloud data — pure compute port, no new uploads needed.
+- [Forecasting Command Center design](plan-forecasting-command-center-2026-11-04.md) — unified
+  landing page over the 14 existing forecasting panels, exception-rail-first per the above finding.
+  Phase 1 = port the model into the engine; page comes after, not before.
 
 ## 🧮 EOM / Inventory / FOB
 - [EOM diagnosis flow](project-eom-diagnosis-flow.md) · [Item Journey](project-eom-item-journey.md) ·
