@@ -88,9 +88,20 @@ export const TOL_ROLLUP_METRICS = TOL_METRICS.filter(m => m.offKey && m.tol != n
 // district roll-ups can be dollar-weighted exactly (Σ$/Σprodsales), never a mean of %s.
 export const TOL_SPEC = {
   oepe:   {man:{src:'opsRows',f:'oepe'},        cloud:{src:'glimpseRows',f:'oepe'}},
-  park:   {man:{src:'opsRows',f:'park'},        cloud:{src:'glimpseRows',f:'parkedPct'}},
-  kvst:   {man:{src:'opsRows',f:'kvst'},        cloud:{src:'glimpseRows',f:'kvst'}},
-  r2p:    {man:{src:'opsRows',f:'r2p'}},
+  // park/kvst (2026-11-04, owner-reported "no data" in Unified Targets' Current column):
+  // glimpseRows (the EMAILED Daily Glimpse stream) was the only cloud fallback, and it isn't
+  // always fresh for the trailing 4-week window this table reads. ds.opsServiceRows
+  // (lib/supabase.js's loadOpsServiceStats, auto-pulled from qsr_service_stats) already
+  // computes real park/kvst values from the same underlying QSRSoft report -- added as a
+  // second-tier cloud2 fallback (tolValuesForLoc tries cloud, then cloud2) rather than
+  // replacing glimpseRows, since either can be the fresher one on a given day.
+  park:   {man:{src:'opsRows',f:'park'},        cloud:{src:'glimpseRows',f:'parkedPct'}, cloud2:{src:'opsServiceRows',f:'park'}},
+  kvst:   {man:{src:'opsRows',f:'kvst'},        cloud:{src:'glimpseRows',f:'kvst'},       cloud2:{src:'opsServiceRows',f:'kvst'}},
+  // r2p (2026-11-04, same report): had NO cloud fallback at all -- manual opsRows only, despite
+  // ds.qsrActSummaryRows (the auto-pulled DAR, lib/supabase.js's _finalizeQsrAct) already
+  // computing a real R2P value, reconciled EXACTLY against QSRSoft's own R2P column (see that
+  // function's own comment) and already used elsewhere in the app (One-Pager). Wired in here too.
+  r2p:    {man:{src:'opsRows',f:'r2p'},         cloud:{src:'qsrActSummaryRows',f:'r2p'}},
   tpph:   {man:{src:'ctrlRows',f:'tpph'}, man2:{src:'laborRows',f:'tpph'}, cloud:{src:'qsrActSummaryRows',fn:r=>r.actHrs>0?r.gc/r.actHrs:null}},
   labor:  {man:{src:'ctrlRows',f:'laborPct'}, man2:{src:'laborRows',f:'laborPct'}, cloud:{src:'glimpseRows',f:'laborPct'}},
   crewlbr:{man:{src:'laborRows',f:'crewLaborPct'}},
@@ -104,10 +115,16 @@ export const TOL_SPEC = {
   empMl:  {man:{src:'fobRows',f:'empMeal'},     fob:{num:'empMgrMealsAmt'}},
   statV:  {man:{src:'fobRows',f:'statVar'},     fob:{num:'statVarianceAmt'}},
   disc:   {man:{src:'fobRows',f:'discCoupon'},  fob:{num:'discountCouponsAmt'}},
-  cashOS: {man:{src:'ctrlRows',f:'cashOSPct'},  cloud:{src:'glimpseRows',f:'cashOSPct'}, signed:true},
-  tRedB:  {man:{src:'ctrlRows',f:'tRedBPct'}},
-  tRedA:  {man:{src:'ctrlRows',f:'tRedAPct'}},
-  discP:  {man:{src:'ctrlRows',f:'discPct'}},
+  // cashOS/tRedB/tRedA/discP (2026-11-04, same report): tRedB/tRedA/discP had NO cloud fallback
+  // at all -- manual ctrlRows only. ds.opsCashRows (lib/supabase.js's loadOpsCashSheet, auto-
+  // pulled from qsr_cash_sheet) already computes real, net-sales-weighted discPct/tRedBPct/
+  // tRedAPct/cashOSPct percentages from the same underlying report -- wired in as cloud (for the
+  // three that had none) or cloud2 (cashOS, which already had glimpseRows and gets a second,
+  // often-fresher tier, same park/kvst reasoning above).
+  cashOS: {man:{src:'ctrlRows',f:'cashOSPct'},  cloud:{src:'glimpseRows',f:'cashOSPct'}, cloud2:{src:'opsCashRows',f:'cashOSPct'}, signed:true},
+  tRedB:  {man:{src:'ctrlRows',f:'tRedBPct'},   cloud:{src:'opsCashRows',f:'tRedBPct'}},
+  tRedA:  {man:{src:'ctrlRows',f:'tRedAPct'},   cloud:{src:'opsCashRows',f:'tRedAPct'}},
+  discP:  {man:{src:'ctrlRows',f:'discPct'},    cloud:{src:'opsCashRows',f:'discPct'}},
   gc:     {man:{src:'laborRows',f:'gc'},        cloud:{src:'qsrActSummaryRows',f:'gc'}},
   avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
   sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
@@ -167,12 +184,16 @@ export function tolValuesForLoc(ds, metricId, loc, sinceMs) {
       .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
     if (vals.length) return vals;
   }
-  // Cloud fallback
-  if (spec.cloud) {
-    const s = spec.cloud;
+  // Cloud fallback (+ optional secondary cloud fallback — same shape as man/man2 above).
+  // A metric can have more than one real auto-pulled source (e.g. park/kvst from the emailed
+  // Daily Glimpse AND from the auto-pulled qsr_service_stats); try the first, then the second,
+  // rather than stopping at whichever was wired in first.
+  for (const key of ['cloud', 'cloud2']) {
+    const s = spec[key]; if (!s) continue;
     const matchLoc = s.src === 'qsrFobRows' ? (r => String(parseInt(r.loc,10)) === String(loc)) : (r => String(r.loc) === String(loc));
-    return (ds[s.src] || []).filter(r => matchLoc(r) && _inRangeMs(r, sinceMs, openMs))
+    const vals = (ds[s.src] || []).filter(r => matchLoc(r) && _inRangeMs(r, sinceMs, openMs))
       .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
+    if (vals.length) return vals;
   }
   return [];
 }
