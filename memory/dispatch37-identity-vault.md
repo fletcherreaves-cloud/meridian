@@ -8,7 +8,7 @@ in `supabase/schema-identity-vault.sql` had a role-gate bug (a `NULL`-role calle
 same day, before any confirmed exposure. The current schema file already has the fix; this
 document's function listing below is otherwise still accurate.
 
-2026-08-20. `memory/dispatch-37.md`, implementing the owner's 2026-08-20 Direction B decision
+2026-08-20. `memory/archive/dispatch-37.md`, implementing the owner's 2026-08-20 Direction B decision
 (`memory/plan-security-pii-architecture-2026-08-19.md` §4) and the access-tier/evidence-grade
 decisions (`memory/plan-security-loss-prevention.md` §5). Lands before Phase 1 per the owner's
 own reasoning: Phase 1 is the first thing that will write new employee-attributed risk data, and

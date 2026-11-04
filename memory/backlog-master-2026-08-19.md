@@ -1459,7 +1459,7 @@ previously documented — is the raw per-event log to build against, and settled
   (`src/parsers/index.js:974`, `src/utils/register-audit.js:7-8,56`). **Sequencing implication:**
   should land before/alongside Phase 1, not after — Phase 1 is the first thing that writes new
   employee-attributed data and should write tokens from day one. **Dispatched 2026-08-20
-  (`memory/dispatch-37.md`)** — owner chose to build this before Phase 1. Surfaces a real finding:
+  (`memory/archive/dispatch-37.md`)** — owner chose to build this before Phase 1. Surfaces a real finding:
   CLAUDE.md's documented 8-tier RBAC isn't actually implemented (`profiles.role` only has 3 real
   values — `admin`/`supervisor`/`manager`); the reveal mechanism's access control is grounded
   against those real values, not the aspirational DO/VP/GM ladder. Also flags that GDPR/CCPA

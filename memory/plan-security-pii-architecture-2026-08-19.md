@@ -145,7 +145,7 @@ employee-attributed data (risk scores, rule evaluations), and it should write to
 one rather than plaintext names that get migrated later. This is a real scoping input for
 whichever dispatch defines Phase 1's actual schema, not a separate, deferred project.
 
-**DISPATCHED 2026-08-20 — `memory/dispatch-37.md`.** Owner chose to build this before Phase 1.
+**DISPATCHED 2026-08-20 — `memory/archive/dispatch-37.md`.** Owner chose to build this before Phase 1.
 The dispatch also surfaces a real, load-bearing finding: CLAUDE.md's documented 8-tier RBAC isn't
 actually implemented (`profiles.role` only has 3 real values), which changes how the reveal
 mechanism's access control has to be grounded — see the dispatch itself, not repeated here.

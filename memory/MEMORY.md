@@ -45,7 +45,7 @@ and each for a reason:
 - **`dispatch-44.md` / `dispatch-45.md` / `dispatch-46.md`** — the engineer writeup carries the
   durable content and *is* linked (`dispatch44-…`, `dispatch45-…` + `dispatch45b-…`,
   `dispatch46-…`); the briefs are cited in prose instead. Not drift.
-- **`dispatch-32.md`** — **superseded the day it was written**, deliberately kept with a
+- **`archive/dispatch-32.md`** — **superseded the day it was written**, deliberately kept with a
   correction notice on top. Read `dispatch32-pipeline-contract.md` instead.
 
 Everything else, #20 through #54, has a linked entry. A few dispatches also carry a second file
@@ -3770,7 +3770,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   3.31 KB gzip). **Not verified**: live browser click-through — this sandbox's Supabase needs real
   magic-link auth this session can't complete headless, stated plainly. Phase 2 (triage state) and
   coexistence deep-links (Register Audit markers, `attention-now.js`) explicitly deferred per the
-  dispatch's own scope. Original brief: [dispatch-43.md](dispatch-43.md), superseded by the
+  dispatch's own scope. Original brief: [dispatch-43.md](archive/dispatch-43.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — baseline-relative detection, implemented](dispatch42-baseline-relative-detection.md)** —
   **Merged** (PR #481, same PR as #43 above). **Fixed post-review, 2026-08-20**: a
@@ -3832,7 +3832,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   applied in production** — confirmed live 2026-08-20: `INV-001` z-score/20/10, `INV-002`
   z-score/null/null, `CASH-001/003/004` floor 250, `CASH-002` floor 25.
   `INV-001`/`INV-002` stay `active=false` until a deliberate reactivation decision. Original brief:
-  [dispatch-42.md](dispatch-42.md), superseded by the implementation writeup above.
+  [dispatch-42.md](archive/dispatch-42.md), superseded by the implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #41 — reconcile the two Model Health Score implementations, dispatched](dispatch-41.md)** —
   Not a security-build item — a separate, independently-discovered live correctness
   bug (`backlog-master-2026-08-19.md` §4). `modelHealthScore` and `computeModelHealth`
@@ -3877,7 +3877,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   writeup), `joinStoreMonthSales`, `computeItemFindingsForRule` (same-item-only baseline
   population). Condiment-class rows excluded from BOTH rules uniformly. 11 new tests, 1663/1663
   suite passes. No UI, no recipe/BOM pull (confirmed not needed — `exp_usage` already IS the
-  theoretical figure). Original brief: [dispatch-40.md](dispatch-40.md), superseded by the
+  theoretical figure). Original brief: [dispatch-40.md](archive/dispatch-40.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, implemented](dispatch39-phase1-cash-rules.md)** —
   **Merged (PR #473).** First dispatch in this build with real,
@@ -3900,7 +3900,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   bug, documented explicitly. A real test-fixture bug (missing `data_required`, silently zeroing
   every assertion) was caught by running the suite and fixed before it shipped. 13 new tests,
   1652/1652 suite passes. No UI — mirrors the #37→#38 split; a findings-viewer is the recommended
-  next dispatch. Original brief: [dispatch-39.md](dispatch-39.md), superseded by the
+  next dispatch. Original brief: [dispatch-39.md](archive/dispatch-39.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, implemented, PR #465 superseded, 2026-08-20](dispatch38-reveal-ui.md)** —
   The `RevealName` component: click → required reason (`window.prompt`, matching
@@ -4036,7 +4036,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   RegisterAuditNarrative panel reads `.emp` directly at 9 sites to display names — this dispatch's
   own "no UI" scope leaves those showing `'Unknown'`/tokens until a follow-up reveal-button
   dispatch, an anticipated cost of Direction B's "blind mode" property, not accidental breakage.
-  28 new fixture tests. Original brief: [dispatch-37.md](dispatch-37.md), superseded by the
+  28 new fixture tests. Original brief: [dispatch-37.md](archive/dispatch-37.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — six owner decisions in one morning, 2026-08-20](plan-security-loss-prevention.md)** —
   2026-08-20. Every open owner-gated question on this build got answered in one sitting —
@@ -4093,7 +4093,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   plan's ideal role/daypart/tenure/volume-band grouping — `audit_rows` doesn't carry those columns
   yet. 22 new fixture tests, 2 of which round-trip the seed SQL's exact `logic_expression` JSON.
   No UI — data-layer + interpreter only, per the dispatch's own scope. Original brief:
-  [dispatch-36.md](dispatch-36.md), superseded by the implementation writeup above.
+  [dispatch-36.md](archive/dispatch-36.md), superseded by the implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit implemented, PM-verified](dispatch35-register-audit-implementation.md)** —
   2026-08-19. **NEWEST, merged (PR #448).** Phase 0a is now code-complete — `mapRow()` implemented
   against dispatch #34's confirmed endpoint, resolved field-by-field against the actual consumer
@@ -4107,7 +4107,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   **Two things remain before this data is trusted**: live-verify against a real API response, and
   resolve the `refundCnt` drift. Neither blocks starting Phase 1 (cash-drawer variance + peer
   ranking), but both should close before Phase 1's output is treated as reliable. The original
-  dispatch instructions are [dispatch-35.md](dispatch-35.md) — superseded by the implementation
+  dispatch instructions are [dispatch-35.md](archive/dispatch-35.md) — superseded by the implementation
   writeup above, kept for the record of what was asked.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security PII/identity architecture — logged, not decided](plan-security-pii-architecture-2026-08-19.md)** —
   2026-08-19. Owner follow-up research (Grok/Gemini/ChatGPT) on how security apps
@@ -4171,7 +4171,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
   threshold on `lifelenz-pull.mjs` directly targets the CLAUDE.md-cited 6-day silent outage class,
   at the source this time. New ratchet **R8** tracks the remaining 18 scripts, seeded fresh.
   C2 (idempotent partition replace) explicitly deferred, tracked under #336, not dropped.
-  **`memory/dispatch-32.md` (the PM re-verification that preceded this) is now superseded — kept
+  **`memory/archive/dispatch-32.md` (the PM re-verification that preceded this) is now superseded — kept
   for the record with a correction notice at its top, not as current guidance.** Independently
   verified: 1584/1584 tests pass, build clean, all claims (the 8/20 count, CEILING=18, the
   pre-existing `pull-outcome.mjs`) reproduced directly against the code by a separate PM pass.

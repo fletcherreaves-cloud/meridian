@@ -1,6 +1,6 @@
 # Dispatch #39 — Security build Phase 1: real cash-domain detection rules
 
-2026-08-20. `memory/dispatch-39.md`. First dispatch in this build that produces real,
+2026-08-20. `memory/archive/dispatch-39.md`. First dispatch in this build that produces real,
 `ACTIVE=true` output — Phase 0a (register audit pull), Phase 0b (rules registry + interpreter +
 baselines, dispatch #36), and the identity-vault/reveal-UI pair (dispatches #37/#38) were all
 substrate. No change to `src/engine/security-rules.js`, `security-baselines.js`, or

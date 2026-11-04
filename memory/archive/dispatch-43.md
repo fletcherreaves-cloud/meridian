@@ -25,7 +25,7 @@ session came back to the owner as a fenced block to run by hand.
    The panel is the main consumer of it.
 3. `memory/analysis-inventory-variance-baseline-2026-08-20.md` — why the inventory numbers on
    screen are not yet trustworthy, and what the panel must therefore NOT imply.
-4. `memory/dispatch-42.md` — the calibration work running in parallel. **Coordinate: #42 changes
+4. `memory/archive/dispatch-42.md` — the calibration work running in parallel. **Coordinate: #42 changes
    what `value`/`pass`/`baseline_context` contain, not their shape.** Build against the shape.
 
 ---
