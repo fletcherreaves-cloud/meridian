@@ -52,10 +52,21 @@ or not an outcome is knowable yet.
 ### Proposed schema (DDL — the owner's own action per this repo's standing rule; nothing here
 is run by an agent session)
 
+**Verified against the real `supabase/schema-multitenant-phase*.sql` files (not assumed) —
+there IS a real `public.tenants(id)` table (`schema-multitenant-phase1.sql`), and every tenant-
+scoped data table gets its `tenant_id` column via that file's own migration LOOP (`alter table
+... add column if not exists tenant_id uuid default '00000000-0000-0000-0000-000000000001'`),
+never a bespoke per-table default. The loc-level RLS is a SEPARATE loop in
+`schema-rls-phase2-loc.sql` (`public.my_locs()`), and `monthly_targets` — the closest existing
+analog — is in BOTH loops' table-name arrays. The correct way to add `recommendation_ledger` is
+to add its name to those two existing arrays, not write bespoke RLS policies.**
+
 ```sql
 create table recommendation_ledger (
   id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references tenants(id),   -- match whatever this repo's real tenant FK is
+  tenant_id uuid default '00000000-0000-0000-0000-000000000001',  -- backfilled by the existing
+                                                                    -- multitenant-phase1 loop
+                                                                    -- convention, not a bespoke FK
   loc text,                                           -- nullable: some recommendations are fleet-wide
   source text not null,         -- 'sales_forecast' | 'labor_tpph_forecast' | 'sage_chat'
                                  -- | 'visit_readiness' | 'scanner_signal' | ...
@@ -73,7 +84,10 @@ create table recommendation_ledger (
   graded_at timestamptz,
   created_at timestamptz not null default now()
 );
--- tenant_id + RLS via the same public.my_locs()/accessible_locs mechanism every other table uses.
+-- After creating the table: add 'recommendation_ledger' to the table-name arrays in
+-- schema-multitenant-phase2-rls.sql (tenant_select/insert/update/delete policies) and
+-- schema-rls-phase2-loc.sql (my_locs()-based loc scoping) -- do NOT write new bespoke policies,
+-- reuse the two existing loops exactly as monthly_targets already does.
 -- Index on (source, status), (tenant_id, outcome_due_at) for the grading job's own query.
 ```
 
@@ -163,9 +177,6 @@ single big-bang build.
 
 ## Open questions for the owner
 
-- Exact `tenant_id`/location-scoping FK shape to match (the sketch above assumes a `tenants`
-  table and `accessible_locs`/RLS pattern consistent with every other table — verify against the
-  real `schema.sql` before writing the real DDL, don't assume this doc's sketch is final).
 - Naming — "Recommendation Accuracy Ledger" is descriptive, not a product name. Worth a short
   branding pass once Phase 1 is real and there's an actual track record to put a name on.
 - Whether Phase 1's grading window (full target month) is the right cadence, or whether a
