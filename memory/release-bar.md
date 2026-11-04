@@ -36,7 +36,12 @@ matter how much work went into it.
     PR body, don't silently skip the step because the author (me) already "knows" the code is
     right.
 12. **The PR body states what was verified**, not just what was built — exact test/file counts,
-    the build budget numbers, and anything deliberately out of scope and why.
+    the build budget numbers, and anything deliberately out of scope and why. A PR of any real
+    size (not a one-line fix) gets a short "Decisions & Trade-offs" note — what else was
+    considered and why this approach won, in a sentence or two — so a reviewer sees the instinct
+    at a glance instead of having to reverse-engineer it from the diff (owner-approved addition,
+    2026-11-04, cherry-picked from a competitor-AI-prompt review that was otherwise mostly
+    redundant with what this file already required).
 
 ## What this is NOT
 
