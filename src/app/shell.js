@@ -179,34 +179,46 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   },[paletteOpen]);
   React.useEffect(()=>{ if(paletteOpen&&paletteInputRef.current) paletteInputRef.current.focus(); },[paletteOpen]);
 
-  const w = isMobile ? 260 : (collapsed ? 48 : 220);
+  // Bug fix (2026-11-04, owner-reported: mobile drawer opened as a wall of bare icons with no
+  // labels, roughly 260px wide). `collapsed` is a desktop-only concept (the rail narrowing to
+  // 48px, icon-only) -- every render below gated purely on `collapsed`, with no `isMobile` check,
+  // so once #71 made `collapsed` default to true, a FIRST mobile session inherited that same
+  // default: the drawer still opened at its full 260px mobile width (`w` above already special-
+  // cased mobile's width, just never the icon-only layout that goes with the 48px desktop case),
+  // but every label/section-header/search-box render downstream used raw `collapsed` and
+  // suppressed itself anyway. Mobile has its own open/closed affordance already (`mobileOpen` +
+  // the hamburger) -- the icon-rail is specifically a desktop-narrow-width feature with no mobile
+  // equivalent, so it must never apply there. `navCollapsed` is the one flag every render below
+  // should check instead of `collapsed` directly.
+  const navCollapsed = collapsed && !isMobile;
+  const w = isMobile ? 260 : (navCollapsed ? 48 : 220);
 
   const navItemSub = (label, icon, onClick, active, badge) =>
-    div({style:{display:'flex',alignItems:'center',gap:collapsed?0:8,
-      padding:collapsed?'6px 0':'5px 10px 5px '+(collapsed?10:20),
+    div({style:{display:'flex',alignItems:'center',gap:navCollapsed?0:8,
+      padding:navCollapsed?'6px 0':'5px 10px 5px '+(navCollapsed?10:20),
       borderRadius:'var(--r)',cursor:'pointer',
       background:active?'var(--adim)':'transparent',
       color:active?'var(--amber)':'var(--text3)',
-      transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
+      transition:'all .15s',justifyContent:navCollapsed?'center':'flex-start',
       position:'relative',fontSize:'11px',fontWeight:active?600:400,
-      borderLeft:collapsed?'none':'1.5px solid var(--bdr)'},
-      onClick:(...a)=>{onClick(...a);closeMobile();}, title:collapsed?label:undefined,
+      borderLeft:navCollapsed?'none':'1.5px solid var(--bdr)'},
+      onClick:(...a)=>{onClick(...a);closeMobile();}, title:navCollapsed?label:undefined,
       onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
       onMouseLeave:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
-      collapsed?null:span({style:{width:8,height:8,borderRadius:'50%',flexShrink:0,
+      navCollapsed?null:span({style:{width:8,height:8,borderRadius:'50%',flexShrink:0,
         background:active?'var(--amber)':'var(--bdr2)'}},null),
-      !collapsed&&span(null,label)
+      !navCollapsed&&span(null,label)
     );
   const navLabel = (l) =>
     div({style:{padding:'4px 14px 2px',fontSize:'7px',fontWeight:700,
       textTransform:'uppercase',letterSpacing:'.7px',color:'var(--text3)',marginTop:8}},(l));
   const navItem = (label, icon, onClick, active, badge, disabled) =>
-    div({style:{display:'flex',alignItems:'center',gap:collapsed?0:8,
-      padding:collapsed?'8px 0':'6px 10px',borderRadius:'var(--r)',cursor:disabled?'not-allowed':'pointer',
+    div({style:{display:'flex',alignItems:'center',gap:navCollapsed?0:8,
+      padding:navCollapsed?'8px 0':'6px 10px',borderRadius:'var(--r)',cursor:disabled?'not-allowed':'pointer',
       background:active?'var(--adim)':'transparent',
       color:disabled?'var(--text3)':(active?'var(--amber)':'var(--text2)'),
       opacity:disabled?0.45:1,
-      transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
+      transition:'all .15s',justifyContent:navCollapsed?'center':'flex-start',
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
       onClick:disabled?undefined:(...a)=>{onClick(...a);closeMobile();},
       // Always carry the full label as a tooltip, not just when collapsed -- a label longer
@@ -217,13 +229,13 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       onMouseEnter:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
       onMouseLeave:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       span({style:{fontSize:14,flexShrink:0}},icon),
-      !collapsed&&span({style:{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},label),
-      !collapsed&&badge>0&&span({style:{marginLeft:'auto',background:'rgba(239,68,68,.15)',
+      !navCollapsed&&span({style:{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},label),
+      !navCollapsed&&badge>0&&span({style:{marginLeft:'auto',background:'rgba(239,68,68,.15)',
         color:'#ef4444',border:'.5px solid rgba(239,68,68,.25)',borderRadius:10,
         fontSize:9,padding:'1px 5px',fontWeight:700}},badge)
     );
 
-  const sectionLabel = (txt) => collapsed?null:
+  const sectionLabel = (txt) => navCollapsed?null:
     div({style:{fontSize:'9px',fontWeight:700,letterSpacing:'.8px',color:'var(--text3)',
       textTransform:'uppercase',padding:'12px 10px 4px',marginTop:4}},txt);
 
@@ -295,7 +307,7 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     // mode (`collapsed`, the whole sidebar narrowed to 48px) also stays flat -- navLabel already
     // renders no icon of its own, so a clickable header there would have nothing to show. Neither
     // has section-collapse state to auto-close, so items render with no extra wiring below.
-    if (navStyle !== 'v2' || collapsed) {
+    if (navStyle !== 'v2' || navCollapsed) {
       const items = panels.map(p => (BETA_HIDDEN_EXTRAS.has(p.id) ? navPBeta : navP)(p.id, NAV_EXTRAS[p.id]));
       return [navLabel(meta.label), ...items];
     }
@@ -390,7 +402,7 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   const goNavResult = (id) => {
     onOpenModal(id); setNavQuery(''); setNavSearchOpen(false); setPaletteOpen(false); closeMobile();
   };
-  const navSearchBox = collapsed ? null : div({ ref: navSearchRef, style: { position: 'relative', padding: '8px 10px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0 } },
+  const navSearchBox = navCollapsed ? null : div({ ref: navSearchRef, style: { position: 'relative', padding: '8px 10px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0 } },
     inp({
       type: 'text', id: 'nav-search', name: 'nav-search', autoComplete: 'off',
       placeholder: '🔍 Search…', value: navQuery,
@@ -465,18 +477,18 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     div({style:sideStyle},
 
     // ── Logo & collapse toggle ──────────────────────────────────
-    div({style:{display:'flex',alignItems:'center',gap:8,padding:collapsed?'14px 0':'14px 12px',
-      borderBottom:'.5px solid var(--bdr)',justifyContent:collapsed?'center':'flex-start',
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:navCollapsed?'14px 0':'14px 12px',
+      borderBottom:'.5px solid var(--bdr)',justifyContent:navCollapsed?'center':'flex-start',
       flexShrink:0}},
       div({style:{width:30,height:30,borderRadius:'var(--r)',background:'var(--amber)',
         display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
         cursor:'pointer',transition:'transform .15s'},
         onClick:()=>setCollapsed(p=>!p),
-        title:collapsed?'Expand sidebar':'Collapse sidebar'},
+        title:navCollapsed?'Expand sidebar':'Collapse sidebar'},
         span({style:{fontSize:15,fontWeight:900,color:'#000',fontFamily:'var(--sans)',
           lineHeight:1}},'M')
       ),
-      !collapsed&&div({style:{overflow:'hidden'}},
+      !navCollapsed&&div({style:{overflow:'hidden'}},
         div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)',
           whiteSpace:'nowrap',lineHeight:1.3}},'Meridian'),
         div({style:{fontSize:'9px',color:'var(--text3)',letterSpacing:'.5px',
@@ -488,7 +500,7 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     navSearchBox,
 
     // ── Navigation ──────────────────────────────────────────────
-    div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:collapsed?'8px 4px':'8px'}},
+    div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:navCollapsed?'8px 4px':'8px'}},
 
       // ── Top: view switches, not panels -- no registry id, always visible ────────
       // Owner-reported bug (2026-11-02): clicking Home/District View did nothing while a
@@ -528,15 +540,15 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
         if(!items.length) return [];
         return [
           div({key:'deepdive-hdr',onClick:()=>setDeepDiveOpen(o=>!o),
-            style:{display:'flex',alignItems:'center',justifyContent:collapsed?'center':'space-between',
-              gap:6,padding:collapsed?'8px 0':'8px 10px',marginTop:8,cursor:'pointer',
+            style:{display:'flex',alignItems:'center',justifyContent:navCollapsed?'center':'space-between',
+              gap:6,padding:navCollapsed?'8px 0':'8px 10px',marginTop:8,cursor:'pointer',
               borderRadius:'var(--r)',background:'var(--surf2)'},
             title:'Deep Dive — models, backtests, correlation analysis'},
-            !collapsed&&span({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.5px',
+            !navCollapsed&&span({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.5px',
               textTransform:'uppercase',color:'var(--text2)',display:'flex',alignItems:'center',gap:6}},
               '🔷',' Deep Dive'),
-            collapsed&&span({style:{fontSize:14}},'🔷'),
-            !collapsed&&span({style:{fontSize:10,color:'var(--text3)',
+            navCollapsed&&span({style:{fontSize:14}},'🔷'),
+            !navCollapsed&&span({style:{fontSize:10,color:'var(--text3)',
               transform:'rotate('+(deepDiveOpen?180:0)+'deg)',transition:'transform .15s'}},'▾')),
           deepDiveOpen&&div({key:'deepdive-items',style:{display:'flex',flexDirection:'column',gap:1}},...items),
         ];
@@ -547,14 +559,14 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     ),
 
     // ── Footer status ───────────────────────────────────────────
-    div({style:{borderTop:'.5px solid var(--bdr)',padding:collapsed?'10px 0':'10px 12px',
-      flexShrink:0,display:'flex',alignItems:'center',gap:8,justifyContent:collapsed?'center':'flex-start'}},
+    div({style:{borderTop:'.5px solid var(--bdr)',padding:navCollapsed?'10px 0':'10px 12px',
+      flexShrink:0,display:'flex',alignItems:'center',gap:8,justifyContent:navCollapsed?'center':'flex-start'}},
       // Data live indicator
       div({style:{width:7,height:7,borderRadius:'50%',flexShrink:0,
         background:ds&&ds.loaded?'#10b981':'#64748b',
         boxShadow:ds&&ds.loaded?'0 0 6px rgba(16,185,129,.5)':'none',
         animation:ds&&ds.loaded?'pulse 2s infinite':'none'}}),
-      !collapsed&&div({style:{fontSize:'9px',color:'var(--text3)',overflow:'hidden'}},
+      !navCollapsed&&div({style:{fontSize:'9px',color:'var(--text3)',overflow:'hidden'}},
         div({style:{color:'var(--text2)',fontWeight:600,fontSize:'10px',whiteSpace:'nowrap'}},
           ds&&ds.loaded?'Data loaded':'No data'),
         div({style:{whiteSpace:'nowrap',opacity:.75}},
