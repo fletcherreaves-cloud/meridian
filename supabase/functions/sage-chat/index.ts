@@ -1069,18 +1069,33 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const { phrase, terms } = searchTerms(raw);
     const ors = [`title.ilike.%${phrase}%`, `chunk_text.ilike.%${phrase}%`, ...terms.flatMap(t => [`title.ilike.%${t}%`, `chunk_text.ilike.%${t}%`])];
 
-    let q = sb.from('sage_memory_kb').select('filename,title,sensitivity,chunk_text').or(ors.join(','));
+    let q = sb.from('sage_memory_kb').select('filename,title,sensitivity,chunk_text');
     // Hard SQL-level filter, same pattern accessible_locs already uses -- a non-qualifying
     // caller's restricted rows are never fetched at all, not filtered out after the fact.
     // See index.ts:695's rbacBlock for the weaker, prompt-only pattern this deliberately does
     // NOT extend to personnel-adjacent content.
     if (!qualifiesForRestricted(role)) q = q.neq('sensitivity', 'restricted');
-    // Explicit tenant scoping (2026-11-03) -- this query runs on the service-role client, which
-    // bypasses sage_memory_kb's tenant_id RLS policies entirely (schema-sage-memory-kb.sql's own
-    // comment already flagged this as "defense in depth for any future non-service-role reader",
-    // but this IS the reader, and it had no filter of its own). A no-op today (one tenant), but
-    // without this a second tenant's SAGE session would see every tenant's rows mixed together.
-    if (tenantId) q = q.eq('tenant_id', tenantId);
+    // Tenant scoping (2026-11-03, hardened; widened 2026-11-04 for the product/tenant scope
+    // split -- memory/plan-knowledge-backbone-2026-11-03.md §3). This query runs on the
+    // service-role client, which bypasses sage_memory_kb's tenant_id RLS policies entirely
+    // (schema-sage-memory-kb.sql's own comment already flagged this as "defense in depth for
+    // any future non-service-role reader", but this IS the reader, and it had no filter of its
+    // own). A caller sees a row when it's EITHER their own tenant's (any scope) OR explicitly
+    // marked scope='product' (generic knowledge, shared across every tenant by design) --
+    // scope='product' rows still carry the real owning tenant's tenant_id (whoever authored
+    // them, not a sentinel), so this needs the OR, not a rewritten tenant_id.
+    //
+    // Built as ONE .or() call with the search-terms OR-group nested inside an and(...), rather
+    // than two separate .or() calls -- postgrest-js's .or() appends a raw, unvalidated string
+    // (confirmed from its source) and PostgREST's documented combination rule for two identical
+    // repeated query keys is not confirmed anywhere reachable from here, with no Deno harness in
+    // this repo to test it empirically either. PostgREST's and()/or() nesting grammar inside a
+    // single parameter value IS standard and documented, so that's the form used here -- no
+    // repeated-key behavior relied on, nothing left unverified.
+    const searchGroup = `or(${ors.join(',')})`;
+    q = tenantId
+      ? q.or(`and(${searchGroup},or(tenant_id.eq.${tenantId},scope.eq.product))`)
+      : q.or(ors.join(','));
 
     const { data, error } = await q.limit(80);
     if (error) {

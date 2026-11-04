@@ -24,6 +24,12 @@ create table if not exists public.sage_memory_kb (
   filename     text not null,              -- e.g. 'finding-padding-and-cash-hunt-2026-08-13.md' -- SAGE cites this
   title        text not null,               -- frontmatter `name:`, or the file's first H1
   sensitivity  text not null check (sensitivity in ('open','restricted')),
+  -- scope (2026-11-04, memory/plan-knowledge-backbone-2026-11-03.md §3) -- orthogonal to
+  -- sensitivity: sensitivity gates by the CALLER'S ROLE, scope gates by WHICH TENANT. 'tenant'
+  -- (default) = this operator's own knowledge, visible only within its tenant_id. 'product' =
+  -- generic, reusable knowledge, visible to every tenant. See schema-sage-memory-kb-scope.sql
+  -- for the ALTER migration an already-deployed instance needs to pick this column up.
+  scope        text not null default 'tenant' check (scope in ('product','tenant')),
   chunk_index  int  not null default 0,
   chunk_text   text not null,
   updated_at   timestamptz not null default now(),  -- source file's last-modified (git), not ingest time
@@ -42,5 +48,6 @@ create policy tenant_delete on public.sage_memory_kb for delete using (tenant_id
 
 create index if not exists sage_memory_kb_filename_idx on public.sage_memory_kb (filename);
 create index if not exists sage_memory_kb_sensitivity_idx on public.sage_memory_kb (sensitivity);
+create index if not exists sage_memory_kb_scope_idx on public.sage_memory_kb (scope);
 create index if not exists sage_memory_kb_search_idx on public.sage_memory_kb
   using gin (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(chunk_text,'')));

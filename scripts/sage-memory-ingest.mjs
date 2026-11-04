@@ -14,8 +14,14 @@
 // restricted` frontmatter field set by a human — anything missing frontmatter, or carrying no
 // recognized sensitivity value, is skipped (fail-closed), never classified by grepping keywords.
 //
+// Each candidate also gets a `scope: product | tenant` frontmatter field (2026-11-04,
+// memory/plan-knowledge-backbone-2026-11-03.md §3) -- unlike sensitivity, a MISSING or invalid
+// scope does not skip the file, it defaults to 'tenant' (see resolveScope() below): the existing
+// corpus has no scope tags yet, and failing those files closed would silently empty the KB.
+//
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Run AFTER supabase/schema-sage-memory-kb.sql has been applied.
+// Run AFTER supabase/schema-sage-memory-kb.sql AND schema-sage-memory-kb-scope.sql have been
+// applied (the latter is the ALTER an already-deployed instance needs for the `scope` column).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +55,18 @@ export function parseFrontmatter(raw) {
 export function firstH1(body) {
   const m = body.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : null;
+}
+
+// scope (2026-11-04, memory/plan-knowledge-backbone-2026-11-03.md §3) -- the product/tenant
+// knowledge-scope classification, orthogonal to sensitivity. Unlike sensitivity (missing/invalid
+// = SKIP the whole file, fail-closed), an absent or invalid `scope:` frontmatter field defaults
+// to 'tenant' rather than skipping -- the ~30 files already ingested today have no scope tag at
+// all, and treating that as a skip would silently de-ingest the entire existing KB until every
+// file is retroactively retagged. 'tenant' is still the safe direction (private by default) --
+// only an explicit `scope: product` opts a file into being visible to every future tenant.
+export function resolveScope(frontmatter) {
+  const raw = (frontmatter && frontmatter.scope) || '';
+  return raw === 'product' ? 'product' : 'tenant';
 }
 
 // Paragraph-aware chunking -- accumulates blank-line-delimited paragraphs up to ~CHUNK_TARGET
@@ -107,6 +125,7 @@ async function main() {
       continue;
     }
     const title = frontmatter.name || firstH1(body) || f.replace(/\.md$/, '');
+    const scope = resolveScope(frontmatter);
     const chunks = chunkText(body);
     const filename = `memory/${f}`;
 
@@ -119,7 +138,7 @@ async function main() {
       continue;
     }
 
-    const rows = chunks.map((chunk_text, chunk_index) => ({ filename, title, sensitivity, chunk_index, chunk_text }));
+    const rows = chunks.map((chunk_text, chunk_index) => ({ filename, title, sensitivity, scope, chunk_index, chunk_text }));
     const { error: insErr } = await supabase.from('sage_memory_kb').insert(rows);
     if (insErr) {
       console.error(`[sage-memory-ingest] FAIL ${f} — insert: ${insErr.message}`);
@@ -127,7 +146,7 @@ async function main() {
       continue;
     }
 
-    console.log(`[sage-memory-ingest] OK ${f} — ${sensitivity}, ${chunks.length} chunk(s)`);
+    console.log(`[sage-memory-ingest] OK ${f} — ${sensitivity}/${scope}, ${chunks.length} chunk(s)`);
     ingested++;
     chunkTotal += chunks.length;
   }
