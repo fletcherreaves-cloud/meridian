@@ -132,6 +132,33 @@ export function managementRateChanges(rows) {
     .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
 }
 
+/**
+ * Crew's own real, logged change events (owner request 2026-11-05) -- same shape as
+ * managementRateChanges(), same source table (employee_pay_rate_changes), just the
+ * source:'lifelenz_roster' rows scripts/lifelenz-pull.mjs's pullEmployeeRoster() writes instead
+ * of source:'qsr_tenure'. A DELIBERATELY SEPARATE function (not a broadened filter on
+ * managementRateChanges() above) because the two populations need different $ impact handling
+ * downstream -- crew has a real measured-hours source (weeklyCrewRates(), same as the derived
+ * detector), management doesn't (ASSUMED_MANAGEMENT_WEEKLY_HOURS) -- and mixing them into one
+ * function would blur that distinction at the call site.
+ *
+ * personKey is a real LifeLenz assignedEmploymentId whenever the pull resolved the roster row's
+ * name to one (see lifelenz-pull.mjs's resolveRosterPersonKeys) -- callers can join that back to
+ * weeklyCrewRates() output for real hours. A personKey starting with 'name:' means the pull
+ * could NOT resolve a real id (new hire with no shift history yet, or an ambiguous duplicate
+ * name at that store) -- still a real logged change, just not joinable to measured hours.
+ */
+export function lifelenzRosterRateChanges(rows) {
+  return (rows || [])
+    .filter(r => r && r.source === 'lifelenz_roster')
+    .map(r => ({
+      personKey: r.personKey, loc: r.loc, name: r.employeeName, jobTitle: r.jobTitle,
+      effectiveDate: r.effectiveDate, fromRate: r.priorRate, toRate: r.newRate, delta: r.newRate - r.priorRate,
+      resolvedToEmploymentId: !String(r.personKey || '').startsWith('name:'),
+    }))
+    .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
+}
+
 // Management impact has no measured actual-hours source (qsr_employee_tenure carries no hours
 // at all, and AM is typically salaried anyway per tenure-roles.js's hourly/salaried split) --
 // a standard full-time week is the stated, flagged assumption, not a measurement. Crew impact

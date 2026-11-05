@@ -17,7 +17,8 @@ import { ModalShell } from '../components/ModalShell.js';
 import { STORE_NAMES, sNameC, INV_ORG_COORDS, unpadLoc } from '../constants.js';
 import { loadLifeLenzShiftPay, loadLifeLenzShiftAssignments, logAppAccess } from '../lib/supabase.js';
 import {
-  weeklyCrewRates, detectRateSteps, managementRateChanges, payImpact, ASSUMED_MANAGEMENT_WEEKLY_HOURS,
+  weeklyCrewRates, detectRateSteps, managementRateChanges, lifelenzRosterRateChanges, payImpact,
+  ASSUMED_MANAGEMENT_WEEKLY_HOURS,
 } from '../engine/employee-pay-history.js';
 
 const h = React.createElement;
@@ -95,6 +96,39 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
     return out;
   }, [dataState, shiftPay, shiftAssignments]);
 
+  // ── Crew, roster-sourced: real logged changes from LifeLenz's own employee_roster_report
+  // (owner request 2026-11-05 — see supabase/schema-lifelenz-employee-roster.sql's header for
+  // the full why). A real posted rate, never earnings-derived, so rateBasis is always
+  // 'straight-time' here regardless of OT mix -- same reasoning as management's changes below.
+  // Hours basis: 'measured' (joined to this person's own most recent weeklyCrewRates() week via
+  // their real employmentId) whenever the pull resolved one; otherwise left unknown rather than
+  // assuming a management-style 40h/wk, since crew hours vary far too much store to store to
+  // guess at -- see the engine function's own header for why personKey can be a real id or a
+  // synthetic 'name:' fallback.
+  const latestCrewHoursByEmploymentId = useMemo(() => {
+    if (dataState !== 'loaded') return new Map();
+    const weekly = weeklyCrewRates(shiftPay, shiftAssignments);
+    const out = new Map();
+    for (const w of weekly) {
+      const prev = out.get(w.employmentId);
+      if (!prev || w.weekStart > prev.weekStart) out.set(w.employmentId, w);
+    }
+    return out;
+  }, [dataState, shiftPay, shiftAssignments]);
+
+  const rosterChanges = useMemo(() => {
+    return lifelenzRosterRateChanges(ds?.employeePayRateChanges || []).map(c => {
+      const latestWeek = c.resolvedToEmploymentId ? latestCrewHoursByEmploymentId.get(c.personKey) : null;
+      const impact = latestWeek ? payImpact(c.delta, latestWeek.hours) : { weeklyDollarImpact: null, annualizedDollarImpact: null };
+      return {
+        source: 'crew-roster', personKey: c.personKey, loc: c.loc, name: c.name || `Employee #${c.personKey}`,
+        jobTitle: c.jobTitle, effectiveDate: c.effectiveDate, fromRate: c.fromRate, toRate: c.toRate, delta: c.delta,
+        weeklyImpact: impact.weeklyDollarImpact, annualizedImpact: impact.annualizedDollarImpact,
+        hoursBasis: latestWeek ? 'measured' : 'unknown', rateBasis: 'straight-time',
+      };
+    });
+  }, [ds?.employeePayRateChanges, latestCrewHoursByEmploymentId]);
+
   // ── Management: already-logged changes, reshaped ──
   const managementChanges = useMemo(() => {
     return managementRateChanges(ds?.employeePayRateChanges || []).map(c => {
@@ -111,8 +145,8 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
   }, [ds?.employeePayRateChanges]);
 
   const allChanges = useMemo(() =>
-    [...managementChanges, ...crewChanges].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate)),
-    [managementChanges, crewChanges]);
+    [...managementChanges, ...rosterChanges, ...crewChanges].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate)),
+    [managementChanges, rosterChanges, crewChanges]);
 
   const totalAnnualizedImpact = allChanges.reduce((s, c) => s + (c.annualizedImpact || 0), 0);
 
@@ -157,7 +191,7 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
       dataState === 'loaded' && div(null,
         div({ style: { display: 'flex', gap: 16, marginBottom: 14, fontSize: '10px', color: 'var(--text3)' } },
           span(null, allChanges.length + ' change' + (allChanges.length === 1 ? '' : 's') + ' detected'),
-          span(null, managementChanges.length + ' management · ' + crewChanges.length + ' crew'),
+          span(null, managementChanges.length + ' management · ' + rosterChanges.length + ' crew (roster) · ' + crewChanges.length + ' crew (derived)'),
           span({ style: { marginLeft: 'auto', fontWeight: 700, color: totalAnnualizedImpact > 0 ? '#f59e0b' : totalAnnualizedImpact < 0 ? '#10b981' : 'var(--text3)' } },
             'Net annualized impact: ' + moneyRound(totalAnnualizedImpact)),
         ),
@@ -218,13 +252,13 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
               h('tbody', null, ...allChanges.map((c, i) => tr({ key: c.source + c.personKey + c.effectiveDate, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
                 td({ style: { padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(c.loc) || c.loc || '—'),
                 td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, c.name),
-                td({ style: { padding: '5px 8px', color: 'var(--text3)', fontSize: '8.5px' } }, c.jobTitle || (c.source === 'crew' ? 'Crew' : '—')),
+                td({ style: { padding: '5px 8px', color: 'var(--text3)', fontSize: '8.5px' } }, c.jobTitle || (c.source === 'crew' || c.source === 'crew-roster' ? 'Crew' : '—')),
                 td({ style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontFamily: 'var(--mono)' } }, c.effectiveDate),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, rate(c.fromRate) + ' → ' + rate(c.toRate)),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: c.delta > 0 ? '#f59e0b' : c.delta < 0 ? '#10b981' : 'var(--text2)' } }, (c.delta > 0 ? '+' : '') + money(c.delta)),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, money(c.weeklyImpact)),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, moneyRound(c.annualizedImpact)),
-                td({ style: { padding: '5px 8px', textAlign: 'right', fontSize: '8px', color: 'var(--text3)' } }, c.hoursBasis === 'measured' ? 'measured' : 'assumed 40h/wk'),
+                td({ style: { padding: '5px 8px', textAlign: 'right', fontSize: '8px', color: 'var(--text3)' } }, c.hoursBasis === 'measured' ? 'measured' : (c.hoursBasis === 'assumed' ? 'assumed 40h/wk' : '—')),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontSize: '8px', color: c.rateBasis === 'straight-time' ? 'var(--text3)' : '#f59e0b', fontWeight: c.rateBasis === 'straight-time' ? 400 : 700 }, title: c.rateBasis === 'straight-time' ? 'Base rate only — overtime (paid at 1.5x) excluded from this comparison.' : 'May include an overtime-mix swing, not a clean before/after base-rate comparison — confirm against a pay stub before acting on this row.' }, c.rateBasis === 'straight-time' ? 'straight-time' : '⚠ blended'),
               ))),
             ),

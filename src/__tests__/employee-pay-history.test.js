@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   weeklyCrewRates, detectRateSteps, RATE_STEP_THRESHOLD, managementRateChanges,
-  payImpact, ASSUMED_MANAGEMENT_WEEKLY_HOURS,
+  lifelenzRosterRateChanges, payImpact, ASSUMED_MANAGEMENT_WEEKLY_HOURS,
 } from '../engine/employee-pay-history.js';
 
 describe('weeklyCrewRates', () => {
@@ -147,6 +147,41 @@ describe('managementRateChanges', () => {
   it('ignores a non-qsr_tenure row (future crew-source rows, if that design ever changes)', () => {
     const rows = [{ source: 'something_else', loc: '0003708', personKey: 'x', priorRate: 1, newRate: 2, effectiveDate: '2026-10-01' }];
     expect(managementRateChanges(rows)).toEqual([]);
+  });
+});
+
+// Owner request 2026-11-05: crew's own real, logged pay-rate changes from LifeLenz's
+// employee_roster_report (scripts/lifelenz-pull.mjs's pullEmployeeRoster), written to the SAME
+// employee_pay_rate_changes table as management but with source:'lifelenz_roster' -- a
+// deliberately separate reshape function from managementRateChanges() above (see its own header
+// comment for why), even though the underlying table and shape are identical.
+describe('lifelenzRosterRateChanges', () => {
+  it('reshapes lifelenz_roster rows into the display shape, sorted newest-first', () => {
+    const rows = [
+      { source: 'lifelenz_roster', loc: '0003708', personKey: 'emp-real-1', employeeName: 'C Crew', jobTitle: '00650', priorRate: 12, newRate: 12.5, effectiveDate: '2026-09-01' },
+      { source: 'lifelenz_roster', loc: '0003708', personKey: 'emp-real-1', employeeName: 'C Crew', jobTitle: '00650', priorRate: 12.5, newRate: 13, effectiveDate: '2026-10-15' },
+    ];
+    const out = lifelenzRosterRateChanges(rows);
+    expect(out).toHaveLength(2);
+    expect(out[0].effectiveDate).toBe('2026-10-15'); // newest first
+    expect(out[0].delta).toBeCloseTo(0.5, 6);
+  });
+
+  it('ignores a qsr_tenure (management) row -- the two populations never mix', () => {
+    const rows = [{ source: 'qsr_tenure', loc: '0003708', personKey: 'g1', priorRate: 18, newRate: 19, effectiveDate: '2026-10-01' }];
+    expect(lifelenzRosterRateChanges(rows)).toEqual([]);
+  });
+
+  it('flags resolvedToEmploymentId=true for a real-id personKey and false for a synthetic name: key', () => {
+    const rows = [
+      { source: 'lifelenz_roster', loc: '0003708', personKey: 'emp-real-1', priorRate: 12, newRate: 12.5, effectiveDate: '2026-10-01' },
+      { source: 'lifelenz_roster', loc: '0003708', personKey: 'name:jordan rivera', priorRate: 12, newRate: 12.5, effectiveDate: '2026-10-01' },
+    ];
+    const out = lifelenzRosterRateChanges(rows);
+    const real = out.find(c => c.personKey === 'emp-real-1');
+    const synthetic = out.find(c => c.personKey === 'name:jordan rivera');
+    expect(real.resolvedToEmploymentId).toBe(true);
+    expect(synthetic.resolvedToEmploymentId).toBe(false);
   });
 });
 
