@@ -4062,6 +4062,48 @@ export async function saveDaypartTpphTarget(loc, daypart, targetTpph) {
   return { saved: true };
 }
 
+// ── Custom metric targets (Targets Editor Tier 2, owner-requested 2026-11-04/05, task #93) ──
+// The "add a brand-new metric with a target" half of Customize Fields — see
+// schema-custom-metric-targets.sql's own header for why this is a dedicated table (no existing
+// monthly_targets/yearly_targets column exists for an arbitrary metric_key) and why `period_type`
+// carries its own value per metric (owner confirmed 2026-11-05: Monthly and Yearly can differ for
+// the same metric). `daypart` is left at the schema's 'ALL' default here — Tier 2's first slice
+// has no daypart picker in TargetFieldConfigEditor, same "ship what was asked, not what the
+// schema merely supports" scoping as every other feature in this file.
+// Returns `{ [loc]: { [metricKey]: { [periodType]: targetValue } } }`, degrading to {} like
+// every other guarded read in this file.
+export async function loadCustomMetricTargets() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('custom_metric_targets').select('loc,metric_key,period_type,target_value');
+  if (error) { console.warn('[supabase] loadCustomMetricTargets:', error.message); return {}; }
+  const out = {};
+  for (const r of (data || [])) {
+    if (!out[r.loc]) out[r.loc] = {};
+    if (!out[r.loc][r.metric_key]) out[r.loc][r.metric_key] = {};
+    out[r.loc][r.metric_key][r.period_type] = r.target_value;
+  }
+  return out;
+}
+
+// Single (loc, metricKey, periodType, value) upsert — matches saveDaypartTpphTarget's inline-
+// edit-one-cell pattern. `targetValue === null` DELETES the row instead of upserting (the
+// column is `not null`, so clearing a cell can't be represented as a stored null the way the
+// fixed-column monthly_targets/yearly_targets tables allow for their own fields).
+export async function saveCustomMetricTarget(loc, metricKey, periodType, targetValue, daypart = 'ALL') {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  if (targetValue == null) {
+    const { error } = await supabase.from('custom_metric_targets').delete()
+      .eq('loc', loc).eq('metric_key', metricKey).eq('period_type', periodType).eq('daypart', daypart);
+    if (error) { console.warn('[supabase] saveCustomMetricTarget (delete):', error.message); return { saved: false, error: error.message }; }
+    return { saved: true };
+  }
+  const { error } = await supabase.from('custom_metric_targets')
+    .upsert({ loc, metric_key: metricKey, period_type: periodType, daypart, target_value: targetValue, updated_at: new Date().toISOString() },
+      { onConflict: 'tenant_id,loc,metric_key,period_type,daypart' });
+  if (error) { console.warn('[supabase] saveCustomMetricTarget:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
 // ── Email digest subscriptions (owner req, 2026-09-01) ────────────────────────────────────────
 // Self-serve per-user opt-in to the scheduled digest emails the system already sends (EOM
 // Digest, Weekly Cycle Digest — see src/engine/email-digest-catalog.js's EMAIL_DIGEST_CATALOG).
