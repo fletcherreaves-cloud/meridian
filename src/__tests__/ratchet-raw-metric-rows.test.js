@@ -103,7 +103,7 @@ const ROOT = 'src/views';
 // was never counted) both already established as acceptable here -- it answers "is there enough
 // history," never reads a metric VALUE from the raw row. See
 // dispatch-onepager-vsly-window-widen-2026-10-13.test.js.
-const CEILING = 142;
+const CEILING = 139;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
