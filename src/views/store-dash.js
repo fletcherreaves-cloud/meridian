@@ -19,7 +19,7 @@ import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engi
 import { lastPriceChangeByStore } from '../engine/price-events.js';
 import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
-import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
+import { DateRangeControl, DATE_RANGE_PRESETS, isValidCustomRange } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
 // Dispatch #203 -- LeaderboardPanel (below) merges Rankings/Record Days/Top-Bottom Performers
 // into one panel with three modes, so this file pulls in the other two's content components.
@@ -2501,6 +2501,16 @@ function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetri
     const e=addDR(new Date(),-1);return{s:addDR(e,-27),e,id:'l4w'};
   });
   const [activePreset, setActivePreset] = React.useState('l4w');
+  // Custom date range (task #95, owner req 2026-11-05) — same {s,e} Custom… affordance
+  // DateRangeControl already offers elsewhere in this app (components/PanelControls.js),
+  // wired to this tab's own Date-object range state rather than that component's ISO-string
+  // shape. Still one ranked total for the whole picked range, same as every preset above —
+  // see this file's own LeaderboardPanel header comment + the leaderboards_guide KB article
+  // for why a period-by-period breakdown of a multi-period Custom range belongs in
+  // Performance Trends, not here.
+  const [customOpen, setCustomOpen] = React.useState(false);
+  const [customS, setCustomS] = React.useState('');
+  const [customE, setCustomE] = React.useState('');
   const DR = rankRange;
   // gcLyQualityMap: the young-restaurant vs-LY trap (dispatch20 addendum, 2026-08-18;
   // src/engine/vs-ly.js's lyQuality). A store under ~24 months old is still lapping its own
@@ -2664,7 +2674,7 @@ function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetri
           })),
         }),
       ),
-      onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)',marginBottom:6}},
+      onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',alignItems:'center',background:'var(--surf2)',marginBottom:6}},
         span({style:{fontSize:'8px',color:'var(--text3)',alignSelf:'center',marginRight:4}},'Filter period:'),
         DR_PRESETS.map(p=>btn({key:p.id,className:'btn btn-sm',
           style:{fontSize:'8px',padding:'2px 6px',
@@ -2675,8 +2685,29 @@ function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetri
             const r=p.fn();
             setRankRange({s:r.s,e:r.e,id:p.id});
             setActivePreset(p.id);
+            setCustomOpen(false);
             onDateChange&&onDateChange({...r,preset:p.id,label:p.l});
-          }},p.l))
+          }},p.l)),
+        btn({key:'custom',className:'btn btn-sm',
+          style:{fontSize:'8px',padding:'2px 6px',
+            background:activePreset==='custom'?'rgba(245,188,0,.12)':'transparent',
+            color:activePreset==='custom'?'var(--gold)':'var(--text3)',
+            borderColor:activePreset==='custom'?'rgba(245,188,0,.4)':'var(--bdr)'},
+          onClick:()=>setCustomOpen(o=>!o)},'Custom…'),
+        customOpen&&div({style:{display:'flex',alignItems:'center',gap:4}},
+          inp({type:'date',value:customS,onChange:e=>setCustomS(e.target.value),
+            style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'9px',padding:'2px 6px'}}),
+          span({style:{fontSize:'9px',color:'var(--text3)'}},'–'),
+          inp({type:'date',value:customE,onChange:e=>setCustomE(e.target.value),
+            style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'9px',padding:'2px 6px'}}),
+          btn({className:'btn btn-sm',disabled:!isValidCustomRange(customS,customE),
+            style:{fontSize:'8px',padding:'2px 8px'},
+            onClick:()=>{
+              const s=new Date(customS+'T00:00:00'),e=new Date(customE+'T00:00:00');
+              setRankRange({s,e,id:'custom'});
+              setActivePreset('custom');
+              onDateChange&&onDateChange({s,e,preset:'custom',label:'Custom: '+customS+' – '+customE});
+            }},'Apply'))
       ),
       // Group-by dimension (Notes 25 #5): rank stores or rolled-up groups
       div({style:{padding:'6px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:5,alignItems:'center',background:'var(--surf2)'}},
@@ -2781,7 +2812,9 @@ function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaul
 
   return h(RoutePanelShell,{
     title:'🏆 Leaderboards',
-    subtitle:'Current rankings · all-time records · top & bottom performers — three distinct leaderboard questions, one home',
+    subtitle:div({style:{display:'flex',alignItems:'center'}},
+      span(null,'Current rankings · all-time records · top & bottom performers — three distinct leaderboard questions, one home'),
+      h(InfoIcon,{articleKey:'leaderboards_guide'})),
     onBack:onClose,
   },
     div({style:{display:'flex',gap:6,padding:'0 0 16px',flexWrap:'wrap',borderBottom:'.5px solid var(--bdr)',marginBottom:16}},

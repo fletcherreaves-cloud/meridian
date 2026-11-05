@@ -10,7 +10,7 @@
 // offered here at all -- PERFORMER_METRICS only lists rankable keys (see that file's own guard
 // test cross-checking it against rankableMetricKeys()).
 import * as React from 'react';
-import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs, isValidCustomRange } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { Bar } from './visit-readiness.js';
 import { rankPerformers, PERFORMER_METRICS } from '../engine/top-bottom-performers.js';
@@ -69,9 +69,21 @@ export function TopBottomTab({ stores, ds, onSelectStore }) {
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState({ level: 'all', id: null });
   const [windowId, setWindowId] = useState('l4w');
+  // Custom date range (task #95, owner req 2026-11-05) — same {s,e} affordance Rankings mode
+  // got in this same pass (store-dash.js's RankingTab), wired to this tab's own range shape.
+  // Still one ranked total for the whole picked range, same as every preset above — see
+  // leaderboards_guide (engine/forecast.js KB_ARTICLES) for why a period-by-period breakdown
+  // of a multi-period Custom range belongs in Performance Trends, not here.
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customS, setCustomS] = useState('');
+  const [customE, setCustomE] = useState('');
+  const [customRange, setCustomRange] = useState(null);
 
   const metric = PERFORMER_METRICS.find(m => m.key === metricKey) || PERFORMER_METRICS[0];
-  const range = useMemo(() => (WINDOW_PRESETS.find(w => w.id === windowId) || WINDOW_PRESETS[1]).fn(), [windowId]);
+  const range = useMemo(
+    () => (windowId === 'custom' && customRange) ? customRange : (WINDOW_PRESETS.find(w => w.id === windowId) || WINDOW_PRESETS[1]).fn(),
+    [windowId, customRange],
+  );
 
   const tree = useMemo(() => buildLocationHierarchy(stores, INV_ORG_COORDS, STORE_NAMES), [stores]);
   const locs = useMemo(() => locationSelectorLocs(scope, tree), [scope, tree]);
@@ -104,7 +116,7 @@ export function TopBottomTab({ stores, ds, onSelectStore }) {
     // without a live owner confirmation, not a guessed dropdown).
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
       h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, mode: 'progressive' })),
-    div({ style: { padding: '6px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', background: 'var(--surf2)' } },
+    div({ style: { padding: '6px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', background: 'var(--surf2)' } },
       span({ style: { fontSize: 8, color: 'var(--text3)', marginRight: 2 } }, 'Window:'),
       WINDOW_PRESETS.map(w => btn({
         key: w.id, className: 'btn btn-sm', style: {
@@ -113,8 +125,32 @@ export function TopBottomTab({ stores, ds, onSelectStore }) {
           color: windowId === w.id ? 'var(--gold)' : 'var(--text3)',
           borderColor: windowId === w.id ? 'rgba(245,188,0,.4)' : 'var(--bdr)',
         },
-        onClick: () => setWindowId(w.id),
-      }, w.label))),
+        onClick: () => { setWindowId(w.id); setCustomOpen(false); },
+      }, w.label)),
+      btn({
+        key: 'custom', className: 'btn btn-sm', style: {
+          fontSize: 9, padding: '2px 9px',
+          background: windowId === 'custom' ? 'rgba(245,188,0,.14)' : 'transparent',
+          color: windowId === 'custom' ? 'var(--gold)' : 'var(--text3)',
+          borderColor: windowId === 'custom' ? 'rgba(245,188,0,.4)' : 'var(--bdr)',
+        },
+        onClick: () => setCustomOpen(o => !o),
+      }, 'Custom…'),
+      customOpen && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        h('input', { type: 'date', value: customS, onChange: e => setCustomS(e.target.value),
+          style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 9, padding: '2px 6px' } }),
+        span({ style: { fontSize: 9, color: 'var(--text3)' } }, '–'),
+        h('input', { type: 'date', value: customE, onChange: e => setCustomE(e.target.value),
+          style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--rs)', color: 'var(--text)', fontSize: 9, padding: '2px 6px' } }),
+        btn({
+          className: 'btn btn-sm', disabled: !isValidCustomRange(customS, customE),
+          style: { fontSize: 9, padding: '2px 10px' },
+          onClick: () => {
+            setCustomRange({ s: new Date(customS + 'T00:00:00'), e: new Date(customE + 'T00:00:00') });
+            setWindowId('custom');
+          },
+        }, 'Apply')),
+    ),
     // The figure's basis depends on result.rollup (dispatch #77, resolved 2026-08-24): 'sum'
     // means the TRUE Σnumerator/Σdenominator period figure a P&L would show (engine/metric-
     // source.js's metricSumRatio); 'mean' means the mean of that store's daily values, which for
