@@ -602,6 +602,16 @@ export const DERIVED_METRICS = {
   // earlier name-match wrongly proposed as a source.
   avgRate: { mode: 'pos', derive: { inputs: ['laborPct', 'sales', 'actHrs'],
              fn: (pct, sales, hrs) => (hrs > 0 && pct > 0 ? (pct * sales) / hrs : null) } },
+
+  // Prime Cost % (task #86) = Labor % + FOB % (food-over-base) -- the standard QSR cost KPI,
+  // combining the two largest controllable cost levers into one number. direction:'lower',
+  // matching both components. Deliberately NOT kind:'ratio' -- it's a SUM of two already-
+  // resolved ratios (laborPct, fobPct), not its own numerator/denominator pair, so
+  // metricSumRatio has nothing separate to sum for it; mean-of-daily (metricAvg) is the
+  // correct rollup here, same treatment as oppCostPct/avgRate above. mode:'pos' since a real
+  // reading is always > 0 (laborPct alone already requires > 0).
+  primeCostPct: { mode: 'pos', direction: 'lower', derive: { inputs: ['laborPct', 'fobPct'],
+                  fn: (labor, fob) => labor + fob } },
 };
 Object.assign(METRIC_SOURCES, DERIVED_METRICS);
 
@@ -922,15 +932,32 @@ function _resolveLeg(rows, field, mode, rowFilter, aggMode) {
 }
 
 // Single-day value for a metric at (loc, date), auto-first. Returns null if no source has it.
-export function metricDaily(ds, loc, date, key) {
+// `derive` is tried as a last resort when no `srcs` entry answers (or a key has no `srcs` at
+// all -- a derivation-only chain like avgRate/spph/primeCostPct) -- found + fixed under task
+// #86: this previously threw on any derive-only key (`for (const [src] of spec.srcs)` with
+// spec.srcs undefined) and never attempted `derive` at all for a key that had BOTH, unlike
+// metricSeriesWithSource (metricSeries/metricAvg's shared resolver), which already does both.
+// Grepped every call site before fixing -- none hits a derive-only key through metricDaily
+// today, so this was a dormant landmine, not a live wrong-answer bug. `_depth` guards cyclic
+// definitions, same as metricSeriesWithSource's own derive recursion.
+export function metricDaily(ds, loc, date, key, _depth = 0) {
   const spec = METRIC_SOURCES[key];
   if (!ds || !spec) return null;
-  if (spec.srcs) for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
-  const dkey = String(loc) + '_' + _dk(date);
-  for (const [src, field, rowFilter, aggMode] of spec.srcs) {
-    const rows = _srcIdx(ds, src)[dkey];
-    const v = _resolveLeg(rows, field, spec.mode, rowFilter, aggMode);
-    if (v !== undefined) return v;
+  if (spec.srcs) {
+    for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
+    const dkey = String(loc) + '_' + _dk(date);
+    for (const [src, field, rowFilter, aggMode] of spec.srcs) {
+      const rows = _srcIdx(ds, src)[dkey];
+      const v = _resolveLeg(rows, field, spec.mode, rowFilter, aggMode);
+      if (v !== undefined) return v;
+    }
+  }
+  if (spec.derive && _depth <= 3) {
+    const vals = spec.derive.inputs.map(k => metricDaily(ds, loc, date, k, _depth + 1));
+    if (vals.every(v => v != null)) {
+      const v = spec.derive.fn(...vals);
+      if (_ok(v, spec.mode)) return v;
+    }
   }
   return null;
 }
