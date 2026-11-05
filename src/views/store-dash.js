@@ -1675,7 +1675,7 @@ function ActionPlanTab({store, ds, settings, dateRange}) {
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <span style="font-size:18px">${a.icon}</span>
           <div>
-            <span style='background:${priorityColor[a.priority]||'#666'};color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px">${a.priority}</span>
+            <span style="background:${priorityColor[a.priority]||'#666'};color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px">${a.priority}</span>
             <strong style="margin-left:8px;font-size:14px">${a.category}</strong>
           </div>
         </div>
