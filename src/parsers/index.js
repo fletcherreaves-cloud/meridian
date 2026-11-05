@@ -898,7 +898,13 @@ function parse3PeaksSales(wb, sheet) {
     slice:fc(h,'Time Slice','Daypart','Period'),
     netSales:fc(h,'All Net Sales','Net Sales','Total Sales','FC All Net Sales'),
     prodSales:findCol(h,'Product Sales'),gc:fc(h,'STW GC','GC','Transactions'),
-    avgCheck:findCol(h,'Average Check'),tpph:findCol(h,'TPPH'),spph:findCol(h,'SPPH')};
+    // tpph: 'TPPH' alone used to miss QSRSoft's spelled-out header on this report
+    // ("Trans Per Person Hour") -- the alias every other TPPH-reading parser in this file
+    // already carries (parseMbiLaborAnalysis, FOB). That mismatch silently zeroed TPPH on
+    // every 3-Peaks row while netSales/gc/avgCheck (multi-alias lookups) kept matching, which
+    // is exactly the live symptom: TPPH "-" for all 3 dayparts, every sibling metric real.
+    // See src/__tests__/dispatch-3peaks-tpph-header-2026-11-05.test.js.
+    avgCheck:findCol(h,'Average Check'),tpph:fc(h,'TPPH','Trans Per Person Hour'),spph:findCol(h,'SPPH')};
   const rows=[];let lastLoc='';
   for(let i=hi+1;i<raw.length;i++){
     const r=raw[i];if(!r)continue;
