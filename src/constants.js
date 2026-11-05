@@ -141,6 +141,14 @@ const DEF_SETTINGS={
   laborGreenPct:0.5,   // ≤0.5pts from target = green ✓
   laborYellowPct:1.5,  // 0.5–1.5pts = yellow warning
   // above 1.5pts = red flag
+  // Store Cockpit "Coach" box (Labor & Scheduling tab) planning-vs-execution threshold.
+  // Owner's rule of thumb (2026-11-05): "In a perfect world, the schedule would run 0 hours
+  // +/-. We don't want to run that close but a +/- 10 hour per day has always been a good rule
+  // of thumb." Applied in src/engine/labor-gap-split.js's laborCoachVerdict() as hrsPerDay *
+  // the pay week's own day count (not a hardcoded weekly number) — see that file's comment for
+  // the measurement behind using the weekly total this way. Per-tenant configurable here so a
+  // future second operator can set their own guideline without a code change.
+  laborCoachHrsPerDay:10,
   weather:{enabled:true,hotDay:-2,coldDay:-3,niceDay:1,lightRain:-3,heavyRain:-2,highWind:-2,veryHighWind:-1},
   opsMults:{oepeSeverePenalty:-3,oepePenalty:-2,oepeBonus:1,kvstPenalty:-2,kvsuPenalty:-2,parkPenalty:-3,tpphPenalty:-2,tpphBonus:1,shortStaffPenalty:-10,readyStaffBonus:1,opsFactorFloor:85},
   scoring:{

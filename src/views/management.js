@@ -707,7 +707,11 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           div({className:'set-sec-t'},'Labor % Thresholds'),
           div({className:'set-row'},div({className:'set-lbl'},'Green threshold (±%)'),inp2({className:'set-inp',path:'laborGreenPct',type:'number',min:.1,max:2,step:.1})),
           div({className:'set-note'},'Labor% within this many points of target shows green on scorecards. Default ±0.3%. This is your acceptable operating range — tighter for high-volume stores, slightly wider for smaller stores.'),
-          div({className:'set-row'},div({className:'set-lbl'},'Yellow threshold (±%)'),inp2({className:'set-inp',path:'laborYellowPct',type:'number',min:.5,max:5,step:.1}))
+          div({className:'set-row'},div({className:'set-lbl'},'Yellow threshold (±%)'),inp2({className:'set-inp',path:'laborYellowPct',type:'number',min:.5,max:5,step:.1})),
+          div({style:{marginTop:14,paddingTop:12,borderTop:'1px solid var(--bdr)'}},
+            div({className:'set-row'},div({className:'set-lbl'},'Coaching threshold (±hrs/day)'),inp2({className:'set-inp',path:'laborCoachHrsPerDay',type:'number',min:1,max:40,step:1})),
+            div({className:'set-note'},'Store Cockpit’s Labor & Scheduling "Coach" box: the planning (Needed→Scheduled) and execution (Scheduled→Actual) weekly gaps are each compared to this many hours per day, scaled by the week’s day count. Below it, neither gap is treated as a coaching signal — a 0-hour-flat schedule isn’t realistic, this is the accepted band. Above it, the box names which side (the schedule build or the shift execution) is driving the miss. Default 10, the owner’s stated rule of thumb.')
+          )
         ),
         activeSection==='appearance'&&div({className:'set-sec'},
           div({className:'set-sec-t'},'🎨 Appearance'),

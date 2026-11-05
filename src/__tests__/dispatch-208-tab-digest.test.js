@@ -115,10 +115,18 @@ function baseSettings(overrides = {}) {
   return { dialedInEnabled: false, ...overrides }; // skip StoreDash's own background auto-calibrate
 }
 
-// One row covers the whole Wed-Tue pay week (computeLaborGapSplit sums by weekKey, not by day) --
-// Jan 8 2025 is itself a Wednesday, safely in the past regardless of when this suite runs.
+// 7 rows, one per pay-week day (Wed Jan 8 2025 .. Tue Jan 14 2025 -- Jan 8 2025 is itself a
+// Wednesday, safely in the past regardless of when this suite runs), splitting the given WEEKLY
+// totals evenly across real days. computeLaborGapSplit sums by weekKey but also counts `days`
+// per row, and `days` now feeds laborCoachVerdict's per-day threshold (hrsPerDay * days) --
+// cramming a whole week's totals into one fake "day" (the pre-#threshold-dispatch shape here)
+// would give a 1-day threshold instead of a 7-day one, which doesn't match how
+// qsr_daily_activity_rollup actually arrives (one row per loc/dt).
 function laborWeekRow(loc, { needHrs, actHrs, darSchedHrs }) {
-  return { loc, date: new Date(2025, 0, 8), needHrs, actHrs, darSchedHrs };
+  return [0, 1, 2, 3, 4, 5, 6].map(i => ({
+    loc, date: new Date(2025, 0, 8 + i),
+    needHrs: needHrs / 7, actHrs: actHrs / 7, darSchedHrs: darSchedHrs / 7,
+  }));
 }
 function ctrlLaborRow(loc, laborPct) {
   return { loc, date: new Date(2025, 0, 10), laborPct };
@@ -143,7 +151,7 @@ function baseDs(loc, { fobRowFn = fobRow, laborWk = { needHrs: 350, actHrs: 364,
   return {
     loaded: true, storeIds: [loc],
     qsrFobRows: [fobRowFn(padded, period)],
-    qsrActSummaryRows: [laborWeekRow(loc, laborWk)],
+    qsrActSummaryRows: laborWeekRow(loc, laborWk),
     ctrlRows: [ctrlLaborRow(loc, laborPct)],
     auditRows: [auditRow(loc)],
     laborRows: [], opsRows: [], records: {},
@@ -203,13 +211,16 @@ describe('dispatch #208 — Overview Tab Digest row', () => {
     expect(food.textContent).toMatch(/driver: Variance Stat/);
 
     // Labor & Scheduling -- actual 30.00% (single ctrlRows.laborPct), target 25.00% -> +5.00pp,
-    // planningGapHrs=execGapHrs=7 (equal) -> "Planning-driven".
+    // planningGapHrs=execGapHrs=7 hrs/week (equal). 7 hrs/week is well inside the default
+    // +/-10 hrs/day guideline (70 hrs/week for a 7-day week) -- laborCoachVerdict correctly
+    // reads this as "On track", not a confident "Planning-driven" direction on a trivial gap
+    // (the exact inaccuracy the coaching-threshold redesign fixed).
     const labor = tileByLabel(container, 'LABOR & SCHEDULING');
     expect(labor).toBeTruthy();
     expect(labor.textContent).toContain('30.00%');
     expect(labor.textContent).toContain('target 25.00%');
     expect(labor.textContent).toContain('+5.00pp');
-    expect(labor.textContent).toMatch(/Planning-driven/);
+    expect(labor.textContent).toMatch(/On track/);
 
     // Location Intelligence -- real liComputeAll/liBuildRoadmap output for this fixture (no
     // correlation-worthy opsRows/laborRows supplied, so a real $0/"no opportunities" reading is

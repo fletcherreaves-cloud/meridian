@@ -83,3 +83,62 @@ describe('LaborCockpitTab (dispatch #204)', () => {
     expect(container.textContent).toMatch(/No complete pay week/i);
   });
 });
+
+// ── Coach box threshold redesign (2026-11-05) — see src/engine/labor-gap-split.js's
+// laborCoachVerdict for the formula. These render the REAL LaborCockpitTab, not the pure engine
+// function alone, per this repo's "would this verification still pass if the change were
+// reverted" rule — a test only against laborCoachVerdict (see labor-gap-split.test.js) couldn't
+// tell "the component actually reads settings.laborCoachHrsPerDay" from "it ignores the prop and
+// always uses the default."
+describe('LaborCockpitTab "Coach" box threshold (dispatch: configurable ±hrs/day coaching threshold)', () => {
+  let container, root;
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); });
+
+  const dates = ['2026-08-05','2026-08-06','2026-08-07','2026-08-08','2026-08-09','2026-08-10','2026-08-11'];
+  const weekOf = (needHrs, actHrs, darSchedHrs) =>
+    dates.map(dt => ({ loc: '10422', date: new Date(dt + 'T00:00:00'), needHrs, actHrs, darSchedHrs }));
+
+  function render(qsrActSummaryRows, settings) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root.render(React.createElement(LaborCockpitTab, { store: STORE, ds: { qsrActSummaryRows }, settings })); });
+  }
+
+  it('within the default ±10 hrs/day guideline (70 hrs/week): "On track", no coaching direction picked', () => {
+    // planGap = (51-50)*7 = 7, execGap = (52-51)*7 = 7 — both well under 70.
+    render(weekOf(50, 52, 51));
+    expect(container.textContent).toContain('On track');
+    expect(container.textContent).not.toMatch(/not the shift|not the schedule/);
+  });
+
+  it('only the planning gap exceeds the guideline: "schedule, not the shift"', () => {
+    // planGap = (63-50)*7 = 91 (over 70), execGap = (65-63)*7 = 14 (under 70).
+    render(weekOf(50, 65, 63));
+    expect(container.textContent).toMatch(/schedule.*not the shift/);
+    expect(container.textContent).toContain('91.0 hrs/week');
+    expect(container.textContent).toContain('14.0 hrs');
+  });
+
+  it('only the execution gap exceeds the guideline: "Execution, not the schedule"', () => {
+    // planGap = (51-50)*7 = 7 (under 70), execGap = (65-51)*7 = 98 (over 70).
+    render(weekOf(50, 65, 51));
+    expect(container.textContent).toMatch(/Execution.*not the schedule/);
+    expect(container.textContent).toContain('98.0 hrs/week');
+  });
+
+  it('BOTH gaps exceed the guideline: neither "tracks the guide" framing — both named as off', () => {
+    // planGap = (65-50)*7 = 105 (over), execGap = (85-65)*7 = 140 (over, the larger piece).
+    render(weekOf(50, 85, 65));
+    expect(container.textContent).toContain('Both outside');
+    expect(container.textContent).not.toMatch(/tracks the guide/);
+  });
+
+  it('a per-tenant settings.laborCoachHrsPerDay overrides the 10/day default', () => {
+    // planGap = (51-50)*7 = 7, execGap = (52-51)*7 = 7 — within-tolerance at the 10/day
+    // default (see first test), but at hrsPerDay=0.5 the band is 0.5*7=3.5, which 7 exceeds.
+    render(weekOf(50, 52, 51), { laborCoachHrsPerDay: 0.5 });
+    expect(container.textContent).not.toContain('On track');
+    expect(container.textContent).toMatch(/±0\.5 hrs\/day/);
+  });
+});
