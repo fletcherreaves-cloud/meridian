@@ -81,3 +81,47 @@ real signal to watch, not silently absorbed.
    a raw GetReportMeta dispatch plus inspecting a handful of actual colliding CSV rows side by
    side to see what column actually differs between them — before task #85's overtime-correlation
    work builds on this data.
+
+## v2 (same day) — the first fix above was itself wrong, measured not guessed
+
+The re-triggered Action (after the fix above merged) was watched live rather than assumed
+successful. Two real defects in the first fix, found by reading its full run log rather than
+trusting the "no errors, so it's fine" absence of a loud warning:
+
+1. **The collision rate wasn't small — it was 100%, every chunk, every store.** The live log
+   showed `bulk upsert error ... falling back to row-by-row` for literally every 500-row chunk of
+   every one of the 6 stores that got through before the run timed out (MARIETTA, TECUMSEH,
+   HARRAH, HOLDENVILLE, TISHOMINGO, CHIPLEY — 1453-2297 rows each). This is much stronger,
+   directly measured confirmation of the grain-mismatch question above — not just the row-count
+   inference, but every single bulk write actually colliding.
+2. **The "loud collision logging" the first fix promised never fired, for a structural reason:**
+   a single-row upsert always succeeds even when it silently overwrites a sibling row from the
+   same batch written moments earlier under the same key — there is no SQL-level conflict with
+   only one row in flight. `collisions = rows.length - saved` could therefore never detect a
+   collision; every store's log showed `rows.length` rows parsed and `rows.length` rows "saved,"
+   with zero collision warnings, even though every bulk chunk had just failed for exactly that
+   reason. The diagnostic was dead code that happened to never do what its own comment said it
+   would.
+3. **Performance:** row-by-row upserts take roughly 50 seconds per 500-row chunk (one HTTP round
+   trip per row). At 1453-4313 rows/store across 28 stores, the full run would need well over an
+   hour; the job's own 20-minute timeout killed it after only 6 of 28 stores finished.
+
+**Real fix (shipped as v2, same commit cycle):** de-duplicate the parsed rows **in memory**
+before any upsert, by `(geid,pay_period_start)`, keeping the last row seen per key — identical
+last-write-wins semantics to what the bulk upsert already does, just computed cheaply (one pass
+over an array) instead of discovered expensively (a failed bulk statement, then hundreds of
+individual round trips). This restores full bulk-upsert speed (row-by-row is now only a
+defensive fallback for a genuinely different, unexpected error, not the normal path) and, because
+the collision count now comes from comparing keys directly rather than inferring it from
+upsert success/failure, it can actually produce the accurate per-store collision rate the first
+fix only promised.
+
+**Still true, now with stronger evidence:** this does not resolve whether
+`(loc,geid,pay_period_start)` is really this report's unique key — it's the opposite, in fact:
+a 100% per-chunk collision rate across every store measured so far is a LOUDER signal that the
+real grain is finer than this table's PK assumes. Watch the new (now-accurate)
+`N/M row(s) (P%) shared a key` warnings on the next run; if the rate stays near 100%, this table's
+primary key genuinely needs the owner's attention (live GetReportMeta + raw row inspection) before
+trusting its totals for task #85's overtime-correlation work — collapsing to last-write-wins keeps
+the pull from failing outright, but it is very likely discarding real data, not just resolving
+incidental re-postings.
