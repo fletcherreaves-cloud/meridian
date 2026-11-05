@@ -18,7 +18,7 @@ import {
 } from '../lib/supabase.js';
 import { buildStoreFobReport } from '../engine/fob-report.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
-import { fobDailyTrace, biggestJumpDay } from '../engine/variance-trace.js';
+import { fobDailyTrace, biggestJumpDay, classTrace, FOB_CLASS_KEYS } from '../engine/variance-trace.js';
 import { computeStoreDataDiscipline } from '../engine/waste-discipline.js';
 import { scanAllPairs } from '../engine/signal-registry.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -249,6 +249,9 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   // count-anchored version.
   const trace = useMemo(() => fobDailyTrace(storeFobRows, { loc, period: reportPeriod }), [storeFobRows, loc, reportPeriod]);
   const jump = useMemo(() => biggestJumpDay(trace), [trace]);
+  // Per-class (Food/Condiment/Paper) $ swing (owner request 2026-11-05) — classTrace just
+  // attaches each point's class breakdown to the same trace, zero new fetch.
+  const clsTrace = useMemo(() => classTrace(trace), [trace]);
 
   // Data-discipline (waste-logging cadence) — lazy-fill, load-on-open, same shape as
   // analytics.js's FOBAnalysisPanel.
@@ -312,8 +315,8 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
         })))),
     ),
     div(gridStyle('1fr 1fr'),
-      Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod },
-        trace.length ? h(VarianceTrace, { trace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
+      Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod + ' · by class' },
+        trace.length ? h(VarianceTrace, { trace: clsTrace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
         // Gated at >=$25, same threshold eom-dashboard.js's VarianceTraceChart callout uses
         // (line ~664) -- without it, a quiet-period trivial swing gets flagged with the same
         // critical red styling as a real jump (mass-review notes 70, 2026-10-13).
@@ -344,26 +347,71 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
       scan ? h(CorrelationStrip, { results: foodCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…')));
 }
 
-// SVG day-by-day variance trace (mirrors the mockup's inline SVG line chart).
+// Class line styling (owner request 2026-11-05: "add lines for the different classes
+// (F/C/P)") — fixed hue + dash-pattern pairing, assigned in a fixed order and never cycled
+// (dataviz skill's categorical rule). Colors are the only 3 non-status tokens this file's own
+// header comment lists as its chart palette (--good/--warn/--crit stay reserved for status,
+// never doubled as a series color). Dash pattern is a second, color-blind-safe encoding
+// layered on top of hue — belt-and-suspenders for the 3 small swatches here, and required
+// relief for what dataviz skill's validate_palette.js actually measures on this exact
+// triplet: CVD-separation and the normal-vision floor both clear comfortably in BOTH modes
+// (worst adjacent pair ~29 ΔE, well over the >=15 floor); light-mode contrast-vs-surface is
+// a WARN (below 3:1), which the legend + per-point hover tooltip below satisfy as the
+// skill's prescribed relief. Dark mode FAILS the skill's lightness-band check on these exact
+// values — they're lifted from --amber/--blue/--orange, mode-independent globals already
+// shipped elsewhere in this file for bars/dots — and re-tuning those globally for dark-mode
+// line-chart lightness would touch every other call site in the app, out of this change's
+// scope. Flagged here, measured, rather than silently papered over.
+const CLASS_LINE = {
+  food:      { color: 'var(--amber)',  dash: null,      label: 'Food' },
+  condiment: { color: 'var(--blue)',   dash: '5,3',     label: 'Condiment' },
+  paper:     { color: 'var(--orange)', dash: '2,2.5',   label: 'Paper' },
+};
+
+// SVG day-by-day variance trace, one line per F/C/P class plus a muted Total reference line
+// (mirrors the mockup's inline SVG line chart, extended with the class breakdown). `trace` is
+// variance-trace.js's classTrace() output — each point already carries `.cls.{food,
+// condiment,paper}` alongside the existing `.delta.fob` total.
 function VarianceTrace({ trace }) {
-  const W = 560, H = 130, padL = 6, padR = 6, padT = 10, padB = 18;
-  const vals = trace.map(p => p.delta.fob || 0);
-  const minV = Math.min(0, ...vals), maxV = Math.max(0, ...vals);
+  const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
+  const totalVals = trace.map(p => p.delta.fob || 0);
+  const classVals = { food: [], condiment: [], paper: [] };
+  for (const p of trace) for (const k of FOB_CLASS_KEYS) classVals[k].push((p.cls && p.cls[k]) || 0);
+  // One shared axis across Total + all 3 classes (never a dual-axis/rescaled-per-line chart —
+  // that's how a class's own swing gets visually overstated relative to the others).
+  const allVals = [...totalVals, ...classVals.food, ...classVals.condiment, ...classVals.paper];
+  const minV = Math.min(0, ...allVals), maxV = Math.max(0, ...allVals);
   const range = (maxV - minV) || 1;
   const innerW = W - padL - padR, innerH = H - padT - padB;
   const zeroY = padT + innerH - ((0 - minV) / range) * innerH;
-  const pts = trace.map((p, i) => ({
-    x: padL + (trace.length > 1 ? (i / (trace.length - 1)) * innerW : innerW / 2),
-    y: padT + innerH - (((p.delta.fob || 0) - minV) / range) * innerH,
-    v: p.delta.fob || 0, date: p.date,
-  }));
-  const pathD = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
-  const maxIdx = vals.indexOf(vals.reduce((best, v) => Math.abs(v) > Math.abs(best) ? v : best, 0));
-  return h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
-    h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
-    h('path', { d: pathD, fill: 'none', stroke: 'var(--amber)', strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' }),
-    ...pts.map((p, i) => h('circle', { key: i, cx: p.x, cy: p.y, r: i === maxIdx ? 4 : 2.2, fill: i === maxIdx ? 'var(--crit)' : 'var(--amber)', stroke: 'var(--surf)', strokeWidth: 1 },
-      h('title', null, p.date + ': ' + (p.v >= 0 ? '+' : '') + '$' + Math.round(p.v)))));
+  const xOf = i => padL + (trace.length > 1 ? (i / (trace.length - 1)) * innerW : innerW / 2);
+  const yOf = v => padT + innerH - (((v || 0) - minV) / range) * innerH;
+  const pathOf = vals => vals.map((v, i) => (i === 0 ? 'M' : 'L') + xOf(i).toFixed(1) + ',' + yOf(v).toFixed(1)).join(' ');
+  const maxAbsIdx = vals => vals.reduce((best, v, i) => Math.abs(v) > Math.abs(vals[best]) ? i : best, 0);
+  const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
+  const money = v => (v >= 0 ? '+' : '') + '$' + Math.round(v).toLocaleString();
+
+  return div(null,
+    h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
+      h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
+      // Total — de-emphasized, muted reference underneath the 3 class lines; it's the sum of
+      // Food+Condiment the chart already showed, not a 4th new series needing its own identity.
+      h('path', { d: pathOf(totalVals), fill: 'none', stroke: 'var(--text3)', strokeWidth: 1.25, strokeDasharray: '1,2', strokeLinejoin: 'round', strokeLinecap: 'round' }),
+      ...FOB_CLASS_KEYS.map(k => {
+        const style = CLASS_LINE[k], vals = classVals[k], mi = maxAbsIdx(vals);
+        return h('g', { key: k },
+          h('path', { d: pathOf(vals), fill: 'none', stroke: style.color, strokeWidth: 2, strokeDasharray: style.dash || undefined, strokeLinejoin: 'round', strokeLinecap: 'round' }),
+          ...vals.map((v, i) => h('circle', {
+            key: i, cx: xOf(i), cy: yOf(v), r: i === mi ? 4 : 2.2, fill: style.color, stroke: 'var(--surf)', strokeWidth: 1,
+          }, h('title', null, `${dLbl(trace[i].date)} · ${style.label}: ${money(v)}`))));
+      })),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
+      ...FOB_CLASS_KEYS.map(k => div({ key: k, style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, borderRadius: '50%', background: CLASS_LINE[k].color, flexShrink: 0 } }),
+        span(null, CLASS_LINE[k].label))),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--text3)', flexShrink: 0 } }),
+        span(null, 'Total (ref)'))));
 }
 
 // ═════════════════════════════════════ LABOR & SCHEDULING TAB ═════════════════════════════════
