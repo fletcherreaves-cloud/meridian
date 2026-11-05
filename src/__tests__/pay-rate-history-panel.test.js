@@ -106,4 +106,34 @@ describe('PayRateHistoryPanel', () => {
     ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
     expect(container.textContent).toContain('No pay-rate changes detected in this window.');
   });
+
+  // Owner request 2026-11-05: "will be interesting to see if we start picking these up" while
+  // entering a round of OK-only raises store by store (wife low-to-high, owner high-to-low).
+  // The store/district rollup regroups allChanges by loc/state -- same detected changes, no new
+  // math -- so these exercise the regrouping, not detection.
+  it('rollup: counts the reporting store against the real OK store total, and leaves a non-reporting store out', async () => {
+    const twoStoreStores = [{ loc: '0010422' }, { loc: '0005183' }]; // both real OK locs (constants.js INV_ORG_COORDS)
+    const ds = {
+      employeePayRateChanges: [{
+        source: 'qsr_tenure', loc: '0010422', personKey: 'g1', employeeName: 'J Mgr',
+        jobTitle: 'General Manager', priorRate: 18, newRate: 19, effectiveDate: '2026-11-04',
+      }],
+    };
+    ({ container, root } = await mount({ ds, stores: twoStoreStores, onClose: () => {} }));
+    expect(container.textContent).toContain('1 / 2 OK stores reporting a detected change');
+    expect(container.textContent).toContain('OK district');
+  });
+
+  it('rollup: a Florida store change lands in the FL district, not the OK count', async () => {
+    const stores = [{ loc: '0010422' }, { loc: '0006178' }]; // 6178 is a real FL loc (INV_ORG_COORDS)
+    const ds = {
+      employeePayRateChanges: [{
+        source: 'qsr_tenure', loc: '0006178', personKey: 'g2', employeeName: 'F Mgr',
+        jobTitle: 'General Manager', priorRate: 18, newRate: 19, effectiveDate: '2026-11-04',
+      }],
+    };
+    ({ container, root } = await mount({ ds, stores, onClose: () => {} }));
+    expect(container.textContent).toContain('0 / 1 OK stores reporting a detected change');
+    expect(container.textContent).toContain('FL district');
+  });
 });
