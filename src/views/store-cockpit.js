@@ -45,6 +45,17 @@ const mixBg = (v, pct, base = '--surf3') => `color-mix(in srgb, var(${v}) ${pct}
 
 const STATUS_COLOR = { good: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)', flat: 'var(--text3)' };
 
+// Plain-language-first subtitle with the technical statistics reachable on hover, per
+// CLAUDE.md's "Voice by role" standing rule — "say the number AND the decision," the jargon
+// stays exact underneath but is never the thing the operator hits unexplained (owner, live:
+// "Most people would have no clue what that even means" re: this exact "Pearson r ·
+// Benjamini–Hochberg FDR-guarded · dot = significant" line). `title` gives native-tooltip depth,
+// the same affordance CorrRow's own significance dot already uses two components down.
+function JargonTip(plain, jargon) {
+  return span(null, plain, ' ',
+    span({ title: jargon, style: { cursor: 'help', color: 'var(--text3)', fontWeight: 700, borderBottom: '1px dotted var(--text3)' } }, 'ⓘ'));
+}
+
 function Card({ title, sub, accent, style }, ...children) {
   return div({ style: {
     background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--rl)',
@@ -343,7 +354,7 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
               discipline.estImpact ? span(null, ' · est. impact ', h('b', { style: { color: 'var(--text)' } }, '+' + f$(Math.round(discipline.estImpact)))) : null)),
           (!discipline && !wastePending) && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 12 } }, wasteFailed ? 'Waste data failed to load.' : 'No submission pattern derivable yet for this store.'))),
     ),
-    Card({ title: 'What Moves With Food Cost', sub: 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant' },
+    Card({ title: 'What Moves With Food Cost', sub: JargonTip('Metrics that tend to move with food cost — a dot means the pattern is real, not random noise', 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant') },
       scan ? h(CorrelationStrip, { results: foodCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…')));
 }
 
@@ -589,7 +600,7 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved, settings }) {
               : excessForLoc.verdict.underStandard ? span(null, 'Overnight running ', h('b', { style: { color: 'var(--text)' } }, excessForLoc.verdict.shortfall.toFixed(1) + ' hrs'), ' under the close-down/pre-open standard')
               : 'Overnight hours are on the close-down/pre-open standard')),
         excessForLoc && excessForLoc.na && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 12 } }, excessForLoc.reason)),
-      Card({ title: 'What Moves With Labor %', sub: 'Pearson r · FDR-guarded' },
+      Card({ title: 'What Moves With Labor %', sub: JargonTip('Metrics that tend to move with labor % — a dot means the pattern is real, not random noise', 'Pearson r · FDR-guarded') },
         scan ? h(CorrelationStrip, { results: laborCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…'))),
     Card({ title: 'Intraday Deployment', sub: 'scheduled hrs needed − actual, by hour × day-of-week · trailing 6 weeks' },
       heat && heat.slots.length ? h(HeatMap, { heat }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 24, textAlign: 'center' } }, hourly === null ? 'Loading hourly activity…' : 'No hourly DAR data loaded for this window.')));

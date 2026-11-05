@@ -83,6 +83,28 @@ describe('FoodCostCockpitTab (dispatch #204)', () => {
     // deltas against $0, i.e. its own pnlPaperCostPurchases value.
     expect(container.innerHTML).toContain('Paper: +$250');
   });
+
+  // Owner, live: 'Let's give a brief description... Most people would have no clue what that
+  // even means' re: the bare "Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant"
+  // subtitle on this exact card. Plain language goes out front (CLAUDE.md's "Voice by role"
+  // standing rule); the statistical jargon stays exact but moves to a hover tooltip, so it's
+  // reachable, never forced inline unexplained. Checked against the rendered DOM, not the
+  // JargonTip helper in isolation (it isn't exported) -- a revert that re-inlined the jargon
+  // into visible text, or dropped it from the tooltip entirely, would fail one of these two
+  // assertions.
+  it('leads "What Moves With Food Cost" with a plain-language line and keeps the stats jargon in a hover tooltip, not inline', () => {
+    const period = new Date().toISOString().slice(0, 7);
+    const row = { loc: '0010422', date: period + '-15', prodSalesAmt: 100000, compWasteAmt: 500 };
+    render({ ds: { qsrFobRows: [row] } });
+    expect(container.textContent).toContain('What Moves With Food Cost');
+    expect(container.textContent).toContain('a dot means the pattern is real, not random noise');
+    // The jargon must NOT be sitting in plain visible text any more...
+    expect(container.textContent).not.toContain('Benjamini');
+    // ...but must still be reachable, verbatim, as the info affordance's tooltip.
+    const tip = [...container.querySelectorAll('[title]')].find(el => (el.getAttribute('title') || '').includes('Benjamini'));
+    expect(tip).toBeTruthy();
+    expect(tip.getAttribute('title')).toBe('Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant');
+  });
 });
 
 describe('LaborCockpitTab (dispatch #204)', () => {
