@@ -104,6 +104,17 @@ export const STREAMS = [
   // confirmed live and this gets revisited. ds.payrollReadinessRows is still loaded at startup
   // (App.js) so a future freshness entry (or any other consumer) has real data to read.
   //   { key: 'payrollReadiness', label: 'LifeLenz Payroll Readiness', dsField: 'payrollReadinessRows', dateField: 'payPeriodStart', cadenceDays: 16 },
+  // Same reasoning, same precedent, for qsr_employee_pay_period_history (owner request
+  // 2026-11-05, scripts/qsrsoft-pay-history-pull.mjs -- see supabase/schema-qsr-employee-
+  // pay-history.sql's header). The pull is built and watched in sync-failure-watch.yml
+  // ('QSRSoft Employee Pay History Pull'), but no client-side ds.payHistoryRows loader exists
+  // yet (Phase 1 of this dispatch is get-the-data-flowing; wiring it into Pay Rate History as
+  // the primary source, including a real ds loader, is a deliberately separate follow-on --
+  // see memory/finding-qsr-employee-pay-history-2026-11-05.md). Uncomment once that loader
+  // exists, with the real pay-period cadence (bi-weekly here, confirmed live) in mind, same
+  // "don't force a wrong cadenceDays into a real alert" caution the payrollReadiness entry
+  // above already states.
+  //   { key: 'payHistory', label: 'QSRSoft Employee Pay History', dsField: 'payHistoryRows', dateField: 'periodStart', cadenceDays: 16 },
   // Closed 2026-09-13 -- previously a documented gap (memory/backlog-open-2026-09-06.md):
   // QSRSoft Inventory Summary Pull runs daily and is already watched in
   // sync-failure-watch.yml, but the table was fetched panel-locally by InventoryIntelligence
