@@ -898,7 +898,8 @@ function NotificationBell({ onOpenModal, perm }) {
 // Consolidates account + utility actions that used to crowd the top bar (and were
 // unreachable on mobile): identity/role, theme, save session, help, user management,
 // Test Kitchen toggle, change password, sign out. Standard SaaS profile-menu pattern.
-function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm }) {
+function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm,
+                       realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   useEffect(() => {
@@ -932,7 +933,27 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestore
           div({ style:{ fontSize:'11px', fontWeight:700, color:'var(--text)', overflow:'hidden',
             textOverflow:'ellipsis', maxWidth:186 } }, email || 'Signed in'),
           div({ style:{ fontSize:'9px', color:'var(--text3)', marginTop:2 } },
-            'Role: ', span({ style:{ color:'var(--amber)', fontWeight:700 } }, roleLabel))
+            'Role: ', span({ style:{ color:'var(--amber)', fontWeight:700 } }, roleLabel),
+            viewAsRole && span({ style:{ color:'var(--text3)' } }, ' (viewing as — you are really ' +
+              (realUserRole ? realUserRole[0].toUpperCase()+realUserRole.slice(1) : 'Admin') + ')'))
+        ),
+        // Role-view sandbox (task #97) — admin/owner only. Simulates nav/panel visibility for
+        // another role; never a real RLS re-scope (see App.js's viewAsRole comment).
+        canViewAsRole && div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)' } },
+          div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)', marginBottom:5,
+            textTransform:'uppercase', letterSpacing:'.3px' } }, '👁 View as role'),
+          h('select', {
+            value: viewAsRole || '',
+            onChange: e => onChangeViewAsRole && onChangeViewAsRole(e.target.value || null),
+            style: { width:'100%', fontSize:'10px', padding:'4px 6px', borderRadius:4,
+              border:'.5px solid var(--bdr)', background:'var(--surf)', color:'var(--text)' },
+          },
+            h('option', { value:'' }, 'My real role' + (realUserRole ? ' (' + (realUserRole[0].toUpperCase()+realUserRole.slice(1)) + ')' : '')),
+            ...(viewAsRoleOptions||[]).filter(r => r.id !== realUserRole).map(r =>
+              h('option', { key:r.id, value:r.id }, r.label)),
+          ),
+          viewAsRole && div({ style:{ fontSize:'8.5px', color:'var(--amber)', marginTop:5, lineHeight:1.4 } },
+            '⚠ Simulated nav/panel view only — your real data access is unchanged.')
         ),
         item(settings.colorMode==='dark'?'☀':'🌙', settings.colorMode==='dark'?'Light mode':'Dark mode', ()=>{
           const next = settings.colorMode==='dark'?'light':'dark';
@@ -994,10 +1015,34 @@ function DataErrorBanner() {
   );
 }
 
+// Role-view sandbox (task #97) — a loud, impossible-to-miss banner whenever a simulated role is
+// active, deliberately styled like DataErrorBanner above (same reasoning: a state this easy to
+// forget you're in needs to announce itself on every screen, not wait to be noticed in a menu).
+function ViewAsBanner({ viewAsRole, viewAsRoleOptions, onExit }) {
+  if (!viewAsRole) return null;
+  const label = (viewAsRoleOptions || []).find(r => r.id === viewAsRole)?.label || viewAsRole;
+  return div({
+    style: {
+      display: 'flex', alignItems: 'center', gap: 10, padding: '5px 12px',
+      background: 'rgba(245,188,0,.14)', borderBottom: '.5px solid rgba(245,188,0,.45)',
+      fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--mono)',
+    },
+  },
+    span({ style: { fontWeight: 700 } }, '👁 VIEWING AS'),
+    span(null, label + ' — nav and panel visibility only; your own data access is unchanged.'),
+    h('button', {
+      onClick: onExit,
+      style: { marginLeft: 'auto', background: 'none', border: '.5px solid var(--amber)', borderRadius: 4,
+        color: 'var(--amber)', cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '2px 8px' },
+    }, 'Exit')
+  );
+}
+
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, setView,
                     sessionBanner, onClearSession, userRole, onOpenAdmin, perm,
-                    betaMode, onToggleBeta}) {
+                    betaMode, onToggleBeta,
+                    realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions}) {
   const today = new Date();
   const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
   React.useEffect(()=>{
@@ -1024,6 +1069,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
   return h(React.Fragment, null,
     h(DataErrorBanner),
+    canViewAsRole && h(ViewAsBanner, { viewAsRole, viewAsRoleOptions, onExit: () => onChangeViewAsRole && onChangeViewAsRole(null) }),
     div({style:{height:44,background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
     display:'flex',alignItems:'center',padding:'0 8px',gap:isMb?4:12,flexShrink:0}},
 
@@ -1119,7 +1165,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
         onClick:()=>onOpenModal('settings')},'⚙'),
       // Profile menu — consolidates Load, theme, save/restore session, help, user mgmt, Test
       // Kitchen, change password, sign out (previously crowded the top bar / unreachable on mobile)
-      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm})
+      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm,
+        realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions})
     )
   ));
 }
