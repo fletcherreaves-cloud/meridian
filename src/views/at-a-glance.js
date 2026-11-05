@@ -2357,7 +2357,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     div({style:{flex:1,overflowY:'auto',padding:'12px 24px'},onScroll:handleAAGScroll},
 
       // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
-      moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
+      moversStrip&&(moversStrip.up.length>0||moversStrip.down.length>0||moversStrip.slowDT.length>0)&&div({
         style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
           borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',
           display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
@@ -2366,12 +2366,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             title:moversStrip.refreshedAt?'Data pulled '+moversStrip.refreshedAt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Pull time unavailable for this data path'},
           'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})
             +(moversStrip.refreshedAt?' · updated '+moversStrip.refreshedAt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'')),
-        (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
+        (moversStrip.up.length>0||moversStrip.down.length>0)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
         ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
           '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%')),
         ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'var(--crit)',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
           '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(2)+'%')),
-        moversStrip.slowDT.length&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
+        moversStrip.slowDT.length>0&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
         ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'},title:'Average drive-thru until-serve time today'},
           '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' '+Math.round(r.dt)+'s')),
         moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'},title:'Stores with net sales below last year today'},
