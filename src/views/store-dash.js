@@ -1090,8 +1090,10 @@ function OpsScorecard({store, settings}) {
   const opsRows = [
     ['OEPE W/O Parked', p.oepe, q2.oepe, q4.oepe, t.tOepe, false, 'Lower = faster DT', 'sec'],
     ['KVS Time/GC',     p.kvst, q2.kvst, q4.kvst, t.tKvst, false, 'Kitchen speed',      'sec'],
-    ['KVS Healthy %',   p.kvsu, q2.kvsu, q4.kvsu, t.tKvsu, true,  'Dual-side utilization', 'pct'],
-    ['DT Parked %',     p.park, q2.park, q4.park, t.tPark, false, 'Pull-forward rate',  'pct'],
+    ['KVS Healthy %',   p.kvsu!=null?p.kvsu*100:null, q2.kvsu!=null?q2.kvsu*100:null, q4.kvsu!=null?q4.kvsu*100:null,
+                        t.tKvsu!=null?t.tKvsu*100:null, true,  'Dual-side utilization', 'pct'],
+    ['DT Parked %',     p.park!=null?p.park*100:null, q2.park!=null?q2.park*100:null, q4.park!=null?q4.park*100:null,
+                        t.tPark!=null?t.tPark*100:null, false, 'Pull-forward rate',  'pct'],
     ['TPPH',            p.tpph, q2.tpph, q4.tpph, t.tTpph, true,  'Trans/person hour',  'num'],
     ['R2P',             p.r2p,  q2.r2p,  q4.r2p,  90,      false, 'Dine-in speed ≤90s', 'sec'],
     ['Floor Compliance',p.floorCompliance!=null?p.floorCompliance*100:null,
@@ -1239,7 +1241,12 @@ function CtrlScorecard({store}) {
     ]},
     {l:'POS INTEGRITY', col:'rgba(249,115,22,.08)', bc:'rgba(249,115,22,.25)', tc:'#fb923c', rows:[
       ['T-Red After %',      p.tRedAPct,   q2.tRedAPct,   q4.tRedAPct,   t.tRedAPct||.003,   v=>v<=(t.tRedAPct||.003),'pct2', 'Post-close voids = manipulation risk'],
-      ['T-Red Before %',     p.tRedBPct,   q2.tRedBPct,   q4.tRedBPct,   null,               null,                    'pct2', 'Pre-total voids — context dependent'],
+      // Owner-caught 2026-11-05: Target/Var columns showed blank -- the tRedBPct target DOES
+      // exist as a settable field (Targets Editor, 'tRedBPct' key) but this row never read it.
+      // Still deliberately ungraded (passFn null, unlike T-Red After's v=>v<=... check) -- "Pre-
+      // total voids, context dependent" per this row's own note -- a target now DISPLAYS when
+      // the owner sets one, it just never turns this row green/red.
+      ['T-Red Before %',     p.tRedBPct,   q2.tRedBPct,   q4.tRedBPct,   t.tRedBPct||null,   null,                    'pct2', 'Pre-total voids — context dependent'],
       ['POS Overrings/Day',  p.posOverCnt, q2.posOverCnt, q4.posOverCnt, 5,                  v=>v<=5,                 'num1', '>5/day = investigate'],
       ['Manual Refund/Day',  p.manualRefAmt,q2.manualRefAmt,q4.manualRefAmt,50,              v=>v<=50,                'dollar','Rising trend = flag'],
     ]},
