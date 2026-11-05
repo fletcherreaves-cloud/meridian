@@ -199,7 +199,20 @@ function renderNavTexts(permFn) {
 // icons was confirmed unused anywhere else in panel-registry.js before being picked, so none
 // needs the "icon has another owner" treatment either in this array or in HIDDEN_WHEN_DENIED
 // below.
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','💰','Pay Rate History','🔒','Security','HR','📋','Performance Reviews','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','🗺️','Layout Planner','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// 2026-11-05: the standalone 'HR' section (added 2026-09-25) merged back into 'People',
+// relabeled 'People & HR' (owner: "Merge them is fine" -- both sections had sat thin: HR had
+// only Performance Reviews, People had three members that didn't obviously belong together
+// either). 'HR' drops out of EXPECTED entirely as its own header text; 'Performance Reviews'
+// (now section:'people', same perm:'reviews.view', unchanged icon/route) renders in its PANELS
+// declaration-order slot among the section's other nav members -- between 'Pay Rate History'
+// and 'Security' (perf-reviews is declared earlier in panel-registry.js than security; see
+// panelsForSection()'s declaration-order contract, exercised throughout this file's own
+// history) -- NOT appended after them as it visually was when 'HR' was a separate, later-
+// rendered section. Same pass fixed 'skills-matrix''s inert section:'people' tag (a Scheduling
+// hub tab, confirmed via App.js's own modal router, never rendered under People) to
+// section:'scheduling' -- no visible effect here, since kind:'hub-tab' already rendered nowhere
+// in this snapshot either way.
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People & HR','🗓','Crew Schedule','💰','Pay Rate History','📋','Performance Reviews','🔒','Security','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','🗺️','Layout Planner','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -401,12 +414,13 @@ const HIDDEN_WHEN_DENIED = {
   // SIDEBAR any more -- the Customize tab itself (inside Performance Reviews) is where that
   // permission now gates visibility, which this nav-only snapshot doesn't reach.
   'reviews.customize': [],
-  // 2026-09-25: 'HR' (the section header itself) joins this list -- Performance Reviews is HR's
-  // only member (new section, see EXPECTED's own recapture note above), so denying reviews.view
-  // now empties the section entirely and renderSection() drops the header too, same "fully
-  // empty -> header vanishes" behavior 'Operations' (dispatch #202) and 'Scheduling & Labor'
-  // already demonstrate elsewhere in this file.
-  'reviews.view': ['HR', 'Performance Reviews'],
+  // 2026-11-05: 'HR' DROPS OUT of this list -- the section merged back into 'People' (see
+  // EXPECTED's own recapture note above), which has three other members (Crew Schedule, Pay
+  // Rate History, Security) that don't share perm:'reviews.view'. Denying it now removes only
+  // 'Performance Reviews' itself; the combined 'People & HR' header stays rendered, since the
+  // section is far from empty -- the opposite of the "fully empty -> header vanishes" shape
+  // this list demonstrates for 'Operations'/'Scheduling & Labor' elsewhere.
+  'reviews.view': ['Performance Reviews'],
   // 'Crew Schedule' no longer carries perm:'security.view' as of dispatch #125 (moved to
   // analytics.store, see above) -- 🔒 is unique to 'Security' so it disappears with it.
   'security.view': ['Security', '🔒'],

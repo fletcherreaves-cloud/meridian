@@ -382,10 +382,13 @@ export const PANELS = [
   // Customize tab's real (narrower) gate; see performance-calculator.js's header comment for
   // why that access-control narrowing is a deliberate, flagged side effect of this move.
   { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'hub-tab', section:'people' },
-  // section:'hr' (owner decision, 2026-09-25) -- notes-67-queue.md §1 asked for a new HR
-  // grouping, Performance Reviews named as its one confirmed member. New section declared in
-  // SECTIONS below, right after 'people'.
-  { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'hr', route:true },
+  // section:'people' -- the standalone 'hr' section (owner decision, 2026-09-25) was merged back
+  // into 'people' (owner decision, 2026-11-05: "Merge them is fine") after both sections sat thin
+  // for a while (HR had this one member; People had three unrelated-feeling ones). 'perf-calc'
+  // just above was already (correctly, if coincidentally) tagged section:'people' the whole time
+  // -- it's a hub-tab nested inside Performance Reviews, so its section now truthfully matches
+  // its real host again instead of disagreeing with it.
+  { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people', route:true },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'inventory-food-cost' },
   // Dispatch #212 — first slice: per-item margin (menu price vs. unit_food_cost +
   // unit_paper_cost) off qsr_product_mix, the same stream ProductMixPanel ('pmix' above)
@@ -453,7 +456,12 @@ export const PANELS = [
   { id:'security', label:'Security', icon:'🔒', perm:'security.view', kind:'nav', section:'people', route:true },
   { id:'settings', label:'Settings', icon:'⚙', perm:'settings.view', kind:'nav', section:'admin' },
   { id:'signals', label:'Signals', icon:'📡', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
-  { id:'skills-matrix', label:'Skills Matrix', icon:'', perm:'analytics.store', kind:'hub-tab', section:'people' },
+  // section:'scheduling', not 'people' -- confirmed via App.js's own modal router
+  // (modal==='skills-matrix' sets setSchedTab('skills') and routes to 'sched-hub'): this is a
+  // Scheduling hub tab, same as sched-summary/labor-analysis/labor-analytics just above it. The
+  // old section:'people' tag was inert (an unrelated grouping from a panel that never rendered
+  // under "People" in the sidebar) -- caught and fixed alongside the 2026-11-05 People/HR merge.
+  { id:'skills-matrix', label:'Skills Matrix', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'smart-targets', label:'Smart Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   { id:'smart-targets-v2', label:'Smart Targets V2', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations', route:true },
@@ -583,10 +591,11 @@ export const SECTIONS = [
   { id:'operations',         label:'Operations' },
   { id:'inventory-food-cost', label:'Inventory & Food Cost' },
   { id:'scheduling',         label:'Scheduling & Labor' },
-  { id:'people',             label:'People' },
-  // New 2026-09-25 (owner decision) -- notes-67-queue.md §1's HR grouping ask; Performance
-  // Reviews is its one member so far (see its own PANELS entry above).
-  { id:'hr',                 label:'HR' },
+  // 'hr' (added 2026-09-25 per notes-67-queue.md §1's HR grouping ask) merged back into 'people'
+  // 2026-11-05 (owner: "Merge them is fine") -- both sections had sat thin for a while (HR had
+  // only Performance Reviews; People had three members that didn't obviously belong together
+  // either). Relabeled 'People & HR' rather than inventing a new combined vocabulary.
+  { id:'people',             label:'People & HR' },
   { id:'analytics',          label:'Analytics' },
   { id:'analysis',           label:'Analysis' },
   { id:'forecasting',        label:'Forecasting and Labor Projections' },
