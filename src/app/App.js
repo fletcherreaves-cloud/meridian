@@ -1244,6 +1244,17 @@ function App() {
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
   const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
+  // Role-view sandbox (task #97, owner-approved "Yes, definitely!") — lets a level-1 user
+  // (admin/owner) preview what the nav/panels look like for another role, without actually
+  // changing their own account. Deliberately NOT persisted anywhere (no localStorage, no
+  // sessionStorage, no cloud settings) — it resets to the real role on every reload so nobody
+  // can be left "stuck" simulating a lower role after walking away. This is a client-side
+  // display/gating simulation only, not a real RLS re-scope — the signed-in user's own JWT and
+  // accessibleLocs never change, so it cannot show data a real holder of that role couldn't
+  // already see from this account's own unrestricted access.
+  const [viewAsRole, setViewAsRole] = useState(null);
+  const canViewAsRole = userRole === 'admin' || userRole === 'owner';
+  const effectiveRole = (canViewAsRole && viewAsRole) ? viewAsRole : userRole;
   // showOperatorSummary — dispatch #205: replaced by routePanel==='operator-summary' (see
   // routePanel above).
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
@@ -3501,11 +3512,14 @@ function App() {
     return()=>document.removeEventListener('keydown',onKey);
   },[]);
 
-  // Permission helper — used by AppSidebar, AppTopbar, and modal gates
-  const perm = (key) => hasPermission(userRole, key, orgRoles);
+  // Permission helper — used by AppSidebar, AppTopbar, and modal gates. Reads effectiveRole
+  // (the real role, unless a view-as simulation is active) so the whole gating surface — nav,
+  // panel visibility, every perm(...)-gated modal/action — reflects the simulated role from
+  // this single interception point, with zero changes needed at any of the ~100 call sites.
+  const perm = (key) => hasPermission(effectiveRole, key, orgRoles);
   // Owner request 2026-11-02: "role-based panel active/inactive toggles" — finer-grained than
   // perm() above (several panels share one perm key; this is one specific panel id per role).
-  const panelEnabled = (id) => isPanelEnabledForRole(id, userRole, orgRoles);
+  const panelEnabled = (id) => isPanelEnabledForRole(id, effectiveRole, orgRoles);
 
   // Render
   // ── anyModalOpen  (v4.212 — performance) ────────────────────────────────
@@ -3871,7 +3885,14 @@ function App() {
         onRestoreSession: handleRestoreSession,
         sessionBanner,
         onClearSession: handleClearSession,
-        userRole,
+        userRole: effectiveRole,
+        // Role-view sandbox (task #97) — only a real admin/owner ever sees or can use this;
+        // AppTopbar/ProfileMenu render nothing from these when canViewAsRole is false.
+        realUserRole: userRole,
+        canViewAsRole,
+        viewAsRole,
+        onChangeViewAsRole: canViewAsRole ? setViewAsRole : null,
+        viewAsRoleOptions: orgRoles,
         // Owner request 2026-11-02: 'users.manage.lower' holders (e.g. a DO) can now also open
         // this -- AdminPanel itself scopes what they see to roles strictly below their own
         // (canManageRole), never a blanket admin view.
@@ -4022,12 +4043,12 @@ function App() {
       // planning — Dispatch #207: moved to the routePanel gate in the main content area
       // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
       routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onUpdateSettings:saveSettings,onClose:()=>goRoute(null)}),
-      routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
+      routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole:effectiveRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
         dataReady:cloudStreamsReady,
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,initialMode:eomInitialMode,
-        initialStore:eomInitialStore,userRole,accessibleLocs,
+        initialStore:eomInitialStore,userRole:effectiveRole,accessibleLocs,
         // Count Cycle's own "🗓 Weekly Count Status report" link (count-cycle-panel.js) —
         // a small, dedicated callback rather than reusing AppSidebar's own onOpenModal (which
         // is an inline literal, not a named binding this scope can reach without a wider edit).
@@ -4116,7 +4137,7 @@ function App() {
         title:'🔒 Security',
         onBack:()=>goRoute(null),
         bodyStyle:{display:'flex',flexDirection:'column'},
-      }, h(SecurityPanel,{userRole,onClose:()=>goRoute(null)})),
+      }, h(SecurityPanel,{userRole:effectiveRole,onClose:()=>goRoute(null)})),
       routePanel==='access-log'&&h(RoutePanelShell,{
         title:'🪪 Access Log',
         onBack:()=>goRoute(null),
@@ -4158,7 +4179,7 @@ function App() {
         title:'✅ Form Completions',
         onBack:()=>goRoute(null),
         bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
-      }, h(FormsCompletionPanel,{stores,userRole,onClose:()=>goRoute(null)})),
+      }, h(FormsCompletionPanel,{stores,userRole:effectiveRole,onClose:()=>goRoute(null)})),
       routePanel==='store-assessments'&&h(StoreAssessmentsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
@@ -4191,12 +4212,12 @@ function App() {
           else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels,customRange:sub.customRange}); goRoute('above-store'); }
         }}),
       routePanel==='smg-voice'&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,initialScope:smgVoiceInit,onClose:()=>{goRoute(null);setSmgVoiceInit(null);}}),
-      routePanel==='task-queue'&&h(TaskQueuePanel,{settings,userRole,initialType:tqInitialType,onClose:()=>goRoute(null)})
+      routePanel==='task-queue'&&h(TaskQueuePanel,{settings,userRole:effectiveRole,initialType:tqInitialType,onClose:()=>goRoute(null)})
     )  // close main content scroll area
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole:effectiveRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
     // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
@@ -4239,7 +4260,7 @@ function App() {
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
     // routePanel==='ranking' in the main content area above.
-    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles,userRole}),
+    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles,userRole:effectiveRole}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
@@ -4292,7 +4313,7 @@ function App() {
         sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…'),
       ),
     },
-      h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName,activeContext:sageActiveContext}),
+      h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole:effectiveRole,userName,activeContext:sageActiveContext}),
     ),
     // Minimized-panel dock — rendered once, generic. Today only SAGE ever appears in `items`;
     // About/Knowledge Base/Metric Lineage/Task Queue add their own entries in Phases 2-3.
@@ -4380,7 +4401,7 @@ function App() {
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
     showWorkflow&&h(WorkflowGuidePanel,{
-      userRole,orgRoles,
+      userRole:effectiveRole,orgRoles,
       onClose:()=>setShowWorkflow(false),
       onStartTour:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
     }),

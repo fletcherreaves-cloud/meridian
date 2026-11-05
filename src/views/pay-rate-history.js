@@ -14,7 +14,7 @@
 //     (written by the pull script's own diff) -- managementRateChanges() just reshapes it.
 import * as React from 'react';
 import { ModalShell } from '../components/ModalShell.js';
-import { STORE_NAMES, sNameC } from '../constants.js';
+import { STORE_NAMES, sNameC, INV_ORG_COORDS, unpadLoc } from '../constants.js';
 import { loadLifeLenzShiftPay, loadLifeLenzShiftAssignments, logAppAccess } from '../lib/supabase.js';
 import {
   weeklyCrewRates, detectRateSteps, managementRateChanges, payImpact, ASSUMED_MANAGEMENT_WEEKLY_HOURS,
@@ -45,6 +45,7 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
   const [dataState, setDataState] = useState('loading'); // loading | loaded | error
   const [shiftPay, setShiftPay] = useState([]);
   const [shiftAssignments, setShiftAssignments] = useState([]);
+  const [rollupOpen, setRollupOpen] = useState(true);
 
   // Owner request 2026-10-17 (app_access_log) -- wage data is sensitive; log the view.
   // Best-effort, fires once on mount, never blocks the panel.
@@ -106,6 +107,37 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
 
   const totalAnnualizedImpact = allChanges.reduce((s, c) => s + (c.annualizedImpact || 0), 0);
 
+  // ── Store + district rollup (owner request 2026-11-05 — "will be interesting to see if we
+  // start picking these up" while he and his wife enter a round of OK-only raises store by
+  // store). allChanges is already everything detected in the window; this just regroups it by
+  // loc/state instead of adding new detection or math. stateOf falls back to 'OK' so a loc
+  // missing from INV_ORG_COORDS doesn't silently disappear from the rollup.
+  const stateOf = loc => (INV_ORG_COORDS[unpadLoc(loc)] || {}).state || 'OK';
+  const storeRollup = useMemo(() => {
+    const byLoc = new Map();
+    for (const c of allChanges) {
+      if (!c.loc) continue;
+      let r = byLoc.get(c.loc);
+      if (!r) { r = { loc: c.loc, state: stateOf(c.loc), employees: new Set(), weeklyImpact: 0, annualizedImpact: 0, latestEffective: c.effectiveDate }; byLoc.set(c.loc, r); }
+      r.employees.add(c.personKey);
+      r.weeklyImpact += (c.weeklyImpact || 0);
+      r.annualizedImpact += (c.annualizedImpact || 0);
+      if (c.effectiveDate > r.latestEffective) r.latestEffective = c.effectiveDate;
+    }
+    return [...byLoc.values()].sort((a, b) => b.latestEffective.localeCompare(a.latestEffective) || sNameC(a.loc).localeCompare(sNameC(b.loc)));
+  }, [allChanges]);
+
+  const okTotalStores = (stores || []).filter(s => /^\d+$/.test(s.loc) && stateOf(s.loc) === 'OK').length;
+  const okReportingStores = storeRollup.filter(r => r.state === 'OK').length;
+  const districtTotals = useMemo(() => {
+    const out = { OK: { weeklyImpact: 0, annualizedImpact: 0, employees: 0 }, FL: { weeklyImpact: 0, annualizedImpact: 0, employees: 0 } };
+    for (const r of storeRollup) {
+      const bucket = out[r.state] || (out[r.state] = { weeklyImpact: 0, annualizedImpact: 0, employees: 0 });
+      bucket.weeklyImpact += r.weeklyImpact; bucket.annualizedImpact += r.annualizedImpact; bucket.employees += r.employees.size;
+    }
+    return out;
+  }, [storeRollup]);
+
   return h(ModalShell, {
     title: 'Pay Rate History', icon: '💰', maxWidth: 1000, onClose,
     subtitle: `Every detected pay-rate change, crew (trailing ${Math.round((new Date(range.e) - new Date(range.s)) / 604800000)} weeks) + management (full history on file) — Owner/Admin/DO only.`,
@@ -119,6 +151,53 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
           span(null, managementChanges.length + ' management · ' + crewChanges.length + ' crew'),
           span({ style: { marginLeft: 'auto', fontWeight: 700, color: totalAnnualizedImpact > 0 ? '#f59e0b' : totalAnnualizedImpact < 0 ? '#10b981' : 'var(--text3)' } },
             'Net annualized impact: ' + moneyRound(totalAnnualizedImpact)),
+        ),
+        okTotalStores > 0 && div({ style: { marginBottom: 14, border: '.5px solid var(--bdr)', borderRadius: 6, padding: '10px 12px', background: 'var(--surf2)' } },
+          div({ style: { display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }, onClick: () => setRollupOpen(v => !v) },
+            span({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)' } }, (rollupOpen ? '▾' : '▸') + ' 📍 Store / district rollup'),
+            span({ style: { fontSize: '9.5px', color: 'var(--text3)' } },
+              okReportingStores + ' / ' + okTotalStores + ' OK stores reporting a detected change'),
+            div({ style: { flex: 1, height: 5, borderRadius: 3, background: 'var(--surf3)', overflow: 'hidden', minWidth: 60 } },
+              div({ style: { height: '100%', width: Math.round(100 * okReportingStores / okTotalStores) + '%', background: '#f5bc00' } })),
+            span({ style: { marginLeft: 'auto', fontSize: '9.5px', color: 'var(--text3)' } },
+              'OK: ' + moneyRound(districtTotals.OK.annualizedImpact) + ' ann. · FL: ' + moneyRound(districtTotals.FL.annualizedImpact) + ' ann.'),
+          ),
+          rollupOpen && (storeRollup.length
+            ? div({ style: { marginTop: 10, overflowX: 'auto' } },
+              h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 560 } },
+                h('thead', null, h('tr', null,
+                  ...['Store', 'State', 'Employees', 'Weekly $', 'Annualized $', 'Latest effective'].map((l, i) =>
+                    th({ key: i, style: { textAlign: i > 1 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
+                h('tbody', null,
+                  ...storeRollup.map((r, i) => tr({ key: r.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf)' : 'transparent' } },
+                    td({ style: { padding: '4px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(r.loc) || r.loc),
+                    td({ style: { padding: '4px 8px', color: 'var(--text3)' } }, r.state),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, r.employees.size),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, moneyRound(r.weeklyImpact)),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, moneyRound(r.annualizedImpact)),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, r.latestEffective),
+                  )),
+                  tr({ style: { borderTop: '1px solid var(--bdr)' } },
+                    td({ style: { padding: '4px 8px', fontWeight: 700, color: 'var(--text)' } }, 'OK district'),
+                    td({ style: { padding: '4px 8px' } }, ''),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, districtTotals.OK.employees),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, moneyRound(districtTotals.OK.weeklyImpact)),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, moneyRound(districtTotals.OK.annualizedImpact)),
+                    td(null, ''),
+                  ),
+                  districtTotals.FL.employees > 0 && tr(null,
+                    td({ style: { padding: '4px 8px', fontWeight: 700, color: 'var(--text)' } }, 'FL district'),
+                    td({ style: { padding: '4px 8px' } }, ''),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, districtTotals.FL.employees),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, moneyRound(districtTotals.FL.weeklyImpact)),
+                    td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, moneyRound(districtTotals.FL.annualizedImpact)),
+                    td(null, ''),
+                  ),
+                ),
+              ),
+            )
+            : div({ style: { marginTop: 8, fontSize: '9.5px', color: 'var(--text3)' } }, 'No stores have a detected change yet in this window.')
+          ),
         ),
         !allChanges.length
           ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '11px' } }, 'No pay-rate changes detected in this window.')
