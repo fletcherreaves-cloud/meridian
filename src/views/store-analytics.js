@@ -25,6 +25,7 @@ import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
 // formatters are imported, never record-day.js's own React components.
 import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT, HourRecordTab, buildBreakIndex } from './record-day.js';
 import { computeHourRecords, scopeHourRecords } from '../engine/record-hour.js';
+import { groupEventRanges } from '../engine/events-import.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1601,6 +1602,43 @@ const DAYPARTS_DEF = [
   {id:'late', label:'Late Night',emoji:'🌙',  slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
 ];
 
+// Owner-caught 2026-11-05 (screenshot): Lunch correctly showed "done" while Snack correctly
+// showed "live", but Breakfast -- EARLIER in the day than both -- ALSO still showed "live".
+// Root cause: isActive/isDone used to be keyed off whether every slot in the daypart had a
+// nonzero product_sales row, not off the actual clock -- a single $0 slot (a genuinely slow
+// opening hour, a late-arriving row) pins a daypart at "live" forever, even hours after it's
+// actually over. "We should mark done based on time of day" (owner's own words) -- so this is
+// now purely a clock comparison against each daypart's own hour_slot window, independent of
+// whether any sales landed. hour_slot's label is the END of the hour block it covers (e.g.
+// '06:00' = the 5-6am block, '28:00' = the last hour of the 4am-4am business day) -- subtracting
+// the business day's 4am start turns a label into "hours elapsed since this business day began",
+// directly comparable to elapsedBusinessHours() below. A daypart with no sales at all by the
+// time its window closes still reads as "done" (the $ tile is hidden separately by visibleDp's
+// own actual>0||proj>0 filter) -- "done" now means "time's up," not "and it had sales."
+function slotElapsedHours(slotLabel) {
+  return parseInt(slotLabel.split(':')[0], 10) - 4;
+}
+
+// Hours elapsed since targetDate's own 4am business-day start, as of `now` -- clamped to
+// [0, 24] so a business day already fully in the past (yesterday's view, or this view running
+// past the next 4am rollover) reads as fully elapsed, and one that hasn't started yet (shouldn't
+// occur via this card's today/yesterday toggle, but defensive) reads as not-yet-started.
+function elapsedBusinessHours(targetDateStr, now = new Date()) {
+  const dayStart = new Date(targetDateStr + 'T04:00:00');
+  const hrs = (now.getTime() - dayStart.getTime()) / 3600000;
+  return Math.max(0, Math.min(24, hrs));
+}
+
+// isActive/isDone for ONE daypart, given hours already elapsed in its business day. Exported
+// (pure, no I/O) so this can be asserted directly against a fixed "now" without mocking Date.
+export function daypartTimeStatus(slots, elapsedHours) {
+  const starts = slots.map(s => slotElapsedHours(s) - 1);
+  const ends   = slots.map(slotElapsedHours);
+  const dpStart = Math.min(...starts);
+  const dpEnd   = Math.max(...ends);
+  return { isActive: elapsedHours > dpStart && elapsedHours < dpEnd, isDone: elapsedHours >= dpEnd };
+}
+
 function DaypartPaceCard({loc}) {
   const [rows, setRows]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1653,8 +1691,7 @@ function DaypartPaceCard({loc}) {
     const labor   = doneRows.reduce((a,r) => a + (r.actual_punched_hours || 0), 0);
     const needed  = doneRows.reduce((a,r) => a + (r.total_needed_hours   || 0), 0);
     const laborVsNeed = needed > 0 ? labor - needed : null;
-    const isActive = doneRows.length > 0 && doneRows.length < dpRows.length;
-    const isDone   = doneRows.length >= dpRows.length && actual > 0;
+    const { isActive, isDone } = daypartTimeStatus(dp.slots, elapsedBusinessHours(targetDate));
     return {...dp, actual, mean, proj, ly, avgDT, pctMean, pctLY, pctProj, labor, needed, laborVsNeed, isActive, isDone, doneRows: doneRows.length, totalSlots: dpRows.length};
   }).filter(Boolean);
 
@@ -2200,10 +2237,18 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         const kbTags = kb.tags && kb.tags.length ? kb.tags : [];
         const evMap  = (userEvents && userEvents[store.loc]) || {};
         const today  = new Date().toISOString().slice(0,10);
-        const recentEvs = Object.entries(evMap)
-          .map(([dk,ev])=>({dk,...ev}))
-          .filter(ev=>ev.dk<=today)
-          .sort((a,b)=>b.dk.localeCompare(a.dk))
+        // Owner-flagged 2026-11-05: this used to list every PER-DAY occurrence a multi-day
+        // event was expanded into (orgEventsToDayMap writes one map entry per calendar day it
+        // spans) -- a 4-day promo showed as 4 identical-looking rows. groupEventRanges()
+        // already exists for exactly this (above-store-onepager.js's "Upcoming Impacts" list
+        // already reuses it, per that function's own header comment) -- collapses same-rangeId
+        // days into one dkStart..dkEnd entry with a clean label (its own "(Day N of M)" suffix
+        // already stripped). A hand-entered single-day event (no rangeId) passes through
+        // unchanged, one row each, same as before.
+        const recentEvs = groupEventRanges(
+          Object.entries(evMap).map(([dk,ev])=>({dk,...ev})).filter(ev=>ev.dk<=today)
+        )
+          .sort((a,b)=>b.dkEnd.localeCompare(a.dkEnd))
           .slice(0,4);
         if(!kbNote && !kbTags.length && !recentEvs.length) return null;
         return div({style:{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}},
@@ -2221,12 +2266,20 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             div({style:{fontSize:'8.5px',color:'#a5b4fc',fontWeight:700,letterSpacing:'.5px',marginBottom:6}},'📅 RECENT EVENTS'),
             recentEvs.map((ev,i)=>{
               const evDef = EVENT_TYPES[ev.type]||{icon:'•',label:ev.type||'Event'};
+              const dShort = dk=>dk.slice(5).replace('-','/');
+              const dateLabel = ev.dkEnd && ev.dkEnd!==ev.dk ? dShort(ev.dk)+'–'+dShort(ev.dkEnd) : dShort(ev.dk);
+              // Plain label up front (what it is); the long sourcing/citation note some
+              // calendar-import rows carry (e.g. "Per the official 2026 OPNAD Marketing
+              // Program Start/Stop Dates workbook...") is reachable on hover, never forced
+              // inline -- same depth-stays-reachable convention CLAUDE.md's "Voice by role"
+              // rule already applies to every other panel.
               return div({key:i,style:{display:'flex',gap:7,fontSize:'9px',alignItems:'flex-start',
-                borderTop:i>0?'.5px solid var(--bdr)':'none',paddingTop:i>0?5:0,marginTop:i>0?5:0}},
-                div({style:{fontSize:'12px',flexShrink:0}},evDef.icon),
+                borderTop:i>0?'.5px solid var(--bdr)':'none',paddingTop:i>0?5:0,marginTop:i>0?5:0},
+                title:ev.note&&ev.note!==ev.label?ev.note:undefined},
+                div({style:{fontSize:'12px',flexShrink:0}},ev.icon||evDef.icon),
                 div({style:{flex:1,minWidth:0}},
-                  div({style:{color:'var(--text3)',fontSize:'8px'}},ev.dk.slice(5).replace('-','/')),
-                  div({style:{color:'var(--text2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},evDef.label+(ev.note?' · '+ev.note:''))
+                  div({style:{color:'var(--text3)',fontSize:'8px'}},dateLabel),
+                  div({style:{color:'var(--text2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},ev.label||evDef.label)
                 )
               );
             })
