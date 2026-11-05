@@ -29,7 +29,7 @@ import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js'
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { worstStream } from '../engine/stream-freshness.js';
+import { worstStream, groupFreshness } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
 import { printHtml } from '../utils/print-html.js';
@@ -2459,40 +2459,40 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
         padding:'8px 24px',display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}},
         div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
-          letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
+          letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0,
+          display:'flex',alignItems:'center',gap:4}},
+          'Loaded Data',
+          span({
+            onClick:()=>onOpenModal&&onOpenModal('data-manager'),
+            title:'Open Data Manager for the full per-stream freshness table',
+            style:{cursor:'pointer',fontSize:'10px',fontWeight:400,color:'var(--text3)'},
+          },'ⓘ'),
+        ),
         ...(()=>{
-          // Each category shows the FRESHEST across its manual AND auto/emailed streams
-          // (Notes: Jul-2026). Manual uploads legitimately stop when the owner stops
-          // uploading; anchoring the strip to manual alone made it read weeks-stale even
-          // though the auto DAR/Glimpse/Ledger/qsr_fob streams were current. Union the
-          // relevant streams so the date range reflects reality (auto/emailed-first rule).
-          const _u=(...arrs)=>arrs.flatMap(a=>a||[]);
-          const sources=[
-            {name:'Sales',      rows:_u(ds?.qsrActSummaryRows,ds?.salesLedgerRows,ds?.laborRows),icon:'💰'},
-            {name:'Scheduling', rows:ds?.schedRows,icon:'📅'},
-            {name:'Service',    rows:_u(ds?.glimpseRows,ds?.qsrActSummaryRows,ds?.opsRows),icon:'⚡'},
-            {name:'Controls',   rows:_u(ds?.glimpseRows,ds?.cashRows,ds?.ctrlRows),icon:'🔒'},
-            {name:'FOB',        rows:_u(ds?.qsrFobRows,ds?.fobRows),icon:'🍟'},
-          ];
-          return sources.map(src=>{
-            const rows=src.rows||[];
-            if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
-              color:'var(--text3)',padding:'2px 8px',borderRadius:3,
-              background:'var(--surf2)',border:'.5px solid var(--bdr)'}},
-              src.icon+' '+src.name+': Not loaded');
-            // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
-            // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
-            // padded "0003708" and "3708" don't double-count the store list.
-            const ms=rows.map(r=>{const d=r?.date instanceof Date?r.date:(r?.date?new Date(r.date):null);return d&&!isNaN(d.getTime())?d.getTime():null;}).filter(v=>v!=null);
-            const minD=ms.length?new Date(Math.min(...ms)):null;
-            const maxD=ms.length?new Date(Math.max(...ms)):null;
-            const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
-            const uniqueLocs=new Set(rows.map(r=>{const n=parseInt(r.loc,10);return isNaN(n)?String(r.loc):String(n);})).size;
-            return div({key:src.name,style:{fontSize:'9px',
-              color:'var(--text)',padding:'2px 8px',borderRadius:3,
-              background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)'}},
-              src.icon+' '+src.name+': '+fmt(minD)+' – '+fmt(maxD)+
-              ' ('+rows.length.toLocaleString()+' rows, '+uniqueLocs+' stores)');
+          // Driven by engine/stream-freshness.js's groupFreshness() (task #94, 2026-11-05) —
+          // the SAME canonical STREAMS registry Data Manager's own per-stream table and the
+          // Action Checklist's worstStream() banner already read, not a second hand-maintained
+          // bucket list. That old list only covered 5 of the now ~24 real automated streams and
+          // showed a merged date range that could hide a dead stream behind a fresh sibling —
+          // see groupFreshness()'s own header for the full "why" (same #171 pooling bug, one
+          // layer up). worstSeverity below is the WORST member of the category, never masked.
+          const SEV_STYLE={
+            ok:{bg:'rgba(16,185,129,.08)',bdr:'rgba(16,185,129,.2)',fg:'var(--text)'},
+            warn:{bg:'rgba(245,158,11,.08)',bdr:'rgba(245,158,11,.3)',fg:'var(--warn)'},
+            crit:{bg:'rgba(239,68,68,.08)',bdr:'rgba(239,68,68,.3)',fg:'var(--crit)'},
+          };
+          const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
+          return groupFreshness(ds).map(g=>{
+            const sty=SEV_STYLE[g.worstSeverity]||SEV_STYLE.ok;
+            // A stream can be LOADED (the array is present) but legitimately empty this session
+            // (nothing synced yet) -- rowCount===0 means minDate/maxDate are both null, which
+            // 'fmt' alone would render as the confusing "? – ?". Say so plainly instead.
+            const range=g.rowCount>0?fmt(g.minDate)+' – '+fmt(g.maxDate)+' ('+g.rowCount.toLocaleString()+' rows, '+g.storeCount+' stores)':'no rows synced yet';
+            return div({key:g.group,style:{fontSize:'9px',color:sty.fg,padding:'2px 8px',
+              borderRadius:3,background:sty.bg,border:'.5px solid '+sty.bdr},
+              title:g.worstSeverity!=='ok'?'At least one '+g.label+' stream is behind schedule — see Data Manager':undefined},
+              g.icon+' '+g.label+': '+range+
+              (g.worstSeverity!=='ok'?' ⚠':''));
           });
         })()
       ),
