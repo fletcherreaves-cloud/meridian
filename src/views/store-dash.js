@@ -310,6 +310,46 @@ function lifeLenzSeries(dayRows, schedRows, loc) {
   return anyVal ? {data, anyPast} : null;
 }
 
+// Generalized backtest-stats compute, extracted from ForecastTable (dispatch 2026-11-05, LifeLenz
+// forecast toggle) so the SAME math can grade either forecast source off one function instead of
+// two hand-duplicated copies ("check whether a helper exists before writing one" — in this case,
+// the existing inline IIFE already WAS the helper, just not parametrized yet). `rows` must already
+// carry the forecast value to grade under `.forecast` (ForecastTable builds two such row sets —
+// one with the engineered model's own r.forecast untouched, one with r.forecast swapped to the
+// LifeLenz number via lifeLenzBacktestRows below) plus `.actual` and `.pass`. Behavior for the
+// engineered/default path is UNCHANGED — same formulas, same >=2-day guard.
+function computeBacktestStats(rows) {
+  if(!rows || rows.length < 2) return null;
+  const errs = rows.map(r=>Math.abs(r.actual-r.forecast)/r.actual);
+  const mape = errs.reduce((a,v)=>a+v,0)/errs.length*100;
+  const bias = rows.reduce((a,r)=>a+(r.forecast-r.actual)/r.actual,0)/rows.length*100;
+  const passRate = rows.filter(r=>r.pass===true).length/rows.length*100;
+  const accuracy = Math.max(0,Math.min(100,100-mape));
+  const best = rows.reduce((b,r)=>Math.abs(r.actual-r.forecast)<Math.abs(b.actual-b.forecast)?r:b);
+  const worst= rows.reduce((b,r)=>Math.abs(r.actual-r.forecast)>Math.abs(b.actual-b.forecast)?r:b);
+  return {mape:+mape.toFixed(2),bias:+bias.toFixed(2),passRate:+passRate.toFixed(2),accuracy:+accuracy.toFixed(2),n:rows.length,best,worst};
+}
+
+// Builds the actualDays-equivalent row set for the LifeLenz forecast source: same (actual>0,
+// forecast>0, not-today-business-day) filter the engineered backtest uses, but reads the forecast
+// from each row's precomputed `.lfzForecast` (lifeLenzSeries match, zipped onto weekDays once by
+// the caller — no new fetch, same ds.schedRows convention as the Overview tab's overlay) instead
+// of the engine's `.forecast`. varPct/pass are RECOMPUTED against the LifeLenz number with the
+// same formula forecast.js's engine uses ((actual-forecast)/actual, tolerance from
+// settings.tolerance||5) — needed because diagnoseMiss/missCauses and the passRate above both
+// read r.varPct/r.pass, and those were computed against the ENGINEERED forecast upstream; without
+// this recompute, "Biggest Miss" cause analysis would diagnose a miss that was never graded.
+// Keeps the original engineered forecast on `.engForecast` so the chart can overlay it back in.
+function lifeLenzBacktestRows(rowsWithLfz, tolerance, todayBiz) {
+  return rowsWithLfz.reduce((acc, r) => {
+    const fc = r.lfzForecast;
+    if(!(fc>0) || !(r.actual>0) || dKey(r.date)===todayBiz) return acc;
+    const varPct = (r.actual-fc)/r.actual;
+    acc.push({...r, forecast:fc, engForecast:r.forecast, varPct, pass:Math.abs(varPct)<=tolerance});
+    return acc;
+  }, []);
+}
+
 function SalesChart({dayRows, tgt, schedRows, loc}) {
   const ref = useRef(null);
   const lfz = lifeLenzSeries(dayRows, schedRows, loc);
@@ -610,7 +650,14 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
   );
 }
 
-function BacktestChart({actualDays}) {
+// altField/altLabel (added for the LifeLenz-vs-engineered toggle, dispatch 2026-11-05): an
+// optional second forecast-line overlay for the source NOT currently driving the bars/Accuracy%
+// — e.g. when the toggle is driving the chart off LifeLenz, this overlays the engineered/Simple
+// model's number for the same days (and vice versa) so both are visible for comparison at once.
+// Same overlay-line visual treatment (dashed purple, rectRot points) as the Overview tab's
+// Sales Trend 'LifeLenz Forecast' dataset — see SalesChart above — so the two tabs read as one
+// convention, not two independently-invented ones.
+function BacktestChart({actualDays, altField, altLabel}) {
   const ref = useRef(null);
   useChart(ref, canvas => {
     if(!actualDays||actualDays.length<3) return null;
@@ -621,11 +668,15 @@ function BacktestChart({actualDays}) {
     const absErrs = sorted.map(r=>+Math.abs((r.forecast-r.actual)/r.actual*100).toFixed(2));
     const errColors = absErrs.map(e=>e<5?'rgba(16,185,129,.65)':e<10?'rgba(245,158,11,.65)':'rgba(239,68,68,.65)');
     const errBorders = absErrs.map(e=>e<5?'#10b981':e<10?'#f59e0b':'#ef4444');
-    return new Chart(canvas,{type:'bar',data:{labels,datasets:[
+    const alt = altField ? sorted.map(r=>r[altField]>0?Math.round(r[altField]):null) : null;
+    const hasAlt = alt && alt.some(v=>v!=null);
+    const datasets = [
       {label:'Forecast',data:fc,backgroundColor:'rgba(99,102,241,.2)',borderColor:'#818cf8',borderWidth:1,order:2},
       {label:'Actual',data:ac,type:'line',borderColor:'#34d399',backgroundColor:'transparent',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#34d399',order:1,tension:.3},
       {label:'Accuracy',data:absErrs,type:'bar',backgroundColor:errColors,borderColor:errBorders,borderWidth:1,yAxisID:'y2',order:3,barPercentage:.35},
-    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    ];
+    if(hasAlt) datasets.push({label:altLabel, data:alt, type:'line', borderColor:'#c084fc', backgroundColor:'transparent', borderWidth:2, borderDash:[5,3], pointStyle:'rectRot', pointRadius:3.5, order:1.5, tension:.3, spanGaps:false});
+    return new Chart(canvas,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>c.dataset.label==='Accuracy'?
         (c.raw<5?'✓ '+c.raw+'% error (excellent)':c.raw<10?'⚠ '+c.raw+'% error (ok)':'✗ '+c.raw+'% error (missed)'):
         `${c.dataset.label}: $${Math.round(c.raw||0).toLocaleString()}`}}},
@@ -636,7 +687,7 @@ function BacktestChart({actualDays}) {
           ticks:{color:'#94a3b8',font:{size:8},callback:v=>v+'%'},
           grid:{display:false},title:{display:true,text:'Forecast Error %',color:'#94a3b8',font:{size:8}}}
       }}});
-  },[actualDays]);
+  },[actualDays, altField, altLabel]);
   return div({style:{height:160,marginTop:10}},h('canvas',{ref}));
 }
 
@@ -652,6 +703,15 @@ function BacktestChart({actualDays}) {
 
 function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   if(!weekDays||!weekDays.length) return div({className:'empty-st'}, div({className:'empty-st-t'}, 'Computing forecast...'));
+  // Forecast-source toggle (owner req 2026-11-05): "lets add lifelenz forecast line as well like
+  // we did on Overview... implement a toggle, defaulted to Lifelenz forecast since that is what
+  // is officially driving the schedule." Persisted like the other small view-preference toggles
+  // in this app (mf_fob_view_style, mf_comment_mode, …) — same localStorage-with-try/catch pattern.
+  const [fcSourcePref, setFcSourcePrefState] = useState(()=>{
+    try { return localStorage.getItem('mf_fc_table_source')==='engineered' ? 'engineered' : 'lifelenz'; }
+    catch(e) { return 'lifelenz'; }
+  });
+  const setFcSourcePref = v => { setFcSourcePrefState(v); try{ localStorage.setItem('mf_fc_table_source', v); }catch(e){} };
   const today = sodOf(new Date());
   const gc = v => v>=0?'#4ade80':'var(--crit)';
   const noLYDays = weekDays.filter(r=>r.noLYData).length;
@@ -696,17 +756,30 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   // how 23 different week-start implementations happened.
   const _todayBiz = businessDate();
   const _todayRow = weekDays.find(r=>r.actual>0&&dKey(r.date)===_todayBiz);
-  const actualDays = weekDays.filter(r=>r.actual>0&&r.forecast>0&&dKey(r.date)!==_todayBiz);
-  const backtest = actualDays.length >= 2 ? (()=>{
-    const errs = actualDays.map(r=>Math.abs(r.actual-r.forecast)/r.actual);
-    const mape = errs.reduce((a,v)=>a+v,0)/errs.length*100;
-    const bias = actualDays.reduce((a,r)=>a+(r.forecast-r.actual)/r.actual,0)/actualDays.length*100;
-    const passRate = actualDays.filter(r=>r.pass===true).length/actualDays.length*100;
-    const accuracy = Math.max(0,Math.min(100,100-mape));
-    const best = actualDays.reduce((b,r)=>Math.abs(r.actual-r.forecast)<Math.abs(b.actual-b.forecast)?r:b);
-    const worst= actualDays.reduce((b,r)=>Math.abs(r.actual-r.forecast)>Math.abs(b.actual-b.forecast)?r:b);
-    return{mape:+mape.toFixed(2),bias:+bias.toFixed(2),passRate:+passRate.toFixed(2),accuracy:+accuracy.toFixed(2),n:actualDays.length,best,worst};
-  })() : null;
+
+  // LifeLenz forecast overlay/source — same ds.schedRows + lifeLenzSeries match the Overview
+  // tab's Sales Trend chart uses (no new fetch, App.js's loadLifeLenzSchedule() already loaded
+  // it app-wide). Zipped onto weekDays once; both forecast-source row sets below read off this.
+  const lfz = lifeLenzSeries(weekDays, ds&&ds.schedRows, loc);
+  const weekDaysWithLfz = weekDays.map((r,i)=>({...r, lfzForecast: lfz&&lfz.data[i]>0 ? lfz.data[i] : null}));
+  const tolerance = (settings&&settings.tolerance||5)/100;
+
+  const actualDaysEng = weekDaysWithLfz.filter(r=>r.actual>0&&r.forecast>0&&dKey(r.date)!==_todayBiz);
+  const actualDaysLfz = lifeLenzBacktestRows(weekDaysWithLfz, tolerance, _todayBiz);
+  const backtestEng = computeBacktestStats(actualDaysEng);
+  const backtestLfz = computeBacktestStats(actualDaysLfz);
+  const lfzAvailable = !!backtestLfz;
+  // Toggle picks which source drives the stats/callouts below — defaults to LifeLenz, but falls
+  // back to the engineered model (with the fallback stated on-screen, not silently) when LifeLenz
+  // has no usable backtest for this store/range, per the "section: must be truthful" standing
+  // rule: a toggle that claims a source it isn't actually using would be the same kind of lie.
+  const fcSource = (fcSourcePref==='lifelenz' && lfzAvailable) ? 'lifelenz' : 'engineered';
+  const fellBackFromLfz = fcSourcePref==='lifelenz' && !lfzAvailable;
+  const backtest = fcSource==='lifelenz' ? backtestLfz : backtestEng;
+  const activeRows = fcSource==='lifelenz' ? actualDaysLfz : actualDaysEng;
+  const altField = fcSource==='lifelenz' ? 'engForecast' : 'lfzForecast';
+  const altLabel = fcSource==='lifelenz' ? 'Engineered Forecast' : 'LifeLenz Forecast';
+  const sourceLabel = fcSource==='lifelenz' ? 'LifeLenz' : 'Engineered Model';
 
   // ── Miss diagnosis ─────────────────────────
   // ── Cross-store correlation on miss date ────
@@ -724,9 +797,31 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
 
   return div(null,
     backtest && div({style:{background:'rgba(52,211,153,.06)',border:'.5px solid rgba(52,211,153,.25)',borderRadius:'var(--r)',padding:'12px 16px',marginBottom:12}},
-      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
+      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}},
         div({style:{fontSize:'13px',fontWeight:700,color:'#34d399'}},'📐 Backtest Accuracy Report'),
-        div({style:{fontSize:'10px',color:'var(--text3)'}},'Based on '+backtest.n+' days with actual data in selected range')
+        div({style:{fontSize:'10px',color:'var(--text3)'}},'Based on '+backtest.n+' days with actual data in selected range'),
+        // Forecast-source toggle — defaults to LifeLenz ("that is what is officially driving the
+        // schedule," owner 2026-11-05). Grades/callouts below follow whichever is active.
+        div({style:{display:'flex',gap:4,marginLeft:'auto'}},
+          [{key:'lifelenz',label:'LifeLenz'},{key:'engineered',label:'Engineered Model'}].map(o=>{
+            const isActive = fcSource===o.key;
+            const isDisabled = o.key==='lifelenz' && !lfzAvailable;
+            return btn({
+              key:o.key, className:'btn btn-sm', disabled:isDisabled,
+              title:isDisabled?'No LifeLenz forecast data for this store/range':undefined,
+              style:{fontSize:'10px',fontWeight:600,padding:'3px 10px',
+                background:isActive?'rgba(192,132,252,.16)':'transparent',
+                color:isActive?'#c084fc':'var(--text3)',
+                borderColor:isActive?'rgba(192,132,252,.4)':'var(--bdr)',
+                opacity:isDisabled?.4:1, cursor:isDisabled?'not-allowed':'pointer'},
+              onClick:()=>{ if(!isDisabled) setFcSourcePref(o.key); }
+            }, o.label);
+          })
+        )
+      ),
+      div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:10,lineHeight:1.5}},
+        'Scored against the '+sourceLabel+' forecast'+(fcSource==='lifelenz'?' — the number officially driving the schedule.':'.')+
+        (fellBackFromLfz?' LifeLenz forecast was requested but has no usable data for this store/range — showing the Engineered Model instead.':'')
       ),
       div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:10}},
         [{l:'Accuracy Score',v:backtest.accuracy+'%',c:backtest.accuracy>=90?'#10b981':backtest.accuracy>=80?'#84cc16':backtest.accuracy>=70?'#f59e0b':'#ef4444',s:backtest.accuracy>=90?'Excellent':backtest.accuracy>=80?'Good':backtest.accuracy>=70?'Acceptable':'Needs calibration'},
@@ -748,10 +843,12 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
         span({style:{fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px'}},'Today — in progress'),
         span({style:{color:'var(--text2)'}},f$(_todayRow.actual)+' so far vs '+f$(_todayRow.forecast)+' full-day forecast'),
         span({style:{color:'var(--text3)',marginLeft:'auto',fontStyle:'italic'}},'not graded — the day is still filling')),
-      h(BacktestChart,{actualDays}),
+      h(BacktestChart,{actualDays:activeRows, altField, altLabel}),
       div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
         backtest.best&&div({style:{flex:1,minWidth:200,background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--r)',padding:'9px 12px'}},
-          div({style:{fontSize:'9px',color:'#34d399',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'✓ Most Accurate Forecast'),
+          div({style:{fontSize:'9px',color:'#34d399',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},
+            '✓ Most Accurate Forecast ',
+            span({style:{color:'var(--text3)',fontWeight:600,letterSpacing:0,textTransform:'none'}},'('+sourceLabel+')')),
           div({style:{fontSize:'12px',fontWeight:600}},DOW_BASE[(backtest.best.date instanceof Date?backtest.best.date:new Date(backtest.best.date)).getDay()]+' '+(backtest.best.date instanceof Date?backtest.best.date:new Date(backtest.best.date)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
           div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},f$(backtest.best.forecast)+' forecast · '+f$(backtest.best.actual)+' actual · ',span({style:{color:'#34d399',fontWeight:600}},fPct((backtest.best.forecast-backtest.best.actual)/backtest.best.actual,2)+' off')),
           bestDrivers&&div({style:{fontSize:'10px',color:'#34d399',marginTop:5,lineHeight:1.4}},bestDrivers)
@@ -762,7 +859,9 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
           const affectedCount = cross?(cross.crossData.sameDir.length+1):1;
           const wRow = (fetchWx(ds,backtest.worst.date))||getForecastWeather(loc,backtest.worst.date);
           return div({style:{flex:2,minWidth:240,background:'rgba(239,68,68,.05)',border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'9px 12px'}},
-            div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'✗ Biggest Miss — Cause Analysis'),
+            div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},
+              '✗ Biggest Miss — Cause Analysis ',
+              span({style:{color:'var(--text3)',fontWeight:600,letterSpacing:0,textTransform:'none'}},'('+sourceLabel+')')),
             div({style:{display:'flex',alignItems:'baseline',gap:8,marginBottom:4,flexWrap:'wrap'}},
               div({style:{fontSize:'12px',fontWeight:600}},DOW_BASE[(backtest.worst.date instanceof Date?backtest.worst.date:new Date(backtest.worst.date)).getDay()]+' '+(backtest.worst.date instanceof Date?backtest.worst.date:new Date(backtest.worst.date)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
               div({style:{fontSize:'10px',color:'var(--text2)'}},f$(backtest.worst.forecast)+' fcst · '+f$(backtest.worst.actual)+' actual'),
@@ -3939,6 +4038,7 @@ export {
   PEAK_SLICES, normSlice, analyzePeaks,
   mdToNodes,
   useChart, TT, AX, LEG, SalesChart, lifeLenzSeries, OpsRadar, TrendChart,
+  computeBacktestStats, lifeLenzBacktestRows,
   wxIcon, ForecastRow, ForecastTable,
   Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, generatePlan, ActionPlanTab,
   StoreCard, DistrictGrid, DistrictOverviewPanels, OrgView, ExportDropdown, LeaderboardPanel, RankingTab,
