@@ -48,6 +48,45 @@ describe('weeklyCrewRates', () => {
   });
 });
 
+// Owner-caught 2026-11-05 (real wage-accuracy bug): overtime is paid at 1.5x, measured directly
+// against real lifelenz_payroll_readiness rows -- a week with ANY overtime would otherwise push
+// the blended earnings/hours rate above the employee's real base rate by however much OT that
+// week happened to carry, which detectRateSteps could mistake for a raise or a cut. These guard
+// the straight-time rate the regular/overtime split (persisted once schema-lifelenz-shift-pay-
+// ot-split.sql has run) makes possible.
+describe('weeklyCrewRates — regular/overtime split (owner-caught 2026-11-05)', () => {
+  const assignments = [
+    { loc: '0010422', shiftId: 's1', date: '2026-08-03', assignedEmploymentId: 'E1', employeeName: 'Alice A' },
+  ];
+
+  it('a week with OT uses the STRAIGHT-TIME rate (regEarnings/regSeconds), not the OT-inflated blended rate', () => {
+    // 6h regular @ $15 ($90) + 2h overtime @ $22.50 (1.5x $15, $45) = $135 blended over 8h = $16.875/hr blended --
+    // that number is NOT this employee's real base rate; $15/hr (regEarnings/regSeconds) is.
+    const pay = [{ loc: '0010422', shiftId: 's1', earnings: 135, seconds: 28800, regEarnings: 90, regSeconds: 21600, otEarnings: 45, otSeconds: 7200 }];
+    const weekly = weeklyCrewRates(pay, assignments);
+    const wk = weekly.find(w => w.weekStart === '2026-08-03');
+    expect(wk.rate).toBeCloseTo(15, 6); // straight-time, not the 16.875 blended figure
+    expect(wk.rateBasis).toBe('straight-time');
+    expect(wk.earnings).toBeCloseTo(135, 6); // the blended total is still tracked, just not used for `rate`
+  });
+
+  it('pre-migration data (no split columns at all, regSeconds/regEarnings undefined) falls back to the old blended rate -- never breaks', () => {
+    const pay = [{ loc: '0010422', shiftId: 's1', earnings: 60, seconds: 14400 }]; // no regEarnings/regSeconds/otEarnings/otSeconds keys
+    const weekly = weeklyCrewRates(pay, assignments);
+    const wk = weekly.find(w => w.weekStart === '2026-08-03');
+    expect(wk.rate).toBeCloseTo(15, 6); // same as the blended rate here since there's nothing to split
+    expect(wk.rateBasis).toBe('blended (pre-split data)');
+  });
+
+  it('a 100%-overtime week (split present but zero regular seconds) falls back to the blended rate rather than dividing by zero', () => {
+    const pay = [{ loc: '0010422', shiftId: 's1', earnings: 90, seconds: 14400, regEarnings: 0, regSeconds: 0, otEarnings: 90, otSeconds: 14400 }];
+    const weekly = weeklyCrewRates(pay, assignments);
+    const wk = weekly.find(w => w.weekStart === '2026-08-03');
+    expect(wk.rate).toBeCloseTo(90 / 4, 6); // blended fallback, not null/NaN
+    expect(wk.rateBasis).toBe('blended (100% OT this week)');
+  });
+});
+
 describe('detectRateSteps', () => {
   it('flags a step clearly above the threshold, either direction', () => {
     const bumped = 15.0 + RATE_STEP_THRESHOLD + 0.05; // clear of the boundary -- avoids a float-precision false negative right at the threshold
@@ -78,6 +117,17 @@ describe('detectRateSteps', () => {
       { weekStart: '2026-08-17', rate: 15.0, hours: 20 },
     ];
     expect(detectRateSteps(series)).toEqual([]);
+  });
+
+  it('carries each side\'s rateBasis through, so a caller can tell a clean straight-time step from one that might still be an OT-mix swing', () => {
+    const bumped = 15.0 + RATE_STEP_THRESHOLD + 0.05;
+    const series = [
+      { weekStart: '2026-08-03', rate: 15.0, hours: 20, rateBasis: 'straight-time' },
+      { weekStart: '2026-08-10', rate: bumped, hours: 25, rateBasis: 'blended (100% OT this week)' },
+    ];
+    const steps = detectRateSteps(series);
+    expect(steps[0].fromRateBasis).toBe('straight-time');
+    expect(steps[0].toRateBasis).toBe('blended (100% OT this week)');
   });
 });
 

@@ -1172,11 +1172,23 @@ async function upsertShiftAssignmentRows(loc, rows) {
 // role that already has Crew Schedule Lookup access, not just Owner/Admin/DO. A separate table
 // with its own role-gated RLS (get_my_role() in ('admin','owner','do') -- see
 // schema-lifelenz-shift-pay.sql) keeps the existing table's visibility completely unchanged.
+// Regular/overtime split (owner-caught 2026-11-05, wage-accuracy bug) — see
+// supabase/schema-lifelenz-shift-pay-ot-split.sql's own header for the full measured writeup.
+// Written optimistically; if that migration hasn't run yet on the target project, each chunk
+// retries once WITHOUT the 4 new columns (same degrade-gracefully pattern loadYearlyTargets'
+// prod_sales/crew_labor_pct 42703 handling already uses in src/lib/supabase.js) so the existing
+// daily sync never breaks — it just keeps writing the old earnings/seconds-only shape until the
+// migration runs, at which point this same code starts persisting the split with no further
+// deploy needed.
+let _otSplitUnavailable = false; // sticky per-run once seen, to avoid retrying every chunk
 async function upsertShiftPayRows(loc, rows) {
   if (!rows.length) return 0;
   const now = new Date().toISOString();
   const upsert = rows.map(r => ({
-    loc, shift_id: r.shiftId, earnings: r.earnings, seconds: r.seconds, updated_at: now,
+    loc, shift_id: r.shiftId, earnings: r.earnings, seconds: r.seconds,
+    reg_earnings: r.regEarnings, reg_seconds: r.regSeconds,
+    ot_earnings: r.otEarnings, ot_seconds: r.otSeconds,
+    updated_at: now,
   }));
   // Same dispatch #137 same-conflict-key dedup as upsertShiftAssignmentRows just above.
   const dedup = new Map();
@@ -1185,10 +1197,20 @@ async function upsertShiftPayRows(loc, rows) {
   const CHUNK = 500;
   let saved = 0;
   for (let i = 0; i < deduped.length; i += CHUNK) {
-    const { error } = await supabase.from('lifelenz_shift_pay')
-      .upsert(deduped.slice(i, i + CHUNK), { onConflict: 'loc,shift_id' });
+    const slice = deduped.slice(i, i + CHUNK);
+    const payload = _otSplitUnavailable
+      ? slice.map(({ reg_earnings, reg_seconds, ot_earnings, ot_seconds, ...rest }) => rest)
+      : slice;
+    let { error } = await supabase.from('lifelenz_shift_pay')
+      .upsert(payload, { onConflict: 'loc,shift_id' });
+    if (error && error.code === '42703' && !_otSplitUnavailable) {
+      _otSplitUnavailable = true;
+      console.error('[shift-pay] reg_earnings/reg_seconds/ot_earnings/ot_seconds columns missing — run supabase/schema-lifelenz-shift-pay-ot-split.sql in your Supabase SQL editor so Pay Rate History can report a straight-time (non-OT-blended) rate. Saving earnings/seconds only for now.');
+      const fallback = slice.map(({ reg_earnings, reg_seconds, ot_earnings, ot_seconds, ...rest }) => rest);
+      ({ error } = await supabase.from('lifelenz_shift_pay').upsert(fallback, { onConflict: 'loc,shift_id' }));
+    }
     if (error) { console.warn('[shift-pay] save error:', error.message); }
-    else saved += Math.min(CHUNK, deduped.length - i);
+    else saved += slice.length;
   }
   return saved;
 }

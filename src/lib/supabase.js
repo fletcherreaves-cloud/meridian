@@ -1571,6 +1571,12 @@ export async function loadLifeLenzShiftPay({ start, end, locs } = {}) {
   return (data || []).map(r => ({
     // Strip zero-padding — see loadLifeLenzScheduleVariance's identical comment above.
     loc: String(parseInt(r.loc, 10)), shiftId: r.shift_id, earnings: r.earnings, seconds: r.seconds, updatedAt: r.updated_at,
+    // Regular/overtime split (owner-caught 2026-11-05) — null, not 0, when the migration
+    // (supabase/schema-lifelenz-shift-pay-ot-split.sql) hasn't run yet on this project, so
+    // employee-pay-history.js's weeklyCrewRates can tell "no split persisted" apart from "zero
+    // OT this shift" and fall back to the blended rate only in the former case.
+    regEarnings: r.reg_earnings ?? null, regSeconds: r.reg_seconds ?? null,
+    otEarnings: r.ot_earnings ?? null, otSeconds: r.ot_seconds ?? null,
   }));
 }
 

@@ -34,13 +34,29 @@ function weekKeyOf(dateStr) {
 /**
  * Joins lifelenz_shift_pay (earnings/seconds, role-gated) to lifelenz_shift_assignments
  * (employmentId/name/loc/date) by shift_id, aggregates to one row per (employmentId, week):
- * {employmentId, name, loc, weekStart, hours, earnings, rate}. `rate` is dollar-weighted
- * (Σearnings/Σhours for the week), never a mean of daily rates -- same "never average
- * averages" discipline as every other rate computation in this app.
+ * {employmentId, name, loc, weekStart, hours, earnings, rate}. `hours`/`earnings` are the
+ * BLENDED (regular+overtime) totals, dollar-weighted (Σearnings/Σhours for the week), never a
+ * mean of daily rates -- same "never average averages" discipline as every other rate
+ * computation in this app.
+ *
+ * `rate`, however, is the STRAIGHT-TIME rate whenever the regular/overtime split is available
+ * (owner-caught 2026-11-05, real wage-accuracy bug): overtime is paid at 1.5x, measured
+ * directly against real lifelenz_payroll_readiness rows (overtime_earnings/overtime_hours
+ * consistently equals exactly 1.5x regular_earnings/regular_hours across every real OT row
+ * sampled, not an assumption) -- so a week with ANY overtime would otherwise push the blended
+ * earnings/hours rate above the employee's real base rate by however much OT that week
+ * happened to carry, which can look like a raise or a cut in detectRateSteps() below when
+ * nothing about the person's actual rate changed. `regEarnings`/`regSeconds` are summed
+ * separately (Σ over segments where payType != 'overtime', from
+ * engine/lifelenz-shift-jobs.js's shiftsForEmployeeSchedule, persisted once
+ * supabase/schema-lifelenz-shift-pay-ot-split.sql has run) and `rate` prefers them whenever any
+ * row this week actually carries the split (`hasSplit`) -- falling back to the blended rate
+ * only for pre-migration rows (no split persisted at all: hasSplit stays false) or the rare
+ * week that was 100% overtime (hasSplit true but zero regular seconds to divide by).
  */
 export function weeklyCrewRates(shiftPayRows, shiftAssignmentRows) {
   const payByShift = new Map((shiftPayRows || []).map(r => [`${r.loc}|${r.shiftId}`, r]));
-  const buckets = new Map(); // `${employmentId}|${weekStart}` -> {employmentId,name,loc,weekStart,hours,earnings}
+  const buckets = new Map(); // `${employmentId}|${weekStart}` -> {employmentId,name,loc,weekStart,hours,earnings,regHours,regEarnings,otHours,otEarnings}
   for (const a of (shiftAssignmentRows || [])) {
     if (!a || !a.assignedEmploymentId || !a.date) continue;
     const pay = payByShift.get(`${a.loc}|${a.shiftId}`);
@@ -50,20 +66,30 @@ export function weeklyCrewRates(shiftPayRows, shiftAssignmentRows) {
     const weekStart = weekKeyOf(a.date);
     const key = `${a.assignedEmploymentId}|${weekStart}`;
     let b = buckets.get(key);
-    if (!b) { b = { employmentId: a.assignedEmploymentId, name: a.employeeName || null, loc: a.loc, weekStart, hours: 0, earnings: 0 }; buckets.set(key, b); }
+    if (!b) { b = { employmentId: a.assignedEmploymentId, name: a.employeeName || null, loc: a.loc, weekStart, hours: 0, earnings: 0, regHours: 0, regEarnings: 0, otHours: 0, otEarnings: 0 }; buckets.set(key, b); }
     b.hours += hours; b.earnings += _n(pay.earnings);
+    b.regHours += _n(pay.regSeconds) / 3600; b.regEarnings += _n(pay.regEarnings);
+    b.otHours += _n(pay.otSeconds) / 3600; b.otEarnings += _n(pay.otEarnings);
     if (!b.name && a.employeeName) b.name = a.employeeName;
   }
   return [...buckets.values()]
-    .map(b => ({ ...b, rate: b.hours > 0 ? b.earnings / b.hours : null }))
+    .map(b => {
+      const hasSplit = (b.regHours + b.otHours) > 0;
+      const rate = hasSplit
+        ? (b.regHours > 0 ? b.regEarnings / b.regHours : (b.hours > 0 ? b.earnings / b.hours : null))
+        : (b.hours > 0 ? b.earnings / b.hours : null);
+      return { ...b, rate, rateBasis: hasSplit ? (b.regHours > 0 ? 'straight-time' : 'blended (100% OT this week)') : 'blended (pre-split data)' };
+    })
     .sort((a, b) => a.employmentId === b.employmentId ? a.weekStart.localeCompare(b.weekStart) : a.employmentId.localeCompare(b.employmentId));
 }
 
-// Rate jump worth calling a "change," not ordinary week-to-week noise (mix of roles/OT). Same
-// $0.20/hr judgment call as engine/pay-events.js's AROP_JUMP_THRESHOLD, for the same reason --
-// NOT independently measured for an individual's week-to-week rate variance; a real noise-
-// threshold measurement (scripts/measure-coaching-noise-threshold.mjs's own methodology) would
-// replace this if ever run for this specific series.
+// Rate jump worth calling a "change," not ordinary week-to-week noise (mix of roles; OT noise
+// is now mostly removed by weeklyCrewRates' straight-time rate above, but the rate is still a
+// dollar-weighted blend across roles/stations within a week, which can shift this much on its
+// own). Same $0.20/hr judgment call as engine/pay-events.js's AROP_JUMP_THRESHOLD, for the same
+// reason -- NOT independently measured for an individual's week-to-week rate variance; a real
+// noise-threshold measurement (scripts/measure-coaching-noise-threshold.mjs's own methodology)
+// would replace this if ever run for this specific series.
 export const RATE_STEP_THRESHOLD = 0.20;
 
 /**
@@ -82,6 +108,10 @@ export function detectRateSteps(series, threshold = RATE_STEP_THRESHOLD) {
     steps.push({
       weekStart: valid[i].weekStart, fromRate: valid[i - 1].rate, toRate: valid[i].rate, delta,
       hoursAtNewRate: valid[i].hours,
+      // Owner-caught 2026-11-05: whether fromRate/toRate are each a clean straight-time rate or
+      // (pre-migration data / a 100%-OT week) still a blended one -- surfaced so the panel can
+      // flag a step that isn't fully OT-clean rather than presenting it as equally certain.
+      fromRateBasis: valid[i - 1].rateBasis, toRateBasis: valid[i].rateBasis,
     });
   }
   return steps;
