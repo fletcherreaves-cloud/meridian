@@ -148,12 +148,56 @@ when ~87% of the real data it pulled was just discarded as a key collision. Maki
 "success" by adjusting the threshold, skipping the check, or otherwise suppressing the signal would
 hide a real, now-confirmed data-completeness problem, not fix one — not done here.
 
-**Where this actually stands:** the pull is now operationally healthy (fast, no timeout, no
-total-zero failures, honest accounting), but the TABLE's data is very likely incomplete under the
-current schema — `(loc,geid,pay_period_start)` almost certainly is not this report's real unique
-key. Closing that gap needs a real schema decision (which extra column distinguishes the ~7-8
-colliding rows per key — a live GetReportMeta-plus-row-inspection question, requiring
-`LIFELENZ_TOKEN` access no agent session has had so far) and is the owner's call, not something to
-resolve by further guessing in this script. Until that happens, this table should be treated as
-a partial/representative sample (whichever row each key's dedup happened to keep last), not a
-complete payroll record, for task #85's overtime-correlation work.
+**Where this actually stands (as of the sections above):** the pull is now operationally healthy
+(fast, no timeout, no total-zero failures, honest accounting), but the TABLE's data is very likely
+incomplete under the current schema — `(loc,geid,pay_period_start)` almost certainly is not this
+report's real unique key. Closing that gap needs a real schema decision (which extra column
+distinguishes the ~7-8 colliding rows per key — a live GetReportMeta-plus-row-inspection question,
+requiring `LIFELENZ_TOKEN` access no agent session has had so far) and is the owner's call, not
+something to resolve by further guessing in this script. Until that happens, this table should be
+treated as a partial/representative sample (whichever row each key's dedup happened to keep last),
+not a complete payroll record, for task #85's overtime-correlation work.
+
+## RESOLVED (2026-11-05) — the real grain, confirmed by live GetReportMeta + real row inspection
+
+The owner added a `LIFELENZ_TOKEN` network credential to this session (`us01-connect.lifelenz.com`,
+header `X-Auth-Token`) specifically to close this out. Two live calls against the real API, not
+inference:
+
+**1. `GetReportMeta(payroll_readiness_report)`** returned the real 58-column schema. It carries
+`shift_date`, `clock_in_time`, `clock_out_time`, `scheduled_shifts_scheduled_shift_id` ("Shift
+Id"), and `worked_shift_id`/`payroll_entry_id` ("Time Clock Id" / "Entry Id") — none of which are
+in the current table. This alone was already strong evidence the real grain is per-shift, not
+per-pay-period.
+
+**2. A real `GetReportDataCsvAsync` pull** (FREEPORT, 2026-10-16→11-05, 879 real rows) proved it
+directly, no inference:
+- **Current PK `(geid,pay_period_start)`: 122 distinct keys for 879 rows — 118 keys collide,
+  covering 875 rows (99.5%)**, consistent with the 86-88%-across-the-district measurement above.
+- **`entry_id` (the report's own `payroll_entry_id` field, surfaced as "Entry Id" in the CSV):
+  879 distinct values for 879 rows — unique on EVERY row, zero exceptions.** Grouping by
+  `(geid, entry_id)` instead of `(geid, pay_period_start)` produces zero groups with more than one
+  row.
+- A real example (employee identity redacted — not needed to make the point and not something
+  that belongs in a committed file): one real employee's one real pay period had **13 separate
+  shifts** (spread across ~2 weeks), each a distinct row today, each with its own unique `entry_id`
+  and (when worked) its own `shift_id`/clock-in/clock-out — the exact "repeated `pay_period_start`
+  across many real sub-rows" shape the row-count math first flagged back on 2026-11-04, now seen
+  directly instead of inferred.
+
+**Verdict, now a measurement, not a guess:** the report's real grain is one row per
+**(employee, payroll entry/shift)**, not one row per (employee, pay period). `entry_id` is the
+real natural unique identifier; `pay_period_start` is just which pay period that shift's date
+falls into, legitimately repeated across every shift in it.
+
+**Still not changed here — DDL stays the owner's own action.** The concrete, now fully-confirmed
+recommendation: add a `payroll_entry_id` column to `lifelenz_payroll_readiness`, re-key the table's
+unique constraint to `(loc, payroll_entry_id)` instead of `(loc, geid, pay_period_start)`, and
+change `upsertRows()`'s in-memory dedup key in `scripts/lifelenz-payroll-readiness-pull.mjs`
+(currently `geid + '|' + pay_period_start`) to `geid + '|' + payroll_entry_id`. That one column is
+already present in every `GetReportMeta` response and was already being read into `raw` JSONB on
+every row pulled so far (via `PROMOTED_MEMBERS`'s existing `raw`-fallback for unlisted fields) — no
+new LifeLenz-side discovery needed, just promoting a field that's already landing, unused, and
+fixing the key it collapses on. Once the owner runs that migration and the script change ships,
+the table stops discarding ~87-99% of real shifts and the PK collision warning this whole finding
+is about should drop to ~0% on the next run.
