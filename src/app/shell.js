@@ -91,7 +91,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled, initialCollapsed=true}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled, initialCollapsed=false}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -101,12 +101,14 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // This mark answers which, directly, instead of guessing further.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('AppSidebar', 'render+commit', performance.now() - _rt0); });
-  // Owner request 2026-11-03: sidebar defaults to collapsed (48px, icon-only) on load; still
-  // session-local only, same "convenience, not data" tier as the comment below -- a user who
-  // expands it gets the full nav back for the rest of that session, nothing persisted.
+  // Owner request 2026-11-03: sidebar defaulted to collapsed (48px, icon-only) on load.
+  // Owner reversed 2026-11-05: defaults to EXPANDED (full labeled nav) on load instead -- the
+  // icon-only rail read as confusing on first open, not a convenience. Still session-local only,
+  // same "convenience, not data" tier as the comment below -- a user who collapses it gets the
+  // icon rail back for the rest of that session, nothing persisted either way.
   // initialCollapsed is a test seam (real App.js call site never passes it, so production always
-  // gets the true default) -- lets tests that exercise nav content/clicks render pre-expanded
-  // instead of every one of them having to click the collapse toggle first.
+  // gets the false default) -- lets a test that specifically wants the collapsed icon-rail render
+  // pass true explicitly instead of needing a click-to-collapse step.
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
