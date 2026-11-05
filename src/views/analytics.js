@@ -8349,6 +8349,14 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
   const now = new Date();
   const base = periodProp || latestActualMonth || {year:now.getFullYear(), month:now.getMonth()+1};
   const [offset, setOffset] = useState(0);           // month stepper (‹ ›)
+  // Owner-reported 2026-11-05: the page's own month dropdown said "Oct 2026" but this widget's
+  // "Actuals vs Target" header said "November 2026" -- this stepper is a SEPARATE control from
+  // the page-level period selector, and a prior click here left `offset` non-zero, which then
+  // kept silently compounding with `base` on every later dropdown change (base+offset) instead
+  // of resetting. Re-syncing offset to 0 whenever the page-level period actually changes makes
+  // the dropdown always the ground truth this widget snaps back to -- "changing the dropdown
+  // resolves it" becomes guaranteed behavior, not a coincidence of the exact click sequence.
+  useEffect(()=>{ setOffset(0); }, [periodProp && periodProp.year, periodProp && periodProp.month]);
   const period = useMemo(()=>{ const idx = base.year*12 + (base.month-1) + offset; return { year: Math.floor(idx/12), month: (idx%12)+1 }; }, [base.year, base.month, offset]);
 
   // Targets for the shown month: use the passed mt when it IS that month, else load it.
