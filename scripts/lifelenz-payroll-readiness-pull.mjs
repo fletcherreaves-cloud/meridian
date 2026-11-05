@@ -373,49 +373,72 @@ function parsePayrollReadinessCSV(text, metaColumns) {
   return rows;
 }
 
-// Fix (2026-11-04, owner-reported pull failure): the FIRST live run against real LifeLenz data
-// hit "ON CONFLICT DO UPDATE command cannot affect row a second time" on every single store --
-// a Postgres bulk-upsert can't apply ON CONFLICT DO UPDATE twice to the same (loc,geid,
-// pay_period_start) key within one statement, and this report apparently returns MULTIPLE CSV
-// rows sharing that key (parsed row counts -- 1905-4313 per store over a 60-day/~4-pay-period
-// window -- are far higher than "one row per employee per period" would predict for a single
-// QSR store's headcount, consistent with a finer real grain than this table's PK currently
-// assumes). That's a real open question about whether (loc,geid,pay_period_start) is actually
-// this report's unique key -- see this file's own UNCONFIRMED header -- NOT something to paper
-// over by silently discarding the "extra" rows as if they were always meaningless duplicates.
-// So: fall back from a dead whole-chunk bulk upsert to ROW-BY-ROW upserts for that chunk (same
-// onConflict target, same last-write-wins semantics Supabase's bulk upsert already uses --
-// nothing new assumed about the data, just applied one row at a time so one colliding pair can
-// no longer sink up to 499 good rows with it) and count+report how many (geid,pay_period_start)
-// collisions actually occurred, loudly, so the volume is visible rather than silently absorbed.
+// Fix v2 (2026-11-04, same day as the first fix, superseding it -- the first fix was wrong about
+// WHY it failed, found by actually reading a live run's full log, not reasoning about it):
+//
+// The first fix (row-by-row fallback on bulk-upsert failure) was built on an untested guess --
+// that in-batch key collisions were rare, so falling back to one-row-at-a-time upserts would be
+// both correct and cheap. Live evidence from the re-run proved both assumptions wrong:
+//   1. EVERY 500-row chunk, for EVERY store, hit "ON CONFLICT DO UPDATE command cannot affect
+//      row a second time" -- not an occasional collision, a SYSTEMATIC one. This report's rows
+//      really do repeat (geid,pay_period_start) keys constantly, strong confirmation (not just
+//      the row-count inference the first fix reasoned from) that this table's PK may not be the
+//      report's true unique key -- still an open question for the owner, see below, not resolved
+//      here.
+//   2. The row-by-row fallback's own collision counter (`rows.length - saved`) could NEVER
+//      actually fire: a single-row upsert always "succeeds" even when it's silently overwriting
+//      a sibling row from the same batch that was upserted moments earlier under the same key --
+//      there's no SQL-level conflict when only one row is being written at a time. So the "loud
+//      collision logging" the first fix promised was dead code; it ran and genuinely found
+//      nothing to report, store after store, because the counting method could not detect what
+//      it was measuring.
+//   3. Row-by-row upserts are also far too slow at this data volume -- roughly 50s per 500-row
+//      chunk (one HTTP round trip per row). At 1453-2297 rows/store this pull needs ~3-5 minutes
+//      PER STORE; the whole-run live log shows only 6 of 28 stores finished before the job's own
+//      20-minute timeout killed it mid-run.
+//
+// Real fix: DE-DUPLICATE IN MEMORY before any upsert, keeping the LAST row seen per
+// (geid,pay_period_start) -- the exact same last-write-wins semantics Supabase's bulk upsert
+// already uses, just applied cheaply (one pass over an array) instead of discovered expensively
+// (one failed bulk statement, then hundreds of individual round trips). This restores full bulk-
+// upsert speed (no more row-by-row fallback needed in the normal case) AND, because dedup counts
+// collisions by comparing keys directly rather than inferring them from upsert success/failure,
+// it can actually produce the accurate collision count/rate the first fix only promised.
 async function upsertRows(loc, rows) {
   if (!rows.length) return 0;
-  const payload = rows.map(r => ({
+  const byKey = new Map();
+  for (const r of rows) {
+    const key = r.geid + '|' + r.pay_period_start;
+    byKey.set(key, r); // later rows overwrite earlier ones under the same key -- last wins
+  }
+  const deduped = [...byKey.values()];
+  const collisions = rows.length - deduped.length;
+  if (collisions > 0) {
+    const pct = Math.round((collisions / rows.length) * 100);
+    console.warn(`[lifelenz-payroll-readiness-pull] ${loc}: ${collisions}/${rows.length} row(s) (${pct}%) shared a (geid,pay_period_start) key with another row in the same pull and were collapsed, keeping the last one seen -- if this is a large share (it has been, every chunk/every store, in production so far), the report's real grain is probably finer than this table's primary key assumes and needs live row-level inspection before trusting totals here. Not resolved here -- DDL is never an agent's own action, and guessing which extra column to add to the key without inspecting real conflicting rows would be exactly the kind of unvalidated guess this file's header already warns against.`);
+  }
+
+  const payload = deduped.map(r => ({
     tenant_id: '00000000-0000-0000-0000-000000000001',
     loc, updated_at: new Date().toISOString(), ...r,
   }));
   const CHUNK = 500;
   let saved = 0;
-  let collisions = 0;
   for (let i = 0; i < payload.length; i += CHUNK) {
     const slice = payload.slice(i, i + CHUNK);
     const { error } = await supabase.from('lifelenz_payroll_readiness').upsert(slice, { onConflict: 'loc,geid,pay_period_start' });
     if (!error) { saved += slice.length; continue; }
-    console.warn(`[supabase] bulk upsert error for ${loc} (chunk ${i}-${i + slice.length}):`, error.message, '-- falling back to row-by-row');
+    // Dedup guarantees no two rows in this payload share a key, so this should not recur -- if
+    // it does, it's a genuinely different error (network, schema, etc.), not the key collision
+    // this function was built to fix. Falling back to row-by-row here is still correct (isolates
+    // whichever row is the real problem instead of losing the whole chunk) but is not expected
+    // to run in the normal case, unlike before.
+    console.warn(`[supabase] bulk upsert error for ${loc} (chunk ${i}-${i + slice.length}), unexpected after dedup:`, error.message, '-- falling back to row-by-row');
     for (const row of slice) {
       const { error: rowError } = await supabase.from('lifelenz_payroll_readiness').upsert([row], { onConflict: 'loc,geid,pay_period_start' });
       if (rowError) { console.warn(`[supabase] row upsert error for ${loc}/${row.geid}/${row.pay_period_start}:`, rowError.message); continue; }
       saved++;
     }
-  }
-  // A real signal this table's (loc,geid,pay_period_start) PK may not be this report's actual
-  // unique key -- flagged for the owner, not resolved here (DDL is never an agent's own action,
-  // and guessing which extra column to add to the key without seeing the real conflicting rows
-  // would be exactly the kind of unvalidated guess this file's header already warns against).
-  collisions = rows.length - saved;
-  if (collisions > 0) {
-    const pct = Math.round((collisions / rows.length) * 100);
-    console.warn(`[lifelenz-payroll-readiness-pull] ${loc}: ${collisions}/${rows.length} row(s) (${pct}%) collided on (geid,pay_period_start) and were overwritten by a later row in the same pull -- if this is a large share, the report's real grain is probably finer than this table's primary key assumes and needs live row-level inspection before trusting totals here.`);
   }
   return saved;
 }
