@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, FOB_TRACE_COMPONENTS, lastCountAnchor } from '../engine/variance-trace.js';
+import {
+  fobDailyTrace, annotateTouchpoints, biggestJumpDay, FOB_TRACE_COMPONENTS, lastCountAnchor,
+  classDelta, classTrace, FOB_CLASS_KEYS,
+} from '../engine/variance-trace.js';
 
 // qsr_fob rows are MTD-CUMULATIVE snapshots — build a synthetic month where day 15
 // has a sudden jump in statVarianceAmt (the "something happened here" signal).
@@ -186,5 +189,84 @@ describe('fobDailyTrace since', () => {
                         rawWasteAmt: 0, condimentsAmt: 0, empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0 }, ...rows];
     const t = fobDailyTrace(spanning, { loc: '3708', period: '2026-08', since: '2026-07-28' });
     expect(t[0].date).toBe('2026-08-01');        // clamped to the period
+  });
+});
+
+// ── Owner request 2026-11-05 (Store Cockpit screenshot): "add lines for the different
+// classes (F/C/P)" on the Day-by-Day Variance chart. classDelta/classTrace are the pure
+// data computation behind those 3 new lines — see variance-trace.js's own header comment
+// for exactly what each class is sourced from.
+describe('variance-trace — classDelta / classTrace (F/C/P breakdown)', () => {
+  it('FOB_CLASS_KEYS is exactly food/condiment/paper, in that order', () => {
+    expect(FOB_CLASS_KEYS).toEqual(['food', 'condiment', 'paper']);
+  });
+
+  it('classDelta: food = every FOB component except condiment; condiment = its own component', () => {
+    const pt = { delta: { compWaste: 100, rawWaste: 50, condiment: 20, empMeal: 10, statVar: 5, unexplained: 5, fob: 190, pLPaperCost: 30 } };
+    const cls = classDelta(pt);
+    expect(cls.food).toBeCloseTo(100 + 50 + 10 + 5 + 5, 6);   // NOT condiment's 20
+    expect(cls.condiment).toBeCloseTo(20, 6);
+  });
+
+  it('classDelta: paper comes from the delta\'s pLPaperCost leg, not any FOB component', () => {
+    const pt = { delta: { compWaste: 0, rawWaste: 0, condiment: 0, empMeal: 0, statVar: 0, unexplained: 0, fob: 0, pLPaperCost: 42 } };
+    expect(classDelta(pt).paper).toBeCloseTo(42, 6);
+  });
+
+  it('classDelta defaults every leg to 0 on a point with no delta at all (never undefined/NaN)', () => {
+    expect(classDelta({})).toEqual({ food: 0, condiment: 0, paper: 0 });
+    expect(classDelta({ delta: {} })).toEqual({ food: 0, condiment: 0, paper: 0 });
+  });
+
+  it('food + condiment reconstructs the existing total FOB delta exactly (no double count, nothing dropped)', () => {
+    const pt = { delta: { compWaste: 12, rawWaste: 34, condiment: 56, empMeal: 7, statVar: 8, unexplained: 9, fob: 126 } };
+    const cls = classDelta(pt);
+    expect(cls.food + cls.condiment).toBeCloseTo(pt.delta.fob, 6);
+  });
+
+  it('classTrace attaches .cls to every point while preserving the original trace shape/length', () => {
+    const rows = [
+      { loc: '3708', date: '2026-07-01', prodSalesAmt: 10000, compWasteAmt: 100, rawWasteAmt: 50, condimentsAmt: 20, empMgrMealsAmt: 10, statVarianceAmt: 0, unexplainedAmt: 0 },
+      { loc: '3708', date: '2026-07-02', prodSalesAmt: 10000, compWasteAmt: 150, rawWasteAmt: 50, condimentsAmt: 40, empMgrMealsAmt: 10, statVarianceAmt: 0, unexplainedAmt: 0 },
+    ];
+    const trace = fobDailyTrace(rows, { loc: '3708', period: '2026-07' });
+    const out = classTrace(trace);
+    expect(out).toHaveLength(trace.length);
+    for (let i = 0; i < out.length; i++) {
+      expect(out[i].date).toBe(trace[i].date);
+      expect(out[i].delta).toBe(trace[i].delta);         // original fields untouched/preserved
+      expect(out[i].cls).toEqual(classDelta(trace[i]));
+    }
+    // Day 2's condiment delta is 40-20=20, food delta is (150-100)+(50-50)+(10-10)=50.
+    expect(out[1].cls.condiment).toBeCloseTo(20, 6);
+    expect(out[1].cls.food).toBeCloseTo(50, 6);
+  });
+
+  it('paper swing is sourced through fobDailyTrace\'s own P&L Paper Cost build-up, diffed day over day (same MTD-cumulative-snapshot rule as every other component)', () => {
+    const mkPaper = (date, paperCum) => ({
+      loc: '3708', date, prodSalesAmt: 10000,
+      compWasteAmt: 0, rawWasteAmt: 0, condimentsAmt: 0, empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0,
+      // Begin+Purchases+Adjustments+Transfers-Promotions-End = paperCum (Begin/Adj/Transfers/Promotions at 0
+      // keeps the build-up arithmetic trivial to reason about here).
+      pnlPaperCostPurchases: paperCum,
+    });
+    const rows = [mkPaper('2026-07-01', 300), mkPaper('2026-07-02', 300), mkPaper('2026-07-15', 950)];
+    const trace = fobDailyTrace(rows, { loc: '3708', period: '2026-07' });
+    const out = classTrace(trace);
+    expect(out[0].cls.paper).toBeCloseTo(300, 6);                    // day 1 vs $0
+    expect(out[1].cls.paper).toBeCloseTo(0, 6);                      // flat day 2
+    expect(out[2].cls.paper).toBeCloseTo(950 - 300, 6);              // the jump on the 15th
+    // And it does NOT leak into the existing total FOB delta (Paper isn't part of FOB).
+    expect(out[2].delta.fob).toBeCloseTo(0, 6);
+  });
+
+  it('does not diff paper across a month boundary (same MTD reset rule as the other components)', () => {
+    const rows = [
+      { loc: '3708', date: '2026-06-30', prodSalesAmt: 5000, compWasteAmt: 0, rawWasteAmt: 0, condimentsAmt: 0, empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0, pnlPaperCostPurchases: 900 },
+      { loc: '3708', date: '2026-07-01', prodSalesAmt: 5000, compWasteAmt: 0, rawWasteAmt: 0, condimentsAmt: 0, empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0, pnlPaperCostPurchases: 5 },
+    ];
+    const trace = fobDailyTrace(rows, { loc: '3708', period: '2026-07' });
+    const out = classTrace(trace);
+    expect(out[0].cls.paper).toBeCloseTo(5, 6);   // NOT 5 - 900
   });
 });

@@ -60,6 +60,29 @@ describe('FoodCostCockpitTab (dispatch #204)', () => {
     // in the engine's own real label text (not a guessed label).
     expect(container.textContent).toMatch(/Variance Stat/i);
   });
+
+  // Owner request 2026-11-05: per-class (Food/Condiment/Paper) lines on the Day-by-Day
+  // Variance chart. Per dispatch16's "would this verification still pass if the change were
+  // reverted?" rule, this renders the REAL component (not just variance-trace.js's engine
+  // tests) so a revert of the wiring -- not just the engine -- would be caught here.
+  it('renders the F/C/P class legend on the Day-by-Day Variance chart from real qsr_fob rows', () => {
+    const period = new Date().toISOString().slice(0, 7);
+    const row = {
+      loc: '0010422', date: period + '-15',
+      prodSalesAmt: 100000, compWasteAmt: 500, rawWasteAmt: 400, condimentsAmt: 300,
+      empMgrMealsAmt: 200, statVarianceAmt: 700, unexplainedAmt: 100,
+      pnlPaperCostPurchases: 250,
+    };
+    render({ ds: { qsrFobRows: [row] } });
+    expect(container.textContent).toContain('Day-by-Day Variance');
+    expect(container.textContent).toContain('Food');
+    expect(container.textContent).toContain('Condiment');
+    expect(container.textContent).toContain('Paper');
+    expect(container.textContent).toContain('Total (ref)');
+    // Real per-point hover tooltips (SVG <title>), not placeholder text -- Paper's single day
+    // deltas against $0, i.e. its own pnlPaperCostPurchases value.
+    expect(container.innerHTML).toContain('Paper: +$250');
+  });
 });
 
 describe('LaborCockpitTab (dispatch #204)', () => {
