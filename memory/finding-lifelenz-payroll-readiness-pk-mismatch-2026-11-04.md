@@ -125,3 +125,35 @@ primary key genuinely needs the owner's attention (live GetReportMeta + raw row 
 trusting its totals for task #85's overtime-correlation work — collapsing to last-write-wins keeps
 the pull from failing outright, but it is very likely discarding real data, not just resolving
 incidental re-postings.
+
+## v2 confirmed live, full district (2026-11-05) — the grain mismatch is real, not a guess
+
+v2 shipped (PR #1662) and the Action was re-triggered a third time. Operationally, the fix worked
+exactly as intended: the pull step finished in ~70 seconds (vs. timing out after over 20 minutes
+on v1), and all 28/28 stores completed with at least one row saved.
+
+But the collision rate, now measured across **every single store in the district, not just the 6
+that got through before v1 timed out**, is remarkably consistent: **86-88% on every store, no
+exceptions** (e.g. ARDMORE-BROADWAY 2306/2648 = 87%, ADA-COUNTRY CLUB 3803/4313 = 88%, SULPHUR
+1458/1667 = 87% — the full 28-store list is in the run's own log, `run_id 41939299809`). Total:
+**8,132 rows saved** across the whole district, out of a much larger parsed total — roughly 1 row
+survives dedup for every ~7-8 rows parsed. This is no longer an inference from row-count math or
+a 6-store sample; it is the full, complete, live measurement.
+
+**The pull-outcome tracker (the same shared `makeOutcomeTracker` machinery every LifeLenz/QSRSoft
+pull uses, with its own pre-existing 25% per-store data-loss threshold) correctly marked this run
+as a failure — 27/28 stores saved less than 25% of what was parsed.** This is NOT a bug to silence
+or a threshold to loosen: it is the tracker doing exactly its job, refusing to call a run "clean"
+when ~87% of the real data it pulled was just discarded as a key collision. Making this run report
+"success" by adjusting the threshold, skipping the check, or otherwise suppressing the signal would
+hide a real, now-confirmed data-completeness problem, not fix one — not done here.
+
+**Where this actually stands:** the pull is now operationally healthy (fast, no timeout, no
+total-zero failures, honest accounting), but the TABLE's data is very likely incomplete under the
+current schema — `(loc,geid,pay_period_start)` almost certainly is not this report's real unique
+key. Closing that gap needs a real schema decision (which extra column distinguishes the ~7-8
+colliding rows per key — a live GetReportMeta-plus-row-inspection question, requiring
+`LIFELENZ_TOKEN` access no agent session has had so far) and is the owner's call, not something to
+resolve by further guessing in this script. Until that happens, this table should be treated as
+a partial/representative sample (whichever row each key's dedup happened to keep last), not a
+complete payroll record, for task #85's overtime-correlation work.
