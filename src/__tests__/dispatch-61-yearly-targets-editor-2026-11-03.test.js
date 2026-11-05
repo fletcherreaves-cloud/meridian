@@ -21,6 +21,13 @@ const saveYearlyTargets = vi.fn(() => Promise.resolve({ saved: 1, errors: [] }))
 vi.mock('../lib/supabase.js', () => ({
   loadDailySales: () => Promise.resolve([]),
   saveYearlyTargets: (...args) => saveYearlyTargets(...args),
+  // Task #93 (2026-11-05) -- TargetCategoriesView now loads custom-metric targets unconditionally
+  // on mount (Targets Editor Tier 2). Same "add a default empty resolve here" rule this repo's
+  // other panel-render tests already follow for a new unmocked dependency -- a stale mock here
+  // would throw "loadCustomMetricTargets is not a function" on every test in this file, not just
+  // skip the new feature.
+  loadCustomMetricTargets: () => Promise.resolve({}),
+  saveCustomMetricTarget: () => Promise.resolve({ saved: true }),
 }));
 
 const { YearlyProjectionsPanel } = await import('../views/yearly-projections.js');

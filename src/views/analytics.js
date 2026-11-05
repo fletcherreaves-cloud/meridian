@@ -23,7 +23,8 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, saveMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote, saveRecommendation, updateRecommendationOutcome } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, saveMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage, loadDataCompletenessIncidents, loadQsrActSummary, loadSalesLedger, addCoachingCycleNote, saveRecommendation, updateRecommendationOutcome, loadCustomMetricTargets, saveCustomMetricTarget } from '../lib/supabase.js';
+import { PERFORMER_METRICS } from '../engine/top-bottom-performers.js';
 import { dedupeKeyFor, outcomeDueAtForMonth, gradeOutcome } from '../engine/recommendation-ledger.js';
 import { COACHING_METRICS, openCoachingCycles } from '../engine/coaching-loop.js';
 import { detectAropJumps } from '../engine/pay-events.js';
@@ -8517,6 +8518,19 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const [sheetGroup,   setSheetGroup]   = useState('');
   const [sheetLoading, setSheetLoading] = useState(false);
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false); // "Customize Fields" editor
+  // Task #93 (owner-requested 2026-11-05) -- Targets Editor Tier 2: a genuinely NEW metric, with
+  // no existing monthly_targets column, added via the Customize editor's "+ Add a metric" picker
+  // and stored in its own custom_metric_targets table (schema-custom-metric-targets.sql). Loaded
+  // once per panel mount, independent of selPeriod -- the table carries its own period_type per
+  // row, not a single-period snapshot like monthly_targets.
+  const [customMetricTargets, setCustomMetricTargets] = useState({});
+  useEffect(() => { loadCustomMetricTargets().then(setCustomMetricTargets); }, []);
+  const customFieldDefs = useMemo(() => (settings?.monthlyTargetConfig?.customMetrics || []).map(cm => ({
+    g: 'Custom Metrics', key: cm.id, l: cm.label,
+    fmt: v => v != null ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—',
+    kind: 'num',
+  })), [settings?.monthlyTargetConfig?.customMetrics]);
+  const customFieldKeySet = useMemo(() => new Set(customFieldDefs.map(f => f.key)), [customFieldDefs]);
 
   // Load available periods on mount
   useEffect(()=>{
@@ -8565,18 +8579,39 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const [edits, setEdits] = useState({});
   useEffect(() => { setEdits({}); }, [selPeriod]);
   const mt = useMemo(() => {
-    if (!Object.keys(edits).length) return mt0;
-    const merged = {...mt0};
+    // Task #93 -- fold each custom metric's own-table value into the SAME per-loc row shape
+    // mt0 already uses, under its key (`cm.id`), so every downstream reader (EditableProjCell's
+    // `t[f.key]`, rollupProj, the print exports) needs zero changes to pick it up.
+    let merged = mt0;
+    if (customFieldDefs.length) {
+      merged = {...mt0};
+      for (const loc of Object.keys(customMetricTargets)) {
+        const cmRow = customMetricTargets[loc] || {};
+        const patch = {};
+        for (const cf of customFieldDefs) {
+          const v = cmRow[cf.key]?.monthly;
+          if (v != null) patch[cf.key] = v;
+        }
+        if (Object.keys(patch).length) merged[loc] = {...(merged[loc]||{}), ...patch};
+      }
+    }
+    if (!Object.keys(edits).length) return merged;
+    merged = merged === mt0 ? {...mt0} : merged;
     for (const loc of Object.keys(edits)) merged[loc] = {...(merged[loc]||{}), ...edits[loc]};
     return merged;
-  }, [mt0, edits]);
+  }, [mt0, edits, customMetricTargets, customFieldDefs]);
   // Commits one field for one store: optimistic local state, then persists the WHOLE current
   // row (saveMonthlyTargets upserts a full row per loc/year/month, so a partial object would
   // null out every other column) -- fire-and-forget, same convention as every other inline-edit
-  // cell in the app.
+  // cell in the app. A custom metric (task #93) has no column in monthly_targets at all -- its
+  // own table is a single-field upsert, keyed by period_type:'monthly'.
   const handleSaveProjField = (loc, fieldKey, value) => {
     if (!selPeriod) return; // no known year/month to save against -- nothing to do yet
     setEdits(prev => ({...prev, [loc]: {...(prev[loc]||{}), [fieldKey]: value}}));
+    if (customFieldKeySet.has(fieldKey)) {
+      saveCustomMetricTarget(loc, fieldKey, 'monthly', value).catch(()=>{});
+      return;
+    }
     const fullRow = {...(mt[loc]||{}), [fieldKey]: value};
     saveMonthlyTargets({[loc]: fullRow}, selPeriod.year, selPeriod.month).catch(()=>{});
     // Recommendation Accuracy Ledger (task #80 follow-on) -- classify this save against
@@ -8716,14 +8751,17 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const showProjService    = settings?.showProjService    !== false;
   const showProjBonusLabor = settings?.showProjBonusLabor !== false;
   const showProjBonusFood  = settings?.showProjBonusFood  !== false;
-  const LEGACY_VISIBLE_FIELDS = PROJ_FIELDS.filter(f =>
+  const LEGACY_VISIBLE_FIELDS = PROJ_FIELDS.concat(customFieldDefs).filter(f =>
     (f.g!=='Service' || showProjService) &&
     (f.key!=='tBonusLabor' || showProjBonusLabor) &&
     (f.key!=='tFOBBonusBase' || showProjBonusFood));
   // Target field customization (owner-requested 2026-11-04) -- layered ON TOP of the legacy
   // show/hide toggles above, never replacing them: those three stay the fast on/off chips they
   // already were, while settings.monthlyTargetConfig (set via the "⚙️ Customize" editor below)
-  // handles hide/relabel/regroup for any field, including the three legacy-toggled ones.
+  // handles hide/relabel/regroup for any field, including the three legacy-toggled ones AND any
+  // Tier 2 custom metric (task #93) now concatenated in above -- applyFieldConfig treats a custom
+  // field's id exactly like a built-in one, so hide/rename/regroup apply uniformly with zero
+  // special-casing here.
   const VISIBLE_FIELDS = applyFieldConfig(LEGACY_VISIBLE_FIELDS, settings?.monthlyTargetConfig);
 
   // Build column group spans
@@ -9093,6 +9131,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       title: 'Customize Monthly Target Fields',
       fields: PROJ_FIELDS.map(f=>({id:f.key, label:f.l, group:f.g, groupLabel:f.g})),
       config: settings?.monthlyTargetConfig,
+      customMetricOptions: PERFORMER_METRICS,
       onClose: ()=>setFieldConfigOpen(false),
       onSave: (cfg)=>onUpdateSettings&&onUpdateSettings({...settings, monthlyTargetConfig:cfg}),
     })

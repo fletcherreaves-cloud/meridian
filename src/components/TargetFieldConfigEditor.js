@@ -8,6 +8,17 @@
 // supported by that engine but not exposed here -- hide/relabel/regroup already covers the
 // owner's literal ask without the extra UI weight (and risk) of drag-and-drop reordering.
 // See memory/plan-target-field-customization-2026-11-04.md for the full design.
+//
+// Tier 2 (owner-requested 2026-11-05, task #93) -- "add or remove metrics", not just hide/
+// relabel/regroup the EXISTING ones. `config.customMetrics`: [{id, label, group}], the as-added
+// identity of each genuinely new metric (same role `fields` plays for built-ins) -- separate from
+// `config.fields`/`config.groups`, which still carry any later hide/rename/regroup drafts for a
+// custom metric exactly like they do for a built-in one (a custom field's id is just another id
+// once added, so the entire existing per-row UI below -- checkbox/label/category dropdown --
+// applies to it unmodified). `customMetricOptions`: [{key,label}] the owner can pick a new metric
+// FROM (engine/top-bottom-performers.js's PERFORMER_METRICS at both real call sites) -- omitted
+// or empty hides the "+ Add a metric" section entirely, so this component stays usable anywhere
+// Tier 1 alone is wanted.
 import React from 'react';
 import { ModalShell } from './ModalShell.js';
 
@@ -21,41 +32,65 @@ const opt = (p, ...c) => h('option', p, ...c);
 const { useState } = React;
 
 const NEW_GROUP_SENTINEL = '__tfc_new__';
+const CUSTOM_METRIC_GROUP = 'Custom Metrics';
 
 // `fields`: [{id, label, group, groupLabel}] -- id/label/group are the ORIGINAL (unconfigured)
 // identity; groupLabel is that group's own display label (same as `group` for Monthly, whose
-// groups have no separate key/label split). `config`: the existing {fields,groups} object this
-// field set already carries, or null/undefined for "never customized".
-export function TargetFieldConfigEditor({ title, subtitle, fields, config, onSave, onClose }) {
+// groups have no separate key/label split). `config`: the existing {fields,groups,customMetrics}
+// object this field set already carries, or null/undefined for "never customized".
+export function TargetFieldConfigEditor({ title, subtitle, fields, config, customMetricOptions, onSave, onClose }) {
   const [draft, setDraft] = useState(() => ({
     fields: Object.fromEntries(Object.entries(config?.fields || {}).map(([k, v]) => [k, { ...v }])),
     groups: Object.fromEntries(Object.entries(config?.groups || {}).map(([k, v]) => [k, { ...v }])),
+    customMetrics: (config?.customMetrics || []).map(cm => ({ ...cm })),
   }));
   // Fields currently showing a free-text "new category" input instead of the group dropdown.
   const [typingGroupFor, setTypingGroupFor] = useState({});
+  const [addMetricKey, setAddMetricKey] = useState('');
 
   const fc = (id) => draft.fields[id] || {};
   const setField = (id, patch) => setDraft(d => ({ ...d, fields: { ...d.fields, [id]: { ...d.fields[id], ...patch } } }));
   const setGroupLabel = (origGroup, lbl) => setDraft(d => ({ ...d, groups: { ...d.groups, [origGroup]: { ...d.groups[origGroup], label: lbl || undefined } } }));
 
+  // allFields = the built-ins this field set has always had, PLUS whatever custom metrics this
+  // session's draft currently holds (freshly added ones included) -- synthesized into the SAME
+  // {id,label,group,groupLabel} shape so every bit of logic below (origGroups/byGroup/the row
+  // renderer) treats a custom metric exactly like a built-in one, with zero branching.
+  const allFields = fields.concat(draft.customMetrics.map(cm => ({ id: cm.id, label: cm.label, group: cm.group || CUSTOM_METRIC_GROUP, groupLabel: cm.group || CUSTOM_METRIC_GROUP, isCustom: true })));
+
   // Original groups, first-seen order -- each always gets a rename box, even if every one of
   // its fields has since been moved elsewhere (a field can always move back).
   const origGroups = [];
-  fields.forEach(f => { if (!origGroups.includes(f.group)) origGroups.push(f.group); });
-  const origGroupLabel = (g) => (fields.find(f => f.group === g) || {}).groupLabel || g;
+  allFields.forEach(f => { if (!origGroups.includes(f.group)) origGroups.push(f.group); });
+  const origGroupLabel = (g) => (allFields.find(f => f.group === g) || {}).groupLabel || g;
   const displayLabel = (g) => (draft.groups[g] && draft.groups[g].label) || origGroupLabel(g);
 
   // Live effective grouping, reflecting every draft override, so the owner sees the real
   // resulting layout (same grouping applyFieldConfig/applyCategoryConfig would produce).
   const byGroup = {};
   const groupOrder = [];
-  fields.forEach(f => {
+  allFields.forEach(f => {
     const g = fc(f.id).group || f.group;
     if (!(g in byGroup)) { byGroup[g] = []; groupOrder.push(g); }
     byGroup[g].push(f);
   });
 
-  const reset = () => { setDraft({ fields: {}, groups: {} }); setTypingGroupFor({}); };
+  const addedIds = new Set(allFields.map(f => f.id));
+  const availableToAdd = (customMetricOptions || []).filter(m => !addedIds.has(m.key));
+
+  const addMetric = () => {
+    const m = availableToAdd.find(m => m.key === addMetricKey) || availableToAdd[0];
+    if (!m) return;
+    setDraft(d => ({ ...d, customMetrics: [...d.customMetrics, { id: m.key, label: m.label, group: CUSTOM_METRIC_GROUP }] }));
+    setAddMetricKey('');
+  };
+  const removeCustomMetric = (id) => setDraft(d => ({
+    ...d,
+    customMetrics: d.customMetrics.filter(cm => cm.id !== id),
+    fields: Object.fromEntries(Object.entries(d.fields).filter(([k]) => k !== id)), // drop any hide/rename/regroup draft on it too
+  }));
+
+  const reset = () => { setDraft({ fields: {}, groups: {}, customMetrics: [] }); setTypingGroupFor({}); };
 
   const save = () => {
     const cleanFields = {};
@@ -72,7 +107,8 @@ export function TargetFieldConfigEditor({ title, subtitle, fields, config, onSav
     }
     const hasFields = Object.keys(cleanFields).length > 0;
     const hasGroups = Object.keys(cleanGroups).length > 0;
-    onSave(hasFields || hasGroups ? { fields: cleanFields, groups: cleanGroups } : null);
+    const hasCustomMetrics = draft.customMetrics.length > 0;
+    onSave(hasFields || hasGroups || hasCustomMetrics ? { fields: cleanFields, groups: cleanGroups, customMetrics: draft.customMetrics } : null);
     onClose();
   };
 
@@ -134,9 +170,25 @@ export function TargetFieldConfigEditor({ title, subtitle, fields, config, onSav
                   !knownOptions.some(o => o.key === curGroup) && opt({ key: curGroup, value: curGroup }, curGroup + ' (new)'),
                   opt({ value: NEW_GROUP_SENTINEL }, '+ New category…'),
                 ),
+            f.isCustom && btn({
+              onClick: () => removeCustomMetric(f.id), title: 'Remove this custom metric entirely',
+              style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' },
+            }, '✕'),
           );
         }),
       )),
+      customMetricOptions && customMetricOptions.length > 0 && div({ style: { border: '1px dashed var(--bdr)', borderRadius: 8, padding: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+        span({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', flexShrink: 0 } }, '+ Add a metric'),
+        availableToAdd.length > 0
+          ? [
+              sel({
+                key: 'pick', value: addMetricKey || availableToAdd[0].key, onChange: e => setAddMetricKey(e.target.value),
+                style: { fontSize: 11, width: 200, background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 4, padding: '3px 6px', color: 'var(--text)' },
+              }, ...availableToAdd.map(m => opt({ key: m.key, value: m.key }, m.label))),
+              btn({ key: 'add', onClick: addMetric, className: 'btn btn-sm' }, 'Add'),
+            ]
+          : span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Every available metric is already on this grid.'),
+      ),
     ),
   );
 }

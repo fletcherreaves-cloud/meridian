@@ -20,7 +20,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // yearly-projections.js's Sales Pace view calls loadDailySales() from src/lib/supabase.js on
 // mount -- stub it so the render never touches a real (or even mocked) supabase client. The
 // Target Categories view under test reads ds directly, not this loader.
-vi.mock('../lib/supabase.js', () => ({ loadDailySales: () => Promise.resolve([]) }));
+// loadCustomMetricTargets (task #93, 2026-11-05) -- TargetCategoriesView now loads this
+// unconditionally on mount too (Targets Editor Tier 2); same "add a default empty resolve"
+// rule as loadDailySales above -- a stale mock here would throw on every test in this file.
+vi.mock('../lib/supabase.js', () => ({ loadDailySales: () => Promise.resolve([]), loadCustomMetricTargets: () => Promise.resolve({}) }));
 
 const { YearlyProjectionsPanel } = await import('../views/yearly-projections.js');
 

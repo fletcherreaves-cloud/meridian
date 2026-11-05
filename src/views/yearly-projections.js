@@ -18,10 +18,11 @@
 //     — this panel previously never displayed it at all (owner-reported gap).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
-import { loadDailySales, saveYearlyTargets } from '../lib/supabase.js';
+import { loadDailySales, saveYearlyTargets, loadCustomMetricTargets, saveCustomMetricTarget } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
 import { applyCategoryConfig } from '../engine/target-field-config.js';
 import { TargetFieldConfigEditor } from '../components/TargetFieldConfigEditor.js';
+import { PERFORMER_METRICS } from '../engine/top-bottom-performers.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -311,7 +312,22 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   // categories on monthly and yearly." applyCategoryConfig flattens/reapplies/regroups
   // YEARLY_CATS into the exact same {key,label,icon,fields} shape every consumer below already
   // expects, so this is a drop-in replacement, not a new shape to learn.
-  const CATS = useMemo(() => applyCategoryConfig(YEARLY_CATS, settings?.yearlyTargetConfig), [settings?.yearlyTargetConfig]);
+  // Task #93 (owner-requested 2026-11-05) -- Targets Editor Tier 2: a genuinely NEW metric, with
+  // no existing yearly_targets column, added via the Customize editor's "+ Add a metric" picker
+  // and stored in its own custom_metric_targets table (schema-custom-metric-targets.sql). Folded
+  // in as one extra synthetic category ('Custom Metrics') BEFORE applyCategoryConfig runs, so a
+  // custom field's hide/rename/regroup (into any real category) flows through the exact same
+  // engine as every built-in field -- no special-casing in applyCategoryConfig itself.
+  const [customMetricTargets, setCustomMetricTargets] = useState({});
+  useEffect(() => { loadCustomMetricTargets().then(setCustomMetricTargets); }, []);
+  const customFieldDefs = useMemo(() => (settings?.yearlyTargetConfig?.customMetrics || []).map(cm => ({
+    k: cm.id, l: cm.label, fmt: numFmt(2), agg: 'avg', kind: 'num',
+  })), [settings?.yearlyTargetConfig?.customMetrics]);
+  const customFieldKeySet = useMemo(() => new Set(customFieldDefs.map(f => f.k)), [customFieldDefs]);
+  const YEARLY_CATS_WITH_CUSTOM = useMemo(() => customFieldDefs.length
+    ? [...YEARLY_CATS, { key: 'custom', label: 'Custom Metrics', icon: '➕', fields: customFieldDefs }]
+    : YEARLY_CATS, [customFieldDefs]);
+  const CATS = useMemo(() => applyCategoryConfig(YEARLY_CATS_WITH_CUSTOM, settings?.yearlyTargetConfig), [YEARLY_CATS_WITH_CUSTOM, settings?.yearlyTargetConfig]);
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false);
   const [cat, setCat] = useState(CATS[0].key);
   // Task #61 (owner request 2026-11-03) -- in-app edits, layered over the cloud-loaded/session
@@ -328,8 +344,22 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
     for (const loc of new Set([...Object.keys(fromCloud), ...Object.keys(fromSession)])) {
       merged[loc] = { ...(fromCloud[loc] || {}), ...(fromSession[loc] || {}) };
     }
+    // Task #93 -- fold each custom metric's own-table value (period_type:'yearly') into the same
+    // per-loc row shape every built-in field already uses, so catAgg/EditableTargetCell/rows'
+    // membership test all pick it up with zero changes.
+    if (customFieldDefs.length) {
+      for (const loc of Object.keys(customMetricTargets)) {
+        const cmRow = customMetricTargets[loc] || {};
+        const patch = {};
+        for (const cf of customFieldDefs) {
+          const v = cmRow[cf.k]?.yearly;
+          if (v != null) patch[cf.k] = v;
+        }
+        if (Object.keys(patch).length) merged[loc] = { ...(merged[loc] || {}), ...patch };
+      }
+    }
     return merged;
-  }, [ds, year, thisYear]);
+  }, [ds, year, thisYear, customMetricTargets, customFieldDefs]);
 
   // effectiveByLoc is what the table actually renders from -- byLoc with any in-app edits this
   // session applied on top, so a saved cell reflects the new value immediately without waiting
@@ -366,6 +396,12 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   // as its own error UI.
   const handleSaveField = (loc, fieldKey, value) => {
     setEdits(prev => ({ ...prev, [loc]: { ...(prev[loc] || {}), [fieldKey]: value } }));
+    // Task #93 -- a custom metric (no column in yearly_targets) saves to its own table instead,
+    // one field at a time, same shape saveDaypartTpphTarget already established.
+    if (customFieldKeySet.has(fieldKey)) {
+      saveCustomMetricTarget(loc, fieldKey, 'yearly', value).catch(() => {});
+      return;
+    }
     const fullRow = { ...(effectiveByLoc[loc] || {}), [fieldKey]: value };
     saveYearlyTargets({ [loc]: fullRow }, year, 'override').catch(() => {});
   };
@@ -419,6 +455,7 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
       title: 'Customize Yearly Target Categories',
       fields: YEARLY_CATS.flatMap(c => c.fields.map(f => ({ id: f.k, label: f.l, group: c.key, groupLabel: c.label }))),
       config: settings?.yearlyTargetConfig,
+      customMetricOptions: PERFORMER_METRICS,
       onClose: () => setFieldConfigOpen(false),
       onSave: (cfg) => onUpdateSettings && onUpdateSettings({ ...settings, yearlyTargetConfig: cfg }),
     })

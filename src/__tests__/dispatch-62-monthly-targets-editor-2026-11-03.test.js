@@ -31,6 +31,9 @@ vi.mock('../lib/supabase.js', async (importOriginal) => {
     saveMonthlyTargets: (...args) => saveMonthlyTargets(...args),
     listMonthlyTargetPeriods: () => Promise.resolve([]),
     loadMonthlyTargets: () => Promise.resolve({}),
+    // Task #93 (2026-11-05) -- same determinism reason as the three overrides above: the real
+    // loadCustomMetricTargets would otherwise hit this test environment's real Supabase config.
+    loadCustomMetricTargets: () => Promise.resolve({}),
   };
 });
 
