@@ -79,10 +79,16 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
       const last = series[series.length - 1];
       for (const step of steps) {
         const impact = payImpact(step.delta, step.hoursAtNewRate); // this person's OWN measured hours that week
+        // Owner-caught 2026-11-05: a step isn't fully OT-clean unless BOTH ends of it are a real
+        // straight-time rate -- a blended end (pre-migration data, or a 100%-OT week on either
+        // side) means this delta could still be partly an OT-mix swing, not a real rate change.
+        const rateBasis = (step.fromRateBasis === 'straight-time' && step.toRateBasis === 'straight-time')
+          ? 'straight-time' : 'blended — verify';
         out.push({
           source: 'crew', personKey: employmentId, loc: last?.loc, name: last?.name || `Employee #${employmentId}`,
           jobTitle: null, effectiveDate: step.weekStart, fromRate: step.fromRate, toRate: step.toRate, delta: step.delta,
           weeklyImpact: impact.weeklyDollarImpact, annualizedImpact: impact.annualizedDollarImpact, hoursBasis: 'measured',
+          rateBasis,
         });
       }
     }
@@ -97,6 +103,9 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
         source: 'management', personKey: c.personKey, loc: c.loc, name: c.name || `Employee #${c.personKey}`,
         jobTitle: c.jobTitle, effectiveDate: c.effectiveDate, fromRate: c.fromRate, toRate: c.toRate, delta: c.delta,
         weeklyImpact: impact.weeklyDollarImpact, annualizedImpact: impact.annualizedDollarImpact, hoursBasis: 'assumed',
+        // A logged posted rate (employee_pay_rate_changes), never earnings-derived -- not
+        // subject to the crew-side OT-blending bug at all.
+        rateBasis: 'straight-time',
       };
     });
   }, [ds?.employeePayRateChanges]);
@@ -204,7 +213,7 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
           : div({ style: { overflowX: 'auto' } },
             h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', minWidth: 820 } },
               h('thead', null, h('tr', null,
-                ...['Store', 'Employee', 'Role', 'Effective', 'Rate', 'Δ', 'Weekly $', 'Annualized $', 'Hours basis'].map((l, i) =>
+                ...['Store', 'Employee', 'Role', 'Effective', 'Rate', 'Δ', 'Weekly $', 'Annualized $', 'Hours basis', 'Rate basis'].map((l, i) =>
                   th({ key: i, style: { textAlign: i > 2 ? 'right' : 'left', fontSize: '8px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px', padding: '4px 8px', borderBottom: '.5px solid var(--bdr)' } }, l)))),
               h('tbody', null, ...allChanges.map((c, i) => tr({ key: c.source + c.personKey + c.effectiveDate, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
                 td({ style: { padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(c.loc) || c.loc || '—'),
@@ -216,11 +225,14 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, money(c.weeklyImpact)),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--amber)' } }, moneyRound(c.annualizedImpact)),
                 td({ style: { padding: '5px 8px', textAlign: 'right', fontSize: '8px', color: 'var(--text3)' } }, c.hoursBasis === 'measured' ? 'measured' : 'assumed 40h/wk'),
+                td({ style: { padding: '5px 8px', textAlign: 'right', fontSize: '8px', color: c.rateBasis === 'straight-time' ? 'var(--text3)' : '#f59e0b', fontWeight: c.rateBasis === 'straight-time' ? 400 : 700 }, title: c.rateBasis === 'straight-time' ? 'Base rate only — overtime (paid at 1.5x) excluded from this comparison.' : 'May include an overtime-mix swing, not a clean before/after base-rate comparison — confirm against a pay stub before acting on this row.' }, c.rateBasis === 'straight-time' ? 'straight-time' : '⚠ blended'),
               ))),
             ),
           ),
         div({ style: { marginTop: 12, fontSize: '8.5px', color: 'var(--text3)', lineHeight: 1.6 } },
-          '⚠ Management impact assumes a standard ' + ASSUMED_MANAGEMENT_WEEKLY_HOURS + '-hr week (no measured hours source exists for that population) — flagged, not measured. Crew impact uses that employee\'s own real hours the week the new rate took effect.'),
+          '⚠ Management impact assumes a standard ' + ASSUMED_MANAGEMENT_WEEKLY_HOURS + '-hr week (no measured hours source exists for that population) — flagged, not measured. Crew impact uses that employee\'s own real hours the week the new rate took effect. ',
+          'Crew rates now exclude overtime pay (paid at 1.5x) from the comparison wherever LifeLenz tags a shift segment ',
+          '‘overtime’ — a "⚠ blended" Rate basis means that data isn\'t available for this row yet (older data, or the one-time schema update is still pending) and the rate may include an OT-mix swing rather than a clean base-rate change.'),
       ),
     ),
   );

@@ -182,6 +182,33 @@ describe('lifelenz-shift-jobs — shiftsForEmployeeSchedule (per-shift, dispatch
     expect(e1first.earnings / (e1first.seconds / 3600)).toBeCloseTo(15, 6);
   });
 
+  // Owner-caught 2026-11-05 (real wage-accuracy bug): the blended earnings/seconds above mixes
+  // straight pay with overtime pay, and overtime is legally/factually paid at 1.5x -- a week
+  // with OT would otherwise push Pay Rate History's derived $/hr above the employee's real base
+  // rate by however much OT that week happened to carry. These guard the regular/overtime split
+  // that makes a clean straight-time rate possible.
+  it('splits a mixed-payType shift into regEarnings/regSeconds (straight) and otEarnings/otSeconds (overtime)', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    const e2 = rows.find(r => r.employmentId === 'E2');
+    // GB segment ($15/3600s, payType:'regular') + GR segment ($52.5/12600s, payType:'overtime').
+    expect(e2.regEarnings).toBeCloseTo(15, 6);
+    expect(e2.regSeconds).toBe(3600);
+    expect(e2.otEarnings).toBeCloseTo(52.5, 6);
+    expect(e2.otSeconds).toBe(12600);
+    // The blended total is unchanged by the split -- still sums to the whole shift.
+    expect(e2.regEarnings + e2.otEarnings).toBeCloseTo(e2.earnings, 6);
+    expect(e2.regSeconds + e2.otSeconds).toBe(e2.seconds);
+  });
+
+  it('an all-regular shift has otEarnings/otSeconds at 0, not undefined', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    const e1first = rows.find(r => r.employmentId === 'E1' && r.date === '2026-08-25');
+    expect(e1first.otEarnings).toBe(0);
+    expect(e1first.otSeconds).toBe(0);
+    expect(e1first.regEarnings).toBeCloseTo(97.5, 6);
+    expect(e1first.regSeconds).toBe(23400);
+  });
+
   it('a segment with null earnings/seconds contributes 0, not NaN/undefined (_committed still requires a non-empty pivotMetrics array)', () => {
     const nullMetrics = { edges: [
       { node: { assignedEmploymentId: 'E9', shiftType: 'roster', scheduleId: SCH,

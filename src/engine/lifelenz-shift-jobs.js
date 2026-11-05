@@ -212,6 +212,27 @@ export function shiftsForEmployeeSchedule(shifts, opts = {}) {
     // row (dispatch #125's reversal of the earlier tokenized-name design).
     const earnings = pm.reduce((s, x) => s + _n(x && x.earnings), 0);
     const seconds = pm.reduce((s, x) => s + _n(x && x.seconds), 0);
+    // Regular/overtime split (owner-caught 2026-11-05, real wage-accuracy bug): `earnings`/
+    // `seconds` above blend together segments at straight pay AND segments LifeLenz itself
+    // marks `payType:'overtime'` -- and overtime dollars are legally and factually paid at
+    // 1.5x, not the employee's base rate (measured directly against real
+    // lifelenz_payroll_readiness rows 2026-11-05: overtime_earnings/overtime_hours consistently
+    // equals 1.5x regular_earnings/regular_hours, exact ratio, across every real OT row
+    // sampled -- not an assumption). A week with ANY overtime therefore pushes this blended
+    // earnings/seconds rate ABOVE the employee's real base rate by however much OT that week
+    // happened to carry -- contaminating Pay Rate History's rate-change detection (a pure
+    // OT-mix swing can look like a raise or a cut) and its $ impact math, with no way to
+    // separate the two once blended. Split here, at the one place both numbers are still
+    // attached to a real payType per segment (same `seg.payType==='overtime'` check
+    // rollupShiftsByRole/rollupShiftsByEmployee above already use) -- callers get a strictly
+    // more precise straight-time rate (regEarnings/regSeconds) for free, whether or not this
+    // particular GraphQL field already bakes the 1.5x in itself.
+    let regEarnings = 0, regSeconds = 0, otEarnings = 0, otSeconds = 0;
+    for (const x of pm) {
+      if (!x) continue;
+      if (x.payType === 'overtime') { otEarnings += _n(x.earnings); otSeconds += _n(x.seconds); }
+      else { regEarnings += _n(x.earnings); regSeconds += _n(x.seconds); }
+    }
     out.push({
       employmentId: eid,
       name: info.computedName || info.name || null,
@@ -227,6 +248,7 @@ export function shiftsForEmployeeSchedule(shifts, opts = {}) {
       code: meta ? meta.code : null,
       isAbsent: !!nd.isAbsent,
       earnings, seconds,
+      regEarnings, regSeconds, otEarnings, otSeconds,
     });
   }
   return out.sort((a, b) => a.startISO.localeCompare(b.startISO));

@@ -98,6 +98,56 @@ describe('PayRateHistoryPanel', () => {
     expect(container.textContent).toContain('measured');
   });
 
+  // Owner-caught 2026-11-05 (real wage-accuracy bug): overtime is paid at 1.5x, not the
+  // employee's base rate -- a week with OT should report the STRAIGHT-TIME rate, not an
+  // OT-inflated blended one, and the panel should say so plainly ("straight-time" vs "⚠ blended").
+  it('a crew week with overtime reports the straight-time rate (not the OT-inflated blended rate) and flags it clearly', async () => {
+    _shiftAssignments = [
+      { loc: '0010422', shiftId: 's1', date: '2026-08-03', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+      { loc: '0010422', shiftId: 's2', date: '2026-08-10', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+    ];
+    _shiftPay = [
+      // Week 1: clean 4h @ $15 straight time, no OT.
+      { loc: '0010422', shiftId: 's1', earnings: 60, seconds: 14400, regEarnings: 60, regSeconds: 14400, otEarnings: 0, otSeconds: 0 },
+      // Week 2: SAME $15 base rate -- but 6h regular ($90) + 2h overtime @ $22.50 (1.5x $15, $45).
+      // Blended would read $16.875/hr (a false "raise"); straight-time correctly reads $15/hr flat.
+      { loc: '0010422', shiftId: 's2', earnings: 135, seconds: 28800, regEarnings: 90, regSeconds: 21600, otEarnings: 45, otSeconds: 7200 },
+    ];
+    ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
+    expect(container.textContent).toContain('No pay-rate changes detected in this window.');
+  });
+
+  it('a real rate CHANGE alongside overtime is still detected correctly via the straight-time rate', async () => {
+    _shiftAssignments = [
+      { loc: '0010422', shiftId: 's1', date: '2026-08-03', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+      { loc: '0010422', shiftId: 's2', date: '2026-08-10', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+    ];
+    _shiftPay = [
+      { loc: '0010422', shiftId: 's1', earnings: 60, seconds: 14400, regEarnings: 60, regSeconds: 14400, otEarnings: 0, otSeconds: 0 }, // $15/hr straight
+      // A real $2.50 raise to $17.50, same week also carrying 2h OT @ $26.25 (1.5x $17.50) --
+      // blended would read even higher than $17.50 and obscure the clean step size.
+      { loc: '0010422', shiftId: 's2', earnings: 157.5, seconds: 28800, regEarnings: 105, regSeconds: 21600, otEarnings: 52.5, otSeconds: 7200 },
+    ];
+    ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
+    expect(container.textContent).toContain('1 change detected');
+    expect(container.textContent).toContain('$15.00 → $17.50'); // the real straight-time step, not an OT-inflated figure
+    expect(container.textContent).toContain('straight-time');
+  });
+
+  it('pre-split data (no OT columns persisted yet) still works and is flagged "⚠ blended" rather than silently presented as clean', async () => {
+    _shiftAssignments = [
+      { loc: '0010422', shiftId: 's1', date: '2026-08-03', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+      { loc: '0010422', shiftId: 's2', date: '2026-08-10', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
+    ];
+    _shiftPay = [
+      { loc: '0010422', shiftId: 's1', earnings: 60, seconds: 14400 }, // no regEarnings/regSeconds/otEarnings/otSeconds at all
+      { loc: '0010422', shiftId: 's2', earnings: 70, seconds: 14400 },
+    ];
+    ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
+    expect(container.textContent).toContain('1 change detected');
+    expect(container.textContent).toContain('⚠ blended');
+  });
+
   it('a crew shift with no matching pay row contributes nothing -- no fabricated step', async () => {
     _shiftAssignments = [
       { loc: '0010422', shiftId: 'missing', date: '2026-08-03', assignedEmploymentId: 'E1', employeeName: 'A Crew' },
