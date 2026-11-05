@@ -22,7 +22,7 @@ import { fobDailyTrace, biggestJumpDay } from '../engine/variance-trace.js';
 import { computeStoreDataDiscipline } from '../engine/waste-discipline.js';
 import { scanAllPairs } from '../engine/signal-registry.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
+import { computeLaborGapSplit, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DAY } from '../engine/labor-gap-split.js';
 import { overnightOpenness, overnightExcessByStore } from '../engine/labor-standard.js';
 import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -392,7 +392,7 @@ function slotStartLabel(hourSlot) {
   return hh + ampm;
 }
 
-export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
+export function LaborCockpitTab({ store, ds, onCoachingSaved, settings }) {
   const loc = String(store.loc), t = store.t || {};
 
   // Planning-vs-execution split (labor-gap-split.js) — Wed-Tue PAY week, the engine's own
@@ -487,16 +487,29 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
   if (!curWeek) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'No complete pay week of DAR data yet for this store — the planning-vs-execution split needs at least one full Wed–Tue week.');
 
   const planGap = curWeek.planningGapHrs, execGap = curWeek.executionGapHrs;
-  const planAbs = planGap != null ? Math.abs(planGap) : null, execAbs = execGap != null ? Math.abs(execGap) : null;
+  // Threshold-gated classification (labor-gap-split.js's laborCoachVerdict) — settable per
+  // tenant via Settings > Labor % Thresholds (DEF_SETTINGS.laborCoachHrsPerDay, default the
+  // owner's ±10 hrs/day rule of thumb). See that file's comment for the full reasoning.
+  const hrsPerDay = (settings && settings.laborCoachHrsPerDay != null) ? settings.laborCoachHrsPerDay : DEFAULT_LABOR_COACH_HRS_PER_DAY;
+  const verdict = laborCoachVerdict({ planGap, execGap, days: curWeek.days, hrsPerDay });
   let verdictText, whyText;
-  if (planAbs != null && execAbs != null) {
-    const planLeads = planAbs >= execAbs;
-    verdictText = planLeads
-      ? span(null, 'The ', h('b', { style: { color: 'var(--amber)' } }, 'schedule'), ', not the shift — Needed→Scheduled gap is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ' (planning), Scheduled→Actual is only ', h('b', null, execAbs.toFixed(1) + ' hrs'), ' (execution is close to plan).')
-      : span(null, h('b', { style: { color: 'var(--amber)' } }, 'Execution'), ', not the schedule — Scheduled→Actual gap is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), ' (execution), Needed→Scheduled is only ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' (the schedule itself tracks the guide).');
-    whyText = planLeads
-      ? (planGap < 0 ? 'The schedule itself was written short of the guide before the week started — the shortfall was built in, not lost at the punch. Fix the guide/scheduler, not the shift managers.' : 'The schedule itself was written over the guide before the week started — review the scheduler’s build against the guide.')
-      : (execGap < 0 ? 'The store is running under its own written schedule — shifts are cutting early or not filling. Coach the shift managers on running the plan as written.' : 'The store is running over its own written schedule — extensions or early clock-ins are adding hours the schedule didn’t call for. Coach the shift managers on holding the plan.');
+  if (verdict) {
+    const { state, planAbs, execAbs, thresholdHrs } = verdict;
+    const bandTxt = hrsPerDay + ' hrs/day · ' + thresholdHrs.toFixed(0) + ' hrs/week band';
+    if (state === 'within-tolerance') {
+      verdictText = span(null, h('b', { style: { color: 'var(--good)' } }, 'On track'), ' — Needed→Scheduled is ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' and Scheduled→Actual is ', h('b', null, execAbs.toFixed(1) + ' hrs'), ', both inside the ±', bandTxt, '.');
+      whyText = 'No coaching signal here — the schedule build and the shift execution are both within normal week-to-week variance. A 0-hour-flat schedule isn’t the goal; staying inside this band is.';
+    } else if (state === 'plan-leads') {
+      verdictText = span(null, 'The ', h('b', { style: { color: 'var(--amber)' } }, 'schedule'), ', not the shift — Needed→Scheduled gap is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ', over the ±', bandTxt, '. Scheduled→Actual is only ', h('b', null, execAbs.toFixed(1) + ' hrs'), ' (execution is inside the guideline).');
+      whyText = planGap < 0 ? 'The schedule itself was written short of the guide before the week started — the shortfall was built in, not lost at the punch. Fix the guide/scheduler, not the shift managers.' : 'The schedule itself was written over the guide before the week started — review the scheduler’s build against the guide.';
+    } else if (state === 'exec-leads') {
+      verdictText = span(null, h('b', { style: { color: 'var(--amber)' } }, 'Execution'), ', not the schedule — Scheduled→Actual gap is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), ', over the ±', bandTxt, '. Needed→Scheduled is only ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' (the schedule itself is inside the guideline).');
+      whyText = execGap < 0 ? 'The store is running under its own written schedule — shifts are cutting early or not filling. Coach the shift managers on running the plan as written.' : 'The store is running over its own written schedule — extensions or early clock-ins are adding hours the schedule didn’t call for. Coach the shift managers on holding the plan.';
+    } else { // both-over-plan-leads | both-over-exec-leads
+      const biggerIsPlan = state === 'both-over-plan-leads';
+      verdictText = span(null, h('b', { style: { color: 'var(--crit)' } }, 'Both'), ' outside the ±', bandTxt, ' — Needed→Scheduled is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ' and Scheduled→Actual is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), '; ', biggerIsPlan ? 'the schedule build is the larger piece' : 'execution is the larger piece', '.');
+      whyText = 'Both legs are off this week — the schedule itself needs to be rebuilt against the guide, AND the shift managers need to be coached on running whatever schedule is written. Fixing only the larger piece leaves the other one unaddressed.';
+    }
   } else {
     verdictText = 'Scheduled hours unknown for this week — total_scheduled_hours isn’t populated yet, so the planning-vs-execution split can’t be computed.';
     whyText = null;

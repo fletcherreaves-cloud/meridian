@@ -83,6 +83,60 @@ export function latestCompleteWeekByStore(splits = []) {
   return byLoc;
 }
 
+// ── Coaching threshold (Store Cockpit "Coach" box, redesigned 2026-11-05) ───────────────────
+// Owner's stated rule of thumb: "In a perfect world, the schedule would run 0 hours +/-. We
+// don't want to run that close but a +/- 10 hour per day has always been a good rule of thumb."
+// That is a PER-DAY guideline, but computeLaborGapSplit's only grain is the pay WEEK — so the
+// threshold applied to a week's planningGapHrs/executionGapHrs is the per-day guideline scaled
+// by that week's own day count (hrsPerDay * days), not a hardcoded 70. Using `days` rather than
+// a fixed 7 also keeps this correct if this is ever fed a partial week.
+//
+// Measured before picking "scale the weekly total" over "check each day individually": a live
+// complete pay week across all 27 stores (2026-10-28..2026-11-03, via qsr_daily_activity_rollup)
+// showed each store's daily planning/execution gaps are overwhelmingly one-signed within the
+// week, not oscillating and cancelling — e.g. loc 3708's 7 execution-gap days were
+// -32.7,-33.5,-51.1,-68.0,-25.3,+0.8,-33.2 hrs (one positive day, the rest negative). So
+// weeklyGap/days is a faithful stand-in for "the typical day's gap" for the stores measured, not
+// an average that launders real daily misses into a falsely small number. A store with genuine
+// day-to-day cancellation (alternating over/under) would still read smaller here than its worst
+// individual days — that's a known limit of operating at the week grain, not something this
+// change fixes; a true per-day exceedance count would need a new engine entry point reading
+// qsr_daily_activity_rollup day-by-day instead of this file's weekly sums.
+//
+// Previously this box had NO magnitude threshold at all — it just said "whichever of
+// planningGapHrs/executionGapHrs is bigger in absolute value" was the coaching direction, even
+// when both were a couple of hours and well inside normal week-to-week noise. That's the
+// inaccuracy the owner flagged: a trivial gap still produced a confident "coach the shift
+// managers" verdict. The threshold below gates that — below it, neither side is a real signal.
+export const DEFAULT_LABOR_COACH_HRS_PER_DAY = 10;
+
+/**
+ * Classifies a pay week's planning/execution split against the ±hrsPerDay guideline (default
+ * the owner's 10 hrs/day rule of thumb). Pure + testable in isolation from the React verdict
+ * text (src/views/store-cockpit.js's LaborCockpitTab), which only turns this classification into
+ * words — the actual threshold decision lives here, once.
+ *
+ * Returns null when either gap is unknown (schedule hours not populated) or `days` is falsy.
+ * Otherwise returns:
+ *   state: 'within-tolerance' | 'plan-leads' | 'exec-leads' | 'both-over-plan-leads' | 'both-over-exec-leads'
+ *     - within-tolerance: neither |planGap| nor |execGap| exceeds the threshold — no coaching signal.
+ *     - plan-leads / exec-leads: exactly one side exceeds the threshold (or both exceed and that
+ *       side is the larger of the two) — coach toward that side.
+ *     - both-over-*: BOTH sides exceed the threshold; the suffix names the larger of the two, but
+ *       the caller should say both are off, not let the smaller one read as "tracks the guide."
+ */
+export function laborCoachVerdict({ planGap, execGap, days, hrsPerDay = DEFAULT_LABOR_COACH_HRS_PER_DAY } = {}) {
+  if (planGap == null || execGap == null || !days) return null;
+  const thresholdHrs = hrsPerDay * days;
+  const planAbs = Math.abs(planGap), execAbs = Math.abs(execGap);
+  const planOver = planAbs > thresholdHrs, execOver = execAbs > thresholdHrs;
+  let state;
+  if (!planOver && !execOver) state = 'within-tolerance';
+  else if (planOver && execOver) state = planAbs >= execAbs ? 'both-over-plan-leads' : 'both-over-exec-leads';
+  else state = planOver ? 'plan-leads' : 'exec-leads';
+  return { state, planGap, execGap, planAbs, execAbs, planOver, execOver, thresholdHrs, hrsPerDay, days };
+}
+
 /** District rollup — mirrors count-cycle.js's cycleSummary / waste-discipline.js's disciplineSummary shape. */
 export function laborGapSplitSummary(weekRows = []) {
   const known = weekRows.filter(w => w.planningGapHrs != null);

@@ -18,7 +18,7 @@ import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
+import { computeLaborGapSplit, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DAY } from '../engine/labor-gap-split.js';
 // dispatch #200 (Task Group C) -- the same live-data record-computation engine record-day.js's
 // main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
 // day-of-week depth. See StoreRecordsTab's own header comment for why only the computation +
@@ -1904,10 +1904,19 @@ function TabDigestRow({store, ds, settings, setTab}) {
     const weekRange = curWeek ? {s:new Date(curWeek.weekStart+'T00:00:00'), e:addD(new Date(curWeek.weekStart+'T00:00:00'), 6)} : null;
     const actualPct = (ds && weekRange) ? metricRate(ds, loc, weekRange, 'laborPct') : null;
     const gapPP = (actualPct!=null && target!=null) ? (actualPct-target)*100 : null;
+    // Same laborCoachVerdict threshold LaborCockpitTab's own full verdict uses (this is
+    // explicitly the one-clause version of THAT verdict, per the comment above) — if this used
+    // its own unthresholded comparison instead, the Overview tab and the Labor & Scheduling tab
+    // could show opposite coaching directions for the identical store/week.
     let shortVerdict = null;
-    if (curWeek && curWeek.planningGapHrs!=null && curWeek.executionGapHrs!=null) {
-      const planAbs = Math.abs(curWeek.planningGapHrs), execAbs = Math.abs(curWeek.executionGapHrs);
-      shortVerdict = planAbs>=execAbs ? 'Planning-driven, not the shift' : 'Execution-driven, not the schedule';
+    if (curWeek) {
+      const hrsPerDay = (settings && settings.laborCoachHrsPerDay != null) ? settings.laborCoachHrsPerDay : DEFAULT_LABOR_COACH_HRS_PER_DAY;
+      const v = laborCoachVerdict({ planGap: curWeek.planningGapHrs, execGap: curWeek.executionGapHrs, days: curWeek.days, hrsPerDay });
+      if (v) {
+        shortVerdict = v.state === 'within-tolerance' ? 'On track — within guideline'
+          : (v.state === 'plan-leads' || v.state === 'both-over-plan-leads') ? 'Planning-driven, not the shift'
+          : 'Execution-driven, not the schedule';
+      }
     }
     return {target, actualPct, gapPP, shortVerdict};
   }, [ds, loc, locS, t]);
@@ -2437,7 +2446,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
     tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
     tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds,onCoachingSaved}),
-    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved})
+    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved,settings})
   );
 }
 
