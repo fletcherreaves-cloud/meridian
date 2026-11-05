@@ -4151,7 +4151,7 @@ function App() {
       routePanel==='morning-brief'&&h(RoutePanelShell,{
         icon:'☀️',
         title:'Morning Intelligence Brief',
-        subtitle:'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
+        subtitle:'Correlation engine · 12 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
         onBack:()=>goRoute(null),
       }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})),
       // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/

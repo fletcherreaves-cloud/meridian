@@ -274,9 +274,26 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const darActVsNeed = dar && dar.needed > 0 ? +(dar.punched - dar.needed).toFixed(1) : null;
   const darOepe      = dar && dar.dtCnt > 0  ? +(dar.dtTime / dar.dtCnt / 1000).toFixed(0) : null;
 
-  // GC vs expected
   const darSales = dar ? dar.sales : null;
   const darProjSales = dar ? dar.projSales : null;
+
+  // ── Owner-caught 2026-11-05 (real data-accuracy bug): every field below used to check the
+  // MANUAL Labor/Controls upload FIRST, falling back to the auto DAR/emailed streams only when
+  // no manual row existed -- the reverse of this app's standing "auto/emailed-first,
+  // freshest-wins" rule (CLAUDE.md Dev Rules: manual uploads are last-resort fill only, never
+  // override a fresher automated value for the same store/date). Fixed by routing each field
+  // through metricDaily() (src/engine/metric-source.js, the shared auto-first resolver this
+  // same function already used for drawerOpens/tRedAPct/tRedBPct/oepe/kvst below) FIRST, with
+  // the manual value -- and any source metric-source.js's own registry doesn't yet know about
+  // for this key (glimpse/cash's gc/sales fields, labor's pre-combined refundAmt) -- kept only
+  // as a LAST-resort fallback. Resolved once here and reused below (salesVsExp/gcVsExp/
+  // vsLYSales/vsLYGC used to each re-derive their own, separately-buggy manual-first chain for
+  // the exact same numbers).
+  const resolvedSales = metricDaily(ds, loc, targetDate, 'sales')
+    ?? (glimpse?.allNetSales>0 ? glimpse.allNetSales : (cash?.allNetSales>0 ? cash.allNetSales : (darSales>0 ? darSales : (labor?.sales>0 ? labor.sales : null))));
+  const resolvedGC = metricDaily(ds, loc, targetDate, 'gc')
+    ?? (labor?.actualGC>0 ? labor.actualGC : (cash?.gc>0 ? cash.gc : null));
+
   const salesVsExp = (()=>{
    const _p=labor?.projSales>0?labor.projSales:darProjSales||
      (()=>{const _t=typeof DEFAULT_TARGETS!=='undefined'?DEFAULT_TARGETS[locStr]:null;
@@ -284,17 +301,16 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
            // same dead-fallback shape as tQSRSoftProj's retirement in this same issue.
            const _m=_t?.tJuneProj||_t?.tOperatorProj||0;
            return _m>0?Math.round(_m/30):0;})();
-   const _s=labor?.sales>0?labor.sales:darSales;
+   const _s=resolvedSales;
    return _p>0&&_s>0?(((_s-_p)/_p)*100):null;
  })();
-  const laborSales = labor?.sales>0 ? labor.sales : darSales;
-  const expGC = (norms.gcSalesRatio && laborSales) ? laborSales*norms.gcSalesRatio : null;
-  const gcVsExp = (expGC && labor?.gc) ? ((labor.gc-expGC)/expGC*100) : null;
+  const expGC = (norms.gcSalesRatio && resolvedSales) ? resolvedSales*norms.gcSalesRatio : null;
+  const gcVsExp = (expGC && resolvedGC) ? ((resolvedGC-expGC)/expGC*100) : null;
 
-  // LY comparison: laborRows first, then the auto DAR's own same-date LY field via the
-  // shared resolver (data-integrity sweep signature #2 — this previously only checked
-  // laborRows for the LY side, so vs-LY was blank on any historical date only the auto
-  // DAR covered, even when today's side had real data).
+  // LY comparison: same auto-first resolution as the current-side fields above (data-integrity
+  // sweep signature #2 — this previously only checked laborRows for the LY side, so vs-LY was
+  // blank on any historical date only the auto DAR covered, even when today's side had real
+  // data).
   const lyTarget = new Date(targetDate);
   lyTarget.setFullYear(lyTarget.getFullYear()-1);
   const lyDk = dKey(lyTarget);
@@ -305,10 +321,8 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const { lyByDate: lyGCByDate }    = autoFirstDaily(ds, loc, {s:targetDate,e:targetDate}, 'gc');
   const lySales = lyLabor?.sales>0 ? lyLabor.sales : (lySalesByDate[dkTarget] ?? null);
   const lyGC    = lyLabor?.gc>0    ? lyLabor.gc    : (lyGCByDate[dkTarget] ?? null);
-  const curSales = labor?.sales>0 ? labor.sales : darSales;
-  const curGC    = labor?.gc>0 ? labor.gc : null;
-  const vsLYSales = (curSales&&lySales) ? ((curSales-lySales)/lySales*100) : null;
-  const vsLYGC    = (curGC&&lyGC)       ? ((curGC-lyGC)/lyGC*100)          : null;
+  const vsLYSales = (resolvedSales&&lySales) ? ((resolvedSales-lySales)/lySales*100) : null;
+  const vsLYGC    = (resolvedGC&&lyGC)       ? ((resolvedGC-lyGC)/lyGC*100)          : null;
 
   // FOB: most recent entry for this store within 35 days (monthly cadence)
   const fobSorted = (ds.fobRows||[])
@@ -330,8 +344,10 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     // already read.
     supervisor: whoRan(loc, targetDate)||'Unknown',
     hasData: !!(labor||ctrl||glimpse||cash||peaks.length||dar),
-    // Labor fields — DAR fills in when labor not uploaded; email pipeline (glimpse/cash) fills when neither uploaded
-    sales:      labor?.sales>0 ? labor.sales : (glimpse?.allNetSales>0 ? glimpse.allNetSales : (cash?.allNetSales>0 ? cash.allNetSales : (darSales || null))),
+    // Labor fields — auto DAR/emailed streams first; manual Labor/Controls uploads are
+    // last-resort fill only, matching this app's standing auto-first rule (see the
+    // resolvedSales/resolvedGC comment above for the full fix writeup).
+    sales:      resolvedSales,
     projSales: (()=>{
       if(labor?.projSales>0) return labor.projSales;
       if(darProjSales>0) return darProjSales;
@@ -341,30 +357,33 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
       const monthly = tgt?.tJuneProj || tgt?.tOperatorProj || 0;
       return monthly>0 ? Math.round(monthly/30) : null;
     })(),
-    gc:         labor?.gc>0 ? labor.gc : (labor?.actualGC>0 ? labor.actualGC : (glimpse?.gc>0 ? glimpse.gc : (cash?.gc>0 ? cash.gc : null))),
-    tpph:       labor?.tpph>0 ? labor.tpph :
-                (ctrl?.tpph>0 ? ctrl.tpph :
-                (DEFAULT_TARGETS[locStr]?.tJuneTpph>0 ? DEFAULT_TARGETS[locStr].tJuneTpph : null)),
-    laborPct:   labor?.laborPct>0 ? labor.laborPct :
-                (ctrl?.laborPct>0 ? ctrl.laborPct :
-                (glimpse?.laborPct>0 ? glimpse.laborPct :
-                (resolveLaborTarget(DEFAULT_TARGETS[locStr]) || null))),
-    actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
+    gc:         resolvedGC,
+    tpph:       metricDaily(ds, loc, targetDate, 'tpph')
+                ?? (DEFAULT_TARGETS[locStr]?.tJuneTpph>0 ? DEFAULT_TARGETS[locStr].tJuneTpph : null),
+    laborPct:   metricDaily(ds, loc, targetDate, 'laborPct')
+                ?? (resolveLaborTarget(DEFAULT_TARGETS[locStr]) || null),
+    actVsNeed:  metricDaily(ds, loc, targetDate, 'actVsNeed')
+                ?? darActVsNeed
+                ?? (labor?.actVsNeed != null ? labor.actVsNeed : null),
     salesVsExp, gcVsExp, vsLYSales, vsLYGC,
-    // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback.
-    // T-Reds/drawerOpens route through metric-source.js (2026-08-04) — its registry already
-    // has an opsCashRows fallback (added for #37/analytics.js's ctrlAuto), but Morning Brief
-    // was still reading raw ctrl?.x only, so today's brief went blank on these whenever
-    // Controls wasn't uploaded even though the auto stream now covers them.
+    // Controls fields — auto (opsCashRows)/emailed (glimpse/cash) streams first, same auto-first
+    // rule, via metric-source.js's own registry order (already correct there -- the bug was
+    // this file reading raw ctrl?.x ahead of it, not the registry itself). T-Reds/drawerOpens
+    // already followed this pattern (2026-08-04 fix); posOverAmt/refundAmt/cashOSAmt did not.
     drawerOpens:  metricDaily(ds, loc, targetDate, 'drawerOpens'),
-    posOverAmt:   ctrl?.posOverAmt ?? (glimpse?.posOverAmt ?? (cash?.posOverAmt ?? null)),
+    posOverAmt:   metricDaily(ds, loc, targetDate, 'posOverAmt'),
     manualRefAmt: ctrl?.manualRefAmt||null,
-    refundAmt:    ctrl?.refundAmt != null ? ctrl.refundAmt :
-                  ((ctrl?.cashRefAmt||0)+(ctrl?.cashlessRefAmt||0)||null) ??
-                  (cash?.cashRefAmt!=null||cash?.cashlessRefAmt!=null ? (cash?.cashRefAmt||0)+(cash?.cashlessRefAmt||0) : null),
+    refundAmt:    (()=>{
+      const cashRef = metricDaily(ds, loc, targetDate, 'cashRefAmt');
+      const cashlessRef = metricDaily(ds, loc, targetDate, 'cashlessRefAmt');
+      if (cashRef != null || cashlessRef != null) return (cashRef||0) + (cashlessRef||0);
+      // ctrl.refundAmt is a pre-combined manual field metric-source.js doesn't register under
+      // this key at all -- kept as a last-resort fallback, not removed.
+      return ctrl?.refundAmt != null ? ctrl.refundAmt : null;
+    })(),
     tRedAPct:     metricDaily(ds, loc, targetDate, 'tRedAPct'),
     tRedBPct:     metricDaily(ds, loc, targetDate, 'tRedBPct'),
-    cashOSAmt:    ctrl?.cashOSAmt ?? (glimpse?.cashOS ?? (cash?.cashOS ?? null)),
+    cashOSAmt:    metricDaily(ds, loc, targetDate, 'cashOSAmt'),
     // Service fields — 3 Peaks first, then Daily Glimpse (daily aggregate), then DAR-derived,
     // then the shared resolver as a final fallback (data-integrity sweep signature #2 — this
     // never read opsServiceRows/opsRows at all, so a store covered only by those went blank).
