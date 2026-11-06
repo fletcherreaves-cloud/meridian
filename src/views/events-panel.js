@@ -28,6 +28,7 @@
 import * as React from 'react';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { DateRangeControl, LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { CalendarManagerPanel } from '../features/calendar.js';
 import { EventImpactPanel } from './event-impact.js';
 // EventCalendar (the old "List" ledger -- search/filter/sort/inline-edit/CSV export, still the
@@ -256,5 +257,9 @@ export function EventsPanel({ stores, ds, settings, userEvents, onUpdate, onClos
     overlay === 'ledger' && h(React.Suspense, { fallback: div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading…') },
       h(EventCalendarLazy, { userEvents, onUpdate, stores: treeStores, onClose: () => setOverlay(null) })));
 
-  return h(RoutePanelShell, { title: 'Events', icon: '◷', subtitle: 'Community & business calendar, incident log, measured impact, and recurring rules — one home', onBack: onClose }, body);
+  return h(RoutePanelShell, { title: 'Events', icon: '◷',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center' } },
+      span(null, 'Community & business calendar, incident log, measured impact, and recurring rules — one home'),
+      h(InfoIcon, { articleKey: 'events_guide' })),
+    onBack: onClose }, body);
 }
