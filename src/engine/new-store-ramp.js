@@ -131,3 +131,95 @@ export function projectLaunchPlan({ loc, comparables, matureWeeklySales, openDat
     projectedSales: p.forecastSales,
   }));
 }
+
+// ── Hourly shape (Launch Planner hourly breakdown, 2026-11-06) ──────────────────────────────
+// A derived VIEW over real hour_slot-level sales, not a new day-indexed ramp concept and NOT
+// persisted anywhere — the panel computes this live from already-loaded rows whenever the owner
+// expands a day, so no new schema/DDL. For each comparable, this is the average fraction of ITS
+// OWN daily total that lands in each of the 24 real hour_slot buckets ('05:00'..'28:00'), taken
+// from the same trailing-up-to-90-real-trading-days window matureBaseline() uses above, for the
+// identical reason: a comparable with a long history and one with a short history both produce a
+// defensible shape from their own real data rather than an arbitrary fixed window.
+//
+// hourlyRows: [{loc, date, hourSlot, sales}] — one row per (date, hour_slot), the hour_slot
+// dimension preserved (loadHourlySalesForStore in src/lib/supabase.js; loadDailySalesForStore
+// already sums this away for the day-level model above, which is why this needs its own reader).
+export const HOUR_SLOTS = [
+  '05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
+  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '24:00',
+  '25:00', '26:00', '27:00', '28:00',
+];
+// The pre-dawn + wrap-around slots a genuinely 24-hour store trades through, but a typical-hours
+// comparable may show near-zero in — checked explicitly so a near-closed comparable's own shape
+// is never silently blended into a 24-hour store's real Late Night hours (owner-flagged risk for
+// Lindsay specifically, but this check applies to any future comparable set).
+export const DEEP_OVERNIGHT_SLOTS = ['05:00', '24:00', '25:00', '26:00', '27:00', '28:00'];
+
+// One comparable's hourly SHAPE: hour_slot -> fraction of its own daily total, averaged over its
+// trailing up-to-90 real trading days. Returns null (never a misleading shape) when there isn't
+// enough history, same "not mature yet" guard matureBaseline() uses.
+export function hourlyShapeFor(hourlyRows, loc, minDays = 10) {
+  const rows = (hourlyRows || []).filter(r => r.loc === loc && r.date);
+  if (!rows.length) return null;
+  const positiveDates = new Set(rows.filter(r => (Number(r.sales) || 0) > 0).map(r => r.date));
+  const dates = [...positiveDates].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  if (dates.length < minDays) return null;
+  const matureDates = new Set(dates.slice(0, 90));
+  const byHour = new Map(HOUR_SLOTS.map(h => [h, 0]));
+  let dayTotal = 0;
+  for (const r of rows) {
+    if (!matureDates.has(r.date) || !byHour.has(r.hourSlot)) continue;
+    const s = Number(r.sales) || 0;
+    byHour.set(r.hourSlot, byHour.get(r.hourSlot) + s);
+    dayTotal += s;
+  }
+  if (!dayTotal) return null;
+  const overnightSales = DEEP_OVERNIGHT_SLOTS.reduce((a, h) => a + byHour.get(h), 0);
+  const overnightFrac = overnightSales / dayTotal;
+  const shape = HOUR_SLOTS.map(h => ({ hourSlot: h, frac: byHour.get(h) / dayTotal }));
+  return { shape, overnightFrac, nearlyClosedOvernight: overnightFrac < 0.01 };
+}
+
+// Weight-blend several comparables' hourly shapes, hour_slot aligned. comparables:
+// [{loc, hourlyRows, weight}]. Also carries a weighted-average overnight fraction and whether ANY
+// comparable is itself near-closed overnight, so the caller can warn before applying this shape
+// to a store that trades through the night for real (e.g. Lindsay's 24-hour-year-one decision).
+export function blendHourlyShapes(comparables) {
+  const perComparable = [];
+  for (const c of (comparables || [])) {
+    const r = hourlyShapeFor(c.hourlyRows, c.loc);
+    if (r) perComparable.push({ ...r, weight: c.weight });
+  }
+  if (!perComparable.length) return null;
+  const byHour = new Map(HOUR_SLOTS.map(h => [h, []]));
+  for (const c of perComparable) {
+    for (const p of c.shape) byHour.get(p.hourSlot).push({ frac: p.frac, weight: c.weight });
+  }
+  const shape = HOUR_SLOTS.map(h => {
+    const entries = byHour.get(h);
+    const wSum = entries.reduce((a, e) => a + e.weight, 0);
+    const frac = wSum ? entries.reduce((a, e) => a + e.frac * e.weight, 0) / wSum : 0;
+    return { hourSlot: h, frac: +frac.toFixed(5) };
+  });
+  const wSum = perComparable.reduce((a, c) => a + c.weight, 0);
+  const overnightFrac = wSum ? perComparable.reduce((a, c) => a + c.overnightFrac * c.weight, 0) / wSum : 0;
+  const anyNearlyClosedOvernight = perComparable.some(c => c.nearlyClosedOvernight);
+  return { shape, overnightFrac, anyNearlyClosedOvernight };
+}
+
+// Split one day's $ total across the 24 real hour_slot buckets using a blended shape. Proportional
+// by fraction; the LAST slot absorbs the rounding remainder so the 24 figures always sum exactly
+// to dailyTotal rather than drifting a few cents short/over from independent rounding.
+export function splitDayAcrossHours(dailyTotal, blended) {
+  if (!blended || !dailyTotal) return [];
+  const { shape } = blended;
+  const out = [];
+  let running = 0;
+  for (let i = 0; i < shape.length; i++) {
+    const isLast = i === shape.length - 1;
+    const amt = isLast ? +(dailyTotal - running).toFixed(2) : +(shape[i].frac * dailyTotal).toFixed(2);
+    running += amt;
+    out.push({ hourSlot: shape[i].hourSlot, sales: amt });
+  }
+  return out;
+}
