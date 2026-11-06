@@ -456,3 +456,66 @@ covered — remaining candidates from the same Supervisor-section note (`pricing
 clearly-high-traffic panels not named in either plan doc at all (e.g. `attention`/"Needs
 Attention", `brief`/"Forecast Brief") worth a future pass's own judgment call, and the `InfoIcon`
 rollout to more panel headers.
+
+## Added 2026-11-06 (batch 7): Needs Attention, Forecast Brief, Custom Report Builder,
+## Price Change Impact, Item Velocity, Channel Mix (task #75, next batch)
+
+Measured 88 real `KB_ARTICLES` keys before starting. Picked, in priority order: the four
+remaining named-but-uncovered Reports-Hub deep-dives batch 6 flagged (`price-change-impact`,
+`item-velocity`, `channel-mix`, `custom-reports` — confirmed each real and `kind:'nav'` in
+`panel-registry.js` and still absent from the 88-key list), plus two clearly-daily-use panels no
+plan doc names directly but whose own real traffic earns a judgment call: `attention` (Needs
+Attention) and `brief` (Forecast Brief).
+
+- **`attention_guide`** — read `AttentionPanel` (`src/views/analytics.js`) and the full
+  `src/engine/attention-feed.js` engine. Documents the real ~17-detector merge inside
+  `buildAttentionFeed()`, the "no-silent-caps" `rankAttention()` design (a hit cap logs exactly
+  what was dropped instead of silently vanishing it), the pinned loc-less "District" strip, the
+  Running-Well tier\'s deliberate sort-by-name (not by the composite Ops/Ctrl score this app has
+  elsewhere flagged as unreliable for ranking), and the real `ATTENTION_ACK_SETTING_KEY` —
+  deliberately SEPARATE from the swing alarm\'s own ack row (issue #115, Trap 2).
+- **`brief_guide`** — **a real mix-up caught and corrected while researching this article, not
+  just a documentation gap.** Before writing anything, traced `id:'brief'` (panel-registry label
+  "Forecast Brief", 🔭) through `App.js`\'s actual routing rather than assuming from the similar
+  name — it renders `LocationBrief` (`routePanel==='brief'`), a SAGE-written (`callSageOnce`)
+  narrative brief built from 6 weeks of real trailing performance data, on-screen titled "🧠
+  Intelligence Brief". This is a COMPLETELY different component from `DistrictPriorityBrief`
+  (reached only via the separate `modal==='priority-brief'`/`showPriorityBrief` path, not this nav
+  entry) — the two share "Brief" in their names and nothing else. This also surfaced a real, now
+  FIXED stale `panel_index` line: it previously read "Forecast Brief — pre-forecast analysis of
+  the upcoming period," which is backwards — the panel is entirely retrospective (6 weeks of
+  what already happened), never a forecast of what\'s coming. Corrected in the same commit, with
+  its own test (`dispatch-kb-panel-guide-batch7-2026-11-06.test.js`) asserting the old wrong text
+  is gone and the new text is present.
+- **`custom_report_builder_guide`** — read `src/views/custom-report-builder.js` and
+  `src/engine/custom-report.js` in full. Documents the dynamic metric-picker catalog (grouped by
+  the same categories Signals\' registry uses), the "View As" range-vs-daily/weekly/monthly
+  decoupling (the window itself never changes, only how it\'s sliced), and the real Share
+  mechanic (RLS-enforced visibility to the whole tenant; only the author can edit/delete — the UI
+  simply never offers a control that would fail anyway).
+- **`price_change_impact_guide`** — read `src/views/price-change-impact.js` and
+  `src/engine/price-change-impact.js` in full. Documents the real `DEFAULT_WINDOW_DAYS` (14)
+  confirmed-step detector reused directly from `price-events.js` — the SAME one the Pricing
+  Engine\'s live simulator and Signal Lab already trust, not a second one — and that only
+  CONFIRMED (flat-before/flat-after) price changes qualify, so a store with constant promotional
+  noise around a real price change may show fewer or zero rows even though its menu did change.
+- **`item_velocity_guide`** — read `src/views/item-velocity.js` and `src/engine/item-velocity.js`
+  in full. Documents the real `DEFAULT_TOP_N` (50) cap, the first-half-vs-second-half Trend %
+  (normalized to a per-day rate), and that this report makes its own direct pass over
+  `ds.pmixRows` rather than routing through Scanner\'s per-item `pmixItem:<code>` resolver.
+- **`channel_mix_guide`** — read `src/views/channel-mix.js` and `src/engine/channel-mix.js` in
+  full. Documents the real five `CHANNEL_MIX_METRICS` columns (DT/Delivery-3PO/MOP/Kiosk/Front
+  Counter) and that Trend is deliberately in percentage POINTS, not a relative % change — a
+  channel moving 2%→4% of sales is a 100% relative jump but only a 2-point absolute shift, and
+  points are the honest way to compare a shift\'s real weight against the other channels on the
+  same row.
+
+13 new tests (2 per article + 1 for the stale-wording fix, mounting the real
+`KnowledgeBasePanel`): `dispatch-kb-panel-guide-batch7-2026-11-06.test.js`.
+
+**Measured running total: 94 `KB_ARTICLES` keys as of this batch.** Still open: ~43 panels not
+yet covered. The Supervisor-section plan-doc source (`plan-role-based-panel-gating-2026-11-03.md`
+§3) is now fully exhausted — every panel it names by id is covered as of this batch. Future
+batches need a fresh candidate source: a direct `panel-registry.js` `kind:'nav'` sweep diffed
+against the current key list, judged on real traffic rather than a named list. The `InfoIcon`
+rollout to more panel headers remains unstarted.
