@@ -4,6 +4,7 @@ import { oepeSeconds, oepeWithParkSeconds } from '../utils/oepe.js';
 import { tokenizeRows } from '../engine/identity-vault.js';
 import { defaultVisibilityFor } from '../constants.js';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
+import { computeErrorFingerprint } from '../engine/error-telemetry.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -3785,6 +3786,69 @@ export async function updateTask(id, updates) {
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) console.warn('[supabase] updateTask:', error.message);
+}
+
+// ── Runtime Error Telemetry (error-telemetry prep, memory/plan-error-telemetry-auto-fix-
+// 2026-11-06.md, task #103, Phase 1) ────────────────────────────────────────────────────────────
+// Called fire-and-forget from ErrorBoundary.componentDidCatch (src/features/session.js) on every
+// real panel crash. Dedup upsert by fingerprint (computeErrorFingerprint, engine/error-
+// telemetry.js) — the SAME bug bumps occurrence_count/last_seen_at on its existing row instead of
+// growing a new one per occurrence (plan doc §2: "never insert one row per occurrence"). No RPC/
+// DB function needed for the increment — a plain client-side upsert can't express
+// `occurrence_count = occurrence_count + 1` server-side, so this does a select-then-write, with a
+// retry-as-update on a 23505 unique-violation (two near-simultaneous crashes of the same bug both
+// finding "no existing row" and racing to insert first).
+// MUST NEVER THROW — a telemetry failure is not something a user should ever see as a second,
+// unrelated error on top of the one that already crashed their panel. Self-heals (silent no-op,
+// not a console.error) if the table hasn't been migrated yet — same `_isMissingTable` check
+// (42P01/PGRST205/"relation ... does not exist") every other schema-gated loader in this file
+// already uses; the owner runs supabase/schema-runtime-error-reports.sql once, and this starts
+// writing with no code change needed.
+// No PII: message/stack/panel ONLY, per the plan doc's explicit "no user id, no accessible_locs,
+// no request payload" rule — never add a caller/tenant identity column here.
+async function _upsertRuntimeErrorReport(fingerprint, message, stack, panel) {
+  const nowIso = new Date().toISOString();
+  const { data: existing, error: selErr } = await supabase
+    .from('runtime_error_reports').select('id,occurrence_count').eq('fingerprint', fingerprint).maybeSingle();
+  if (selErr) {
+    if (_isMissingTable(selErr)) return; // not migrated yet -- silent no-op, no console noise
+    console.warn('[supabase] reportRuntimeError (select):', selErr.message);
+    return;
+  }
+  if (existing) {
+    const { error } = await supabase.from('runtime_error_reports')
+      .update({ occurrence_count: (existing.occurrence_count || 1) + 1, last_seen_at: nowIso })
+      .eq('id', existing.id);
+    if (error) console.warn('[supabase] reportRuntimeError (update):', error.message);
+    return;
+  }
+  const { error: insErr } = await supabase.from('runtime_error_reports').insert({
+    fingerprint, message: String(message || '').slice(0, 2000),
+    stack: stack ? String(stack).slice(0, 4000) : null, panel: panel || null,
+    occurrence_count: 1, first_seen_at: nowIso, last_seen_at: nowIso,
+  });
+  if (!insErr) return;
+  if (insErr.code === '23505') { // lost the race -- someone else's insert landed first; bump theirs
+    const { data: winner } = await supabase.from('runtime_error_reports')
+      .select('id,occurrence_count').eq('fingerprint', fingerprint).maybeSingle();
+    if (winner) {
+      const { error } = await supabase.from('runtime_error_reports')
+        .update({ occurrence_count: (winner.occurrence_count || 1) + 1, last_seen_at: nowIso })
+        .eq('id', winner.id);
+      if (error) console.warn('[supabase] reportRuntimeError (race-retry):', error.message);
+    }
+    return;
+  }
+  if (!_isMissingTable(insErr)) console.warn('[supabase] reportRuntimeError (insert):', insErr.message);
+}
+export async function reportRuntimeError(message, stack, panel) {
+  if (!supabase) return;
+  try {
+    const fingerprint = computeErrorFingerprint({ message, stack, panel });
+    await _upsertRuntimeErrorReport(fingerprint, message, stack, panel);
+  } catch (e) {
+    console.warn('[supabase] reportRuntimeError:', e?.message || e); // never rethrow -- see header
+  }
 }
 
 // ── Session Notes ─────────────────────────────────────────────────────────────

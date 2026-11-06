@@ -4,7 +4,7 @@ import { dKey } from '../utils/date.js';
 import { bLocIdx } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { DEF_SETTINGS } from '../constants.js';
-import { loadUserSetting } from '../lib/supabase.js';
+import { loadUserSetting, reportRuntimeError } from '../lib/supabase.js';
 import { normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 
 // ErrorBoundary React class component
@@ -13,11 +13,16 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(e){return{err:e};}
   // panelName (error-telemetry prep, memory/plan-error-telemetry-auto-fix-2026-11-06.md, task
   // #102) -- threaded in by lazyPanel() (App.js) as a prop, one per panel, so a crash log says
-  // WHICH panel broke instead of just that something did. Logged here only -- not yet sent
-  // anywhere (reportRuntimeError()/runtime_error_reports is task #103, deliberately not built in
-  // this PR). meridian.js's own top-level boundary (the whole-app fallback) passes no panelName,
-  // so this stays undefined there exactly as before.
-  componentDidCatch(e,i){console.error('Meridian error:',this.props.panelName?`[${this.props.panelName}]`:'',e,e?.cause||'',i);}
+  // WHICH panel broke instead of just that something did. meridian.js's own top-level boundary
+  // (the whole-app fallback) passes no panelName, so this stays undefined there exactly as before.
+  // reportRuntimeError() (task #103, lib/supabase.js) is fire-and-forget: `.catch(()=>{})` so a
+  // telemetry failure can never surface as a SECOND, unrelated error on top of the one that just
+  // crashed this panel, and it's never awaited so it can't delay this synchronous console.error
+  // or the fallback render below.
+  componentDidCatch(e,i){
+    console.error('Meridian error:',this.props.panelName?`[${this.props.panelName}]`:'',e,e?.cause||'',i);
+    reportRuntimeError(e?.message, e?.stack, this.props.panelName).catch(()=>{});
+  }
   render(){
     if(this.state.err){
       const e=this.state.err;
