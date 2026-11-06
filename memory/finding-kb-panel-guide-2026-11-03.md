@@ -236,3 +236,82 @@ expanded as a side effect of this pass.
 
 Still open, same as before: the other ~68 panels not yet covered (`panel_index` still covers all
 of them at the one-line-directory level), and the `InfoIcon` rollout to more panel headers.
+
+## This log itself had gone stale — 7 real articles shipped without a logged entry (found 2026-11-06)
+
+Measuring `KB_ARTICLES`' real key count before starting the next batch (per this repo's own
+"measure, don't reason" rule) found **69 keys**, not the ~61 this file's own running total implies.
+Seven panel-level articles exist in `src/engine/forecast.js` with no corresponding section here:
+`eom_dashboard_guide`, `controls_food_cost_link_guide`, `pricing_engine_guide`,
+`leaderboards_guide`, `morning_brief_guide`, `reports_hub_guide`, `date_range_report_guide`. A
+code comment above the first of these in `forecast.js` even says "Task #75 (ongoing KB-coverage
+backlog) — 3 more nav-level panels with no guide yet," confirming they were deliberate #75 work
+that simply never got logged back to this file — this doc's own standing instruction (every prior
+section ends with "Added later the same day…") was dropped at some point, not a fabrication.
+**Not retroactively reconstructing those 7 entries' own rationale here** — the content itself is
+live and correct in `forecast.js`/`KnowledgeBasePanel`, and re-deriving "why" after the fact would
+risk inventing a reason that wasn't the real one. Flagging the gap so a future pass doesn't
+re-discover it as a surprise, and so this file's running total can be trusted again going forward:
+**as of this correction, 69 keys existed before the batch below, 75 after.**
+
+## Added 2026-11-06: Inventory Intelligence, Speed of Service, Store One-Pager, Weekly Count
+## Status, Digital Checklists, Forms Library (task #75, next batch)
+
+Picked from `memory/plan-role-based-panel-gating-2026-11-03.md` §3's GM-routine direct-match
+table — the same cross-walk the 2026-11-04 batch drew its six panels from, confirmed to still have
+real, uncovered candidates before picking (`inventory`, `dt-sos`, `one-pager`,
+`weekly-count-status`, `checklist-fill`, `forms-library` — all real `kind:'nav'` ids in
+`panel-registry.js`, all absent from the measured 69-key list above before this batch).
+
+- **`inventory_guide`** — read `src/views/inventory.js` in full (694 lines). Documents the real
+  four-tab structure (Service/Production/Overstock/Transfers), the cloud-first/manual-gap-fill-
+  only sourcing from `qsr_inventory_summary` (confirmed via the panel's own 4-state header chip:
+  loading/failed/cloud+gap-fill/manual-only), the `cls`-vocabulary synonym-mapping trap (an
+  unrecognized class is flagged, never silently miscategorized), and the real natural-unit
+  quantity fields (`eachFmt:true` always for cloud rows — confirmed the API never returns
+  `uom:'Case'` — so Excess Cases divides by case size while Excess Value does not, which is why a
+  plausible dollar figure can sit beside what looks like an odd case count for a small-pack item).
+- **`speed_of_service_guide`** — read `src/views/dt-speedofservice.js` in full (952 lines).
+  Documents the real per-station target fields (`tOepe`/`tR2p`/`tKvst`, each +40s amber buffer),
+  that DT alone uses the reconciled `oepeSeconds()` formula (independently validated at r=0.9958
+  against a real QSRSoft Service report) while FC/Kitchen/Beverage still use a simpler raw ratio
+  (their own formula corrections are a separate, not-yet-done piece of work — stated honestly
+  rather than implied as equally reconciled), and that Beverage has no per-store target at all
+  (owner-confirmed) and always renders a dashed "(default)" band.
+- **`store_one_pager_guide`** — read the `StoreOnePager` component in `src/views/analytics.js`
+  directly. Documents the real KPI status-tier cuts (within 5% = On Target, within 15% = Watch,
+  else Off Track), that the still-open business day is explicitly excluded from the averaging
+  window (`businessDate()`), and that the five auto-written observations are generated from the
+  SAME averaged figures the KPI table shows, not a separate narrative source.
+- **`weekly_count_status_guide`** — read `src/views/weekly-count-status-report.js` in full.
+  Documents that this panel and Count Cycle share the exact same compliance engine
+  (`count-cycle.js`) and can never disagree, the real count-day-drift detection (a statistical,
+  confidence-gated call, not a certainty), and the real asOf-resolves-to-the-whole-week behavior
+  (so two people picking different days in the same week see identical results).
+- **`digital_checklists_guide`** — read `src/views/checklist-fill.js` in full. Documents the real
+  dependency on `scripts/qsrsoft-forms-pull.mjs` having been run (the panel's own empty-state names
+  the exact command), the section-index+title response-keying convention (items have no stable id
+  in QSRSoft's raw payload), and explicitly distinguishes this FILLABLE panel from the separate,
+  still-existing blank/print-by-hand Forms (Printable) panel.
+- **`forms_library_guide`** — read `src/views/forms-library.js` in full. Documents that it
+  generates BLANK forms only, via the exact same builder functions (`weeklyReviewHtml`/
+  `printWeeklyReview`/`downloadDoc`) the Leadership One-Pager uses for its own live-filled version
+  — a shared-builder design that keeps the two from ever drifting into different layouts — and
+  points to the One-Pager explicitly for live numbers. **Also flagged, not fixed (out of this
+  pass's scope):** this panel renders its own hand-rolled `position:fixed`/`rgba` backdrop instead
+  of the shared `ModalShell`/`RoutePanelShell` convention most panels now use — a real
+  panel-contract gap (`memory/panel-contract.md`), left for a UI-convention pass, not a
+  documentation-content one.
+
+No stale `panel_index` wording found for any of these six — it already correctly names "DT Speed
+of Service," "Forms Library," and "District View / Store One-Pager" with their real live labels.
+It mentions none of Inventory, Weekly Count Status, or Digital Checklists at all, same as the
+already-documented, deliberately-deferred ~70-panel omission from the first batch — left alone
+rather than expanded as a side effect of this pass, same call every batch since has made.
+
+12 new tests (2 per article, mounting the real `KnowledgeBasePanel`):
+`dispatch-kb-panel-guide-batch4-2026-11-06.test.js`.
+
+**Measured running total: 75 `KB_ARTICLES` keys as of this batch.** Still open: ~62 panels not yet
+covered (down from ~68 at the last measured point, but re-measure before trusting any count in
+this file again — see the correction above), and the `InfoIcon` rollout to more panel headers.
