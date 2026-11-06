@@ -352,6 +352,14 @@ export const PANELS = [
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
+  // Curated Home Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §2, task #92) -- same
+  // underlying correlation engine as Daily Brief, just role-cascaded voice + a user-chosen
+  // format on top (src/views/curated-home.js). Same perm/section as Daily Brief since it reads
+  // the exact same data under the exact same gate; kind:'nav' (not test-kitchen) since the
+  // mechanism is real and already verified end-to-end, not an unproven experiment -- see that
+  // PR's own body for why this ships as its own panel rather than replacing the Command/Home
+  // view outright.
+  { id:'curated-home', label:'Curated Home', icon:'🧭', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
   // section:'reports' -- see above-store's own comment above; same 2026-09-25 move.
   // Relabeled 'My Reports' -> 'Reports Hub' (Phase 3, 2026-10-16): this id now opens the
   // categorized Reports Hub (reports-hub.js), which embeds the old My Reports picker as its own

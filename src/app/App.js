@@ -378,6 +378,9 @@ import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt
 // both a static and a lazyPanel() import target — src/__tests__/lazy-panel-not-static.test.js
 // enforces this), so that one call site imports them dynamically instead — see there.
 const MorningBriefPanel = lazyPanel(() => import('../features/morning-brief.js').then(m => ({ default: m.MorningBriefPanel })), 'morning-brief');
+// Curated Home Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §2, task #92) -- same
+// underlying correlation engine as Daily Brief above, role-cascaded voice + user format choice.
+const CuratedHomePanel = lazyPanel(() => import('../views/curated-home.js').then(m => ({ default: m.CuratedHomePanel })), 'curated-home');
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores, annotateAutoFirstFlags } from '../engine/pipeline.js';
@@ -3713,6 +3716,7 @@ function App() {
         if(modal==='delivery-mix')    perm('analytics.store')&&goRoute('delivery-mix');
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&goRoute('morning-brief');
+        if(modal==='curated-home')   perm('analytics.brief')&&goRoute('curated-home');
         // eom-summary RETIRED (dispatch #202) — redirects into eom-dashboard's Supervisor
         // Rollup tab (eomInitialMode==='supervisor'). Deliberately STAYS 'analytics.district' as
         // of 2026-09-28, even though eom-dashboard's own registry perm widened to
@@ -4186,6 +4190,14 @@ function App() {
         subtitle:'Correlation engine · 12 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
         onBack:()=>goRoute(null),
       }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})),
+      // Curated Home Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §2, task #92) -- same
+      // engine as Daily Brief above, role-cascaded voice + a user-chosen format.
+      routePanel==='curated-home'&&h(RoutePanelShell,{
+        icon:'🧭',
+        title:'Curated Home',
+        subtitle:'Same correlation engine as Daily Brief · role-cascaded voice · your chosen format',
+        onBack:()=>goRoute(null),
+      }, h(CuratedHomePanel,{ds,settings,role:userRole,darRows})),
       // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/
       // operator-summary/delivery-mix carry RoutePanelShell inside their own component (same
       // "shell inside the component" pattern as above-store/ranking/perf-reviews/fob-analysis

@@ -754,18 +754,16 @@ function TodayPaceCard({date, darRows}) {
 }
 
 // ── MorningBriefPanel ────────────────────────────────────────────────────────
-function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}){
-  const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
-  const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
-  const [expanded, setExpanded] = uSt(null);
-  const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN
-  const [supervisorFilter, setSupervisorFilter] = uSt('ALL');
-  const [generating, setGenerating] = uSt(false);
-
-  // Re-sync date if ds changes
-  uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
-
-  // Build darByLoc from shared darRows (if they match briefDate), else fetch own
+// Build the per-store DAR aggregate (sales/projSales/punched/needed/dtTime/dtCnt) computeMorningBrief
+// needs, from whichever rows are actually available for `briefDate`: the shared `darRows` prop if
+// its own date matches (same rows another panel already fetched this render pass, no duplicate
+// query), else a direct `qsr_daily_activity` fetch scoped to that date. Extracted from
+// MorningBriefPanel (Curated Home Phase 1, memory/plan-overnight-notes-72-2026-11-06.md §2, task
+// #92) so a second front door onto the SAME correlation engine (CuratedHomePanel, views/curated-
+// home.js) doesn't duplicate this fetch-or-reuse logic -- same computeMorningBrief() input either
+// way, never a second darByLoc implementation that could silently drift from this one.
+export function useBriefDarByLoc(briefDate, darRows){
+  const uSt=React.useState, uM=React.useMemo, uE=React.useEffect;
   const briefDateStr = briefDate instanceof Date && !isNaN(briefDate) ? briefDate.toISOString().slice(0,10) : null;
   const sharedMatch = darRows && darRows.length > 0 && darRows[0]?.dt === briefDateStr;
   const [ownDarRows, setOwnDarRows] = uSt([]);
@@ -778,7 +776,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
   },[briefDateStr, sharedMatch]);
 
   const activeDarRows = sharedMatch ? darRows : ownDarRows;
-  const darByLoc = uM(()=>{
+  return uM(()=>{
     if(!activeDarRows.length) return {};
     const map = {};
     for(const r of activeDarRows){
@@ -793,6 +791,20 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
     }
     return map;
   },[activeDarRows]);
+}
+
+function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}){
+  const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
+  const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
+  const [expanded, setExpanded] = uSt(null);
+  const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN
+  const [supervisorFilter, setSupervisorFilter] = uSt('ALL');
+  const [generating, setGenerating] = uSt(false);
+
+  // Re-sync date if ds changes
+  uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
+
+  const darByLoc = useBriefDarByLoc(briefDate, darRows);
 
   const brief = uM(()=>computeMorningBrief(ds, briefDate, darByLoc),[ds, briefDate, darByLoc]);
   const filtered = uM(()=>{
@@ -1112,3 +1124,6 @@ function storeDistance(locA, locB) {
 function regionalRadius(loc){return getStoreOrg(loc)==='emerald'?80:150;}
 
 export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM };
+// useBriefDarByLoc is already exported inline (export function, above) -- re-exported here isn't
+// needed, but noted for discoverability: it's the shared DAR-aggregation hook both MorningBriefPanel
+// and CuratedHomePanel (views/curated-home.js) call.
