@@ -389,3 +389,70 @@ No stale `panel_index`/Workflow-Guide wording found for any of these seven in th
 covered, the GM-routine cross-walk itself now exhausted (future batches need a new candidate
 source — the Supervisor/OM sections of the same plan doc, or direct panel-registry traffic
 judgment), and the `InfoIcon` rollout to more panel headers.
+
+## Added 2026-11-06 (batch 6): Trend Explorer, Conversion Efficiency Ratio, Oil Efficiency,
+## Labor Opportunity Cost, Weather Impact, Loss Prevention Summary (task #75, next batch)
+
+Measured 82 real `KB_ARTICLES` keys before starting (confirmed by walking the object literal
+directly). Since the GM-routine cross-walk itself is now exhausted (see batch 5's closing note),
+picked this batch from `memory/plan-role-based-panel-gating-2026-11-03.md` §3's Supervisor section
+instead, which names `pricing-engine`, `promo-roi`, `trends`, `signals`, `ranking`, the "Reports
+Hub deep-dives," `conversion-efficiency`, and `oil-efficiency` together as "all plausibly real
+Supervisor tools" — of that named set, `trends` (Trend Explorer), `conversion-efficiency`, and
+`oil-efficiency` were still uncovered, as were three of the named Reports-Hub deep-dives
+(`labor-opportunity-cost`, `weather-impact`, `loss-prevention`) out of the nine that section lists.
+Confirmed each id is real and `kind:'nav'` in `panel-registry.js` and absent from the measured
+82-key list before picking.
+
+- **`trend_explorer_guide`** — read `src/views/trends.js` (193 lines) and `src/engine/trend-
+  explorer.js` in full. Documents the real deliberate single-store-only scope (stated in both
+  files' own header comments — a correct district-wide rollup risks this app's own "never average
+  averages" trap for rate/percentage metrics with no volume-weighting metadata), and that the
+  "Moves together with" list reuses Signals' Scanner `scanAllPairs()` output directly — no second
+  correlation engine or significance filter of its own.
+- **`conversion_efficiency_guide`** / **`oil_efficiency_guide`** — read `src/views/conversion-
+  efficiency.js` and `src/views/oil-efficiency.js` in full, plus their respective engine files. Both
+  are manual-upload-only McDonald's-corporate reports, each with a "collapse to ONE latest period,
+  never sum across periods" design and the SAME real 2026-10-20 incident (a too-narrow default date
+  range silently hid a freshly backfilled historical upload) behind their wide "All Time" default
+  preset. **A real, worth-noting nuance surfaced while reading, not a confirmed bug fix:**
+  `supabase/functions/ingest-report/index.ts`'s `detectReportType()` already recognizes both
+  reports' real filename patterns (`owner_operator*` and `cargill_food_oil_report`) and would route
+  them through the same Gmail-ingest pipeline several other report types already use automatically
+  — the RECEIVING side is ready, but each panel's own on-screen copy still states manual upload as
+  the only path. Whether the SENDING side (the external Gmail Apps-Script poller) has actually been
+  updated to forward these two filename patterns can't be verified from this repo alone, so this is
+  noted in both articles as an open nuance, not claimed as stale wording and not "fixed."
+  `oil_efficiency_guide` also cross-references this session's own VITO AG fry-filtration pilot work
+  (task #59), built from this exact same `oil_use_pct`/`filtration_pct`/`impact_dollars`/Quality-
+  Concern dataset.
+- **`labor_opportunity_cost_guide`** — read `src/views/labor-opportunity-cost.js` and `src/engine/
+  labor-opportunity-cost.js` in full. Documents the real `signedBasis` distinction (`'needed'` vs.
+  `'sched'`) behind the arrow+tooltip redesign this same session shipped earlier (dropping the bare
+  "(signed)" column-label suffix), and the real total-vs-average split per column (three $ columns
+  summed across the range; two hour-gap columns + Sales/Person-Hr averaged, to avoid double-counting
+  a persisting daily staffing gap).
+- **`weather_impact_guide`** — read `src/views/weather-impact.js` and `src/engine/weather-impact.js`
+  in full. Documents the deliberate historical-SPLIT design (rainy-vs-dry, hotter-vs-cooler-half),
+  explicitly NOT a matched-day design like Promo ROI's, since weather has no equivalent exogenous
+  "coverage window" concept to split on — stated as an honest association-not-causation read, same
+  standard Promo ROI holds itself to.
+- **`loss_prevention_summary_guide`** — read `src/views/loss-prevention-report.js` and `src/engine/
+  loss-prevention-report.js` in full. Documents that this was the FIRST report built on the shared
+  `ReportShell` chrome (the Reports-Hub-redesign proof-of-concept, Phase 2) and that every one of
+  its 20 columns resolves through the same `metricValueForRange()` every other rollup in the app
+  already uses — no second computation of its own.
+
+No stale `panel_index`/Workflow-Guide wording found for any of these six in this pass.
+
+12 new tests (2 per article, mounting the real `KnowledgeBasePanel`):
+`dispatch-kb-panel-guide-batch6-2026-11-06.test.js`.
+
+**Measured running total: 88 `KB_ARTICLES` keys as of this batch.** Still open: ~49 panels not yet
+covered — remaining candidates from the same Supervisor-section note (`pricing-engine` and
+`signals`/`ranking` are already covered; the other six named Reports-Hub deep-dives —
+`weather-impact`/`loss-prevention` now also covered, leaving `price-change-impact`,
+`item-velocity`, `channel-mix`, `custom-reports` genuinely open from that specific list) — plus
+clearly-high-traffic panels not named in either plan doc at all (e.g. `attention`/"Needs
+Attention", `brief`/"Forecast Brief") worth a future pass's own judgment call, and the `InfoIcon`
+rollout to more panel headers.
