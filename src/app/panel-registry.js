@@ -82,6 +82,11 @@ export const PANELS = [
   // full merge later" over a much larger, harder-to-verify rewrite of ~1800 lines of working UI).)
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning', route:true },
   { id:'events', label:'Events', icon:'◷', perm:null, kind:'nav', section:'planning', route:true },
+  // New Store Launch Planner (2026-11-06) -- occasional-use tool (one in-flight store
+  // relocation/opening at a time), route:true from day one per the panel-contract's own
+  // standing rule ("natural fit for route:true" -- this is a full standalone screen, not a
+  // quick action). See memory/project-new-store-launch-planner.md.
+  { id:'launch-planner', label:'Launch Planner', icon:'🚀', perm:'analytics.store', kind:'nav', section:'planning', route:true },
   // event-impact — RETIRED as a nav entry (Events Phase 3 (a), 2026-09-04), same pattern as
   // calendar-manager just below: its content (EventImpactPanel, src/views/event-impact.js,
   // component itself unchanged) is now reached as an Impact pill inside the unified Events panel.
