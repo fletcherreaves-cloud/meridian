@@ -110,6 +110,17 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // gets the false default) -- lets a test that specifically wants the collapsed icon-rail render
   // pass true explicitly instead of needing a click-to-collapse step.
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
+  // Full-collapse / hamburger-only (task #98, 2026-11-06) -- a THIRD state layered on top of
+  // `collapsed`, not folded into it as a 3-value enum: `collapsed` keeps meaning exactly what it
+  // always has (full vs. icon-rail) and is never touched by entering/exiting this state, so
+  // expanding out of hamburger-only always restores whichever of the other two the user was
+  // actually in before -- a derived 3-way enum cycling forward would lose that (it can only
+  // remember "the previous step in the cycle", not "the real prior mode"). Reached via
+  // double-click on the SAME logo/toggle target (not a second button) so the existing single-
+  // click full<->rail toggle -- and every test asserting on it by `title` -- stays byte-identical.
+  // Session-local only, same "convenience, not data" tier as `collapsed` itself (see its own
+  // comment above) -- nothing persisted for either.
+  const [navHidden, setNavHidden] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -193,7 +204,10 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   // equivalent, so it must never apply there. `navCollapsed` is the one flag every render below
   // should check instead of `collapsed` directly.
   const navCollapsed = collapsed && !isMobile;
-  const w = isMobile ? 260 : (navCollapsed ? 48 : 220);
+  // Same desktop-only invariant as `navCollapsed` above, same reason (#87's fix) -- mobile
+  // already has its own open/closed affordance and must never see this state either.
+  const fullyHidden = navHidden && !isMobile;
+  const w = isMobile ? 260 : (fullyHidden ? 48 : (navCollapsed ? 48 : 220));
 
   const navItemSub = (label, icon, onClick, active, badge) =>
     div({style:{display:'flex',alignItems:'center',gap:navCollapsed?0:8,
@@ -479,18 +493,28 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     div({style:sideStyle},
 
     // ── Logo & collapse toggle ──────────────────────────────────
-    div({style:{display:'flex',alignItems:'center',gap:8,padding:navCollapsed?'14px 0':'14px 12px',
-      borderBottom:'.5px solid var(--bdr)',justifyContent:navCollapsed?'center':'flex-start',
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:(navCollapsed||fullyHidden)?'14px 0':'14px 12px',
+      borderBottom:'.5px solid var(--bdr)',justifyContent:(navCollapsed||fullyHidden)?'center':'flex-start',
       flexShrink:0}},
       div({style:{width:30,height:30,borderRadius:'var(--r)',background:'var(--amber)',
         display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,
         cursor:'pointer',transition:'transform .15s'},
-        onClick:()=>setCollapsed(p=>!p),
-        title:navCollapsed?'Expand sidebar':'Collapse sidebar'},
+        // Single click: EXACTLY the pre-existing full<->rail toggle, untouched -- unless
+        // currently hamburger-only, in which case a single click just exits that state and
+        // reveals whichever of full/rail `collapsed` already held (never mutated while hidden).
+        // Double-click: collapse ALL THE WAY to hamburger-only, from either full or rail,
+        // without touching `collapsed` -- so the single-click path back out always lands
+        // exactly where the user was.
+        onClick:()=>{ if(fullyHidden) setNavHidden(false); else setCollapsed(p=>!p); },
+        onDoubleClick:(e)=>{ e.stopPropagation(); if(!isMobile) setNavHidden(true); },
+        // Title text for the two pre-existing states stays BYTE-IDENTICAL to before this change
+        // -- dispatch-nav-search.test.js and dispatch-sidebar-collapsed-default-2026-11-03.test.js
+        // both look up this element by its exact `title` string.
+        title:fullyHidden?'Expand sidebar':(navCollapsed?'Expand sidebar':'Collapse sidebar')},
         span({style:{fontSize:15,fontWeight:900,color:'#000',fontFamily:'var(--sans)',
           lineHeight:1}},'M')
       ),
-      !navCollapsed&&div({style:{overflow:'hidden'}},
+      !(navCollapsed||fullyHidden)&&div({style:{overflow:'hidden'}},
         div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)',
           whiteSpace:'nowrap',lineHeight:1.3}},'Meridian'),
         div({style:{fontSize:'9px',color:'var(--text3)',letterSpacing:'.5px',
@@ -499,10 +523,12 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       )
     ),
 
-    navSearchBox,
+    // Hamburger-only (task #98): nothing below the logo row renders at all -- not just
+    // icon-only, literally nothing -- the logo click target above is the entire sidebar.
+    !fullyHidden&&navSearchBox,
 
     // ── Navigation ──────────────────────────────────────────────
-    div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:navCollapsed?'8px 4px':'8px'}},
+    !fullyHidden&&div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:navCollapsed?'8px 4px':'8px'}},
 
       // ── Top: view switches, not panels -- no registry id, always visible ────────
       // Owner-reported bug (2026-11-02): clicking Home/District View did nothing while a
@@ -561,7 +587,7 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
     ),
 
     // ── Footer status ───────────────────────────────────────────
-    div({style:{borderTop:'.5px solid var(--bdr)',padding:navCollapsed?'10px 0':'10px 12px',
+    !fullyHidden&&div({style:{borderTop:'.5px solid var(--bdr)',padding:navCollapsed?'10px 0':'10px 12px',
       flexShrink:0,display:'flex',alignItems:'center',gap:8,justifyContent:navCollapsed?'center':'flex-start'}},
       // Data live indicator
       div({style:{width:7,height:7,borderRadius:'50%',flexShrink:0,
