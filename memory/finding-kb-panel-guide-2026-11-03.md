@@ -720,3 +720,33 @@ CLAUDE.md's promotion-is-a-one-field-flip note — a Test Kitchen panel isn't "l
 sense this backlog is covering). Future batches should re-sweep `kind:'hub-tab'`/`'internal'`
 entries specifically, since several (e.g. Planning Hub's five tabs) may already be covered under
 a parent panel's article and others may not be.
+
+## 2026-11-06 — batch 11: the `nav`/`optional` sweep is exhausted
+
+Measured directly (not assumed): of all 70 real `kind:'nav'`/`kind:'optional'` panel-registry
+entries, **67 are covered.** Four of those weren't mechanically slug-matched to their article key
+and had to be confirmed by reading the real article title against the real panel label before
+counting them: `planning` → `planning_hub`, `delivery-mix` → `delivery_3po` ("3PO Delivery —
+Channel Mix & Delivery Platforms"), `dt-sos` → `speed_of_service_guide`, `checklist-fill` →
+`digital_checklists_guide`.
+
+**Only 3 panels remain uncovered in this tier: `about`, `kb`, `workflow`.** All three are
+meta/self-referential (the About panel, the Knowledge Base panel itself, and the
+workflow/changelog view) — the same classification batch 10's log already gave them. Below the
+threshold for a real batch (no new article written, no PR opened this round) — writing a KB
+article *about* the KB panel, or about the changelog viewer, isn't the kind of SOP content this
+backlog exists to produce.
+
+**Verdict: the `nav`/`optional` phase of task #75 is functionally done.** Two real next
+increments exist, neither started yet:
+1. **Sweep `kind:'hub-tab'`/`kind:'internal'`** (18 + 14 entries) — unmeasured. Some are likely
+   already covered under a parent panel's article (e.g. Planning Hub's own sub-tabs under
+   `planning_hub`); others may be genuinely new ground. A fresh batch should measure this tier
+   specifically before assuming either way.
+2. **The `InfoIcon` rollout** — flagged as unstarted in every batch's log since the first
+   (2026-11-03). Wiring the now-111 real KB articles into more panel headers is UI work, not new
+   content, and may be the higher-value next increment over chasing an ever-thinner article tail
+   in the `hub-tab`/`internal` tiers.
+
+Neither started without the owner's go-ahead — this section is the stopping point, not a
+decision to proceed either direction.
