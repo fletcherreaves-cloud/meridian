@@ -87,4 +87,33 @@ describe('lazyPanel per-panel ErrorBoundary (dispatch #79 item 1)', () => {
     // "Try to recover" is still there either way.
     expect([...container.querySelectorAll('button')].some(b => b.textContent === 'Try to recover')).toBe(true);
   });
+
+  // Owner-requested 2026-11-06, after a real live crash (District View, DistrictGrid has no
+  // onClose to forward -- it renders from the main view, not a modal) left a user with ONLY
+  // "Try to recover", which just re-renders into the same persistent crash. "Back to Home" must
+  // be present REGARDLESS of onClose -- reverting that `&& this.props.onClose` guard back onto
+  // it (the mistake the old "Close panel" button made) must fail this test.
+  it('always shows a "Back to Home" action, even with no onClose to forward', async () => {
+    await renderCrashing(root); // no onClose passed -- the exact DistrictGrid shape
+    const homeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Back to Home'));
+    expect(homeBtn, '"Back to Home" must exist even when the panel has no onClose').toBeTruthy();
+  });
+
+  it('"Back to Home" fires the mf:error-go-home window event App.js listens for', async () => {
+    await renderCrashing(root);
+    const handler = vi.fn();
+    window.addEventListener('mf:error-go-home', handler);
+    try {
+      const homeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Back to Home'));
+      act(() => { homeBtn.click(); });
+      expect(handler).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('mf:error-go-home', handler);
+    }
+  });
+
+  it('shows a reassuring line that the rest of the app still works, not just the raw error', async () => {
+    await renderCrashing(root);
+    expect(container.textContent).toContain('Nothing else is affected');
+  });
 });

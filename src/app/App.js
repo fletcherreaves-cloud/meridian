@@ -1020,6 +1020,19 @@ function App() {
   },[settings]);
   // Open SAGE on demand (e.g. the EOM diagnosis "Ask SAGE" button seeds window.__MF_SAGE_SEED__).
   useEffect(()=>{ const h=()=>setShowSage(true); window.addEventListener('mf:open-sage',h); return ()=>window.removeEventListener('mf:open-sage',h); },[]);
+  // Guaranteed escape hatch for a crashed panel (owner-requested 2026-11-06, after the District
+  // View crash: "we probably need to create a loop... allow the user to still use the app without
+  // having to fully reload it"). lazyPanel()'s compact ErrorBoundary only offered "Close panel"
+  // when the specific call site happened to pass an onClose -- plenty of lazyPanel() call sites
+  // (DistrictGrid rendered from the main view, not a modal) pass none at all, so a crash there
+  // left "Try to recover" (which just re-renders into the SAME crash for anything non-transient)
+  // as the only button. ErrorBoundary's compact render now ALWAYS shows a "Back to Home" action
+  // regardless of onClose, via this same window-event convention mf:open-sage above already uses
+  // -- a plain module-level component (lazyPanel's Wrapped) has no hook access to setView/goRoute,
+  // so it can't call them directly. This does exactly what the Home nav item does (same
+  // dispatch-home-nav-clears-route-panel-2026-11-02 fix): leave the broken view, clear any open
+  // route panel, land on Command.
+  useEffect(()=>{ const h=()=>{setView('command');goRoute(null);}; window.addEventListener('mf:error-go-home',h); return ()=>window.removeEventListener('mf:error-go-home',h); },[]);
   const [userEvents, setUserEvents]= useState(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}});
   const [showSettings, setShowSettings]= useState(false);
   // showRanking removed — dispatch #192: replaced by routePanel==='ranking' (see routePanel
