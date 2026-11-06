@@ -11,7 +11,13 @@ import { normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 class ErrorBoundary extends React.Component {
   constructor(p){super(p);this.state={err:null};}
   static getDerivedStateFromError(e){return{err:e};}
-  componentDidCatch(e,i){console.error('Meridian error:',e,e?.cause||'',i);}
+  // panelName (error-telemetry prep, memory/plan-error-telemetry-auto-fix-2026-11-06.md, task
+  // #102) -- threaded in by lazyPanel() (App.js) as a prop, one per panel, so a crash log says
+  // WHICH panel broke instead of just that something did. Logged here only -- not yet sent
+  // anywhere (reportRuntimeError()/runtime_error_reports is task #103, deliberately not built in
+  // this PR). meridian.js's own top-level boundary (the whole-app fallback) passes no panelName,
+  // so this stays undefined there exactly as before.
+  componentDidCatch(e,i){console.error('Meridian error:',this.props.panelName?`[${this.props.panelName}]`:'',e,e?.cause||'',i);}
   render(){
     if(this.state.err){
       const e=this.state.err;
