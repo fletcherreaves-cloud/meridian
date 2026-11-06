@@ -519,3 +519,84 @@ yet covered. The Supervisor-section plan-doc source (`plan-role-based-panel-gati
 batches need a fresh candidate source: a direct `panel-registry.js` `kind:'nav'` sweep diffed
 against the current key list, judged on real traffic rather than a named list. The `InfoIcon`
 rollout to more panel headers remains unstarted.
+
+## Added 2026-11-06 (batch 8): Events, Market Intelligence, Cash Variance Pattern, Metric
+## Lineage, District Lens, Pay Rate History (task #75, next batch)
+
+Measured 94 real `KB_ARTICLES` keys before starting (confirmed by walking the object literal
+directly). Both named candidate sources (`plan-role-based-panel-gating-2026-11-03.md`'s GM-routine
+table and its Supervisor-tier list) were already exhausted as of batches 5 and 7's own closing
+notes, so this batch used a FRESH method instead: grepped every real `kind:'nav'`/`kind:'optional'`
+entry in `panel-registry.js` (70 total), diffed against the current `KB_ARTICLES` key list, and
+picked 6 by direct judgment of real day-to-day operational traffic/importance — explicitly skipping
+Test Kitchen experiments and the clearly low-traffic admin/settings panels (`about`, `settings`,
+`panel-manager`, `workflow`, `troubleshoot`, `news`, `fob-reference-table`), same deferral every
+batch has made.
+
+- **`events_guide`** — read `src/views/events-panel.js` in full (the real "Events (unified panel)"
+  Phase 3 shell, panel-registry id `events`). Documents the real 5-pill structure (Upcoming/
+  Calendar/Log/Impact/Rules), that Upcoming vs. Log is one data source split by each event's
+  `visibility` field (not two separate tables), the (date,label,type) collapse-into-one-row-with-
+  scope-chip design, the confidence glyph's three real tiers (measured/estimated/assumed) read
+  from the Event Impact Registry, and — the most load-bearing fact for this session's own earlier
+  work — that this is the EXACT SAME `saveOrgEvents()` write path Quick-Capture's tiles and SAGE's
+  `log_event` tool both already feed, confirmed by reading the real function call, not assumed from
+  the shared name.
+- **`loc_intel_guide`** — read `src/features/location-intel.js` in full (panel-registry id
+  `loc-intel`, labeled "Market Intelligence"). Documents the three real modes (Statistical/AI/
+  Demographics), that Statistical computes real Pearson-r/weather-bucket/median-split correlations
+  live from `ds` with real per-stat minimum-sample gates, that AI mode's SAGE narrative is built
+  from a JSON payload containing ONLY those already-computed Statistical figures (never a second
+  data source), and that Demographics is architecturally independent of `ds` — its own Supabase
+  table, refreshed only on an explicit Census Geocoder + ACS5 fetch click, never automatically.
+- **`cash_variance_pattern_guide`** — read `src/views/cash-variance-pattern.js` and
+  `src/engine/cash-variance-pattern.js` in full. Documents the real store × day-of-week grain
+  (never register- or employee-level — this app's data model has no register-number field at all,
+  confirmed from the engine's own header comment, and naming individuals is out of scope by the
+  repo's "verify, don't accuse" convention regardless), the real 10 `CASH_VARIANCE_METRICS`
+  columns, the 3-observed-day minimum bucket, and the deliberate absence of any built-in "flagged"
+  threshold (the same no-unvalidated-cutoff posture Weather Impact and Channel Mix already take).
+- **`metric_lineage_guide`** — read `src/views/metric-lineage.js` and
+  `src/engine/metric-provenance.js`. Documents the real hand-curated-plus-auto-synthesized design
+  (a core set hand-written because the prose itself is the value; everything else synthesized
+  automatically from the SAME `METRIC_SOURCES` resolver every other metric in the app reads
+  through, per that file's own Notes-61 header), and that this panel is a pure read with zero
+  `ds`/Supabase coupling — the registry file itself IS the source of truth, not a view over one.
+- **`district_lens_guide`** — read `DistrictLensPanel` in `src/views/analytics.js` in full.
+  Documents the real heatmap (every store × every `CORR_PREDICTORS` metric, Pearson-r against a
+  chosen outcome, over a 90-day trailing window ending on the last CLOSED business day), the
+  opportunity-ranking formula (correlation strength × gap-from-district-average, not either one
+  alone), the OK-vs-FL org-summary minimum-coverage gate, and that the AI-generated narrative's
+  SAGE prompt contains only the already-computed top-metric/opportunity lists — no second
+  computation hidden inside the narrative step.
+- **`pay_rate_history_guide`** — read `src/views/pay-rate-history.js` and
+  `src/engine/employee-pay-history.js`. Documents the real two-population merge (Crew: DERIVED
+  via `weeklyCrewRates()`/`detectRateSteps()`, since no pay-raise event is ever logged for crew at
+  all; Management: a real already-LOGGED change event the pull script's own diff writes), the real
+  `rateBasis` straight-time-vs-blended distinction (an owner-caught 2026-11-05 correction — a step
+  isn't a clean rate change unless BOTH its before and after rate are confirmed straight-time), and
+  the real `logAppAccess('panel_view','pay-rate-history')` access-logging on every mount, since this
+  is real wage data even within an Owner/Admin/DO-only panel.
+
+**Checked for stale wording, found one genuine ambiguity, decided it's not drift:**
+`panel_index`'s existing one-liner for Events ("promo / known-event calendar that feeds forecasts
+& Smart Targets... relabeled from 'Events & Tags'") undersells the real current panel (it also
+merged in the separate Event Impact nav entry, and now has Log/Rules tabs the one-liner doesn't
+mention) — but nothing in that line is factually WRONG, only incomplete, which is the same
+already-documented, deliberately-deferred one-liner-depth gap every prior batch has left alone
+rather than new drift. No other stale wording found for any of these six panels in `panel_index` or
+the Workflow Guide (`tutorial.js`/`App.js`'s `WORKFLOW_GUIDE_SECTIONS` text) — grepped both
+directly, confirmed no mention of Market Intelligence/Cash Variance Pattern/Metric Lineage/
+District Lens/Pay Rate History beyond code comments, and Metric Lineage's own one-liner already
+matches the real panel.
+
+12 new tests (2 per article, mounting the real `KnowledgeBasePanel`):
+`dispatch-kb-panel-guide-batch8-2026-11-06.test.js`.
+
+**Measured running total: 100 `KB_ARTICLES` keys as of this batch.** Still open: ~37 panels not
+yet covered (`panel-manager`, `pmix`, `aiscan`, `compare`, `dar-daypart`, `settings`, `about`,
+`workflow`, `troubleshoot`, `news`, `fob-reference-table`, `kb`, and the remaining Test-Kitchen-
+excluded set among others — judged lower traffic than this batch's six, not yet measured
+exhaustively). Both named plan-doc sources remain exhausted; future batches should continue the
+fresh `panel-registry.js`-sweep method this batch established. The `InfoIcon` rollout to more
+panel headers remains unstarted.
