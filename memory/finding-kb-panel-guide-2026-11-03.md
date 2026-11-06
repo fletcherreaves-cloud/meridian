@@ -929,3 +929,43 @@ make the control vanish and these fail, unlike a test that only imported `InfoIc
   already-documented gap from the very first KB batch) — not needed for `InfoIcon` itself (it
   opens its own inline modal, no dependency on the standalone KB panel), but still open for a
   future "jump to this article in the full KB browser" flow.
+
+## InfoIcon rollout — Phase 2 (2026-11-06)
+
+Continued the mechanical wiring Phase 1 started. **13 more panels**, each a real
+`RoutePanelShell`-backed panel with a single, clean header location and an already-existing
+matching `KB_ARTICLES` key — confirmed by reading each file directly (grepping for
+`RoutePanelShell` and its `title`/`subtitle` block) before touching it, same bar Phase 1 used:
+
+- **Visit Readiness** (`visit-readiness.js`) → `visit_readiness_guide`
+- **Graded Visits** (`graded-visits.js`) → `graded_visits_guide`
+- **Customer Complaints** (`customer-complaints.js`) → `customer_complaints_guide`
+- **Crew Schedule** (`crew-schedule-panel.js`) → `crew_schedule_guide`
+- **Task Queue** (`task-queue.js`) → `task_queue_guide`
+- **Pricing Engine** (`pricing-engine.js`) → `pricing_engine_guide`
+- **Speed of Service** (`dt-speedofservice.js`) → `speed_of_service_guide`
+- **Weekly Count Status** (`weekly-count-status-report.js`) → `weekly_count_status_guide`
+- **Digital Checklists** (`checklist-fill.js`) → `digital_checklists_guide`
+- **Promo / Discount ROI** (`promo-roi.js`) → `promo_roi_guide`
+- **Trend Explorer** (`trends.js`) → `trend_explorer_guide`
+- **Above-Store One-Pager** (`above-store-onepager.js`) → `above_store_guide` — only in the
+  default/`'rollup'` view; the panel's own `'leadership'` view (Leadership One-Pager) has no
+  matching article, so the icon is conditionally omitted there rather than mislabeling it.
+- **Local News** (`news-panel.js`) → `news_guide`
+
+**Checked, deliberately NOT wired this phase** (same per-file judgment call Phase 1 made for
+Signals/SAGE): `labor-analysis.js` and `forms-library.js` both have a matching KB key
+(`labor_analysis_guide`, `forms_library_guide`) but neither uses `RoutePanelShell` — `forms-
+library.js` is the already-documented `panel-contract.md` gap (hand-rolled backdrop); `security-
+panel.js` likewise has no `RoutePanelShell` call. Left for a future phase alongside Signals/SAGE,
+not forced into this one's mechanical copy-paste.
+
+13 new tests (one per wiring, mounting the real panel component and clicking the real "?"
+control): `dispatch-kb-infoicon-rollout-phase2-2026-11-06.test.js`.
+
+**Running total: 18 of ~114 real `KB_ARTICLES` panel-level keys now have a wired `InfoIcon`**
+(5 from Phase 1 + 13 here; `mape`/`leaderboards_guide`/`model_health` were wired before either
+phase started and aren't counted against the panel-level total). **Still open:** ~96 panels with
+a real KB key and no icon yet, plus the Signals/SAGE/`labor-analysis`/`forms-library`/`security-
+panel` tier that needs its own per-file judgment call rather than the mechanical copy-paste this
+phase and Phase 1 both used.

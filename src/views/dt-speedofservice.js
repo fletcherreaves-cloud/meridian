@@ -17,6 +17,7 @@ import { printHtml } from '../utils/print-html.js';
 // var() colors; a raw `+'66'` silently drops on a var() color per #351/#368).
 import { withAlpha } from './patch-heatmap.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 // Dispatch #136 Part 1 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ chart.js/
 // auto, which this panel already pulls in directly) that this session's established pattern
@@ -722,10 +723,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   return h(RoutePanelShell, {
     icon: '🚗',
     title: 'Speed of Service',
-    subtitle:
-      'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · ' +
-      'DT/FC/Kitchen thresholds are each store\'s own target (tOepe/tR2p/tKvst) +40s amber buffer · ' +
-      'Beverage has no target yet — shown as a dashed "(default)" band',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null,
+        'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · ' +
+        'DT/FC/Kitchen thresholds are each store\'s own target (tOepe/tR2p/tKvst) +40s amber buffer · ' +
+        'Beverage has no target yet — shown as a dashed "(default)" band'),
+      h(InfoIcon, { articleKey: 'speed_of_service_guide' })),
     onBack: onClose,
     headerExtra: div({ style:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }},
       h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),

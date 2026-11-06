@@ -21,6 +21,7 @@ import { printHtml } from '../utils/print-html.js';
 // without a doubled RoutePanelShell; OnePagerPanel (one-pager.js's own thin wrapper around the
 // same body) keeps working unchanged for anything that still renders it standalone.
 import { LeadershipCascadeBody } from './one-pager.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 // Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
 async function askSageStream(prompt, systemPrompt, onChunk) {
@@ -596,9 +597,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   return h(RoutePanelShell, {
     title: view === 'leadership' ? 'Leadership One-Pager' : 'Above-Store One-Pager',
     icon: view === 'leadership' ? '📋' : '📄',
-    subtitle: view === 'leadership'
-      ? 'Weekly cascade — Owner → DO → Supervisor → GM'
-      : scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, view === 'leadership'
+        ? 'Weekly cascade — Owner → DO → Supervisor → GM'
+        : scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')'),
+      view !== 'leadership' && h(InfoIcon, { articleKey: 'above_store_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
       // Dispatch #190's scope selector — Rollup (Above-Store, read-only quantified rollup) vs.

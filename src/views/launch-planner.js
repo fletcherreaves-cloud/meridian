@@ -133,6 +133,7 @@ export function NewStoreLaunchPlanner({ onClose }) {
   }
 
   const tTpph = DEFAULT_TARGETS[selLoc]?.tTpph;
+  const tAvgCheck = DEFAULT_TARGETS[selLoc]?.tAvgCheck;
 
   return h(RoutePanelShell, { icon: '🚀', title: 'New Store Launch Planner', subtitle: h(InfoIcon, { articleKey: 'launch_planner_guide' }), onBack: onClose },
     div({ style: { display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 } },
@@ -175,7 +176,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
               h('th', { key: t, style: { textAlign: 'left', padding: '4px 10px', borderBottom: '1px solid var(--bdr)', color: 'var(--text3)', fontWeight: 600 } }, t)))),
           h('tbody', null, rows.map((r) => {
             const effective = r.overrideSales ?? r.projectedSales;
-            const hrs = tTpph ? effective / tTpph : null;
+            // hours = transactions / TPPH, and transactions = $ / avg check -- tTpph is a
+            // transactions-per-hour ratio, never a dollars-per-hour one, so dividing $ by it
+            // directly (the bug this replaced) skips the avg-check conversion and overstates
+            // hours by roughly that factor.
+            const hrs = (tTpph && tAvgCheck) ? (effective / tAvgCheck) / tTpph : null;
             const isGrand = grandOpeningDate && r.planDate === grandOpeningDate;
             return h('tr', { key: r.planDate, style: isGrand ? { background: 'rgba(245,188,0,.08)' } : null },
               h('td', { style: { padding: '4px 10px' } }, r.dayN),

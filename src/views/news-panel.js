@@ -27,6 +27,7 @@ import { loadNewsMentions } from '../lib/supabase.js';
 import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const EMPTY_STORES = [];
 
@@ -145,8 +146,10 @@ export function NewsPanel({ onClose, stores, initialLoc = null }) {
   return h(RoutePanelShell, {
     icon: '📰',
     title: 'Local News',
-    subtitle: rows === null ? 'loading…'
-      : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`,
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, rows === null ? 'loading…'
+        : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`),
+      h(InfoIcon, { articleKey: 'news_guide' })),
     onBack: onClose,
   },
     articles.length ? div({ style: { display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10, marginBottom: 10, borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },

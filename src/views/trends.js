@@ -15,6 +15,7 @@ import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset, LocationSelect
 import { MetricSelect } from './signals.js';
 import { METRIC_CATEGORIES, findMetric, extractMetricValues, scanAllPairs } from '../engine/signal-registry.js';
 import { TREND_FREQUENCIES, bucketMetricSeries, filterSeriesToRange, dayOfWeekBreakdown, correlatedMetricsFor } from '../engine/trend-explorer.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -127,7 +128,9 @@ export function TrendExplorerPanel({ ds, onClose }) {
   return h(RoutePanelShell, {
     icon: '📈',
     title: 'Trend Explorer',
-    subtitle: 'Any metric, any period, any frequency — with a day-of-week read and what else moves with it',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Any metric, any period, any frequency — with a day-of-week read and what else moves with it'),
+      h(InfoIcon, { articleKey: 'trend_explorer_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       h(MetricSelect, { value: metricKey, onChange: setMetricKey, label: 'Metric' }),
