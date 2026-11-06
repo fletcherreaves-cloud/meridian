@@ -1654,6 +1654,17 @@ function elapsedBusinessHours(targetDateStr, now = new Date()) {
   return Math.max(0, Math.min(24, hrs));
 }
 
+// Most-recent-first sort for groupEventRanges() output (District View's "RECENT EVENTS" strip).
+// groupEventRanges() (engine/events-import.js) only sets dkEnd on a COLLAPSED multi-day group --
+// a hand-entered single-day event (no rangeId) passes straight through with no dkEnd at all.
+// Sorting directly on `.dkEnd` crashed the instant a real single-day event reached this sort
+// ("undefined is not an object (evaluating 't.dkEnd.localeCompare')"), owner-caught live on
+// District View 2026-11-06. A single-day event's own "end" is just its own dk. Exported (pure,
+// no I/O) so this can be asserted directly, same convention as daypartTimeStatus below.
+export function sortRecentEvents(events) {
+  return [...events].sort((a, b) => (b.dkEnd || b.dk).localeCompare(a.dkEnd || a.dk));
+}
+
 // isActive/isDone for ONE daypart, given hours already elapsed in its business day. Exported
 // (pure, no I/O) so this can be asserted directly against a fixed "now" without mocking Date.
 export function daypartTimeStatus(slots, elapsedHours) {
@@ -2279,11 +2290,9 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         // days into one dkStart..dkEnd entry with a clean label (its own "(Day N of M)" suffix
         // already stripped). A hand-entered single-day event (no rangeId) passes through
         // unchanged, one row each, same as before.
-        const recentEvs = groupEventRanges(
+        const recentEvs = sortRecentEvents(groupEventRanges(
           Object.entries(evMap).map(([dk,ev])=>({dk,...ev})).filter(ev=>ev.dk<=today)
-        )
-          .sort((a,b)=>b.dkEnd.localeCompare(a.dkEnd))
-          .slice(0,4);
+        )).slice(0,4);
         if(!kbNote && !kbTags.length && !recentEvs.length) return null;
         return div({style:{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}},
           (kbNote||kbTags.length>0)&&div({style:{flex:'2 1 260px',background:'rgba(251,191,36,.05)',
