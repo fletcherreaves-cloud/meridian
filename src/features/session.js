@@ -25,14 +25,26 @@ class ErrorBoundary extends React.Component {
       // onClose (most panels have one) gives a real way back instead of only retrying the same
       // render, which loops right back to the same crash for a persistent error.
       if (this.props.compact) {
+        // Owner-requested 2026-11-06, after a real crash (District View, single-day events) left
+        // a user with only "Try to recover" -- which just re-renders into the SAME crash for
+        // anything that isn't transient -- and no "Close panel" because that call site passes no
+        // onClose at all (DistrictGrid renders from the main view, not a modal, so there's
+        // nothing panel-specific to close). "Back to Home" is now ALWAYS present, never
+        // conditional, so a crash here can never strand someone with no way back except a full
+        // reload. It fires the same mf:error-go-home window event App.js's own listener answers
+        // with setView('command')+goRoute(null) -- the exact thing the Home nav item already
+        // does. "Close panel" stays additional, when a real onClose exists, since closing just
+        // that one modal is nicer than bouncing all the way to Home.
         return h('div',{style:{position:'fixed',inset:0,zIndex:450,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.75)',padding:20}},
           h('div',{style:{maxWidth:480,width:'100%',padding:24,borderRadius:10,fontFamily:'monospace',background:'#090e18',color:'#e2e8f0',border:'1px solid #f59e0b'}},
             h('div',{style:{color:'#f59e0b',fontSize:15,fontWeight:700,marginBottom:10}},'⚠ This panel hit an error'),
+            h('div',{style:{color:'var(--text2)',fontSize:11,marginBottom:10}},'Nothing else is affected -- you\'re still logged in, and the rest of the app still works.'),
             h('div',{style:{color:'var(--crit)',fontSize:12,marginBottom:8}},e.message),
             cause&&h('div',{style:{color:'#fb923c',fontSize:11,marginBottom:10}},'Caused by: '+(cause.message||String(cause))),
-            h('div',{style:{display:'flex',gap:8,marginTop:6}},
+            h('div',{style:{display:'flex',gap:8,marginTop:6,flexWrap:'wrap'}},
               h('button',{onClick:()=>this.setState({err:null}),style:{padding:'6px 14px',background:'#f59e0b',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12}},'Try to recover'),
-              this.props.onClose&&h('button',{onClick:this.props.onClose,style:{padding:'6px 14px',background:'transparent',color:'#e2e8f0',border:'1px solid #475569',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12}},'Close panel')),
+              this.props.onClose&&h('button',{onClick:this.props.onClose,style:{padding:'6px 14px',background:'transparent',color:'#e2e8f0',border:'1px solid #475569',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12}},'Close panel'),
+              h('button',{onClick:()=>{try{window.dispatchEvent(new CustomEvent('mf:error-go-home'));}catch{}},style:{padding:'6px 14px',background:'transparent',color:'#e2e8f0',border:'1px solid #475569',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12}},'← Back to Home')),
           ));
       }
       return h('div',{style:{padding:40,fontFamily:'monospace',background:'#090e18',color:'#e2e8f0',minHeight:'100vh'}},
