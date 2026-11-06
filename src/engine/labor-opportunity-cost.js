@@ -34,13 +34,22 @@ function sumMetric(key, ds, loc, start, end) {
   return rows.length ? rows.reduce((s, r) => s + r.value, 0) : null;
 }
 
+// `signedBasis` names what a positive/negative value on this column actually means, for the
+// view's arrow+tooltip treatment (owner-requested 2026-11-05: drop the bare "(signed)" suffix
+// from the label — "a math/programming term, not something a GM or supervisor would parse" —
+// and let a colored arrow + one-line tooltip carry that meaning instead). Two distinct bases
+// here, not one: 'needed' columns (oppCostDollarTotal/actVsNeedAvgHrs) are signed vs the
+// NEEDED-hours baseline (positive = overstaffed vs need); 'sched' columns
+// (actVsSchedOppTotal/actVsSchedAvgHrs) are signed vs the SCHEDULE instead (positive = ran over
+// the plan) — a real difference per this file's own header (planning accuracy vs execution
+// accuracy), so one tooltip wording would misdescribe the other. null = not signed at all.
 export const LABOR_OPP_COLUMNS = [
-  { key: 'otDollarTotal', label: 'OT $ (Total)', unit: '$' },
-  { key: 'oppCostDollarTotal', label: 'Opportunity Cost $ (Total, signed)', unit: '$' },
-  { key: 'actVsSchedOppTotal', label: 'Act-vs-Sched Opportunity $ (Total, signed)', unit: '$' },
-  { key: 'actVsNeedAvgHrs', label: 'Act vs Needed Hrs (Avg/day, signed)', unit: 'hrs' },
-  { key: 'actVsSchedAvgHrs', label: 'Act vs Sched Hrs (Avg/day, signed)', unit: 'hrs' },
-  { key: 'spphAvg', label: 'Sales/Person-Hr (Avg)', unit: '$/hr' },
+  { key: 'otDollarTotal', label: 'OT $ (Total)', unit: '$', signedBasis: null },
+  { key: 'oppCostDollarTotal', label: 'Opportunity Cost $ (Total)', unit: '$', signedBasis: 'needed' },
+  { key: 'actVsSchedOppTotal', label: 'Act-vs-Sched Opportunity $ (Total)', unit: '$', signedBasis: 'sched' },
+  { key: 'actVsNeedAvgHrs', label: 'Act vs Needed Hrs (Avg/day)', unit: 'hrs', signedBasis: 'needed' },
+  { key: 'actVsSchedAvgHrs', label: 'Act vs Sched Hrs (Avg/day)', unit: 'hrs', signedBasis: 'sched' },
+  { key: 'spphAvg', label: 'Sales/Person-Hr (Avg)', unit: '$/hr', signedBasis: null },
 ];
 
 export function buildLaborOpportunityCostReport(ds, { locs, range } = {}) {

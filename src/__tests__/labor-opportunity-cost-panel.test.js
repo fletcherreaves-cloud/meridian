@@ -64,6 +64,34 @@ describe('LaborOpportunityCostPanel', () => {
     expect(container.textContent).toContain('-$500'); // oppCostDollarTotal: -125 * 4
   });
 
+  // Owner-requested 2026-11-05: "signed" is unnecessary jargon for this audience -- drop it
+  // from the column label entirely and let a colored arrow + tooltip carry the direction
+  // instead. Renders the real panel (not just engine/labor-opportunity-cost.js's LABOR_OPP_
+  // COLUMNS strings in isolation) so a revert that put "(signed)" back in the header, or
+  // dropped the arrow/tooltip from the cell, would be caught here.
+  it('drops "(signed)" from every column header and carries direction via a colored arrow + tooltip on the cell instead', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    ({ container, root } = await mount({ ds: buildFixture(), stores: STORES, onClose: () => {} }));
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    expect(container.textContent).not.toContain('signed');
+    expect(container.textContent).toContain('Opportunity Cost $ (Total)'); // no "(Total, signed)"
+
+    // oppCostDollarTotal is -$500 for this fixture (negative = understaffed vs needed) -- the
+    // cell must carry a down arrow and a tooltip explaining what that sign means, not just the
+    // bare figure.
+    const oppCostCell = [...container.querySelectorAll('[title]')]
+      .find(el => (el.getAttribute('title') || '').includes('understaffed'));
+    expect(oppCostCell, 'no tooltip-bearing cell found for the signed Opportunity Cost column').toBeTruthy();
+    expect(oppCostCell.textContent).toContain('▼'); // negative -> down arrow
+    expect(oppCostCell.textContent).toContain('-$500');
+    // A non-signed column (OT $) must NOT get an arrow or a direction tooltip -- it's never negative.
+    const otDollarText = container.textContent;
+    expect(otDollarText).toContain('$320');
+  });
+
   it('after a run, CSV export fires with the real headers and figures', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
