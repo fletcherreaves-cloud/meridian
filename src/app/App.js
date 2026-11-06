@@ -77,7 +77,14 @@ const _panelFallback = () => React.createElement('div', {
 // src/__tests__/lazy-panel-error-boundary.test.js can exercise the real composition below
 // directly -- rendering the full App component just to trigger one panel's crash would need
 // its entire prop/state surface for no real gain in what the test actually checks.
-export const lazyPanel = (importFn) => {
+// panelName (error-telemetry prep, memory/plan-error-telemetry-auto-fix-2026-11-06.md, task #102)
+// -- an optional stable identifier for this panel, passed through to ErrorBoundary so a future
+// componentDidCatch can tag which panel crashed. Every real call site below now passes one
+// (the panel-registry.js id where one obviously matches, else a readable slug of the component's
+// own name) -- optional only so a test or a future call site that genuinely has no name doesn't
+// break. NOT yet wired to any capture/reporting backend -- that's task #103, deliberately out of
+// scope here; today this only makes the name available to componentDidCatch's existing console.error.
+export const lazyPanel = (importFn, panelName) => {
   const Inner = React.lazy(() => importFn().catch((err) => {
     try {
       const KEY = 'meridian_chunk_reload_at';
@@ -99,10 +106,10 @@ export const lazyPanel = (importFn) => {
   // crash for a persistent error -- a real "Close panel" way back matters here. See
   // features/session.js's ErrorBoundary for the compact variant itself.
   const Wrapped = (props) => React.createElement(
-    ErrorBoundary, { compact: true, onClose: props?.onClose },
+    ErrorBoundary, { compact: true, onClose: props?.onClose, panelName },
     React.createElement(React.Suspense, { fallback: React.createElement(_panelFallback) },
       React.createElement(Inner, props)));
-  Wrapped.displayName = 'LazyPanel';
+  Wrapped.displayName = panelName ? `LazyPanel(${panelName})` : 'LazyPanel';
   return Wrapped;
 };
 // AtAGlance (extracted from analytics.js, issue #124) is the app's default landing view
@@ -137,22 +144,22 @@ const _AtAGlanceInner = React.lazy(() => _ataglance().then(m => ({ default: m.At
 const AtAGlance = (props) => React.createElement(React.Suspense, { fallback: null }, React.createElement(_AtAGlanceInner, props));
 
 const _laborTools = () => import('../views/labor-tools.js');
-const ChecklistFillPanel  = lazyPanel(() => import('../views/checklist-fill.js').then(m => ({ default: m.ChecklistFillPanel })));
-const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
-const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
-const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
-const PayEventsReportPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.PayEventsReportPanel })));
-const ScheduleDisciplinePanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ScheduleDisciplinePanel })));
-const ComplianceAuditPanel   = lazyPanel(() => _laborTools().then(m => ({ default: m.ComplianceAuditPanel })));
-const EmployeePerformancePanel = lazyPanel(() => _laborTools().then(m => ({ default: m.EmployeePerformancePanel })));
-const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
-const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
-const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
+const ChecklistFillPanel  = lazyPanel(() => import('../views/checklist-fill.js').then(m => ({ default: m.ChecklistFillPanel })), 'checklist-fill');
+const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })), 'dar-daypart');
+const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })), 'product-mix-panel');
+const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })), 'labor-analytics');
+const PayEventsReportPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.PayEventsReportPanel })), 'pay-events-report-panel');
+const ScheduleDisciplinePanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ScheduleDisciplinePanel })), 'schedule-discipline-panel');
+const ComplianceAuditPanel   = lazyPanel(() => _laborTools().then(m => ({ default: m.ComplianceAuditPanel })), 'compliance-audit-panel');
+const EmployeePerformancePanel = lazyPanel(() => _laborTools().then(m => ({ default: m.EmployeePerformancePanel })), 'employee-performance-panel');
+const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })), 'operator-summary');
+const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })), 'model-assignment-panel');
+const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })), 'store-kb');
 
 const _storeAnalytics = () => import('../views/store-analytics.js');
-const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
-const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
-const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
+const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })), 'revenue-intelligence');
+const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })), 'store-dash');
+const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })), 'multi-store-comparison');
 
 // #232: analytics.js was the single biggest static import in App.js (316 KB raw) — every one of
 // these is a modal/report panel gated behind its own showX flag, so none of them are needed to
@@ -164,30 +171,30 @@ const _analytics = () => import('../views/analytics.js');
 // MetricCorrelationExplorer — RETIRED (dispatch #195, 2026-08-28): merged into Signals as the
 // Correlations tab (signals.js's CorrelationsTab, now Scanner-statistics-powered). See
 // panel-registry.js's comment on corr-explorer.
-const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
+const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })), 'district-lens');
 // TopBottomPerformers -- RETIRED as its own lazyPanel (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (below) as a mode; see panel-registry.js's comment on 'top-bottom'.
-const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
-const PricingEnginePanel        = lazyPanel(() => import('../views/pricing-engine.js').then(m => ({ default: m.PricingEnginePanel })));
-const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
-const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
+const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })), 'opportunity-dollars');
+const PricingEnginePanel        = lazyPanel(() => import('../views/pricing-engine.js').then(m => ({ default: m.PricingEnginePanel })), 'pricing-engine');
+const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })), 'why-engine');
+const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })), 'fob-analysis');
 // ForecastAccuracyPanel — dispatch #106 Phase B: no longer given its own lazyPanel entry here.
 // It's still used, but only inside ForecastReportsPanel below, which lazy-loads it itself
 // (src/features/forecast-reports.js imports it directly from analytics.js).
-const ForecastReportsPanel      = lazyPanel(() => import('../features/forecast-reports.js').then(m => ({ default: m.ForecastReportsPanel })));
-const AIBacktestScanner         = lazyPanel(() => _analytics().then(m => ({ default: m.AIBacktestScanner })));
-const DialedInPanel             = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInPanel })));
-const DateRangeReport           = lazyPanel(() => _analytics().then(m => ({ default: m.DateRangeReport })));
-const ForecastAudit             = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAudit })));
-const LocationBrief             = lazyPanel(() => _analytics().then(m => ({ default: m.LocationBrief })));
-const ProjectionVsActualsReport = lazyPanel(() => _analytics().then(m => ({ default: m.ProjectionVsActualsReport })));
-const DialedInComparisonReport  = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInComparisonReport })));
-const DistrictPriorityBrief     = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictPriorityBrief })));
-const AttentionPanel            = lazyPanel(() => _analytics().then(m => ({ default: m.AttentionPanel })));
-const DataManagerPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.DataManagerPanel })));
-const StoreOnePager             = lazyPanel(() => _analytics().then(m => ({ default: m.StoreOnePager })));
-const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ default: m.MonthlyProjectionsPanel })));
-const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })));
+const ForecastReportsPanel      = lazyPanel(() => import('../features/forecast-reports.js').then(m => ({ default: m.ForecastReportsPanel })), 'forecast-reports');
+const AIBacktestScanner         = lazyPanel(() => _analytics().then(m => ({ default: m.AIBacktestScanner })), 'ai-backtest-scanner');
+const DialedInPanel             = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInPanel })), 'dialed-in-panel');
+const DateRangeReport           = lazyPanel(() => _analytics().then(m => ({ default: m.DateRangeReport })), 'date-range-report');
+const ForecastAudit             = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAudit })), 'forecast-audit');
+const LocationBrief             = lazyPanel(() => _analytics().then(m => ({ default: m.LocationBrief })), 'location-brief');
+const ProjectionVsActualsReport = lazyPanel(() => _analytics().then(m => ({ default: m.ProjectionVsActualsReport })), 'projection-vs-actuals-report');
+const DialedInComparisonReport  = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInComparisonReport })), 'dialed-in-comparison-report');
+const DistrictPriorityBrief     = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictPriorityBrief })), 'district-priority-brief');
+const AttentionPanel            = lazyPanel(() => _analytics().then(m => ({ default: m.AttentionPanel })), 'attention');
+const DataManagerPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.DataManagerPanel })), 'data-manager');
+const StoreOnePager             = lazyPanel(() => _analytics().then(m => ({ default: m.StoreOnePager })), 'store-one-pager');
+const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ default: m.MonthlyProjectionsPanel })), 'monthly-projections-panel');
+const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })), 'store-vlh-config-panel');
 
 // #232: projections.js's only two live exports in App.js (ProjectionWorkflow/PreForecastBrief,
 // gated behind routePanel==='proj' (Dispatch27)/showProjBriefSA) — its loadLockedProjections/saveLockedProjections/
@@ -195,32 +202,32 @@ const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ defa
 // other static path into analytics.js (ForecastAudit/CurrentMonthPaceSection), which a static
 // projections.js import would otherwise have kept pinning in place no matter what App.js itself did.
 const _projections = () => import('../features/projections.js');
-const ProjectionWorkflow = lazyPanel(() => _projections().then(m => ({ default: m.ProjectionWorkflow })));
-const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: m.PreForecastBrief })));
+const ProjectionWorkflow = lazyPanel(() => _projections().then(m => ({ default: m.ProjectionWorkflow })), 'projection-workflow');
+const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: m.PreForecastBrief })), 'pre-forecast-brief');
 
 // #232 Finding 3: the 7 store-dash.js panels App.js actually renders, all gated behind view/show
 // state already — see the comment on monthly-targets-v2.js's import above for what stayed static.
 const _storeDash = () => import('../views/store-dash.js');
-const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
-const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
+const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })), 'district-grid');
+const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })), 'org-view');
 // LeaderboardPanel (dispatch #203) -- merges Rankings/Record Days/Top-Bottom Performers into one
 // route:true panel with three modes; see store-dash.js's own comment on LeaderboardPanel.
-const LeaderboardPanel       = lazyPanel(() => _storeDash().then(m => ({ default: m.LeaderboardPanel })));
+const LeaderboardPanel       = lazyPanel(() => _storeDash().then(m => ({ default: m.LeaderboardPanel })), 'leaderboard-panel');
 // PerformanceCalculator — dispatch #199 moved this UI into Performance Review -> Customize ->
 // Calculator (see performance-reviews.js's PerformanceCalculatorSection usage). No longer a
 // standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
-const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })));
-const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })));
+const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })), 'unified-targets');
+const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })), 'monthly-target-manager');
 
-const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })), 'performance-reviews-panel');
 // TargetsEditorPanel — dispatch #135 item 3 moved this UI into Performance Review -> Customize
 // -> Targets (see performance-reviews.js's TargetsEditorSection usage). No longer a standalone
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
-const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
-const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
-const AccessLogPanel = lazyPanel(() => import('../views/access-log.js').then(m => ({ default: m.AccessLogPanel })));
+const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })), 'news');
+const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })), 'security');
+const AccessLogPanel = lazyPanel(() => import('../views/access-log.js').then(m => ({ default: m.AccessLogPanel })), 'access-log');
 // TroubleshootingPanel — dispatch #196: the app's real "Help" (two modes, End User/Developer).
-const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })));
+const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })), 'troubleshooting-panel');
 // CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
@@ -230,42 +237,42 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 // longer its own lazyPanel entry here — it's imported directly by crew-schedule-panel.js and
 // rendered as the Punches tab, same "absorbed into the hub, no standalone entry point" pattern as
 // CountCyclePanel/count-cycle-panel.js above.
-const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
-const PayRateHistoryPanel = lazyPanel(() => import('../views/pay-rate-history.js').then(m => ({ default: m.PayRateHistoryPanel })));
-const LossPreventionReportPanel = lazyPanel(() => import('../views/loss-prevention-report.js').then(m => ({ default: m.LossPreventionReportPanel })));
+const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })), 'crew-schedule');
+const PayRateHistoryPanel = lazyPanel(() => import('../views/pay-rate-history.js').then(m => ({ default: m.PayRateHistoryPanel })), 'pay-rate-history');
+const LossPreventionReportPanel = lazyPanel(() => import('../views/loss-prevention-report.js').then(m => ({ default: m.LossPreventionReportPanel })), 'loss-prevention-report-panel');
 // Custom Report Builder (Reports redesign Phase 4, 2026-10-16) -- same lazy-panel treatment as
 // every other occasional-use report panel above.
-const CustomReportBuilderPanel = lazyPanel(() => import('../views/custom-report-builder.js').then(m => ({ default: m.CustomReportBuilderPanel })));
+const CustomReportBuilderPanel = lazyPanel(() => import('../views/custom-report-builder.js').then(m => ({ default: m.CustomReportBuilderPanel })), 'custom-report-builder-panel');
 // Reports redesign Phase 5 (2026-10-16) -- six new base reports, same lazy-panel treatment.
-const ControlsFoodCostLinkPanel = lazyPanel(() => import('../views/controls-food-cost-link.js').then(m => ({ default: m.ControlsFoodCostLinkPanel })));
-const WeatherImpactPanel = lazyPanel(() => import('../views/weather-impact.js').then(m => ({ default: m.WeatherImpactPanel })));
-const PriceChangeImpactPanel = lazyPanel(() => import('../views/price-change-impact.js').then(m => ({ default: m.PriceChangeImpactPanel })));
-const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').then(m => ({ default: m.ItemVelocityPanel })));
-const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })));
-const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })));
-const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })));
-const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })));
-const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })));
-const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })));
-const EquipmentLayoutPanel = lazyPanel(() => import('../views/equipment-layout.js').then(m => ({ default: m.EquipmentLayoutPanel })));
-const EquipmentResultsPanel = lazyPanel(() => import('../views/equipment-results.js').then(m => ({ default: m.EquipmentResultsPanel })));
-const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
+const ControlsFoodCostLinkPanel = lazyPanel(() => import('../views/controls-food-cost-link.js').then(m => ({ default: m.ControlsFoodCostLinkPanel })), 'controls-food-cost-link');
+const WeatherImpactPanel = lazyPanel(() => import('../views/weather-impact.js').then(m => ({ default: m.WeatherImpactPanel })), 'weather-impact');
+const PriceChangeImpactPanel = lazyPanel(() => import('../views/price-change-impact.js').then(m => ({ default: m.PriceChangeImpactPanel })), 'price-change-impact');
+const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').then(m => ({ default: m.ItemVelocityPanel })), 'item-velocity');
+const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })), 'channel-mix');
+const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })), 'labor-opportunity-cost');
+const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })), 'cash-variance-pattern');
+const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })), 'fob-reference-table');
+const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })), 'conversion-efficiency');
+const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })), 'oil-efficiency');
+const EquipmentLayoutPanel = lazyPanel(() => import('../views/equipment-layout.js').then(m => ({ default: m.EquipmentLayoutPanel })), 'equipment-layout');
+const EquipmentResultsPanel = lazyPanel(() => import('../views/equipment-results.js').then(m => ({ default: m.EquipmentResultsPanel })), 'equipment-results');
+const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })), 'events');
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
-const ScheduleRetentionSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionSection })));
+const ScheduleRetentionSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionSection })), 'schedule-retention-section');
 // Dispatch #141: cross-store Patch/Operator/Org/State rollup ("who is driving this") — a
 // separate hub tab next to Training Retention, same lazy-per-tab pattern, same source file
 // (shares the METRICS/formatter/Supabase-marks plumbing — see that file's dispatch #141 header).
-const ScheduleRetentionRollupSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionRollupSection })));
-const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
-const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
+const ScheduleRetentionRollupSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionRollupSection })), 'schedule-retention-rollup-section');
+const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })), 'delivery-mix');
+const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })), 'above-store-one-pager');
 // #214/#207 batch-2: inventory.js is 76KB and was the last static import of a panel-sized
 // file left in App.js. Its only other consumer, pipeline.js's parseInventoryData call, was
 // moved to parsers/inventory-parse.js in the same change — inventory.js now has zero static
 // importers, so this lazyPanel() wrapper is no longer defeated by INEFFECTIVE_DYNAMIC_IMPORT.
-const InventoryIntelligence = lazyPanel(() => import('../views/inventory.js').then(m => ({ default: m.InventoryIntelligence })));
-const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })));
+const InventoryIntelligence = lazyPanel(() => import('../views/inventory.js').then(m => ({ default: m.InventoryIntelligence })), 'inventory-intelligence');
+const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })), 'scheduling');
 import { AdminPanel } from '../views/admin.js';
 // #207: see the FormsLibraryPanel comment below — same fix, same reason. report-subscriptions.js
 // was the other static importer defeating a lazy import (above-store-onepager.js, 55KB).
@@ -273,9 +280,9 @@ import { AdminPanel } from '../views/admin.js';
 // ReportSubscriptions directly — reports-hub.js imports ReportSubscriptionsBody itself, so this
 // lazy boundary still keeps report-subscriptions.js (and above-store-onepager.js through it) out
 // of the eager bundle, same as before.
-const ReportsHub = lazyPanel(() => import('../views/reports-hub.js').then(m => ({ default: m.ReportsHub })));
-const EmailDigestSubscriptionsPanel = lazyPanel(() => import('../views/email-digest-subscriptions-panel.js').then(m => ({ default: m.EmailDigestSubscriptionsPanel })));
-const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
+const ReportsHub = lazyPanel(() => import('../views/reports-hub.js').then(m => ({ default: m.ReportsHub })), 'reports');
+const EmailDigestSubscriptionsPanel = lazyPanel(() => import('../views/email-digest-subscriptions-panel.js').then(m => ({ default: m.EmailDigestSubscriptionsPanel })), 'email-digest-subscriptions-panel');
+const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })), 'smg-voice');
 // FOBEOMPanel — Dispatch #188: no longer its own top-level lazyPanel() entry. Merged into Food
 // Cost (FOBAnalysisPanel) as an "End of Month" mode; analytics.js now React.lazy()-loads
 // fob-eom.js itself, directly, only when that mode is actually opened (see FOBEOMPanelLazy in
@@ -284,11 +291,11 @@ const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => 
 // but only as a "Supervisor Rollup" tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from eom-supervisor.js) — same "absorbed into the hub, no standalone
 // entry point" pattern as CountCyclePanel/count-cycle-panel.js above.
-const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
+const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })), 'eom-dashboard');
 // #230, R6 (dispatch16): the About modal's changelog list — the only consumer of the
 // MERIDIAN_CHANGELOG array (src/app/changelog/, one file per version), lazy for the same reason
 // every other rarely-opened panel here is.
-const ChangelogPanel = lazyPanel(() => import('./changelog-panel.js').then(m => ({ default: m.ChangelogPanel })));
+const ChangelogPanel = lazyPanel(() => import('./changelog-panel.js').then(m => ({ default: m.ChangelogPanel })), 'changelog-panel');
 import { FormsPrintPanel } from '../views/forms-print.js';
 import { MetricLineagePanel } from '../views/metric-lineage.js';
 // #207: forms-library.js/report-subscriptions.js were the only static importers left of
@@ -304,37 +311,37 @@ import { MetricLineagePanel } from '../views/metric-lineage.js';
 // (still on-demand from App.js's perspective, since above-store-onepager.js itself stays lazy)
 // and via forms-library.js's pre-existing static import of its CASCADE_LEVELS/weeklyReviewHtml
 // exports. Either way, one-pager.js never reaches the entry chunk.
-const FormsLibraryPanel = lazyPanel(() => import('../views/forms-library.js').then(m => ({ default: m.FormsLibraryPanel })));
-const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
+const FormsLibraryPanel = lazyPanel(() => import('../views/forms-library.js').then(m => ({ default: m.FormsLibraryPanel })), 'forms-library');
+const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })), 'signals');
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
 // #232: PaceToTargetPanel's only real weight is CurrentMonthPaceSection (analytics.js) — a
 // static import here was the second path pinning analytics.js in the entry chunk.
-const PaceToTargetPanel = lazyPanel(() => import('../views/pace-to-target.js').then(m => ({ default: m.PaceToTargetPanel })));
-const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
+const PaceToTargetPanel = lazyPanel(() => import('../views/pace-to-target.js').then(m => ({ default: m.PaceToTargetPanel })), 'pace-to-target-panel');
+const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })), 'yearly-projections-panel');
 // PromoRoiPanel — Dispatch #192: was a static top-level import; lazy-wrapped as part of the
 // route:true conversion (PromoRoiPanel is the ONLY export of promo-roi.js App.js ever used, so
 // this fully removes the module from the entry chunk, unlike morning-brief.js below).
-const PromoRoiPanel = lazyPanel(() => import('../views/promo-roi.js').then(m => ({ default: m.PromoRoiPanel })));
-const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
-const WeeklyCountStatusPanel = lazyPanel(() => import('../views/weekly-count-status-report.js').then(m => ({ default: m.WeeklyCountStatusPanel })));
-const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.js').then(m => ({ default: m.LaborAllocationPanel })));
+const PromoRoiPanel = lazyPanel(() => import('../views/promo-roi.js').then(m => ({ default: m.PromoRoiPanel })), 'promo-roi');
+const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })), 'visit-readiness');
+const WeeklyCountStatusPanel = lazyPanel(() => import('../views/weekly-count-status-report.js').then(m => ({ default: m.WeeklyCountStatusPanel })), 'weekly-count-status');
+const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.js').then(m => ({ default: m.LaborAllocationPanel })), 'labor-allocation');
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
-const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
+const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })), 'sage');
 import { TaskQueuePanel } from '../views/task-queue.js'; // dispatch #194: absorbed Feature Requests -- see the panel's own header comment
 // #232 Finding 2: gated behind showDtSoS, statically imported. Its own chart.js/auto import was
 // the third of the three paths pulling Chart.js into the entry chunk — see the comment on the
 // dead top-of-file Chart import above.
-const DTSpeedOfServicePanel = lazyPanel(() => import('../views/dt-speedofservice.js').then(m => ({ default: m.DTSpeedOfServicePanel })));
-const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
-const CustomerComplaintsPanel = lazyPanel(() => import('../views/customer-complaints.js').then(m => ({ default: m.CustomerComplaintsPanel })));
-const StoreAssessmentsPanel = lazyPanel(() => import('../views/store-assessments.js').then(m => ({ default: m.StoreAssessmentsPanel })));
-const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })));
-const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })));
-const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
-const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })));
-const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })));
+const DTSpeedOfServicePanel = lazyPanel(() => import('../views/dt-speedofservice.js').then(m => ({ default: m.DTSpeedOfServicePanel })), 'dt-speed-of-service-panel');
+const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })), 'graded-visits');
+const CustomerComplaintsPanel = lazyPanel(() => import('../views/customer-complaints.js').then(m => ({ default: m.CustomerComplaintsPanel })), 'customer-complaints');
+const StoreAssessmentsPanel = lazyPanel(() => import('../views/store-assessments.js').then(m => ({ default: m.StoreAssessmentsPanel })), 'store-assessments');
+const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })), 'trend-explorer-panel');
+const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })), 'trend-report');
+const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })), 'forms-completion');
+const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })), 'forms-reviews');
+const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })), 'quick-capture');
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -360,7 +367,7 @@ import { newsContextFor, metricContextFor } from '../engine/swing-context.js';
 // the route:true conversion (same "lazy-wrap + route conversion together" bundling dispatch #192
 // did for promo-roi/morning-brief). Its embedded:true call site (store-analytics.js's inline
 // tab) imports it directly from location-intel.js, unaffected by this App.js-only lazy wrap.
-const LocationIntelligence = lazyPanel(() => import('../features/location-intel.js').then(m => ({ default: m.LocationIntelligence })));
+const LocationIntelligence = lazyPanel(() => import('../features/location-intel.js').then(m => ({ default: m.LocationIntelligence })), 'location-intelligence');
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
 // Dispatch #192 — MorningBriefPanel was a static top-level import; lazy-wrapped as part of the
 // route:true conversion. exportBriefHTML/getReportRecipients/storeDistance/regionalRadius/
@@ -370,7 +377,7 @@ import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt
 // effect), but importing them statically here would defeat the lazy split (a module can't be
 // both a static and a lazyPanel() import target — src/__tests__/lazy-panel-not-static.test.js
 // enforces this), so that one call site imports them dynamically instead — see there.
-const MorningBriefPanel = lazyPanel(() => import('../features/morning-brief.js').then(m => ({ default: m.MorningBriefPanel })));
+const MorningBriefPanel = lazyPanel(() => import('../features/morning-brief.js').then(m => ({ default: m.MorningBriefPanel })), 'morning-brief');
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores, annotateAutoFirstFlags } from '../engine/pipeline.js';
