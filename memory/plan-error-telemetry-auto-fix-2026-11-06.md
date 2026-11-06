@@ -167,20 +167,19 @@ framework already has instead of needing new ones invented for it:
   is an accepted, reviewed risk already inherent in any stack-trace logging; worth a second look
   during build, not a blocker to writing this doc.
 
-## Open questions for the owner (before Phase 1 starts)
+## Decisions (owner-approved 2026-11-06 — "good with your preferences on all")
 
-1. **Does `runtime_error_reports` get its own small in-app viewer**, or is querying it only
-   something a sweep/session does? (Lean: no viewer needed for v1 — the sweep's own filed `tasks`
-   rows are already visible in the existing Task Queue panel; a raw-reports viewer is a nice-to-
-   have, not load-bearing.)
-2. **Should a crash ever notify the owner directly** (push/email) outside the weekly cadence, or
-   is "it'll be in next week's sweep" acceptable for everything that isn't already caught live
-   the way tonight's was? (Lean: no — a high-`occurrence_count` row by Monday is itself the
-   signal; a live crash the owner is looking at, like tonight's, will keep being reported the way
-   it was tonight regardless of this pipeline.)
-3. **Threading `panelName` through all ~80 `lazyPanel()` call sites** is mechanical but touches a
-   lot of lines for a feature that's otherwise small — worth doing as its own prep PR before the
-   rest of this, or folded into the same PR as the capture function?
+1. **No in-app viewer for `runtime_error_reports` in v1.** The sweep's own filed `tasks` rows stay
+   the visible surface; a raw-reports viewer is deferred, not building it now.
+2. **No direct owner notification (push/email) outside the weekly sweep cadence.** A high-
+   `occurrence_count` row by Monday is the signal; a live crash the owner is already looking at
+   gets reported live regardless, independent of this pipeline.
+3. **`panelName` threading is its own prep PR, before the capture-function PR.** Mechanical
+   find-and-verify work across ~80 `lazyPanel()` call sites is easier to review and easier to
+   revert in isolation than bundled with new logic — keeps each PR's blast radius checkable on its
+   own.
+
+These are final — do not re-raise any of the three before starting Phase 1.
 
 ## Phasing
 
