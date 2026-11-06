@@ -750,3 +750,110 @@ increments exist, neither started yet:
 
 Neither started without the owner's go-ahead — this section is the stopping point, not a
 decision to proceed either direction.
+
+## 2026-11-06 — batch 12: the `hub-tab`/`internal` sweep (first pass)
+
+Measured directly: `grep -n "kind:'hub-tab'"`/`"kind:'internal'"` for real `{ id: ... }` entries
+(not comment-line mentions, which inflate the count) gives **18 real `hub-tab` entries and 14
+real `internal` entries — 32 total**, matching the "18 + 14" estimate batch 11 flagged as
+unmeasured.
+
+**28 of the 32 were already covered**, under a different key name, by an existing article —
+mostly because a hub panel's own article already names every one of its tabs explicitly:
+
+- `scheduling_hub`'s tab list already names `labor-allocation`, `labor-analysis` (also has its
+  own dedicated `labor_analysis_guide`), `labor-analytics`, `sched-summary`, `scheduling`,
+  `sched-retention`, `sched-retention-rollup`, and `skills-matrix` verbatim.
+- `planning_hub`'s tab list already names `monthly-proj` (Monthly), `pace-target` (Pace),
+  `yearly-proj` (Yearly), and `unified-targets` (Targets) verbatim. `smart-targets` has its own
+  `smart_targets` article (`Access: Planning → Smart Targets tab`); the internal `targets` id is
+  a legacy `showTargets` alias into the exact same `MonthlyTargetManager` component Planning's
+  own Monthly tab uses — same content, not a gap. `smart-targets-v2` (hub-tab) was checked
+  against `App.js`: it sets `planningTab('smart')` and routes to `planning` — it is the SAME
+  Smart tab `smart_targets`/`planning_hub` already document under a newer id, not a second
+  feature.
+- `eom_dashboard_guide` already names its five folded-in tabs including `eom-summary`
+  (Supervisor Rollup) and `count-cycle` (its own `count_cycle_guide` too).
+- `food_cost_panel` explicitly documents `fob-eom` as its "📋 End of Month" mode tab, redirect
+  included.
+- `task_queue_guide` explicitly documents the Feature Request type `feature-requests` now
+  redirects into.
+- `delivery_3po` explicitly documents `channel-intel`'s content as its Overview tab.
+- `crew_schedule_guide` explicitly documents `time-punches`'s content as its Punches tab.
+- `leaderboards_guide` explicitly documents `record-day` (Record Days mode) and `top-bottom`
+  (Top/Bottom mode).
+- `events_guide` explicitly documents `event-impact`'s content as the Impact pill.
+- `store_kb_guide`, `lifelenz_bridge`, and `targets_editor` (the *existing* key — see below)
+  directly match `store-kb`, `lifelenz-bridge`, and (misleadingly, see below) a Planning Hub
+  tab, not the registry's `targets-editor`.
+
+**4 were genuinely uncovered under any name — written up this batch:**
+
+1. **`review_target_overrides_guide`** (registry id `targets-editor`, Performance Reviews →
+   Customize → Targets). This is the real finding of the batch: the *existing* KB key named
+   `targets_editor` does **not** describe this panel at all — it describes "Planning → Monthly
+   tab / Planning → Yearly tab → Target Categories," i.e. the same content `planning_hub`
+   already covers under `monthly-proj`/`yearly-proj`. The registry's actual `targets-editor` id
+   (company/state/patch/store override cascade for review fields with no workbook source,
+   `src/views/targets-editor.js`'s `TargetsEditorSection`) had **zero** article anywhere, under
+   any key, despite the near-identical name making it look covered at a glance. Confirmed via
+   `App.js`: `modal==='targets-editor'` routes into `perf-reviews` → Customize → Targets, a
+   completely different component from `MonthlyTargetManager`. New article's title
+   ("Targets Editor — Panel Guide") is deliberately the plainer, more findable one since it's
+   the registry id's real content; the existing `targets_editor` key keeps its own
+   "Monthly & Yearly Targets — Panel Guide" title unchanged.
+2. **`performance_calculator_guide`** (registry id `perf-calc`, Performance Reviews → Customize
+   → Calculator). Read `performance-calculator.js` directly to confirm its own header's claim
+   that it shares nothing with `review-engine.js`'s scoring functions — true, it's an unrelated
+   drive-thru throughput slider (OEPE → cars/hr → GC → sales → labor hours → TPPH, via a fixed
+   formula, capacity-limited vs. demand-limited conversion rate from the store's own KB tags).
+3. **`calendar_manager_guide`** (registry id `calendar-manager`, Events → 📆 Calendar / 🔁 Rules
+   pills). `events_guide` already existed but never actually described this content — its own
+   "Five pills" sentence had silently substituted the "✎ Full ledger" button (not a pill) for
+   the real Calendar pill, so Calendar Manager's month grid / recurring rules / AI-search
+   pending-review queue (`src/features/calendar.js`'s `CalendarManagerPanel`, 3 internal tabs:
+   grid/rules/pending) was undocumented. Fixed in the same commit — `events_guide`'s pill list
+   now names the real 5 (Upcoming/Calendar/Log/Impact/Rules) plus the Full Ledger button
+   separately.
+4. **`fcst_accuracy_guide`** (registry id `fcst-accuracy`, Forecast Reports → 🎯 Forecast
+   Accuracy tab). The engine-concept articles (`mape`, `model_types`, `model_health_scoring`,
+   `adaptive_ensemble`) describe what MAPE/model-types mean conceptually, but none of them
+   describe the actual UI workflow for running a live backtest (period picker, per-store
+   sortable 6-model MAPE table including a "Sched Proj" scheduling-system comparison column,
+   DOW/weekly breakdown expanders) — confirmed by reading `ForecastAccuracyPanel` in
+   `analytics.js` directly. This was a real gap, not a naming mismatch like #1.
+
+**Flagged, not acted on this batch — two real, named follow-ons:**
+
+- **`signals_guide` is substantially stale**, discovered incidentally while checking whether
+  `corr-explorer`'s Correlations tab was covered. It is — `signals.js`'s real tab bar is 10 tabs
+  (Live Ops / Projection Accuracy / Park × OEPE / Store Controls / Built-in / Signal Lab /
+  Scanner / Correlations / CSAT Drivers / Graveyard), but the article's own "Several tabs" list
+  names only 5, and 2 of those 5 (`Baseline Anomalies`, `Speed of Service`) aren't top-level tabs
+  in the real tab bar at all (likely sub-content under `Built-in`, not independently verified
+  this batch). Correcting this properly means reading 5+ unfamiliar tab components
+  (`ProjectionAccuracyTab`, `ParkOepeTab`, `StoreControlsTab`, `CsatDriversTab`, `GraveyardTab`)
+  for accuracy — out of proportion to this batch's actual job (confirming `corr-explorer`'s
+  coverage, which checked out). Left as a precisely-measured, real follow-on rather than a
+  rushed partial patch.
+- **`proj-brief`** (registry id, internal, renders `PreForecastBrief` — a standalone pre-
+  forecast-run brief inside ⚗ Test Kitchen → Projections) has a genuinely distinct, real
+  content, but its host panel (`proj`, `kind:'test-kitchen'`) itself carries zero KB coverage.
+  Documenting the sub-panel in isolation from an undocumented parent would be a context-free
+  article — this belongs to the `kind:'test-kitchen'` tier sweep (separate from both the
+  `nav`/`optional` tier batch 11 closed out and this batch's `hub-tab`/`internal` tier), not
+  this batch.
+
+**Measured running total: 114 `KB_ARTICLES` keys.** 8 new tests (2 per new article):
+`dispatch-kb-panel-guide-batch12-2026-11-06.test.js`.
+
+**Verdict: the `hub-tab`/`internal` tier is now also functionally done** (28/32 pre-existing
+coverage + 4 new articles = 32/32). The two real next increments for task #75 are now:
+1. **Sweep `kind:'test-kitchen'`** — unmeasured, and now known to hold at least one genuinely
+   uncovered sub-panel (`proj-brief`) plus its host (`proj`).
+2. **The `InfoIcon` rollout** — still flagged as unstarted since the very first batch
+   (2026-11-03); wiring the now-114 articles into more panel headers is UI work, not new
+   content.
+
+Neither started without the owner's go-ahead — per this task's own standing stop-and-wait rule
+after each batch.
