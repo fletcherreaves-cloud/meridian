@@ -1316,7 +1316,7 @@ function RegisterAuditNarrative({auditData, store, ds}) {
   );
 }
 
-function RegisterAuditTab({ds, loc}) {
+function RegisterAuditTab({ds, loc, dateRange}) {
   // #191: auditRows is no longer eagerly loaded at startup — it's the reference "load on open"
   // consumer for metric-source.js's lazy-fill mechanism. Trigger it on mount (this tab reading
   // ds.auditRows directly, not through the resolver, would never fire the demand on its own) and
@@ -1340,8 +1340,42 @@ function RegisterAuditTab({ds, loc}) {
   // same reason hooks generally must be (hooks can't be conditional).
   const [registerFilter, setRegisterFilter] = React.useState('all');
   const [expandedEmp, setExpandedEmp] = React.useState(null);
+  // Which detail section (Overview/T-Reds/Refunds/Cash) is active. Hoisted up here, alongside
+  // the other unconditional hooks, from its old position just after the three early returns
+  // below -- found while fixing the date-range bug (not itself the reported symptom, but a
+  // real, reproduced separate defect in this same component): a hook declared only AFTER an
+  // early `return` is a genuine Rules-of-Hooks violation whenever a later render of the SAME
+  // mounted instance takes a different branch than the render that first committed -- exactly
+  // what happens here on a fresh load (mount commits via the "Loading…" branch, hooks up to
+  // `expandedEmp` only; the lazy-fill resolving via `ensureLazyFill` then re-renders this same
+  // instance past all three early returns, reaching this hook for the first time). Reproduced
+  // directly against React 19 in isolation before touching this: an equivalent minimal
+  // component throws "Rendered more hooks than during the previous render." on that exact
+  // mount→loaded transition. Moving the hook here (same initial value, same name, same usage
+  // below) removes the conditional-hook shape entirely without changing any behavior.
+  const [activeSection, setActiveSection] = React.useState('overview');
 
-  const auditRows = ds&&ds.auditRows ? ds.auditRows.filter(r=>r.loc===loc) : [];
+  // Root cause of the live bug report ("changing date selection does not appear to update
+  // anything" on this tab): this filter used to check ONLY `r.loc===loc` -- `dateRange` was
+  // never in this component's signature at all, so the toolbar's date-range control (the
+  // "Oct 28 – Nov 3 · Last Week" pill StoreDash renders above every tab) had nothing to drive
+  // here. Not a missing useEffect dependency (the mount-only `ensureLazyFill` effect above is
+  // correct as-is -- it triggers a one-time demand-load of the WHOLE auditRows stream, not a
+  // date-scoped fetch, same as every other LAZY_FILL_SOURCES consumer); the bug was downstream
+  // of that, in the render-time filter itself never consulting the range at all. Reproduced live
+  // (per CLAUDE.md's "measure it" rule) before touching this: with a two-day stub + a dateRange
+  // excluding one of them, `RegisterAuditTab` with the pre-fix filter still rendered both days'
+  // totals regardless of which range was passed, confirming the symptom is real and not a subtle
+  // update that was easy to miss.
+  const inDateRange = r => !dateRange || !dateRange.s || !dateRange.e || (r.date>=dateRange.s && r.date<=dateRange.e);
+  // allLocRows -- every loaded row for this store, BEFORE the date-range narrowing. Kept
+  // separate so the pending/empty gates below (and the "no data in THIS range, but there is
+  // data outside it" message) can tell "nothing has loaded for this store at all" apart from
+  // "data loaded fine, the selected date range just doesn't overlap it" -- those are different
+  // situations and were indistinguishable before this fix since there was no date filter to
+  // miss in the first place.
+  const allLocRows = ds&&ds.auditRows ? ds.auditRows.filter(r=>r.loc===loc) : [];
+  const auditRows = allLocRows.filter(inDateRange);
   // The filter narrows the INPUT rows, not analyzeRegisterAudit's own aggregation -- the default
   // ('all') passes every row through unfiltered, so a cashier-only store (or any employee who
   // never touches more than one register) renders behaviourally identically to before #62.
@@ -1352,22 +1386,37 @@ function RegisterAuditTab({ds, loc}) {
   const breakdown = React.useMemo(() => registerTypeBreakdown(auditRows), [auditRows]);
   const availableTypes = React.useMemo(() => [...new Set(auditRows.map(r=>r.registerType||'cashier'))].sort(), [auditRows]);
 
-  if(pending && !auditRows.length) return div({style:{padding:20}},
+  if(pending && !allLocRows.length) return div({style:{padding:20}},
     div({className:'empty-st'},
       div({className:'empty-st-t'},'Loading Register Audit data…'),
       div({className:'empty-st-s'},'Fetching from Supabase — this stream loads on demand rather than at startup.')
     )
   );
 
-  if(!auditRows.length) return div({style:{padding:20}},
+  if(!allLocRows.length) return div({style:{padding:20}},
     div({className:'empty-st'},
       div({className:'empty-st-t'},'No Register Audit data'),
       div({className:'empty-st-s'},'Load a Register Audit YYYY-MM-DD to YYYY-MM-DD.xlsx file to activate employee-level register analysis.')
     )
   );
 
+  if(!auditRows.length) {
+    const sortedDates = allLocRows.map(r=>r.date).sort((a,b)=>a-b);
+    const spanS = sortedDates[0], spanE = sortedDates[sortedDates.length-1];
+    return div({style:{padding:20}},
+      div({className:'empty-st'},
+        div({className:'empty-st-t'},'No Register Audit data in the selected date range'),
+        div({className:'empty-st-s'},
+          'This store has '+allLocRows.length+' Register Audit row'+(allLocRows.length!==1?'s':'')+' on file, '
+          +'spanning '+spanS.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' – '
+          +spanE.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+', but none fall inside '
+          +(dateRange&&dateRange.label?'"'+dateRange.label+'"':'the current date range')+'. '
+          +'Pick a date range that overlaps that window to see it here.')
+      )
+    );
+  }
+
   const {employees=[],summary={}} = auditData||{};
-  const [activeSection, setActiveSection] = React.useState('overview');
   const sorted = [...employees].sort((a,b)=>(b.riskScore||0)-(a.riskScore||0));
   const riskColor = s=>s>=70?'var(--crit)':s>=40?'var(--warn)':s>=15?'#84cc16':'#10b981';
   const riskLabel = s=>s>=70?'HIGH':s>=40?'WATCH':s>=15?'LOW':'CLEAN';
@@ -1444,7 +1493,8 @@ function RegisterAuditTab({ds, loc}) {
   return div(null,
     div({style:{fontSize:'13px',fontWeight:700,marginBottom:4}},'⚖ Register Audit Analysis'),
     div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:10}},
-      auditRows.length+' transactions · '+employees.length+' employees · sorted by risk score'),
+      auditRows.length+' transactions · '+employees.length+' employees · sorted by risk score'
+      +(dateRange&&dateRange.label?' · '+dateRange.label:'')),
 
     // dispatch #62 -- register-type filter pill row. Only shown once there's more than one
     // type to filter between -- a cashier-only store (or a window before the #59 pull started
@@ -2441,7 +2491,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='action'     && h(ActionPlanTab,{store,ds,settings,dateRange}),
     tab==='shift'      && h(ShiftAnalysisTab,{store,ds,settings,userEvents}),
     tab==='peaks'      && h(PeaksTab,{ds,loc:store.loc,tgt:t,settings}),
-    tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc}),
+    tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc,dateRange}),
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
     tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
