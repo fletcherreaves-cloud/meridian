@@ -1728,7 +1728,9 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
         display:'flex',alignItems:'center',gap:10}},
         span({style:{fontSize:'18px'}},'🗄'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
+          div({style:{display:'flex',alignItems:'center'}},
+            div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
+            h(InfoIcon,{articleKey:'data_manager_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz · QSRSoft FOB · eBOS Purchases · Daily Activity auto-sync · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
@@ -3429,6 +3431,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode, onNav}){
   return h(RoutePanelShell, {
     title: mode==='eom' ? 'End of Month' : 'Food Cost',
     icon: mode==='eom' ? '📋' : '🥗',
+    subtitle: h(InfoIcon,{articleKey: mode==='eom' ? 'eom_dashboard_guide' : 'food_cost_panel'}),
     onBack: onClose,
     headerExtra: div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
       modeTabBar,
@@ -5785,7 +5788,9 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
 
   return h(RoutePanelShell,{
     title:'⚠ Needs Attention',
-    subtitle:'Ranked by worst finding per store · click a chip to filter',
+    subtitle:div({style:{display:'flex',alignItems:'center'}},
+      span(null,'Ranked by worst finding per store · click a chip to filter'),
+      h(InfoIcon,{articleKey:'attention_guide'})),
     onBack:onClose,
   },
     // Clickable severity chips (Notes 61 DV14) — moved into the body since RoutePanelShell

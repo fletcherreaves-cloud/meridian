@@ -5,6 +5,7 @@ import { INV_MASTER, classifyInvArea, parseInvUOM } from '../parsers/inventory-p
 import { loadQsrInventorySummary } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
+import { InfoIcon } from '../engine/forecast.js';
 // #? — invDist/invSameState/formatXferQty/rollupByWRIN/computeTransfers moved to
 // engine/inventory-transfers.js (Decisions Panel Inventory salvage #2/#3) so attention-feed.js
 // can reuse them without importing this 76KB view component — same split #214 already did for
@@ -382,7 +383,8 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   // early return AND the main panel body below) + sheet + '✕' close button — same "two hand-
   // rolled backdrops under one component" shape OperatorSummaryPanel/FOBAnalysisPanel had under
   // dispatch #205/#188.
-  if(!locs.length) return h(RoutePanelShell,{icon:'📦',title:'Inventory Intelligence',onBack:onClose},
+  if(!locs.length) return h(RoutePanelShell,{icon:'📦',title:'Inventory Intelligence',
+    subtitle:h(InfoIcon,{articleKey:'inventory_guide'}),onBack:onClose},
     div({style:{display:'flex',alignItems:'center',justifyContent:'center',minHeight:200}},
       cloudRows===null
         ?div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
@@ -400,6 +402,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   return h(RoutePanelShell,{
     icon:'📦',
     title:'Inventory Intelligence',
+    subtitle:h(InfoIcon,{articleKey:'inventory_guide'}),
     headerExtra:div({style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
       // #214: visible (not tooltip-only) data-source state — a failed cloud read must not
       // look like an empty one, same rule the FOB panel's fix established.

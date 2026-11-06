@@ -883,3 +883,49 @@ Baseline Anomalies lives inside Live Ops and that Speed of Service is a separate
 same mix-up can't recur. `KB_ARTICLES` key count unchanged (114) — this is a content fix to an
 existing key, not a new article. 2 new tests
 (`dispatch-kb-signals-guide-correction-2026-11-06.test.js`).
+
+## InfoIcon rollout — Phase 1 (2026-11-06)
+
+Not a new coverage batch — this is the OTHER flagged gap every batch above has carried forward
+without starting: `KB_ARTICLES` entries exist but nothing in most panels' own UI surfaces them.
+**Measured before building anything:** `InfoIcon({articleKey, inline})` (`src/engine/forecast.js`)
+already existed, fully self-contained (its own inline modal — no dependency on
+`KnowledgeBasePanel` or any deep-link mechanism needed), and was already wired into 4 places
+(`store-dash.js`'s Leaderboards → `leaderboards_guide`, `management.js` → `model_health`,
+`analytics.js` → `mape`). So this pass is wiring-only, not a new component — the thing flagged as
+unstarted since the very first batch was never "build the icon," only "use it more."
+
+**Phase 1 slice (mechanical, bounded):** 5 real `RoutePanelShell`-backed panels whose title
+already has a matching `KB_ARTICLES` key — picked for being clean, single-location
+`RoutePanelShell`/header calls. Not every panel is: `signals.js` and `sage.js`, for instance, use
+neither `RoutePanelShell` nor a single clean header line, so they're deferred rather than forced
+into this pass.
+
+- **Needs Attention** (`analytics.js`'s `AttentionPanel`) → `attention_guide`
+- **Food Cost / End of Month** (`analytics.js`'s `FOBAnalysisPanel`, one component, two modes) →
+  `food_cost_panel` (default mode) / `eom_dashboard_guide` (`mode==='eom'`) — the icon's
+  `articleKey` switches with the mode, same as the title already does.
+- **Data Manager** (`analytics.js`'s `DataManagerPanel`) → `data_manager_guide` — this one has a
+  hand-rolled header (not `RoutePanelShell`; a pre-existing, already-documented panel-contract
+  gap, not touched here), so the icon was added next to its own title `div` instead.
+- **Events** (`events-panel.js`'s `EventsPanel`) → `events_guide`
+- **Inventory Intelligence** (`inventory.js`'s `InventoryIntelligence`) → `inventory_guide` —
+  both of its two `RoutePanelShell` returns (the empty-state early-return AND the main panel
+  body) got the icon, so it shows regardless of which branch renders.
+
+6 new tests (one per wiring) in `dispatch-kb-infoicon-rollout-phase1-2026-11-06.test.js`, each
+mounting the REAL panel component (not a stand-in) and clicking the real "?" control — per this
+repo's "would this verification still pass if reverted" rule, removing the `InfoIcon` prop would
+make the control vanish and these fail, unlike a test that only imported `InfoIcon` in isolation.
+
+**Explicitly deferred, not forgotten — Phase 2 candidates:**
+- The other ~109 panels with a real `KB_ARTICLES` key and no icon yet. 93 files in `src/` use
+  `RoutePanelShell` at all (not all of those have a matching KB key), so this is a genuinely
+  multi-pass rollout, not a single next PR.
+- Panels like Signals/SAGE that don't use the clean `RoutePanelShell`-single-title pattern need
+  their own per-file judgment call on where to place the icon, not the mechanical copy-paste this
+  slice used.
+- `window._openKB(articleKey)` (`App.js`) still ignores its `articleKey` argument (a separate,
+  already-documented gap from the very first KB batch) — not needed for `InfoIcon` itself (it
+  opens its own inline modal, no dependency on the standalone KB panel), but still open for a
+  future "jump to this article in the full KB browser" flow.
