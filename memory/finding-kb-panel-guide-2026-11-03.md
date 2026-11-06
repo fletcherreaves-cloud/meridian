@@ -600,3 +600,75 @@ excluded set among others — judged lower traffic than this batch's six, not ye
 exhaustively). Both named plan-doc sources remain exhausted; future batches should continue the
 fresh `panel-registry.js`-sweep method this batch established. The `InfoIcon` rollout to more
 panel headers remains unstarted.
+
+## Batch 9 (2026-11-06)
+
+Continued the fresh `panel-registry.js` sweep method batch 8 established (both named plan-doc
+sources — the GM-routine cross-walk and the Supervisor-tier list — remain exhausted). Re-swept
+`kind:'nav'`/`kind:'optional'` entries directly (73 matched this pass) and diffed candidate
+labels against real `KB_ARTICLES` titles, initially picking 6: Store Compare (`compare`),
+Product Mix (`pmix`), DAR Daypart Analytics (`dar-daypart`), Priority Actions (`priority-brief`),
+Email Digests (`email-digests`), Anomaly Scan (`aiscan`).
+
+**Caught before merge: the `priority-brief` pick was a false positive, not a genuinely uncovered
+panel.** While doing this batch's own stale-wording check, a grep of `forecast.js` surfaced a
+pre-existing, more detailed article at the `priority_brief` key (`'Priority Brief — District
+Priority Brief (Tiered Daily Coaching List)'`) that already fully documents this exact panel —
+including the same `buildBrief()`/`MORNING_RULES` findings-engine distinction, the
+calibration-gap watch, and an explicit note that "Priority Brief"/"Priority Actions" is a known
+internal naming inconsistency, not two features. The newly-written `priority_brief_guide` entry
+would have shipped as a thinner duplicate of already-covered ground. Deleted it (and its 2
+tests) before commit, and swept `panel-registry.js` again for a genuinely uncovered 6th
+candidate — **`fob-reference-table`** (FOB Reference Table, `kind:'nav'`, `route:true`,
+section `'reports'`) — confirmed uncovered by grepping both `panel-registry.js` and
+`forecast.js` for its exact label with no hit beyond the registry line itself.
+**Takeaway for future batches: a sweep diff by label/id is necessary but not sufficient — a
+panel can already be covered under a KB key whose title text doesn't literally match the
+registry label (`priority_brief` vs. the registry's `priority-brief`/"Priority Actions"), so
+still grep the full candidate name space (including known aliases) against `forecast.js` before
+writing a new entry, not just before shipping it.**
+
+Final six, each read against its own real source before writing:
+
+- **`store_compare_guide`** — read `MultiStoreComparison` in `src/views/store-analytics.js`.
+  Documents the 2–5-store cap (a 6th pick is blocked, not swapped), the Scorecard/Radar/Sales
+  Trend views, that every number reuses each store's own already-computed summary (`s.opsScore`/
+  `s.ctrlScore`/`s.p.*`) rather than computing anything new, and that DT Parked%/Labor% are
+  deliberately left unstarred since neither direction is objectively "best" for a target-range
+  metric.
+- **`product_mix_dashboard_guide`** — read `ProductMixPanel` in `src/views/labor-tools.js`.
+  Documents the Cloud/Manual toggle, the lazy-fill trigger (`ensureLazyFill('pmixRows')`, the
+  real fix for a 2026-08-26 bug where 2.5M fresh rows sat unused because nothing had triggered
+  the fetch), the separate wide-fetch tier (`ensureLazyFillWide`) gated on the 90D/180D/All
+  ranges, and flags — as a real, confirmed `panel-contract.md` gap, not fixed in this pass — that
+  this panel still renders its own hand-rolled full-screen backdrop instead of `ModalShell`.
+- **`dar_daypart_guide`** — read `DARDaypartPanel` in `src/views/labor-tools.js` and
+  `saveDarRows()`/`loadDarRows()` in `src/lib/supabase.js`. Documents the genuinely separate
+  `dar_rows` table (manual-upload-only, this panel's sole consumer) vs. the much more widely used
+  auto-pulled `qsr_daily_activity` the rest of the app reads — same "DAR" name, zero shared rows,
+  not a contradiction when one shows data and the other doesn't for the same store.
+- **`fob_reference_table_guide`** — read `FobReferenceTablePanel` in
+  `src/views/fob-reference-table.js` and the full computation in `src/engine/fob-reference.js`.
+  Documents the live rebuild of the owner's own Excel "Table 1 (2)" target-setting reference
+  sheet (16 metrics × L3M/L6W/LM/MTD/Projected/Trend), the cumulative-MTD-to-daily-delta
+  reconstruction (`fobDailyDeltas()`) required because `qsr_fob` is a running MTD snapshot not a
+  daily figure, and the Projected blend (MTD weighted increasingly over L3M as the month
+  progresses; a dollar metric first annualizes MTD to a run-rate before that blend).
+- **`email_digests_guide`** — read `EmailDigestSubscriptionsPanel`
+  (`src/views/email-digest-subscriptions-panel.js`) and `EMAIL_DIGEST_CATALOG`
+  (`src/engine/email-digest-catalog.js`, exactly 2 entries today). Documents the generic
+  catalog-driven subscribe/unsubscribe UI and explicitly distinguishes this org-wide scheduled
+  **email** list from Reports Hub's "My Reports" (a per-scope, launchable in-app report with no
+  email component).
+- **`anomaly_scan_guide`** — read `AIBacktestScanner` in `src/views/analytics.js`. Documents the
+  model-independent per-DOW median baseline (never forecast-vs-actual), the 21-day minimum before
+  a store baselines at all, the confidence ≥ 75 + geo-relevant + specific-event gate before an
+  auto-tag fires, and that a `broadEvent` (multi-store) finding is queued for human review rather
+  than fanned out automatically.
+
+Stale-wording check: no stale `panel_index`/registry-label wording found for any of the final
+six — each registry label matches its KB article title exactly.
+
+12 new tests (2 per article): `dispatch-kb-panel-guide-batch9-2026-11-06.test.js`.
+
+**Measured running total: 106 `KB_ARTICLES` keys as of this batch.**
