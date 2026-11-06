@@ -4,7 +4,7 @@
 // what RevenueIntelligence already shipped, and gives attention-feed.js's slowDT detector a
 // real $ value instead of the hardcoded 0 its own header comment used to complain about.
 import { describe, it, expect } from 'vitest';
-import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
+import { computeOepeDollarGap, computeDaypartErosion, computeParkOptimization } from '../engine/revenue-opportunity.js';
 
 const daysAgo = n => new Date(Date.now() - n * 86400000);
 
@@ -90,5 +90,63 @@ describe('computeDaypartErosion', () => {
   it('only looks at the requested store\'s own rows', () => {
     const ds = { peaksSalesRows: rowsFor('b', { breakfast: 1000, lunch: 1000, dinner: 500 }) };
     expect(computeDaypartErosion('a', ds, {})).toBeNull();
+  });
+});
+
+describe('computeParkOptimization', () => {
+  // Real-shaped fixtures: a Service-sheet row NEVER carries tpph (parse3PeaksService,
+  // src/parsers/index.js), and a Sales-sheet row NEVER carries parkPct (parse3PeaksSales) --
+  // this is the exact split that broke the pre-fix code, which filtered ds.peaksSvcRows by
+  // r.tpph>0 and so always got zero rows. Matching rows share the same loc/date/slice, the
+  // join key.
+  function pairedRows(loc, n, parkPctOf, tpphOf) {
+    const svc = [], sales = [];
+    for (let i = 0; i < n; i++) {
+      const date = daysAgo(i);
+      svc.push({ loc, slice: 'lunch', date, parkPct: parkPctOf(i) });
+      sales.push({ loc, slice: 'lunch', date, tpph: tpphOf(i) });
+    }
+    return { peaksSvcRows: svc, peaksSalesRows: sales };
+  }
+
+  it('returns null without both peaksSvcRows and peaksSalesRows on ds', () => {
+    expect(computeParkOptimization('a', { park: 0.15 }, {})).toBeNull();
+    expect(computeParkOptimization('a', { park: 0.15 }, { peaksSvcRows: [] })).toBeNull();
+    expect(computeParkOptimization('a', { park: 0.15 }, { peaksSalesRows: [] })).toBeNull();
+  });
+
+  it('returns null when the store has no current park% to optimize', () => {
+    const ds = pairedRows('a', 10, () => 0.15, () => 20);
+    expect(computeParkOptimization('a', { park: 0 }, ds)).toBeNull();
+  });
+
+  it('the pre-fix bug: joins Service parkPct with Sales tpph by (loc,date,slice) instead of ' +
+     'filtering Service rows for a tpph field they never carry', () => {
+    // Low park% (10%) -> high TPPH (22); high park% (25%) -> low TPPH (14). A join bug that
+    // drops every row (the old r.tpph>0 filter on peaksSvcRows) would return null here.
+    const ds = pairedRows('a', 10, i => (i % 2 === 0 ? 0.10 : 0.25), i => (i % 2 === 0 ? 22 : 14));
+    const r = computeParkOptimization('a', { park: 0.20, tpph: 15 }, ds);
+    expect(r).not.toBeNull();
+    expect(r.optimalParkPct).toBe(10);
+    expect(r.bestTPPH).toBe(22);
+    expect(r.currentParkPct).toBe(20);
+    expect(r.note).toContain('over-parking');
+  });
+
+  it('requires at least 6 joined rows before optimizing', () => {
+    const ds = pairedRows('a', 5, () => 0.12, () => 20);
+    expect(computeParkOptimization('a', { park: 0.15 }, ds)).toBeNull();
+  });
+
+  it('only joins rows for the requested store, not a sibling store\'s rows', () => {
+    const ds = pairedRows('b', 10, () => 0.12, () => 20);
+    expect(computeParkOptimization('a', { park: 0.15 }, ds)).toBeNull();
+  });
+
+  it('a Service row with no matching Sales row (different date/slice) contributes nothing', () => {
+    const ds = pairedRows('a', 10, () => 0.12, () => 20);
+    // Shift every sales row's slice so none of them key-match their service counterpart.
+    ds.peaksSalesRows = ds.peaksSalesRows.map(r => ({ ...r, slice: 'dinner' }));
+    expect(computeParkOptimization('a', { park: 0.15 }, ds)).toBeNull();
   });
 });

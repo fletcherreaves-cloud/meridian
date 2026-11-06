@@ -6,7 +6,7 @@ import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModel
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
-import { computeOepeDollarGap, computeDaypartErosion } from '../engine/revenue-opportunity.js';
+import { computeOepeDollarGap, computeDaypartErosion, computeParkOptimization } from '../engine/revenue-opportunity.js';
 import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
@@ -674,33 +674,8 @@ function computeRevenueOpportunity(store, ds, settings) {
   if(oepeGap) result.oepe = oepeGap;
 
   // 2. DT Parked % Optimization — where is the efficiency sweet spot?
-  if(p.park>0 && ds && ds.peaksSvcRows) {
-    const locStr = String(loc||'').trim();
-    const svcRows = ds.peaksSvcRows.filter(r=>String(r.loc||'').trim()===locStr&&r.parkPct>0&&r.tpph>0);
-    if(svcRows.length>=6) {
-      // Find park% range where TPPH is highest
-      const buckets = {};
-      svcRows.forEach(r=>{
-        const bucket=Math.round(r.parkPct*100/5)*5; // 5% buckets
-        if(!buckets[bucket])buckets[bucket]=[];
-        buckets[bucket].push(r.tpph||0);
-      });
-      const avgByBucket = Object.entries(buckets).map(([pct,tpphs])=>
-        ({pct:+pct,tpph:tpphs.reduce((a,v)=>a+v,0)/tpphs.length,n:tpphs.length}))
-        .filter(b=>b.n>=2).sort((a,b)=>b.tpph-a.tpph);
-      if(avgByBucket.length>0) {
-        result.parkOpt = {
-          optimalParkPct:avgByBucket[0].pct,
-          currentParkPct:+(p.park*100).toFixed(2),
-          bestTPPH:+avgByBucket[0].tpph.toFixed(2),
-          currentTPPH:p.tpph||0,
-          note:avgByBucket[0].pct<14?'Your data shows TPPH peaks at lower park rates — you may be over-parking.':
-               avgByBucket[0].pct>20?'Your data shows TPPH improves with higher park rates — consider staging more aggressively.':
-               'Park rate is near the optimal zone based on your data.'
-        };
-      }
-    }
-  }
+  const parkOpt = computeParkOptimization(loc, p, ds);
+  if(parkOpt) result.parkOpt = parkOpt;
 
   // 3. Daypart Erosion — asymmetric decline signals competitive pressure
   const erosion = computeDaypartErosion(loc, ds, settings);
