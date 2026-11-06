@@ -315,3 +315,77 @@ rather than expanded as a side effect of this pass, same call every batch since 
 **Measured running total: 75 `KB_ARTICLES` keys as of this batch.** Still open: ~62 panels not yet
 covered (down from ~68 at the last measured point, but re-measure before trusting any count in
 this file again — see the correction above), and the `InfoIcon` rollout to more panel headers.
+
+## Added 2026-11-06 (batch 5): Printable Forms, Curated Home, Log Something (Quick-Capture),
+## Above-Store One-Pager, Org Summary, Promo/Discount ROI, Count Cycle (task #75, next batch)
+
+Measured 75 real `KB_ARTICLES` keys before starting (confirmed by walking the object literal
+directly, not trusting the number above without re-checking). `memory/plan-role-based-panel-
+gating-2026-11-03.md` §3's GM-routine direct-match table is now **exhausted of easy candidates**:
+of everything it names, only `forms-print` (the "Food safety / checklist items" row) was still
+uncovered — picked first for that reason. The other six were picked by direct measurement (grep
+`panel-registry.js` for real `kind:'nav'` ids, diff against the real `KB_ARTICLES` key list), not
+guessed: the two brand-new-this-session features (`curated-home`, `quick-capture`, both shipped
+earlier today) and three Supervisor/OM/DO-tier analytical panels (`above-store`, `operator-
+summary`, `promo-roi`) that §3's Supervisor/OM sections name directly as already-correctly-visible
+tooling at that tier, plus `count-cycle` (a hub-tab inside Inventory Control sharing Weekly Count
+Status's own engine — also named in the GM table's food-cost-reconciliation row). **This batch is
+7 articles, not 6** — one more than the usual batch size, since `count-cycle` was added once its
+real engine overlap with the already-covered Weekly Count Status became clear mid-pass.
+
+- **`forms_print_guide`** — read `src/views/forms-print.js` in full. Documents the real
+  static-JSON-fetch sourcing (`public/forms/*.json`, produced once by `scripts/qsrsoft-forms-
+  pull.mjs` — not a live query), the Compact B&W print toggle, and the self-serve "🔄 Request
+  pull" action (dispatches the same `trigger-dar-sync` Edge Function `forms` workflow entry other
+  on-demand syncs use, scoped to the current search text) — a real, not-previously-documented
+  escape hatch from needing direct QSRSoft credentials to refresh a stale template. Explicitly
+  distinguishes this BLANK/print-by-hand panel from the separate, cloud-saved Digital Checklists
+  panel (already covered, batch 4).
+- **`curated_home_guide`** — read `src/views/curated-home.js` and `src/engine/curated-home.js` in
+  full (this session's own just-merged Curated Home Phase 1 work). Documents the real
+  `ALTITUDE_BY_ROLE` mapping (store/patch/district), that the headline alone is regenerated at
+  patch/district altitude while `detail`/`action` are reused verbatim (confirmed from the engine's
+  own code comment on WHY that\'s safe — `MORNING_RULES` writes those two fields generically per
+  severity tier, not per live value), and the real `curated_home_format` Supabase `user_settings`
+  persistence shape (same pattern `kpi_secs` already uses). States plainly, per the PR\'s own
+  judgment-call note, that this ships as its own nav panel today, not a Command/Home replacement.
+- **`quick_capture_guide`** — read `src/views/quick-capture.js` and `src/engine/quick-capture.js`
+  in full (also this session's own just-merged Quick-Capture Phase 1 work). Documents the real
+  3-step flow, that it writes through the EXACT SAME `saveOrgEvents()` path the Events Calendar
+  uses (via `buildQuickCaptureEvent()`\'s identical row shape), that the confirmation number is a
+  REAL `loadEventImpact()`/`lookupMeasuredImpact()` lookup — honestly reporting "no measured
+  history yet" rather than a fabricated figure on a first occurrence — and the explicit no-
+  gamification design choice from the plan doc this shipped against.
+- **`above_store_guide`** — read `src/views/above-store-onepager.js` (first ~520 of 780 lines —
+  enough to cover the real view/period/panel-toggle mechanism, the dispatch #190 Leadership-
+  cascade merge, the AI-analyze/print paths; did not need the remaining render-body lines for an
+  SOP-level article). Documents the real Rollup-vs-Leadership toggle as a genuinely different axis
+  from the location scope below it (not the same selector), the eight toggleable panels including
+  the owner-requested Upcoming Impacts tile, and the on-demand stream-widening fix for an old
+  Custom date range\'s LY leg.
+- **`operator_summary_guide`** — read `OperatorSummaryPanel` in `src/views/labor-tools.js` in
+  full. Documents the real four grouping modes (Company/Org/Operator/Patch — Patch uses the live
+  `supervisorGroups()`, explicitly NOT the Settings editor\'s own save-time snapshot), and that
+  TPPH/OEPE roll up via `metricRate`/`metricSumRatio` (true Σ/Σ, weighted by real hours/transaction
+  count) rather than a plain per-store average — the issue #175 fix, stated as fact with its real
+  mechanism, not assumed.
+- **`promo_roi_guide`** — read `src/views/promo-roi.js` in full. Documents the real matched-day
+  design (a verified-exogenous `org_events` promo-calendar tag vs. untagged same-weekday days),
+  and states plainly that Discounts is INTENTIONALLY left unscored (no equivalent exogenous signal
+  exists for a same-day discount decision) — a deliberate fix for a previously-measured-endogenous
+  split (`memory/finding-promo-roi-denominator-bias-2026-08-23.md`), not a coverage gap.
+- **`count_cycle_guide`** — read the `count-cycle` hub-tab's real engine (`src/engine/count-
+  cycle.js`) via its own exported `cycleCompliance`/`detectWeeklyCountDay`/`countDayDrift`
+  functions, the SAME ones `weekly_count_status_guide` (batch 4) already documents Weekly Count
+  Status as reading — stated explicitly so the two articles cross-reference instead of risking a
+  future contradiction between them.
+
+No stale `panel_index`/Workflow-Guide wording found for any of these seven in this pass.
+
+14 new tests (2 per article, mounting the real `KnowledgeBasePanel`):
+`dispatch-kb-panel-guide-batch5-2026-11-06.test.js`.
+
+**Measured running total: 82 `KB_ARTICLES` keys as of this batch.** Still open: ~55 panels not yet
+covered, the GM-routine cross-walk itself now exhausted (future batches need a new candidate
+source — the Supervisor/OM sections of the same plan doc, or direct panel-registry traffic
+judgment), and the `InfoIcon` rollout to more panel headers.
