@@ -22,6 +22,10 @@
 //   LIFELENZ_SKIP_PUNCH_AUDIT — set to '1' to skip the punch-edit-audit pull
 //                          (lifelenz_punch_edits — manual-edit-pattern security rules,
 //                          memory/finding-lifelenz-punch-edit-audit-report-2026-10-12.md)
+//   LIFELENZ_SKIP_ROSTER — set to '1' to skip the crew pay-rate ground-truth pull
+//                          (lifelenz_employee_roster + employee_pay_rate_changes,
+//                          owner request 2026-11-05 — see supabase/schema-lifelenz-
+//                          employee-roster.sql for the full why)
 
 import { chromium } from 'playwright';
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
@@ -33,6 +37,11 @@ import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // shiftsForEmployeeSchedule (dispatch #123, Crew Schedule Lookup) — same source, per-SHIFT
 // instead of rolled up. See the pullShiftAssignments() section below.
 import { rollupShiftsByRole, shiftsForEmployeeSchedule } from '../src/engine/lifelenz-shift-jobs.js';
+// Crew pay-rate ground truth (owner request 2026-11-05) -- reuses the SAME read-before-overwrite
+// diff logic scripts/qsrsoft-employee-roster-pull.mjs already proves out for management, with
+// source:'lifelenz_roster' instead of the default 'qsr_tenure'. See pullEmployeeRoster() below
+// and supabase/schema-lifelenz-employee-roster.sql for the full design.
+import { computePayRateChanges } from './qsrsoft-employee-roster-pull.mjs';
 // dispatch #123 originally routed the resolved name through identity-vault.js's tokenizeRows()
 // before this table existed a name column at all. Dispatch #125 (owner directive, 2026-08-25:
 // "there is no reason to hide names for scheduling and punch times > everyone can see this data
@@ -44,6 +53,7 @@ const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
 const SKIP_JOBS    = process.env.LIFELENZ_SKIP_JOBS === '1'; // escape hatch for the per-job pull
 const SKIP_SHIFT_ASSIGNMENTS = process.env.LIFELENZ_SKIP_SHIFT_ASSIGNMENTS === '1'; // escape hatch, dispatch #123
 const SKIP_PUNCH_AUDIT = process.env.LIFELENZ_SKIP_PUNCH_AUDIT === '1'; // escape hatch, punch-edit-audit pull
+const SKIP_ROSTER = process.env.LIFELENZ_SKIP_ROSTER === '1'; // escape hatch, crew pay-rate ground-truth pull (employee_roster_report)
 const DAYS_BACK    = parseInt(process.env.LIFELENZ_DAYS_BACK    || '30', 10);
 const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
@@ -1263,6 +1273,220 @@ async function pullShiftAssignments(token, schedules, start, end) {
   return saved;
 }
 
+// ── Crew pay-rate ground truth — employee_roster_report (owner request 2026-11-05) ────────────
+// See supabase/schema-lifelenz-employee-roster.sql's header for the full why. Short version:
+// crew pay rate everywhere else in this app is DERIVED (weeklyCrewRates' Σearnings/Σhours) --
+// noisy, and lags a real raise until it's actually been worked. This pulls LifeLenz's own
+// vendor-recorded CURRENT rate per employee via the same already-automated admin-report family
+// this file uses for labor_analysis_actuals_report/time_punch_change_approvals_report.
+//
+// PII: employee_roster_report's CSV always carries SSN/DOB/address/phone/email/emergency-contact
+// -- there is no selectCols-style param to ask for fewer, unlike QSRSoft's roster endpoint. The
+// allowlist is enforced here, at parse time, by simply never reading those columns into a row at
+// all -- see ROSTER_ALLOWED_HEADERS below. Nothing outside that set is ever looked up.
+const ROSTER_ALLOWED_HEADERS = {
+  loc: 'home store nsn', firstName: 'first name', lastName: 'last name',
+  hireDate: 'hire date', restaurantStartDate: 'restaurant start date',
+  jobTitleCode: 'primary jtc', payRate: 'pay rate', status: 'status',
+  terminationDate: 'termination date', terminationReason: 'termination reason',
+};
+
+function normalizeRosterName(first, last) {
+  return `${first || ''} ${last || ''}`.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Same two-line-preamble CSV shape as the other admin reports (row0: "...,Store,0003708",
+// row1: headers, row2+: data) -- reuses parseCsvLine. Returns rows with ONLY the allowed
+// fields above; a header this parser doesn't explicitly look up is never read, so SSN/DOB/
+// address/phone/email/emergency-contact can't land in a row even by future accident.
+function parseEmployeeRosterCSV(text) {
+  const lines = text.split('\n').map(l => l.replace(/^﻿/, '')).filter(l => l.trim());
+  if (lines.length < 3) return [];
+
+  const r0 = parseCsvLine(lines[0]);
+  let loc = '';
+  for (let i = 0; i < r0.length; i++) {
+    if (r0[i].toLowerCase() === 'store' && i + 1 < r0.length) { loc = r0[i + 1].trim(); break; }
+  }
+  if (!loc) return [];
+  loc = loc.padStart(7, '0');
+
+  const headers = parseCsvLine(lines[1]).map(h => h.trim().toLowerCase());
+  const idx = key => headers.indexOf(ROSTER_ALLOWED_HEADERS[key]);
+  const I = Object.fromEntries(Object.keys(ROSTER_ALLOWED_HEADERS).map(k => [k, idx(k)]));
+
+  const rows = [];
+  for (let i = 2; i < lines.length; i++) {
+    const r = parseCsvLine(lines[i]);
+    const firstName = I.firstName >= 0 ? r[I.firstName] : '';
+    const lastName  = I.lastName  >= 0 ? r[I.lastName]  : '';
+    if (!firstName && !lastName) continue;
+    const payRateRaw = I.payRate >= 0 ? r[I.payRate] : '';
+    rows.push({
+      loc,
+      firstName: firstName || '', lastName: lastName || '',
+      fullName: `${firstName || ''} ${lastName || ''}`.trim(),
+      hireDate: I.hireDate >= 0 ? parseDate(r[I.hireDate]) : null,
+      restaurantStartDate: I.restaurantStartDate >= 0 ? parseDate(r[I.restaurantStartDate]) : null,
+      jobTitleCode: I.jobTitleCode >= 0 ? (r[I.jobTitleCode] || null) : null,
+      payRate: payRateRaw ? parseFloat(payRateRaw) : null,
+      status: I.status >= 0 ? (r[I.status] || null) : null,
+      terminationDate: I.terminationDate >= 0 ? parseDate(r[I.terminationDate]) : null,
+      terminationReason: I.terminationReason >= 0 ? (r[I.terminationReason] || null) : null,
+    });
+  }
+  return rows;
+}
+
+function toDateStr(d) {
+  if (!d) return null;
+  const yr = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, '0'), dy = String(d.getDate()).padStart(2, '0');
+  return `${yr}-${mo}-${dy}`;
+}
+
+// POST {employee_ids} -> CSV (confirmed via a live owner-captured DevTools request, 2026-11-05).
+// No async-job variant observed for this report (unlike labor_analysis_actuals_report) -- a
+// direct 200/text response -- but the same resp.ok/HTTP-error handling as fetchReportChunk
+// applies in case that ever changes.
+async function fetchEmployeeRosterReport(token, scheduleId, employeeIds) {
+  if (!employeeIds.length) return [];
+  const url = `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules/${scheduleId}/employee_roster_report`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { ...apiHeaders(token, scheduleId), 'X-Page-Module': 'reports-pdf', 'Accept': 'application/json, text/csv, */*' },
+    body: JSON.stringify({ employee_ids: employeeIds }),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const text = await resp.text();
+  return text && text.length > 20 ? parseEmployeeRosterCSV(text) : [];
+}
+
+// This run's own (assignedEmploymentId, name) population for one store, from the ALREADY-
+// SYNCED lifelenz_shift_assignments table -- doubles as (a) the employee_ids list to request
+// in the roster-report POST body and (b) the name->id lookup used to resolve the roster CSV's
+// response rows back to a real employment id, since that CSV echoes back NAME ONLY, never the
+// id it was requested with (measured directly off the live response, 2026-11-05 -- confirmed
+// no id/geid column exists in employee_roster_report's CSV at all).
+async function getRecentShiftIdentities(loc, sinceDate) {
+  const { data, error } = await supabase
+    .from('lifelenz_shift_assignments')
+    .select('assigned_employment_id,employee_name')
+    .eq('loc', loc)
+    .gte('date', toISO(sinceDate))
+    .not('assigned_employment_id', 'is', null);
+  if (error) { console.warn(`[employee-roster] identity lookup failed for ${loc}: ${error.message}`); return { employeeIds: [], nameToId: new Map() }; }
+  const nameToId = new Map(); // normalized name -> id, or 'AMBIGUOUS' when 2+ distinct ids share a name at this store
+  const employeeIds = new Set();
+  for (const r of (data || [])) {
+    if (!r.assigned_employment_id) continue;
+    employeeIds.add(r.assigned_employment_id);
+    if (!r.employee_name) continue;
+    const key = r.employee_name.trim().toLowerCase().replace(/\s+/g, ' ');
+    const existing = nameToId.get(key);
+    if (existing === undefined) nameToId.set(key, r.assigned_employment_id);
+    else if (existing !== 'AMBIGUOUS' && existing !== r.assigned_employment_id) nameToId.set(key, 'AMBIGUOUS');
+  }
+  return { employeeIds: [...employeeIds], nameToId };
+}
+
+// Resolves each roster row's person_key to a real assignedEmploymentId by exact (loc, name)
+// match against this SAME run's shift-assignment identities, falling back to a visibly-
+// synthetic 'name:<normalized>' key when unresolved (new hire with no shifts yet, or an
+// ambiguous duplicate name at this store -- logged once, never silently merged into the wrong
+// person's history). A resolved key is what lets the Pay Rate History panel join this row to
+// the person's own measured crew hours for $ impact; a synthetic key still persists and is
+// still diffable, just not joinable.
+function resolveRosterPersonKeys(rows, nameToId) {
+  let ambiguous = 0, unresolved = 0;
+  const out = rows.map(r => {
+    const key = normalizeRosterName(r.firstName, r.lastName);
+    const id = nameToId.get(key);
+    if (id === 'AMBIGUOUS') { ambiguous++; return { ...r, personKey: `name:${key}`, resolved: false }; }
+    if (id) return { ...r, personKey: id, resolved: true };
+    unresolved++;
+    return { ...r, personKey: `name:${key}`, resolved: false };
+  });
+  return { rows: out, ambiguous, unresolved };
+}
+
+async function upsertEmployeeRoster(rows) {
+  if (!rows.length) return 0;
+  const now = new Date().toISOString();
+  const upsert = rows.map(r => ({
+    loc: r.loc, person_key: r.personKey, full_name: r.fullName || null,
+    job_title_code: r.jobTitleCode, hire_date: toDateStr(r.hireDate),
+    restaurant_start_date: toDateStr(r.restaurantStartDate), status: r.status,
+    termination_date: toDateStr(r.terminationDate), termination_reason: r.terminationReason,
+    pay_rate: r.payRate, updated_at: now,
+  }));
+  const { error } = await supabase.from('lifelenz_employee_roster')
+    .upsert(upsert, { onConflict: 'tenant_id,loc,person_key' });
+  if (error) { console.warn('[employee-roster] upsert error:', error.message); return 0; }
+  return upsert.length;
+}
+
+// MUST run before upsertEmployeeRoster() above -- same reasoning as
+// qsrsoft-employee-roster-pull.mjs's own detectAndRecordPayRateChanges(): reads the value the
+// upsert is about to overwrite, so a real change is never lost even though
+// lifelenz_employee_roster itself only ever holds the CURRENT state.
+async function detectAndRecordLifelenzRosterChanges(rows) {
+  if (!rows.length) return 0;
+  const { data: current, error: readErr } = await supabase
+    .from('lifelenz_employee_roster').select('loc,person_key,pay_rate');
+  if (readErr) { console.warn('[employee-roster] read current rates failed (skipping change detection this run):', readErr.message); return 0; }
+  const priorByKey = new Map((current || []).map(r => [`${r.loc}|${r.person_key}`, r.pay_rate]));
+  // Shaped to computePayRateChanges()'s generic {loc, geid, hourly_pay_rate, full_employee_name,
+  // job_title_code_description} contract -- geid here IS personKey, reusing that function's
+  // existing diff logic rather than duplicating it (see the import at this file's top).
+  const shaped = rows.map(r => ({
+    loc: r.loc, geid: r.personKey, hourly_pay_rate: r.payRate,
+    full_employee_name: r.fullName, job_title_code_description: r.jobTitleCode,
+  }));
+  const changes = computePayRateChanges(shaped, priorByKey, toDateStr(new Date()), 'lifelenz_roster');
+  if (!changes.length) return 0;
+  const { error: insErr } = await supabase.from('employee_pay_rate_changes').insert(changes);
+  if (insErr) { console.warn('[employee-roster] change-log insert failed:', insErr.message); return 0; }
+  return changes.length;
+}
+
+// Pulls crew pay-rate ground truth for every store schedule. Best-effort, additive, never
+// fatal -- same posture as pullJobHours/pullShiftAssignments/pullPunchEditAudit: a failure here
+// can never cost anything that already committed earlier in main(). Looks back 60 days for the
+// employee-identity population (long enough to cover anyone who's worked recently without
+// pulling the full historical roster every run).
+async function pullEmployeeRoster(token, schedules, today = new Date()) {
+  const since = addDay(today, -60);
+  console.log(`[employee-roster] pulling crew pay-rate ground truth for ${schedules.length} store(s)…`);
+  let totalRows = 0, totalSaved = 0, totalChanges = 0, totalAmbiguous = 0, totalUnresolved = 0, fetchFailed = false;
+  for (const schedule of schedules) {
+    const scheduleId = schedule.id || schedule.scheduleId;
+    const loc = locFromName(schedule.name || schedule.scheduleName || scheduleId);
+    if (!loc) continue;
+
+    const { employeeIds, nameToId } = await getRecentShiftIdentities(loc, since);
+    if (!employeeIds.length) continue;
+
+    let rawRows;
+    try {
+      rawRows = await fetchEmployeeRosterReport(token, scheduleId, employeeIds);
+    } catch (e) {
+      if (!fetchFailed) { console.warn(`[employee-roster] fetch failed (${schedule.name}): ${e.message}`); fetchFailed = true; }
+      continue;
+    }
+    if (!rawRows.length) continue;
+
+    const { rows, ambiguous, unresolved } = resolveRosterPersonKeys(rawRows, nameToId);
+    totalAmbiguous += ambiguous; totalUnresolved += unresolved;
+
+    const changes = await detectAndRecordLifelenzRosterChanges(rows);
+    const saved = await upsertEmployeeRoster(rows);
+    totalRows += rows.length; totalSaved += saved; totalChanges += changes;
+    console.log(`  [employee-roster] ${loc}: ${saved}/${rows.length} roster rows saved, ${changes} pay-rate change(s), ${rows.length - ambiguous - unresolved}/${rows.length} resolved to a real employment id`);
+  }
+  console.log(`[employee-roster] ✓ ${totalSaved}/${totalRows} roster rows saved, ${totalChanges} pay-rate change(s) recorded${totalAmbiguous ? `, ${totalAmbiguous} ambiguous duplicate name(s)` : ''}${totalUnresolved ? `, ${totalUnresolved} unresolved to a real id` : ''}${fetchFailed ? ' (some fetches failed — see first warning)' : ''}`);
+  return totalSaved;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────
 async function main() {
   // Date range: START_DATE override bypasses gap detection (used for historical backfills).
@@ -1454,6 +1678,18 @@ async function main() {
       console.warn('[punch-audit] pull failed (non-fatal):', e.message);
     }
   }
+
+  // 7. Crew pay-rate ground truth (employee_roster_report, owner request 2026-11-05) --
+  //    additive, best-effort, never fatal. Runs LAST, same reasoning as steps 4-6.
+  if (SKIP_ROSTER) {
+    console.log('[employee-roster] skipped (LIFELENZ_SKIP_ROSTER=1)');
+  } else {
+    try {
+      await pullEmployeeRoster(token, schedules, today);
+    } catch (e) {
+      console.warn('[employee-roster] pull failed (non-fatal):', e.message);
+    }
+  }
 }
 
 // Guarded (2026-09-11, matching lifelenz-attendance-pull.mjs's own pattern) so a test can
@@ -1465,4 +1701,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
 }
 
-export { buildLeadTimeCaptures, getLatestDate, parsePunchEditCSV, parsePunchDateTime };
+export {
+  buildLeadTimeCaptures, getLatestDate, parsePunchEditCSV, parsePunchDateTime,
+  parseEmployeeRosterCSV, resolveRosterPersonKeys, normalizeRosterName,
+};

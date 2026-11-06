@@ -20,10 +20,22 @@ describe('stream-freshness.js STREAMS groups (task #94)', () => {
 });
 
 describe('groupFreshness (task #94)', () => {
-  const D = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(12, 0, 0, 0); return d; };
+  // Fixed asOf, same convention stream-freshness.test.js's own freshDs()/rowsAt() already use
+  // (see its "clamps to asOf" test) -- NEVER let a date-math test race the real wall clock.
+  // D(0) used to feed groupFreshness() its IMPLICIT asOf=new Date() default, which is only ever
+  // equal to "noon today" when the test happens to run after noon local/UTC time. A run between
+  // midnight and noon (confirmed live: CI ran this file at 2026-11-06T00:01, right after the
+  // Nov 5->6 UTC rollover) makes D(0) (forced to noon THAT calendar day) a few hours in the
+  // FUTURE relative to the real asOf -- which _latestDateOf's own asOf clamp (stream-
+  // freshness.js, added for LifeLenz's forward-schedule skew) then correctly treats as
+  // unusable, collapsing the "fresh" row to staleDays:Infinity -> severity 'crit'. Not a
+  // production bug -- the clamp is working exactly as designed; the test's own use of the
+  // ambient clock for asOf was the bug. Passing a fixed ASOF explicitly removes the race.
+  const ASOF = (() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d; })();
+  const D = (daysAgo) => { const d = new Date(ASOF); d.setDate(d.getDate() - daysAgo); return d; };
 
   it('omits a group with no loaded stream this session', () => {
-    const out = groupFreshness({});
+    const out = groupFreshness({}, ASOF);
     expect(out).toEqual([]);
   });
 
@@ -35,7 +47,7 @@ describe('groupFreshness (task #94)', () => {
       qsrActSummaryRows: [{ loc: '3708', date: D(0) }],
       salesLedgerRows: [{ loc: '3708', date: D(10) }],
     };
-    const sales = groupFreshness(ds).find(g => g.group === 'sales');
+    const sales = groupFreshness(ds, ASOF).find(g => g.group === 'sales');
     expect(sales, 'sales group missing from output').toBeTruthy();
     expect(sales.worstSeverity).toBe('crit'); // salesLedger's own staleness, not masked by dar
     expect(sales.maxDate.getTime()).toBe(D(0).getTime()); // union date range still shows the real freshest date
@@ -46,23 +58,22 @@ describe('groupFreshness (task #94)', () => {
       qsrActSummaryRows: [{ loc: '3708', date: D(0) }, { loc: '3708', date: D(1) }],
       salesLedgerRows: [{ loc: '0005183', date: D(0) }], // zero-padded loc must not double-count 5183
     };
-    const sales = groupFreshness(ds).find(g => g.group === 'sales');
+    const sales = groupFreshness(ds, ASOF).find(g => g.group === 'sales');
     expect(sales.rowCount).toBe(3);
     expect(sales.storeCount).toBe(2); // 3708 and 5183, zero-padding normalized
   });
 
   it('a genuinely new group ("people") is covered -- the old strip had no bucket for it at all', () => {
-    const now = new Date();
-    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const thisMonth = `${ASOF.getFullYear()}-${String(ASOF.getMonth() + 1).padStart(2, '0')}`;
     const ds = { rosterStatsRows: [{ loc: '3708', month: thisMonth }] };
-    const people = groupFreshness(ds).find(g => g.group === 'people');
+    const people = groupFreshness(ds, ASOF).find(g => g.group === 'people');
     expect(people, 'people group missing -- these streams were invisible in the old 5-bucket strip').toBeTruthy();
     expect(people.worstSeverity).toBe('ok');
   });
 
   it('all-ok group reports worstSeverity "ok"', () => {
     const ds = { qsrActSummaryRows: [{ loc: '3708', date: D(0) }] };
-    const sales = groupFreshness(ds).find(g => g.group === 'sales');
+    const sales = groupFreshness(ds, ASOF).find(g => g.group === 'sales');
     expect(sales.worstSeverity).toBe('ok');
   });
 });

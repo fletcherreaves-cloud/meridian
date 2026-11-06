@@ -51,6 +51,50 @@ const PEAK_SLICES = {
 };
 function normSlice(s) { return PEAK_SLICES[s.toLowerCase().trim()] || s.toLowerCase().replace(/\s/g, ''); }
 
+// ── DT Parked % Optimization ─────────────────────────────────────────────────────
+// Extracted from views/store-analytics.js's computeRevenueOpportunity block 2, same split
+// pattern as computeOepeDollarGap/computeDaypartErosion above -- and fixed in the same pass
+// (dispatch, 2026-11-06): parkPct and tpph live on two DIFFERENT 3 Peaks sheets (Service vs
+// Sales, each its own parser -- parse3PeaksService/parse3PeaksSales, src/parsers/index.js). A
+// Service row never carries a tpph field at all, so the pre-fix code's `ds.peaksSvcRows.filter(
+// r=>r.parkPct>0&&r.tpph>0)` filtered EVERY row out, every time, for every store -- this bucket
+// could never compute. Fixed by joining the two sheets' same-day/same-daypart rows on
+// (loc, date, slice), the key both parsers already produce per row, before bucketing.
+export function computeParkOptimization(loc, p, ds) {
+  if (!(p && p.park > 0 && ds && ds.peaksSvcRows && ds.peaksSalesRows)) return null;
+  const locStr = String(loc || '').trim();
+  const tpphByKey = new Map();
+  ds.peaksSalesRows.forEach(r => {
+    if (String(r.loc || '').trim() !== locStr || !(r.tpph > 0) || !r.date) return;
+    tpphByKey.set(r.date.getTime() + '|' + r.slice, r.tpph);
+  });
+  const svcRows = ds.peaksSvcRows
+    .filter(r => String(r.loc || '').trim() === locStr && r.parkPct > 0 && r.date)
+    .map(r => ({ ...r, tpph: tpphByKey.get(r.date.getTime() + '|' + r.slice) }))
+    .filter(r => r.tpph > 0);
+  if (svcRows.length < 6) return null;
+  // Find park% range where TPPH is highest
+  const buckets = {};
+  svcRows.forEach(r => {
+    const bucket = Math.round(r.parkPct * 100 / 5) * 5; // 5% buckets
+    if (!buckets[bucket]) buckets[bucket] = [];
+    buckets[bucket].push(r.tpph || 0);
+  });
+  const avgByBucket = Object.entries(buckets).map(([pct, tpphs]) =>
+    ({ pct: +pct, tpph: tpphs.reduce((a, v) => a + v, 0) / tpphs.length, n: tpphs.length }))
+    .filter(b => b.n >= 2).sort((a, b) => b.tpph - a.tpph);
+  if (avgByBucket.length === 0) return null;
+  return {
+    optimalParkPct: avgByBucket[0].pct,
+    currentParkPct: +(p.park * 100).toFixed(2),
+    bestTPPH: +avgByBucket[0].tpph.toFixed(2),
+    currentTPPH: p.tpph || 0,
+    note: avgByBucket[0].pct < 14 ? 'Your data shows TPPH peaks at lower park rates — you may be over-parking.' :
+      avgByBucket[0].pct > 20 ? 'Your data shows TPPH improves with higher park rates — consider staging more aggressively.' :
+        'Park rate is near the optimal zone based on your data.',
+  };
+}
+
 export function computeDaypartErosion(loc, ds, settings) {
   if (!(ds && ds.peaksSalesRows)) return null;
   const locStr = String(loc || '').trim();

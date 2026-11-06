@@ -216,4 +216,14 @@ describe('computePayRateChanges() — pure diff against the about-to-be-overwrit
     expect(computePayRateChanges([], new Map(), TODAY)).toEqual([]);
     expect(computePayRateChanges(null, new Map(), TODAY)).toEqual([]);
   });
+
+  // 4th param (source) -- added 2026-11-05 so scripts/lifelenz-pull.mjs's crew roster pull can
+  // reuse this exact diff logic with source:'lifelenz_roster' instead of duplicating it. Default
+  // unchanged ('qsr_tenure'), covered by every test above that omits the 4th arg.
+  it('an explicit source overrides the default "qsr_tenure"', () => {
+    const rows = [{ loc: '0003708', geid: 'emp-1', hourly_pay_rate: 13.0 }];
+    const prior = new Map([['0003708|emp-1', 12.0]]);
+    const changes = computePayRateChanges(rows, prior, TODAY, 'lifelenz_roster');
+    expect(changes[0].source).toBe('lifelenz_roster');
+  });
 });

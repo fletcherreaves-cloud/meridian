@@ -67,7 +67,7 @@ describe('PayRateHistoryPanel', () => {
     };
     ({ container, root } = await mount({ ds, stores: STORES, onClose: () => {} }));
     expect(container.textContent).toContain('1 change detected');
-    expect(container.textContent).toContain('1 management · 0 crew');
+    expect(container.textContent).toContain('1 management · 0 crew (roster) · 0 crew (derived)');
     expect(container.textContent).toContain('J Mgr');
     expect(container.textContent).toContain('General Manager');
     expect(container.textContent).toContain('$18.00 → $19.00');
@@ -89,13 +89,54 @@ describe('PayRateHistoryPanel', () => {
     ];
     ({ container, root } = await mount({ ds: { employeePayRateChanges: [] }, stores: STORES, onClose: () => {} }));
     expect(container.textContent).toContain('1 change detected');
-    expect(container.textContent).toContain('0 management · 1 crew');
+    expect(container.textContent).toContain('0 management · 0 crew (roster) · 1 crew (derived)');
     expect(container.textContent).toContain('A Crew');
     expect(container.textContent).toContain('$15.00 → $17.50');
-    // weekly = 2.5 * 4 (this employee's own measured hours that week) = 10; annualized = 10*52 = 520
-    expect(container.textContent).toContain('$10.00');
-    expect(container.textContent).toContain('$520');
-    expect(container.textContent).toContain('measured');
+  });
+
+  // Owner request 2026-11-05: crew's own REAL logged change from LifeLenz's employee_roster_
+  // report (never earnings-derived) -- a separate table-sourced population from the two above.
+  it('renders a logged crew (roster) rate change, joined to that employee\'s own measured hours when resolved to a real id', async () => {
+    _shiftAssignments = [
+      { loc: '0010422', shiftId: 's1', date: '2026-08-03', assignedEmploymentId: 'emp-real-1', employeeName: 'D Crew' },
+      { loc: '0010422', shiftId: 's2', date: '2026-08-10', assignedEmploymentId: 'emp-real-1', employeeName: 'D Crew' },
+    ];
+    // Both weeks at the SAME $12/hr -- the earnings-DERIVED detector (weeklyCrewRates/
+    // detectRateSteps) must find no step of its own here, so this test isolates the
+    // roster-sourced real change below rather than also tripping the separate derived one.
+    _shiftPay = [
+      { loc: '0010422', shiftId: 's1', earnings: 48, seconds: 14400 }, // 4h @ $12
+      { loc: '0010422', shiftId: 's2', earnings: 48, seconds: 14400 }, // 4h @ $12 -- same rate, just feeds the impact-calc hours
+    ];
+    const ds = {
+      employeePayRateChanges: [{
+        source: 'lifelenz_roster', loc: '0010422', personKey: 'emp-real-1', employeeName: 'D Crew',
+        jobTitle: '00650', priorRate: 12, newRate: 13, effectiveDate: '2026-10-20',
+      }],
+    };
+    ({ container, root } = await mount({ ds, stores: STORES, onClose: () => {} }));
+    expect(container.textContent).toContain('1 change detected');
+    expect(container.textContent).toContain('0 management · 1 crew (roster) · 0 crew (derived)');
+    expect(container.textContent).toContain('D Crew');
+    expect(container.textContent).toContain('$12.00 → $13.00');
+    expect(container.textContent).toContain('measured'); // joined to the real id's latest week's hours
+    // Real posted rate, never earnings-derived -- always straight-time, regardless of OT mix.
+    expect(container.textContent).toContain('straight-time');
+  });
+
+  it('shows no measured-hours impact for a roster change that could not be resolved to a real employment id', async () => {
+    const ds = {
+      employeePayRateChanges: [{
+        source: 'lifelenz_roster', loc: '0010422', personKey: 'name:new hire', employeeName: 'New Hire',
+        jobTitle: '00650', priorRate: 12, newRate: 13, effectiveDate: '2026-10-20',
+      }],
+    };
+    ({ container, root } = await mount({ ds, stores: STORES, onClose: () => {} }));
+    expect(container.textContent).toContain('New Hire');
+    expect(container.textContent).toContain('$12.00 → $13.00');
+    // No real employment id to join to a measured-hours week -- left honestly unknown (no
+    // dollar impact fabricated, no fallback to an assumed management-style 40h/wk for crew).
+    expect(container.textContent).toContain('Net annualized impact: $0');
   });
 
   // Owner-caught 2026-11-05 (real wage-accuracy bug): overtime is paid at 1.5x, not the

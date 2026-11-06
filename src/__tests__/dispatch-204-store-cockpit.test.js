@@ -60,6 +60,51 @@ describe('FoodCostCockpitTab (dispatch #204)', () => {
     // in the engine's own real label text (not a guessed label).
     expect(container.textContent).toMatch(/Variance Stat/i);
   });
+
+  // Owner request 2026-11-05: per-class (Food/Condiment/Paper) lines on the Day-by-Day
+  // Variance chart. Per dispatch16's "would this verification still pass if the change were
+  // reverted?" rule, this renders the REAL component (not just variance-trace.js's engine
+  // tests) so a revert of the wiring -- not just the engine -- would be caught here.
+  it('renders the F/C/P class legend on the Day-by-Day Variance chart from real qsr_fob rows', () => {
+    const period = new Date().toISOString().slice(0, 7);
+    const row = {
+      loc: '0010422', date: period + '-15',
+      prodSalesAmt: 100000, compWasteAmt: 500, rawWasteAmt: 400, condimentsAmt: 300,
+      empMgrMealsAmt: 200, statVarianceAmt: 700, unexplainedAmt: 100,
+      pnlPaperCostPurchases: 250,
+    };
+    render({ ds: { qsrFobRows: [row] } });
+    expect(container.textContent).toContain('Day-by-Day Variance');
+    expect(container.textContent).toContain('Food');
+    expect(container.textContent).toContain('Condiment');
+    expect(container.textContent).toContain('Paper');
+    expect(container.textContent).toContain('Total (ref)');
+    // Real per-point hover tooltips (SVG <title>), not placeholder text -- Paper's single day
+    // deltas against $0, i.e. its own pnlPaperCostPurchases value.
+    expect(container.innerHTML).toContain('Paper: +$250');
+  });
+
+  // Owner, live: 'Let's give a brief description... Most people would have no clue what that
+  // even means' re: the bare "Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant"
+  // subtitle on this exact card. Plain language goes out front (CLAUDE.md's "Voice by role"
+  // standing rule); the statistical jargon stays exact but moves to a hover tooltip, so it's
+  // reachable, never forced inline unexplained. Checked against the rendered DOM, not the
+  // JargonTip helper in isolation (it isn't exported) -- a revert that re-inlined the jargon
+  // into visible text, or dropped it from the tooltip entirely, would fail one of these two
+  // assertions.
+  it('leads "What Moves With Food Cost" with a plain-language line and keeps the stats jargon in a hover tooltip, not inline', () => {
+    const period = new Date().toISOString().slice(0, 7);
+    const row = { loc: '0010422', date: period + '-15', prodSalesAmt: 100000, compWasteAmt: 500 };
+    render({ ds: { qsrFobRows: [row] } });
+    expect(container.textContent).toContain('What Moves With Food Cost');
+    expect(container.textContent).toContain('a dot means the pattern is real, not random noise');
+    // The jargon must NOT be sitting in plain visible text any more...
+    expect(container.textContent).not.toContain('Benjamini');
+    // ...but must still be reachable, verbatim, as the info affordance's tooltip.
+    const tip = [...container.querySelectorAll('[title]')].find(el => (el.getAttribute('title') || '').includes('Benjamini'));
+    expect(tip).toBeTruthy();
+    expect(tip.getAttribute('title')).toBe('Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant');
+  });
 });
 
 describe('LaborCockpitTab (dispatch #204)', () => {
@@ -81,5 +126,64 @@ describe('LaborCockpitTab (dispatch #204)', () => {
   it('shows the no-complete-week message when ds has no qsrActSummaryRows for this store', () => {
     render({ ds: { qsrActSummaryRows: [] } });
     expect(container.textContent).toMatch(/No complete pay week/i);
+  });
+});
+
+// ── Coach box threshold redesign (2026-11-05) — see src/engine/labor-gap-split.js's
+// laborCoachVerdict for the formula. These render the REAL LaborCockpitTab, not the pure engine
+// function alone, per this repo's "would this verification still pass if the change were
+// reverted" rule — a test only against laborCoachVerdict (see labor-gap-split.test.js) couldn't
+// tell "the component actually reads settings.laborCoachHrsPerDay" from "it ignores the prop and
+// always uses the default."
+describe('LaborCockpitTab "Coach" box threshold (dispatch: configurable ±hrs/day coaching threshold)', () => {
+  let container, root;
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); });
+
+  const dates = ['2026-08-05','2026-08-06','2026-08-07','2026-08-08','2026-08-09','2026-08-10','2026-08-11'];
+  const weekOf = (needHrs, actHrs, darSchedHrs) =>
+    dates.map(dt => ({ loc: '10422', date: new Date(dt + 'T00:00:00'), needHrs, actHrs, darSchedHrs }));
+
+  function render(qsrActSummaryRows, settings) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root.render(React.createElement(LaborCockpitTab, { store: STORE, ds: { qsrActSummaryRows }, settings })); });
+  }
+
+  it('within the default ±10 hrs/day guideline (70 hrs/week): "On track", no coaching direction picked', () => {
+    // planGap = (51-50)*7 = 7, execGap = (52-51)*7 = 7 — both well under 70.
+    render(weekOf(50, 52, 51));
+    expect(container.textContent).toContain('On track');
+    expect(container.textContent).not.toMatch(/not the shift|not the schedule/);
+  });
+
+  it('only the planning gap exceeds the guideline: "schedule, not the shift"', () => {
+    // planGap = (63-50)*7 = 91 (over 70), execGap = (65-63)*7 = 14 (under 70).
+    render(weekOf(50, 65, 63));
+    expect(container.textContent).toMatch(/schedule.*not the shift/);
+    expect(container.textContent).toContain('91.0 hrs/week');
+    expect(container.textContent).toContain('14.0 hrs');
+  });
+
+  it('only the execution gap exceeds the guideline: "Execution, not the schedule"', () => {
+    // planGap = (51-50)*7 = 7 (under 70), execGap = (65-51)*7 = 98 (over 70).
+    render(weekOf(50, 65, 51));
+    expect(container.textContent).toMatch(/Execution.*not the schedule/);
+    expect(container.textContent).toContain('98.0 hrs/week');
+  });
+
+  it('BOTH gaps exceed the guideline: neither "tracks the guide" framing — both named as off', () => {
+    // planGap = (65-50)*7 = 105 (over), execGap = (85-65)*7 = 140 (over, the larger piece).
+    render(weekOf(50, 85, 65));
+    expect(container.textContent).toContain('Both outside');
+    expect(container.textContent).not.toMatch(/tracks the guide/);
+  });
+
+  it('a per-tenant settings.laborCoachHrsPerDay overrides the 10/day default', () => {
+    // planGap = (51-50)*7 = 7, execGap = (52-51)*7 = 7 — within-tolerance at the 10/day
+    // default (see first test), but at hrsPerDay=0.5 the band is 0.5*7=3.5, which 7 exceeds.
+    render(weekOf(50, 52, 51), { laborCoachHrsPerDay: 0.5 });
+    expect(container.textContent).not.toContain('On track');
+    expect(container.textContent).toMatch(/±0\.5 hrs\/day/);
   });
 });

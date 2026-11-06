@@ -69,6 +69,7 @@ on:
       - QSRSoft Daily Activity Pull
       - QSRSoft Digital App Pull
       - QSRSoft Email Report Parse
+      - QSRSoft Employee Pay History Pull
       - QSRSoft Employee Roster Pull
       - QSRSoft FOB Pull
       - QSRSoft Forms Completion Pull

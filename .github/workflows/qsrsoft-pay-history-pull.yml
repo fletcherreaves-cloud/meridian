@@ -1,0 +1,98 @@
+name: QSRSoft Employee Pay History Pull
+
+# Owner request 2026-11-05 ("we can also infer wages in the past from this report"). See
+# supabase/schema-qsr-employee-pay-history.sql's header for the full measurement + architecture
+# decision (primary source for Pay Rate History going forward, backfilled as deep as the data
+# supports -- the LifeLenz-roster and qsr_employee_tenure mechanisms stay as fallback/cross-check).
+#
+# Endpoint confirmed via a live owner-captured DevTools request AND independently re-verified by
+# the engineer session that wrote this script (real token, real data, live Supabase measurement)
+# -- unlike several other QSRSoft pulls in this repo, this one has an actual live-verified
+# response shape behind it, not just a one-off capture. Still: run once via workflow_dispatch
+# after first merge and spot-check qsr_employee_pay_period_history before trusting the scheduled
+# cadence, same discipline every new pull in this repo follows.
+#
+# IMPORTANT: the daily schedule below only pulls a small ROLLING window (QSROSFT_PAY_DAYS_BACK/
+# RECENT, catching corrections to recent pay periods). The real historical backfill (years of
+# data) must be run manually ONCE via workflow_dispatch with start_date set far back (e.g.
+# 2018-01-01) -- the daily cron intentionally never does this on its own, to keep the routine
+# run fast and avoid re-pulling years of already-settled history every day.
+
+on:
+  schedule:
+    # 10:40 UTC -- staggered after the other QSRSoft pulls at 10:00/10:30 UTC, same reasoning
+    # qsrsoft-punch-times-pull.yml's own comment gives for its own 10:30 slot.
+    - cron: '40 10 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 60)'
+        required: false
+        default: '60'
+      days_recent:
+        description: 'Rolling re-pull window in days, catches late pay-period corrections (default: 21)'
+        required: false
+        default: '21'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set for a real historical backfill, e.g. 2018-01-01.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      stores:
+        description: 'Subset of NSNs, comma-separated. Default: all 27.'
+        required: false
+        default: ''
+      max_chunk_days:
+        description: 'Per-request window size in days (default: 365)'
+        required: false
+        default: '365'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Employee Pay History
+        run: node scripts/qsrsoft-pay-history-pull.mjs
+        env:
+          VITE_SUPABASE_URL:            ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:             ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:             ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_PAY_DAYS_BACK:        ${{ github.event.inputs.days_back      || '60'  }}
+          QSRSOFT_PAY_DAYS_RECENT:      ${{ github.event.inputs.days_recent    || '21'  }}
+          QSRSOFT_PAY_START_DATE:       ${{ github.event.inputs.start_date     || ''    }}
+          QSRSOFT_PAY_END_DATE:         ${{ github.event.inputs.end_date       || ''    }}
+          QSRSOFT_PAY_STORES:           ${{ github.event.inputs.stores         || ''    }}
+          QSRSOFT_PAY_MAX_CHUNK_DAYS:   ${{ github.event.inputs.max_chunk_days || '365' }}
+          QSRSOFT_PAY_DEBUG:            ${{ github.event.inputs.debug          || '0'   }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pay-history-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

@@ -18,6 +18,25 @@
 //
 // Pure + unit-tested. Row shapes match loadQsrFob (src/lib/supabase.js) and
 // analyzeCountCadence's sessions (src/engine/weekly-cadence.js).
+//
+// ── F/C/P class breakdown (owner request, 2026-11-05: Store Cockpit screenshot, "I was
+// envisioning it displaying variance as it changes based on counts for all items. You could
+// add lines for the different classes (F/C/P).") — measured, not assumed, against what
+// qsr_fob actually carries at daily grain:
+//   - Condiment has its OWN reported line (condimentsAmt) — unambiguously the Condiment side.
+//   - eom-inventory.js's own FOB_CLASSES = ['food','condiment'] constant says FOB is a
+//     Food+Condiment split with nothing else in it — so the other 5 components
+//     (compWaste/rawWaste/empMeal/statVar/unexplained) are, collectively, the Food side.
+//     QSRSoft does not further attribute THOSE 5 by item class at this grain, so this is the
+//     finest split the data actually supports, not a guess at a finer one that isn't there.
+//   - Paper has NO FOB-variance component at all — FOB structurally excludes it. The only
+//     Paper $ this same qsr_fob row carries at daily grain is the P&L Paper Cost build-up
+//     (pnl_paper_cost_* — pLPaperCostFromRow), which is a net-cost swing (purchases net of the
+//     Begin+Purchases+Adjustments+Transfers-Promotions-End formula), NOT a counted-waste
+//     variance like the other two classes. It is reported here because it is the only
+//     daily-resolvable Paper $ signal that exists — do not mistake it for a "Paper variance"
+//     this data model doesn't have.
+import { pLPaperCostFromRow } from './eom-inventory.js';
 
 const _dk = d => (typeof d === 'string') ? d.slice(0, 10)
   : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
@@ -65,6 +84,9 @@ export function fobDailyTrace(fobRows, { loc, period, since = null } = {}) {
     cum.fob = FOB_TRACE_COMPONENTS.reduce((s, c) => s + cum[c], 0);
     cum.sales = sales;
     cum.fobPct = sales > 0 ? cum.fob / sales : null;
+    // Paper's only daily-resolvable $ — see the file-header comment. Same MTD-cumulative
+    // snapshot shape as the 6 FOB components, so it diffs the same way.
+    cum.pLPaperCost = pLPaperCostFromRow(r, sales).pLPaperCost || 0;
 
     if (!inPeriod(day)) { prevCum = cum; prevDay = day; continue; }   // lead-in row: seeds the delta only
 
@@ -72,7 +94,7 @@ export function fobDailyTrace(fobRows, { loc, period, since = null } = {}) {
     // boundary (would read as a huge negative "delta" that's really just the reset).
     const sameMonth = prevDay && prevDay.slice(0, 7) === day.slice(0, 7);
     const delta = {};
-    for (const c of [...FOB_TRACE_COMPONENTS, 'fob']) {
+    for (const c of [...FOB_TRACE_COMPONENTS, 'fob', 'pLPaperCost']) {
       delta[c] = (prevCum && sameMonth) ? cum[c] - prevCum[c] : cum[c];
     }
     out.push({ date: day, cumulative: cum, delta, daysSincePrev: prevDay ? _daysBetween(prevDay, day) : null });
@@ -133,4 +155,25 @@ export function biggestJumpDay(trace) {
   let windowStart = null;
   for (let i = idx - 1; i >= 0; i--) { if (trace[i].touchpoint) { windowStart = trace[i].date; break; } }
   return { date: best.date, delta: best.delta.fob, windowStart: windowStart || (trace[0] && trace[0].date) || null };
+}
+
+// ── Per-class (Food/Condiment/Paper) $ swing — see the file-header comment for exactly what
+// each class is sourced from and why Paper is a different KIND of number than the other two.
+export const FOB_CLASS_KEYS = ['food', 'condiment', 'paper'];
+
+// One trace point → that day's $ swing for each class. Pure (no lookups), so a caller can
+// map it over fobDailyTrace's output directly.
+export function classDelta(pt) {
+  const d = (pt && pt.delta) || {};
+  return {
+    food: (d.compWaste || 0) + (d.rawWaste || 0) + (d.empMeal || 0) + (d.statVar || 0) + (d.unexplained || 0),
+    condiment: d.condiment || 0,
+    paper: d.pLPaperCost || 0,
+  };
+}
+
+// fobDailyTrace's output, with each point's class breakdown attached as `.cls`. The chart
+// (and anything else wanting per-class series) consumes this instead of re-deriving it.
+export function classTrace(trace) {
+  return (trace || []).map(pt => ({ ...pt, cls: classDelta(pt) }));
 }

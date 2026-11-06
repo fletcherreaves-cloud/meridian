@@ -18,11 +18,11 @@ import {
 } from '../lib/supabase.js';
 import { buildStoreFobReport } from '../engine/fob-report.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
-import { fobDailyTrace, biggestJumpDay } from '../engine/variance-trace.js';
+import { fobDailyTrace, biggestJumpDay, classTrace, FOB_CLASS_KEYS } from '../engine/variance-trace.js';
 import { computeStoreDataDiscipline } from '../engine/waste-discipline.js';
 import { scanAllPairs } from '../engine/signal-registry.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
+import { computeLaborGapSplit, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DAY } from '../engine/labor-gap-split.js';
 import { overnightOpenness, overnightExcessByStore } from '../engine/labor-standard.js';
 import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -44,6 +44,17 @@ const tint = (v, pct) => `color-mix(in srgb, var(${v}) ${pct}%, transparent)`;
 const mixBg = (v, pct, base = '--surf3') => `color-mix(in srgb, var(${v}) ${pct}%, var(${base}))`;
 
 const STATUS_COLOR = { good: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)', flat: 'var(--text3)' };
+
+// Plain-language-first subtitle with the technical statistics reachable on hover, per
+// CLAUDE.md's "Voice by role" standing rule — "say the number AND the decision," the jargon
+// stays exact underneath but is never the thing the operator hits unexplained (owner, live:
+// "Most people would have no clue what that even means" re: this exact "Pearson r ·
+// Benjamini–Hochberg FDR-guarded · dot = significant" line). `title` gives native-tooltip depth,
+// the same affordance CorrRow's own significance dot already uses two components down.
+function JargonTip(plain, jargon) {
+  return span(null, plain, ' ',
+    span({ title: jargon, style: { cursor: 'help', color: 'var(--text3)', fontWeight: 700, borderBottom: '1px dotted var(--text3)' } }, 'ⓘ'));
+}
 
 function Card({ title, sub, accent, style }, ...children) {
   return div({ style: {
@@ -249,6 +260,9 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   // count-anchored version.
   const trace = useMemo(() => fobDailyTrace(storeFobRows, { loc, period: reportPeriod }), [storeFobRows, loc, reportPeriod]);
   const jump = useMemo(() => biggestJumpDay(trace), [trace]);
+  // Per-class (Food/Condiment/Paper) $ swing (owner request 2026-11-05) — classTrace just
+  // attaches each point's class breakdown to the same trace, zero new fetch.
+  const clsTrace = useMemo(() => classTrace(trace), [trace]);
 
   // Data-discipline (waste-logging cadence) — lazy-fill, load-on-open, same shape as
   // analytics.js's FOBAnalysisPanel.
@@ -312,8 +326,8 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
         })))),
     ),
     div(gridStyle('1fr 1fr'),
-      Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod },
-        trace.length ? h(VarianceTrace, { trace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
+      Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod + ' · by class' },
+        trace.length ? h(VarianceTrace, { trace: clsTrace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
         // Gated at >=$25, same threshold eom-dashboard.js's VarianceTraceChart callout uses
         // (line ~664) -- without it, a quiet-period trivial swing gets flagged with the same
         // critical red styling as a real jump (mass-review notes 70, 2026-10-13).
@@ -340,30 +354,75 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
               discipline.estImpact ? span(null, ' · est. impact ', h('b', { style: { color: 'var(--text)' } }, '+' + f$(Math.round(discipline.estImpact)))) : null)),
           (!discipline && !wastePending) && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 12 } }, wasteFailed ? 'Waste data failed to load.' : 'No submission pattern derivable yet for this store.'))),
     ),
-    Card({ title: 'What Moves With Food Cost', sub: 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant' },
+    Card({ title: 'What Moves With Food Cost', sub: JargonTip('Metrics that tend to move with food cost — a dot means the pattern is real, not random noise', 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant') },
       scan ? h(CorrelationStrip, { results: foodCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…')));
 }
 
-// SVG day-by-day variance trace (mirrors the mockup's inline SVG line chart).
+// Class line styling (owner request 2026-11-05: "add lines for the different classes
+// (F/C/P)") — fixed hue + dash-pattern pairing, assigned in a fixed order and never cycled
+// (dataviz skill's categorical rule). Colors are the only 3 non-status tokens this file's own
+// header comment lists as its chart palette (--good/--warn/--crit stay reserved for status,
+// never doubled as a series color). Dash pattern is a second, color-blind-safe encoding
+// layered on top of hue — belt-and-suspenders for the 3 small swatches here, and required
+// relief for what dataviz skill's validate_palette.js actually measures on this exact
+// triplet: CVD-separation and the normal-vision floor both clear comfortably in BOTH modes
+// (worst adjacent pair ~29 ΔE, well over the >=15 floor); light-mode contrast-vs-surface is
+// a WARN (below 3:1), which the legend + per-point hover tooltip below satisfy as the
+// skill's prescribed relief. Dark mode FAILS the skill's lightness-band check on these exact
+// values — they're lifted from --amber/--blue/--orange, mode-independent globals already
+// shipped elsewhere in this file for bars/dots — and re-tuning those globally for dark-mode
+// line-chart lightness would touch every other call site in the app, out of this change's
+// scope. Flagged here, measured, rather than silently papered over.
+const CLASS_LINE = {
+  food:      { color: 'var(--amber)',  dash: null,      label: 'Food' },
+  condiment: { color: 'var(--blue)',   dash: '5,3',     label: 'Condiment' },
+  paper:     { color: 'var(--orange)', dash: '2,2.5',   label: 'Paper' },
+};
+
+// SVG day-by-day variance trace, one line per F/C/P class plus a muted Total reference line
+// (mirrors the mockup's inline SVG line chart, extended with the class breakdown). `trace` is
+// variance-trace.js's classTrace() output — each point already carries `.cls.{food,
+// condiment,paper}` alongside the existing `.delta.fob` total.
 function VarianceTrace({ trace }) {
-  const W = 560, H = 130, padL = 6, padR = 6, padT = 10, padB = 18;
-  const vals = trace.map(p => p.delta.fob || 0);
-  const minV = Math.min(0, ...vals), maxV = Math.max(0, ...vals);
+  const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
+  const totalVals = trace.map(p => p.delta.fob || 0);
+  const classVals = { food: [], condiment: [], paper: [] };
+  for (const p of trace) for (const k of FOB_CLASS_KEYS) classVals[k].push((p.cls && p.cls[k]) || 0);
+  // One shared axis across Total + all 3 classes (never a dual-axis/rescaled-per-line chart —
+  // that's how a class's own swing gets visually overstated relative to the others).
+  const allVals = [...totalVals, ...classVals.food, ...classVals.condiment, ...classVals.paper];
+  const minV = Math.min(0, ...allVals), maxV = Math.max(0, ...allVals);
   const range = (maxV - minV) || 1;
   const innerW = W - padL - padR, innerH = H - padT - padB;
   const zeroY = padT + innerH - ((0 - minV) / range) * innerH;
-  const pts = trace.map((p, i) => ({
-    x: padL + (trace.length > 1 ? (i / (trace.length - 1)) * innerW : innerW / 2),
-    y: padT + innerH - (((p.delta.fob || 0) - minV) / range) * innerH,
-    v: p.delta.fob || 0, date: p.date,
-  }));
-  const pathD = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
-  const maxIdx = vals.indexOf(vals.reduce((best, v) => Math.abs(v) > Math.abs(best) ? v : best, 0));
-  return h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
-    h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
-    h('path', { d: pathD, fill: 'none', stroke: 'var(--amber)', strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' }),
-    ...pts.map((p, i) => h('circle', { key: i, cx: p.x, cy: p.y, r: i === maxIdx ? 4 : 2.2, fill: i === maxIdx ? 'var(--crit)' : 'var(--amber)', stroke: 'var(--surf)', strokeWidth: 1 },
-      h('title', null, p.date + ': ' + (p.v >= 0 ? '+' : '') + '$' + Math.round(p.v)))));
+  const xOf = i => padL + (trace.length > 1 ? (i / (trace.length - 1)) * innerW : innerW / 2);
+  const yOf = v => padT + innerH - (((v || 0) - minV) / range) * innerH;
+  const pathOf = vals => vals.map((v, i) => (i === 0 ? 'M' : 'L') + xOf(i).toFixed(1) + ',' + yOf(v).toFixed(1)).join(' ');
+  const maxAbsIdx = vals => vals.reduce((best, v, i) => Math.abs(v) > Math.abs(vals[best]) ? i : best, 0);
+  const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
+  const money = v => (v >= 0 ? '+' : '') + '$' + Math.round(v).toLocaleString();
+
+  return div(null,
+    h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
+      h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
+      // Total — de-emphasized, muted reference underneath the 3 class lines; it's the sum of
+      // Food+Condiment the chart already showed, not a 4th new series needing its own identity.
+      h('path', { d: pathOf(totalVals), fill: 'none', stroke: 'var(--text3)', strokeWidth: 1.25, strokeDasharray: '1,2', strokeLinejoin: 'round', strokeLinecap: 'round' }),
+      ...FOB_CLASS_KEYS.map(k => {
+        const style = CLASS_LINE[k], vals = classVals[k], mi = maxAbsIdx(vals);
+        return h('g', { key: k },
+          h('path', { d: pathOf(vals), fill: 'none', stroke: style.color, strokeWidth: 2, strokeDasharray: style.dash || undefined, strokeLinejoin: 'round', strokeLinecap: 'round' }),
+          ...vals.map((v, i) => h('circle', {
+            key: i, cx: xOf(i), cy: yOf(v), r: i === mi ? 4 : 2.2, fill: style.color, stroke: 'var(--surf)', strokeWidth: 1,
+          }, h('title', null, `${dLbl(trace[i].date)} · ${style.label}: ${money(v)}`))));
+      })),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
+      ...FOB_CLASS_KEYS.map(k => div({ key: k, style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, borderRadius: '50%', background: CLASS_LINE[k].color, flexShrink: 0 } }),
+        span(null, CLASS_LINE[k].label))),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--text3)', flexShrink: 0 } }),
+        span(null, 'Total (ref)'))));
 }
 
 // ═════════════════════════════════════ LABOR & SCHEDULING TAB ═════════════════════════════════
@@ -392,7 +451,7 @@ function slotStartLabel(hourSlot) {
   return hh + ampm;
 }
 
-export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
+export function LaborCockpitTab({ store, ds, onCoachingSaved, settings }) {
   const loc = String(store.loc), t = store.t || {};
 
   // Planning-vs-execution split (labor-gap-split.js) — Wed-Tue PAY week, the engine's own
@@ -487,16 +546,29 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
   if (!curWeek) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'No complete pay week of DAR data yet for this store — the planning-vs-execution split needs at least one full Wed–Tue week.');
 
   const planGap = curWeek.planningGapHrs, execGap = curWeek.executionGapHrs;
-  const planAbs = planGap != null ? Math.abs(planGap) : null, execAbs = execGap != null ? Math.abs(execGap) : null;
+  // Threshold-gated classification (labor-gap-split.js's laborCoachVerdict) — settable per
+  // tenant via Settings > Labor % Thresholds (DEF_SETTINGS.laborCoachHrsPerDay, default the
+  // owner's ±10 hrs/day rule of thumb). See that file's comment for the full reasoning.
+  const hrsPerDay = (settings && settings.laborCoachHrsPerDay != null) ? settings.laborCoachHrsPerDay : DEFAULT_LABOR_COACH_HRS_PER_DAY;
+  const verdict = laborCoachVerdict({ planGap, execGap, days: curWeek.days, hrsPerDay });
   let verdictText, whyText;
-  if (planAbs != null && execAbs != null) {
-    const planLeads = planAbs >= execAbs;
-    verdictText = planLeads
-      ? span(null, 'The ', h('b', { style: { color: 'var(--amber)' } }, 'schedule'), ', not the shift — Needed→Scheduled gap is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ' (planning), Scheduled→Actual is only ', h('b', null, execAbs.toFixed(1) + ' hrs'), ' (execution is close to plan).')
-      : span(null, h('b', { style: { color: 'var(--amber)' } }, 'Execution'), ', not the schedule — Scheduled→Actual gap is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), ' (execution), Needed→Scheduled is only ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' (the schedule itself tracks the guide).');
-    whyText = planLeads
-      ? (planGap < 0 ? 'The schedule itself was written short of the guide before the week started — the shortfall was built in, not lost at the punch. Fix the guide/scheduler, not the shift managers.' : 'The schedule itself was written over the guide before the week started — review the scheduler’s build against the guide.')
-      : (execGap < 0 ? 'The store is running under its own written schedule — shifts are cutting early or not filling. Coach the shift managers on running the plan as written.' : 'The store is running over its own written schedule — extensions or early clock-ins are adding hours the schedule didn’t call for. Coach the shift managers on holding the plan.');
+  if (verdict) {
+    const { state, planAbs, execAbs, thresholdHrs } = verdict;
+    const bandTxt = hrsPerDay + ' hrs/day · ' + thresholdHrs.toFixed(0) + ' hrs/week band';
+    if (state === 'within-tolerance') {
+      verdictText = span(null, h('b', { style: { color: 'var(--good)' } }, 'On track'), ' — Needed→Scheduled is ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' and Scheduled→Actual is ', h('b', null, execAbs.toFixed(1) + ' hrs'), ', both inside the ±', bandTxt, '.');
+      whyText = 'No coaching signal here — the schedule build and the shift execution are both within normal week-to-week variance. A 0-hour-flat schedule isn’t the goal; staying inside this band is.';
+    } else if (state === 'plan-leads') {
+      verdictText = span(null, 'The ', h('b', { style: { color: 'var(--amber)' } }, 'schedule'), ', not the shift — Needed→Scheduled gap is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ', over the ±', bandTxt, '. Scheduled→Actual is only ', h('b', null, execAbs.toFixed(1) + ' hrs'), ' (execution is inside the guideline).');
+      whyText = planGap < 0 ? 'The schedule itself was written short of the guide before the week started — the shortfall was built in, not lost at the punch. Fix the guide/scheduler, not the shift managers.' : 'The schedule itself was written over the guide before the week started — review the scheduler’s build against the guide.';
+    } else if (state === 'exec-leads') {
+      verdictText = span(null, h('b', { style: { color: 'var(--amber)' } }, 'Execution'), ', not the schedule — Scheduled→Actual gap is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), ', over the ±', bandTxt, '. Needed→Scheduled is only ', h('b', null, planAbs.toFixed(1) + ' hrs'), ' (the schedule itself is inside the guideline).');
+      whyText = execGap < 0 ? 'The store is running under its own written schedule — shifts are cutting early or not filling. Coach the shift managers on running the plan as written.' : 'The store is running over its own written schedule — extensions or early clock-ins are adding hours the schedule didn’t call for. Coach the shift managers on holding the plan.';
+    } else { // both-over-plan-leads | both-over-exec-leads
+      const biggerIsPlan = state === 'both-over-plan-leads';
+      verdictText = span(null, h('b', { style: { color: 'var(--crit)' } }, 'Both'), ' outside the ±', bandTxt, ' — Needed→Scheduled is ', h('b', null, planAbs.toFixed(1) + ' hrs/week'), ' and Scheduled→Actual is ', h('b', null, execAbs.toFixed(1) + ' hrs/week'), '; ', biggerIsPlan ? 'the schedule build is the larger piece' : 'execution is the larger piece', '.');
+      whyText = 'Both legs are off this week — the schedule itself needs to be rebuilt against the guide, AND the shift managers need to be coached on running whatever schedule is written. Fixing only the larger piece leaves the other one unaddressed.';
+    }
   } else {
     verdictText = 'Scheduled hours unknown for this week — total_scheduled_hours isn’t populated yet, so the planning-vs-execution split can’t be computed.';
     whyText = null;
@@ -528,7 +600,7 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved }) {
               : excessForLoc.verdict.underStandard ? span(null, 'Overnight running ', h('b', { style: { color: 'var(--text)' } }, excessForLoc.verdict.shortfall.toFixed(1) + ' hrs'), ' under the close-down/pre-open standard')
               : 'Overnight hours are on the close-down/pre-open standard')),
         excessForLoc && excessForLoc.na && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 12 } }, excessForLoc.reason)),
-      Card({ title: 'What Moves With Labor %', sub: 'Pearson r · FDR-guarded' },
+      Card({ title: 'What Moves With Labor %', sub: JargonTip('Metrics that tend to move with labor % — a dot means the pattern is real, not random noise', 'Pearson r · FDR-guarded') },
         scan ? h(CorrelationStrip, { results: laborCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…'))),
     Card({ title: 'Intraday Deployment', sub: 'scheduled hrs needed − actual, by hour × day-of-week · trailing 6 weeks' },
       heat && heat.slots.length ? h(HeatMap, { heat }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 24, textAlign: 'center' } }, hourly === null ? 'Loading hourly activity…' : 'No hourly DAR data loaded for this window.')));

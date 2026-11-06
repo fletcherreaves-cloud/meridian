@@ -22,6 +22,32 @@ function _fmt(v, unit) {
   return (v >= 0 ? '+' : '') + fN(v, 1);
 }
 
+// Owner-requested 2026-11-05: drop the bare "(signed)" suffix from these column labels and
+// instead carry the direction with a small colored arrow + a one-line tooltip people can read
+// without knowing what "signed" means. Tooltip wording depends on signedBasis (see
+// engine/labor-opportunity-cost.js's LABOR_OPP_COLUMNS comment) — "vs needed" and "vs
+// scheduled" are genuinely different claims and must not share one sentence.
+const _SIGNED_TOOLTIP = {
+  needed: {
+    $: 'Positive = scheduled/spent more than needed (overstaffed). Negative = less than needed (understaffed).',
+    hrs: 'Positive = more hours than needed (overstaffed). Negative = fewer hours than needed (understaffed).',
+  },
+  sched: {
+    $: 'Positive = ran over the schedule’s $ plan. Negative = ran under the schedule’s $ plan.',
+    hrs: 'Positive = worked more hours than scheduled. Negative = worked fewer hours than scheduled.',
+  },
+};
+
+function SignedCell({ v, unit, signedBasis }) {
+  if (v == null || !signedBasis) return _fmt(v, unit);
+  const tip = _SIGNED_TOOLTIP[signedBasis]?.[unit] || '';
+  const over = v >= 0;
+  return div({ style: { display: 'inline-flex', alignItems: 'center', gap: 3, cursor: tip ? 'help' : undefined }, title: tip },
+    h('span', { style: { color: over ? '#ef4444' : '#10b981', fontSize: '8px', lineHeight: 1 } }, over ? '▲' : '▼'),
+    h('span', null, _fmt(v, unit)),
+  );
+}
+
 const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 
 export function LaborOpportunityCostPanel({ ds, stores, onClose }) {
@@ -64,7 +90,8 @@ export function LaborOpportunityCostPanel({ ds, stores, onClose }) {
             )),
             h('tbody', null, ...sorted.map((r, i) => tr({ key: r.loc, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
               td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: i % 2 ? 'var(--surf2)' : 'var(--surf)' } }, sNameC(r.loc) || r.name),
-              ...LABOR_OPP_COLUMNS.map(c => td({ key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, _fmt(r[c.key], c.unit))),
+              ...LABOR_OPP_COLUMNS.map(c => td({ key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } },
+                h(SignedCell, { v: r[c.key], unit: c.unit, signedBasis: c.signedBasis }))),
             ))),
           ),
         ),

@@ -249,7 +249,12 @@ export function toTenureRows(records) {
 // Pure diff logic pulled out (no supabase dependency) so it's directly testable the same way
 // this file's own toTenureRows() already is -- priorByKey is {loc}|{geid} -> hourly_pay_rate
 // (or absent entirely for a person never seen before).
-export function computePayRateChanges(rows, priorByKey, today) {
+// `source` is a 4th, optional param (default unchanged: 'qsr_tenure') so
+// scripts/lifelenz-pull.mjs's own crew roster-pull can reuse this SAME diff logic with
+// source:'lifelenz_roster' instead of duplicating it -- "check whether a helper exists before
+// writing one" (CLAUDE.md standing rule). Existing qsr-tenure callers/tests are unaffected
+// (they never pass a 4th arg).
+export function computePayRateChanges(rows, priorByKey, today, source = 'qsr_tenure') {
   const changes = [];
   for (const row of (rows || [])) {
     if (row.hourly_pay_rate == null) continue; // nothing to compare -- this run has no rate at all
@@ -261,7 +266,7 @@ export function computePayRateChanges(rows, priorByKey, today) {
     // Only a REAL prior NUMBER that differs from the new one is a change.
     if (prior == null || prior === row.hourly_pay_rate) continue;
     changes.push({
-      loc: row.loc, source: 'qsr_tenure', person_key: row.geid,
+      loc: row.loc, source, person_key: row.geid,
       employee_name: row.full_employee_name || null, job_title: row.job_title_code_description || null,
       prior_rate: prior, new_rate: row.hourly_pay_rate, effective_date: today,
     });

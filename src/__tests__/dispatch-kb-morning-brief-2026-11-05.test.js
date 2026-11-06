@@ -3,9 +3,13 @@
 // Task #75 (Knowledge Base expansion), 2026-11-05: Daily Brief (src/features/morning-brief.js) --
 // the single highest-traffic panel in the app, had zero dedicated Panel Guide article (only a
 // one-line mention in panel_index). Added `morning_brief_guide` to KB_ARTICLES
-// (src/engine/forecast.js), verified against the real 12-entry MORNING_RULES array (not the
-// stale "9 rules" the panel's own subtitle string still shows) and the manual-first (not
-// auto-first) sourcing of assembleBriefStoreData()'s headline fields.
+// (src/engine/forecast.js), verified against the real 12-entry MORNING_RULES array.
+//
+// Updated same day, same session: the article originally documented a real manual-first
+// sourcing bug in assembleBriefStoreData() (and the then-still-stale "9 rules" subtitle) as a
+// live problem. Both were fixed in the same session (see src/features/morning-brief.js and
+// App.js's subtitle string) -- the article and this test were updated together so neither goes
+// stale the moment the code it describes changes underneath it.
 import { describe, it, expect, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -33,19 +37,20 @@ function openArticle(matchText) {
 
 const SUMMARY_MATCH = "The district's daily correlation/anomaly scan";
 
-describe('Knowledge Base — new morning_brief_guide article (task #75)', () => {
-  it('is findable and names the real rule count (12), flagging the stale "9 rules" subtitle', () => {
+describe('Knowledge Base — morning_brief_guide article (task #75, updated for the sourcing fix)', () => {
+  it('is findable and names the real rule count (12), with the subtitle fix reflected', () => {
     mount();
     openArticle(SUMMARY_MATCH);
     expect(container.textContent).toContain('12 rule objects');
-    expect(container.textContent).toContain('9 rules');
+    expect(container.textContent).toContain('Correlation engine · 12 rules');
   });
 
-  it('documents that headline fields are manual-first, the reverse of the standing auto-first rule', () => {
+  it('documents the sourcing fix as fixed, not as a live problem', () => {
     mount();
     openArticle(SUMMARY_MATCH);
-    expect(container.textContent).toContain('does NOT cleanly follow the app-wide auto/emailed-first');
-    expect(container.textContent).toContain('REVERSE of the standing rule');
+    expect(container.textContent).toContain('Fixed 2026-11-05');
+    expect(container.textContent).toContain('metricDaily()');
+    expect(container.textContent).not.toContain('does NOT cleanly follow');
   });
 
   it("distinguishes this panel's own rules engine from Priority/Intelligence Brief's shared findings array", () => {

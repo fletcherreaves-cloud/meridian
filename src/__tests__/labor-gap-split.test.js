@@ -4,7 +4,7 @@
 // exclusion (signature #4), and "scheduled hours unknown" reporting null rather than a
 // fabricated number when the rollup hasn't backfilled total_scheduled_hours yet.
 import { describe, it, expect } from 'vitest';
-import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
+import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DAY } from '../engine/labor-gap-split.js';
 
 const day = (loc, dt, needHrs, actHrs, darSchedHrs) => ({ loc, date: new Date(dt + 'T00:00:00'), needHrs, actHrs, darSchedHrs });
 
@@ -114,5 +114,68 @@ describe('laborGapSplitSummary', () => {
     expect(s.totalCombinedGapHrs).toBeCloseTo(20, 2); // 8 + 10 + 2, always known
     expect(s.storesOverPlanning).toBe(1);  // only A (5 > 0)
     expect(s.storesOverExecution).toBe(2); // A and C
+  });
+});
+
+// ── laborCoachVerdict — Store Cockpit "Coach" box threshold (redesigned 2026-11-05) ──────────
+// Owner's rule of thumb: ±10 hrs/day. computeLaborGapSplit only operates at the pay-WEEK grain,
+// so the threshold applied to a week's gap is hrsPerDay * days (default 10*7=70 for a complete
+// week), never a bare magnitude comparison with no tolerance band at all (the old behavior).
+describe('laborCoachVerdict', () => {
+  it('defaults to the owner’s stated 10 hrs/day guideline', () => {
+    expect(DEFAULT_LABOR_COACH_HRS_PER_DAY).toBe(10);
+  });
+
+  it('returns null when either gap or days is missing — "scheduled hours unknown" stays unknown, not fabricated', () => {
+    expect(laborCoachVerdict({ planGap: null, execGap: 5, days: 7 })).toBeNull();
+    expect(laborCoachVerdict({ planGap: 5, execGap: null, days: 7 })).toBeNull();
+    expect(laborCoachVerdict({ planGap: 5, execGap: 5, days: 0 })).toBeNull();
+  });
+
+  it('within-tolerance: both gaps inside ±10/day * 7 = 70 hrs/week — no coaching signal, previously this still picked a "leader"', () => {
+    const v = laborCoachVerdict({ planGap: 20, execGap: -15, days: 7 });
+    expect(v.state).toBe('within-tolerance');
+    expect(v.thresholdHrs).toBe(70);
+    expect(v.planOver).toBe(false);
+    expect(v.execOver).toBe(false);
+  });
+
+  it('plan-leads: only the planning gap exceeds the threshold', () => {
+    const v = laborCoachVerdict({ planGap: 90, execGap: 10, days: 7 });
+    expect(v.state).toBe('plan-leads');
+    expect(v.planOver).toBe(true);
+    expect(v.execOver).toBe(false);
+  });
+
+  it('exec-leads: only the execution gap exceeds the threshold — this is the screenshot’s own figures scaled down, now correctly gated', () => {
+    // Screenshot: Scheduled→Actual 228.3 hrs/week, Needed→Scheduled 217.3 hrs/week — BOTH are
+    // actually over a 70 hrs/week (10/day) band; see the both-over case below for that exact
+    // pair. This case isolates "only execution is over."
+    const v = laborCoachVerdict({ planGap: 40, execGap: -90, days: 7 });
+    expect(v.state).toBe('exec-leads');
+    expect(v.planOver).toBe(false);
+    expect(v.execOver).toBe(true);
+  });
+
+  it('both-over: BOTH gaps exceed the threshold — the screenshot’s real numbers (228.3 vs 217.3) land here, not a clean "schedule tracks the guide" story', () => {
+    const v = laborCoachVerdict({ planGap: 217.3, execGap: 228.3, days: 7 });
+    expect(v.state).toBe('both-over-exec-leads'); // execAbs (228.3) > planAbs (217.3)
+    expect(v.planOver).toBe(true);
+    expect(v.execOver).toBe(true);
+  });
+
+  it('respects a custom hrsPerDay (per-tenant configurable threshold)', () => {
+    // 5 hrs/day * 7 = 35 hrs/week band — a gap of 40 now exceeds where it wouldn't at 10/day.
+    const tight = laborCoachVerdict({ planGap: 40, execGap: 5, days: 7, hrsPerDay: 5 });
+    expect(tight.state).toBe('plan-leads');
+    expect(tight.thresholdHrs).toBe(35);
+    const loose = laborCoachVerdict({ planGap: 40, execGap: 5, days: 7, hrsPerDay: 10 });
+    expect(loose.state).toBe('within-tolerance');
+  });
+
+  it('scales the threshold by the week’s own day count, not a hardcoded 7', () => {
+    const partial = laborCoachVerdict({ planGap: 25, execGap: 5, days: 3 }); // 10*3=30 band
+    expect(partial.thresholdHrs).toBe(30);
+    expect(partial.state).toBe('within-tolerance');
   });
 });
