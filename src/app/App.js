@@ -272,6 +272,7 @@ const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager
 // moved to parsers/inventory-parse.js in the same change — inventory.js now has zero static
 // importers, so this lazyPanel() wrapper is no longer defeated by INEFFECTIVE_DYNAMIC_IMPORT.
 const InventoryIntelligence = lazyPanel(() => import('../views/inventory.js').then(m => ({ default: m.InventoryIntelligence })), 'inventory-intelligence');
+const NewStoreLaunchPlanner = lazyPanel(() => import('../views/launch-planner.js').then(m => ({ default: m.NewStoreLaunchPlanner })), 'launch-planner');
 const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })), 'scheduling');
 import { AdminPanel } from '../views/admin.js';
 // #207: see the FormsLibraryPanel comment below — same fix, same reason. report-subscriptions.js
@@ -3832,6 +3833,7 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&goRoute('loc-intel');
         if(modal==='inventory')      perm('analytics.store')&&goRoute('inventory');
+        if(modal==='launch-planner') perm('analytics.store')&&goRoute('launch-planner');
         // 'count-cycle' — dispatch #189: no longer its own panel, redirects into Inventory
         // Control's Count Cycle tab (mirrors 'targets-editor' just above) so an old deep link
         // doesn't 404. Deliberately STAYS 'analytics.district' as of 2026-09-28 (same reasoning as
@@ -4239,6 +4241,7 @@ function App() {
       routePanel==='dt-sos'&&h(DTSpeedOfServicePanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='news'&&h(NewsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='inventory'&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>goRoute(null)}),
+      routePanel==='launch-planner'&&h(NewStoreLaunchPlanner,{onClose:()=>goRoute(null)}),
       routePanel==='loc-intel'&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>goRoute(null)}),
       // Reports Hub (Phase 3, 2026-10-16) — 'my-reports' now opens the categorized Reports Hub
       // instead of the old standalone My Reports picker; ReportsHub embeds that same picker as

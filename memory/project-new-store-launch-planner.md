@@ -1,0 +1,121 @@
+---
+name: project-new-store-launch-planner
+description: "New Store Launch Planner — a reusable day-by-day sales plan for a newly opening/relocating store, seeded from the comparable-store ramp model and editable in-app. First used for Lindsay (44689), but built as reusable infrastructure for the next relocation/opening per the owner's own stated goal."
+metadata:
+  node_type: memory
+  type: project
+scope: tenant
+sensitivity: open
+---
+
+# New Store Launch Planner (2026-11-06)
+
+## What prompted this
+
+Same conversation, same session: the owner needed Lindsay's (44689) new-standalone-building
+opening (2026-11-14, official grand opening 2026-11-17) staffed via LifeLenz, and asked "where
+did we put the projections." The honest answer was: nowhere real yet — `DEFAULT_TARGETS['44689']`
+in `constants.js` is a verbatim copy-paste of predecessor 18213's old targets, explicitly flagged
+in its own code comment as a placeholder, not a forecast. The real tool for this,
+`src/engine/new-store-ramp.js` (built 2026-10-14, comparable-store ramp blending), existed but had
+never actually been run with real numbers.
+
+I ran it live against real `qsr_daily_activity` data (Tishomingo 43380 weighted 0.7, Ponce de Leon
+43701 weighted 0.3 — the owner's own read on which stores are comparable) and got real, actionable
+numbers — see §2. The owner then said: "We need to forward think as we do this to be able to model
+future new locations on something to kickstart forecasting," and approved building this as a
+reusable tool, not a one-off script. "Build it now."
+
+## 1. What already existed (measured, not assumed)
+
+`src/engine/new-store-ramp.js` already had, fully tested, real functions: `firstTradingDay`,
+`rampSeriesFor`, `matureBaseline`, `rampShape`, `blendRampShapes`, `projectNewStoreSales`. It
+blends comparable stores' own real opening trajectories (as a fraction of each comparable's own
+mature run-rate) into a day-indexed `$` forecast, given a caller-supplied mature weekly sales
+assumption — deliberately never guessed by the engine itself. This design plugs into that engine
+rather than duplicating it.
+
+## 2. The real Lindsay numbers (measured live, 2026-11-06)
+
+Queried live `qsr_daily_activity`, summed `product_sales` across `hour_slot` per `(loc,dt)`:
+
+- **Tishomingo (43380)** real mature daily sales: **$6,276/day** (≈$43,930/week). 707 real daily
+  rows.
+- **Ponce de Leon (43701)**: **$7,148/day** mature daily sales. 246 real daily rows.
+- **Inflation-adjusted assumption for Lindsay**: Tishomingo's weekly figure × 3.5%/yr compounded
+  over ~23 months (Tishomingo opened 2024-12-16, Lindsay opens 2026-11-14) ≈ **$46,925/week**. This
+  is a default, not a hardcoded truth — the UI lets the owner change it per store/opening.
+- **The real finding that changes the staffing picture**: the blended comparable shape shows a
+  **grand-opening BUMP, not a slow ramp** — day 0 (partial, matching Lindsay's own planned 10am
+  lunch-only soft open) is low (0.30× mature), but days 1–7 run **0.96×–1.81×** mature, settling
+  toward ~1.0–1.3× by week 8. Both real comparables ran ABOVE their own eventual steady-state for
+  the first several weeks. Staffing should budget closer to peak for weeks 1–4, not ramp up slowly.
+- This real comparable-based estimate ($46,925/week) is **lower** than the 18213 placeholder
+  ($61,438/week) — 18213 is an old in-Walmart unit with its own baked-in volume; don't treat either
+  number as interchangeable with the other.
+- **Owner-stated, received mid-build: Lindsay opens as a 24-HOUR operation for its first year** —
+  a deliberate owner operating decision, not something the Tishomingo/Ponce de Leon ramp-shape
+  comparables predict (whatever those two stores' own overnight patterns are, they don't apply
+  here). This does NOT change the day-level `$` math — `projected_sales` stays daypart-agnostic,
+  no change needed in `new-store-ramp.js` or the schema. It matters for whoever builds the
+  LifeLenz schedule off these numbers: Late Night staffing cannot be assumed minimal. Surfaced as
+  an `opsNote` field in `launch-planner.js`'s `SEED_DEFAULTS['44689']`, rendered as a visible
+  warning banner in the panel.
+
+## 3. What was built
+
+- **`projectLaunchPlan({loc, comparables, matureWeeklySales, openDate, maxDays})`**
+  (`src/engine/new-store-ramp.js`) — a thin calendar-mapping layer over `projectNewStoreSales`.
+  The day-indexed math is untouched; this only maps `dayN` to a real `plan_date` starting at
+  `openDate`.
+- **`new_store_launch_plan` table** (`supabase/schema-new-store-launch-plan.sql`, owner migration,
+  not yet run as of this writing) — one row per `(tenant_id, loc, plan_date)`:
+  `projected_sales` (the model's own output), `override_sales` (nullable — the owner's manual
+  edit), `note`, `source` (`'ramp'` | `'manual'`). Same tenant_id+RLS shape as every other small
+  operational table in this repo (closest analog: `runtime_error_reports`).
+- **`saveLaunchPlanRow`/`loadLaunchPlan`/`loadDailySalesForStore`** (`src/lib/supabase.js`) — the
+  first two self-heal (silent no-op) against the missing table until the owner runs the migration,
+  same pattern `reportRuntimeError` already established. `loadDailySalesForStore` is a new minimal
+  single-store `{loc,date,sales}` reader — `loadDailyActivityRangeForStore` already existed but
+  selects labor columns, not `product_sales`, and widening that shared selection would cost every
+  other caller for a long comparable history (Tishomingo: ~2 years × 24 `hour_slot`s).
+- **`NewStoreLaunchPlanner`** (`src/views/launch-planner.js`, `panel-registry.js` id
+  `launch-planner`, Planning section, `kind:'nav'`, `route:true` from day one) — an editable grid:
+  Day N / Date (+ DOW) / Projected $ (read-only, from the model) / Override $ (editable) /
+  Effective $ (`override ?? projected`) / Suggested Labor Hours (`effective ÷ DEFAULT_TARGETS[loc]
+  ?.tTpph`). A **"Regenerate from ramp model"** action re-derives `projected_sales` for every row
+  whose `source` is still `'ramp'` — it **never touches** a row the owner has overridden
+  (`source:'manual'`), which is the mechanic that makes this reusable for the next opening rather
+  than a one-off: changing the comparables/weights/run-rate and re-running never silently discards
+  manual corrections. A Grand Opening date input flags the matching row visually and in its note.
+  Store picker is a plain `<select>` over `STORE_NAMES`, not `LocationSelector` — this is a
+  single-store, occasional-use planning tool (one in-flight launch at a time), the same exception
+  class `memory/panel-contract.md` already documents for `StoreKBEditor`'s own non-`LocationSelector`
+  picker.
+
+## 4. Seeded defaults (convenience only, not load-bearing)
+
+`SEED_DEFAULTS['44689']` in `launch-planner.js` pre-fills the form with Lindsay's real numbers
+(§2) and the 2026-11-17 grand-opening date — purely a UI convenience for the first real use; every
+field is editable, and a different store/opening starts from blank inputs.
+
+## 5. What this does NOT do (by design)
+
+- **No hour-level/daypart breakdown.** Day-level only, v1. The LifeLenz schedule build itself is
+  where daypart allocation happens; this tool hands it a daily $ figure and a suggested hours
+  total, not an hourly curve.
+- **No auto-persist of the real Lindsay plan.** The schema migration hasn't run yet (owner action,
+  DDL is never run by an agent session). The computed first-10-day numbers were shown in this PR's
+  own report for sanity-check; the actual rows get written the first time the owner opens the panel
+  and clicks "Regenerate from ramp model" after running the migration.
+- **No multi-launch-at-once UI.** One store selected at a time. If two openings are ever in flight
+  simultaneously, the store picker already supports switching between them (each loc's plan is
+  independent), but there's no side-by-side comparison view — not asked for, not built.
+
+## 6. Reusability — the actual point of this build
+
+Every input (store, comparables + weights, mature run-rate assumption, open date, grand-opening
+date) is a form field, not a constant. The next relocation or new build just needs: pick the new
+store, pick its comparables and weights, type a mature run-rate assumption, set the open date, and
+click Regenerate — no new code. This is the "kickstart forecasting" infrastructure the owner asked
+for when he said "we need to forward think... to be able to model future new locations."

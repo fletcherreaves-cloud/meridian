@@ -3851,6 +3851,75 @@ export async function reportRuntimeError(message, stack, panel) {
   }
 }
 
+// ── New Store Launch Planner (memory/project-new-store-launch-planner.md, 2026-11-06) ──────────
+// Minimal single-store daily-sales reader for src/engine/new-store-ramp.js's comparable-store
+// blending (matureBaseline/rampShape expect {loc,date,sales} rows). loadDailyActivityRangeForStore
+// already exists for this table but selects labor columns, not product_sales -- a long comparable
+// history (Tishomingo: ~2 years x 24 hour_slots) makes widening that shared selection wasteful for
+// every OTHER caller, so this is its own minimal query rather than a modified shared one.
+export async function loadDailySalesForStore(loc, startDate, endDate) {
+  if (!supabase) return [];
+  const locPadded = String(loc).padStart(7, '0');
+  const rows = await fetchAll((lo, hi) => supabase
+    .from('qsr_daily_activity')
+    .select('dt,product_sales')
+    .eq('loc', locPadded)
+    .gte('dt', startDate)
+    .lte('dt', endDate)
+    .order('dt')
+    .range(lo, hi), 1000, 'qsr_daily_activity');
+  const byDate = new Map();
+  for (const r of rows) {
+    const s = Number(r.product_sales) || 0;
+    byDate.set(r.dt, (byDate.get(r.dt) || 0) + s);
+  }
+  return [...byDate.entries()].map(([date, sales]) => ({ loc: String(loc).replace(/^0+/, '') || String(loc), date, sales }));
+}
+
+// Upsert one day's plan row (projected and/or manually overridden). `source:'manual'` on an
+// override marks it immune to "Regenerate from ramp model" (src/views/launch-planner.js) --
+// NEVER silently flip source back to 'ramp' from this helper; the caller decides when a row
+// transitions. Self-heals (silent no-op) if the owner hasn't run
+// supabase/schema-new-store-launch-plan.sql yet, same `_isMissingTable` pattern as
+// reportRuntimeError above -- no code change needed once the migration runs.
+export async function saveLaunchPlanRow(loc, planDate, { dayN, projectedSales, overrideSales, note, source } = {}) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const row = {
+    loc: String(loc), plan_date: planDate,
+    day_n: dayN ?? null,
+    projected_sales: projectedSales ?? null,
+    override_sales: overrideSales ?? null,
+    note: note ?? null,
+    source: source || 'ramp',
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('new_store_launch_plan').upsert(row, { onConflict: 'tenant_id,loc,plan_date' });
+  if (error) {
+    if (_isMissingTable(error)) return { error: null }; // not migrated yet -- silent no-op
+    console.warn('[supabase] saveLaunchPlanRow:', error.message);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+export async function loadLaunchPlan(loc) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('new_store_launch_plan')
+    .select('loc,plan_date,day_n,projected_sales,override_sales,note,source')
+    .eq('loc', String(loc))
+    .order('plan_date');
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadLaunchPlan:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, planDate: r.plan_date, dayN: r.day_n,
+    projectedSales: r.projected_sales, overrideSales: r.override_sales,
+    note: r.note, source: r.source,
+  }));
+}
+
 // ── Session Notes ─────────────────────────────────────────────────────────────
 export async function loadSessionNotes() {
   if (!supabase) return [];

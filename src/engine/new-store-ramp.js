@@ -109,3 +109,25 @@ export function projectNewStoreSales({ comparables, matureWeeklySales, maxDays =
   const matureDaily = matureWeeklySales / 7;
   return shape.map(p => ({ dayN: p.dayN, frac: p.frac, forecastSales: +(p.frac * matureDaily).toFixed(2) }));
 }
+
+// ── Launch Planner calendar mapping (New Store Launch Planner, 2026-11-06) ──────────────────
+// A thin layer over projectNewStoreSales above — this file's own day-indexed math is untouched.
+// The Launch Planner (src/views/launch-planner.js) needs real CALENDAR dates to show and persist
+// (new_store_launch_plan rows are keyed by plan_date, not dayN), so this maps dayN -> the real
+// date starting at openDate. Built reusable for the NEXT relocation/opening, not Lindsay-specific
+// — every input (loc, comparables, matureWeeklySales, openDate) is a caller-supplied parameter.
+function _addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+export function projectLaunchPlan({ loc, comparables, matureWeeklySales, openDate, maxDays = 60 }) {
+  if (!loc || !openDate) return [];
+  const forecast = projectNewStoreSales({ comparables, matureWeeklySales, maxDays });
+  return forecast.map(p => ({
+    loc,
+    planDate: _addDays(openDate, p.dayN),
+    dayN: p.dayN,
+    projectedSales: p.forecastSales,
+  }));
+}

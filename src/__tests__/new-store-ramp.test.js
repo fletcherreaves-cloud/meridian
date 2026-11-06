@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   firstTradingDay, rampSeriesFor, matureBaseline, rampShape, blendRampShapes, projectNewStoreSales,
+  projectLaunchPlan,
 } from '../engine/new-store-ramp.js';
 
 function row(loc, date, sales) { return { loc, date, sales, gc: 1 }; }
@@ -138,5 +139,32 @@ describe('projectNewStoreSales()', () => {
   it('returns an empty forecast when matureWeeklySales is not provided or non-positive', () => {
     expect(projectNewStoreSales({ comparables: [], matureWeeklySales: 0 })).toEqual([]);
     expect(projectNewStoreSales({ comparables: [], matureWeeklySales: undefined })).toEqual([]);
+  });
+});
+
+// New Store Launch Planner (2026-11-06) -- the calendar-mapping layer over projectNewStoreSales
+// above. dayN math is untouched; this only tests that dayN maps to the right real date.
+describe('projectLaunchPlan()', () => {
+  const mkFlat = (loc, frac) => {
+    const rows = [row(loc, '2026-01-01', frac * 1000)];
+    let d = new Date('2026-01-01');
+    for (let i = 0; i < 100; i++) { d = new Date(d.getTime() + 864e5); rows.push(row(loc, d.toISOString().slice(0, 10), 1000)); }
+    return rows;
+  };
+  it('maps dayN to the real calendar date starting at openDate, dayN=0 on the open date itself', () => {
+    const comparables = [{ loc: 'X', laborRows: mkFlat('X', 1.0), weight: 1 }];
+    const plan = projectLaunchPlan({ loc: '44689', comparables, matureWeeklySales: 70000, openDate: '2026-11-14', maxDays: 5 });
+    expect(plan.map(p => p.planDate)).toEqual(['2026-11-14', '2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18']);
+    expect(plan[0]).toMatchObject({ loc: '44689', dayN: 0 });
+    expect(plan[0].projectedSales).toBeGreaterThan(0);
+  });
+  it('correctly rolls the date across a month boundary', () => {
+    const comparables = [{ loc: 'X', laborRows: mkFlat('X', 1.0), weight: 1 }];
+    const plan = projectLaunchPlan({ loc: 'A', comparables, matureWeeklySales: 70000, openDate: '2026-11-29', maxDays: 4 });
+    expect(plan.map(p => p.planDate)).toEqual(['2026-11-29', '2026-11-30', '2026-12-01', '2026-12-02']);
+  });
+  it('returns an empty plan when loc or openDate is missing', () => {
+    expect(projectLaunchPlan({ comparables: [], matureWeeklySales: 1000, openDate: '2026-11-14' })).toEqual([]);
+    expect(projectLaunchPlan({ loc: 'A', comparables: [], matureWeeklySales: 1000 })).toEqual([]);
   });
 });
