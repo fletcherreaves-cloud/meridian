@@ -338,6 +338,39 @@ Returns per-store totals (resolved/completed/missed counts, pass rate) and per-f
     },
   },
   {
+    name: 'log_event',
+    description: `Log a store-level operational event into org_events -- the SAME table and write pipeline the in-app Quick-Capture entry point ("+ Log Something") and Events Calendar use. Use this when the owner or a caller describes something that happened or is happening at a specific store, worth recording for future correlation (a call-out, equipment outage, local event, competitor move, weather, construction, etc.), rather than just discussing it in chat and letting it evaporate.
+event_type is a short free-text category slug, not a fixed enum -- use the closest match from the app's own taxonomy if one obviously fits (e.g. "staffing", "power", "weather", "road_closure", "event", "promo", "maintenance", "training", "comp"), or "other" if nothing fits. An unrecognized slug is still logged correctly (the app's own display falls back to a generic "Other" treatment) -- never refuse to log something because you're unsure of the exact category.
+This writes to the SAME table the tile-based entry point writes to -- no separate schema, no drift between "typed it" and "told SAGE." After logging, this also reports back the REAL measured historical sales impact (from the Event Impact Registry, event_impact table) for this exact event type at this exact store, if one exists yet -- a genuine measured number, never invented, and says plainly when nothing has been measured yet (e.g. a first-time occurrence).
+RBAC: a restricted caller (anyone whose profile scopes them to specific stores) can only log events for stores within their own accessible_locs -- a request for a store outside that set is refused outright, never silently redirected to an allowed store.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        loc: {
+          type: 'string',
+          description: 'Store loc ID this event applies to. Required.',
+        },
+        event_type: {
+          type: 'string',
+          description: 'Short category slug, e.g. "staffing", "power", "weather", "road_closure", "event", "promo", "maintenance", "training", "comp". Use "other" if nothing fits -- still logged correctly either way. Defaults to "other".',
+        },
+        label: {
+          type: 'string',
+          description: 'Short human-readable label for this event, e.g. "Called out sick" or "Street festival downtown". Required.',
+        },
+        note: {
+          type: 'string',
+          description: 'Optional longer free-text note / detail beyond the label.',
+        },
+        date: {
+          type: 'string',
+          description: 'Date YYYY-MM-DD this event applies to. Defaults to today (the current 4am-cutover business day, matching the rest of the app).',
+        },
+      },
+      required: ['loc', 'label'],
+    },
+  },
+  {
     name: 'search_qsr_kb',
     description: `Search the official QSRSoft Help Center / Knowledge Base — the vendor's own documentation for how QSRSoft reports, eBOS, DAR, food-cost/FOB, inventory counts, and forms work.
 Use this whenever a question is about HOW QSRSoft works, what a QSRSoft metric/report/field MEANS, how to do something in QSRSoft, or when you need the vendor's authoritative definition to ground an answer (e.g. "how does QSRSoft calculate stat variance", "what is OEPE", "how do I run the raw item report", "what does a red model mean").
@@ -391,6 +424,14 @@ Not a source of live store data -- use the query_* tools for that.`,
 
 // ── RBAC scoping ─────────────────────────────────────────────────────────────
 const normLoc = (l: string) => { const n = parseInt(l, 10); return Number.isNaN(n) ? String(l) : String(n); };
+// Same 4am business-day cutover as src/utils/date.js's businessDate() -- a log_event call with
+// no explicit date should land on the same business day the rest of the app would call "today",
+// not the literal calendar date, so an overnight log a few minutes after midnight still lands on
+// yesterday's business day like everything else keyed by this convention.
+function businessDateUtc(now: Date = new Date()): string {
+  const d = new Date(now.getTime() - 4 * 3600e3);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
 // Restrict a per-store list to the caller's accessible stores while keeping the
 // district RANK + count for context. `allowed`=null → unrestricted (return all).
 function applyScope<T extends { loc: string }>(stores: T[], allowed: Set<string> | null) {
@@ -1012,6 +1053,44 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: FORMS_NOTE,
     });
+  }
+
+  if (name === 'log_event') {
+    const loc = String(input.loc || '').trim();
+    const label = String(input.label || '').trim();
+    if (!loc) return 'A store loc ID is required to log an event.';
+    if (!label) return 'A short label describing the event is required.';
+    if (allowed && !allowed.has(normLoc(loc))) {
+      return `Cannot log an event for store ${loc} -- it is outside your accessible stores. Ask Fletcher if this looks wrong.`;
+    }
+    const eventType = (String(input.event_type || 'other').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 40)) || 'other';
+    const note = input.note ? String(input.note).trim() : null;
+    const dateStart = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date || '')) ? String(input.date) : businessDateUtc();
+    const nowIso = new Date().toISOString();
+    // Same write shape saveOrgEvents() (src/lib/supabase.js) sends -- one upsert, one table, no
+    // second schema. method:'sage' and entered_by:'SAGE' distinguish this write path in the
+    // existing entered_by/method columns without adding anything new.
+    const row = {
+      loc, date_start: dateStart, date_end: dateStart, span: false,
+      category: null, event_type: eventType, label,
+      scope: 'store', scope_state: null, scope_locs: null,
+      note, entered_by: 'SAGE', entered_at: nowIso, method: 'sage', updated_at: nowIso,
+      visibility: 'log',
+    };
+    const { error } = await sb.from('org_events').upsert([row], { onConflict: 'loc,date_start,label' });
+    if (error) return `Could not log this event: ${error.message}`;
+
+    // Report back the REAL measured impact, never an invented number -- same Event Impact
+    // Registry (event_impact table) the in-app Events panel's impactGlyph() reads, keyed the
+    // same way (loc, event_type).
+    const { data: impactRows } = await sb.from('event_impact')
+      .select('home_impact,measured_home,n_home,source').eq('loc', loc).eq('event_type', eventType);
+    const row0 = (impactRows || [])[0] as { home_impact: number | null; n_home: number | null; source: string | null } | undefined;
+    const storeName = STORE_NAMES[loc] || `Store ${loc}`;
+    const impactLine = (row0 && row0.home_impact != null)
+      ? `Measured history for "${eventType}" at ${storeName}: ${row0.home_impact >= 0 ? '+' : ''}${(row0.home_impact * 100).toFixed(1)}% sales (n=${row0.n_home || 0}${row0.source === 'measured' ? ', measured' : ', estimated'}).`
+      : `No measured history yet for "${eventType}" at ${storeName} -- this may be the first time it's been logged there. It'll start contributing to the Event Impact Registry and Scanner correlations going forward.`;
+    return `Logged "${label}" (${eventType}) at ${storeName} on ${dateStart}. ${impactLine}`;
   }
 
   if (name === 'search_qsr_kb') {
