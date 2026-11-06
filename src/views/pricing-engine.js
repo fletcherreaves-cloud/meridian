@@ -32,6 +32,7 @@ import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
 import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact, estimateOutageLostSales } from '../engine/pricing-engine.js';
 import { loadQsrMenuItemActivitySummary, loadQsrMenuItemRecipe, loadQsrProductOutage, loadQsrMenuPriceComparison } from '../lib/supabase.js';
+import { InfoIcon } from '../engine/forecast.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -1175,7 +1176,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
 
   return h(RoutePanelShell, {
     title: '💲 Pricing Engine', onBack: onClose,
-    subtitle: 'Per-item margin (menu price vs. food + paper cost) — qsr_product_mix, auto-pulled',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Per-item margin (menu price vs. food + paper cost) — qsr_product_mix, auto-pulled'),
+      h(InfoIcon, { articleKey: 'pricing_engine_guide' })),
     bodyStyle: { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   },
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },

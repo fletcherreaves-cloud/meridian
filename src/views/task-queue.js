@@ -47,6 +47,7 @@ import * as React from 'react';
 import { loadTasks, saveTask, updateTask, loadSessionNotes, saveSessionNote, markNoteConsumed,
   loadFeatureRequests, saveFeatureRequest, updateFeatureRequest, voteFeatureRequest } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h   = React.createElement;
 const div  = (p,...c) => h('div',   p, ...c);
@@ -896,7 +897,9 @@ export function TaskQueuePanel({ onClose, settings, initialType, userRole }) {
   return h(RoutePanelShell, {
     icon: '⚡',
     title: 'Task Queue',
-    subtitle: 'Autonomous + manual work tracking, plus feature requests · vote for what matters most',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Autonomous + manual work tracking, plus feature requests · vote for what matters most'),
+      h(InfoIcon, { articleKey: 'task_queue_guide' })),
     onBack: onClose,
     headerExtra: activeCt>0 && span({ style:{ background:'rgba(245,188,0,.15)', color:'var(--gold)',
       border:'.5px solid rgba(245,188,0,.3)', borderRadius:99,

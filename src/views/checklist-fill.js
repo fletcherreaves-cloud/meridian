@@ -24,6 +24,7 @@ import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { businessDate } from '../utils/date.js';
 import { normalizeForm, sectionColor, CARD_COLOR, parseOptionBadge, formatOptionBadge } from '../engine/forms-model.js';
 import { loadChecklistSubmission, saveChecklistSubmission } from '../lib/supabase.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect, useCallback } = React;
@@ -127,7 +128,9 @@ export function ChecklistFillPanel({ onClose, stores, initialSlug }) {
 
   return h(RoutePanelShell, {
     title: '✅ Digital Checklists',
-    subtitle: 'Fill any QSRSoft shift/operations checklist in-app — saved to Supabase per store and day',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Fill any QSRSoft shift/operations checklist in-app — saved to Supabase per store and day'),
+      h(InfoIcon, { articleKey: 'digital_checklists_guide' })),
     onBack: onClose,
     bodyStyle: { padding: 0, display: 'flex', overflow: 'hidden' },
   },

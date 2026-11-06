@@ -27,6 +27,7 @@ import { loadQsrOnHand, loadWeeklyCountDayOverrides } from '../lib/supabase.js';
 import { cycleCompliance, diffNewWrins, detectWeeklyCountDay,
          mergeWeeklyCountDay, countDayDrift } from '../engine/count-cycle.js';
 import { periodKey } from '../engine/eom-inventory.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { printHtml } from '../utils/print-html.js';
 import { weekStartOf, addD, dKey, fmtRng } from '../utils/date.js';
 
@@ -290,7 +291,9 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   return h(RoutePanelShell, {
     icon: '🗓',
     title: 'Weekly Count Status',
-    subtitle: 'Last full count, regular count day, and this-week status — per store, for sharing with the team',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Last full count, regular count day, and this-week status — per store, for sharing with the team'),
+      h(InfoIcon, { articleKey: 'weekly_count_status_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
       h('button', { className: 'btn btn-sm', style: { fontSize: 10 }, onClick: doPrint }, '🖨 Print'),

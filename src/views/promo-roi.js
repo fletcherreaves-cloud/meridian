@@ -20,6 +20,7 @@ import { computePromoDiscountRoi } from '../engine/promo-roi.js';
 import { STORE_NAMES } from '../constants.js';
 import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -249,7 +250,9 @@ export function PromoRoiPanel({ ds, userEvents, onClose }) {
   return h(RoutePanelShell, {
     title: 'Promo / Discount ROI',
     icon: '🎟️',
-    subtitle: 'Matched-day lift — real calendar-tagged promo days vs untagged days within each weekday. Directional, not a controlled trial.',
+    subtitle: h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      h('span', null, 'Matched-day lift — real calendar-tagged promo days vs untagged days within each weekday. Directional, not a controlled trial.'),
+      h(InfoIcon, { articleKey: 'promo_roi_guide' })),
     onBack: onClose,
     headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       h('span', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)' } }, 'Incremental margin'),

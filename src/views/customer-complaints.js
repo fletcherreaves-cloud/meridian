@@ -16,6 +16,7 @@ import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { withAlpha } from '../utils/fmt.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -95,7 +96,9 @@ export function CustomerComplaintsPanel({ ds, stores, onClose }) {
   return h(RoutePanelShell, {
     icon: '📮',
     title: 'Customer Complaints',
-    subtitle: 'Propel Customer Care cases — feeds the Complaint Contacts/100K review metric',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, 'Propel Customer Care cases — feeds the Complaint Contacts/100K review metric'),
+      h(InfoIcon, { articleKey: 'customer_complaints_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       statuses.length > 1 && h('select', { value: statusFilter, onChange: e => setStatusFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },

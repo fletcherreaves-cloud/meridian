@@ -8,6 +8,7 @@ import { oepeSeconds } from '../utils/oepe.js';
 import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector } from '../components/PanelControls.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -650,7 +651,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
   return h(RoutePanelShell, {
     icon: '📋',
     title: 'Graded Visits',
-    subtitle: 'CFV (single-channel) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded',
+    subtitle: h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      h('span', null, 'CFV (single-channel) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded'),
+      h(InfoIcon, { articleKey: 'graded_visits_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },

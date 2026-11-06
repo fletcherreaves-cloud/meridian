@@ -73,6 +73,7 @@ import { DateRangeControl, LocationSelector, buildLocationHierarchy, locationSel
 import { loadLifeLenzShiftAssignments } from '../lib/supabase.js';
 import { INV_ORG_COORDS, STORE_NAMES } from '../constants.js';
 import { TimePunchesTab } from './time-punches-panel.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -314,7 +315,9 @@ export function CrewSchedulePanel({ onClose, stores, initialTab }) {
 
   return h(RoutePanelShell, {
     title: 'Crew Schedule', icon: '🗓',
-    subtitle: summary,
+    subtitle: div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      span(null, summary),
+      h(InfoIcon, { articleKey: 'crew_schedule_guide' })),
     onBack: onClose,
   }, body);
 }

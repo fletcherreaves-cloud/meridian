@@ -12,6 +12,7 @@ import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
 import { withAlpha } from '../utils/fmt.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -715,7 +716,9 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   return h(RoutePanelShell, {
     icon: '🛡️',
     title: 'Visit Readiness',
-    subtitle: 'PACE graded-visit readiness (CFV / RGRV / EcoSure) from daily ops metrics · coach the at-risk stores before the visit',
+    subtitle: h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      h('span', null, 'PACE graded-visit readiness (CFV / RGRV / EcoSure) from daily ops metrics · coach the at-risk stores before the visit'),
+      h(InfoIcon, { articleKey: 'visit_readiness_guide' })),
     onBack: onClose,
     headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
       h(ReportButton, { detail, setDetail, onPrint: doPrint }),
