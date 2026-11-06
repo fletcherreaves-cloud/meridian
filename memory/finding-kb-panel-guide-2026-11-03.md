@@ -672,3 +672,51 @@ six — each registry label matches its KB article title exactly.
 12 new tests (2 per article): `dispatch-kb-panel-guide-batch9-2026-11-06.test.js`.
 
 **Measured running total: 106 `KB_ARTICLES` keys as of this batch.**
+
+## Batch 10 (2026-11-06)
+
+Closed out the remaining `kind:'nav'` candidates from batch 9's own sweep. Of the original
+candidate pool, two ('help', 'admin') turned out to be false positives — they're entries in
+`panel-registry.js`'s `SECTIONS` array (display-section labels), not actual panels, picked up
+by a sweep script that matched `id:` anywhere nearby without checking which array it belonged
+to. The 4 genuinely real, still-uncovered `kind:'nav'` panels:
+
+- **`panel_manager_guide`** — read `PanelManagerPanel` in `src/app/App.js` and
+  `loadPanelVis`/`savePanelVis`/`OPTIONAL_PANELS` in `src/constants.js`. Documents that
+  visibility state is `localStorage`-only (`mf.optionalPanelVis`), per device/browser with NO
+  Supabase sync — unlike nearly everything else in Settings — and that hiding a panel is a
+  personal display preference only, never an access restriction (a "no access" row vs. a working
+  toggle is role-based permissions, a separate system entirely).
+- **`settings_guide`** — read `Settings` in `src/views/management.js` and `saveSettings()` in
+  `src/app/App.js`. Documents the shared `set(path,val)` write path, that most sections DO sync
+  via `pushConfigToSupabase(..., 'app_settings')` (the opposite persistence model from Panel
+  Manager), and the one deliberate exception — the AI section's personal Anthropic API key is
+  explicitly `localStorage`-only (`mf_anthropic_key`), stated directly in the UI's own copy.
+- **`troubleshooting_guide`** — read `TroubleshootingPanel` in `src/views/troubleshooting.js` in
+  full. Documents the End User / Developer mode split (no separate permission gate on Developer
+  mode — same `perm:null` as the panel itself, so any user can switch into it), and that the
+  Developer content is SEEDED from real existing sources (`sage.js`'s `buildTroubleshootPrompt()`,
+  `stream-freshness.js`'s `STREAMS` array) rather than a second, driftable hand-typed copy — per
+  the panel's own header comment. Also captured the owner's naming rationale: this panel IS the
+  app's real "Help," deliberately distinct from the Workflow panel (the former onboarding
+  checklist).
+- **`news_guide`** — read `NewsPanel` in `src/views/news-panel.js` in full. Documents the real
+  nine-outlet nightly pull (`news-rss-pull.mjs`) → classify (`news-classify.js`) → locality
+  attribution (`locality.js`) pipeline, the deliberate "EITHER store" rendering for genuinely
+  ambiguous town-level stories (Ardmore, DeFuniak Springs each have two stores) rather than
+  guessing one, and the panel's own explicit non-claim to be McDonald's brand monitoring (the
+  seeding run found zero brand mentions across all nine feeds).
+
+Stale-wording check: all 4 registry labels match their KB article titles exactly — no drift
+found.
+
+8 new tests (2 per article): `dispatch-kb-panel-guide-batch10-2026-11-06.test.js`.
+
+**Measured running total: 110 `KB_ARTICLES` keys as of this batch.** This closes out the
+`panel-registry.js`-sweep candidate pool the last two batches worked through — remaining
+uncovered panels are either meta/self-referential (`kb`, `workflow`, `about`), or belong to
+`kind:'test-kitchen'`/`'hub-tab'`/`'internal'` (not yet measured exhaustively; lower priority per
+CLAUDE.md's promotion-is-a-one-field-flip note — a Test Kitchen panel isn't "live" in the SOP
+sense this backlog is covering). Future batches should re-sweep `kind:'hub-tab'`/`'internal'`
+entries specifically, since several (e.g. Planning Hub's five tabs) may already be covered under
+a parent panel's article and others may not be.
