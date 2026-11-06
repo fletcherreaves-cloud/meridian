@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the fifty-six panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, and Layout Planner)', () => {
+  it('is exactly the fifty-eight panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, Layout Planner, Equipment Results, and Curated Home)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -349,8 +349,12 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // panel for the results in the app" -- 'equipment-results' (Equipment Results) is a
     // brand-new panel (survey-link create/list/revoke + a cross-store logged-equipment rollup),
     // route:true and kind:'nav' from day one, the direct thing asked for (fifty-six -> fifty-seven).
+    // 2026-11-06: 'curated-home' (Curated Home, memory/plan-overnight-notes-72-2026-11-06.md §2,
+    // task #92) -- same Morning Brief correlation engine, role-cascaded voice + a user-chosen
+    // format on top; route:true and kind:'nav' from day one, same treatment as every nav panel
+    // above (fifty-seven -> fifty-eight).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'custom-reports', 'customer-complaints',
+      'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'curated-home', 'custom-reports', 'customer-complaints',
       'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
