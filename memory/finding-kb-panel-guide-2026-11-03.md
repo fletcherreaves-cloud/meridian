@@ -857,3 +857,29 @@ coverage + 4 new articles = 32/32). The two real next increments for task #75 ar
 
 Neither started without the owner's go-ahead — per this task's own standing stop-and-wait rule
 after each batch.
+
+## 2026-11-06 — content correction: `signals_guide` was stale, now fixed
+
+Follow-on to batch 12's own flag above. Confirmed by reading `src/views/signals.js`'s
+`SignalsPanel` tab bar directly (not trusting either the old article or batch 12's own
+unverified count): the real tab bar is exactly **10 tabs** — Live Ops (⚡), Projection Accuracy
+(📐), Park × OEPE (🅿️), Store Controls (🎛️), Built-in, Signal Lab, Scanner (🔎), Correlations
+(🔗), CSAT Drivers (😊), Graveyard (⚰) — confirming batch 12's "10 tabs" count exactly.
+
+The old article's own "Several tabs" list named only 5 (LiveOps, Baseline Anomalies, Speed of
+Service, Signal Lab, Scanner), and **2 of those 5 were not real top-level tabs at all**, not
+just undercounted:
+- **Baseline Anomalies** is a strip rendered *inside* the Live Ops tab (`LiveOpsTab`, the
+  `anomalies` block), never its own tab.
+- **Speed of Service** is not part of Signals at all — it's `src/views/dt-speedofservice.js`, a
+  completely separate panel with its own existing article (`speed_of_service_guide`, batch 4).
+  The old `signals_guide` text had conflated the two panels' names.
+
+Rewrote `signals_guide`'s `detail` to describe all 10 real tabs from their own source files —
+read `LiveOpsTab`, `ProjectionAccuracyTab`, `ParkOepeTab`, `StoreControlsTab`, the Built-in/
+Signal Lab tab bodies inside `SignalsPanel`, `ScannerTab`, `CorrelationsTab`, and
+`CsatDriversTab` directly, not just the tab-bar button labels — and explicitly states that
+Baseline Anomalies lives inside Live Ops and that Speed of Service is a separate panel, so the
+same mix-up can't recur. `KB_ARTICLES` key count unchanged (114) — this is a content fix to an
+existing key, not a new article. 2 new tests
+(`dispatch-kb-signals-guide-correction-2026-11-06.test.js`).
