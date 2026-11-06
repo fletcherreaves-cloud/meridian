@@ -417,6 +417,14 @@ export const PANELS = [
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:2 },
+  // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) -- the
+  // "‼ Log something" top-bar button (AppTopbar, shell.js), same topbar-button-not-sidebar-link
+  // treatment as 'sage' below, including its perm:null + section:'analytics' pairing (every
+  // Operations-section nav panel is permission-gated by convention -- see panel-registry.test.js
+  // -- but 'sage' already establishes perm:null is fine in 'analytics'). Logging an event about
+  // your own store's day is a self-service action every signed-in user should have, not a gated
+  // analytics panel.
+  { id:'quick-capture', label:'Log Something', icon:'‼', perm:null, kind:'nav', section:'analytics' },
   // 'ranking' -- dispatch #203 merged Record Days and Top/Bottom Performers into this panel as
   // modes (store-dash.js's LeaderboardPanel); relabeled Rankings -> Leaderboards to reflect the
   // three questions it now answers. Survived as the id/route because it was the most-established

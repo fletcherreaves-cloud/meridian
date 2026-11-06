@@ -334,6 +334,7 @@ const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m =
 const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })));
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
 const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })));
+const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -1281,6 +1282,9 @@ function App() {
   const darFetchRef = useRef({ date: '', ts: 0 });
   const [customSignalDefs,    setCustomSignalDefs]    = useState([]);
   const [showSage,            setShowSage]            = useState(false);
+  // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) — the
+  // "+ Log Something" entry point, same simple show/hide pattern as showFormsReviews below.
+  const [showQuickCapture,    setShowQuickCapture]    = useState(false);
   const [sageMin,             setSageMin]             = useState(false); // SAGE minimized to a floating pill (session keeps running)
   const [sageBusy,            setSageBusy]            = useState(false); // SAGE is streaming/thinking (drives the pill's red/green light)
   // showTaskQueue — dispatch #206: replaced by routePanel==='task-queue' (see routePanel above).
@@ -2445,6 +2449,11 @@ function App() {
         // orgSourced — hand-entered events are never clobbered (owner's "notify before
         // overwrite" rule; genuine conflicts stay local and surface in the import UI).
         const orgEvents=await loadOrgEvents();
+        // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) —
+        // also keep the raw rows on ds (separate from the day-map projection below) so Signals'
+        // Scanner can correlate logged events as metric series (signal-registry.js's "Logged
+        // Events" category) without re-deriving its own copy from mf_events.
+        setDs(prev=>prev?{...prev,orgEventRows:orgEvents||[]}:prev);
         if(orgEvents&&orgEvents.length){
           const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
           // Dispatch24 Workstream B (#388) — per-store overrides on a scoped event (a GM
@@ -3579,7 +3588,7 @@ function App() {
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsReviews||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsReviews||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager||showQuickCapture;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -3603,6 +3612,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);
+      setShowQuickCapture(false);
       setShowFormsReviews(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowKB(false);setShowEmailDigests(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);
@@ -3858,6 +3868,7 @@ function App() {
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
+        if(modal==='quick-capture')     setShowQuickCapture(true);
         // dispatch #194: Feature Requests retired into Task Queue -- redirect into the merged
         // panel, pre-filtered. Dispatch #206: Task Queue became route:true -- see routing.js's
         // LEGACY_PANEL_REDIRECTS comment for why this id stays a plain onOpenModal branch.
@@ -3918,6 +3929,7 @@ function App() {
           if(modal==='troubleshoot') setShowTroubleshoot(true);
           if(modal==='proj-brief')   setShowProjBriefSA(true);
           if(modal==='sage')         {setShowSage(true);setSageMin(false);}
+          if(modal==='quick-capture') setShowQuickCapture(true);
           // dispatch #209 — the notification bell (NotificationBell, inside AppTopbar) deep-
           // links a fired notification into that store's Scoreboard entry. Same colon-arg +
           // perm gate as the sidebar's own 'eom-dashboard:' handler above (AppSidebar's
@@ -4304,6 +4316,14 @@ function App() {
       onClose:()=>setShowFormsReviews(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
     },
       h(FormsReviewsPanel,{stores,onClose:()=>setShowFormsReviews(false)})
+    ),
+    // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) — the
+    // always-reachable "+ Log Something" entry point (AppTopbar button -> onOpenModal('quick-capture')).
+    showQuickCapture&&h(ModalShell,{
+      title:'‼ Log Something',
+      onClose:()=>setShowQuickCapture(false),maxWidth:560,zIndex:Z.nested,
+    },
+      h(QuickCapturePanel,{stores,selStore,settings,onClose:()=>setShowQuickCapture(false)})
     ),
     // SAGE stays MOUNTED while minimized (DrawerShell toggles display, never unmounts) so the
     // session keeps running in the background and you can look at other Meridian data at the

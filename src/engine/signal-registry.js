@@ -2,6 +2,7 @@
 // Signal Registry — metric definitions + extraction engine + custom signal computation
 import { priceDailySeries } from './price-events.js';
 import { metricSeriesWithSource, METRIC_SOURCES } from './metric-source.js';
+import { EVENT_TYPE_GROUPS } from '../constants.js';
 
 // ── Metric Categories ─────────────────────────────────────────────────────────
 // source: ds array key; field: row field name; granularity: which modes work;
@@ -274,6 +275,22 @@ export const METRIC_CATEGORIES = [
       { key: 'calMon',     label: 'Monday',            source: '__calendar', field: 'monday',  granularity: ['daily'], better: null, unit: 'flag', allowZero: true },
     ],
   },
+  // ── Logged Events (Quick-Capture Phase 1, memory/plan-overnight-notes-72-2026-11-06.md §1,
+  // task #101) — human-logged org_events, synthesized into a 0/1 flag per (loc, date) same shape
+  // as Calendar above, so a logged event becomes one more correlatable series in the Scanner's
+  // existing Pearson/Spearman sweep. One flag per EVENT_TYPE_GROUPS category (constants.js) rather
+  // than per individual event_type (~50 keys) — the plan doc's own "don't over-build it" call;
+  // category-level is still specific enough to be useful ("did a Weather event land near this
+  // sales dip") without bloating METRIC_FLAT the way a per-type listing would. Store-scoped
+  // events only (scope==='store') — a district/state-scoped event (e.g. a company holiday) isn't
+  // counted per-store here yet; that's real but deliberately out of Phase 1's scope.
+  {
+    key: 'events', label: 'Logged Events', color: '#34d399',
+    metrics: EVENT_TYPE_GROUPS.map(g => ({
+      key: 'evt_' + _evtGroupSlug(g.label), label: g.label + ' logged', source: '__events',
+      field: g.items, granularity: ['daily'], better: null, unit: 'flag', allowZero: true,
+    })),
+  },
 ];
 
 // Calendar field synthesizers (date → 0/1 flag). Keyed by the metric's `field`.
@@ -285,6 +302,35 @@ const CAL_FIELDS = {
 // Daily-grained real sources whose (loc, date) coverage defines the universe a
 // calendar metric is generated over, so it intersects cleanly with any metric.
 const _CAL_SRC = ['laborRows','opsRows','ctrlRows','glimpseRows','salesLedgerRows','qsrActSummaryRows','cashRows','weatherRows'];
+
+// Slug for an EVENT_TYPE_GROUPS label ("⛈ Weather" -> "weather") -- stable key suffix for the
+// Logged Events metrics below. Strips emoji/non-alnum, lowercases.
+function _evtGroupSlug(label) {
+  return String(label || '').replace(/[^a-zA-Z0-9]+/g, ' ').trim().toLowerCase().replace(/\s+/g, '_') || 'other';
+}
+// Index ds.orgEventRows (loadOrgEvents()'s shape -- loc/dateStart/dateEnd/type/scope) by
+// (loc, date) -> Set of event_type for every STORE-scoped event whose span covers that date.
+// Cached by array identity, same discipline as _priceDailySeriesCached below (the Scanner calls
+// extractMetricValues once per Logged Events metric per pass -- 7x for this category alone).
+let _evtIndexCache = null, _evtIndexSrc = null;
+function _eventsIndex(rows) {
+  if (rows === _evtIndexSrc) return _evtIndexCache;
+  const idx = new Map();
+  for (const r of rows || []) {
+    if (!r || r.scope !== 'store' || !r.loc || !r.dateStart) continue;
+    const loc = _normLoc(r.loc);
+    const start = new Date(String(r.dateStart) + 'T00:00:00');
+    const end = r.dateEnd ? new Date(String(r.dateEnd) + 'T00:00:00') : start;
+    if (isNaN(+start) || isNaN(+end)) continue;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const k = loc + '_' + _dKey(d);
+      if (!idx.has(k)) idx.set(k, new Set());
+      idx.get(k).add(r.type || 'other');
+    }
+  }
+  _evtIndexSrc = rows; _evtIndexCache = idx;
+  return idx;
+}
 
 // Flat lookup by key
 export const METRIC_FLAT = {};
@@ -626,6 +672,22 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
     const fn = CAL_FIELDS[field];
     if (!fn) return [];
     return _calendarUniverse(ds, scopeLoc).map(u => ({ loc: u.loc, date: u.date, value: fn(u.date) }));
+  }
+
+  // Logged Events metrics — same "synthesize a 0/1 flag over the real-data universe" shape as
+  // Calendar just above, so a store with no event of this category on a given day genuinely
+  // correlates as a 0, not a missing value (allowZero:true on these metrics is what makes that
+  // 0 count instead of being dropped as "missing"). field here is the group's EVENT_TYPES key
+  // list (set at registration above), not a single field name.
+  if (meta.source === '__events') {
+    if (granularity !== 'daily') return [];
+    const idx = _eventsIndex(ds.orgEventRows);
+    const types = new Set(meta.field);
+    return _calendarUniverse(ds, scopeLoc).map(u => {
+      const hit = idx.get(u.loc + '_' + _dKey(u.date));
+      const value = (hit && [...hit].some(t => types.has(t))) ? 1 : 0;
+      return { loc: u.loc, date: u.date, value };
+    });
   }
 
   // Pricing metrics are derived from ds.pmixRows through price-events.js's confirmed-step

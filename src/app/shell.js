@@ -1129,6 +1129,13 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           background:'rgba(167,139,250,.08)',marginRight:4,fontWeight:700},
         title:'Open SAGE — AI analytics advisor',
         onClick:()=>onOpenModal&&onOpenModal('sage')},isMb?'🧠':'🧠 SAGE'),
+      // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) —
+      // same "always reachable, one tap away" placement as SAGE above, not buried in a store tab.
+      btn({className:'btn btn-sm',
+        style:{fontSize:'9px',color:'var(--amber,var(--gold))',borderColor:'rgba(245,188,0,.4)',
+          background:'rgba(245,188,0,.08)',marginRight:4,fontWeight:700},
+        title:'Log something — a call-out, outage, local event, anything worth recording',
+        onClick:()=>onOpenModal&&onOpenModal('quick-capture')},isMb?'‼':'‼ Log something'),
       // Pre-Forecast Brief quick-access
       !isMb&&ds&&ds.loaded&&btn({className:'btn btn-sm',
         style:{fontSize:'9px',color:'var(--gold)',borderColor:'rgba(245,188,0,.3)',
