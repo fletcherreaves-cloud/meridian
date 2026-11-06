@@ -3902,6 +3902,26 @@ export async function saveLaunchPlanRow(loc, planDate, { dayN, projectedSales, o
   return { error: null };
 }
 
+// Hourly-granularity sibling of loadDailySalesForStore, for the Launch Planner's hourly
+// breakdown (hourlyShapeFor/blendHourlyShapes in src/engine/new-store-ramp.js) — same table and
+// filter, but keeps hour_slot instead of summing it away, since the hourly shape needs that
+// dimension. A separate query rather than widening loadDailySalesForStore's own shared selection,
+// same reasoning that function's header already gives for not touching it.
+export async function loadHourlySalesForStore(loc, startDate, endDate) {
+  if (!supabase) return [];
+  const locPadded = String(loc).padStart(7, '0');
+  const rows = await fetchAll((lo, hi) => supabase
+    .from('qsr_daily_activity')
+    .select('dt,hour_slot,product_sales')
+    .eq('loc', locPadded)
+    .gte('dt', startDate)
+    .lte('dt', endDate)
+    .order('dt')
+    .range(lo, hi), 1000, 'qsr_daily_activity');
+  const unpadded = String(loc).replace(/^0+/, '') || String(loc);
+  return rows.map(r => ({ loc: unpadded, date: r.dt, hourSlot: r.hour_slot, sales: Number(r.product_sales) || 0 }));
+}
+
 export async function loadLaunchPlan(loc) {
   if (!supabase) return [];
   const { data, error } = await supabase

@@ -13,8 +13,8 @@
 // non-LocationSelector picker.
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
-import { loadDailySalesForStore, loadLaunchPlan, saveLaunchPlanRow } from '../lib/supabase.js';
-import { projectLaunchPlan } from '../engine/new-store-ramp.js';
+import { loadDailySalesForStore, loadHourlySalesForStore, loadLaunchPlan, saveLaunchPlanRow } from '../lib/supabase.js';
+import { projectLaunchPlan, blendHourlyShapes, splitDayAcrossHours } from '../engine/new-store-ramp.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
 
@@ -48,6 +48,21 @@ function dowOf(dateStr) {
 }
 const fmtMoney = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 }));
 
+// hour_slot is the END of the hour block ('06:00' = the 5am-6am block), running '05:00'->'28:00'
+// across the 4am business day -- same convention CLAUDE.md/metric-source.js document elsewhere.
+// Values above 24 wrap into the next calendar day (24:00 = 11pm-midnight, 28:00 = 3am-4am).
+function fmtHour12(hh) {
+  const h24 = ((hh % 24) + 24) % 24;
+  const ampm = h24 < 12 ? 'am' : 'pm';
+  let h12 = h24 % 12; if (h12 === 0) h12 = 12;
+  return h12 + ampm;
+}
+function hourRangeLabel(hourSlot) {
+  const end = parseInt(String(hourSlot).slice(0, 2), 10);
+  return fmtHour12(end - 1) + '–' + fmtHour12(end);
+}
+const DEEP_OVERNIGHT = new Set(['05:00', '24:00', '25:00', '26:00', '27:00', '28:00']);
+
 export function NewStoreLaunchPlanner({ onClose }) {
   const storeOptions = React.useMemo(
     () => Object.entries(STORE_NAMES || {}).sort((a, b) => a[1].localeCompare(b[1])),
@@ -64,6 +79,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
   const [rows, setRows] = React.useState([]); // {planDate,dayN,projectedSales,overrideSales,note,source}
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState(null);
+  const [expandedDate, setExpandedDate] = React.useState(null);
+  const [hourlyBlend, setHourlyBlend] = React.useState(null);
+  const [hourlyLoading, setHourlyLoading] = React.useState(false);
+  const [hourlyErr, setHourlyErr] = React.useState(null);
+  const hourlyBlendCache = React.useRef({ key: null, blend: null });
 
   // Re-seed the form when the store changes (but only on the ACTUAL change, never clobbering an
   // in-progress edit on the same store).
@@ -74,6 +94,9 @@ export function NewStoreLaunchPlanner({ onClose }) {
     setMatureWeeklySales(s.matureWeeklySales ?? '');
     setComparables(s.comparables || [{ loc: '', weight: 1 }]);
     setOpsNote(s.opsNote || '');
+    setExpandedDate(null);
+    setHourlyBlend(null);
+    hourlyBlendCache.current = { key: null, blend: null };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selLoc]);
 
@@ -115,6 +138,41 @@ export function NewStoreLaunchPlanner({ onClose }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Lazily load + blend the comparables' real hourly shape, cached by the comparables' own
+  // signature so switching which DAY is expanded never re-fetches -- only an actual edit to the
+  // comparable list/weights invalidates it.
+  async function ensureHourlyBlend() {
+    const key = JSON.stringify(comparables);
+    if (hourlyBlendCache.current.key === key) {
+      setHourlyBlend(hourlyBlendCache.current.blend);
+      return hourlyBlendCache.current.blend;
+    }
+    const realComparables = comparables.filter((c) => c.loc && c.weight > 0);
+    if (!realComparables.length) { setHourlyErr('Add at least one comparable store with a weight > 0.'); return null; }
+    setHourlyLoading(true);
+    setHourlyErr(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const withRows = await Promise.all(
+        realComparables.map(async (c) => ({ ...c, hourlyRows: await loadHourlySalesForStore(c.loc, HISTORY_START, today) })),
+      );
+      const blend = blendHourlyShapes(withRows);
+      hourlyBlendCache.current = { key, blend };
+      setHourlyBlend(blend);
+      return blend;
+    } catch (e) {
+      setHourlyErr(String(e?.message || e));
+      return null;
+    } finally {
+      setHourlyLoading(false);
+    }
+  }
+  async function toggleExpand(row) {
+    if (expandedDate === row.planDate) { setExpandedDate(null); return; }
+    setExpandedDate(row.planDate);
+    if (!hourlyBlend) await ensureHourlyBlend();
   }
 
   function setOverride(row, value) {
@@ -172,9 +230,9 @@ export function NewStoreLaunchPlanner({ onClose }) {
       : div({ style: { overflowX: 'auto' } },
         h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 12, borderCollapse: 'collapse' } },
           h('thead', null, h('tr', null,
-            ['Day', 'Date', 'Projected $', 'Override $', 'Effective $', 'Suggested Hrs', 'Note'].map((t) =>
+            ['Day', 'Date', 'Projected $', 'Override $', 'Effective $', 'Suggested Hrs', 'Note', 'Hourly'].map((t) =>
               h('th', { key: t, style: { textAlign: 'left', padding: '4px 10px', borderBottom: '1px solid var(--bdr)', color: 'var(--text3)', fontWeight: 600 } }, t)))),
-          h('tbody', null, rows.map((r) => {
+          h('tbody', null, rows.flatMap((r) => {
             const effective = r.overrideSales ?? r.projectedSales;
             // hours = transactions / TPPH, and transactions = $ / avg check -- tTpph is a
             // transactions-per-hour ratio, never a dollars-per-hour one, so dividing $ by it
@@ -182,7 +240,8 @@ export function NewStoreLaunchPlanner({ onClose }) {
             // hours by roughly that factor.
             const hrs = (tTpph && tAvgCheck) ? (effective / tAvgCheck) / tTpph : null;
             const isGrand = grandOpeningDate && r.planDate === grandOpeningDate;
-            return h('tr', { key: r.planDate, style: isGrand ? { background: 'rgba(245,188,0,.08)' } : null },
+            const isExpanded = expandedDate === r.planDate;
+            const mainRow = h('tr', { key: r.planDate, style: isGrand ? { background: 'rgba(245,188,0,.08)' } : null },
               h('td', { style: { padding: '4px 10px' } }, r.dayN),
               h('td', { style: { padding: '4px 10px' } }, r.planDate + ' (' + dowOf(r.planDate) + ')'),
               h('td', { style: { padding: '4px 10px' } }, fmtMoney(r.projectedSales)),
@@ -195,6 +254,39 @@ export function NewStoreLaunchPlanner({ onClose }) {
                 isGrand && !r.note
                   ? span({ style: { fontSize: 10, fontWeight: 700, color: '#f5bc00' } }, '🎉 Grand Opening')
                   : inp({ value: r.note || '', placeholder: isGrand ? 'Grand Opening' : '', style: { width: 120 }, className: 'inp',
-                      onChange: (e) => setNote(r, e.target.value) })));
+                      onChange: (e) => setNote(r, e.target.value) })),
+              h('td', { style: { padding: '4px 10px' } },
+                btn({ className: 'btn btn-sm', onClick: () => toggleExpand(r) }, isExpanded ? '▾ Hourly' : '▸ Hourly')));
+            if (!isExpanded) return [mainRow];
+            const hourly = hourlyBlend ? splitDayAcrossHours(effective, hourlyBlend) : [];
+            let detailBody;
+            if (hourlyLoading) {
+              detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Loading hourly shape from comparables…');
+            } else if (hourlyErr) {
+              detailBody = span({ style: { fontSize: 11, color: 'var(--crit)' } }, hourlyErr);
+            } else if (!hourlyBlend) {
+              detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'No hourly shape available.');
+            } else {
+              const caveat = hourlyBlend.anyNearlyClosedOvernight
+                ? div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 8, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },
+                    '⚠ Comparable store(s) show minimal real overnight volume — Late Night hours below are not a reliable shape for a 24-hour store.')
+                : null;
+              const hourTable = h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 11, borderCollapse: 'collapse' } },
+                h('thead', null, h('tr', null,
+                  ['Hour', '$', 'Suggested Hrs'].map((t) =>
+                    h('th', { key: t, style: { textAlign: 'left', padding: '2px 10px', color: 'var(--text3)', fontWeight: 600 } }, t)))),
+                h('tbody', null, hourly.map((hp) => {
+                  const hHrs = (tTpph && tAvgCheck) ? (hp.sales / tAvgCheck) / tTpph : null;
+                  const overnight = DEEP_OVERNIGHT.has(hp.hourSlot);
+                  return h('tr', { key: hp.hourSlot, style: overnight ? { color: 'var(--text3)' } : null },
+                    h('td', { style: { padding: '2px 10px' } }, hourRangeLabel(hp.hourSlot)),
+                    h('td', { style: { padding: '2px 10px' } }, fmtMoney(hp.sales)),
+                    h('td', { style: { padding: '2px 10px' } }, hHrs != null ? hHrs.toFixed(1) : '—'));
+                })));
+              detailBody = div(null, caveat, hourTable);
+            }
+            const detailRow = h('tr', { key: r.planDate + '-hourly' },
+              h('td', { colSpan: 8, style: { padding: '8px 10px 16px 24px', background: 'var(--surf2)' } }, detailBody));
+            return [mainRow, detailRow];
           })))));
 }

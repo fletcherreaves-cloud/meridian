@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
+import { HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS } from '../engine/new-store-ramp.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,7 +40,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-const { saveLaunchPlanRow, loadLaunchPlan, loadDailySalesForStore } = await import('../lib/supabase.js');
+const { saveLaunchPlanRow, loadLaunchPlan, loadDailySalesForStore, loadHourlySalesForStore } = await import('../lib/supabase.js');
 
 beforeEach(() => {
   _upsertError = null; _selectError = null; _selectData = null; _lastUpsert = null; _allUpserts = []; _dailyActivityRows = [];
@@ -92,6 +93,20 @@ describe('loadDailySalesForStore', () => {
     ];
     const rows = await loadDailySalesForStore('43380', '2026-01-01', '2026-01-02');
     expect(rows).toEqual([{ loc: '43380', date: '2026-01-01', sales: 150 }, { loc: '43380', date: '2026-01-02', sales: 200 }]);
+  });
+});
+
+describe('loadHourlySalesForStore', () => {
+  it('pads the loc and keeps hour_slot (does not sum it away like loadDailySalesForStore)', async () => {
+    _dailyActivityRows = [
+      { dt: '2026-01-01', hour_slot: '06:00', product_sales: 100 },
+      { dt: '2026-01-01', hour_slot: '07:00', product_sales: 50 },
+    ];
+    const rows = await loadHourlySalesForStore('43380', '2026-01-01', '2026-01-01');
+    expect(rows).toEqual([
+      { loc: '43380', date: '2026-01-01', hourSlot: '06:00', sales: 100 },
+      { loc: '43380', date: '2026-01-01', hourSlot: '07:00', sales: 50 },
+    ]);
   });
 });
 
@@ -180,5 +195,49 @@ describe('NewStoreLaunchPlanner', () => {
     // upsert call it makes, not just the last one.
     expect(_allUpserts.length).toBeGreaterThan(0);
     expect(_allUpserts.some(u => u.row.plan_date === '2026-11-14')).toBe(false);
+  });
+
+  // Hourly breakdown (2026-11-06 follow-on) -- the mock's .eq() doesn't actually filter by loc
+  // (see the vi.mock above), so both configured comparables (43380/43701) receive this SAME
+  // synthetic hourly dataset when the panel loads each one's real rows -- fine for exercising the
+  // blend/render path, which doesn't depend on the two comparables differing.
+  function mkHourlyActivityRows(dailyPattern) {
+    const out = [];
+    let d = new Date('2026-01-01');
+    for (let i = 0; i < 20; i++) {
+      const dt = d.toISOString().slice(0, 10);
+      for (const hs of HOUR_SLOTS) out.push({ dt, hour_slot: hs, product_sales: dailyPattern(hs) });
+      d = new Date(d.getTime() + 864e5);
+    }
+    return out;
+  }
+
+  it('expanding a row shows all 24 real hour_slot buckets with the corrected hours formula', async () => {
+    _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2400, override_sales: null, note: null, source: 'ramp' }];
+    _dailyActivityRows = mkHourlyActivityRows(() => 100); // flat 24hr pattern, no overnight gap
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const hourlyBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Hourly'));
+    await act(async () => { hourlyBtn.click(); });
+    await flush();
+    await flush(); // extra tick for the async loadHourlySalesForStore round-trip
+    const hourRows = [...container.querySelectorAll('table')][1]?.querySelectorAll('tbody tr') || [];
+    expect(hourRows.length).toBe(24);
+    // No overnight caveat -- this comparable's synthetic data trades through the night for real.
+    expect(container.textContent).not.toMatch(/minimal real overnight volume/);
+  });
+
+  it('shows the overnight-shape caveat when the comparables carry near-zero real Late Night volume', async () => {
+    _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2400, override_sales: null, note: null, source: 'ramp' }];
+    _dailyActivityRows = mkHourlyActivityRows((hs) => (DEEP_OVERNIGHT_SLOTS.includes(hs) ? 0 : 100));
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const hourlyBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Hourly'));
+    await act(async () => { hourlyBtn.click(); });
+    await flush();
+    await flush();
+    expect(container.textContent).toMatch(/minimal real overnight volume/);
   });
 });

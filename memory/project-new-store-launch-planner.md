@@ -119,3 +119,42 @@ date) is a form field, not a constant. The next relocation or new build just nee
 store, pick its comparables and weights, type a mature run-rate assumption, set the open date, and
 click Regenerate — no new code. This is the "kickstart forecasting" infrastructure the owner asked
 for when he said "we need to forward think... to be able to model future new locations."
+
+## 2026-11-06 (later same day) — hourly breakdown
+
+Owner, after seeing the day-level grid live and asking where the Suggested Hours number came from
+(real bug, fixed separately — see commit `9434bb76`, PR #1707): *"do we have the horsepower to
+generate the first week or two of hourly or quarter hourly sales."* Measured directly before
+building anything:
+
+- **Hourly: yes, real.** `qsr_daily_activity`'s `hour_slot` for the comparables (checked live
+  against Tishomingo 43380, one real day) comes back as exactly 24 ON-THE-HOUR slots
+  (`05:00`→`28:00`). The field's internal name hints at quarter-hour origin; the actual DAR pull
+  never populates anything finer than hourly.
+- **Quarter-hour: no, not from this table.** Any quarter-hour view would have to be
+  *interpolated* from the real hourly curve, not measured — not built, since presenting an
+  interpolation as real data would be the kind of claim this repo's own "measure it, don't
+  reason about it" rule exists to prevent.
+
+### What was built
+
+- **`hourlyShapeFor(hourlyRows, loc)` / `blendHourlyShapes(comparables)` / `splitDayAcrossHours(dailyTotal, blended)`**
+  (`src/engine/new-store-ramp.js`) — a derived VIEW over real `hour_slot`-level sales, structurally
+  parallel to the existing day-level `rampShape`/`blendRampShapes` (same trailing-up-to-90-real-
+  trading-days mature window, same per-store-own-baseline-then-blend-by-weight shape). Explicitly
+  NOT persisted — computed live in the panel from already-loaded rows when the owner expands a day,
+  so no new table/DDL for this piece.
+- **`loadHourlySalesForStore(loc, startDate, endDate)`** (`src/lib/supabase.js`) — same table/filter
+  as `loadDailySalesForStore`, but keeps `hour_slot` instead of summing it away (that function's own
+  header already explains why these stay two separate minimal queries rather than one widened one).
+- **Overnight-comparability guard.** `hourlyShapeFor` also reports each comparable's own real
+  fraction of sales in the deep-overnight slots (`05:00`, `24:00`-`28:00`) and flags
+  `nearlyClosedOvernight` under 1%. `blendHourlyShapes` carries this forward as
+  `anyNearlyClosedOvernight` — directly motivated by Lindsay's real 24-hour-year-one decision: if
+  Tishomingo or Ponce de Leon is itself near-closed overnight, their shape is not a valid stand-in
+  for Lindsay's real Late Night trading, and the panel says so rather than silently applying it.
+- **UI** (`src/views/launch-planner.js`): a "▸ Hourly" toggle per plan-date row expands a nested
+  24-row table (hour range, $, Suggested Hrs — same corrected `($ ÷ avg check) ÷ TPPH` formula as
+  the daily total), with the overnight caveat banner shown inline when it applies. The blended
+  shape is cached by the comparables' own signature so switching which day is expanded never
+  re-fetches; editing the comparable list/weights invalidates the cache.

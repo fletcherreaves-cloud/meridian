@@ -6,10 +6,25 @@
 import { describe, it, expect } from 'vitest';
 import {
   firstTradingDay, rampSeriesFor, matureBaseline, rampShape, blendRampShapes, projectNewStoreSales,
-  projectLaunchPlan,
+  projectLaunchPlan, HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS, hourlyShapeFor, blendHourlyShapes,
+  splitDayAcrossHours,
 } from '../engine/new-store-ramp.js';
 
 function row(loc, date, sales) { return { loc, date, sales, gc: 1 }; }
+function hrow(loc, date, hourSlot, sales) { return { loc, date, hourSlot, sales }; }
+// Every real HOUR_SLOT gets hourSalesFn(hourSlot) of sales, identically for `numDays` consecutive
+// days -- a flat synthetic fixture so each test's expected fraction is exact arithmetic, not a
+// live-data approximation.
+function mkHourlyRows(loc, numDays, hourSalesFn) {
+  const rows = [];
+  let d = new Date('2026-01-01');
+  for (let i = 0; i < numDays; i++) {
+    const date = d.toISOString().slice(0, 10);
+    for (const hs of HOUR_SLOTS) rows.push(hrow(loc, date, hs, hourSalesFn(hs)));
+    d = new Date(d.getTime() + 864e5);
+  }
+  return rows;
+}
 
 describe('firstTradingDay()', () => {
   it('finds the earliest sales>0 date for a loc, ignoring other locs and zero-sales rows', () => {
@@ -166,5 +181,100 @@ describe('projectLaunchPlan()', () => {
   it('returns an empty plan when loc or openDate is missing', () => {
     expect(projectLaunchPlan({ comparables: [], matureWeeklySales: 1000, openDate: '2026-11-14' })).toEqual([]);
     expect(projectLaunchPlan({ loc: 'A', comparables: [], matureWeeklySales: 1000 })).toEqual([]);
+  });
+});
+
+// Launch Planner hourly breakdown (2026-11-06) -- a derived view over the same real hour_slot
+// rows, not a new day-indexed ramp concept. Synthetic flat fixtures throughout, same reasoning
+// as the day-level suite above: deterministic, exact-arithmetic expectations.
+describe('hourlyShapeFor()', () => {
+  it('returns null when there is not enough history to call it mature', () => {
+    const rows = mkHourlyRows('A', 2, () => 100);
+    expect(hourlyShapeFor(rows, 'A', 10)).toBe(null);
+  });
+  it('expresses each hour as a fraction of the day total, summing to ~1 across all 24 hours', () => {
+    const rows = mkHourlyRows('A', 20, () => 100); // flat: every hour gets 100, every day
+    const result = hourlyShapeFor(rows, 'A', 10);
+    expect(result).toBeTruthy();
+    expect(result.shape).toHaveLength(24);
+    const sum = result.shape.reduce((a, p) => a + p.frac, 0);
+    expect(sum).toBeCloseTo(1, 4);
+    // Flat distribution -> every hour is an equal 1/24 share.
+    expect(result.shape[0].frac).toBeCloseTo(1 / 24, 4);
+  });
+  it('flags nearlyClosedOvernight when the deep-overnight slots carry under 1% of real daily sales', () => {
+    const rows = mkHourlyRows('A', 20, (hs) => (DEEP_OVERNIGHT_SLOTS.includes(hs) ? 0 : 100));
+    const result = hourlyShapeFor(rows, 'A', 10);
+    expect(result.overnightFrac).toBe(0);
+    expect(result.nearlyClosedOvernight).toBe(true);
+  });
+  it('a genuinely 24-hour store (real overnight volume) is NOT flagged', () => {
+    const rows = mkHourlyRows('A', 20, () => 100); // flat, including the overnight slots
+    const result = hourlyShapeFor(rows, 'A', 10);
+    expect(result.nearlyClosedOvernight).toBe(false);
+  });
+  it('an hour_slot with no rows at all (sparse/missing data) contributes 0, not NaN, and the shape still sums to ~1', () => {
+    const rows = mkHourlyRows('A', 20, (hs) => (hs === '10:00' ? undefined : 100)).filter((r) => r.sales !== undefined);
+    const result = hourlyShapeFor(rows, 'A', 10);
+    expect(result).toBeTruthy();
+    const missingHour = result.shape.find((p) => p.hourSlot === '10:00');
+    expect(missingHour.frac).toBe(0);
+    const sum = result.shape.reduce((a, p) => a + p.frac, 0);
+    expect(sum).toBeCloseTo(1, 3);
+  });
+});
+
+describe('blendHourlyShapes()', () => {
+  it('weight-blends two comparables by hour_slot', () => {
+    const flat = mkHourlyRows('X', 20, () => 100); // 1/24 per hour
+    const closedOvernight = mkHourlyRows('Y', 20, (hs) => (DEEP_OVERNIGHT_SLOTS.includes(hs) ? 0 : 100));
+    const comparables = [
+      { loc: 'X', hourlyRows: flat, weight: 0.5 },
+      { loc: 'Y', hourlyRows: closedOvernight, weight: 0.5 },
+    ];
+    const blended = blendHourlyShapes(comparables);
+    expect(blended).toBeTruthy();
+    // '06:00' (not deep-overnight) -- both comparables carry real volume there.
+    const normalHour = blended.shape.find((p) => p.hourSlot === '06:00');
+    expect(normalHour.frac).toBeGreaterThan(0);
+    // '24:00' (deep-overnight) -- X contributes 1/24, Y contributes 0, blended at 0.5/0.5 weight.
+    const overnightHour = blended.shape.find((p) => p.hourSlot === '24:00');
+    expect(overnightHour.frac).toBeCloseTo(0.5 * (1 / 24), 3);
+  });
+  it('flags anyNearlyClosedOvernight true if even one blended comparable is near-closed overnight', () => {
+    const flat = mkHourlyRows('X', 20, () => 100);
+    const closedOvernight = mkHourlyRows('Y', 20, (hs) => (DEEP_OVERNIGHT_SLOTS.includes(hs) ? 0 : 100));
+    const blended = blendHourlyShapes([
+      { loc: 'X', hourlyRows: flat, weight: 0.7 },
+      { loc: 'Y', hourlyRows: closedOvernight, weight: 0.3 },
+    ]);
+    expect(blended.anyNearlyClosedOvernight).toBe(true);
+  });
+  it('returns null when no comparable has enough history to produce a shape', () => {
+    expect(blendHourlyShapes([{ loc: 'X', hourlyRows: mkHourlyRows('X', 2, () => 100), weight: 1 }])).toBe(null);
+  });
+});
+
+describe('splitDayAcrossHours()', () => {
+  it('splits a daily total proportionally by the blended shape, exactly to the cent', () => {
+    const blended = { shape: HOUR_SLOTS.map((h) => ({ hourSlot: h, frac: 1 / 24 })) };
+    const out = splitDayAcrossHours(1200, blended);
+    expect(out).toHaveLength(24);
+    const sum = out.reduce((a, p) => a + p.sales, 0);
+    expect(sum).toBeCloseTo(1200, 2);
+    expect(out[0].sales).toBeCloseTo(50, 2);
+  });
+  it('the last slot absorbs any rounding remainder so the total stays accurate to the cent', () => {
+    const blended = { shape: HOUR_SLOTS.map((h) => ({ hourSlot: h, frac: 1 / 24 })) };
+    const out = splitDayAcrossHours(1000, blended); // 1000/24 does not divide evenly to the cent
+    const sum = out.reduce((a, p) => a + p.sales, 0);
+    // Summing 24 independently-rounded floats re-introduces a sub-cent float residue even though
+    // the LAST slot was computed as an exact subtraction from the running total -- toBeCloseTo,
+    // not toBe, is the correct bar here (same convention the sibling test above already uses).
+    expect(sum).toBeCloseTo(1000, 2);
+  });
+  it('returns an empty array when there is no blend or no total', () => {
+    expect(splitDayAcrossHours(0, { shape: [] })).toEqual([]);
+    expect(splitDayAcrossHours(1000, null)).toEqual([]);
   });
 });
