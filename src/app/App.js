@@ -352,6 +352,7 @@ import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } f
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole, getRoleById } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
+import { OnboardingTour } from '../components/OnboardingTour.js';
 // RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
 // fixes a pre-existing entry-chunk quirk this file's own header comment used to flag: record-
@@ -3694,6 +3695,10 @@ function App() {
         div({style:{fontSize:11,color:'var(--text3)'}},'Operations Report · Labor · Lifelenz · CSV')
       )
     ),
+
+    // First-login nav walkthrough (task #107) — renders null unless AuthGate's consent screen
+    // just flagged a brand-new sign-in; see src/components/OnboardingTour.js's own header.
+    h(OnboardingTour, null),
 
     // ── LEFT SIDEBAR ─────────────────────────────────────────────
     h(AppSidebar,{
