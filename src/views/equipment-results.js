@@ -16,6 +16,7 @@
 // those two files each carry about not being each other.
 import * as React from 'react';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { LocationSelector, locationSelectorLocs, buildLocationHierarchy } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { buildEquipmentStoreSummary } from '../engine/equipment-survey.js';
@@ -166,7 +167,7 @@ export function EquipmentResultsPanel({ stores, onClose }) {
 
   return h(RoutePanelShell, {
     title: 'Equipment Results', icon: '📋', onBack: onClose,
-    subtitle: 'Equipment Profile survey — what\'s been logged per store, and the crew walkthrough link itself',
+    subtitle: h('span', null, 'Equipment Profile survey — what\'s been logged per store, and the crew walkthrough link itself', h(InfoIcon, { articleKey: 'equipment_results_guide' })),
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
       h(LocationSelector, {
         stores: storeList, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,

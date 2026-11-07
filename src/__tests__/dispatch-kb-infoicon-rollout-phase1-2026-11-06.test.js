@@ -65,7 +65,12 @@ describe('InfoIcon rollout Phase 1 — Needs Attention (attention_guide)', () =>
   });
 });
 
-describe('InfoIcon rollout Phase 1 — Food Cost / End of Month (food_cost_panel / eom_dashboard_guide)', () => {
+// CORRECTED Phase 3 (dispatch-kb-infoicon-rollout-phase3-2026-11-06.test.js) — this component's
+// 'eom' mode used to wire the WRONG key, eom_dashboard_guide (the real content behind that key
+// describes the separate `EOMDashboardPanel`/"Inventory Control" panel, not this one). Both modes
+// now correctly wire food_cost_panel, which documents the End-of-Month mode as a tab within this
+// same panel. eom_dashboard_guide is wired onto its real target panel in Phase 3 instead.
+describe('InfoIcon rollout Phase 1 — Food Cost / End of Month (food_cost_panel)', () => {
   let resolveLoadQsrFob;
   afterEach(() => { resolveLoadQsrFob = undefined; vi.doUnmock('../lib/supabase.js'); vi.resetModules(); });
 
@@ -94,10 +99,11 @@ describe('InfoIcon rollout Phase 1 — Food Cost / End of Month (food_cost_panel
     expect(container.textContent).toContain('Food Cost — Panel Guide');
   });
 
-  it('End of Month mode: renders the info icon and opens eom_dashboard_guide', async () => {
+  it('End of Month mode: renders the info icon and opens food_cost_panel (not eom_dashboard_guide)', async () => {
     await mountFOB('eom');
     clickInfoIcon();
-    expect(container.textContent).toContain('Inventory Control (EOM Dashboard) — Panel Guide');
+    expect(container.textContent).toContain('Food Cost — Panel Guide');
+    expect(container.textContent).not.toContain('Inventory Control (EOM Dashboard) — Panel Guide');
   });
 });
 

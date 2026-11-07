@@ -8,6 +8,7 @@ import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 import { LocationSelector } from '../components/PanelControls.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
@@ -1091,6 +1092,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
   // does NOT move that ratchet's CEILING (see that test's own comment).
   if (!rows.length && !fsRows.length && !vpRows.length && !dpRows.length) return h(RoutePanelShell, {
     icon: '💬', title: 'SMG VOICE', onBack: onClose,
+    subtitle: h(InfoIcon, { articleKey: 'guest_voice_smg' }),
   },
     h('div', { style: { textAlign: 'center', padding: 40 } },
       h('div', { style: { fontSize: 40, marginBottom: 12 } }, '💬'),
@@ -1108,7 +1110,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
   return h(RoutePanelShell, {
     icon: '💬',
     title: 'SMG VOICE',
-    subtitle: periodLabel || undefined,
+    subtitle: h('span', null, periodLabel || undefined, h(InfoIcon, { articleKey: 'guest_voice_smg' })),
     onBack: onClose,
     headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       tabSwitcher,
