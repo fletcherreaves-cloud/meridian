@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
-import { supabase, logAppAccess } from '../lib/supabase.js';
+import { supabase, logAppAccess, setNotificationConsent } from '../lib/supabase.js';
+import { detectPushCapability, subscribeToPush } from '../lib/push-subscribe.js';
 
 const { useState, useEffect } = React;
 const h = React.createElement;
@@ -248,6 +249,94 @@ function SetPasswordScreen({ onDone }) {
   );
 }
 
+// ── Screen C: Notification consent (shown once, right after a brand-new user sets their first
+// password) — task #91 follow-on, 2026-11-07. Explains what device alerts are for BEFORE the
+// browser's own cold permission prompt, and records the choice durably via
+// setNotificationConsent() so this is never asked again. See supabase/schema-notification-
+// consent.sql for the column + RPC, and src/lib/push-subscribe.js for the shared
+// subscribe/capability logic also used by shell.js's bell-dropdown toggle.
+// Same visual as PrimaryBtn, but actually forwards onClick — PrimaryBtn only ever worked for
+// form-submit buttons (its type defaults to 'submit' and it has no onClick param at all), which
+// is fine for every existing screen in this file (each wraps its button in a <form onSubmit>),
+// but this screen has two independent actions with no natural single form to submit.
+function ActionBtn({ children, loading, disabled, onClick }) {
+  return btn({
+    type: 'button', onClick, disabled: loading || disabled,
+    style: {
+      padding: '10px 0', background: loading ? '#78350f' : AMBER,
+      color: '#000', border: 'none', borderRadius: R,
+      fontSize: 13, fontWeight: 700, width: '100%',
+      cursor: loading || disabled ? 'not-allowed' : 'pointer',
+      opacity: loading || disabled ? 0.7 : 1, transition: 'all .15s',
+    }
+  }, loading ? 'Working…' : children);
+}
+
+function NotificationConsentScreen({ onDone }) {
+  // 'checking' | 'unsupported' | 'ios-install' | 'denied' | 'ready'
+  const [capability, setCapability] = useState('checking');
+  const [busy,       setBusy]       = useState(false);
+  const [err,        setErr]        = useState('');
+
+  useEffect(() => {
+    let live = true;
+    detectPushCapability().then(s => {
+      if (!live) return;
+      setCapability(s === 'off' ? 'ready' : s); // 'on' can't happen for a brand-new account
+    });
+    return () => { live = false; };
+  }, []);
+
+  const finish = async (choice) => {
+    try { await setNotificationConsent(choice); } catch {} // best-effort -- never blocks entry
+    onDone();
+  };
+
+  const enable = async () => {
+    setBusy(true); setErr('');
+    const res = await subscribeToPush();
+    if (!res.ok && res.reason === 'error') {
+      setErr(res.error || 'Could not enable device alerts.'); setBusy(false); return;
+    }
+    // 'denied' (browser-level block) / 'unconfigured' still count as the user having said yes --
+    // this records "do you want this," not "did the browser allow it."
+    await finish('granted');
+  };
+
+  const skip = () => finish('declined');
+
+  if (capability === 'checking') return null; // avoid a flash of the wrong affordance
+
+  const copy = div({ style: { fontSize: 12, color: TEXT2, lineHeight: 1.6 } },
+    'Meridian can send push alerts straight to this device — a sudden sales swing, a schedule ',
+    'change, an inventory count reminder, scoped to your role. It’s entirely optional, and ',
+    'you can turn it on or off anytime from the 🔔 bell in the top bar.');
+
+  if (capability === 'unsupported' || capability === 'ios-install' || capability === 'denied') {
+    const note = capability === 'ios-install'
+      ? 'To enable alerts on iPhone/iPad, add Meridian to your Home Screen first, then reopen it from there.'
+      : capability === 'denied'
+        ? 'Notifications are currently blocked for this site in your browser settings.'
+        : 'Device alerts aren’t supported in this browser.';
+    return div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+      div({ style: { fontSize: 15, fontWeight: 700, color: TEXT } }, 'Device Alerts'),
+      copy,
+      div({ style: { fontSize: 11, color: TEXT3 } }, note),
+      h(ActionBtn, { onClick: skip, disabled: busy }, 'Continue')
+    );
+  }
+
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+    div({ style: { fontSize: 15, fontWeight: 700, color: TEXT } }, 'Stay in the Loop'),
+    copy,
+    h(ErrBox, { msg: err }),
+    h(ActionBtn, { loading: busy, onClick: enable }, 'Enable Alerts'),
+    div({ style: { textAlign: 'center' } },
+      h(GhostBtn, { onClick: skip }, 'Not now')
+    )
+  );
+}
+
 // ── Login card wrapper ──────────────────────────────────────────────────────────
 function LoginCard({ children, showOrgName }) {
   const orgName = (() => { try { return localStorage.getItem('mf_org_name') || ''; } catch { return ''; } })();
@@ -296,6 +385,11 @@ export function AuthGate({ children }) {
   // pendingPasswordSet: true while user has just verified OTP and still needs to set a password.
   // Kept separate so we can show the Set Password screen even though session is now active.
   const [pendingPwSet,      setPendingPwSet] = useState(false);
+  // pendingConsent: true for the one screen right after a brand-new user sets their first
+  // password — the notification-consent prompt (task #91 follow-on, 2026-11-07). Deliberately
+  // NOT shown on every login — only this exact first-sign-in path, which is how new accounts
+  // are onboarded today (see this file's own header: "Access controlled by your administrator").
+  const [pendingConsent,    setPendingConsent] = useState(false);
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
@@ -311,8 +405,8 @@ export function AuthGate({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      // If sign-out happens while pendingPwSet, clear that too
-      if (!s) { setPendingPwSet(false); setScreen('login'); }
+      // If sign-out happens while pendingPwSet/pendingConsent, clear those too
+      if (!s) { setPendingPwSet(false); setPendingConsent(false); setScreen('login'); }
       // Owner request 2026-10-17 (app_access_log) — log only a REAL credential-based sign-in,
       // never INITIAL_SESSION (an already-persisted session restored on page load/refresh) or
       // TOKEN_REFRESHED (a silent background renewal). Best-effort, never blocks auth.
@@ -337,8 +431,16 @@ export function AuthGate({ children }) {
   if (session && pendingPwSet) {
     return h(LoginCard, null,
       h(SetPasswordScreen, {
-        onDone: () => { setPendingPwSet(false); setScreen('login'); }
+        onDone: () => { setPendingPwSet(false); setPendingConsent(true); setScreen('login'); }
       })
+    );
+  }
+
+  // Authenticated + notification-consent interstitial (task #91 follow-on) — only for the one
+  // first-sign-in path right above, never shown again once a choice is recorded.
+  if (session && pendingConsent) {
+    return h(LoginCard, null,
+      h(NotificationConsentScreen, { onDone: () => setPendingConsent(false) })
     );
   }
 

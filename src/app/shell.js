@@ -4,7 +4,8 @@ import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
-import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead, dismissEomCountNotification, loadAppNotifications, countUnreadAppNotifications, markAppNotificationRead, dismissAppNotification, upsertPushSubscription, deletePushSubscription } from '../lib/supabase.js';
+import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead, dismissEomCountNotification, loadAppNotifications, countUnreadAppNotifications, markAppNotificationRead, dismissAppNotification } from '../lib/supabase.js';
+import { detectPushCapability, subscribeToPush, unsubscribeFromPush } from '../lib/push-subscribe.js';
 import { SEVERITY_COLOR } from '../engine/app-notifications.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 
@@ -692,28 +693,12 @@ function NotificationRow({ row, onClick, onDismiss }) {
 }
 
 // ── Device alerts (Web Push) — dispatch #216 ─────────────────────────────────
-// Standard base64url -> Uint8Array conversion (subscribe()'s applicationServerKey requires a
-// Uint8Array, not the raw VAPID public-key string) — small, well-known, not worth a dependency.
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const out = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
-}
-function isIOSDevice() {
-  return typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-}
-function isStandaloneDisplay() {
-  return (typeof navigator !== 'undefined' && navigator.standalone === true)
-    || (typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-}
-
 // A small toggle inside the bell's dropdown, not a panel of its own — same "positioned div,
 // click-outside closes it" shape the dropdown it lives in already uses, so no ModalShell/
 // RoutePanelShell chrome applies here (panel-contract's close-button/date-picker/
 // LocationSelector/mobile-scroll items are about actual panels; this has none of those surfaces).
+// Capability detection + subscribe/unsubscribe live in ../lib/push-subscribe.js — shared with
+// AuthGate.js's new-user notification-consent screen (task #91 follow-on, 2026-11-07).
 function DeviceAlertsToggle() {
   // 'checking' | 'unsupported' | 'ios-install' | 'denied' | 'off' | 'on'
   const [state, setState] = useState('checking');
@@ -722,58 +707,24 @@ function DeviceAlertsToggle() {
 
   useEffect(() => {
     let live = true;
-    (async () => {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
-        if (live) setState('unsupported'); return;
-      }
-      if (isIOSDevice() && !isStandaloneDisplay()) { if (live) setState('ios-install'); return; }
-      if (Notification.permission === 'denied') { if (live) setState('denied'); return; }
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (live) setState(sub ? 'on' : 'off');
-      } catch { if (live) setState('off'); }
-    })();
+    detectPushCapability().then(s => { if (live) setState(s); });
     return () => { live = false; };
   }, []);
 
   const enable = async () => {
     setBusy(true); setErr('');
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') { setState('denied'); setBusy(false); return; }
-      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      if (!vapidKey) { setErr('Push isn\'t configured yet — ask the admin to finish the device-alerts setup.'); setBusy(false); return; }
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
-      });
-      const json = sub.toJSON();
-      const { saved, error } = await upsertPushSubscription({
-        endpoint: json.endpoint, p256dh: json.keys.p256dh, authKey: json.keys.auth, userAgent: navigator.userAgent,
-      });
-      if (!saved) { setErr(error || 'Could not save this device.'); setBusy(false); return; }
-      setState('on');
-    } catch (e) {
-      setErr(e?.message || 'Could not enable device alerts.');
-    }
+    const res = await subscribeToPush();
+    if (res.ok) setState('on');
+    else if (res.reason === 'denied') setState('denied');
+    else if (res.reason === 'unconfigured') setErr('Push isn\'t configured yet — ask the admin to finish the device-alerts setup.');
+    else setErr(res.error || 'Could not enable device alerts.');
     setBusy(false);
   };
 
   const disable = async () => {
     setBusy(true); setErr('');
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await deletePushSubscription(sub.endpoint);
-        await sub.unsubscribe();
-      }
-      setState('off');
-    } catch (e) {
-      setErr(e?.message || 'Could not disable device alerts.');
-    }
+    const res = await unsubscribeFromPush();
+    if (res.ok) setState('off'); else setErr(res.error || 'Could not disable device alerts.');
     setBusy(false);
   };
 
