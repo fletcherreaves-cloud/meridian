@@ -44,6 +44,7 @@ import { withAlpha } from '../utils/fmt.js';
 import { loadUserSetting, saveUserSetting } from '../lib/supabase.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
 import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
+import { GamePlanFormat } from './game-plan-view.js';
 
 const h = React.createElement;
 const div  = (p, ...c) => h('div', p, ...c);
@@ -51,11 +52,20 @@ const span = (p, ...c) => h('span', p, ...c);
 
 const FORMAT_KEY = 'curated_home_format';
 const FORMAT_LS_KEY = 'mf_curated_home_format';
+// 'gameplan' (owner request 2026-11-07, following the "Four Decks" mockup exploration) is the
+// new FRONT-FACING default at store altitude only -- it's the GM/SM/AM/DM day, not a multi-
+// store pattern, so it has no meaning at patch/district altitude (see ALL_FORMATS below).
+// Owner's own framing: "create a new set of main overlay. Keep the other intact and make it
+// optional for users, but make this the front facing version." Checklist/Bullets/Narrative stay
+// fully intact and reachable -- never removed, never the thing being replaced, just no longer
+// the first thing a fresh GM login sees.
 const FORMATS = [
+  { id: 'gameplan', label: 'Game Plan' },
   { id: 'checklist', label: 'Checklist' },
   { id: 'bullets', label: 'Bullets' },
   { id: 'narrative', label: 'Narrative' },
 ];
+const STORE_ONLY_FORMATS = new Set(['gameplan']);
 
 const SEV_COLOR = { RED: '#ef4444', AMBER: '#f59e0b', GREEN: '#10b981' };
 const SEV_DOT   = { RED: '!', AMBER: '~', GREEN: '✓' };
@@ -211,7 +221,7 @@ const RENDERERS = { checklist: ChecklistFormat, bullets: BulletsFormat, narrativ
 // `onNav` (Phase 2, optional): App.js passes `v=>goRoute(v)` -- the exact mechanism At A
 // Glance's own Action Checklist uses for its "Go to Dialed-In →" links. With no `onNav`, every
 // drill-through link in this panel simply doesn't render -- no dead buttons.
-export function CuratedHomePanel({ ds, settings, role, darRows, onNav }) {
+export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName }) {
   const [briefDate] = React.useState(() => getLatestBriefDate(ds));
   const darByLoc = useBriefDarByLoc(briefDate, darRows);
   const brief = React.useMemo(() => computeMorningBrief(ds, briefDate, darByLoc), [ds, briefDate, darByLoc]);
@@ -219,19 +229,66 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav }) {
   const altitude = altitudeForRole(role);
   const { items, summary } = React.useMemo(() => buildCuratedHomeItems(brief, role), [brief, role]);
 
+  // The GM/SM/AM/DM's own store -- the SAME hasData filter storeItems() already applies, so
+  // this always resolves to whichever store(s) this caller's RLS-scoped `ds` actually covers.
+  const myStore = altitude === 'store' ? (brief.stores || []).find(s => s.hasData) : null;
+
+  // Default format (owner request 2026-11-07): 'gameplan' at store altitude for anyone who has
+  // never set a preference -- the new front-facing default. An existing saved preference is
+  // NEVER overridden (same "don't retroactively change existing users' settings" convention
+  // this app already uses for the notification-consent screen/onboarding tour) -- Checklist/
+  // Bullets/Narrative stay exactly as reachable as they always were, just not the first thing a
+  // FRESH login sees. 'gameplan' means nothing at patch/district altitude (STORE_ONLY_FORMATS),
+  // so it's never the fallback there.
+  const defaultFormat = altitude === 'store' ? 'gameplan' : 'checklist';
   const [format, setFormat] = React.useState(() => {
-    try { const v = localStorage.getItem(FORMAT_LS_KEY); return FORMATS.some(f => f.id === v) ? v : 'checklist'; } catch { return 'checklist'; }
+    try {
+      const v = localStorage.getItem(FORMAT_LS_KEY);
+      if (FORMATS.some(f => f.id === v) && !(STORE_ONLY_FORMATS.has(v) && altitude !== 'store')) return v;
+    } catch {}
+    return defaultFormat;
   });
   React.useEffect(() => {
     let live = true;
-    loadUserSetting(FORMAT_KEY).then(v => { if (live && FORMATS.some(f => f.id === v)) setFormat(v); }).catch(() => {});
+    loadUserSetting(FORMAT_KEY).then(v => {
+      if (live && FORMATS.some(f => f.id === v) && !(STORE_ONLY_FORMATS.has(v) && altitude !== 'store')) setFormat(v);
+    }).catch(() => {});
     return () => { live = false; };
-  }, []);
+  }, [altitude]);
   const pickFormat = (id) => {
     setFormat(id);
     try { localStorage.setItem(FORMAT_LS_KEY, id); } catch {}
     saveUserSetting(FORMAT_KEY, id).catch(() => {});
   };
+
+  const visibleFormats = FORMATS.filter(f => !STORE_ONLY_FORMATS.has(f.id) || altitude === 'store');
+  const formatPicker = div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px 4px 4px 10px' } },
+    span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', fontWeight: 600 } }, 'Format'),
+    ...visibleFormats.map(f => h('button', {
+      key: f.id, type: 'button', onClick: () => pickFormat(f.id),
+      style: {
+        padding: '5px 10px', borderRadius: 999, border: 'none', fontSize: 11, fontWeight: 700,
+        cursor: 'pointer',
+        background: format === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
+        color: format === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
+      },
+    }, f.label)),
+  );
+
+  // Game Plan is its OWN full screen (hero + week trend + actions), not a renderer slotted into
+  // the generic stat-tiles/severity-bar/card shell every other format shares -- it's the thing
+  // the owner asked to make "the front facing version," not a 4th peer inside the old one. The
+  // format picker stays visible (small, top-right) so switching back to Checklist/Bullets/
+  // Narrative is always one click, per "keep the other intact and make it optional for users."
+  if (format === 'gameplan') {
+    return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 14 } }, formatPicker),
+      h(GamePlanFormat, {
+        ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
+        onShowEverything: () => pickFormat('checklist'),
+      }),
+    );
+  }
 
   const Renderer = RENDERERS[format] || ChecklistFormat;
   const altitudeLabel = altitude === 'store' ? 'Store' : altitude === 'patch' ? 'Patch' : 'District';
@@ -245,18 +302,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav }) {
         div({ style: { fontSize: 12, color: 'var(--text3,#6b7280)', marginTop: 3 } },
           summary.totalFlags + ' flag' + (summary.totalFlags !== 1 ? 's' : '') + ' · ' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ' at ' + altitudeLabel.toLowerCase() + ' altitude'),
       ),
-      div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px 4px 4px 10px' } },
-        span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', fontWeight: 600 } }, 'Format'),
-        ...FORMATS.map(f => h('button', {
-          key: f.id, type: 'button', onClick: () => pickFormat(f.id),
-          style: {
-            padding: '5px 10px', borderRadius: 999, border: 'none', fontSize: 11, fontWeight: 700,
-            cursor: 'pointer',
-            background: format === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
-            color: format === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
-          },
-        }, f.label)),
-      ),
+      formatPicker,
     ),
     div({ style: { display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 4 } },
       h(StatTile, { sev: 'RED', count: summary.red || 0, label: 'Red stores' }),
