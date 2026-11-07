@@ -4173,6 +4173,7 @@ function App() {
       routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
+        subtitle:h(InfoIcon,{articleKey:'security_panel_guide'}),
         onBack:()=>goRoute(null),
         bodyStyle:{display:'flex',flexDirection:'column'},
       }, h(SecurityPanel,{userRole:effectiveRole,onClose:()=>goRoute(null)})),

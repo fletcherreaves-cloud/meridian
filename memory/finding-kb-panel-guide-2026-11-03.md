@@ -1120,11 +1120,10 @@ crash, no test failure, the "?" control simply never existed.
 Signals it turned out to have one clean single-block header (eyebrow "AI Assistant" + 'SAGE'
 title + subtitle) above all its tabs/chat UI. Wired `sage_guide` there.
 
-**Still deferred, unchanged from Phase 3's list:** `security-panel.js` (no KB key exists at all
-for it — a missing-content gap, not a dangling-wire one, out of scope for this mechanical pass),
-`AIBacktestScanner` (embedded in `App.js`, no own header), `CustomizePanel`-sub-tabs
-(`performance_calculator_guide`/`review_target_overrides_guide`) — none inspected further this
-pass: real remaining judgment-call work, not re-confirmed here.
+**Still deferred, unchanged from Phase 3's list:** `AIBacktestScanner` (embedded in `App.js`, no
+own header), `CustomizePanel`-sub-tabs (`performance_calculator_guide`/
+`review_target_overrides_guide`) — not inspected further this pass: real remaining judgment-call
+work, not re-confirmed here.
 
 **Running total: 35 of ~116 real `KB_ARTICLES` keys now wired** (29 after Phase 3, +5 in the
 first commit, +1 here; `launch_planner_guide` from v5.675 already counted separately and not
@@ -1134,3 +1133,28 @@ an existing title string, the exact same shape Phase 1's Data Manager fix and th
 (clean, within payload budget) and the full suite (773/773 files, 7083+/7083+ tests) rather than
 new assertions, consistent with how trivial a dangling-reference wire-up is to verify by
 inspection plus a passing suite.
+
+## 2026-11-07 — `security-panel.js` written AND wired (v5.679), correcting Phase 3's own claim
+
+Phase 3 (above) and this doc's batch-1 section both described `security-panel.js` as needing a
+**new** KB article written from scratch, AND as lacking a clean `RoutePanelShell` the way
+Signals/SAGE turned out to have. Re-reading `App.js`'s actual routing (not assumed from the
+earlier claim) found the second half was simply wrong: `routePanel==='security'` already wraps
+`SecurityPanel` in `RoutePanelShell` at the App.js route gate (`title:'🔒 Security'`) — the exact
+same "shell lives at the gate, not inside the component" pattern several other panels
+(dicompare/forecast-reports/proj/report/fcst-ref) already use. Wiring the new article in was a
+one-line `subtitle:h(InfoIcon,{articleKey:'security_panel_guide'})` add to that existing call,
+not a structural fix.
+
+Wrote `security_panel_guide` from the panel's real mechanics (read `src/views/security-panel.js`
+in full relevant sections, not guessed): the subject-grouped-not-rule-grouped design rationale,
+the four real verdict states (`flagged`/`clear`/`undetermined`/`hygiene` — `verdictState()`), the
+RBAC gate (`securityPanelAccess()`, matching `security_findings`' own RLS tier exactly), name
+masking + logged reveals, the three-tab domain split (Cash/Inventory/Labor), and the
+cross-store-prevalence drill-down step that distinguishes a subject-specific lead from an
+estate-wide pattern.
+
+**Running total: 36 of ~117 real `KB_ARTICLES` keys now wired.** Same verification shape as
+every other wiring in this doc — local build (clean, within payload budget) + full suite
+(773/773 files, 7083+/7083+ tests), no new test since this is a pure content+wiring addition
+with no logic change.
