@@ -201,3 +201,32 @@ new LifeLenz-side discovery needed, just promoting a field that's already landin
 fixing the key it collapses on. Once the owner runs that migration and the script change ships,
 the table stops discarding ~87-99% of real shifts and the PK collision warning this whole finding
 is about should drop to ~0% on the next run.
+
+## SHIPPED (2026-11-07) — the script-side fix + migration, both ready for the owner's migration run
+
+Implemented the exact recommendation above, verbatim:
+- `supabase/schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql` — new migration for the
+  EXISTING production table (adds `payroll_entry_id`, drops the old `(loc,geid,pay_period_start)`
+  PK, deletes the pre-fix rows that have no `payroll_entry_id` value to backfill from — they were
+  already a known-incomplete last-write-wins sample, not a real record worth keeping — and adds
+  the new `(loc, payroll_entry_id)` PK). **Not run against production — DDL is never an agent's
+  own action; this is the owner's next step**, same as every other `schema-*.sql` in this repo.
+- `supabase/schema-lifelenz-payroll-readiness.sql` (the original create-table script) updated to
+  match, so a fresh install gets the right schema from day one, plus its stale "UNCONFIRMED
+  reportKey" header framing corrected to reflect the 2026-11-05 live confirmation above.
+- `scripts/lifelenz-payroll-readiness-pull.mjs`: `payroll_entry_id` added to `GATE_MEMBERS` (header-
+  row detection now requires it) and `PROMOTED_MEMBERS` (promoted to its own column instead of
+  sitting unused in `raw`, where it had already been landing on every row pulled so far); the
+  in-memory dedup key and both `onConflict` targets (bulk + row-by-row fallback) changed from
+  `geid+pay_period_start`/`'loc,geid,pay_period_start'` to `geid+payroll_entry_id`/
+  `'loc,payroll_entry_id'`; a row now also skips if `payroll_entry_id` is missing, same as the
+  existing `geid`/`pay_period_start` gate.
+- Tests (`dispatch-lifelenz-payroll-readiness-2026-11-04.test.js`) extended: a new test proving two
+  rows that share `(geid,pay_period_start)` but carry distinct `payroll_entry_id` values both now
+  survive parsing (the exact real-world shape this whole finding is about — one employee, one pay
+  period, multiple real shifts), and a new test for the missing-`payroll_entry_id` skip path.
+
+**What happens next, concretely:** once the owner runs the new migration file against production,
+the next scheduled/triggered run of the pull Action will upsert real rows under the real key —
+replacing the deleted incomplete sample with the genuine, complete one. No further code change
+needed on this repo's side; this finding is closed pending that one owner action.

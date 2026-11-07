@@ -4,35 +4,23 @@
 // scripts/lifelenz-compliance-audit-pull.mjs for the trigger→poll→download mechanism this
 // reuses verbatim).
 //
-// ⚠️ UNCONFIRMED AT A LEVEL BEYOND EVERY PRIOR DATA EXPLORER PULL — flagged explicitly, not
-// hidden, per this repo's standing "measure, don't reason" rule:
-//   1. The reportKey itself (`payroll_readiness_report`) is a NAMING-PATTERN GUESS, not a
-//      confirmed string. memory/lifelenz-session.md's own words: "the other 4 tiles almost
-//      certainly follow the same naming pattern, e.g. ... payroll_readiness_report ... --
-//      UNCONFIRMED, would need to open each tile and capture its own GetReportMeta call to be
-//      sure." Compliance Audit/Employee Performance both had their reportKey confirmed via a
-//      live dispatch before any pull script was written for them (task #28/#30); this one has
-//      not been. If the real key differs, `fetchReportMeta` below throws immediately and loudly
-//      ("GetReportMeta returned null for reportKey=... — report may have been renamed/removed"
-//      or similar) rather than silently pulling nothing.
-//   2. The field member names in PROMOTED_MEMBERS below are copied from
-//      memory/lifelenz-session.md's own representative (not exhaustive, not live-captured)
-//      58-column description — a human paraphrase of what the report tile showed, not a
-//      GetReportMeta dump. Same dynamic-discovery resilience as every sibling pull: the real
-//      runtime GetReportMeta call drives the actual column list and label map; a wrong GUESS in
-//      PROMOTED_MEMBERS just means that one field falls through to `raw` JSONB instead of its
-//      own column — it does not break the pull.
-// This script CANNOT be live-validated from an agent session with no LIFELENZ_TOKEN (checked:
-// none present in this environment). Before trusting it for real use, either the owner triggers
-// the new GitHub Action manually once this merges, or a future session with LIFELENZ_TOKEN runs
-// a GetReportMeta discovery dispatch (same method task #30 used for Employee Performance) to
-// confirm the real reportKey and column members. Same honesty standard the Recommendation
-// Ledger's grading script already set for its own Phase-1 limitation.
+// ✅ CONFIRMED 2026-11-05, live (memory/finding-lifelenz-payroll-readiness-pk-mismatch-2026-11-04.md's
+// "RESOLVED" section) — correcting this header's own earlier "unconfirmed naming-pattern guess"
+// framing. A live GetReportMeta(payroll_readiness_report) call returned the real 58-column
+// schema, confirming the reportKey; a live GetReportDataCsvAsync pull (Freeport, 879 real rows)
+// confirmed the real grain below. The field member names in PROMOTED_MEMBERS are now a mix of
+// that live-confirmed schema and the earlier memory/lifelenz-session.md paraphrase for fields
+// not individually re-checked — same dynamic-discovery resilience as every sibling pull either
+// way: a wrong guess in PROMOTED_MEMBERS just means that field falls through to `raw` JSONB
+// instead of its own column, it does not break the pull.
 //
-// Grain: ONE ROW PER (loc, geid, pay_period_start) — unlike Employee Performance's synthesized
-// rolling window, this report's own pay_periods_start_time is a REAL per-row column (the actual
-// pay period an employee's figures belong to), so it is NOT synthesized here — same "real event
-// id/date" shape as Compliance Audit's shift_date, not Employee Performance's windowed shape.
+// Grain: ONE ROW PER (loc, payroll_entry_id) — NOT (loc, geid, pay_period_start) as this file
+// originally assumed. The report's real unique key is `payroll_entry_id` (CSV label "Entry Id")
+// — one row per payroll entry/shift, not one row per pay period; `pay_period_start` is
+// legitimately repeated across every shift inside the same pay period (one real employee/pay-
+// period combination measured live had 13 separate shift rows). Every production pull before
+// this fix discarded 86-99% of real rows to last-write-wins dedup under the wrong key — see the
+// finding doc above for the full measurement.
 //
 // Required env vars: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN
 // Optional: LIFELENZ_PAYROLL_READINESS_WINDOW_DAYS (default 60 — wide enough to span 2-4 pay
@@ -154,7 +142,7 @@ const GET_REPORT_META_QUERY = `query GetReportMeta($businessId: ID!, $reportKey:
 
 // The two fields every real row must carry — the per-employee-per-pay-period identity. Both are
 // GUESSED member names (see this file's own header caveat), not yet confirmed real.
-const GATE_MEMBERS = ['employees_geid', 'pay_periods_start_time'];
+const GATE_MEMBERS = ['employees_geid', 'pay_periods_start_time', 'payroll_entry_id'];
 
 // Fields promoted to real columns on lifelenz_payroll_readiness — the ones named explicitly in
 // memory/lifelenz-session.md's representative column description. Everything else the runtime
@@ -191,6 +179,7 @@ const PROMOTED_MEMBERS = {
   pay_period_approvers_employee_name:   'approver_employee_name',
   scheduled_shifts_absent_reason_text:  'absent_reason_text',
   time_off_types_name:                  'time_off_type_name',
+  payroll_entry_id:                     'payroll_entry_id',   // the report's real per-row unique id ("Entry Id") — see header
 };
 
 // Same fully-qualified-member-name trap every sibling pull hit: GetReportMeta's own
@@ -332,13 +321,15 @@ function parsePayrollReadinessCSV(text, metaColumns) {
     const cells = parseCsvLine(lines[i]);
     const geid = get(cells, 'geid');
     const payPeriodStart = get(cells, 'pay_period_start');
-    if (!geid || !payPeriodStart) continue;
+    const payrollEntryId = get(cells, 'payroll_entry_id');
+    if (!geid || !payPeriodStart || !payrollEntryId) continue;
 
     const raw = {};
     for (const [member, idx] of Object.entries(otherIdx)) raw[member] = cells[idx] ?? null;
 
     rows.push({
       geid,
+      payroll_entry_id: payrollEntryId,
       employee_name: get(cells, 'employee_name'),
       pay_period_start: payPeriodStart,
       pay_period_status: get(cells, 'pay_period_status'),
@@ -373,49 +364,35 @@ function parsePayrollReadinessCSV(text, metaColumns) {
   return rows;
 }
 
-// Fix v2 (2026-11-04, same day as the first fix, superseding it -- the first fix was wrong about
-// WHY it failed, found by actually reading a live run's full log, not reasoning about it):
+// Fix v3 (2026-11-07) -- re-keyed on the report's real unique column, confirmed live (see this
+// file's header and memory/finding-lifelenz-payroll-readiness-pk-mismatch-2026-11-04.md's
+// "RESOLVED" section). v2 (2026-11-04, below) de-duplicated in memory on (geid,pay_period_start)
+// to stop the pull from failing/timing out, which worked operationally but was confirmed to
+// silently discard 86-99% of real rows, because that was never the report's real unique key.
+// `payroll_entry_id` is -- 879 distinct values for 879 real rows in the live-measured sample,
+// zero collisions. Deduping on it is now a correctness no-op in the normal case (every row
+// really should have a distinct key) rather than the lossy collapse v2 was.
 //
-// The first fix (row-by-row fallback on bulk-upsert failure) was built on an untested guess --
-// that in-batch key collisions were rare, so falling back to one-row-at-a-time upserts would be
-// both correct and cheap. Live evidence from the re-run proved both assumptions wrong:
-//   1. EVERY 500-row chunk, for EVERY store, hit "ON CONFLICT DO UPDATE command cannot affect
-//      row a second time" -- not an occasional collision, a SYSTEMATIC one. This report's rows
-//      really do repeat (geid,pay_period_start) keys constantly, strong confirmation (not just
-//      the row-count inference the first fix reasoned from) that this table's PK may not be the
-//      report's true unique key -- still an open question for the owner, see below, not resolved
-//      here.
-//   2. The row-by-row fallback's own collision counter (`rows.length - saved`) could NEVER
-//      actually fire: a single-row upsert always "succeeds" even when it's silently overwriting
-//      a sibling row from the same batch that was upserted moments earlier under the same key --
-//      there's no SQL-level conflict when only one row is being written at a time. So the "loud
-//      collision logging" the first fix promised was dead code; it ran and genuinely found
-//      nothing to report, store after store, because the counting method could not detect what
-//      it was measuring.
-//   3. Row-by-row upserts are also far too slow at this data volume -- roughly 50s per 500-row
-//      chunk (one HTTP round trip per row). At 1453-2297 rows/store this pull needs ~3-5 minutes
-//      PER STORE; the whole-run live log shows only 6 of 28 stores finished before the job's own
-//      20-minute timeout killed it mid-run.
-//
-// Real fix: DE-DUPLICATE IN MEMORY before any upsert, keeping the LAST row seen per
-// (geid,pay_period_start) -- the exact same last-write-wins semantics Supabase's bulk upsert
-// already uses, just applied cheaply (one pass over an array) instead of discovered expensively
-// (one failed bulk statement, then hundreds of individual round trips). This restores full bulk-
-// upsert speed (no more row-by-row fallback needed in the normal case) AND, because dedup counts
-// collisions by comparing keys directly rather than inferring them from upsert success/failure,
-// it can actually produce the accurate collision count/rate the first fix only promised.
+// v2's own history, kept for context: the first fix (row-by-row fallback on bulk-upsert
+// failure) assumed in-batch key collisions were rare; live evidence proved every 500-row chunk,
+// every store, collided under the old (geid,pay_period_start) key, and row-by-row upserts were
+// also far too slow at this volume (~50s/chunk, timing out the job after only 6 of 28 stores).
+// v2 de-duplicated in memory before upserting to fix both problems operationally. This v3 keeps
+// v2's in-memory-dedup-before-bulk-upsert structure (still the right approach for a key that's
+// unique in practice but shouldn't be bulk-upserted without a defensive pass) and only changes
+// WHICH key it dedupes and conflicts on.
 async function upsertRows(loc, rows) {
   if (!rows.length) return 0;
   const byKey = new Map();
   for (const r of rows) {
-    const key = r.geid + '|' + r.pay_period_start;
+    const key = r.geid + '|' + r.payroll_entry_id;
     byKey.set(key, r); // later rows overwrite earlier ones under the same key -- last wins
   }
   const deduped = [...byKey.values()];
   const collisions = rows.length - deduped.length;
   if (collisions > 0) {
     const pct = Math.round((collisions / rows.length) * 100);
-    console.warn(`[lifelenz-payroll-readiness-pull] ${loc}: ${collisions}/${rows.length} row(s) (${pct}%) shared a (geid,pay_period_start) key with another row in the same pull and were collapsed, keeping the last one seen -- if this is a large share (it has been, every chunk/every store, in production so far), the report's real grain is probably finer than this table's primary key assumes and needs live row-level inspection before trusting totals here. Not resolved here -- DDL is never an agent's own action, and guessing which extra column to add to the key without inspecting real conflicting rows would be exactly the kind of unvalidated guess this file's header already warns against.`);
+    console.warn(`[lifelenz-payroll-readiness-pull] ${loc}: ${collisions}/${rows.length} row(s) (${pct}%) shared a (geid,payroll_entry_id) key with another row in the same pull and were collapsed, keeping the last one seen -- unexpected under the confirmed-unique payroll_entry_id key (see this file's header); if this fires at a non-trivial rate, treat it as a new finding worth live investigation, not an expected condition the way the old (geid,pay_period_start) collisions were.`);
   }
 
   const payload = deduped.map(r => ({
@@ -426,7 +403,7 @@ async function upsertRows(loc, rows) {
   let saved = 0;
   for (let i = 0; i < payload.length; i += CHUNK) {
     const slice = payload.slice(i, i + CHUNK);
-    const { error } = await supabase.from('lifelenz_payroll_readiness').upsert(slice, { onConflict: 'loc,geid,pay_period_start' });
+    const { error } = await supabase.from('lifelenz_payroll_readiness').upsert(slice, { onConflict: 'loc,payroll_entry_id' });
     if (!error) { saved += slice.length; continue; }
     // Dedup guarantees no two rows in this payload share a key, so this should not recur -- if
     // it does, it's a genuinely different error (network, schema, etc.), not the key collision
@@ -435,8 +412,8 @@ async function upsertRows(loc, rows) {
     // to run in the normal case, unlike before.
     console.warn(`[supabase] bulk upsert error for ${loc} (chunk ${i}-${i + slice.length}), unexpected after dedup:`, error.message, '-- falling back to row-by-row');
     for (const row of slice) {
-      const { error: rowError } = await supabase.from('lifelenz_payroll_readiness').upsert([row], { onConflict: 'loc,geid,pay_period_start' });
-      if (rowError) { console.warn(`[supabase] row upsert error for ${loc}/${row.geid}/${row.pay_period_start}:`, rowError.message); continue; }
+      const { error: rowError } = await supabase.from('lifelenz_payroll_readiness').upsert([row], { onConflict: 'loc,payroll_entry_id' });
+      if (rowError) { console.warn(`[supabase] row upsert error for ${loc}/${row.geid}/${row.payroll_entry_id}:`, rowError.message); continue; }
       saved++;
     }
   }
