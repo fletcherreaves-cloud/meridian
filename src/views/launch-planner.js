@@ -13,8 +13,8 @@
 // non-LocationSelector picker.
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
-import { loadDailySalesForStore, loadHourlySalesForStore, loadLaunchPlan, saveLaunchPlanRow } from '../lib/supabase.js';
-import { projectLaunchPlan, blendHourlyShapes, splitDayAcrossHours } from '../engine/new-store-ramp.js';
+import { loadDailySalesForStore, loadHourlySalesForStore, loadQuarterHourSalesForStore, loadLaunchPlan, saveLaunchPlanRow } from '../lib/supabase.js';
+import { projectLaunchPlan, blendHourlyShapes, splitDayAcrossHours, blendQuarterHourShapes, splitDayAcrossQuarterHours, DEEP_OVERNIGHT_QTR_SLOTS } from '../engine/new-store-ramp.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
 
@@ -62,6 +62,24 @@ function hourRangeLabel(hourSlot) {
   return fmtHour12(end - 1) + '–' + fmtHour12(end);
 }
 const DEEP_OVERNIGHT = new Set(['05:00', '24:00', '25:00', '26:00', '27:00', '28:00']);
+const DEEP_OVERNIGHT_QTR = new Set(DEEP_OVERNIGHT_QTR_SLOTS);
+
+// qtr_slot is the same closing-edge/4am-business-day convention as hour_slot above, just at
+// 15-minute resolution ('04:15'..'28:00', 96 real slots -- see
+// memory/finding-record-hour-quarter-hour-pull.md). Label shows both edges since a bare "4:15am"
+// reads ambiguously at this grain, unlike the hour-level label.
+function fmtClock12(totalMin) {
+  const norm = ((totalMin % 1440) + 1440) % 1440;
+  const hh = Math.floor(norm / 60), mm = norm % 60;
+  const ampm = hh < 12 ? 'am' : 'pm';
+  let h12 = hh % 12; if (h12 === 0) h12 = 12;
+  return h12 + (mm ? ':' + String(mm).padStart(2, '0') : '') + ampm;
+}
+function qtrRangeLabel(qtrSlot) {
+  const [hh, mm] = String(qtrSlot).split(':').map(Number);
+  const end = hh * 60 + mm;
+  return fmtClock12(end - 15) + '–' + fmtClock12(end);
+}
 
 export function NewStoreLaunchPlanner({ onClose }) {
   const storeOptions = React.useMemo(
@@ -84,6 +102,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
   const [hourlyLoading, setHourlyLoading] = React.useState(false);
   const [hourlyErr, setHourlyErr] = React.useState(null);
   const hourlyBlendCache = React.useRef({ key: null, blend: null });
+  const [expandedQtrDate, setExpandedQtrDate] = React.useState(null);
+  const [qtrBlend, setQtrBlend] = React.useState(null);
+  const [qtrLoading, setQtrLoading] = React.useState(false);
+  const [qtrErr, setQtrErr] = React.useState(null);
+  const qtrBlendCache = React.useRef({ key: null, blend: null });
 
   // Re-seed the form when the store changes (but only on the ACTUAL change, never clobbering an
   // in-progress edit on the same store).
@@ -97,6 +120,9 @@ export function NewStoreLaunchPlanner({ onClose }) {
     setExpandedDate(null);
     setHourlyBlend(null);
     hourlyBlendCache.current = { key: null, blend: null };
+    setExpandedQtrDate(null);
+    setQtrBlend(null);
+    qtrBlendCache.current = { key: null, blend: null };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selLoc]);
 
@@ -175,6 +201,42 @@ export function NewStoreLaunchPlanner({ onClose }) {
     if (!hourlyBlend) await ensureHourlyBlend();
   }
 
+  // Finer sibling of ensureHourlyBlend/toggleExpand, same caching and comparable-weighting logic,
+  // against the REAL 15-minute sales table (qsr_sales_quarter_hour) instead of qsr_daily_activity's
+  // hourly buckets -- see new-store-ramp.js's quarterHourShapeFor header for why this table (built
+  // for the separate "Record Hour" feature) was missed by the original 2026-11-06 hourly build.
+  async function ensureQtrBlend() {
+    const key = JSON.stringify(comparables);
+    if (qtrBlendCache.current.key === key) {
+      setQtrBlend(qtrBlendCache.current.blend);
+      return qtrBlendCache.current.blend;
+    }
+    const realComparables = comparables.filter((c) => c.loc && c.weight > 0);
+    if (!realComparables.length) { setQtrErr('Add at least one comparable store with a weight > 0.'); return null; }
+    setQtrLoading(true);
+    setQtrErr(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const withRows = await Promise.all(
+        realComparables.map(async (c) => ({ ...c, qtrHourRows: await loadQuarterHourSalesForStore(c.loc, HISTORY_START, today) })),
+      );
+      const blend = blendQuarterHourShapes(withRows);
+      qtrBlendCache.current = { key, blend };
+      setQtrBlend(blend);
+      return blend;
+    } catch (e) {
+      setQtrErr(String(e?.message || e));
+      return null;
+    } finally {
+      setQtrLoading(false);
+    }
+  }
+  async function toggleExpandQtr(row) {
+    if (expandedQtrDate === row.planDate) { setExpandedQtrDate(null); return; }
+    setExpandedQtrDate(row.planDate);
+    if (!qtrBlend) await ensureQtrBlend();
+  }
+
   function setOverride(row, value) {
     const overrideSales = value === '' ? null : Number(value);
     const source = overrideSales != null ? 'manual' : 'ramp';
@@ -230,7 +292,7 @@ export function NewStoreLaunchPlanner({ onClose }) {
       : div({ style: { overflowX: 'auto' } },
         h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 12, borderCollapse: 'collapse' } },
           h('thead', null, h('tr', null,
-            ['Day', 'Date', 'Projected $', 'Override $', 'Effective $', 'Suggested Hrs', 'Note', 'Hourly'].map((t) =>
+            ['Day', 'Date', 'Projected $', 'Override $', 'Effective $', 'Suggested Hrs', 'Note', 'Hourly', '15-min'].map((t) =>
               h('th', { key: t, style: { textAlign: 'left', padding: '4px 10px', borderBottom: '1px solid var(--bdr)', color: 'var(--text3)', fontWeight: 600 } }, t)))),
           h('tbody', null, rows.flatMap((r) => {
             const effective = r.overrideSales ?? r.projectedSales;
@@ -241,6 +303,7 @@ export function NewStoreLaunchPlanner({ onClose }) {
             const hrs = (tTpph && tAvgCheck) ? (effective / tAvgCheck) / tTpph : null;
             const isGrand = grandOpeningDate && r.planDate === grandOpeningDate;
             const isExpanded = expandedDate === r.planDate;
+            const isQtrExpanded = expandedQtrDate === r.planDate;
             const mainRow = h('tr', { key: r.planDate, style: isGrand ? { background: 'rgba(245,188,0,.08)' } : null },
               h('td', { style: { padding: '4px 10px' } }, r.dayN),
               h('td', { style: { padding: '4px 10px' } }, r.planDate + ' (' + dowOf(r.planDate) + ')'),
@@ -256,37 +319,72 @@ export function NewStoreLaunchPlanner({ onClose }) {
                   : inp({ value: r.note || '', placeholder: isGrand ? 'Grand Opening' : '', style: { width: 120 }, className: 'inp',
                       onChange: (e) => setNote(r, e.target.value) })),
               h('td', { style: { padding: '4px 10px' } },
-                btn({ className: 'btn btn-sm', onClick: () => toggleExpand(r) }, isExpanded ? '▾ Hourly' : '▸ Hourly')));
-            if (!isExpanded) return [mainRow];
-            const hourly = hourlyBlend ? splitDayAcrossHours(effective, hourlyBlend) : [];
-            let detailBody;
-            if (hourlyLoading) {
-              detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Loading hourly shape from comparables…');
-            } else if (hourlyErr) {
-              detailBody = span({ style: { fontSize: 11, color: 'var(--crit)' } }, hourlyErr);
-            } else if (!hourlyBlend) {
-              detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'No hourly shape available.');
-            } else {
-              const caveat = hourlyBlend.anyNearlyClosedOvernight
-                ? div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 8, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },
-                    '⚠ Comparable store(s) show minimal real overnight volume — Late Night hours below are not a reliable shape for a 24-hour store.')
-                : null;
-              const hourTable = h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 11, borderCollapse: 'collapse' } },
-                h('thead', null, h('tr', null,
-                  ['Hour', '$', 'Suggested Hrs'].map((t) =>
-                    h('th', { key: t, style: { textAlign: 'left', padding: '2px 10px', color: 'var(--text3)', fontWeight: 600 } }, t)))),
-                h('tbody', null, hourly.map((hp) => {
-                  const hHrs = (tTpph && tAvgCheck) ? (hp.sales / tAvgCheck) / tTpph : null;
-                  const overnight = DEEP_OVERNIGHT.has(hp.hourSlot);
-                  return h('tr', { key: hp.hourSlot, style: overnight ? { color: 'var(--text3)' } : null },
-                    h('td', { style: { padding: '2px 10px' } }, hourRangeLabel(hp.hourSlot)),
-                    h('td', { style: { padding: '2px 10px' } }, fmtMoney(hp.sales)),
-                    h('td', { style: { padding: '2px 10px' } }, hHrs != null ? hHrs.toFixed(1) : '—'));
-                })));
-              detailBody = div(null, caveat, hourTable);
+                btn({ className: 'btn btn-sm', onClick: () => toggleExpand(r) }, isExpanded ? '▾ Hourly' : '▸ Hourly')),
+              h('td', { style: { padding: '4px 10px' } },
+                btn({ className: 'btn btn-sm', onClick: () => toggleExpandQtr(r) }, isQtrExpanded ? '▾ 15-min' : '▸ 15-min')));
+            const detailRows = [];
+            if (isExpanded) {
+              const hourly = hourlyBlend ? splitDayAcrossHours(effective, hourlyBlend) : [];
+              let detailBody;
+              if (hourlyLoading) {
+                detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Loading hourly shape from comparables…');
+              } else if (hourlyErr) {
+                detailBody = span({ style: { fontSize: 11, color: 'var(--crit)' } }, hourlyErr);
+              } else if (!hourlyBlend) {
+                detailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'No hourly shape available.');
+              } else {
+                const caveat = hourlyBlend.anyNearlyClosedOvernight
+                  ? div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 8, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },
+                      '⚠ Comparable store(s) show minimal real overnight volume — Late Night hours below are not a reliable shape for a 24-hour store.')
+                  : null;
+                const hourTable = h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 11, borderCollapse: 'collapse' } },
+                  h('thead', null, h('tr', null,
+                    ['Hour', '$', 'Suggested Hrs'].map((t) =>
+                      h('th', { key: t, style: { textAlign: 'left', padding: '2px 10px', color: 'var(--text3)', fontWeight: 600 } }, t)))),
+                  h('tbody', null, hourly.map((hp) => {
+                    const hHrs = (tTpph && tAvgCheck) ? (hp.sales / tAvgCheck) / tTpph : null;
+                    const overnight = DEEP_OVERNIGHT.has(hp.hourSlot);
+                    return h('tr', { key: hp.hourSlot, style: overnight ? { color: 'var(--text3)' } : null },
+                      h('td', { style: { padding: '2px 10px' } }, hourRangeLabel(hp.hourSlot)),
+                      h('td', { style: { padding: '2px 10px' } }, fmtMoney(hp.sales)),
+                      h('td', { style: { padding: '2px 10px' } }, hHrs != null ? hHrs.toFixed(1) : '—'));
+                  })));
+                detailBody = div(null, caveat, hourTable);
+              }
+              detailRows.push(h('tr', { key: r.planDate + '-hourly' },
+                h('td', { colSpan: 9, style: { padding: '8px 10px 16px 24px', background: 'var(--surf2)' } }, detailBody)));
             }
-            const detailRow = h('tr', { key: r.planDate + '-hourly' },
-              h('td', { colSpan: 8, style: { padding: '8px 10px 16px 24px', background: 'var(--surf2)' } }, detailBody));
-            return [mainRow, detailRow];
+            if (isQtrExpanded) {
+              const qtr = qtrBlend ? splitDayAcrossQuarterHours(effective, qtrBlend) : [];
+              let qtrDetailBody;
+              if (qtrLoading) {
+                qtrDetailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Loading 15-minute shape from comparables…');
+              } else if (qtrErr) {
+                qtrDetailBody = span({ style: { fontSize: 11, color: 'var(--crit)' } }, qtrErr);
+              } else if (!qtrBlend) {
+                qtrDetailBody = span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'No 15-minute shape available.');
+              } else {
+                const caveat = qtrBlend.anyNearlyClosedOvernight
+                  ? div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 8, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },
+                      '⚠ Comparable store(s) show minimal real overnight volume — Late Night 15-min slots below are not a reliable shape for a 24-hour store.')
+                  : null;
+                const qtrTable = h('table', { style: { width: 'max-content', minWidth: '100%', fontSize: 11, borderCollapse: 'collapse' } },
+                  h('thead', null, h('tr', null,
+                    ['15-min', '$', 'Suggested Hrs'].map((t) =>
+                      h('th', { key: t, style: { textAlign: 'left', padding: '2px 10px', color: 'var(--text3)', fontWeight: 600 } }, t)))),
+                  h('tbody', null, qtr.map((qp) => {
+                    const qHrs = (tTpph && tAvgCheck) ? (qp.sales / tAvgCheck) / tTpph : null;
+                    const overnight = DEEP_OVERNIGHT_QTR.has(qp.qtrSlot);
+                    return h('tr', { key: qp.qtrSlot, style: overnight ? { color: 'var(--text3)' } : null },
+                      h('td', { style: { padding: '2px 10px' } }, qtrRangeLabel(qp.qtrSlot)),
+                      h('td', { style: { padding: '2px 10px' } }, fmtMoney(qp.sales)),
+                      h('td', { style: { padding: '2px 10px' } }, qHrs != null ? qHrs.toFixed(2) : '—'));
+                  })));
+                qtrDetailBody = div(null, caveat, qtrTable);
+              }
+              detailRows.push(h('tr', { key: r.planDate + '-qtr' },
+                h('td', { colSpan: 9, style: { padding: '8px 10px 16px 24px', background: 'var(--surf2)' } }, qtrDetailBody)));
+            }
+            return [mainRow, ...detailRows];
           })))));
 }

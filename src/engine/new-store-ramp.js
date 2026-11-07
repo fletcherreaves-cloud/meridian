@@ -223,3 +223,102 @@ export function splitDayAcrossHours(dailyTotal, blended) {
   }
   return out;
 }
+
+// ── Quarter-hour shape (Launch Planner 15-min breakdown, 2026-11-07) ────────────────────────
+// Same derived-VIEW approach as the hourly shape above, one level finer. The hourly build's own
+// comment (2026-11-06) concluded "quarter-hour: no, not from this table" -- true of
+// qsr_daily_activity (genuinely hourly-only, confirmed live), but that check never looked beyond
+// that one table. A SEPARATE table, qsr_sales_quarter_hour, already holds REAL 15-minute sales
+// buckets -- built for the unrelated "Record Hour" feature, confirmed live at 96 distinct
+// qtr_slot values/store/day, backfilled to 2024-01-01 (memory/finding-record-hour-quarter-hour-
+// pull.md). This is that same real data, reused here rather than interpolated, with the identical
+// trailing-up-to-90-real-trading-days shape logic hourlyShapeFor uses, just keyed on 96 real
+// qtr_slot buckets instead of 24 hour_slot buckets.
+//
+// qtrHourRows: [{loc, date, qtrSlot, sales}] — loadQuarterHourSalesForStore in src/lib/supabase.js.
+export const QTR_SLOTS = (() => {
+  const START_MIN = 4 * 60 + 15; // '04:15' -- first real 15-min bucket after the 4am business-day open
+  const END_MIN = 28 * 60;       // '28:00'
+  const out = [];
+  for (let t = START_MIN; t <= END_MIN; t += 15) {
+    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+  }
+  return out;
+})();
+
+// The 4 quarter-hour buckets that compose each DEEP_OVERNIGHT_SLOTS hour bucket, derived from that
+// array rather than hand-duplicated, so the two sets can never drift out of lockstep.
+function _hourBucketToQtrSlots(hourLabel) {
+  const [hh, mm] = hourLabel.split(':').map(Number);
+  const endMin = hh * 60 + mm;
+  const out = [];
+  for (let k = 3; k >= 0; k--) {
+    const t = endMin - k * 15;
+    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+  }
+  return out;
+}
+export const DEEP_OVERNIGHT_QTR_SLOTS = [...new Set(DEEP_OVERNIGHT_SLOTS.flatMap(_hourBucketToQtrSlots))];
+
+export function quarterHourShapeFor(qtrHourRows, loc, minDays = 10) {
+  const rows = (qtrHourRows || []).filter(r => r.loc === loc && r.date);
+  if (!rows.length) return null;
+  const positiveDates = new Set(rows.filter(r => (Number(r.sales) || 0) > 0).map(r => r.date));
+  const dates = [...positiveDates].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  if (dates.length < minDays) return null;
+  const matureDates = new Set(dates.slice(0, 90));
+  const bySlot = new Map(QTR_SLOTS.map(s => [s, 0]));
+  let dayTotal = 0;
+  for (const r of rows) {
+    if (!matureDates.has(r.date) || !bySlot.has(r.qtrSlot)) continue;
+    const s = Number(r.sales) || 0;
+    bySlot.set(r.qtrSlot, bySlot.get(r.qtrSlot) + s);
+    dayTotal += s;
+  }
+  if (!dayTotal) return null;
+  const overnightSales = DEEP_OVERNIGHT_QTR_SLOTS.reduce((a, s) => a + bySlot.get(s), 0);
+  const overnightFrac = overnightSales / dayTotal;
+  const shape = QTR_SLOTS.map(s => ({ qtrSlot: s, frac: bySlot.get(s) / dayTotal }));
+  return { shape, overnightFrac, nearlyClosedOvernight: overnightFrac < 0.01 };
+}
+
+// Weight-blend several comparables' quarter-hour shapes, qtr_slot aligned. comparables:
+// [{loc, qtrHourRows, weight}]. Same overnight-comparability guard as blendHourlyShapes.
+export function blendQuarterHourShapes(comparables) {
+  const perComparable = [];
+  for (const c of (comparables || [])) {
+    const r = quarterHourShapeFor(c.qtrHourRows, c.loc);
+    if (r) perComparable.push({ ...r, weight: c.weight });
+  }
+  if (!perComparable.length) return null;
+  const bySlot = new Map(QTR_SLOTS.map(s => [s, []]));
+  for (const c of perComparable) {
+    for (const p of c.shape) bySlot.get(p.qtrSlot).push({ frac: p.frac, weight: c.weight });
+  }
+  const shape = QTR_SLOTS.map(s => {
+    const entries = bySlot.get(s);
+    const wSum = entries.reduce((a, e) => a + e.weight, 0);
+    const frac = wSum ? entries.reduce((a, e) => a + e.frac * e.weight, 0) / wSum : 0;
+    return { qtrSlot: s, frac: +frac.toFixed(5) };
+  });
+  const wSum = perComparable.reduce((a, c) => a + c.weight, 0);
+  const overnightFrac = wSum ? perComparable.reduce((a, c) => a + c.overnightFrac * c.weight, 0) / wSum : 0;
+  const anyNearlyClosedOvernight = perComparable.some(c => c.nearlyClosedOvernight);
+  return { shape, overnightFrac, anyNearlyClosedOvernight };
+}
+
+// Split one day's $ total across the 96 real qtr_slot buckets using a blended shape. Same
+// last-slot-absorbs-the-remainder rounding discipline as splitDayAcrossHours.
+export function splitDayAcrossQuarterHours(dailyTotal, blended) {
+  if (!blended || !dailyTotal) return [];
+  const { shape } = blended;
+  const out = [];
+  let running = 0;
+  for (let i = 0; i < shape.length; i++) {
+    const isLast = i === shape.length - 1;
+    const amt = isLast ? +(dailyTotal - running).toFixed(2) : +(shape[i].frac * dailyTotal).toFixed(2);
+    running += amt;
+    out.push({ qtrSlot: shape[i].qtrSlot, sales: amt });
+  }
+  return out;
+}
