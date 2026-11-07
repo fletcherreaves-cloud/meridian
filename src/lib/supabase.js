@@ -4348,6 +4348,31 @@ export async function deletePushSubscription(endpoint) {
   return { deleted: true };
 }
 
+// ── Notification consent (task #91 follow-on, 2026-11-07) ────────────────────
+// Recorded once, the first time a brand-new user sets their password (src/components/
+// AuthGate.js's NotificationConsentScreen, shown right after SetPasswordScreen) — a plain
+// 'granted'/'declined' answer to "do you want device alerts," independent of whether the
+// browser itself ends up supporting/allowing push. Written via the set_notification_consent
+// RPC (supabase/schema-notification-consent.sql) rather than a direct .update() on `profiles`,
+// since that table's RLS only grants a user SELECT on their own row (`profiles: own read`) —
+// widening that to a general own-row UPDATE policy would let a non-admin rewrite their own
+// role/accessible_locs, so the RPC is scoped server-side to just these two columns instead.
+export async function setNotificationConsent(choice) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const { error } = await supabase.rpc('set_notification_consent', { choice });
+  if (error) { console.warn('[notification_consent] rpc error:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
+export async function getNotificationConsent() {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase.from('profiles').select('notification_consent').eq('id', user.id).maybeSingle();
+  if (error) { console.warn('[notification_consent] read error:', error.message); return null; }
+  return data?.notification_consent ?? null;
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client

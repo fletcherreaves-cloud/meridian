@@ -28,6 +28,14 @@ create table if not exists public.profiles (
   -- mapping yet, which is why the RLS policies below are ADDITIVE alongside the pre-existing
   -- accessible_locs-based ones, not a replacement of them.
   person           text,
+  -- notification_consent/_at: task #91 follow-on (2026-11-07) — set once by a brand-new user's
+  -- first sign-in (src/components/AuthGate.js's NotificationConsentScreen), never retroactively
+  -- for an existing profile. See supabase/schema-notification-consent.sql for the full rationale
+  -- and the set_notification_consent() RPC that writes these (profiles' own RLS only grants a
+  -- user SELECT on their own row, so a dedicated RPC writes these two columns instead of a
+  -- general self-UPDATE policy that would also let a non-admin rewrite role/accessible_locs).
+  notification_consent     text check (notification_consent in ('granted', 'declined')),
+  notification_consent_at  timestamptz,
   created_at       timestamptz default now()
 );
 
