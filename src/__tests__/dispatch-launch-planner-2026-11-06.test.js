@@ -319,6 +319,66 @@ describe('NewStoreLaunchPlanner', () => {
     expect(container.textContent).not.toMatch(/minimal real overnight volume/);
   });
 
+  // Day-of-week overlay (2026-11-07 follow-on) -- owner: "lets figure out, based on 18213
+  // patterns how that splits by day of week and apply to launch as well." Note: the mock's
+  // .eq() doesn't filter by loc (same caveat the Hourly/15-min tests above already document), so
+  // this same fixture also reaches the 43380/43701 comparable loads, not just the predecessor --
+  // fine for exercising the panel's wiring/display path, which is what these tests cover.
+  function mkDowPatternedRows(numDays) {
+    const out = [];
+    let d = new Date('2026-01-01T00:00:00Z');
+    for (let i = 0; i < numDays; i++) {
+      const dt = d.toISOString().slice(0, 10);
+      const dow = new Date(dt + 'T12:00:00Z').getUTCDay();
+      out.push({ dt, product_sales: dow === 5 ? 150 : 100 }); // Friday (5) valued higher
+      d = new Date(d.getTime() + 864e5);
+    }
+    return out;
+  }
+
+  it('Predecessor Store field defaults to 18213 for Lindsay (44689) and is editable', async () => {
+    _selectData = [];
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const predInput = [...container.querySelectorAll('input')].find((i) => i.value === '18213');
+    expect(predInput, 'Predecessor Store input defaulting to 18213 not found').toBeTruthy();
+  });
+
+  it('regenerating with real day-of-week variation in the predecessor data shows the computed shape', async () => {
+    _selectData = [];
+    _dailyActivityRows = mkDowPatternedRows(56); // 8 full weeks -- real coverage on every weekday
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const regenBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Regenerate'));
+    await act(async () => { regenBtn.click(); });
+    await flush();
+    await flush(); // extra tick for the predecessor + comparable round-trips to settle
+    expect(container.textContent).toMatch(/Day-of-week shape \(18213\)/);
+    expect(container.textContent).toMatch(/Fri \+\d+%/);
+  });
+
+  it('shows no day-of-week shape note when Predecessor Store is left blank', async () => {
+    _selectData = [];
+    _dailyActivityRows = (() => {
+      const out = [];
+      let d = new Date('2026-01-01');
+      for (let i = 0; i < 100; i++) { out.push({ dt: d.toISOString().slice(0, 10), product_sales: 1000 }); d = new Date(d.getTime() + 864e5); }
+      return out;
+    })();
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const predInput = [...container.querySelectorAll('input')].find((i) => i.value === '18213');
+    await act(async () => { setInputValue(predInput, ''); });
+    const regenBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Regenerate'));
+    await act(async () => { regenBtn.click(); });
+    await flush();
+    await flush();
+    expect(container.textContent).not.toMatch(/Day-of-week shape/);
+  });
+
   it('shows the overnight-shape caveat on the 15-min breakdown too', async () => {
     _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2400, override_sales: null, note: null, source: 'ramp' }];
     _dailyActivityRows = mkQtrActivityRows((qs) => (DEEP_OVERNIGHT_QTR_SLOTS.includes(qs) ? 0 : 25));

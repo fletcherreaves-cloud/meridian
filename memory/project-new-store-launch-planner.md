@@ -268,3 +268,75 @@ see — or sanity-check an assumption against — a real annual total.
   select defaults to 365, the Projected Total stat is absent with no rows, and it correctly sums
   effective sales (override wins over its own row's projected value) with the right row count in
   its label.
+
+## 2026-11-07 (later same day) — day-of-week shape from the real predecessor store
+
+Owner, after liking the "$8k-$9k/day early weeks" finding from the 12-month reconciliation above:
+*"lets figure out, based on 18213 patterns how that splits by day of week and apply to launch as
+well."*
+
+**Real measurement, both windows for robustness, queried live from `qsr_daily_activity.product_sales`
+for 18213 (Lindsay-Wal-Mart, the predecessor 44689 replaces), each weekday normalized to a fraction
+of the all-weekday average:**
+
+| DOW | frac (trailing 2yr, 2024-10-01→2026-09-30) | frac (full history, 2020-01-01→2026-09-30) |
+|---|---|---|
+| Sun | 0.891 | 0.857 |
+| Mon | 0.977 | 0.992 |
+| Tue | 1.007 | 1.011 |
+| Wed | 1.010 | 1.010 |
+| Thu | 1.035 | 1.044 |
+| Fri | 1.092 | 1.101 |
+| Sat | 0.988 | 0.986 |
+
+Stable across both windows (~350 real days/weekday in the full-history version). **Friday is 18213's
+real peak day, not Saturday**; Sunday is clearly the softest. This is genuinely LOCAL to Lindsay —
+18213 IS the same town/trade-area as 44689, just the old in-Walmart building — unlike the
+Tishomingo/Ponce de Leon ramp-SHAPE comparables used elsewhere in this tool, which are different
+towns and carry their own, different, local DOW patterns.
+
+### Why this is a new function, not a reuse of forecast.js's existing `_dowShape`
+
+`forecast.js` already has a private `_dowShape(series, asOf, dow, days)` (used by the `'simple'`
+forecast model) — found by grepping before writing anything new, per CLAUDE.md's "check whether a
+helper exists" rule. It is NOT reusable here: it shapes a single day, strictly `asOf`-bounded
+(leak-free), from an ACTIVE store's own recent trailing history, for live day-ahead forecasting.
+The new need is structurally different — derive a full 7-value shape ONCE from a RETIRED
+predecessor's entire real history, for a brand-new store's launch plan, with no leak-free
+constraint (18213's whole history is fair game; there's no "today" to leak across). Two small,
+separate functions rather than one overloaded one.
+
+### What was built
+
+- **`dowShapeFor(dailyRows, loc, minDays=20)`** (`src/engine/new-store-ramp.js`) — same derived-
+  view pattern as `rampShape`/`hourlyShapeFor`/`quarterHourShapeFor`: filter to real rows for
+  `loc`, bucket by real UTC weekday, average each bucket, normalize to the all-weekday average.
+  Requires real coverage on all 7 weekdays (not just `minDays` total) before returning a shape —
+  a predecessor with zero real Sundays would otherwise silently apply `frac:1` there, which is
+  indistinguishable from "no adjustment" and would misrepresent real coverage. Returns `null`
+  (never a misleading shape) otherwise, same convention every other shape function in this file
+  uses.
+- **`projectLaunchPlan`** (`src/engine/new-store-ramp.js`) gained an optional `dowShape` param —
+  applied AFTER the existing ramp-shape math, multiplying each day's `forecastSales` by the
+  real-weekday fraction for that `planDate`. Deliberately not added to `projectNewStoreSales`
+  (which is calendar-agnostic/dayN-indexed and doesn't know real dates) — only `projectLaunchPlan`
+  maps `dayN` to a real date, so only there can a DOW factor be looked up correctly. Defaults to
+  `null` (no-op) — every existing caller/test is unaffected unless it opts in.
+- **UI** (`src/views/launch-planner.js`): a new "Predecessor Store (optional, day-of-week shape)"
+  text input, following this panel's existing plain-input convention (not `LocationSelector` —
+  same single-store-tool exception class the rest of this panel already carries). Seeded for
+  Lindsay: `SEED_DEFAULTS['44689'].predecessorLoc = '18213'`; blank by default for any other
+  store with no known predecessor, keeping the feature fully optional. "Regenerate from ramp
+  model" now also loads the predecessor's real daily sales (reusing `loadDailySalesForStore`,
+  same `HISTORY_START`), computes `dowShapeFor`, and passes it into `projectLaunchPlan`. A compact
+  one-line summary ("Day-of-week shape (18213): Sun -11%  Mon -2%  Tue +1%  Wed +1%  Thu +3%
+  Fri +9%  Sat -1%") shows when a shape was computed; a plain-text note explains when it couldn't
+  be (predecessor left blank, or insufficient real coverage on one or more weekdays) rather than
+  silently applying nothing.
+
+Tests: 4 new engine tests (`dowShapeFor` null-guards + the normalize-to-1.0 property +
+loc-filtering, plus 2 `projectLaunchPlan` tests for the multiplicative apply and the
+no-dowShape-arg regression guard) in `src/__tests__/new-store-ramp.test.js`; 3 new panel tests
+(predecessor field default, the computed-shape summary rendering end to end through a real
+Regenerate click, and the blank-predecessor no-op case) in
+`src/__tests__/dispatch-launch-planner-2026-11-06.test.js`.

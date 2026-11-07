@@ -14,7 +14,7 @@
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { loadDailySalesForStore, loadHourlySalesForStore, loadQuarterHourSalesForStore, loadLaunchPlan, saveLaunchPlanRow } from '../lib/supabase.js';
-import { projectLaunchPlan, blendHourlyShapes, splitDayAcrossHours, blendQuarterHourShapes, splitDayAcrossQuarterHours, DEEP_OVERNIGHT_QTR_SLOTS } from '../engine/new-store-ramp.js';
+import { projectLaunchPlan, blendHourlyShapes, splitDayAcrossHours, blendQuarterHourShapes, splitDayAcrossQuarterHours, DEEP_OVERNIGHT_QTR_SLOTS, dowShapeFor } from '../engine/new-store-ramp.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
 
@@ -33,6 +33,10 @@ const SEED_DEFAULTS = {
     grandOpeningDate: '2026-11-17',
     matureWeeklySales: 46925,
     comparables: [{ loc: '43380', weight: 0.7 }, { loc: '43701', weight: 0.3 }],
+    // The predecessor store being replaced -- same town/trade-area, so its real day-of-week
+    // pattern is genuinely local demand (see dowShapeFor's header in new-store-ramp.js). Optional
+    // and blank by default for any other store with no known predecessor.
+    predecessorLoc: '18213',
     // Owner-stated 2026-11-06: Lindsay opens as a 24-HOUR operation for its first year -- a
     // deliberate owner operating decision, NOT something the Tishomingo/Ponce de Leon ramp-shape
     // comparables predict (their own overnight patterns, if closed, don't apply here). Does not
@@ -43,8 +47,9 @@ const SEED_DEFAULTS = {
 };
 const HISTORY_START = '2015-01-01'; // wide enough to capture any comparable's real first trading day
 
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function dowOf(dateStr) {
-  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(dateStr + 'T12:00:00Z').getUTCDay()];
+  return DOW_LABELS[new Date(dateStr + 'T12:00:00Z').getUTCDay()];
 }
 const fmtMoney = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 }));
 
@@ -92,6 +97,8 @@ export function NewStoreLaunchPlanner({ onClose }) {
   const [grandOpeningDate, setGrandOpeningDate] = React.useState(seed.grandOpeningDate || '');
   const [matureWeeklySales, setMatureWeeklySales] = React.useState(seed.matureWeeklySales ?? '');
   const [comparables, setComparables] = React.useState(seed.comparables || [{ loc: '', weight: 1 }]);
+  const [predecessorLoc, setPredecessorLoc] = React.useState(seed.predecessorLoc || '');
+  const [dowShapeInfo, setDowShapeInfo] = React.useState(null); // {shape, loc} | {note} | null
   const [opsNote, setOpsNote] = React.useState(seed.opsNote || '');
   // 365 (a true 12-month view) is the default -- the 60-day window this used to be hardcoded to
   // never showed enough of the curve to check a mature-run-rate assumption against a real annual
@@ -119,6 +126,8 @@ export function NewStoreLaunchPlanner({ onClose }) {
     setGrandOpeningDate(s.grandOpeningDate || '');
     setMatureWeeklySales(s.matureWeeklySales ?? '');
     setComparables(s.comparables || [{ loc: '', weight: 1 }]);
+    setPredecessorLoc(s.predecessorLoc || '');
+    setDowShapeInfo(null);
     setOpsNote(s.opsNote || '');
     setExpandedDate(null);
     setHourlyBlend(null);
@@ -145,10 +154,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
     setLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const withRows = await Promise.all(
-        realComparables.map(async (c) => ({ ...c, laborRows: await loadDailySalesForStore(c.loc, HISTORY_START, today) })),
-      );
-      const plan = projectLaunchPlan({ loc: selLoc, comparables: withRows, matureWeeklySales: mws, openDate, maxDays });
+      const [withRows, dowShape] = await Promise.all([
+        Promise.all(realComparables.map(async (c) => ({ ...c, laborRows: await loadDailySalesForStore(c.loc, HISTORY_START, today) }))),
+        ensureDowShape(),
+      ]);
+      const plan = projectLaunchPlan({ loc: selLoc, comparables: withRows, matureWeeklySales: mws, openDate, maxDays, dowShape });
       const existingByDate = new Map(rows.map((r) => [r.planDate, r]));
       for (const p of plan) {
         const existing = existingByDate.get(p.planDate);
@@ -167,6 +177,25 @@ export function NewStoreLaunchPlanner({ onClose }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Load the predecessor store's real day-of-week shape (dowShapeFor, new-store-ramp.js) once
+  // per regenerate -- not cached across regenerates like the hourly/qtr blends below, since this
+  // only runs when the owner explicitly clicks Regenerate, not on every day-row expand. Returns
+  // null (no-op multiplier in projectLaunchPlan) when predecessorLoc is blank or the predecessor
+  // doesn't have real coverage on all 7 weekdays; either way dowShapeInfo is set so the panel can
+  // say what happened rather than silently applying nothing.
+  async function ensureDowShape() {
+    if (!predecessorLoc) { setDowShapeInfo(null); return null; }
+    const today = new Date().toISOString().slice(0, 10);
+    const predRows = await loadDailySalesForStore(predecessorLoc, HISTORY_START, today);
+    const shape = dowShapeFor(predRows, predecessorLoc);
+    if (!shape) {
+      setDowShapeInfo({ note: 'No day-of-week shape available for store ' + predecessorLoc + ' (insufficient real history on one or more weekdays) — plan uses no day-of-week adjustment.' });
+      return null;
+    }
+    setDowShapeInfo({ shape, loc: predecessorLoc });
+    return shape;
   }
 
   // Lazily load + blend the comparables' real hourly shape, cached by the comparables' own
@@ -277,7 +306,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
         span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 2 } }, 'Plan Length'),
         h('select', { value: maxDays, onChange: (e) => setMaxDays(Number(e.target.value)), className: 'inp' },
           [[60, '60 days'], [90, '90 days'], [180, '180 days'], [365, '365 days (12 months)']].map(([v, label]) =>
-            h('option', { key: v, value: v }, label))))),
+            h('option', { key: v, value: v }, label)))),
+      div(null,
+        span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 2 } }, 'Predecessor Store (optional, day-of-week shape)'),
+        inp({ placeholder: 'loc', value: predecessorLoc, style: { width: 90 }, className: 'inp',
+          onChange: (e) => setPredecessorLoc(e.target.value) }))),
     div({ style: { marginBottom: 12 } },
       span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 4 } }, 'Comparable stores (loc + weight)'),
       div({ style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
@@ -293,6 +326,11 @@ export function NewStoreLaunchPlanner({ onClose }) {
       err && span({ style: { fontSize: 11, color: 'var(--crit)' } }, err)),
     rows.length > 0 && div({ style: { fontSize: 14, fontWeight: 700, marginBottom: 12 } },
       'Projected Total (' + rows.length + ' days): ' + fmtMoney(rows.reduce((s, r) => s + (r.overrideSales ?? r.projectedSales ?? 0), 0))),
+    dowShapeInfo && (dowShapeInfo.shape
+      ? div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 12 } },
+          'Day-of-week shape (' + dowShapeInfo.loc + '): ' +
+          dowShapeInfo.shape.map((d) => DOW_LABELS[d.dow] + ' ' + (d.frac >= 1 ? '+' : '') + Math.round((d.frac - 1) * 100) + '%').join('  '))
+      : div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 12 } }, dowShapeInfo.note)),
     div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.5 } },
       'Real comparable openings often run ABOVE their own mature run-rate for the first several weeks (grand-opening traffic), not below — check the Projected $ column for a bump before assuming a slow ramp.'),
     opsNote && div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 12, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },
