@@ -82,6 +82,7 @@ describe('Targets Editor Tier 2: custom metrics (task #93, 2026-11-05)', () => {
       const onUpdateSettings = vi.fn();
       await mount(React.createElement(MonthlyProjectionsPanel, {
         ds: freshDs(), stores: [{ loc: A, name: STORE_NAMES[A] }], settings: {}, onClose: () => {}, onUpdateSettings,
+        canOwnProjections: true,
       }));
       await act(async () => { await Promise.resolve(); });
 
@@ -107,6 +108,7 @@ describe('Targets Editor Tier 2: custom metrics (task #93, 2026-11-05)', () => {
       const settings = { monthlyTargetConfig: { customMetrics: [{ id: 'avgCheck', label: 'Avg Check ($)', group: 'Custom Metrics' }] } };
       await mount(React.createElement(MonthlyProjectionsPanel, {
         ds: freshDs(), stores: [{ loc: A, name: STORE_NAMES[A] }], settings, onClose: () => {},
+        canOwnProjections: true,
       }));
       await act(async () => { await Promise.resolve(); });
       await act(async () => { await Promise.resolve(); }); // one more tick past loadCustomMetricTargets().then(...)
@@ -131,7 +133,7 @@ describe('Targets Editor Tier 2: custom metrics (task #93, 2026-11-05)', () => {
 
     it('adding a metric via the Customize editor saves it into yearlyTargetConfig.customMetrics', async () => {
       const onUpdateSettings = vi.fn();
-      await mount(React.createElement(YearlyProjectionsPanel, { ds: freshDs(), stores: [], settings: {}, onClose: () => {}, embedded: true, onUpdateSettings }));
+      await mount(React.createElement(YearlyProjectionsPanel, { ds: freshDs(), stores: [], settings: {}, onClose: () => {}, embedded: true, onUpdateSettings, canOwnProjections: true }));
       const tabBtn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
       await act(async () => { tabBtn.click(); });
 
@@ -150,7 +152,7 @@ describe('Targets Editor Tier 2: custom metrics (task #93, 2026-11-05)', () => {
     it('a pre-configured custom metric renders under its own "Custom Metrics" category tab and edits save to custom_metric_targets, not yearly_targets', async () => {
       loadCustomMetricTargets.mockResolvedValue({ [A]: { avgCheck: { yearly: 6.1 } } });
       const settings = { yearlyTargetConfig: { customMetrics: [{ id: 'avgCheck', label: 'Avg Check ($)', group: 'Custom Metrics' }] } };
-      await mount(React.createElement(YearlyProjectionsPanel, { ds: freshDs(), stores: [], settings, onClose: () => {}, embedded: true }));
+      await mount(React.createElement(YearlyProjectionsPanel, { ds: freshDs(), stores: [], settings, onClose: () => {}, embedded: true, canOwnProjections: true }));
       const tabBtn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
       await act(async () => { tabBtn.click(); });
       await act(async () => { await Promise.resolve(); });

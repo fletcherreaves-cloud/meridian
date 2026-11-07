@@ -70,6 +70,19 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    group: 'Projections & Targets Ownership',
+    items: [
+      // Owner request 2026-11-07: "designate someone... in charge of projections for an
+      // organization as that should not be spread across all roles." Default baseline per the
+      // owner's own words ("safe to assign to DO/VP and above") is DO/VP and above (admin/owner/
+      // vp/do); everyone else needs an explicit src/engine/panel-ownership.js grant (named
+      // delegation, e.g. for a different operator/org) to pass canOwnPanel(). Owner also
+      // confirmed Smart Targets' "Apply as Official" and the Monthly/Yearly Targets editors are
+      // "the same zone" as Projections lock/edit -- one key gates all four write actions.
+      { key: 'projections.own', label: 'Lock/edit Projections, Smart Targets Apply-as-Official, Monthly/Yearly Targets' },
+    ],
+  },
+  {
     group: 'Security',
     items: [
       // Static baseline only -- admin/supervisor always match security_findings' RLS tier, but
@@ -119,6 +132,7 @@ const SUPERVISOR_PERMS = {
   'security.view':          true,
   'payroll.view':           false,
   'security.auditLog':      false,
+  'projections.own':        false,
 };
 
 const MANAGER_PERMS = {
@@ -150,6 +164,7 @@ const MANAGER_PERMS = {
   // build is careful about (nobody sees more than RLS allows).
   'security.view':          true,
   'security.auditLog':      false,
+  'projections.own':        false,
 };
 
 // ── The 7-rung review-hierarchy ladder (dispatch #148) ─────────────────────────
@@ -180,6 +195,8 @@ const VP_PERMS = {
   'security.view':          true,
   'payroll.view':           false, // overridden true in DO_PERMS just below
   'security.auditLog':      false, // stays false in DO_PERMS too -- see that key's own comment
+  // DO/VP and above (owner-stated 2026-11-07) -- true here, inherited by DO_PERMS' spread below.
+  'projections.own':        true,
 };
 
 const DO_PERMS = {
@@ -216,6 +233,7 @@ const GM_PERMS = {
   'security.view':          true,
   'payroll.view':           false,
   'security.auditLog':      false,
+  'projections.own':        false,
 };
 
 const SM_AM_DM_PERMS = {
@@ -241,6 +259,7 @@ const SM_AM_DM_PERMS = {
   'security.view':          true,
   'payroll.view':           false,
   'security.auditLog':      false,
+  'projections.own':        false,
 };
 
 export const ROLE_PERMISSION_TEMPLATES = {

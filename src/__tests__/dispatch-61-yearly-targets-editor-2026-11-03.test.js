@@ -61,7 +61,7 @@ describe('Yearly Targets in-app editor (task #61, 2026-11-03)', () => {
 
   async function openTargetCategories(ds) {
     await act(async () => {
-      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true }));
+      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: true }));
     });
     const tabBtn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
     await act(async () => { tabBtn.click(); });

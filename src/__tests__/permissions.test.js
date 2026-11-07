@@ -436,3 +436,18 @@ describe('permissions.js — security.auditLog (access log, owner request 2026-1
     }
   });
 });
+
+// Owner request 2026-11-07 (projection/targets ownership): "designate someone... in charge of
+// projections for an organization as that should not be spread across all roles"; owner's own
+// words, "safe to assign to DO/VP and above." Gates Projections lock/edit, Smart Targets
+// Apply-as-Official, and Monthly/Yearly Targets saves ("the same zone" per the owner) -- a named
+// panel_owner_grants holder can extend this to someone outside these roles on top of this
+// baseline (see src/engine/panel-ownership.js), but the role baseline itself is exactly these 4.
+describe('permissions.js — projections.own (projection/targets ownership, owner request 2026-11-07)', () => {
+  it('admin/owner/vp/do can lock/edit projections & targets; every other role cannot (without a named grant)', () => {
+    const allowed = ['admin', 'owner', 'vp', 'do'];
+    for (const role of DEFAULT_ROLES) {
+      expect(hasPermission(role.id, 'projections.own')).toBe(allowed.includes(role.id));
+    }
+  });
+});

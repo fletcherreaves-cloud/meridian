@@ -110,18 +110,27 @@ describe('loadUserSettings (batched)', () => {
 describe('App.js startup wiring (source-inspection)', () => {
   const src = readFileSync('src/app/App.js', 'utf8');
 
-  it('routes the 5 T2 startup keys through ONE loadUserSettings(...) call', () => {
+  // ⚠️ UPDATED 2026-11-07 (projection-ownership fork-bug fix) — locked_projections moved OUT of
+  // this batch. user_settings is PRIMARY KEY (user_id, key), so two different real logins would
+  // silently fork into two disconnected copies of locked projections instead of sharing one
+  // shared truth; it now persists to org_config (no user_id column at all) via its own
+  // loadOrgConfig('locked_projections') call, so this batch is down to 4 keys, not 5.
+  it('routes the 4 T2 startup user_settings keys through ONE loadUserSettings(...) call', () => {
     const m = src.match(/loadUserSettings\(\s*\[([^\]]+)\]/);
     expect(m, 'loadUserSettings([...]) call not found in App.js').toBeTruthy();
     const keys = m[1].split(',').map(s => s.trim().replace(/['"]/g, ''));
-    expect(keys).toEqual(['locked_projections', 'ae_params', 'model_assignments', 'dialed_in', 'recurring_rules']);
+    expect(keys).toEqual(['ae_params', 'model_assignments', 'dialed_in', 'recurring_rules']);
   });
 
-  it('none of the 5 batched keys are still fetched via an individual loadUserSetting(...) call', () => {
-    for (const key of ['locked_projections', 'ae_params', 'model_assignments', 'dialed_in', 'recurring_rules']) {
+  it('none of the 4 batched keys are still fetched via an individual loadUserSetting(...) call', () => {
+    for (const key of ['ae_params', 'model_assignments', 'dialed_in', 'recurring_rules']) {
       expect(src, `loadUserSetting('${key}') should have been replaced by the batched read`)
         .not.toMatch(new RegExp(`loadUserSetting\\(\\s*['"]${key}['"]\\s*\\)`));
     }
+  });
+
+  it('locked_projections now loads via loadOrgConfig, not the user_settings batch (fork-bug fix)', () => {
+    expect(src).toMatch(/loadOrgConfig\(\s*['"]locked_projections['"]\s*\)/);
   });
 
   it('loadUserSetting (singular) is still imported -- other callers (swing acks, etc.) are unaffected', () => {

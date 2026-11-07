@@ -478,7 +478,8 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
 
 // PROJECTION WORKSPACE — Enterprise One-Stop Projection Hub
 // Wed-Tue work week | Group toggles | Inline overrides | Lock workflow
-function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections, onSaveLocked}) {
+function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections, onSaveLocked,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners}) {
   const ALL_LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
 
   // ── State ──────────────────────────────────────────────
@@ -759,6 +760,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   // times the button was clicked. Fixed the same way showLockFor/showMonthLockFor
   // already do it correctly: build ONE `next` across every day, save once.
   const lockRow = (loc) => {
+    // Projection/Targets ownership (owner request 2026-11-07) -- DO/VP+ by default, or a named
+    // panel_owner_grants holder (src/engine/panel-ownership.js). The row's own Lock button is
+    // already disabled for a non-owner (see its render below); this is the defensive backstop.
+    if(!canOwnProjections) return;
     const next={...(lockedProjections||{})};
     weekDays.forEach(d=>{
       const amt=getAmt(loc,d);
@@ -767,11 +772,14 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
       const prev=lockedProjections&&lockedProjections[key];
       const originalMonthLock=(prev&&prev.source==='month')
         ?(prev.originalMonthLock||{amt:prev.amt,ts:prev.ts}):(prev&&prev.originalMonthLock)||null;
-      const entry={amt,mode:'locked',source:'week',ts:new Date().toISOString(),by:settings.dmName||'DM'};
+      const entry={amt,mode:'locked',source:'week',ts:new Date().toISOString(),by:userName||'DM'};
       if(originalMonthLock) entry.originalMonthLock=originalMonthLock;
       next[key]=entry;
     });
     onSaveLocked(next);
+    if(onNotifyOwners) onNotifyOwners({grants:projOwnerGrants,actorUserId:userId,
+      title:(userName||'Someone')+' locked a projection',
+      detail:sName(loc)+' — Week of '+weekStart,loc,period:weekStart}).catch(()=>{});
   };
 
   // Batch lock helpers
@@ -796,6 +804,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
 
   // ── Show lock confirmation, then execute lock on confirm ─────────────
   const showLockFor = (locs, label) => {
+    // Same ownership gate as lockRow/approveRow above -- never even open the confirm modal for
+    // a non-owner.
+    if(!canOwnProjections) return;
     const summaries = buildStoreSummaries(locs);
     const periodStr = 'Week of '+new Date(weekStart+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
       +' – '+new Date(weekDays[weekDays.length-1]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
@@ -814,12 +825,15 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             const originalMonthLock = (prev&&prev.source==='month')
               ? (prev.originalMonthLock||{amt:prev.amt,ts:prev.ts}) : (prev&&prev.originalMonthLock)||null;
             const entry={amt,mode:'locked',source:'week',
-              ts:new Date().toISOString(),by:settings.dmName||'DM',notes};
+              ts:new Date().toISOString(),by:userName||'DM',notes};
             if(originalMonthLock) entry.originalMonthLock=originalMonthLock;
             next[key]=entry;
           });
         });
         onSaveLocked(next);
+        if(onNotifyOwners) onNotifyOwners({grants:projOwnerGrants,actorUserId:userId,
+          title:(userName||'Someone')+' locked '+locs.length+' store projection(s)',
+          detail:label+' — Week of '+weekStart+(notes?' ("'+notes+'")':''),period:weekStart}).catch(()=>{});
         // Log to history
         try {
           const log = loadProjectionLog();
@@ -856,6 +870,8 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   };
 
   const showMonthLockFor = (yr,mo,forceRefresh=false) => {
+    // Same ownership gate as lockRow/approveRow/showLockFor above.
+    if(!canOwnProjections) return;
     const monthDays = getMonthCalendarDays(yr,mo);
     const monthName = new Date(yr,mo,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
     // When refreshing, show LIVE forecast numbers in the preview (bypassing any
@@ -898,10 +914,13 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             const amt=forceRefresh?(_cachedForecast(loc,d).forecast||0):fcstAmt(loc,d);
             if(!amt) return;
             next[key]={amt,mode:'locked',source:'month',monthKey:yr+'-'+String(mo+1).padStart(2,'0'),
-              ts:new Date().toISOString(),by:settings.dmName||'DM',notes};
+              ts:new Date().toISOString(),by:userName||'DM',notes};
           });
         });
         onSaveLocked(next);
+        if(onNotifyOwners) onNotifyOwners({grants:projOwnerGrants,actorUserId:userId,
+          title:(userName||'Someone')+(forceRefresh?' refreshed the month plan':' locked the month plan'),
+          detail:monthName+(notes?' ("'+notes+'")':''),period:yr+'-'+String(mo+1).padStart(2,'0')}).catch(()=>{});
         try {
           const log = loadProjectionLog();
           const total = summaries.reduce((a,s)=>a+s.weekTotal,0);
@@ -918,6 +937,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   // #dispatch11 — same last-write-wins defect as lockRow (see its comment): build one
   // `next` across every day, save once.
   const approveRow = (loc) => {
+    // Same ownership gate as lockRow above -- approving still writes the shared lockedProjections
+    // truth, so it's the same sensitive action, not a lesser one.
+    if(!canOwnProjections) return;
     const next={...(lockedProjections||{})};
     weekDays.forEach(d=>{
       const key=loc+'_'+dKey(d);
@@ -927,11 +949,14 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
       const prev=existing;
       const originalMonthLock=(prev&&prev.source==='month')
         ?(prev.originalMonthLock||{amt:prev.amt,ts:prev.ts}):(prev&&prev.originalMonthLock)||null;
-      const entry={amt,mode:'approved',source:'week',ts:new Date().toISOString(),by:settings.dmName||'DM'};
+      const entry={amt,mode:'approved',source:'week',ts:new Date().toISOString(),by:userName||'DM'};
       if(originalMonthLock) entry.originalMonthLock=originalMonthLock;
       next[key]=entry;
     });
     onSaveLocked(next);
+    if(onNotifyOwners) onNotifyOwners({grants:projOwnerGrants,actorUserId:userId,
+      title:(userName||'Someone')+' approved a projection',
+      detail:sName(loc)+' — Week of '+weekStart,loc,period:weekStart}).catch(()=>{});
   };
 
   // ── Period navigation ────────────────────────────────────
@@ -1203,8 +1228,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
       td({style:{padding:'2px 6px',whiteSpace:'nowrap'}},
         div({style:{display:'flex',gap:2}},
           btn({className:'btn btn-sm',
-            style:{fontSize:'8px',padding:'1px 5px',color:allApproved?'#10b981':allLocked?'#a5b4fc':'var(--text3)'},
-            title:allApproved?'Approved':allLocked?'Approve this store row':'Lock this store row',
+            style:{fontSize:'8px',padding:'1px 5px',color:allApproved?'#10b981':allLocked?'#a5b4fc':'var(--text3)',
+              opacity:canOwnProjections?1:.5},
+            disabled:!canOwnProjections,
+            title:!canOwnProjections?'Only a Projections & Targets owner (DO/VP and above, or a granted user) can lock/approve projections':allApproved?'Approved':allLocked?'Approve this store row':'Lock this store row',
             // #dispatch11 — was allApproved?approveRow:lockRow, an inverted condition that
             // made mode:'approved' unreachable from the UI: approveRow only ever fired once
             // a row was ALREADY approved (re-approving, a no-op), and a not-yet-locked row
@@ -1584,13 +1611,16 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             btn({className:'btn btn-sm',style:{marginLeft:4,fontSize:'9px',opacity:.7},
               title:'Refresh projections without showing the Pre-Forecast Brief',
               onClick:refreshWeek,disabled:loading},'↻ Quick Refresh'),
-            btn({className:'btn btn-sm btn-a',style:{marginLeft:4},
-              title:'Review model health + projected totals, then lock all stores — opens confirmation dialog',
+            btn({className:'btn btn-sm btn-a',style:{marginLeft:4,opacity:canOwnProjections?1:.5},
+              disabled:!canOwnProjections,
+              title:!canOwnProjections?'Only a Projections & Targets owner (DO/VP and above, or a granted user) can lock projections':'Review model health + projected totals, then lock all stores — opens confirmation dialog',
               onClick:lockAllStores},'🔒 Lock All'),
             // Patch-based batch lock — Week-only (v4.195): Month already has
             // its own explicit Lock Month action, so this only needs to live
             // alongside Lock All here rather than in the always-visible header.
             h('select',{
+              disabled:!canOwnProjections,
+              title:!canOwnProjections?'Only a Projections & Targets owner (DO/VP and above, or a granted user) can lock projections':undefined,
               onChange:e=>{
                 if(!e.target.value) return;
                 const patch=e.target.value;
@@ -1602,7 +1632,8 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                 e.target.value='';
               },
               style:{fontSize:'9px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
-                borderRadius:'var(--r)',color:'var(--text2)',padding:'3px 8px',cursor:'pointer',marginLeft:4}},
+                borderRadius:'var(--r)',color:'var(--text2)',padding:'3px 8px',
+                cursor:canOwnProjections?'pointer':'default',marginLeft:4,opacity:canOwnProjections?1:.5}},
               h('option',{value:''},'🔒 Lock by Patch...'),
               ...['Langford','Spencer','Podroza','Vaughn','Estrada','Denley'].map(p=>
                 h('option',{key:p,value:p},p)
@@ -1617,8 +1648,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             // locked the single week on screen, while the confirmation/toast
             // said "Month (July 2026)" — misleading. Now actually locks
             // every calendar day of the target month.
-            btn({className:'btn btn-sm',style:{marginLeft:8,color:'var(--amber)',borderColor:'rgba(245,158,11,.35)'},
-              title:'Lock the business-plan numbers for every day of the month. Individual weeks can still be refined later with fresher data — that refinement always wins over this month plan for those specific days.',
+            btn({className:'btn btn-sm',style:{marginLeft:8,color:'var(--amber)',borderColor:'rgba(245,158,11,.35)',opacity:canOwnProjections?1:.5},
+              disabled:!canOwnProjections,
+              title:!canOwnProjections?'Only a Projections & Targets owner (DO/VP and above, or a granted user) can lock the month plan':'Lock the business-plan numbers for every day of the month. Individual weeks can still be refined later with fresher data — that refinement always wins over this month plan for those specific days.',
               onClick:()=>{
                 const ws=new Date(weekStart+'T12:00:00');
                 showMonthLockFor(ws.getFullYear(),ws.getMonth());
@@ -1628,8 +1660,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             // is a safe no-op on days already locked at the month level; this
             // is the explicit action for "re-run the plan with what we know
             // now." Week-refined days are always left untouched either way.
-            btn({className:'btn btn-sm',style:{marginLeft:4,color:'#818cf8',borderColor:'rgba(165,180,252,.35)'},
-              title:'Re-pull current forecast data into the month plan for every day NOT already refined at the week level. Days already locked/refined at the week level are never touched.',
+            btn({className:'btn btn-sm',style:{marginLeft:4,color:'#818cf8',borderColor:'rgba(165,180,252,.35)',opacity:canOwnProjections?1:.5},
+              disabled:!canOwnProjections,
+              title:!canOwnProjections?'Only a Projections & Targets owner (DO/VP and above, or a granted user) can refresh the month plan':'Re-pull current forecast data into the month plan for every day NOT already refined at the week level. Days already locked/refined at the week level are never touched.',
               onClick:()=>{
                 const ws=new Date(weekStart+'T12:00:00');
                 showMonthLockFor(ws.getFullYear(),ws.getMonth(),true);

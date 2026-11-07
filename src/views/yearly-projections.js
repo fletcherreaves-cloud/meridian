@@ -236,15 +236,17 @@ const fromEditValue = (kind, s) => {
 // replacing Excel-upload-only entry). Same interaction shape as labor-allocation.js's
 // TargetTpphCell -- click to reveal an input, commit on blur/Enter, Escape to cancel -- so the
 // whole app has one click-to-edit convention, not a bespoke one per panel.
-function EditableTargetCell({ loc, field, value, onSave }) {
+function EditableTargetCell({ loc, field, value, onSave, disabled, disabledTitle }) {
   const { useState } = React;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   if (!editing) {
+    // Projection/Targets ownership (owner request 2026-11-07) -- same zone as Projections
+    // lock/edit and Monthly Targets.
     return h('td', {
-      style: { ...{ padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' }, cursor: 'pointer' },
-      title: 'Click to set ' + field.l + ' for this store',
-      onClick: () => { setDraft(toEditValue(field.kind, value)); setEditing(true); },
+      style: { ...{ padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' }, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? .75 : 1 },
+      title: disabled ? disabledTitle : 'Click to set ' + field.l + ' for this store',
+      onClick: disabled ? undefined : () => { setDraft(toEditValue(field.kind, value)); setEditing(true); },
     }, field.fmt(value));
   }
   const commit = () => {
@@ -306,7 +308,8 @@ function aggregate(rows) {
 // Sales view's data model: ds.allYearlyTargets[year] (Supabase-persisted, Part 1),
 // with ds.targets (flattened "most recent year", may include a same-session upload
 // not yet round-tripped through Supabase) preferred for the current calendar year.
-function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onUpdateSettings }) {
+function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onUpdateSettings,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners }) {
   const { useState, useMemo, useEffect } = React;
   // Target field customization (owner-requested 2026-11-04) -- "add or remove metrics and
   // categories on monthly and yearly." applyCategoryConfig flattens/reapplies/regroups
@@ -395,6 +398,10 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   // cell in the app -- a transient save failure surfaces on the next Excel re-upload/reload, not
   // as its own error UI.
   const handleSaveField = (loc, fieldKey, value) => {
+    // Projection/Targets ownership (owner request 2026-11-07) -- "the same zone" as Projections
+    // lock/edit and Monthly Targets. EditableTargetCell's own disabled state already keeps a
+    // non-owner from reaching this at all; this defensive check covers any other caller.
+    if (!canOwnProjections) return;
     setEdits(prev => ({ ...prev, [loc]: { ...(prev[loc] || {}), [fieldKey]: value } }));
     // Task #93 -- a custom metric (no column in yearly_targets) saves to its own table instead,
     // one field at a time, same shape saveDaypartTpphTarget already established.
@@ -404,6 +411,12 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
     }
     const fullRow = { ...(effectiveByLoc[loc] || {}), [fieldKey]: value };
     saveYearlyTargets({ [loc]: fullRow }, year, 'override').catch(() => {});
+    if (onNotifyOwners) {
+      onNotifyOwners({ grants: projOwnerGrants, actorUserId: userId,
+        title: (userName || 'Someone') + ' edited a Yearly Target',
+        detail: (STORE_NAMES[loc] || loc) + ' — ' + fieldKey + ' for ' + year,
+        loc, period: String(year) }).catch(() => {});
+    }
   };
 
   // Dispatch #147 -- lift the currently-active category's full data up to the parent panel for
@@ -445,7 +458,9 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
         h('tbody', null,
           ...rows.map(loc => h('tr', { key: loc },
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + loc)),
-            ...active.fields.map(f => h(EditableTargetCell, { key: f.k, loc, field: f, value: (effectiveByLoc[loc] || {})[f.k], onSave: handleSaveField })))),
+            ...active.fields.map(f => h(EditableTargetCell, { key: f.k, loc, field: f, value: (effectiveByLoc[loc] || {})[f.k], onSave: handleSaveField,
+              disabled: !canOwnProjections,
+              disabledTitle: 'Only a Projections & Targets owner (DO/VP and above, or a granted user) can edit yearly targets' })))),
           [['Oklahoma', ok], ['Florida', fl], ['Grand Total', rows]].map(([label, locs]) => locs.length ? h('tr', { key: label, style: { background: 'rgba(245,188,0,.06)' } },
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 800, fontFamily: 'inherit', color: 'var(--amber)' } }, label + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '(' + locs.length + ')')),
             ...active.fields.map(f => h('td', { key: f.k, style: { ...td, fontWeight: 800 } }, f.fmt(catAgg(locs, f))))) : null)))),
@@ -462,7 +477,8 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   );
 }
 
-export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded, onUpdateSettings }) {
+export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded, onUpdateSettings,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners }) {
   const { useState, useMemo, useEffect, useCallback } = React;
   const now = new Date();
   const thisYear = now.getFullYear();
@@ -584,7 +600,8 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
         view === 'targets'
-          ? h(TargetCategoriesView, { ds, year, thisYear, onExportReady: setTargetsData, settings, onUpdateSettings })
+          ? h(TargetCategoriesView, { ds, year, thisYear, onExportReady: setTargetsData, settings, onUpdateSettings,
+              canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners })
           : [
         loading
           ? div({ key: 'load', style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + year + ' actuals…')

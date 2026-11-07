@@ -5,6 +5,8 @@ import { tokenizeRows } from '../engine/identity-vault.js';
 import { defaultVisibilityFor } from '../constants.js';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 import { computeErrorFingerprint } from '../engine/error-telemetry.js';
+import { buildAppNotification } from '../engine/app-notifications.js';
+import { ownerNotificationTargets } from '../engine/panel-ownership.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -4055,6 +4057,61 @@ export async function loadOrgConfigs(keys) {
   return out;
 }
 
+// ── Generic org_config single-key read/write (task "projection ownership", 2026-11-07) ──────────
+// org_config is already the shared, TENANT-wide (not per-user) blob table org_roles/app_settings/
+// store_registry/contact_registry/app_user_targets all use -- see that table's own header comment
+// in schema.sql. Reused here to fix locked_projections' real bug: saveUserSetting/loadUserSetting
+// key it to `user_settings` (PRIMARY KEY (user_id, key)), so two different real logins would
+// silently fork into two disconnected copies of "the truth" instead of sharing one. org_config has
+// no user_id column at all -- every signed-in user reads/writes the SAME row for a given key,
+// which is the actual requirement for data that's supposed to be the org's shared truth.
+export async function saveOrgConfig(key, data) {
+  if (!supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.from('org_config').upsert(
+    { key, data, updated_by: user?.id || null, updated_at: new Date().toISOString() },
+    { onConflict: 'key' });
+}
+
+export async function loadOrgConfig(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('org_config')
+    .select('data').eq('key', key).maybeSingle();
+  if (error) return null;
+  return data?.data ?? null;
+}
+
+// ── Panel ownership grants (owner request 2026-11-07) ────────────────────────────────────────────
+// Named delegation on top of the 'projections.own' role baseline (DO/VP and above by default --
+// src/engine/permissions.js) -- lets an owner grant a specific other person the same standing
+// regardless of role (the owner's own "different organization" scenario). Pure IO; the gate
+// question itself (canOwnPanel()) and the notification-targeting question (ownerNotificationTargets())
+// live in src/engine/panel-ownership.js, kept Supabase-free for testability.
+export async function loadPanelOwnerGrants(panelId = 'projections') {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('panel_owner_grants')
+    .select('*').eq('panel_id', panelId).is('revoked_at', null);
+  if (error) { console.warn('[panel_owner_grants] load error (table may not exist yet — run supabase/schema-panel-ownership-2026-11-07.sql):', error.message); return []; }
+  return data || [];
+}
+
+export async function grantPanelOwnership(panelId, userId, userLabel) {
+  if (!supabase || !userId) return { error: 'missing user' };
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error } = await supabase.from('panel_owner_grants')
+    .insert({ panel_id: panelId, user_id: userId, user_label: userLabel || null, granted_by: user?.id || null });
+  if (error) { console.warn('[panel_owner_grants] grant error:', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
+export async function revokePanelOwnership(grantId) {
+  if (!supabase || !grantId) return { error: 'missing grant id' };
+  const { error } = await supabase.from('panel_owner_grants')
+    .update({ revoked_at: new Date().toISOString() }).eq('id', grantId);
+  if (error) { console.warn('[panel_owner_grants] revoke error:', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
 // ── Org assignment audit (owner, 2026-10-06) ──────────────────────────────────
 // "I want to ensure the effective dates for changes are retained so if I remove a supervisor
 // from a location assignment, I need to know that we have a stored record somewhere of the
@@ -5368,6 +5425,17 @@ export async function insertAppNotifications(rows) {
   const { error } = await supabase.from('app_notifications').insert(rows);
   if (error) { console.warn('[app_notifications] insert error (table may not exist yet — run supabase/schema-app-notifications.sql):', error.message); return { saved: 0, error: error.message }; }
   return { saved: rows.length };
+}
+
+// Convenience wrapper for the projection-ownership cross-user awareness ask (owner, 2026-11-07):
+// "if one user logged in and makes changes to projections and another user follows up and logged
+// in, they're notified that the first user has already done certain things." One call from each
+// gated write site (Projections lock, Smart Targets Apply-as-Official, Monthly/Yearly Targets
+// save) instead of re-deriving the target_roles/target_user_ids shape at each of the four.
+export async function notifyPanelOwners({ panelId = 'projections', grants, actorUserId, title, detail, loc, period }) {
+  const targets = ownerNotificationTargets(panelId, grants, actorUserId);
+  const row = { ...buildAppNotification({ type: 'panel_ownership', title, detail, loc, period, severity: 'info' }), ...targets };
+  return insertAppNotifications([row]);
 }
 
 export async function markAppNotificationRead(id) {

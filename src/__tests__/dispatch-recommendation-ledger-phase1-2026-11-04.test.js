@@ -118,6 +118,7 @@ describe('Recommendation Accuracy Ledger capture (task #80 follow-on, integratio
     await act(async () => {
       root.render(React.createElement(MonthlyProjectionsPanel, {
         ds, stores: [{ loc: A, name: STORE_NAMES[A] }], settings: {}, onClose: () => {},
+        canOwnProjections: true,
       }));
     });
     await act(async () => { await Promise.resolve(); });

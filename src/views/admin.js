@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { supabase, logAppAccess } from '../lib/supabase.js';
+import { supabase, logAppAccess, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership } from '../lib/supabase.js';
 import {
   PERMISSION_GROUPS, DEFAULT_ROLES,
   getOrgRoles, saveOrgRoles, pushOrgRolesToSupabase,
@@ -597,6 +597,89 @@ function RolesTab({ orgRoles, setOrgRoles, userRole, fullAccess }) {
 }
 
 // ── Main Panel ─────────────────────────────────────────────────────────────────
+// ── Projection/Targets Owners (owner request 2026-11-07) ───────────────────────
+// Named delegation on top of the 'projections.own' role baseline (DO/VP and above by default).
+// "designate someone while allowing other people to be added as well to be in charge of
+// projections for an organization... option to grant access from those role levels to another
+// user if the need arose based on a different organization" (owner's own words). Gates
+// Projections lock/edit, Smart Targets Apply-as-Official, and Monthly/Yearly Targets saves --
+// "the same zone" per the owner. Visible only to an existing owner (role baseline or an active
+// grant), so a non-owner can never see or reach this tab.
+function OwnersTab() {
+  const [users, setUsers] = useState([]);
+  const [grants, setGrants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pickUserId, setPickUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    const g = await loadPanelOwnerGrants('projections');
+    setGrants(g);
+    if (supabase) {
+      const { data, error: err } = await supabase.from('profiles')
+        .select('id,name,email,role').order('name', { ascending: true });
+      if (err) setError('Could not load users: ' + err.message);
+      else setUsers(data || []);
+    }
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const grantedIds = new Set(grants.map(g => g.user_id));
+  const pickable = users.filter(u => !grantedIds.has(u.id));
+
+  const addGrant = async () => {
+    if (!pickUserId) return;
+    const u = users.find(x => x.id === pickUserId);
+    setBusy(true);
+    const res = await grantPanelOwnership('projections', pickUserId, u ? (u.name || u.email) : null);
+    setBusy(false);
+    if (res.error) { alert('Grant failed: ' + res.error); return; }
+    setPickUserId('');
+    load();
+  };
+
+  const removeGrant = async (grantId) => {
+    setBusy(true);
+    const res = await revokePanelOwnership(grantId);
+    setBusy(false);
+    if (res.error) { alert('Revoke failed: ' + res.error); return; }
+    load();
+  };
+
+  const nameFor = (u) => u.name || u.email || u.id;
+
+  const grantRows = grants.map(g => div({ key: g.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: S2, border: `1px solid ${BDR}`, borderRadius: R } },
+    div({ style: { flex: 1, fontSize: 12, color: TEXT } }, g.user_label || g.user_id),
+    div({ style: { fontSize: 10, color: TEXT3 } }, 'granted ' + new Date(g.granted_at).toLocaleDateString()),
+    btn({ className: 'btn btn-sm', style: { color: '#ef4444' }, onClick: () => removeGrant(g.id), disabled: busy }, 'Revoke')));
+
+  const grantList = !grants.length
+    ? div({ style: { fontSize: 12, color: TEXT3 } }, 'No named grants — only the Admin/Owner/VP/DO role baseline currently applies.')
+    : div({ style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...grantRows);
+
+  const pickerOptions = pickable.map(u => opt({ key: u.id, value: u.id }, nameFor(u) + ' (' + u.role + ')'));
+
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+    div({ style: { fontSize: 12, color: TEXT2, lineHeight: 1.5 } },
+      'Admin/Owner/VP/DO roles can always lock/edit Projections, apply Smart Targets as Official, ' +
+      'and edit Monthly/Yearly Targets — that baseline never needs a grant below. Add a specific ' +
+      'person here only to extend that same standing to someone outside those roles (e.g. a ' +
+      'trusted operator at a different organization).'),
+    error && div({ style: { color: '#ef4444', fontSize: 12 } }, error),
+    div({ style: { display: 'flex', gap: 8, alignItems: 'center' } },
+      sel({ value: pickUserId, onChange: e => setPickUserId(e.target.value), style: { ...inputStyle, flex: 1 }, disabled: loading || busy },
+        opt({ value: '' }, loading ? 'Loading users…' : 'Select a user to grant…'),
+        ...pickerOptions),
+      btn({ className: 'btn btn-sm btn-a', onClick: addGrant, disabled: !pickUserId || busy }, '+ Grant Ownership')),
+    div(null,
+      div({ style: { fontSize: 10, fontWeight: 700, color: TEXT3, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 } },
+        'Named Owners (' + grants.length + ')'),
+      grantList));
+}
+
 export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRoles, userRole }) {
   const [orgRoles, setOrgRoles] = useState(() => initRoles || getOrgRoles());
   // Owner request 2026-11-02: "delegated sub-role management." App.js's own onOpenAdmin gate now
@@ -605,6 +688,11 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   // Fails OPEN (fullAccess=true) when userRole is omitted, matching this panel's pre-existing
   // behavior for any caller that hasn't been updated to pass it yet; every real caller does.
   const fullAccess = !userRole || hasPermission(userRole, 'users.manage.all', orgRoles);
+  // Projection/Targets Owners tab (owner request 2026-11-07) -- visible only to an existing
+  // owner (the 'projections.own' role baseline; a named grant-holder with no other admin access
+  // manages their own zone through App.js's own UI, not here, so this tab doesn't need to check
+  // grants too -- it only needs to exist for someone who already has some admin-panel access).
+  const canOwnProjections = !userRole || hasPermission(userRole, 'projections.own', orgRoles);
   const [tab, setTab] = useState(fullAccess ? 'users' : 'roles');
 
   // Owner request 2026-10-17 (app_access_log) -- this panel only ever mounts once App.js's own
@@ -620,6 +708,7 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   const tabs = [
     ...(fullAccess ? [{ key:'users', label:'Users' }] : []),
     { key:'roles', label:'Roles & Permissions' },
+    ...(canOwnProjections ? [{ key:'owners', label:'Projections & Targets Owners' }] : []),
   ];
 
   return h(ModalShell,{
@@ -638,5 +727,6 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   },
     tab==='users' && fullAccess && h(UsersTab,{orgRoles}),
     tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles,userRole,fullAccess}),
+    tab==='owners' && canOwnProjections && h(OwnersTab),
   );
 }

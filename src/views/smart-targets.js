@@ -444,7 +444,8 @@ export function runMonthlyBacktest(ds, metric, seriesByLoc, months, opts = {}) {
   return out;
 }
 
-export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
+export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners }) {
   const { useState, useMemo, useEffect, useRef } = React;
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState('all');
@@ -627,8 +628,12 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   };
 
   // Push Smart → Official (monthly_targets) for the upcoming month. entries = rows.
+  // Projection/Targets ownership (owner request 2026-11-07) -- Apply-as-Official is "the same
+  // zone" as Projections lock/edit per the owner, so it's gated by the same canOwnProjections
+  // (DO/VP+ by default, or a named panel_owner_grants holder -- see src/engine/panel-ownership.js).
   const applyOfficial = async (entries) => {
     if (!metric.officialCol || applyBusy) return;
+    if (!canOwnProjections) { setApplyMsg('⚠ Only a Projections & Targets owner (DO/VP and above, or a granted user) can apply official targets'); return; }
     const rows = (entries || []).filter(r => r && r.smart != null);
     if (!rows.length) return;
     setApplyBusy(true); setApplyMsg('Applying ' + rows.length + '…');
@@ -638,6 +643,12 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     setAppliedOff(p => { const n = { ...p }; rows.forEach(r => { n[locNum(r.loc)] = r.smart; }); return n; });
     setApplyMsg('✓ Applied ' + rows.length + ' to ' + targetLabel);
     setTimeout(() => setApplyMsg(''), 3000);
+    if (onNotifyOwners) {
+      onNotifyOwners({ grants: projOwnerGrants, actorUserId: userId,
+        title: (userName || 'Someone') + ' applied Smart Targets as Official',
+        detail: rows.length + ' store(s) — ' + metric.label + ' for ' + targetLabel,
+        period: targetYM.ty + '-' + String(targetYM.tm).padStart(2, '0') }).catch(() => {});
+    }
   };
 
   const model = useMemo(() => {
@@ -937,7 +948,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     metric.officialCol ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' } },
       appliedOff[locNum(r.loc)] != null
         ? span({ style: { fontSize: 8.5, fontWeight: 800, color: '#10b981' }, title: 'Applied to ' + targetLabel + ' official' }, '✓ Applied')
-        : btn({ onClick: () => applyOfficial([r]), disabled: r.smart == null || applyBusy, title: 'Set this store’s Smart number as the official target for ' + targetLabel, style: { padding: '1px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 9, fontWeight: 700, cursor: r.smart != null && !applyBusy ? 'pointer' : 'default' } }, '→ Official')) : null);
+        : btn({ onClick: () => applyOfficial([r]), disabled: r.smart == null || applyBusy || !canOwnProjections,
+            title: !canOwnProjections ? 'Only a Projections & Targets owner (DO/VP and above, or a granted user) can apply official targets' : 'Set this store’s Smart number as the official target for ' + targetLabel,
+            style: { padding: '1px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 9, fontWeight: 700, cursor: r.smart != null && !applyBusy && canOwnProjections ? 'pointer' : 'default', opacity: canOwnProjections ? 1 : .5 } }, '→ Official')) : null);
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   // CSV numeric formatter — ratio metrics keep precision (labor % as decimal, OEPE
@@ -995,7 +1008,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
           h('optgroup', { label: '— Patches —' }, ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
           h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
           h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
-        (!showBacktest && metric.officialCol) ? btn({ onClick: () => { if (window.confirm('Apply the Smart ' + metric.label.split(' ')[0] + ' target as the OFFICIAL target for ' + targetLabel + ' across ' + shown.length + ' shown store(s)? This writes monthly_targets and feeds Projections.')) applyOfficial(shown); }, disabled: !shown.length || applyBusy, title: 'Write the Smart number to the official monthly_targets for ' + targetLabel + ' (all shown stores)', style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--amber)', background: applyBusy ? 'var(--surf)' : 'rgba(245,188,0,.14)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length && !applyBusy ? 'pointer' : 'default' } }, '✓ Apply as Official') : null,
+        (!showBacktest && metric.officialCol) ? btn({ onClick: () => { if (window.confirm('Apply the Smart ' + metric.label.split(' ')[0] + ' target as the OFFICIAL target for ' + targetLabel + ' across ' + shown.length + ' shown store(s)? This writes monthly_targets and feeds Projections.')) applyOfficial(shown); }, disabled: !shown.length || applyBusy || !canOwnProjections,
+            title: !canOwnProjections ? 'Only a Projections & Targets owner (DO/VP and above, or a granted user) can apply official targets' : 'Write the Smart number to the official monthly_targets for ' + targetLabel + ' (all shown stores)',
+            style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--amber)', background: applyBusy ? 'var(--surf)' : 'rgba(245,188,0,.14)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length && !applyBusy && canOwnProjections ? 'pointer' : 'default', opacity: canOwnProjections ? 1 : .5 } }, '✓ Apply as Official') : null,
         applyMsg ? span({ style: { fontSize: 10, fontWeight: 600, color: applyMsg.startsWith('⚠') ? '#ef4444' : '#10b981' } }, applyMsg) : null,
         btn({ onClick: showBacktest ? exportBacktestCSV : exportCSV, disabled: showBacktest ? !backtestShown.length : !shown.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: (showBacktest ? backtestShown.length : shown.length) ? 'pointer' : 'default' } }, '⬇ CSV'),
         !showBacktest && btn({ onClick: printReport, disabled: !shown.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '🖨 Print'),
