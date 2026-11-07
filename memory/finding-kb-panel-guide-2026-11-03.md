@@ -1158,3 +1158,30 @@ estate-wide pattern.
 every other wiring in this doc — local build (clean, within payload budget) + full suite
 (773/773 files, 7083+/7083+ tests), no new test since this is a pure content+wiring addition
 with no logic change.
+
+## 2026-11-07 — closing out the original judgment-call-tier list (v5.680)
+
+Re-grepped the two remaining names from the ORIGINAL judgment-call-tier list (Phase 2's own
+framing): `AIBacktestScanner` and `CustomizePanel`-sub-tabs. Both turned out to have real,
+already-written `KB_ARTICLES` entries (`anomaly_scan_guide`, `performance_calculator_guide`,
+`review_target_overrides_guide`) that were simply never wired — the same dangling-reference
+shape as every other fix in this file, not new content needed.
+
+- **`AIBacktestScanner`** — Phase 3's own note said this was "embedded directly into `App.js` at
+  its call site, not wrapped in its own `RoutePanelShell`." Re-checked directly: it IS wrapped,
+  just in a `ModalShell` (`title:'🔍 Historical Sales Anomaly Scan'`), not a `RoutePanelShell` —
+  a different shell component, but the same `subtitle` slot exists on both. Wired
+  `anomaly_scan_guide` there.
+- **`performance-calculator.js`**'s `PerformanceCalculatorSection` (the Customize → Calculator
+  sub-tab) has its own hand-rolled header div (🧮 icon + title + description), exactly the Data
+  Manager workaround pattern. Wired `performance_calculator_guide` there.
+- **`targets-editor.js`**'s `TargetsEditorSection` (the Customize → Targets sub-tab) has NO title
+  div at all — just a description line directly in a bordered info box. Added the icon as a
+  sibling inside that same box rather than inventing a title it never had.
+
+**This closes the original judgment-call-tier list from Phase 2/3** (Signals, SAGE,
+`labor-analysis`, `forms-library`, `security-panel`, `AIBacktestScanner`,
+`ProductMixPanel`/`DARDaypartPanel`, `CustomizePanel`-sub-tabs) — every one of those eight items
+is now wired. **Running total: 39 of ~117 real `KB_ARTICLES` keys wired.** Verified the same way
+as every prior batch — local build (clean, within payload budget) + full suite, no new tests
+(pure wiring, no logic change).

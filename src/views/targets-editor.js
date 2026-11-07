@@ -27,6 +27,7 @@ import {
   indexTargetOverrides, resolveOverrideWithSource,
 } from '../engine/target-overrides.js';
 import { mergedTargetsForLoc } from '../engine/review-engine.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -117,9 +118,11 @@ export function TargetsEditorSection({ ds }) {
 
   return div({ style: { padding: 4, display: 'flex', flexDirection: 'column', gap: 14 } },
     div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 2, padding: '8px 12px',
-      background: 'var(--surf2)', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', lineHeight: 1.5 } },
-      'Set Performance Review targets by Company / State / Patch / Store — no re-upload needed.',
-      msg && span({ style: { marginLeft: 8, fontWeight: 700, color: 'var(--text2)' } }, busy ? '…' : msg)),
+      background: 'var(--surf2)', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 4 } },
+      div({ style: { flex: 1 } },
+        'Set Performance Review targets by Company / State / Patch / Store — no re-upload needed.',
+        msg && span({ style: { marginLeft: 8, fontWeight: 700, color: 'var(--text2)' } }, busy ? '…' : msg)),
+      h(InfoIcon, { articleKey: 'review_target_overrides_guide' })),
     // ── field picker ──
     div(null, label9('Target field'),
       div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
