@@ -1,5 +1,14 @@
 name: Movers Alert Run
 
+# ⚠️ PAUSED (owner, 2026-11-07) — the workflow_run auto-trigger is deliberately commented out
+# below. End-to-end verified live the same day (a real CRIT fired for Sulphur, landed correctly
+# in app_notifications with the right target_roles), but the owner wants this held until a real
+# GM/AS/DO account with its own device push subscription exists — today the only live accounts
+# are the owner's own ('manager'/'admin' role), so target_roles filtering already returns zero
+# recipients and nothing actually reaches a phone, but the owner asked to hold it explicitly
+# rather than rely on that incidental zero. RE-ENABLE by uncommenting the `workflow_run:` block
+# below once a real target-role account + subscription is set up — nothing else needs to change.
+#
 # Fires on OCCURRENCE (task #91, owner decision 2026-11-07) — runs right after "QSRSoft Daily
 # Activity Pull" completes, rather than its own independent schedule, so a bad day is flagged as
 # soon as that day's real DAR data lands. See scripts/movers-alert-run.mjs's own header and
@@ -11,11 +20,11 @@ name: Movers Alert Run
 # workflows only, and this one has no cron (reactive on-occurrence + manual dispatch only). If
 # this ever gains its own cron fallback, add it to that list in the same change.
 on:
-  workflow_run:
-    workflows:
-      - QSRSoft Daily Activity Pull
-    types:
-      - completed
+  # workflow_run:
+  #   workflows:
+  #     - QSRSoft Daily Activity Pull
+  #   types:
+  #     - completed
   workflow_dispatch:
 
 jobs:
