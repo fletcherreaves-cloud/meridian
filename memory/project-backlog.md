@@ -947,3 +947,14 @@ Monthly Targets) is in `plan-targets-system-2026-11-02.md`.
       own legal entity separate from the restaurant-operating business, to contain liability.
       Recommended: a real business/IP attorney for the actual documents — can help draft a first
       pass for their review when picked up, not a substitute for counsel.
+12. **Notes 73 (2026-11-07) — five queued-for-later ideas, none scoped yet.** Full text in
+    `memory/notes-73-queue.md`. Summary: (a) per-panel info-icon help — likely a re-hit, check
+    task #75's KB InfoIcon rollout coverage first; (b) a UI/UX consistency QC pass across every
+    menu/dropdown/selector + a standardization plan — check `memory/feedback-selector-ui-standard.md`
+    and `memory/panel-contract.md` first; (c) systematic role-based depth/terminology/perspective
+    tuning per panel, generalizing the existing "Voice by role" rule beyond the few panels that
+    already do it; (d) more interactivity — contextual help links (incl. external), Why-Engine-style
+    cause→practical-remedy coaching, and a currently-nonexistent "celebrate the wins" mechanism;
+    (e) an app-wide "lean and mean" real-estate review — what should be retired/relocated out of
+    prime placement (Test Kitchen population, dev-only panels, one-off diagnostics), a product
+    judgment call (Tier C) requiring a report + recommendation before any visible change.
