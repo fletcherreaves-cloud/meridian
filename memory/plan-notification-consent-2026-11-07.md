@@ -60,14 +60,18 @@ every other path (plain `LoginScreen` submit) is an existing account signing in 
   so the consent screen doesn't duplicate it and `DeviceAlertsToggle` was refactored to call the
   same shared functions — one implementation, two UIs.
 
-## Handoff — DDL required before this can record a real choice
+## Handoff — DONE (2026-11-07, owner ran the migration same day)
 
 `supabase/schema-notification-consent.sql` adds `profiles.notification_consent` /
-`notification_consent_at` and the `set_notification_consent()` RPC. **Not run by this session**
-(DDL is strictly the owner's own action per CLAUDE.md). Until it runs, `setNotificationConsent()`
-calls fail silently (best-effort, wrapped in try/catch in `NotificationConsentScreen` — never
-blocks entry to the app) and the screen will simply show again on the next brand-new account's
-first sign-in. No existing behavior changes until the SQL is run.
+`notification_consent_at` and the `set_notification_consent()` RPC. **Confirmed live** via direct
+service-role REST calls, calibrated against a deliberately wrong column/choice to rule out a
+false positive: `profiles?select=id,notification_consent,notification_consent_at` returns `200`
+with real (null) values, while a misspelled column name returns `42703`; `rpc/set_notification_
+consent` with an invalid `choice` returns the function's own `raise exception` (`P0001`,
+"invalid notification_consent value: bogus"), and a valid `choice` returns `204`. The RPC calls
+made for this verification ran under the service-role key, which carries no `auth.uid()`, so
+`where id = auth.uid()` matched zero rows — no real profile was touched by the check itself.
+The feature is fully live: a brand-new user's first sign-in will now persist their real choice.
 
 ## What this does NOT do
 
