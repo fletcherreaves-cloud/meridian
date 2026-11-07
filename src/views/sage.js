@@ -9,6 +9,7 @@ import { businessDate } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifelenz-labor-agg.js';
 // Cross-device cloud persistence (dispatch #187): reuse the SAME generic {data,savedAt}
@@ -1462,7 +1463,9 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
     h('div', { style: { padding: '16px 20px 14px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' } },
       h('div', null,
         h('div', { style: { fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'AI Assistant'),
-        h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
+        h('div', { style: { display: 'flex', alignItems: 'center' } },
+          h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
+          h(InfoIcon, { articleKey: 'sage_guide' })),
         h('div', { style: { fontSize: '11px', color: muted, marginTop: 4 } }, 'Strategic Analytics & Guidance Engine · Claude Opus'),
       ),
       h('div', { style: { display: 'flex', gap: 6, flexShrink: 0, marginTop: 2 } },

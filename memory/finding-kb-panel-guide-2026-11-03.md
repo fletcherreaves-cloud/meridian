@@ -1115,15 +1115,22 @@ crash, no test failure, the "?" control simply never existed.
   Wired `signals_guide` there — it documents the panel as a whole, not any one tab, so a
   panel-level icon is the right altitude regardless of which tab is active.
 
-**Still deferred, unchanged from Phase 3's list:** `security-panel.js`, `sage.js`,
-`AIBacktestScanner` (embedded in `App.js`, no own header), `CustomizePanel`-sub-tabs
-(`performance_calculator_guide`/`review_target_overrides_guide`) — none inspected this pass:
-real remaining judgment-call work, not re-confirmed here.
+**Also wired the same pass (v5.678, found moments after opening the PR for the first five):**
+`sage.js`'s `SagePanel` — also deferred by Phase 3 for lacking a `RoutePanelShell`, but like
+Signals it turned out to have one clean single-block header (eyebrow "AI Assistant" + 'SAGE'
+title + subtitle) above all its tabs/chat UI. Wired `sage_guide` there.
 
-**Running total: 34 of ~115 real `KB_ARTICLES` keys now wired** (29 after Phase 3, +5 here;
-`launch_planner_guide` from v5.675 already counted separately and not re-counted). No new tests
-added for this batch — each wiring is a one-line sibling add next to an existing title string,
-the exact same shape Phase 1's Data Manager fix and the `launch_planner_guide` fix both already
-have test coverage patterns for; verified by local build (clean, within payload budget) and the
-full suite (773/773 files, 7083+/7083+ tests) rather than new assertions, consistent with how
-trivial a dangling-reference wire-up is to verify by inspection plus a passing suite.
+**Still deferred, unchanged from Phase 3's list:** `security-panel.js` (no KB key exists at all
+for it — a missing-content gap, not a dangling-wire one, out of scope for this mechanical pass),
+`AIBacktestScanner` (embedded in `App.js`, no own header), `CustomizePanel`-sub-tabs
+(`performance_calculator_guide`/`review_target_overrides_guide`) — none inspected further this
+pass: real remaining judgment-call work, not re-confirmed here.
+
+**Running total: 35 of ~116 real `KB_ARTICLES` keys now wired** (29 after Phase 3, +5 in the
+first commit, +1 here; `launch_planner_guide` from v5.675 already counted separately and not
+re-counted). No new tests added for this batch — each wiring is a one-line sibling add next to
+an existing title string, the exact same shape Phase 1's Data Manager fix and the
+`launch_planner_guide` fix both already have test coverage patterns for; verified by local build
+(clean, within payload budget) and the full suite (773/773 files, 7083+/7083+ tests) rather than
+new assertions, consistent with how trivial a dangling-reference wire-up is to verify by
+inspection plus a passing suite.
