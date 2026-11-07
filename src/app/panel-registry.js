@@ -148,7 +148,7 @@ export const PANELS = [
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations', route:true },
-  { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:4 },
+  { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'nav', section:'forecasting' },
   { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:7 },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
@@ -426,10 +426,10 @@ export const PANELS = [
   // went unnoticed only because kind:'test-kitchen' makes section: inert. Left wrong, a future
   // promotion would have dropped Projections into the Planning section's owner-approved four
   // links (#516) instead of Forecasting and Labor Projections where it belongs.
-  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:1 },
+  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'nav', section:'forecasting', route:true },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
-  { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:2 },
+  { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'nav', section:'forecasting' },
   // Quick-Capture Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §1, task #101) -- the
   // "‼ Log something" top-bar button (AppTopbar, shell.js), same topbar-button-not-sidebar-link
   // treatment as 'sage' below, including its perm:null + section:'analytics' pairing (every

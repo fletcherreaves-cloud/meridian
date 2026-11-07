@@ -46,7 +46,9 @@ describe('AppSidebar nav regroup — v2 (default, no settings.navStyle field at 
     const { container } = mountSidebar();
     expect(container.textContent).toMatch(/Deep Dive/);
     // Closed by default -- a real Test Kitchen panel label is not in the flat text yet.
-    expect(container.textContent).not.toMatch(/Projections/);
+    // 'DI Compare' (id 'dicompare'), not 'Projections' -- the latter was promoted OUT of Test
+    // Kitchen 2026-11-07 (owner-approved), so it no longer lives under this header at all.
+    expect(container.textContent).not.toMatch(/DI Compare/);
   });
 
   it('clicking the header reveals the same items classic mode renders flatly', () => {
@@ -60,7 +62,7 @@ describe('AppSidebar nav regroup — v2 (default, no settings.navStyle field at 
 
     // Clicking again collapses it back.
     act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).not.toMatch(/Projections/);
+    expect(container.textContent).not.toMatch(/DI Compare/);
   });
 
   it('still reaches a Deep Dive panel through onOpenModal once expanded and clicked', () => {
@@ -69,10 +71,10 @@ describe('AppSidebar nav regroup — v2 (default, no settings.navStyle field at 
     act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     // The label renders as its own <span> inside the clickable row (navItem's shape: icon span +
     // label span as siblings under one div) -- not a <div> whose whole text is just the label.
-    const projLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Projections');
-    expect(projLabel, 'Projections row not found after expanding Deep Dive').toBeTruthy();
+    const projLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'DI Compare');
+    expect(projLabel, 'DI Compare row not found after expanding Deep Dive').toBeTruthy();
     act(() => { projLabel.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(onOpenModal).toHaveBeenCalledWith('proj');
+    expect(onOpenModal).toHaveBeenCalledWith('dicompare');
   });
 
   it('renders no Deep Dive header at all under betaMode (same as classic — nothing to show)', () => {
