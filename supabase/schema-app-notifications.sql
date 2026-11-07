@@ -80,3 +80,20 @@ create policy "app_notifications: tenant delete" on public.app_notifications
 -- just new ones -- this lets the bell's delete button work uniformly on BOTH the existing EOM rows
 -- (which keep their own rich table/rendering, untouched otherwise) and the new generic rows.
 alter table public.eom_count_notifications add column if not exists dismissed_at timestamptz;
+
+-- ── 3. app_notifications gets target_roles for role-scoped push delivery (task #91, 2026-11-07) ──
+-- Movers alerts is the first REAL producer against this table (EOM count notifications keep
+-- their own separate table/delivery path, untouched). Every push notification shipped so far in
+-- this repo (dispatch #211/#215/#216's own comments say so explicitly) broadcasts to every
+-- subscribed device -- "this app doesn't have per-role notification recipients modeled" per
+-- qsrsoft-onhand-pull.mjs's own notifyRow() comment. Movers needed real targeting (GM/AS/DO
+-- only, scoped to the store that actually moved), so this is the first producer that needs it.
+--
+-- NULL (every existing/future row that doesn't set it) preserves the exact broadcast-to-everyone
+-- behavior every prior producer already depends on -- this is purely additive, not a behavior
+-- change for anything that already exists. Only scripts/lib/app-notification-delivery.mjs's
+-- deliverAppNotification() reads this column (see that file's own comment for the exact
+-- profiles.role + accessible_locs join it runs when target_roles is set).
+alter table public.app_notifications add column if not exists target_roles text[];
+comment on column public.app_notifications.target_roles is
+  'NULL = broadcast push to every subscribed device (the pre-2026-11-07 default behavior, still used by every non-Movers producer). Non-null = deliverAppNotification() only pushes to users whose profiles.role is in this array AND whose profiles.accessible_locs is null or contains this row''s loc.';

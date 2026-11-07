@@ -108,3 +108,50 @@ describe('deliverAppNotification', () => {
     expect(postResendMock).not.toHaveBeenCalled();
   });
 });
+
+// task #91 (Movers alerts) — the first producer to use target_roles. A mock supabase that
+// differentiates by table name, unlike the single-shape mock above, since this path reads BOTH
+// push_subscriptions and profiles.
+describe('deliverAppNotification — target_roles (task #91)', () => {
+  const subs = [
+    { id: 'sub-gm', user_id: 'u-gm', endpoint: 'e1', p256dh: 'p', auth_key: 'a' },
+    { id: 'sub-vp', user_id: 'u-vp', endpoint: 'e2', p256dh: 'p', auth_key: 'a' },
+    { id: 'sub-gm-other-store', user_id: 'u-gm-other', endpoint: 'e3', p256dh: 'p', auth_key: 'a' },
+    { id: 'sub-gm-unrestricted', user_id: 'u-gm-all', endpoint: 'e4', p256dh: 'p', auth_key: 'a' },
+  ];
+  const profiles = [
+    { id: 'u-gm', role: 'gm', accessible_locs: ['3708'] },          // matches role + loc
+    { id: 'u-vp', role: 'vp', accessible_locs: null },              // wrong role, even with full access
+    { id: 'u-gm-other', role: 'gm', accessible_locs: ['9999'] },    // right role, wrong store
+    { id: 'u-gm-all', role: 'gm', accessible_locs: null },          // right role, unrestricted — null means every store
+  ];
+  const supabase = {
+    from: (table) => ({
+      select: () => Promise.resolve(
+        table === 'push_subscriptions' ? { data: subs, error: null }
+        : table === 'profiles' ? { data: profiles, error: null }
+        : { data: [], error: null }
+      ),
+    }),
+  };
+
+  it('pushes only to subscriptions whose profile role is in target_roles AND whose accessible_locs covers this row\'s loc', async () => {
+    const row = { title: 't', detail: 'd', link: null, severity: 'crit', notify_push: true, notify_email: false, loc: '3708', target_roles: ['gm', 'area_supervisor', 'do'] };
+    await deliverAppNotification(row, { supabase });
+    const pushedSubIds = sendWebPushMock.mock.calls.map(([sub]) => sub.id);
+    expect(pushedSubIds.sort()).toEqual(['sub-gm', 'sub-gm-unrestricted'].sort());
+  });
+
+  it('with no target_roles, broadcasts to every subscription regardless of role — unchanged EOM-style behavior', async () => {
+    const row = { title: 't', detail: 'd', link: null, severity: 'crit', notify_push: true, notify_email: false, loc: '3708' };
+    await deliverAppNotification(row, { supabase });
+    expect(sendWebPushMock).toHaveBeenCalledTimes(subs.length);
+  });
+
+  it('a null accessible_locs always qualifies for a matching role, regardless of loc', async () => {
+    const row = { title: 't', notify_push: true, notify_email: false, loc: '5555', target_roles: ['gm'] };
+    await deliverAppNotification(row, { supabase });
+    const pushedSubIds = sendWebPushMock.mock.calls.map(([sub]) => sub.id);
+    expect(pushedSubIds).toEqual(['sub-gm-unrestricted']);
+  });
+});

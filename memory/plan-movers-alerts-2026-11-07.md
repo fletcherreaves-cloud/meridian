@@ -129,38 +129,103 @@ This is single-store, single-day **sales** only — matches `moversStrip`'s curr
 now). If Movers alerts later expand to guest-count or DT (the strip already shows "Slowest DT"
 passively), that needs its own separate measurement — DT's noise characteristics are not sales'.
 
-## Open product-judgment questions — NOT decided here, owner's call
+## DECIDED (2026-11-07, owner, live Q&A) — all four open questions answered
 
-Per this project's own standing rule (CLAUDE.md "Dev Rules" — a change whose scope or product
-behavior is a judgment call is never applied unattended), these four are specifically called out
-by task #91 itself and are not something to resolve by guessing:
+1. **Audience/role targeting** → **GM + AS + DO only** (the roles who can actually act on a
+   single-store decline), not every role with `accessible_locs` access to that store.
+2. **Occurrence vs schedule** → **On occurrence.** Fires the moment that day's DAR pull confirms
+   a CRIT/WARN swing — not bundled into a daily digest.
+3. **Push content** → **Store + severity + top cause.** The notification body itself carries the
+   single highest-ranked `diagnoseMiss()` cause, not just the swing number — more self-contained
+   than a bare "CRIT decline" ping, at the cost of a longer body.
+4. **Scope of the mechanism** → **Build a general alerting system now**, not a Movers-only
+   notification type. Movers is the first alert TYPE registered against it, but the
+   trigger-evaluation/dedup/push-delivery plumbing is built generic from the start so a second
+   alert type (e.g. a future Labor or FOB alert) doesn't need a rewrite.
 
-1. **Audience/role targeting** — which roles get which store's alerts. The RBAC/`accessible_locs`
-   model already scopes data access; does every role with access to a store get its Movers alert,
-   or should this default to GM/AS/DO (the roles who can actually act on it) with everyone else
-   opt-in?
-2. **"On occurrence" vs "on a schedule," or both** — occurrence-based (fire the moment a day's
-   DAR pull confirms a CRIT/WARN day) is more timely; schedule-based (e.g. once each morning) is
-   calmer and matches the existing `sage-run.mjs` precedent most directly. Could also be CRIT=
-   occurrence, WARN=next scheduled digest.
-3. **Push content** — title/body length limits mean the notification itself can carry at most a
-   one-line summary (store name + the swing + maybe the single top `diagnoseMiss()` cause);
-   everything else (full Why Engine causes, suggested remedy, ledger tracking) lives behind a
-   tap-through into the app. Exact copy/format is a product call, not a data one.
-4. **Scope of the mechanism** — does this stay a Movers-specific notification type, or does it
-   become the first instance of a more general alerting system (the owner's own framing — "could
-   see this becoming a major part of our app" — suggests the latter is worth considering
-   up front, even if only Movers ships first, so the plumbing doesn't need a rewrite later).
+This changes the shape of "next step" below — it's no longer just a Movers trigger script, it's
+a small generic alerting framework with Movers as its first registered type.
 
 ## Recommended next step when this is picked up for real
 
-1. Owner answers the four questions above (or defers them with a stated default to start with).
-2. Build the trigger as a scheduled check (reusing the `sage-run.mjs` cron pattern) that reads
-   `qsr_daily_activity_rollup`'s freshest day per store, applies the thresholds in the table
-   above, and writes a result row (new table, e.g. `movers_alerts_sent`, to avoid re-firing the
-   same event every run).
-3. Wire the three existing pieces (push-send, `diagnoseMiss()`, Recommendation Ledger) rather
-   than building new versions of any of them.
-4. Ship CRIT/WARN-down only for v1, per the finding above — revisit up-swings only if a genuinely
-   different, more targeted signal is found later (e.g. a sudden day-over-day jump rather than a
-   sustained level, which this measurement did not test).
+**Generic alerting framework, Movers as the first type:**
+
+1. **`alert_types` concept (code-registry, not a DB table)** — each type registers an `id`
+   (`movers_down`), a trigger-evaluation function (reads live data, returns 0+ candidate events),
+   a severity, a push-content formatter (title/body, given the event + its top
+   `diagnoseMiss()`-style cause), and a target-role list (`['gm','area_supervisor','do']` for
+   Movers). This keeps Movers' actual logic in its own module (e.g.
+   `src/engine/alerts/movers-alert.js`) rather than hand-coding movers-specific branches into a
+   shared runner.
+2. **One generic table, not one per type**: `alert_events` — `(id, alert_type, loc, severity,
+   event_date, payload jsonb, created_at)` — and `alert_deliveries` — `(id, alert_event_id,
+   user_id, channel, sent_at)` to dedupe (never re-push the same event to the same user) and to
+   give a per-user delivery log for free, reusable by any future alert type.
+3. **One generic runner** (new GitHub Action, same `sage-run.mjs`-style cron pattern but
+   triggered on occurrence — i.e. right after the DAR pull workflow completes, not on its own
+   independent schedule): loop every registered alert type's evaluator → write new `alert_events`
+   rows (skip if an identical one already exists for that loc/date/type) → resolve each event's
+   target users via its type's role list + `accessible_locs` → push via the existing
+   `webpush-notify.mjs`/`app-notification-delivery.mjs` (unchanged) → log each send to
+   `alert_deliveries`.
+4. **Movers' own evaluator** applies this doc's measured thresholds (CRIT: 1 day ≤ -25%; WARN:
+   3+ consecutive days ≤ -20%/-25%) against `qsr_daily_activity_rollup`'s freshest day per store,
+   and formats its push body as `"{store}: {severity} sales decline — {topCause}"` using
+   `why.js`'s `diagnoseMiss()` for the cause.
+5. Tap-through from the notification opens the store's Why Engine / Recommendation Ledger view
+   for full detail — not duplicated into the push body itself.
+6. Ship Movers CRIT/WARN-down only for v1 (per this doc's up-swing finding) — the framework's
+   generality is in the plumbing, not in shipping multiple alert types at once.
+
+## SHIPPED (2026-11-07, v5.681) — exactly per the decisions above, two real adjustments
+
+Built the same session the decisions were made. Reused `app_notifications` (shipped 2026-10-12)
+as the generic alerting substrate rather than building a second one — it was already designed
+for exactly this ("the NEXT notification-producing feature... plugs into" per its own header),
+Movers is simply its first real producer. No new generic tables were needed.
+
+- **`src/engine/movers-alert.js`** (new, pure) — `evaluateMoversAlert(series)` implements the
+  measured table exactly (CRIT single-day ≤-25%; WARN 3+ consecutive days ≤-20%; CRIT wins if
+  both would fire the same day). `buildMoversAlertContent()` builds the push title/body.
+- **`scripts/movers-alert-run.mjs`** (new) — reads `qsr_daily_activity_rollup` directly
+  (service-role), computes salesVsLYPct per store/day with the same guard `moversStrip`/
+  `lib/supabase.js`'s `_yoyPct` use, dedupes against existing `app_notifications` rows via
+  `(type, resolve_key)` before ever inserting (never re-fires the same store/day twice), and
+  calls `deliverAppNotification()` for each new alert.
+- **`.github/workflows/movers-alert-run.yml`** (new) — `workflow_run` trigger on "QSRSoft Daily
+  Activity Pull" completing, matching the owner's on-occurrence decision. Deliberately NOT added
+  to `sync-failure-watch.yml`'s watched list — that watcher's own test
+  (`sync-failure-watch.test.js`) scopes its "is this a real workflow" check to cron-triggered
+  workflows specifically, and this one has no cron (reactive-only). Noted in the workflow's own
+  header so this isn't mistaken for an oversight later.
+- **Real adjustment #1 — "general alerting system" meant extending `app_notifications`, not
+  building a parallel generic framework.** The owner's decision was to build the general
+  mechanism now rather than Movers-only plumbing; `app_notifications` already *was* that general
+  mechanism (demonstrated with a synthetic type in its own test suite, never given a second real
+  producer before this). Building a second parallel system alongside it would have been the
+  wrong kind of "general."
+- **Real adjustment #2 — push content uses `swing-detect.js`'s `classify()`, not
+  `why.js`'s `diagnoseMiss()`.** The owner asked for "top cause" in the push body; `diagnoseMiss()`
+  needs the browser app's full in-memory `ds` dataset object (built from many client-side
+  loaders over time) and cannot run from a Node pull script without replicating that whole
+  aggregation server-side. `swing-detect.js`'s `classify(pct, guestPct)` is a pure, already-
+  existing function doing the same sales-vs-guest-count relationship classification (traffic
+  loss / check-mix / check erosion) the swing alarm already uses at weekly grain — reused here at
+  daily grain instead of built new, per this repo's own "check whether a helper exists" rule.
+  Full Why Engine detail stays reachable by tapping through to the app, as the owner's own
+  decision specified.
+- **New capability, not previously modeled anywhere in this app**: role/store-targeted push
+  delivery. Every push notification shipped before this (dispatch #211/#215/#216's own code
+  comments say so explicitly) broadcasts to every subscribed device. Added a `target_roles`
+  column to `app_notifications` (nullable — null preserves the exact existing broadcast
+  behavior for every other producer) and taught `scripts/lib/app-notification-delivery.mjs`'s
+  `deliverAppNotification()` to resolve recipients by `profiles.role` + `profiles.accessible_locs`
+  when a row sets it (`profiles.accessible_locs == null` = unrestricted, same convention every
+  other RLS/access check in this repo already uses).
+- **Owner action required**: run the new `target_roles` column migration in
+  `supabase/schema-app-notifications.sql`'s block 3 (idempotent `alter table add column if not
+  exists` — safe to run even though the rest of that file was already run before). DDL is never
+  an agent's own action.
+- Verified: `npm run build` clean, within payload budget; full suite passing (new tests:
+  `movers-alert.test.js`, `movers-alert-run.test.js`, plus 3 new cases in
+  `app-notification-delivery.test.js` for the role/store-targeting path).
