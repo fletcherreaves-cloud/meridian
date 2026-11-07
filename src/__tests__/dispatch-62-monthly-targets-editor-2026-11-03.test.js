@@ -69,6 +69,7 @@ describe('Monthly Targets in-app editor (task #62, 2026-11-03)', () => {
     await act(async () => {
       root.render(React.createElement(MonthlyProjectionsPanel, {
         ds, stores: [{ loc: A, name: STORE_NAMES[A] }], settings: {}, onClose: () => {},
+        canOwnProjections: true,
       }));
     });
     // The panel resolves its initial selPeriod inside listMonthlyTargetPeriods().then(...) --

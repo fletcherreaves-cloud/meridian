@@ -8058,7 +8058,7 @@ const _projFromEditValue = (kind, s) => {
 // fills the normal edit flow (same onSave path a hand-typed value takes) rather than writing
 // silently, so every value in this column is either a real approved number or a value the owner
 // explicitly accepted.
-function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion}) {
+function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion, disabled, disabledTitle}) {
   const {useState} = React;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -8066,16 +8066,19 @@ function EditableProjCell({loc, field, value, tdStyle, onSave, suggestion}) {
   const hasSuggestion = suggestion && typeof suggestion.value === 'number' &&
     !(typeof value === 'number' && Math.abs(value - suggestion.value) < suggestionTolerance);
   if (!editing) {
+    // Projection/Targets ownership (owner request 2026-11-07) -- a non-owner sees the value
+    // read-only (no click-to-edit, no suggestion-accept shortcut), same zone as Projections
+    // lock/edit and Smart Targets Apply-as-Official.
     return h('td', {
-      style: {...tdStyle, cursor: 'pointer'},
-      title: 'Click to set ' + field.l + ' for this store',
-      onClick: () => { setDraft(_projToEditValue(field.kind, value)); setEditing(true); },
+      style: {...tdStyle, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? .75 : 1},
+      title: disabled ? disabledTitle : 'Click to set ' + field.l + ' for this store',
+      onClick: disabled ? undefined : () => { setDraft(_projToEditValue(field.kind, value)); setEditing(true); },
     },
       field.fmt(value),
       hasSuggestion && div({style:{marginTop:2,fontSize:8,fontWeight:400,
         color: suggestion.reviewFlag ? '#f59e0b' : 'var(--text3)', whiteSpace:'nowrap'},
-        title: suggestion.tooltip || 'Owner forecast model. Click to accept.',
-        onClick: e => { e.stopPropagation();
+        title: disabled ? disabledTitle : (suggestion.tooltip || 'Owner forecast model. Click to accept.'),
+        onClick: disabled ? undefined : e => { e.stopPropagation();
           const decimals = field.kind === 'dollar' ? 2 : field.kind === 'pct' ? 6 : 2;
           const mult = 10 ** decimals;
           onSave(loc, field.key, Math.round(suggestion.value * mult) / mult); }},
@@ -8515,7 +8518,8 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       h('tbody',null,...withPace.map(r=>rowEl(r,false)),rowEl({label:'District Total',tgt:tgtSum,act:actSum,pace:totPace,vs:totVs},true))));
 }
 
-function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded, onUpdateSettings}) {
+function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded, onUpdateSettings,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
   const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
@@ -8620,6 +8624,10 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   // own table is a single-field upsert, keyed by period_type:'monthly'.
   const handleSaveProjField = (loc, fieldKey, value) => {
     if (!selPeriod) return; // no known year/month to save against -- nothing to do yet
+    // Projection/Targets ownership (owner request 2026-11-07) -- "the same zone" as Projections
+    // lock/edit per the owner. EditableProjCell's own disabled state already keeps a non-owner
+    // from reaching this at all; this defensive check covers any other caller.
+    if (!canOwnProjections) return;
     setEdits(prev => ({...prev, [loc]: {...(prev[loc]||{}), [fieldKey]: value}}));
     if (customFieldKeySet.has(fieldKey)) {
       saveCustomMetricTarget(loc, fieldKey, 'monthly', value).catch(()=>{});
@@ -8627,6 +8635,12 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     }
     const fullRow = {...(mt[loc]||{}), [fieldKey]: value};
     saveMonthlyTargets({[loc]: fullRow}, selPeriod.year, selPeriod.month).catch(()=>{});
+    if (onNotifyOwners) {
+      onNotifyOwners({ grants: projOwnerGrants, actorUserId: userId,
+        title: (userName || 'Someone') + ' edited a Monthly Target',
+        detail: storeName(loc) + ' — ' + fieldKey + ' for ' + selPeriod.year + '-' + String(selPeriod.month).padStart(2,'0'),
+        loc, period: selPeriod.year + '-' + String(selPeriod.month).padStart(2, '0') }).catch(() => {});
+    }
     // Recommendation Accuracy Ledger (task #80 follow-on) -- classify this save against
     // whatever suggestion badge this field showed, if any. A field with no suggestion (or a
     // period with no open ledger row, e.g. the table isn't created yet) is a harmless no-op --
@@ -8819,6 +8833,8 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       return h(EditableProjCell, {key:f.key, loc, field:f, value:v,
         tdStyle:{...tdS,textAlign:'right',fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'},
         onSave:handleSaveProjField,
+        disabled: !canOwnProjections,
+        disabledTitle: 'Only a Projections & Targets owner (DO/VP and above, or a granted user) can edit monthly targets',
         suggestion: suggestionFor(loc, f.key)});
     });
     return h('tr',{key:loc},

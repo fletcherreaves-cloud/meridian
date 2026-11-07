@@ -53,7 +53,7 @@ describe('#107 Part 2: Planning > Yearly panel renders the real yearly-target ca
 
   it('Sales Pace view still renders by default (existing behavior preserved)', async () => {
     await act(async () => {
-      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true }));
+      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: true }));
     });
     expect(container.textContent).toMatch(/Sales Pace/);
     expect(container.textContent).toMatch(/Target Categories/);
@@ -63,7 +63,7 @@ describe('#107 Part 2: Planning > Yearly panel renders the real yearly-target ca
 
   it('Target Categories tab surfaces real per-store OEPE/CSAT/Digital/People/Labor-FOB values, not just Sales', async () => {
     await act(async () => {
-      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true }));
+      root.render(React.createElement(YearlyProjectionsPanel, { ds, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: true }));
     });
     const btn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
     expect(btn).toBeTruthy();
@@ -84,7 +84,7 @@ describe('#107 Part 2: Planning > Yearly panel renders the real yearly-target ca
 
   it('shows the empty-state message for a year with no yearly-targets upload, not a crash', async () => {
     await act(async () => {
-      root.render(React.createElement(YearlyProjectionsPanel, { ds: { targets: {}, allYearlyTargets: {} }, stores: [], settings: {}, onClose: () => {}, embedded: true }));
+      root.render(React.createElement(YearlyProjectionsPanel, { ds: { targets: {}, allYearlyTargets: {} }, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: true }));
     });
     const btn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
     await act(async () => { btn.click(); });

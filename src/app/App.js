@@ -346,11 +346,12 @@ const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole, getRoleById } from '../engine/permissions.js';
+import { canOwnPanel } from '../engine/panel-ownership.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { OnboardingTour } from '../components/OnboardingTour.js';
 // RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
@@ -457,9 +458,14 @@ const PLANNING_TABS = [
   { id: 'yearly',  label: 'Yearly',      icon: '📆' },
   { id: 'smart',   label: 'Smart',       icon: '🧭' },
 ];
-function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onUpdateSettings, onClose }) {
+function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onUpdateSettings, onClose,
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners }) {
   const [tab, setTab] = useState(initialTab && PLANNING_TABS.some(t => t.id === initialTab) ? initialTab : 'targets');
-  const common = { ds, stores, settings, onUpdateSettings, onClose, embedded: true };
+  // Projection/Targets ownership (owner request 2026-11-07) — Targets/Monthly/Yearly/Smart all
+  // share the SAME ownership zone as Projections lock ("the same zone" per the owner), so one
+  // prop set spreads into every tab via `common` rather than threading each separately.
+  const common = { ds, stores, settings, onUpdateSettings, onClose, embedded: true,
+    canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners };
   const active =
     tab === 'targets' ? h(UnifiedTargetsPanel, common) :
     tab === 'monthly' ? h(MonthlyProjectionsPanel, { ...common, customSignalDefs }) :
@@ -1215,7 +1221,11 @@ function App() {
   const saveLockedProjections = useCallback((next)=>{
     setLockedProjections(next);
     try{localStorage.setItem('mf_locked_projections',JSON.stringify(next));}catch{}
-    saveUserSetting('locked_projections', next).catch(()=>{});
+    // org_config, not saveUserSetting/user_settings (owner request 2026-11-07) -- user_settings
+    // is keyed PRIMARY KEY (user_id, key), so two different real logins would silently fork into
+    // two disconnected copies of locked projections instead of sharing one shared truth.
+    // org_config has no user_id column at all -- every signed-in user reads/writes the SAME row.
+    saveOrgConfig('locked_projections', next).catch(()=>{});
   },[]);
   // showAttention — dispatch #192: replaced by routePanel==='attention' (see routePanel above).
   const [showFormsPrint, setShowFormsPrint] = useState(false);
@@ -1268,6 +1278,13 @@ function App() {
   // production, per CLAUDE.md — this is the first client-side consumer of the field).
   const [accessibleLocs,      setAccessibleLocs]      = useState(null);
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
+  // Projection/Targets ownership (owner request 2026-11-07) — the signed-in profile's own id
+  // (needed to check/attribute a named panel_owner_grants row, not derivable from role/name) and
+  // the zone's active grant list, fetched once at startup alongside role/name below. See
+  // src/engine/panel-ownership.js's canOwnPanel()/ownerNotificationTargets() for how these two
+  // combine with the 'projections.own' role baseline.
+  const [userId,               setUserId]              = useState(null);
+  const [projOwnerGrants,      setProjOwnerGrants]      = useState([]);
   const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
   const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
   // Role-view sandbox (task #97, owner-approved "Yes, definitely!") — lets a level-1 user
@@ -1583,6 +1600,8 @@ function App() {
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
+      setUserId(user.id);
+      loadPanelOwnerGrants('projections').then(setProjOwnerGrants).catch(()=>{});
       supabase.from('profiles').select('role,name,email,accessible_locs').eq('id', user.id).maybeSingle()
         .then(({ data }) => {
           setUserName(data?.name || data?.email || user.email || '');
@@ -2392,17 +2411,19 @@ function App() {
       }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);} };
       // Load cross-device user settings (locked projections, AE calibration params)
       // Batched (backlog firing #5, 2026-09-23): the 5 loadUserSetting() calls below
-      // (locked_projections/ae_params/model_assignments/dialed_in/recurring_rules) all run
-      // concurrently in the SAME T2 Promise.all tier and want the SAME signed-in user, but
-      // loadUserSetting pays its own auth.getUser() round trip + its own single-row select
-      // per call — 5 of each. loadUserSettings() does one auth.getUser() + one `.in('key',…)`
-      // select for all 5, kicked off here so it's already in flight before any _stXxx below
-      // awaits it.
+      // (ae_params/model_assignments/dialed_in/recurring_rules) all run concurrently in the SAME
+      // T2 Promise.all tier and want the SAME signed-in user, but loadUserSetting pays its own
+      // auth.getUser() round trip + its own single-row select per call — 4 of each.
+      // loadUserSettings() does one auth.getUser() + one `.in('key',…)` select for all 4, kicked
+      // off here so it's already in flight before any _stXxx below awaits it. locked_projections
+      // moved OUT of this batch (owner request 2026-11-07, org_config fork-bug fix just above) —
+      // org_config is a different table with no per-user scoping, so it can't share this
+      // user_settings-specific batched call; it gets its own loadOrgConfig() below instead.
       const _settingsBatch = loadUserSettings(
-        ['locked_projections','ae_params','model_assignments','dialed_in','recurring_rules']);
+        ['ae_params','model_assignments','dialed_in','recurring_rules']);
       const _stLockedProjections = async () => {
       try{
-        const remoteProj=(await _settingsBatch)['locked_projections'];
+        const remoteProj=await loadOrgConfig('locked_projections');
         if(remoteProj&&typeof remoteProj==='object'&&Object.keys(remoteProj).length>0){
           setLockedProjections(remoteProj);
           try{localStorage.setItem('mf_locked_projections',JSON.stringify(remoteProj));}catch{}
@@ -3551,6 +3572,10 @@ function App() {
   // panel visibility, every perm(...)-gated modal/action — reflects the simulated role from
   // this single interception point, with zero changes needed at any of the ~100 call sites.
   const perm = (key) => hasPermission(effectiveRole, key, orgRoles);
+  // Projection/Targets ownership (owner request 2026-11-07) — DO/VP+ by default, or a named
+  // panel_owner_grants holder. Same effectiveRole convention as perm() above: previewing as a
+  // lower role (view-as-role sandbox) correctly previews that role's own lock/apply/save access.
+  const canOwnProjections = canOwnPanel('projections', effectiveRole, projOwnerGrants, userId, orgRoles);
   // Owner request 2026-11-02: "role-based panel active/inactive toggles" — finer-grained than
   // perm() above (several panels share one perm key; this is one specific panel id per role).
   const panelEnabled = (id) => isPanelEnabledForRole(id, effectiveRole, orgRoles);
@@ -4061,7 +4086,8 @@ function App() {
         subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
         onBack:()=>goRoute(null),
         bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
-      }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections})),
+      }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,
+        canOwnProjections,userName,userId,projOwnerGrants,onNotifyOwners:notifyPanelOwners})),
       routePanel==='report'&&h(RoutePanelShell,{
         title:'📊 Date-Range Comprehensive Report',
         subtitle:'Compares all metrics for any date range across selected locations.',
@@ -4085,7 +4111,8 @@ function App() {
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null),onPayEventSaved:refreshPayEvents}),
       // planning — Dispatch #207: moved to the routePanel gate in the main content area
       // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
-      routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onUpdateSettings:saveSettings,onClose:()=>goRoute(null)}),
+      routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onUpdateSettings:saveSettings,onClose:()=>goRoute(null),
+        canOwnProjections,userId,userName,projOwnerGrants,onNotifyOwners:notifyPanelOwners}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole:effectiveRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
         dataReady:cloudStreamsReady,
