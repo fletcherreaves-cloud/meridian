@@ -5,19 +5,21 @@
 -- memory/lifelenz-session.md). This table's pull script is
 -- scripts/lifelenz-payroll-readiness-pull.mjs.
 --
--- ⚠️ UNCONFIRMED AT A LEVEL BEYOND EVERY SIBLING TABLE ABOVE -- flagged here too, not just in
--- the pull script, since this schema itself encodes the same unverified guesses. The reportKey
--- (`payroll_readiness_report`) is a naming-pattern guess (memory/lifelenz-session.md's own
--- words: "unconfirmed, would need to open each tile and capture its own GetReportMeta call to
--- be sure"), and the column member names below are copied from that same memory file's
--- representative (not live-captured) 58-column description. Do NOT treat this table's real
--- data, once it exists, as validated until a live GetReportMeta dispatch (same method task #30
--- used for Employee Performance) confirms the real reportKey and field members match.
+-- ✅ CONFIRMED 2026-11-05, live -- reportKey and grain both verified against the real API (see
+-- memory/finding-lifelenz-payroll-readiness-pk-mismatch-2026-11-04.md's "RESOLVED" section),
+-- correcting this header's own earlier "unconfirmed naming-pattern guess" framing. A live
+-- GetReportMeta(payroll_readiness_report) call returned the real 58-column schema, confirming
+-- the reportKey; a live GetReportDataCsvAsync pull (Freeport, 879 real rows) confirmed the real
+-- grain below.
 --
--- Grain: ONE ROW PER (loc, geid, pay_period_start) -- unlike lifelenz_employee_performance's
--- synthesized rolling window, this report's own pay_periods_start_time is (expected to be) a
--- REAL per-row column, so it is not synthesized here -- same "real event id/date" shape as
--- lifelenz_compliance_audit's shift_date, not lifelenz_employee_performance's windowed shape.
+-- Grain: ONE ROW PER (loc, payroll_entry_id) -- NOT (loc, geid, pay_period_start) as originally
+-- assumed. The report's real unique key is `payroll_entry_id` (CSV label "Entry Id") -- one row
+-- per payroll entry/shift, not one row per pay period; `pay_period_start` is legitimately
+-- repeated across every shift that falls inside the same pay period (one real employee/pay-
+-- period combination measured live had 13 separate shift rows). The original PK caused every
+-- production pull to discard 86-99% of real rows to last-write-wins dedup before this was fixed
+-- -- see supabase/schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql for the migration
+-- against a database that already ran the old version of this script.
 --
 -- Only the fields explicitly named in memory/lifelenz-session.md's representative description
 -- are promoted to real columns; everything else the pull script's runtime GetReportMeta call
@@ -62,9 +64,10 @@ create table if not exists public.lifelenz_payroll_readiness (
   approver_employee_name  text,                     -- pay_period_approvers_employee_name -- who approved it
   absent_reason_text      text,                     -- scheduled_shifts_absent_reason_text
   time_off_type_name      text,                     -- time_off_types_name
+  payroll_entry_id        text        not null,      -- the report's real per-row unique id ("Entry Id") -- see header
   raw                     jsonb,                     -- every other real column this report carries (discovered at runtime via GetReportMeta, not hand-enumerated here)
   updated_at              timestamptz not null default now(),
-  primary key (loc, geid, pay_period_start)
+  primary key (loc, payroll_entry_id)
 );
 
 create index if not exists lifelenz_payroll_readiness_period_idx
@@ -102,4 +105,4 @@ create policy "lifelenz_payroll_readiness: loc scope" on public.lifelenz_payroll
 -- scripts/lifelenz-payroll-readiness-pull.mjs's service-role key, which bypasses RLS entirely.
 
 comment on table public.lifelenz_payroll_readiness is
-  'Per-employee, per-pay-period payroll pre-close audit from LifeLenz''s Data Explorer Payroll Readiness report (Lakehouse-backed): scheduled vs worked hours, hours/cost variance, earnings by type (regular/overtime/double/time-off/etc.), one row per (loc, geid, pay_period_start). Task #85''s overtime-correlation work point-of-origin. UNCONFIRMED reportKey/field-member guesses -- see this table and its pull script''s own header comments before trusting real data here. Written only by scripts/lifelenz-payroll-readiness-pull.mjs (service role); read gated by ordinary tenant + accessible_locs RLS.';
+  'Per-employee payroll pre-close audit from LifeLenz''s Data Explorer Payroll Readiness report (Lakehouse-backed): scheduled vs worked hours, hours/cost variance, earnings by type (regular/overtime/double/time-off/etc.), one row per (loc, payroll_entry_id) -- one payroll entry/shift, not one pay period (confirmed live 2026-11-05; see schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql). Task #85''s overtime-correlation work point-of-origin. Written only by scripts/lifelenz-payroll-readiness-pull.mjs (service role); read gated by ordinary tenant + accessible_locs RLS.';

@@ -1,15 +1,15 @@
 // @ts-nocheck
 // Tests of lifelenz-payroll-readiness-pull.mjs's dynamic label-map builder + CSV parser.
 //
-// This report's real CSV header labels AND its reportKey/column member names have never been
-// captured live — unlike Employee Performance (real capture) and even unlike Compliance Audit
-// (members confirmed real, only labels synthetic), this one is entirely unconfirmed, built from
-// memory/lifelenz-session.md's representative column description. So these fixtures use fully
-// synthetic members AND labels to prove the MECHANISM (deriving the label→member map from a
-// live GetReportMeta call, then using it to parse an arbitrary header row) works correctly for
-// whatever the real report turns out to use — not a claim about what the real shape is. Guarded
-// by `if (import.meta.url === ...)` in the script itself, so importing it here does not also
-// fire off a live LifeLenz pull.
+// ✅ As of 2026-11-05, the reportKey and real grain ARE confirmed live (see this script's own
+// header and memory/finding-lifelenz-payroll-readiness-pk-mismatch-2026-11-04.md's "RESOLVED"
+// section — the real unique key is `payroll_entry_id`, not `(geid,pay_period_start)`). These
+// fixtures still use fully synthetic members AND display labels, though — the point of this file
+// is proving the MECHANISM (deriving the label→member map from a live GetReportMeta call, then
+// using it to parse an arbitrary header row) works correctly regardless of exactly what labels
+// LifeLenz's UI shows, not re-asserting the real shape every test run. Guarded by
+// `if (import.meta.url === ...)` in the script itself, so importing it here does not also fire
+// off a live LifeLenz pull.
 import { describe, it, expect } from 'vitest';
 import { parsePayrollReadinessCSV, buildLabelMap, locFromName, stripReportPrefix } from '../../scripts/lifelenz-payroll-readiness-pull.mjs';
 
@@ -61,6 +61,10 @@ const META_COLUMNS = [
   { member: 'scheduled_shifts_absent_reason_text', name: 'Absence Reason' },
   { member: 'time_off_types_name', name: 'Time Off Type' },
   { member: 'locations_location_name', name: 'Location' },
+  // The report's real per-row unique id ("Entry Id") — confirmed live 2026-11-05, see this
+  // file's header and memory/finding-lifelenz-payroll-readiness-pk-mismatch-2026-11-04.md.
+  // Appended last so it doesn't disturb every other column's existing position below.
+  { member: 'payroll_entry_id', name: 'Entry Id' },
 ];
 
 const HEADER_ROW = META_COLUMNS.map(c => c.name).join(',');
@@ -68,8 +72,8 @@ const HEADER_ROW = META_COLUMNS.map(c => c.name).join(',');
 const CSV_WITH_DATA = `Payroll Readiness
 Date Range,10/02/2026 - 11/01/2026
 ${HEADER_ROW}
-G1001,Jordan Lee,2026-10-19,Open,80,78,78,-2,-45.00,2340.00,2200,140.00,4,0,0,0,0,0,0,0,0,0,0,0,0,,,,,Ardmore-Broadway
-G1002,Casey Nguyen,2026-10-19,Posted,80,92,92,12,180.00,2600.00,2000,600.00,12,0,0,0,0,0,0,0,0,0,0,0,0,Pat Rivera,Sam Diaz,,,Ardmore-Broadway
+G1001,Jordan Lee,2026-10-19,Open,80,78,78,-2,-45.00,2340.00,2200,140.00,4,0,0,0,0,0,0,0,0,0,0,0,0,,,,,Ardmore-Broadway,E1001
+G1002,Casey Nguyen,2026-10-19,Posted,80,92,92,12,180.00,2600.00,2000,600.00,12,0,0,0,0,0,0,0,0,0,0,0,0,Pat Rivera,Sam Diaz,,,Ardmore-Broadway,E1002
 `;
 
 describe('buildLabelMap', () => {
@@ -93,16 +97,29 @@ describe('buildLabelMap', () => {
 });
 
 describe('parsePayrollReadinessCSV — data rows', () => {
-  it('parses one row per employee-pay-period, resolving promoted fields via the dynamic label map', () => {
+  it('parses one row per employee-payroll-entry, resolving promoted fields via the dynamic label map', () => {
     const rows = parsePayrollReadinessCSV(CSV_WITH_DATA, META_COLUMNS);
     expect(rows).toHaveLength(2);
     expect(rows[0].geid).toBe('G1001');
+    expect(rows[0].payroll_entry_id).toBe('E1001');
     expect(rows[0].employee_name).toBe('Jordan Lee');
     expect(rows[0].pay_period_start).toBe('2026-10-19');
     expect(rows[0].pay_period_status).toBe('Open');
     expect(rows[0].scheduled_hours).toBe(80);
     expect(rows[0].hours_variance).toBe(-2);
     expect(rows[0].cost_variance).toBe(-45);
+  });
+
+  it('two rows sharing (geid,pay_period_start) but with distinct payroll_entry_id both parse — the report\'s real grain', () => {
+    const csv = CSV_WITH_DATA.replace(
+      'G1002,Casey Nguyen,2026-10-19,Posted,80,92,92,12,180.00,2600.00,2000,600.00,12,0,0,0,0,0,0,0,0,0,0,0,0,Pat Rivera,Sam Diaz,,,Ardmore-Broadway,E1002',
+      'G1001,Jordan Lee,2026-10-19,Open,80,78,78,-2,-45.00,2340.00,2200,140.00,4,0,0,0,0,0,0,0,0,0,0,0,0,,,,,Ardmore-Broadway,E1002'
+    );
+    const rows = parsePayrollReadinessCSV(csv, META_COLUMNS);
+    // Same geid + same pay_period_start as row 1, but a different payroll_entry_id (a second
+    // real shift inside the same pay period) — both must survive parsing, not collapse.
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r => r.payroll_entry_id).sort()).toEqual(['E1001', 'E1002']);
   });
 
   it('resolves overtime_earnings/overtime_hours correctly — the field this pull exists for', () => {
@@ -138,12 +155,19 @@ describe('parsePayrollReadinessCSV — data rows', () => {
     expect(rows.length).toBeLessThan(2);
   });
 
+  it('skips a row missing payroll_entry_id rather than crashing (the report\'s real key)', () => {
+    const csv = CSV_WITH_DATA.replace(',Ardmore-Broadway,E1002', ',Ardmore-Broadway,');
+    const rows = parsePayrollReadinessCSV(csv, META_COLUMNS);
+    expect(rows.length).toBeLessThan(2);
+    expect(rows.every(r => r.payroll_entry_id)).toBe(true);
+  });
+
   it('does not mistake a metadata row (right column count, wrong content) for the header', () => {
     const noisyMetadata = `Payroll Readiness
 Date Range,10/02/2026 - 11/01/2026
 ${META_COLUMNS.map((_, i) => 'Field' + i).join(',')}
 ${HEADER_ROW}
-G1001,Jordan Lee,2026-10-19,Open,80,78,78,-2,-45.00,2340.00,2200,140.00,4,0,0,0,0,0,0,0,0,0,0,0,0,,,,,Ardmore-Broadway
+G1001,Jordan Lee,2026-10-19,Open,80,78,78,-2,-45.00,2340.00,2200,140.00,4,0,0,0,0,0,0,0,0,0,0,0,0,,,,,Ardmore-Broadway,E1001
 `;
     const rows = parsePayrollReadinessCSV(noisyMetadata, META_COLUMNS);
     expect(rows).toHaveLength(1);
