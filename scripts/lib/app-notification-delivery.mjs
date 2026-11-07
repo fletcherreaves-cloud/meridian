@@ -60,6 +60,29 @@ ${row.detail ? `<p style="margin:0 0 12px;font-size:13px">${row.detail}</p>` : '
   return { subject, html };
 }
 
+// Resolve which push_subscriptions rows a targeted row should reach (task #91, Movers alerts —
+// the first producer that needs real role/store-scoped delivery; see
+// supabase/schema-app-notifications.sql's `target_roles` column comment for why this didn't
+// exist before — every prior push producer broadcasts to every subscribed device). A profile's
+// accessible_locs is null = unrestricted (every other RLS policy/access check in this repo
+// treats null the same way — see CLAUDE.md's RBAC section), so a null-accessible_locs profile
+// with a matching role always qualifies regardless of `row.loc`. Joins client-side (two small
+// selects) rather than a SQL join, matching this file's own existing plain-`.select()` style —
+// push_subscriptions and profiles are both small tables at this repo's scale.
+async function subscriptionsFor(row, { supabase }) {
+  const { data: subs, error: subErr } = await supabase.from('push_subscriptions').select('id,user_id,endpoint,p256dh,auth_key');
+  if (subErr) { console.warn('[app-notification-delivery] push_subscriptions read error:', subErr.message); return []; }
+  if (!row.target_roles?.length) return subs || []; // unscoped — every existing producer's behavior, unchanged
+  const { data: profiles, error: profErr } = await supabase.from('profiles').select('id,role,accessible_locs');
+  if (profErr) { console.warn('[app-notification-delivery] profiles read error:', profErr.message); return []; }
+  const eligibleUserIds = new Set(
+    (profiles || [])
+      .filter(p => row.target_roles.includes(p.role) && (p.accessible_locs == null || (row.loc != null && p.accessible_locs.includes(row.loc))))
+      .map(p => p.id)
+  );
+  return (subs || []).filter(s => eligibleUserIds.has(s.user_id));
+}
+
 /**
  * Deliver one just-inserted app_notifications row over whichever channels it opted into.
  * Never throws -- matches resend-notify.mjs/webpush-notify.mjs's own "warn and continue" shape,
@@ -71,13 +94,10 @@ export async function deliverAppNotification(row, { supabase } = {}) {
     if (!supabase) {
       console.warn('[app-notification-delivery] notify_push set but no supabase client passed — skipping push');
     } else {
-      const { data, error } = await supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth_key');
-      if (error) console.warn('[app-notification-delivery] push_subscriptions read error:', error.message);
-      else {
-        const payload = buildPushPayload(row);
-        for (const sub of (data || [])) {
-          await sendWebPush({ id: sub.id, endpoint: sub.endpoint, p256dh: sub.p256dh, authKey: sub.auth_key }, payload);
-        }
+      const targets = await subscriptionsFor(row, { supabase });
+      const payload = buildPushPayload(row);
+      for (const sub of targets) {
+        await sendWebPush({ id: sub.id, endpoint: sub.endpoint, p256dh: sub.p256dh, authKey: sub.auth_key }, payload);
       }
     }
   }

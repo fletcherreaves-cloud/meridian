@@ -176,3 +176,56 @@ a small generic alerting framework with Movers as its first registered type.
    for full detail — not duplicated into the push body itself.
 6. Ship Movers CRIT/WARN-down only for v1 (per this doc's up-swing finding) — the framework's
    generality is in the plumbing, not in shipping multiple alert types at once.
+
+## SHIPPED (2026-11-07, v5.681) — exactly per the decisions above, two real adjustments
+
+Built the same session the decisions were made. Reused `app_notifications` (shipped 2026-10-12)
+as the generic alerting substrate rather than building a second one — it was already designed
+for exactly this ("the NEXT notification-producing feature... plugs into" per its own header),
+Movers is simply its first real producer. No new generic tables were needed.
+
+- **`src/engine/movers-alert.js`** (new, pure) — `evaluateMoversAlert(series)` implements the
+  measured table exactly (CRIT single-day ≤-25%; WARN 3+ consecutive days ≤-20%; CRIT wins if
+  both would fire the same day). `buildMoversAlertContent()` builds the push title/body.
+- **`scripts/movers-alert-run.mjs`** (new) — reads `qsr_daily_activity_rollup` directly
+  (service-role), computes salesVsLYPct per store/day with the same guard `moversStrip`/
+  `lib/supabase.js`'s `_yoyPct` use, dedupes against existing `app_notifications` rows via
+  `(type, resolve_key)` before ever inserting (never re-fires the same store/day twice), and
+  calls `deliverAppNotification()` for each new alert.
+- **`.github/workflows/movers-alert-run.yml`** (new) — `workflow_run` trigger on "QSRSoft Daily
+  Activity Pull" completing, matching the owner's on-occurrence decision. Deliberately NOT added
+  to `sync-failure-watch.yml`'s watched list — that watcher's own test
+  (`sync-failure-watch.test.js`) scopes its "is this a real workflow" check to cron-triggered
+  workflows specifically, and this one has no cron (reactive-only). Noted in the workflow's own
+  header so this isn't mistaken for an oversight later.
+- **Real adjustment #1 — "general alerting system" meant extending `app_notifications`, not
+  building a parallel generic framework.** The owner's decision was to build the general
+  mechanism now rather than Movers-only plumbing; `app_notifications` already *was* that general
+  mechanism (demonstrated with a synthetic type in its own test suite, never given a second real
+  producer before this). Building a second parallel system alongside it would have been the
+  wrong kind of "general."
+- **Real adjustment #2 — push content uses `swing-detect.js`'s `classify()`, not
+  `why.js`'s `diagnoseMiss()`.** The owner asked for "top cause" in the push body; `diagnoseMiss()`
+  needs the browser app's full in-memory `ds` dataset object (built from many client-side
+  loaders over time) and cannot run from a Node pull script without replicating that whole
+  aggregation server-side. `swing-detect.js`'s `classify(pct, guestPct)` is a pure, already-
+  existing function doing the same sales-vs-guest-count relationship classification (traffic
+  loss / check-mix / check erosion) the swing alarm already uses at weekly grain — reused here at
+  daily grain instead of built new, per this repo's own "check whether a helper exists" rule.
+  Full Why Engine detail stays reachable by tapping through to the app, as the owner's own
+  decision specified.
+- **New capability, not previously modeled anywhere in this app**: role/store-targeted push
+  delivery. Every push notification shipped before this (dispatch #211/#215/#216's own code
+  comments say so explicitly) broadcasts to every subscribed device. Added a `target_roles`
+  column to `app_notifications` (nullable — null preserves the exact existing broadcast
+  behavior for every other producer) and taught `scripts/lib/app-notification-delivery.mjs`'s
+  `deliverAppNotification()` to resolve recipients by `profiles.role` + `profiles.accessible_locs`
+  when a row sets it (`profiles.accessible_locs == null` = unrestricted, same convention every
+  other RLS/access check in this repo already uses).
+- **Owner action required**: run the new `target_roles` column migration in
+  `supabase/schema-app-notifications.sql`'s block 3 (idempotent `alter table add column if not
+  exists` — safe to run even though the rest of that file was already run before). DDL is never
+  an agent's own action.
+- Verified: `npm run build` clean, within payload budget; full suite passing (new tests:
+  `movers-alert.test.js`, `movers-alert-run.test.js`, plus 3 new cases in
+  `app-notification-delivery.test.js` for the role/store-targeting path).

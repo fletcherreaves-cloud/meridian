@@ -1,0 +1,48 @@
+name: Movers Alert Run
+
+# Fires on OCCURRENCE (task #91, owner decision 2026-11-07) — runs right after "QSRSoft Daily
+# Activity Pull" completes, rather than its own independent schedule, so a bad day is flagged as
+# soon as that day's real DAR data lands. See scripts/movers-alert-run.mjs's own header and
+# memory/plan-movers-alerts-2026-11-07.md for the measured thresholds and the owner's decisions.
+#
+# workflow_run only fires for workflows on the DEFAULT branch (same note sync-failure-watch.yml's
+# own header carries). Deliberately NOT added to that watcher's `workflows:` list — its own test
+# (src/__tests__/sync-failure-watch.test.js) scopes the "real workflow" check to cron-triggered
+# workflows only, and this one has no cron (reactive on-occurrence + manual dispatch only). If
+# this ever gains its own cron fallback, add it to that list in the same change.
+on:
+  workflow_run:
+    workflows:
+      - QSRSoft Daily Activity Pull
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # Only proceed if the DAR pull itself actually succeeded — a Movers check against a pull
+    # that failed partway through would read incomplete/stale rows and could misfire. manual
+    # workflow_dispatch has no github.event.workflow_run, so the second condition always passes
+    # for that trigger (the owner is explicitly asking it to run now).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Movers alert check
+        run: node scripts/movers-alert-run.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_VAPID_PUBLIC_KEY:      ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY:          ${{ secrets.VAPID_PRIVATE_KEY }}
