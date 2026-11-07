@@ -10,6 +10,7 @@ import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engi
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { intradayPace } from '../engine/tracking-to-plan.js';
 import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { dKey } from '../utils/date.js';
 import { f$ } from '../utils/fmt.js';
 // Correlations tab (dispatch #195, 2026-08-28) — merges the retired standalone "Metric
@@ -2734,7 +2735,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     // Header
     h('div', { style: { marginBottom: 16 } },
       h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'Intelligence'),
-      h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
+      h('div', { style: { display: 'flex', alignItems: 'center' } },
+        h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
+        h(InfoIcon, { articleKey: 'signals_guide' })),
       h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Find which of your numbers move together. Built-in links run automatically; build your own in Signal Lab; or let the 🔎 Scanner surface them for you.'),
     ),
 

@@ -10,6 +10,7 @@ import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGE
 import { LocationSelector } from '../components/PanelControls.js';
 import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule, mergeAutoManualWeek } from '../engine/labor-analysis.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
 
@@ -359,6 +360,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
         span({ style: { fontSize: 18 } }, '🧮'),
         div({ style: { flex: 1, minWidth: 180 } },
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, 'Labor Analysis',
+            h(InfoIcon, { articleKey: 'labor_analysis_guide' }),
             // Week navigator ‹ · ›
             btn({ onClick: () => shiftWeek(-1), title: 'Previous week', style: { padding: '1px 7px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, '‹'),
             span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Week of ' + ((week && week.weekStart) || '—')),

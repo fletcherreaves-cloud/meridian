@@ -8,6 +8,7 @@
 // for us to fold into the template. Reuses the One-Pager's builders (single source).
 import * as React from 'react';
 import { CASCADE_LEVELS, cascadeOf, weeklyReviewHtml, printWeeklyReview, downloadDoc } from './one-pager.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const { useState } = React;
@@ -64,7 +65,7 @@ export function FormsLibraryPanel({ onClose }) {
       // Header
       div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
         div({},
-          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, '🗂 Forms Library'),
+          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center' } }, '🗂 Forms Library', h(InfoIcon, { articleKey: 'forms_library_guide' })),
           div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } }, 'Leadership review forms by cascade level — print to PDF or download as editable Word')),
         h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕')),
 

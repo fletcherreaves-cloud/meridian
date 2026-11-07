@@ -1083,3 +1083,47 @@ judgment call rather than the mechanical copy-paste this phase and Phase 1/2 all
 pool for a clean mechanical next phase is visibly thinning — worth re-checking at the START of a
 Phase 4 whether enough single-header, unwired-but-keyed panels remain to justify another
 mechanical batch, versus moving on to the judgment-call tier directly.
+
+## 2026-11-07 — judgment-call tier, batch 1 (5 wirings: Labor Analysis, Forms Library, DAR
+Daypart, Product Mix, Signals)
+
+Picked up the judgment-call tier directly (Phase 3's candidate pool was already thin) rather than
+another mechanical sweep. Re-grepped every key this doc's Phase 3 section listed as deferred
+(`labor_analysis_guide`, `forms_library_guide`, `dar_daypart_guide`, `product_mix_dashboard_guide`,
+`signals_guide`) against every `src/views/*.js` file and confirmed all five were genuinely
+dangling — a real `KB_ARTICLES` entry existing but zero `h(InfoIcon,...)` call anywhere in the
+codebase referencing it. Same silent-failure shape as `launch_planner_guide` (fixed v5.675): no
+crash, no test failure, the "?" control simply never existed.
+
+- **`labor-analysis.js`** (`LaborAnalysisPanel`) — title div at its header (`'Labor Analysis'`
+  plus the week-navigator `‹ Week of … ›` controls, all one flex row) now also carries
+  `h(InfoIcon,{articleKey:'labor_analysis_guide'})` right after the title text, before the nav
+  buttons.
+- **`forms-library.js`** — same Data-Manager-style hand-rolled header (`'🗂 Forms Library'` title
+  div, no `RoutePanelShell`) now wraps the title + icon in a flex row, matching the established
+  workaround pattern exactly.
+- **`labor-tools.js`**'s `DARDaypartPanel` and `ProductMixPanel` — both already had their own
+  matching KB keys (confirmed in Phase 3 above) but, on actually tracing their render path this
+  pass, both turned out to have perfectly ordinary single-title header divs (`'DAR Daypart
+  Analytics'`, `'Product Mix Dashboard'`) — Phase 3's "no own `RoutePanelShell` call… needs
+  tracing their real render path first" caveat held, but tracing it found an easy mechanical wire,
+  not a structural blocker. Wired both the same way.
+- **`signals.js`**'s `SignalsPanel` — despite being the single biggest judgment-call deferral
+  (multiple tabs: Live Ops/Projection Accuracy/Park×OEPE/Store Controls/Built-in/Signal
+  Lab/Scanner), the panel-level header itself (the `'Signals'` title + "Intelligence" eyebrow +
+  one-line description, rendered once above the tab bar, not per-tab) is a single clean block.
+  Wired `signals_guide` there — it documents the panel as a whole, not any one tab, so a
+  panel-level icon is the right altitude regardless of which tab is active.
+
+**Still deferred, unchanged from Phase 3's list:** `security-panel.js`, `sage.js`,
+`AIBacktestScanner` (embedded in `App.js`, no own header), `CustomizePanel`-sub-tabs
+(`performance_calculator_guide`/`review_target_overrides_guide`) — none inspected this pass:
+real remaining judgment-call work, not re-confirmed here.
+
+**Running total: 34 of ~115 real `KB_ARTICLES` keys now wired** (29 after Phase 3, +5 here;
+`launch_planner_guide` from v5.675 already counted separately and not re-counted). No new tests
+added for this batch — each wiring is a one-line sibling add next to an existing title string,
+the exact same shape Phase 1's Data Manager fix and the `launch_planner_guide` fix both already
+have test coverage patterns for; verified by local build (clean, within payload budget) and the
+full suite (773/773 files, 7083+/7083+ tests) rather than new assertions, consistent with how
+trivial a dangling-reference wire-up is to verify by inspection plus a passing suite.
