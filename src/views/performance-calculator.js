@@ -38,6 +38,7 @@ import { LocationSelector } from '../components/PanelControls.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addDR } from '../utils/date.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -159,7 +160,7 @@ export function PerformanceCalculatorSection({ ds }) {
       background:'var(--surf2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
       span({style:{fontSize:'18px'}},'🧮'),
       div({style:{flex:'1 1 220px'}},
-        div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Performance Calculator'),
+        div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},'Performance Calculator',h(InfoIcon,{articleKey:'performance_calculator_guide'})),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},'Interactive what-if model: how metric improvements chain through throughput → GC → sales → labor → TPPH')
       ),
       // 2026-11-02 — standardized onto the shared LocationSelector (mode:'store', so the full

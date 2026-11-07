@@ -4410,6 +4410,7 @@ function App() {
     // (NewsPanel carries RoutePanelShell internally; see routePanel==='news').
     showAIScan&&h(ModalShell,{
       title:'🔍 Historical Sales Anomaly Scan',
+      subtitle:h(InfoIcon,{articleKey:'anomaly_scan_guide'}),
       onClose:()=>setShowAIScan(false),maxWidth:940,zIndex:Z.modal,bodyStyle:{padding:'16px'}
     },
       h(AIBacktestScanner,{stores,ds,settings,userEvents,onTagEvent:(loc,dk,note,evType,opts)=>{
