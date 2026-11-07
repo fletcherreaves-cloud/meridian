@@ -1185,3 +1185,47 @@ shape as every other fix in this file, not new content needed.
 is now wired. **Running total: 39 of ~117 real `KB_ARTICLES` keys wired.** Verified the same way
 as every prior batch — local build (clean, within payload budget) + full suite, no new tests
 (pure wiring, no logic change).
+
+## 2026-11-07 — Notes 73 #1 ("info icon on panels") measured: this task is the answer, not a new ask
+
+The owner's Notes 73 field queue (`memory/notes-73-queue.md` #1) asked for "adding info icon with
+easy access click for help on panels," flagged there as a possible re-hit of this exact task.
+Measured directly to confirm: `KB_ARTICLES` (`src/engine/forecast.js`) carries **116** real keys
+(a plain-object parse of the whole block, not the old "~117" estimate); `grep`ing every
+`articleKey:` call site across `src/app/`/`src/views/`/`src/features/` finds **41** wired (two
+more than the "39" the 2026-11-07 batch above counted, from v5.681's Movers Alerts work touching
+nothing here — the drift is just this count being re-measured, not new wiring). **75 keys remain
+unwired** — this is a real, substantial remainder, not a stale task about to be closed. Confirmed
+task #108 is this task (#75), not a separate ask.
+
+Spot-checked four names that READ like duplicates of already-wired keys, to rule out a second
+false-positive the way `AIBacktestScanner`/`CustomizePanel` turned out to be real gaps rather than
+duplicates above — all four are genuinely distinct, separate panels, not a wiring target already
+covered under a different key name:
+- `targets_editor` ("Monthly & Yearly Targets — Panel Guide", Planning → Monthly/Yearly tabs) vs.
+  the already-wired `review_target_overrides_guide` ("Targets Editor — Panel Guide", Performance
+  Reviews → Customize → Targets tab) — same-sounding name, two unrelated features; the KB article
+  for `review_target_overrides_guide` says so explicitly ("Do NOT confuse this with the Monthly &
+  Yearly Targets grids"). **`targets_editor`'s own real on-screen home was not conclusively
+  located this pass** — panel-registry.js's Planning hub-tabs (`monthly-proj`/`pace-target`/
+  `smart-targets-v2`/`unified-targets`/`yearly-proj`) don't obviously match "Monthly tab / Yearly
+  tab → Target Categories" by id name alone, and `UnifiedTargetsPanel` (store-dash.js, id
+  `unified-targets`) turned out on inspection to be a tolerance-status rollup (Service/Labor/Food
+  & Paper/POS/Sales vs. target), not an editable grid — the wrong candidate. Left unwired rather
+  than guessed at; next pass should grep `saveMonthlyTargets`/`saveYearlyTargets` (named directly
+  in the KB article's own detail text) to find the real component before wiring this one.
+- `security_guide` (new finding-batch wording, "An investigation surface over `security_findings`
+  …") vs. the already-wired `security_panel_guide` — both describe the Security panel, but are
+  two separately-written, non-identical entries under different keys. Left as-is (did not merge
+  or re-wire) — outside this pass's scope, flagged for whoever next touches this panel's KB
+  content to decide whether one should redirect to the other or genuinely cover a sub-view the
+  other doesn't.
+- `morning_brief_guide` ("Daily Brief — Morning Intelligence Brief") vs. `brief_guide` ("Forecast
+  Brief — Panel Guide") — confirmed genuinely different panels (`morning-brief` vs. `brief`
+  registry ids), not a naming collision. Neither wired yet.
+
+**Net finding: no duplicate-collapse opportunity found, and the 75-item remainder is real.**
+Continuing the wiring itself stays task #75's open-ended scope — picking off a few more per pass,
+same pattern as every batch in this file, verifying the real mount point before wiring each one
+rather than assuming from the key name (exactly the discipline that caught `targets_editor` not
+being `unified-targets` above).
