@@ -191,6 +191,42 @@ describe('NewStoreLaunchPlanner', () => {
     expect(container.textContent).toMatch(/Grand Opening/);
   });
 
+  // Plan Length + Projected Total (2026-11-07 follow-on) -- maxDays used to be hardcoded at 60
+  // with no UI control at all; the owner's 12-month reconciliation request surfaced that the
+  // panel never showed enough of the curve to check a mature-run-rate assumption against a real
+  // annual total. See memory/project-new-store-launch-planner.md's 2026-11-07 section.
+  it('defaults the Plan Length selector to 365 days (12 months)', async () => {
+    _selectData = [];
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const planLengthSelect = [...container.querySelectorAll('select')].find(
+      (s) => [...s.options].some((o) => o.value === '365'),
+    );
+    expect(planLengthSelect, 'Plan Length select with a 365-day option not found').toBeTruthy();
+    expect(planLengthSelect.value).toBe('365');
+  });
+
+  it('shows no Projected Total stat in the empty state (no rows yet)', async () => {
+    _selectData = [];
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    expect(container.textContent).not.toMatch(/Projected Total/);
+  });
+
+  it('shows a Projected Total summing every row\'s effective (override-or-projected) sales', async () => {
+    _selectData = [
+      { loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2020, override_sales: null, note: null, source: 'ramp' },
+      { loc: '44689', plan_date: '2026-11-15', day_n: 1, projected_sales: 2500, override_sales: 3000, note: null, source: 'manual' },
+    ];
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    // 2020 (projected, no override) + 3000 (override wins over its own 2500 projected) = 5020.
+    expect(container.textContent).toMatch(/Projected Total \(2 days\): \$5,020/);
+  });
+
   it('"Regenerate from ramp model" never overwrites a row whose source is already manual', async () => {
     _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2020, override_sales: 9999, note: null, source: 'manual' }];
     _dailyActivityRows = (() => {
