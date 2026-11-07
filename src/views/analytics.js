@@ -1036,7 +1036,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
   return h(RoutePanelShell,{
     icon:'📄',
     title:'Store One-Pager Generator',
-    subtitle:'Professional print-ready brief — opens in new tab, save as PDF via browser print',
+    subtitle:h('span',null,'Professional print-ready brief — opens in new tab, save as PDF via browser print',h(InfoIcon,{articleKey:'store_one_pager_guide'})),
     onBack:onClose,
   },
     div({style:{display:'flex',flexDirection:'column',gap:14,maxWidth:640}},
@@ -3431,7 +3431,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode, onNav}){
   return h(RoutePanelShell, {
     title: mode==='eom' ? 'End of Month' : 'Food Cost',
     icon: mode==='eom' ? '📋' : '🥗',
-    subtitle: h(InfoIcon,{articleKey: mode==='eom' ? 'eom_dashboard_guide' : 'food_cost_panel'}),
+    subtitle: h(InfoIcon,{articleKey: 'food_cost_panel'}),
     onBack: onClose,
     headerExtra: div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
       modeTabBar,

@@ -10,6 +10,7 @@ import { loadReportSubs, saveReportSubs } from '../lib/supabase.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { ONEPAGER_PANELS } from './above-store-onepager.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
@@ -216,6 +217,6 @@ export function ReportSubscriptionsBody({ onLaunch }) {
 export function ReportSubscriptions({ onClose, onLaunch }) {
   return h(RoutePanelShell, {
     title: 'My Reports', icon: '🗂', onBack: onClose,
-    subtitle: 'Save the reports and groupings you want — one-click, pre-scoped',
+    subtitle: h('span', null, 'Save the reports and groupings you want — one-click, pre-scoped', h(InfoIcon, { articleKey: 'reports_hub_guide' })),
   }, h(ReportSubscriptionsBody, { onLaunch }));
 }

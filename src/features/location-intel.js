@@ -4,6 +4,7 @@ import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS } from '../co
 import { dKey, nDays } from '../utils/date.js';
 import { gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { printHtml } from '../utils/print-html.js';
 import { loadStoreDemographics, saveStoreDemographics, getAuthToken } from '../lib/supabase.js';
 import { fetchAllStoreDemographics } from '../engine/census-demographics.js';
@@ -769,6 +770,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
   return h(RoutePanelShell,{
     icon:'📊',
     title:'Location Intelligence',
+    subtitle:h(InfoIcon,{articleKey:'loc_intel_guide'}),
     onBack:onClose,
     headerExtra:div({style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},...headerControls),
   }, bodyEl);

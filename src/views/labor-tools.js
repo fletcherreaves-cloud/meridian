@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_COFFEE } from '../constants.js';
-import { forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
+import { forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate, InfoIcon } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
@@ -1904,7 +1904,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   // treatment as OperatorSummaryPanel's siblings in this batch (StoreOnePager/GradedVisitsPanel/
   // VisitReadinessPanel), and AttentionPanel/RankingView under dispatch #192.
   if(!hasData)
-    return h(RoutePanelShell,{icon:groupIcon,title:'Org Summary',onBack:onClose},
+    return h(RoutePanelShell,{icon:groupIcon,title:'Org Summary',onBack:onClose,subtitle:h(InfoIcon,{articleKey:'operator_summary_guide'})},
       div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
         div({style:{fontSize:40,marginBottom:12}},'📊'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
@@ -1919,7 +1919,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   return h(RoutePanelShell,{
     icon:groupIcon,
     title:'Org Summary',
-    subtitle:'Sales, labor, food cost & service by '+GROUP_OPTS.find(g=>g.id===groupBy).l.toLowerCase()+' · Expand rows for store detail',
+    subtitle:h('span',null,'Sales, labor, food cost & service by '+GROUP_OPTS.find(g=>g.id===groupBy).l.toLowerCase()+' · Expand rows for store detail',h(InfoIcon,{articleKey:'operator_summary_guide'})),
     onBack:onClose,
     headerExtra:
           h(ExportDropdown,{

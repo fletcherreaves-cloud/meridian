@@ -10,6 +10,7 @@
 // header for why the extraction is behavior-identical).
 import * as React from 'react';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { reportsCatalog, REPORT_CATEGORIES } from '../app/reports-catalog.js';
 import { ReportSubscriptionsBody } from './report-subscriptions.js';
 
@@ -57,7 +58,7 @@ export function ReportsHub({ can, onOpenPanel, onLaunchSubscription, onClose }) 
 
   return h(RoutePanelShell, {
     title: 'Reports Hub', icon: '🗂', onBack: onClose,
-    subtitle: 'Every report in one place — categorized, pre-scoped, printable/shareable',
+    subtitle: h('span', null, 'Every report in one place — categorized, pre-scoped, printable/shareable', h(InfoIcon, { articleKey: 'reports_hub_guide' })),
     bodyStyle: { display: 'flex', flexDirection: 'column', gap: 16 },
   },
     // category tab strip — wraps on narrow screens rather than scrolling horizontally

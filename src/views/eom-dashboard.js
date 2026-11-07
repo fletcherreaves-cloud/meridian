@@ -9,6 +9,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, supervisorGroups, operatorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { EOMDataRefreshButton } from '../components/EOMDataRefreshButton.js';
 import { LocationSelector, ActionMenus, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
@@ -3545,7 +3546,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // the active tab's own Print button can be clicked; harmless no-ops otherwise (they only take
   // effect under body.eom-printing, which nothing else in this panel ever sets).
   return h(RoutePanelShell, {
-    title: '📦 Inventory Control', subtitle: subtitleText, onBack: onClose,
+    title: '📦 Inventory Control', subtitle: h('span', null, subtitleText, h(InfoIcon, { articleKey: 'eom_dashboard_guide' })), onBack: onClose,
     bodyStyle: { padding: '20px' },
     className: printableMode ? 'mf-eom-print-modal mf-eom-print-card' : undefined,
     headerClassName: printableMode ? 'mf-eom-modal-chrome' : undefined,

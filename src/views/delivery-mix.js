@@ -25,6 +25,7 @@ import * as React from 'react';
 import { f$, fPct } from '../utils/fmt.js';
 import { STORE_NAMES } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const { useState, useMemo } = React;
@@ -512,7 +513,7 @@ export function DeliveryMixPanel({ ds, stores, onClose }) {
 
   return h(RoutePanelShell, {
     title: 'Delivery & Channel Mix',
-    subtitle: 'District channel-mix overview, drill into 3rd-party delivery platforms',
+    subtitle: h('span', null, 'District channel-mix overview, drill into 3rd-party delivery platforms', h(InfoIcon, { articleKey: 'delivery_3po' })),
     icon: '🛵',
     onBack: onClose,
     headerExtra: h('div', { style: { display: 'flex', gap: 6 } },

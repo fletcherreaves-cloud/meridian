@@ -29,6 +29,7 @@ import { applyDepartureAutoFinalize } from '../engine/departure.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 // Targets Editor, moved into Customize as a sub-tab by dispatch #135 item 3 (was its own
 // standalone panel-registry nav entry under dispatch #132 — see targets-editor.js's own header).
 import { TargetsEditorSection } from './targets-editor.js';
@@ -3371,7 +3372,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
 
   return h(RoutePanelShell,{
     title:'Performance Reviews', icon:'📋', onBack:onClose,
-    subtitle:'Salaried Management · GM · AM · AS · OM',
+    subtitle:h('span',null,'Salaried Management · GM · AM · AS · OM',h(InfoIcon,{articleKey:'performance_reviews_guide'})),
     headerExtra: GhostBtn({onClick:()=>setShowHelp(true),style:{fontSize:11}},'? Help'),
     bodyStyle:{display:'flex',flexDirection:'column',overflow:'hidden'},
   },
