@@ -93,7 +93,10 @@ export function NewStoreLaunchPlanner({ onClose }) {
   const [matureWeeklySales, setMatureWeeklySales] = React.useState(seed.matureWeeklySales ?? '');
   const [comparables, setComparables] = React.useState(seed.comparables || [{ loc: '', weight: 1 }]);
   const [opsNote, setOpsNote] = React.useState(seed.opsNote || '');
-  const [maxDays, setMaxDays] = React.useState(60);
+  // 365 (a true 12-month view) is the default -- the 60-day window this used to be hardcoded to
+  // never showed enough of the curve to check a mature-run-rate assumption against a real annual
+  // total. Still caller-adjustable; nothing here is Lindsay-specific.
+  const [maxDays, setMaxDays] = React.useState(365);
   const [rows, setRows] = React.useState([]); // {planDate,dayN,projectedSales,overrideSales,note,source}
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState(null);
@@ -269,7 +272,12 @@ export function NewStoreLaunchPlanner({ onClose }) {
         inp({ type: 'date', value: grandOpeningDate, onChange: (e) => setGrandOpeningDate(e.target.value), className: 'inp' })),
       div(null,
         span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 2 } }, 'Mature Weekly Sales $'),
-        inp({ type: 'number', value: matureWeeklySales, onChange: (e) => setMatureWeeklySales(e.target.value), className: 'inp', style: { width: 120 } }))),
+        inp({ type: 'number', value: matureWeeklySales, onChange: (e) => setMatureWeeklySales(e.target.value), className: 'inp', style: { width: 120 } })),
+      div(null,
+        span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 2 } }, 'Plan Length'),
+        h('select', { value: maxDays, onChange: (e) => setMaxDays(Number(e.target.value)), className: 'inp' },
+          [[60, '60 days'], [90, '90 days'], [180, '180 days'], [365, '365 days (12 months)']].map(([v, label]) =>
+            h('option', { key: v, value: v }, label))))),
     div({ style: { marginBottom: 12 } },
       span({ style: { fontSize: 10, color: 'var(--text3)', display: 'block', marginBottom: 4 } }, 'Comparable stores (loc + weight)'),
       div({ style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
@@ -283,6 +291,8 @@ export function NewStoreLaunchPlanner({ onClose }) {
     div({ style: { marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 } },
       btn({ className: 'btn btn-sm', onClick: regenerate, disabled: loading }, loading ? 'Projecting…' : '↻ Regenerate from ramp model'),
       err && span({ style: { fontSize: 11, color: 'var(--crit)' } }, err)),
+    rows.length > 0 && div({ style: { fontSize: 14, fontWeight: 700, marginBottom: 12 } },
+      'Projected Total (' + rows.length + ' days): ' + fmtMoney(rows.reduce((s, r) => s + (r.overrideSales ?? r.projectedSales ?? 0), 0))),
     div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.5 } },
       'Real comparable openings often run ABOVE their own mature run-rate for the first several weeks (grand-opening traffic), not below — check the Projected $ column for a bump before assuming a slow ramp.'),
     opsNote && div({ style: { fontSize: 11, fontWeight: 700, color: '#f5bc00', marginBottom: 12, padding: '6px 10px', border: '.5px solid rgba(245,188,0,.4)', borderRadius: 4, background: 'rgba(245,188,0,.08)' } },

@@ -202,3 +202,69 @@ Tests: 12 new engine tests mirroring the hourly suite exactly (`src/__tests__/ne
 1 loader test + 2 panel tests (`src/__tests__/dispatch-launch-planner-2026-11-06.test.js`). Full
 suite 772/772 files, 7062/7062 tests. Build clean, 670.64 KB gzip eager payload (budget 850 KB,
 negligible change from the pre-existing 670.52 KB).
+
+## 2026-11-07 (later same day) — 12-month reconciliation: two independent methods converge within 0.3%
+
+Owner: "let's remodel the sales forecast for 12 months for 44689... I think we documented it
+somewhere... I think maybe I copied it and saved it" — then pasted a recollection: 18213's real
+trailing-12-month sales ($2,154,000.83), the Holdenville NSN 2979→35064 precedent (+$500,000 in
+year one), and a rough "$8k-$9k/day" and "2.7M/year" sense of where Lindsay should land. Asked to
+reevaluate against the existing ramp-model assumption and adjust if they no longer agreed.
+
+**What was measured, live, before changing anything:**
+
+- **18213's real trailing-12-month sales** (2025-10-01 → 2026-09-30), summed directly from
+  `qsr_daily_activity.product_sales`: **$2,154,060.43** across 8,761 real hour-slot rows —
+  matches the owner's recollection ($2,154,000.83) almost exactly.
+- **The Holdenville $500k-year-one precedent** was already documented, owner-sourced-only, in
+  `memory/finding-qsrsoft-retention-2026-10-17.md`'s "Holdenville NSN 2979 → 35064" section —
+  QSRSoft's own data retention erased that window for every store (not a 2011-date error; the
+  transition happened, see that file's dated correction), so the $500k figure can never be
+  independently re-verified from Meridian's own data and was correctly treated here as a given
+  fact, not re-investigated.
+- **$2,154,060.43 + $500,000 = $2,654,060** — this is almost certainly the real source of the
+  owner's "~2.7M/year" recollection, reconstructed exactly from the two real numbers they
+  supplied, not a new estimate.
+- **The existing ramp-model assumption, run for the real 365 days it was never actually shown
+  for**: `projectNewStoreSales` from `src/engine/new-store-ramp.js`, run directly against real
+  Tishomingo (43380, weight 0.7) and Ponce de Leon (43701, weight 0.3) daily sales loaded live
+  from `qsr_daily_activity`, at the EXISTING `matureWeeklySales: 46925` seeded in
+  `launch-planner.js`, produces a real 365-day total of **$2,646,006** (vs. just $726,770 for the
+  first 90 days — the old hardcoded 60-day UI window never showed enough of the curve to check
+  this against anything).
+- **$2,646,006 vs. $2,654,060 is a 0.3% difference** — two completely independent methods
+  (comparable-store ramp shape vs. predecessor-store base + a real precedent transition) converge
+  on essentially the same number.
+
+**Conclusion: the $46,925/week mature-sales assumption is validated and unchanged.** The real gap
+was never the assumption — it was that the UI had no way to view or check a 12-month total at
+all. That gap is now closed (see "What changed" below), not the math.
+
+**The "$8k-$9k/day" figure also reconciles, not contradicts.** $2.65M/365 ≈ $7,260/day as a
+FULL-YEAR average, below $8k-$9k — but the existing ramp shape (documented in this file's first
+section) already shows days 1-7 running 0.96x-1.81x mature and settling toward 1.0-1.3x by week
+8, i.e. a MATURE steady-state of roughly $6,704-$8,715/day once the opening bump settles — which
+is exactly the $8k-$9k/day range, just describing the steady-state rate rather than the blended
+first-year average. Both figures were right; they were answering different questions.
+
+**One operational note surfaced in passing, not acted on here**: GM Harlee's last day is
+2026-10-14, with the new GM starting 2026-10-16 — a leadership transition landing about a month
+before a brand-new-building opening (2026-11-14) and grand opening (2026-11-17). Worth keeping in
+mind for onboarding/readiness, but this tool is a sales-ramp planner, not an HR tracker — no field
+was added for it here.
+
+### What changed
+
+The gap this surfaced: `maxDays` was hardcoded to 60 with zero UI control, so nobody could ever
+see — or sanity-check an assumption against — a real annual total.
+
+- **`src/views/launch-planner.js`**: `maxDays` now defaults to **365** (a true 12-month view).
+  Added a **Plan Length** `<select>` (60 / 90 / 180 / 365 days) next to the other inputs so any
+  window length is a click, not a code edit — reusable for the next opening, same as every other
+  input on this panel. Added a **"Projected Total (N days): $X"** stat, summing every row's
+  EFFECTIVE sales (`overrideSales ?? projectedSales`) across however many rows currently exist —
+  shown only once a plan exists (hidden in the empty state).
+- Tests: 3 new (`src/__tests__/dispatch-launch-planner-2026-11-06.test.js`) — the Plan Length
+  select defaults to 365, the Projected Total stat is absent with no rows, and it correctly sums
+  effective sales (override wins over its own row's projected value) with the right row count in
+  its label.
