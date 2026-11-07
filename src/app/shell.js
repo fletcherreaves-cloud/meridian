@@ -169,6 +169,19 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       ? new Set(SECTIONS.filter(s=>s.id!==id).map(s=>s.id))
       : new Set(prev).add(id)
   );
+  // Opens section `id` if it's currently collapsed (every section is, by default -- see above);
+  // a no-op if it's already open, unlike toggleSection (which would close it). Used by
+  // OnboardingTour.js's 'mf:expandSection' event below so its Data Manager step (section
+  // 'admin', collapsed by default) has something real to spotlight without the tour needing to
+  // reach into this component's own local state.
+  const ensureSectionOpen = (id) => setCollapsedSections(prev=>
+    prev.has(id) ? new Set(SECTIONS.filter(s=>s.id!==id).map(s=>s.id)) : prev
+  );
+  React.useEffect(()=>{
+    const onExpand=(e)=>{ const id=e?.detail?.id; if(id) ensureSectionOpen(id); };
+    window.addEventListener('mf:expandSection',onExpand);
+    return ()=>window.removeEventListener('mf:expandSection',onExpand);
+  },[]);
 
   // ── Command palette (2026-10-07) — a reachable-from-anywhere presentation of the SAME
   // navIndex/navResults/goNavResult the inline sidebar search below already computes; no second
@@ -237,6 +250,11 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       opacity:disabled?0.45:1,
       transition:'all .15s',justifyContent:navCollapsed?'center':'flex-start',
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
+      // Stable hook for OnboardingTour.js's spotlight steps -- matched by exact label text, same
+      // coupling this file already accepts for the collapse-toggle's `title` string (matched by
+      // tests). Only 'Home' and 'Data Manager' carry a hook; every other nav item's `data-tour`
+      // prop is simply undefined, which React omits from the DOM.
+      'data-tour':(label==='Home'?'home':label==='Data Manager'?'data-manager':undefined),
       onClick:disabled?undefined:(...a)=>{onClick(...a);closeMobile();},
       // Always carry the full label as a tooltip, not just when collapsed -- a label longer
       // than the sidebar's fixed width (dispatch #55 Part A's LifeLenz Bridge rename, ~3x its
@@ -491,7 +509,7 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
   return h(React.Fragment,null,
     paletteOverlay,
     isMobile&&mobileOpen&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:299},onClick:()=>setMobileOpen(false)}),
-    div({style:sideStyle},
+    div({style:sideStyle, 'data-tour':'sidebar'},
 
     // ── Logo & collapse toggle ──────────────────────────────────
     div({style:{display:'flex',alignItems:'center',gap:8,padding:(navCollapsed||fullyHidden)?'14px 0':'14px 12px',
@@ -845,7 +863,7 @@ function NotificationBell({ onOpenModal, perm }) {
   // This is exactly the manager/gm/sm_am_dm use case: a GM's own store's EOM count notification.
   if (perm && !perm('analytics.store')) return null;
 
-  return div({ style: { position: 'relative', flexShrink: 0 } },
+  return div({ style: { position: 'relative', flexShrink: 0 }, 'data-tour': 'bell' },
     btn({ onClick: () => setOpen(o => !o), title: 'Notifications',
       style: { position: 'relative', width: 26, height: 26, borderRadius: '50%',
         border: '.5px solid var(--bdr)', background: 'var(--surf2)', color: 'var(--text2)',

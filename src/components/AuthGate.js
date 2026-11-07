@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { supabase, logAppAccess, setNotificationConsent } from '../lib/supabase.js';
 import { detectPushCapability, subscribeToPush } from '../lib/push-subscribe.js';
+import { TOUR_PENDING_FLAG_KEY } from './OnboardingTour.js';
 
 const { useState, useEffect } = React;
 const h = React.createElement;
@@ -289,6 +290,11 @@ function NotificationConsentScreen({ onDone }) {
 
   const finish = async (choice) => {
     try { await setNotificationConsent(choice); } catch {} // best-effort -- never blocks entry
+    // Task #107 — flags the first-login nav walkthrough (src/components/OnboardingTour.js) to
+    // run once the real app mounts. sessionStorage, not a profiles column, deliberately: this is
+    // the exact first-sign-in moment (never retroactive for an existing account), and the tour
+    // consumes the flag itself on mount, so this is a one-shot signal, not durable state.
+    try { sessionStorage.setItem(TOUR_PENDING_FLAG_KEY, '1'); } catch {}
     onDone();
   };
 
