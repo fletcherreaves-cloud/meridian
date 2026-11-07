@@ -7,7 +7,8 @@ import { describe, it, expect } from 'vitest';
 import {
   firstTradingDay, rampSeriesFor, matureBaseline, rampShape, blendRampShapes, projectNewStoreSales,
   projectLaunchPlan, HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS, hourlyShapeFor, blendHourlyShapes,
-  splitDayAcrossHours,
+  splitDayAcrossHours, QTR_SLOTS, DEEP_OVERNIGHT_QTR_SLOTS, quarterHourShapeFor,
+  blendQuarterHourShapes, splitDayAcrossQuarterHours,
 } from '../engine/new-store-ramp.js';
 
 function row(loc, date, sales) { return { loc, date, sales, gc: 1 }; }
@@ -276,5 +277,113 @@ describe('splitDayAcrossHours()', () => {
   it('returns an empty array when there is no blend or no total', () => {
     expect(splitDayAcrossHours(0, { shape: [] })).toEqual([]);
     expect(splitDayAcrossHours(1000, null)).toEqual([]);
+  });
+});
+
+// Launch Planner 15-min breakdown (2026-11-07) -- same derived-view approach, one level finer,
+// against the real qsr_sales_quarter_hour table (built for the separate "Record Hour" feature;
+// the 2026-11-06 hourly build missed it and wrongly concluded no quarter-hour data existed).
+// Mirrors the hourlyShapeFor/blendHourlyShapes/splitDayAcrossHours suites above exactly.
+function qrow(loc, date, qtrSlot, sales) { return { loc, date, qtrSlot, sales }; }
+function mkQtrRows(loc, numDays, qtrSalesFn) {
+  const rows = [];
+  let d = new Date('2026-01-01');
+  for (let i = 0; i < numDays; i++) {
+    const date = d.toISOString().slice(0, 10);
+    for (const qs of QTR_SLOTS) rows.push(qrow(loc, date, qs, qtrSalesFn(qs)));
+    d = new Date(d.getTime() + 864e5);
+  }
+  return rows;
+}
+
+describe('QTR_SLOTS', () => {
+  it('is exactly 96 real 15-minute slots, 04:15 through 28:00', () => {
+    expect(QTR_SLOTS).toHaveLength(96);
+    expect(QTR_SLOTS[0]).toBe('04:15');
+    expect(QTR_SLOTS[QTR_SLOTS.length - 1]).toBe('28:00');
+  });
+});
+
+describe('DEEP_OVERNIGHT_QTR_SLOTS', () => {
+  it('is the 4 quarter-hour slots composing each of the 6 DEEP_OVERNIGHT_SLOTS hour buckets', () => {
+    expect(DEEP_OVERNIGHT_QTR_SLOTS).toHaveLength(DEEP_OVERNIGHT_SLOTS.length * 4);
+    // The '05:00' hour bucket (4am-5am) is composed of these 4 real 15-min slots.
+    expect(DEEP_OVERNIGHT_QTR_SLOTS).toEqual(expect.arrayContaining(['04:15', '04:30', '04:45', '05:00']));
+  });
+});
+
+describe('quarterHourShapeFor()', () => {
+  it('returns null when there is not enough history to call it mature', () => {
+    const rows = mkQtrRows('A', 2, () => 25);
+    expect(quarterHourShapeFor(rows, 'A', 10)).toBe(null);
+  });
+  it('expresses each 15-min slot as a fraction of the day total, summing to ~1 across all 96 slots', () => {
+    const rows = mkQtrRows('A', 20, () => 25); // flat: every slot gets 25, every day
+    const result = quarterHourShapeFor(rows, 'A', 10);
+    expect(result).toBeTruthy();
+    expect(result.shape).toHaveLength(96);
+    const sum = result.shape.reduce((a, p) => a + p.frac, 0);
+    expect(sum).toBeCloseTo(1, 4);
+    expect(result.shape[0].frac).toBeCloseTo(1 / 96, 4);
+  });
+  it('flags nearlyClosedOvernight when the deep-overnight slots carry under 1% of real daily sales', () => {
+    const rows = mkQtrRows('A', 20, (qs) => (DEEP_OVERNIGHT_QTR_SLOTS.includes(qs) ? 0 : 25));
+    const result = quarterHourShapeFor(rows, 'A', 10);
+    expect(result.overnightFrac).toBe(0);
+    expect(result.nearlyClosedOvernight).toBe(true);
+  });
+  it('a genuinely 24-hour store (real overnight volume) is NOT flagged', () => {
+    const rows = mkQtrRows('A', 20, () => 25); // flat, including the overnight slots
+    const result = quarterHourShapeFor(rows, 'A', 10);
+    expect(result.nearlyClosedOvernight).toBe(false);
+  });
+});
+
+describe('blendQuarterHourShapes()', () => {
+  it('weight-blends two comparables by qtr_slot', () => {
+    const flat = mkQtrRows('X', 20, () => 25); // 1/96 per slot
+    const closedOvernight = mkQtrRows('Y', 20, (qs) => (DEEP_OVERNIGHT_QTR_SLOTS.includes(qs) ? 0 : 25));
+    const blended = blendQuarterHourShapes([
+      { loc: 'X', qtrHourRows: flat, weight: 0.5 },
+      { loc: 'Y', qtrHourRows: closedOvernight, weight: 0.5 },
+    ]);
+    expect(blended).toBeTruthy();
+    const normalSlot = blended.shape.find((p) => p.qtrSlot === '06:00');
+    expect(normalSlot.frac).toBeGreaterThan(0);
+    const overnightSlot = blended.shape.find((p) => p.qtrSlot === '24:00');
+    expect(overnightSlot.frac).toBeCloseTo(0.5 * (1 / 96), 3);
+  });
+  it('flags anyNearlyClosedOvernight true if even one blended comparable is near-closed overnight', () => {
+    const flat = mkQtrRows('X', 20, () => 25);
+    const closedOvernight = mkQtrRows('Y', 20, (qs) => (DEEP_OVERNIGHT_QTR_SLOTS.includes(qs) ? 0 : 25));
+    const blended = blendQuarterHourShapes([
+      { loc: 'X', qtrHourRows: flat, weight: 0.7 },
+      { loc: 'Y', qtrHourRows: closedOvernight, weight: 0.3 },
+    ]);
+    expect(blended.anyNearlyClosedOvernight).toBe(true);
+  });
+  it('returns null when no comparable has enough history to produce a shape', () => {
+    expect(blendQuarterHourShapes([{ loc: 'X', qtrHourRows: mkQtrRows('X', 2, () => 25), weight: 1 }])).toBe(null);
+  });
+});
+
+describe('splitDayAcrossQuarterHours()', () => {
+  it('splits a daily total proportionally by the blended shape, exactly to the cent', () => {
+    const blended = { shape: QTR_SLOTS.map((qs) => ({ qtrSlot: qs, frac: 1 / 96 })) };
+    const out = splitDayAcrossQuarterHours(960, blended);
+    expect(out).toHaveLength(96);
+    const sum = out.reduce((a, p) => a + p.sales, 0);
+    expect(sum).toBeCloseTo(960, 2);
+    expect(out[0].sales).toBeCloseTo(10, 2);
+  });
+  it('the last slot absorbs any rounding remainder so the total stays accurate to the cent', () => {
+    const blended = { shape: QTR_SLOTS.map((qs) => ({ qtrSlot: qs, frac: 1 / 96 })) };
+    const out = splitDayAcrossQuarterHours(1000, blended);
+    const sum = out.reduce((a, p) => a + p.sales, 0);
+    expect(sum).toBeCloseTo(1000, 2);
+  });
+  it('returns an empty array when there is no blend or no total', () => {
+    expect(splitDayAcrossQuarterHours(0, { shape: [] })).toEqual([]);
+    expect(splitDayAcrossQuarterHours(1000, null)).toEqual([]);
   });
 });

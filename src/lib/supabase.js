@@ -3922,6 +3922,29 @@ export async function loadHourlySalesForStore(loc, startDate, endDate) {
   return rows.map(r => ({ loc: unpadded, date: r.dt, hourSlot: r.hour_slot, sales: Number(r.product_sales) || 0 }));
 }
 
+// Quarter-hour-granularity sibling of loadHourlySalesForStore, for the Launch Planner's finer
+// "15-min" breakdown (quarterHourShapeFor/blendQuarterHourShapes in src/engine/new-store-ramp.js).
+// Reads qsr_sales_quarter_hour -- the REAL 15-minute sales table built for the separate "Record
+// Hour" feature (memory/finding-record-hour-quarter-hour-pull.md), confirmed live at 96 distinct
+// qtr_slot values/store/day -- rather than interpolating from the hourly table. loc is stored
+// PADDED in this table (matching every other QSRSoft-sourced table, including qsr_daily_activity)
+// but this function returns it UNPADDED, matching loadHourlySalesForStore/loadDailySalesForStore's
+// own convention for this engine's callers.
+export async function loadQuarterHourSalesForStore(loc, startDate, endDate) {
+  if (!supabase) return [];
+  const locPadded = String(loc).padStart(7, '0');
+  const rows = await fetchAll((lo, hi) => supabase
+    .from('qsr_sales_quarter_hour')
+    .select('dt,qtr_slot,product_sales')
+    .eq('loc', locPadded)
+    .gte('dt', startDate)
+    .lte('dt', endDate)
+    .order('dt')
+    .range(lo, hi), 1000, 'qsr_sales_quarter_hour');
+  const unpadded = String(loc).replace(/^0+/, '') || String(loc);
+  return rows.map(r => ({ loc: unpadded, date: r.dt, qtrSlot: r.qtr_slot, sales: Number(r.product_sales) || 0 }));
+}
+
 export async function loadLaunchPlan(loc) {
   if (!supabase) return [];
   const { data, error } = await supabase

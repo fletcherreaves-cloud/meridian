@@ -158,3 +158,47 @@ building anything:
   the daily total), with the overnight caveat banner shown inline when it applies. The blended
   shape is cached by the comparables' own signature so switching which day is expanded never
   re-fetches; editing the comparable list/weights invalidates the cache.
+
+## 2026-11-07 — quarter-hour (15-min) breakdown: the "no quarter-hour data" conclusion was wrong
+
+The 2026-11-06 hourly-breakdown entry above states *"Quarter-hour: no, not from this table"* and
+explains that was true of `qsr_daily_activity` specifically. The owner asked to re-check ("We
+should have the quarter hourly data from the pulls") rather than accept that as final — correct
+call. A **separate table, `qsr_sales_quarter_hour`**, already holds REAL 15-minute sales buckets:
+built on 2026-10-12 for the unrelated "Record Hour" feature (best rolling 60-consecutive-minute
+sales window), live-measured at **96 distinct `qtr_slot` values/store/day**, backfilled to
+**2024-01-01** (2,511,402 rows total as of that build) — see
+`memory/finding-record-hour-quarter-hour-pull.md`. The 2026-11-06 check only looked at
+`qsr_daily_activity` (genuinely hourly-only) and never searched for a sibling table; this is
+exactly the "check whether an affordance already exists before adding one" miss CLAUDE.md warns
+about, just on the read side instead of the write side.
+
+### What was built
+
+Structurally parallel to the hourly breakdown, one level finer, reusing the REAL quarter-hour data
+rather than interpolating from the hourly curve (interpolation would be exactly the kind of
+unmeasured claim the "measure it, don't reason about it" rule exists to prevent — not needed here
+since real 15-min data already exists):
+
+- **`loadQuarterHourSalesForStore(loc, startDate, endDate)`** (`src/lib/supabase.js`) — sibling of
+  `loadHourlySalesForStore`, reading `qsr_sales_quarter_hour` instead of `qsr_daily_activity`.
+  loc is stored PADDED in that table (matching every other QSRSoft-sourced table) but this
+  function returns it unpadded, same convention the existing day/hour readers already use for
+  this engine's callers.
+- **`QTR_SLOTS` / `DEEP_OVERNIGHT_QTR_SLOTS` / `quarterHourShapeFor` / `blendQuarterHourShapes` /
+  `splitDayAcrossQuarterHours`** (`src/engine/new-store-ramp.js`) — same trailing-up-to-90-real-
+  trading-days shape logic as the hourly functions, keyed on the 96 real `qtr_slot` buckets
+  (`'04:15'`..`'28:00'`) instead of 24 `hour_slot` buckets. `DEEP_OVERNIGHT_QTR_SLOTS` is DERIVED
+  from the existing `DEEP_OVERNIGHT_SLOTS` (each hour bucket's 4 constituent 15-min slots),
+  not hand-duplicated, so the two sets can't drift apart.
+- **UI**: a second "▸ 15-min" toggle alongside the existing "▸ Hourly" toggle on each plan-date
+  row, independently expandable (a day can show neither, either, or both breakdowns at once) —
+  expands a nested 96-row table (15-min range, $, Suggested Hrs, same corrected formula), with the
+  same overnight-comparability caveat banner.
+- Explicitly NOT persisted — same derived-live-view approach as the hourly breakdown, computed
+  from already-loaded rows when the owner expands a day.
+
+Tests: 12 new engine tests mirroring the hourly suite exactly (`src/__tests__/new-store-ramp.test.js`),
+1 loader test + 2 panel tests (`src/__tests__/dispatch-launch-planner-2026-11-06.test.js`). Full
+suite 772/772 files, 7062/7062 tests. Build clean, 670.64 KB gzip eager payload (budget 850 KB,
+negligible change from the pre-existing 670.52 KB).

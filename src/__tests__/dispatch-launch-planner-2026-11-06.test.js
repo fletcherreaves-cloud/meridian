@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import { HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS } from '../engine/new-store-ramp.js';
+import { HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS, QTR_SLOTS, DEEP_OVERNIGHT_QTR_SLOTS } from '../engine/new-store-ramp.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,7 +40,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-const { saveLaunchPlanRow, loadLaunchPlan, loadDailySalesForStore, loadHourlySalesForStore } = await import('../lib/supabase.js');
+const { saveLaunchPlanRow, loadLaunchPlan, loadDailySalesForStore, loadHourlySalesForStore, loadQuarterHourSalesForStore } = await import('../lib/supabase.js');
 
 beforeEach(() => {
   _upsertError = null; _selectError = null; _selectData = null; _lastUpsert = null; _allUpserts = []; _dailyActivityRows = [];
@@ -106,6 +106,20 @@ describe('loadHourlySalesForStore', () => {
     expect(rows).toEqual([
       { loc: '43380', date: '2026-01-01', hourSlot: '06:00', sales: 100 },
       { loc: '43380', date: '2026-01-01', hourSlot: '07:00', sales: 50 },
+    ]);
+  });
+});
+
+describe('loadQuarterHourSalesForStore', () => {
+  it('pads the loc and keeps qtr_slot (15-minute buckets, not summed)', async () => {
+    _dailyActivityRows = [
+      { dt: '2026-01-01', qtr_slot: '06:00', product_sales: 25 },
+      { dt: '2026-01-01', qtr_slot: '06:15', product_sales: 12 },
+    ];
+    const rows = await loadQuarterHourSalesForStore('43380', '2026-01-01', '2026-01-01');
+    expect(rows).toEqual([
+      { loc: '43380', date: '2026-01-01', qtrSlot: '06:00', sales: 25 },
+      { loc: '43380', date: '2026-01-01', qtrSlot: '06:15', sales: 12 },
     ]);
   });
 });
@@ -236,6 +250,47 @@ describe('NewStoreLaunchPlanner', () => {
     await flush();
     const hourlyBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Hourly'));
     await act(async () => { hourlyBtn.click(); });
+    await flush();
+    await flush();
+    expect(container.textContent).toMatch(/minimal real overnight volume/);
+  });
+
+  // 15-min breakdown (2026-11-07 follow-on) -- real qsr_sales_quarter_hour data, same mock
+  // table-agnostic caveat as the Hourly tests above, mirrored one level finer.
+  function mkQtrActivityRows(dailyPattern) {
+    const out = [];
+    let d = new Date('2026-01-01');
+    for (let i = 0; i < 20; i++) {
+      const dt = d.toISOString().slice(0, 10);
+      for (const qs of QTR_SLOTS) out.push({ dt, qtr_slot: qs, product_sales: dailyPattern(qs) });
+      d = new Date(d.getTime() + 864e5);
+    }
+    return out;
+  }
+
+  it('expanding a row\'s 15-min toggle shows all 96 real qtr_slot buckets with the corrected hours formula', async () => {
+    _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2400, override_sales: null, note: null, source: 'ramp' }];
+    _dailyActivityRows = mkQtrActivityRows(() => 25); // flat 24hr pattern, no overnight gap
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const qtrBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('15-min'));
+    await act(async () => { qtrBtn.click(); });
+    await flush();
+    await flush(); // extra tick for the async loadQuarterHourSalesForStore round-trip
+    const qtrRows = [...container.querySelectorAll('table')][1]?.querySelectorAll('tbody tr') || [];
+    expect(qtrRows.length).toBe(96);
+    expect(container.textContent).not.toMatch(/minimal real overnight volume/);
+  });
+
+  it('shows the overnight-shape caveat on the 15-min breakdown too', async () => {
+    _selectData = [{ loc: '44689', plan_date: '2026-11-14', day_n: 0, projected_sales: 2400, override_sales: null, note: null, source: 'ramp' }];
+    _dailyActivityRows = mkQtrActivityRows((qs) => (DEEP_OVERNIGHT_QTR_SLOTS.includes(qs) ? 0 : 25));
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const qtrBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('15-min'));
+    await act(async () => { qtrBtn.click(); });
     await flush();
     await flush();
     expect(container.textContent).toMatch(/minimal real overnight volume/);
