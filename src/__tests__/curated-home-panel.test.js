@@ -62,8 +62,14 @@ async function mount(props) {
 }
 
 describe('CuratedHomePanel — real render', () => {
-  it('renders the real flag content by default in checklist format', async () => {
+  // Game Plan (owner request 2026-11-07) is the new front-facing default at store altitude --
+  // see curated-home-game-plan.test.js for its own dedicated coverage. This proves the SAME
+  // real flag content still reaches Checklist once explicitly selected (the format picker is
+  // always present, per "keep the other intact and make it optional for users").
+  it('renders the real flag content in checklist format once explicitly selected', async () => {
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); });
     expect(container.textContent).toContain('19 drawer opens');
     expect(container.textContent).toContain('Ardmore-Broadway');
     expect(container.textContent).toContain('Store view'); // gm -> 'store' altitude label
@@ -102,8 +108,10 @@ describe('CuratedHomePanel — real render', () => {
     expect(container.querySelector('.ch-item')).toBeTruthy();
   });
 
-  it('shows patch-altitude framing for an area_supervisor', async () => {
+  it('shows patch-altitude framing for an area_supervisor once Checklist is selected (The Patch is now the default there -- see curated-home-patch-plan.test.js)', async () => {
     await mount({ ds: {}, settings: {}, role: 'area_supervisor', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); });
     expect(container.textContent).toContain('Patch view');
   });
 

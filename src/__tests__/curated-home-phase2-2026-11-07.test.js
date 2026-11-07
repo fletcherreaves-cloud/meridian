@@ -49,6 +49,13 @@ async function renderPanel(root, props) {
     root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'gm', darRows: [], ...props }));
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   });
+  // Game Plan (owner request 2026-11-07) is now the front-facing default at store altitude --
+  // this whole file exercises Checklist/Bullets/Narrative specifically (Game Plan has its own
+  // dedicated test file), so every test here switches to Checklist right after mount, exactly
+  // as a real GM clicking the always-present format picker would. document.body is scoped to
+  // this one test's own container (beforeEach/afterEach append/remove exactly one per test).
+  const checklistBtn = [...document.body.querySelectorAll('button')].find(b => b.textContent === 'Checklist');
+  if (checklistBtn) await act(async () => { checklistBtn.click(); });
 }
 
 describe('Curated Home Phase 2 — graphical summary + drill-through', () => {
