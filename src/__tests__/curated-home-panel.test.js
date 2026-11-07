@@ -108,8 +108,10 @@ describe('CuratedHomePanel — real render', () => {
     expect(container.querySelector('.ch-item')).toBeTruthy();
   });
 
-  it('shows patch-altitude framing for an area_supervisor', async () => {
+  it('shows patch-altitude framing for an area_supervisor once Checklist is selected (The Patch is now the default there -- see curated-home-patch-plan.test.js)', async () => {
     await mount({ ds: {}, settings: {}, role: 'area_supervisor', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); });
     expect(container.textContent).toContain('Patch view');
   });
 
