@@ -182,7 +182,7 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         span({style:{fontSize:'18px'}},'⏱'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'DAR Daypart Analytics'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},'DAR Daypart Analytics',h(InfoIcon,{articleKey:'dar_daypart_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)'}},'Hourly OEPE, GC, and Sales from Daily Activity Reports — peak identification, capacity analysis')
         ),
         // 2026-11-02 — standardized onto the shared LocationSelector (mode:'store' -- this
@@ -521,7 +521,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         span({style:{fontSize:'18px'}},'🍔'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Product Mix Dashboard'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},'Product Mix Dashboard',h(InfoIcon,{articleKey:'product_mix_dashboard_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)'}},
             dataSrc==='cloud'
               ? 'Auto-pulled, per-store per-date product mix (qsr_product_mix) — family mix, discount exposure, top items'
