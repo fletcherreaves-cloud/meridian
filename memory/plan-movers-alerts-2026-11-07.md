@@ -229,3 +229,29 @@ Movers is simply its first real producer. No new generic tables were needed.
 - Verified: `npm run build` clean, within payload budget; full suite passing (new tests:
   `movers-alert.test.js`, `movers-alert-run.test.js`, plus 3 new cases in
   `app-notification-delivery.test.js` for the role/store-targeting path).
+
+## LIVE-VERIFIED end-to-end, then PAUSED (2026-11-07, same day)
+
+Owner ran the `target_roles` migration. Confirmed directly (service-role key): the column exists
+(a deliberately misspelled column name returned `42703`, calibrating the measurement). The
+workflow's own first automatic firing (right after the PR merged, triggered by a real DAR pull
+completing — before the migration had run) hit `Could not find the table 'public.app_notifications'
+in the schema cache` — a transient PostgREST schema-cache staleness right after the `ALTER TABLE`,
+not a real bug; it failed closed (0 alerts, no insert attempted past the dedupe check) with no
+side effects. A second, manually-triggered run (`workflow_dispatch`, after the cache had settled)
+completed clean with **zero errors** and found a real live case: **Sulphur (0032525) tripped
+CRIT** — sales -27.0% vs LY, classified `check-erosion` ("Sales fell faster than guest count —
+average check is eroding"). Queried the row back directly: landed in `app_notifications` with the
+correct `resolve_key` (`movers_down:0032525:2026-11-07`) and `target_roles: [gm, area_supervisor,
+do]`. The full pipeline — threshold evaluation, cause classification, dedupe, insert, delivery
+resolution — is confirmed working against real production data.
+
+**Then paused, owner's explicit call** ("let's maybe not push just yet, only after a user account
+is setup"). `.github/workflows/movers-alert-run.yml`'s `workflow_run` trigger is commented out —
+`workflow_dispatch` (manual run) stays available for further testing, but it will not fire
+automatically after each DAR pull until re-enabled. Practically, today's only live accounts are
+the owner's own (`manager`/`admin` role), so `target_roles` filtering already resolves to zero
+real recipients and no push would reach a phone regardless — but the owner asked to hold this
+explicitly rather than rely on that incidental zero. **Re-enable**: uncomment the `workflow_run:`
+block in that workflow file once a real GM/AS/DO account exists with its own device push
+subscription — nothing else in the pipeline needs to change.
