@@ -230,3 +230,23 @@ Implemented the exact recommendation above, verbatim:
 the next scheduled/triggered run of the pull Action will upsert real rows under the real key —
 replacing the deleted incomplete sample with the genuine, complete one. No further code change
 needed on this repo's side; this finding is closed pending that one owner action.
+
+## CLOSED (2026-11-07) — migration run, pull re-triggered, real data confirmed live
+
+Owner ran `supabase/schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql` in the Supabase SQL
+editor. Verified directly (service-role key, `content-range`/row content, same calibration
+standard as every other live-data claim in this repo — a deliberately misspelled column
+returned `42703`, confirming this was a real schema read, not a silent empty-result pass):
+- Post-migration, pre-pull: `payroll_entry_id` is a real column (`200`, not `42703`) and the
+  table held `*/0` rows — the pre-fix incomplete sample was deleted exactly as the migration's
+  own header said it would be.
+- Manually triggered `lifelenz-payroll-readiness-pull.yml` (workflow_dispatch, run #6, head sha
+  `d221bd23`) rather than waiting for tomorrow's 10:00 UTC schedule. Completed `success` in ~2.5
+  minutes across all 27 stores.
+- Re-queried after completion: **65,022 real rows**, `content-range: 0-4/65022`. Spot-checked
+  rows confirm the real grain directly — e.g. `geid=200677846`, `pay_period_start=2026-11-04` has
+  (at least) 5 rows in the sample, each with its own distinct `payroll_entry_id` (real UUIDs:
+  `01a1acde-…`, `01a1a6a5-…`, `01a1b272-…`, `01a18cfa-78de-…`, `01a18cfa-7972-…`) — exactly the
+  one-row-per-shift shape this entire finding is about, not collapsed to one row per pay period.
+
+Task #85 closed. Nothing further to do on this finding.
