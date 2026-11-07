@@ -858,6 +858,26 @@ coverage + 4 new articles = 32/32). The two real next increments for task #75 ar
 Neither started without the owner's go-ahead — per this task's own standing stop-and-wait rule
 after each batch.
 
+## 2026-11-07 — fixed the dangling `launch_planner_guide` reference (flagged by Phase 3)
+
+Phase 3's own log above flagged `launch-planner.js`'s `InfoIcon({articleKey:
+'launch_planner_guide'})` as wired to a key that didn't exist in `KB_ARTICLES` — a missing-content
+problem, not a missing-wiring one, left for whoever owned that content decision. By this point in
+the session the orchestrator had just driven three real PRs through `launch-planner.js`/`new-store-
+ramp.js` (the 12-month view + reconciliation, the day-of-week shape from the predecessor store, the
+hourly/15-min breakdown) and so had direct, current knowledge of the panel's real mechanics — wrote
+the article directly rather than deferring it to a future batch or a fresh research pass. Documents
+the real `projectNewStoreSales`/`blendRampShapes` comparable-blending mechanism, the deliberate
+separation between this engine's `dowShapeFor` and `forecast.js`'s own leak-free `_dowShape` (same
+distinction PR #1714's own body already drew), the manual-override-never-touched-by-regenerate
+mechanic, the corrected `($ ÷ avg check) ÷ TPPH` Suggested Hours formula, and the overnight-
+comparability guard shared by both the Hourly and 15-min breakdowns. Removed the test-file stub
+that had been rendering `InfoIcon` as a no-op specifically because the article didn't exist yet
+(`dispatch-launch-planner-2026-11-06.test.js`'s `vi.mock('../engine/forecast.js', ...)` block, added
+when PR #1706 first shipped the panel) and added a real test clicking the "?" icon and asserting the
+article's real title appears — the same bar every other InfoIcon-phase test in this backlog uses.
+`KB_ARTICLES` key count: 115 (was 114, flagged-but-missing since Phase 3).
+
 ## 2026-11-06 — content correction: `signals_guide` was stale, now fixed
 
 Follow-on to batch 12's own flag above. Confirmed by reading `src/views/signals.js`'s

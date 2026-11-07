@@ -125,10 +125,9 @@ describe('loadQuarterHourSalesForStore', () => {
 });
 
 // ── Panel tests ──────────────────────────────────────────────────────────────────────────────
-vi.mock('../engine/forecast.js', async () => {
-  const actual = await vi.importActual('../engine/forecast.js');
-  return { ...actual, InfoIcon: () => null }; // KB article doesn't exist yet -- not under test here
-});
+// InfoIcon's articleKey ('launch_planner_guide') is a real KB_ARTICLES entry now (added 2026-11-07,
+// closing the dangling reference InfoIcon rollout Phase 3 flagged) -- no stub needed; the "?" test
+// below exercises the real wiring end to end.
 
 let container, root;
 afterEach(() => {
@@ -168,6 +167,17 @@ describe('NewStoreLaunchPlanner', () => {
     mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
     await flush();
     expect(container.textContent).toMatch(/24-hour operation/);
+  });
+
+  it('the InfoIcon opens the real launch_planner_guide article (was a dangling key, fixed 2026-11-07)', async () => {
+    _selectData = [];
+    const { NewStoreLaunchPlanner } = await import('../views/launch-planner.js');
+    mountEl(React.createElement(NewStoreLaunchPlanner, { onClose: () => {} }));
+    await flush();
+    const icon = container.querySelector('span[title^="Click for details"]');
+    expect(icon, 'InfoIcon "?" control not found').toBeTruthy();
+    await act(async () => { icon.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toContain('New Store Launch Planner — Panel Guide');
   });
 
   it('typing an Override $ recomputes the Effective $ column and persists source:manual', async () => {
