@@ -121,15 +121,55 @@ function _addDays(dateStr, n) {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
-export function projectLaunchPlan({ loc, comparables, matureWeeklySales, openDate, maxDays = 60 }) {
+export function projectLaunchPlan({ loc, comparables, matureWeeklySales, openDate, maxDays = 60, dowShape = null }) {
   if (!loc || !openDate) return [];
   const forecast = projectNewStoreSales({ comparables, matureWeeklySales, maxDays });
-  return forecast.map(p => ({
-    loc,
-    planDate: _addDays(openDate, p.dayN),
-    dayN: p.dayN,
-    projectedSales: p.forecastSales,
-  }));
+  return forecast.map(p => {
+    const planDate = _addDays(openDate, p.dayN);
+    let projectedSales = p.forecastSales;
+    if (dowShape) {
+      const dow = new Date(planDate + 'T12:00:00Z').getUTCDay();
+      const entry = dowShape.find(d => d.dow === dow);
+      if (entry) projectedSales = +(projectedSales * entry.frac).toFixed(2);
+    }
+    return { loc, planDate, dayN: p.dayN, projectedSales };
+  });
+}
+
+// ── Day-of-week shape (Launch Planner DOW overlay, 2026-11-07) ─────────────────────────────
+// A derived VIEW over a PREDECESSOR store's real daily sales -- NOT a ramp-shape comparable.
+// The predecessor (e.g. 18213 for Lindsay/44689) is the SAME town/trade-area as the new store,
+// just the old building, so its real day-of-week pattern is genuinely local demand (payday
+// Fridays, a quiet rural Sunday, etc.) rather than borrowed from a different town the way the
+// Tishomingo/Ponce de Leon ramp-shape comparables are. Owner ask (2026-11-07), after liking the
+// "$8k-$9k/day early weeks" finding: "lets figure out, based on 18213 patterns how that splits
+// by day of week and apply to launch as well."
+//
+// Deliberately separate from forecast.js's private _dowShape (not exported, not reusable here):
+// that function shapes a SINGLE day, strictly asOf-bounded (leak-free), from an ACTIVE store's
+// own recent trailing history, for live day-ahead forecasting. This function derives a full
+// 7-value shape once, from a RETIRED predecessor's entire real history, for a brand-new store's
+// launch plan -- a different mechanism solving a different problem, not an overload of the same
+// one.
+//
+// dailyRows: [{loc, date, sales}] -- loadDailySalesForStore's own output shape, reused as-is.
+// Requires real data on every one of the 7 weekdays (not just `minDays` total) before returning
+// a shape -- a predecessor with, say, zero real Sundays would otherwise silently apply frac:1
+// there, which is indistinguishable from "no adjustment" and would misrepresent real coverage.
+export function dowShapeFor(dailyRows, loc, minDays = 20) {
+  const rows = (dailyRows || []).filter(r => r.loc === loc && r.sales > 0 && r.date);
+  if (rows.length < minDays) return null;
+  const byDow = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
+  for (const r of rows) {
+    const d = new Date(r.date + 'T12:00:00Z').getUTCDay();
+    byDow[d].sum += r.sales;
+    byDow[d].count += 1;
+  }
+  if (byDow.some(b => b.count === 0)) return null; // every weekday needs real coverage
+  const avgByDow = byDow.map(b => b.sum / b.count);
+  const overallAvg = avgByDow.reduce((a, b) => a + b, 0) / 7;
+  if (!(overallAvg > 0)) return null;
+  return avgByDow.map((avg, dow) => ({ dow, frac: +(avg / overallAvg).toFixed(4) }));
 }
 
 // ── Hourly shape (Launch Planner hourly breakdown, 2026-11-06) ──────────────────────────────

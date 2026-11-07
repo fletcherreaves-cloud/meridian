@@ -8,7 +8,7 @@ import {
   firstTradingDay, rampSeriesFor, matureBaseline, rampShape, blendRampShapes, projectNewStoreSales,
   projectLaunchPlan, HOUR_SLOTS, DEEP_OVERNIGHT_SLOTS, hourlyShapeFor, blendHourlyShapes,
   splitDayAcrossHours, QTR_SLOTS, DEEP_OVERNIGHT_QTR_SLOTS, quarterHourShapeFor,
-  blendQuarterHourShapes, splitDayAcrossQuarterHours,
+  blendQuarterHourShapes, splitDayAcrossQuarterHours, dowShapeFor,
 } from '../engine/new-store-ramp.js';
 
 function row(loc, date, sales) { return { loc, date, sales, gc: 1 }; }
@@ -182,6 +182,76 @@ describe('projectLaunchPlan()', () => {
   it('returns an empty plan when loc or openDate is missing', () => {
     expect(projectLaunchPlan({ comparables: [], matureWeeklySales: 1000, openDate: '2026-11-14' })).toEqual([]);
     expect(projectLaunchPlan({ loc: 'A', comparables: [], matureWeeklySales: 1000 })).toEqual([]);
+  });
+
+  // Day-of-week overlay (2026-11-07 follow-on, dowShapeFor below) -- opt-in, applied only here
+  // since only this layer maps dayN to a real calendar date.
+  it('applies a supplied dowShape multiplicatively per real calendar weekday', () => {
+    const comparables = [{ loc: 'X', laborRows: mkFlat('X', 1.0), weight: 1 }];
+    const dowShape = [0, 1, 2, 3, 4, 5, 6].map((dow) => ({ dow, frac: dow === 5 ? 1.5 : 1 })); // Friday x1.5
+    const plan = projectLaunchPlan({ loc: '44689', comparables, matureWeeklySales: 70000, openDate: '2026-11-14', maxDays: 7, dowShape });
+    // mkFlat('X', 1.0) is flat at 1000/day throughout -> mature=1000 -> frac=1 every day ->
+    // forecastSales=10000 (70000/7) before any dowShape adjustment. A 7-day window always
+    // contains exactly one real Friday, whichever calendar date openDate happens to be.
+    const fridayRow = plan.find((p) => new Date(p.planDate + 'T12:00:00Z').getUTCDay() === 5);
+    const nonFridayRow = plan.find((p) => new Date(p.planDate + 'T12:00:00Z').getUTCDay() !== 5);
+    expect(fridayRow.projectedSales).toBeCloseTo(15000, 2);
+    expect(nonFridayRow.projectedSales).toBeCloseTo(10000, 2);
+  });
+
+  it('defaults to no day-of-week adjustment when dowShape is omitted (regression guard)', () => {
+    const comparables = [{ loc: 'X', laborRows: mkFlat('X', 1.0), weight: 1 }];
+    const withNullShape = projectLaunchPlan({ loc: '44689', comparables, matureWeeklySales: 70000, openDate: '2026-11-14', maxDays: 5, dowShape: null });
+    const withNoShapeArg = projectLaunchPlan({ loc: '44689', comparables, matureWeeklySales: 70000, openDate: '2026-11-14', maxDays: 5 });
+    expect(withNullShape).toEqual(withNoShapeArg);
+  });
+});
+
+// Day-of-week shape (2026-11-07) -- a derived view over a PREDECESSOR store's real daily sales,
+// not a ramp-shape comparable. See dowShapeFor's own header comment in new-store-ramp.js for why
+// this is deliberately separate from forecast.js's private _dowShape.
+describe('dowShapeFor()', () => {
+  // Dates generated programmatically from a real day-of-week check (never hardcoded "this
+  // calendar date is a Friday" literals), so the fixture can't silently drift if rebased.
+  function rowsWithDowPattern(loc, numDays, dowSalesFn) {
+    const rows = [];
+    let d = new Date('2026-01-01T00:00:00Z');
+    for (let i = 0; i < numDays; i++) {
+      const date = d.toISOString().slice(0, 10);
+      const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+      rows.push(row(loc, date, dowSalesFn(dow)));
+      d = new Date(d.getTime() + 864e5);
+    }
+    return rows;
+  }
+
+  it('returns null when there is less than minDays of real data', () => {
+    const rows = rowsWithDowPattern('X', 10, () => 100);
+    expect(dowShapeFor(rows, 'X', 20)).toBeNull();
+  });
+
+  it('returns null when at least one weekday has zero real coverage', () => {
+    // 6 consecutive days never completes a full week, so exactly one weekday is always missing.
+    const rows = rowsWithDowPattern('X', 6, () => 100);
+    expect(dowShapeFor(rows, 'X', 5)).toBeNull();
+  });
+
+  it('normalizes each weekday to a fraction of the all-weekday average, averaging to 1.0', () => {
+    // 4 full weeks, Friday (dow=5) valued higher -- mirrors the real 18213 finding (Friday is
+    // Lindsay's actual real peak day, not Saturday).
+    const rows = rowsWithDowPattern('X', 28, (dow) => (dow === 5 ? 150 : 100));
+    const shape = dowShapeFor(rows, 'X', 20);
+    expect(shape).not.toBeNull();
+    expect(shape).toHaveLength(7);
+    expect(shape.find((d) => d.dow === 5).frac).toBeGreaterThan(1);
+    expect(shape.filter((d) => d.dow !== 5).every((d) => d.frac < 1)).toBe(true);
+    const avg = shape.reduce((s, d) => s + d.frac, 0) / 7;
+    expect(avg).toBeCloseTo(1, 2);
+  });
+
+  it('ignores rows for a different loc', () => {
+    const rows = rowsWithDowPattern('OTHER', 28, () => 100);
+    expect(dowShapeFor(rows, 'X', 20)).toBeNull();
   });
 });
 
