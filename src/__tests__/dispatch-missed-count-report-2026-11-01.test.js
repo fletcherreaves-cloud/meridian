@@ -94,8 +94,17 @@ function modalCard(container) {
 
 describe('Missed on Current Count report (owner req 2026-11-01)', () => {
   let container, root;
-  beforeEach(() => { ({ container, root } = mountRoot()); });
-  afterEach(() => { act(() => { root.unmount(); }); container.remove(); });
+  beforeEach(() => {
+    // eom-dashboard.js's defaultPeriod() shows the PRIOR month while now.getDate() <= 6 (early-
+    // month grace window, "still closing"), else the real current month. This test's whole fixture
+    // is anchored to October counts and relies on the panel defaulting to period '2026-10' — true
+    // only through Nov 6. Pin the clock inside that window so this doesn't silently break every
+    // month once the 7th arrives (exactly the class of bug dispatch #22 already fixed once).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-03T12:00:00'));
+    ({ container, root } = mountRoot());
+  });
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); vi.useRealTimers(); });
 
   it('opens from Reports▾ and lists only the items that miss the store\'s current count date, grouped by class', async () => {
     await renderPanel(root);
