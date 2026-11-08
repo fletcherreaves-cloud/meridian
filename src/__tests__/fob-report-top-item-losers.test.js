@@ -120,7 +120,9 @@ async function openFobReport(container) {
   const reportsBtn = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
   expect(reportsBtn, '"Reports" menu button not found').toBeTruthy();
   await act(async () => { reportsBtn.click(); });
-  const fobRepBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '📊 FOB Report');
+  // ActionMenu's open dropdown portals to document.body (task #119) -- no longer a descendant
+  // of container.
+  const fobRepBtn = [...document.querySelectorAll('button')].find(b => b.textContent === '📊 FOB Report');
   expect(fobRepBtn, '"📊 FOB Report" menu item not found').toBeTruthy();
   await act(async () => { fobRepBtn.click(); });
 }

@@ -84,8 +84,10 @@ describe('dispatch #160 item 4 — the five print/export actions collapse into o
     const menuBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Reports'));
     await act(async () => { menuBtn.click(); });
     const itemLabels = ['Print', 'Discussion sheet', 'Weekly Review', 'Download Word (filled)', 'Download Word (blank)'];
+    // ActionMenu's open dropdown portals to document.body (task #119) -- no longer a
+    // descendant of container.
     for (const label of itemLabels) {
-      const item = [...container.querySelectorAll('button')].find(b => b.textContent === label);
+      const item = [...document.querySelectorAll('button')].find(b => b.textContent === label);
       expect(item, `ActionMenu item "${label}" not found after opening`).toBeTruthy();
     }
   });

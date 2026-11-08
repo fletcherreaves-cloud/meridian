@@ -72,9 +72,37 @@ describe('PanelChrome — band 3 (actions + tabs) scrolls instead of overflowing
     const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
     expect(toggle).toBeTruthy();
     await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const items = [...container.querySelectorAll('button')].map(b => b.textContent);
+    // Task #119: the open menu now portals to document.body (so no scrollable ancestor's
+    // overflow can clip it on Safari/Mac/iPhone) -- its items are no longer DESCENDANTS of
+    // `container`, so assert against the document, not the wrapper.
+    const items = [...document.querySelectorAll('button')].map(b => b.textContent);
     expect(items).toContain('Summary');
     expect(items).toContain('Detail');
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  // Task #119 (owner screenshot, Mac + iPhone): the dropdown opened fine on Chrome/Firefox but
+  // was clipped to invisible on Safari (same WebKit engine on both platforms), which enforces
+  // the CSS spec's overflow-axis coercion (overflowX:'auto' forces overflowY to also compute as
+  // 'auto') more strictly than Chrome/Firefox do -- so the dropdown, an absolutely-positioned
+  // DESCENDANT of this `overflowX:'auto'` wrapper, got clipped into the wrapper's own tiny box.
+  // Asserting the open menu is never a descendant of that wrapper -- on any engine -- is what
+  // actually proves the fix, not just that *some* button rendered somewhere in the document.
+  it('the open menu is never a descendant of the overflowX:"auto" actions wrapper (the actual clipping ancestor)', async () => {
+    const { container, root } = mountRoot();
+    await act(async () => {
+      root.render(h(PanelChrome, {
+        actions: h(ActionMenu, { label: 'Reports', items: [{ label: 'Summary', onClick: () => {} }] }),
+      }));
+    });
+    const actionsWrap = [...container.querySelectorAll('div')].find(d => d.style.overflowX === 'auto');
+    expect(actionsWrap).toBeTruthy();
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const summaryBtn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Summary');
+    expect(summaryBtn).toBeTruthy();
+    expect(actionsWrap.contains(summaryBtn)).toBe(false);
     act(() => { root.unmount(); });
     container.remove();
   });

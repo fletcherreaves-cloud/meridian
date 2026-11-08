@@ -86,7 +86,7 @@ async function openReport(container) {
   const reportsBtn = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
   expect(reportsBtn, 'Reports▾ action menu button not found').toBeTruthy();
   await act(async () => { reportsBtn.click(); });
-  const openBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '⏱ Count Timing Report');
+  const openBtn = [...document.querySelectorAll('button')].find(b => b.textContent === '⏱ Count Timing Report');
   expect(openBtn, '⏱ Count Timing Report item not found').toBeTruthy();
   await act(async () => { openBtn.click(); await Promise.resolve(); await Promise.resolve(); });
 }

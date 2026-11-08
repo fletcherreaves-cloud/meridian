@@ -78,7 +78,9 @@ describe('PriceChangeImpactPanel', () => {
 
       const exportBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Export'));
       await act(async () => { exportBtn.click(); });
-      const csvItem = [...container.querySelectorAll('button')].find(b => b.textContent.includes('CSV'));
+      // ActionMenu's open dropdown portals to document.body (task #119) -- no longer a
+      // descendant of container.
+      const csvItem = [...document.querySelectorAll('button')].find(b => b.textContent.includes('CSV'));
       await act(async () => { csvItem.click(); });
 
       expect(clicks).toHaveLength(1);

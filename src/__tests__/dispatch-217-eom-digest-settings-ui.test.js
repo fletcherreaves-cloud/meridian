@@ -80,7 +80,9 @@ async function openDigestModal(container) {
   const reportsBtn = [...container.querySelectorAll('button')].find(b => b.textContent.startsWith('Reports'));
   expect(reportsBtn, 'Reports▾ action menu button not found').toBeTruthy();
   await act(async () => { reportsBtn.click(); });
-  const genBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '📧 Generate Report');
+  // ActionMenu's open dropdown portals to document.body (task #119) -- no longer a descendant
+  // of container.
+  const genBtn = [...document.querySelectorAll('button')].find(b => b.textContent === '📧 Generate Report');
   expect(genBtn, '📧 Generate Report item not found (rows.length was probably 0 — check the loadQsrOnHand fixture)').toBeTruthy();
   await act(async () => { genBtn.click(); await Promise.resolve(); await Promise.resolve(); });
 }
