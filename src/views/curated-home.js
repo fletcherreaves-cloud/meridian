@@ -44,6 +44,10 @@ import { withAlpha } from '../utils/fmt.js';
 import { loadUserSetting, saveUserSetting } from '../lib/supabase.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
 import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
+import { operatorStores } from '../engine/operator-ledger.js';
+import { dKey } from '../utils/date.js';
+import { callSageOnce } from '../lib/sage-client.js';
+import { huddleScopeKey, huddleStorageKey, buildHuddleFacts, huddleSystemPrompt, huddleUserMessage } from '../engine/huddle-narrative.js';
 import { GamePlanFormat } from './game-plan-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
 import { OperatorLedgerFormat } from './operator-ledger-view.js';
@@ -254,6 +258,67 @@ function summarizeStores(stores) {
   };
 }
 
+// The Huddle -- Phase 1 (owner request 2026-11-08). One click-to-generate AI narrative line,
+// cached per (scope, business day) in user_settings -- see src/engine/huddle-narrative.js for
+// why it's click-triggered rather than auto-fired, and why the cache key is shaped the way it is.
+// Renders identically across every format (gameplan/patch/ledger/checklist/bullets/narrative);
+// each render branch below just passes the right `stores` subset for its own altitude/scope.
+function HuddleNarrative({ stores, altitude, scopeKey, dateKey }) {
+  const storageKey = huddleStorageKey(scopeKey, dateKey);
+  const [state, setState] = React.useState({ text: null, loading: false, error: null });
+  const loadedKeyRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (loadedKeyRef.current === storageKey) return;
+    loadedKeyRef.current = storageKey;
+    setState({ text: null, loading: false, error: null });
+    loadUserSetting(storageKey).then(v => {
+      if (v?.text) setState({ text: v.text, loading: false, error: null });
+    }).catch(() => {});
+  }, [storageKey]);
+
+  const generate = async () => {
+    setState(s => ({ ...s, loading: true, error: null }));
+    try {
+      const facts = buildHuddleFacts(stores, altitude);
+      const text = await callSageOnce(
+        [{ role: 'user', content: huddleUserMessage(facts) }],
+        huddleSystemPrompt(altitude),
+      );
+      const clean = (text || '').trim() || 'No narrative generated.';
+      setState({ text: clean, loading: false, error: null });
+      saveUserSetting(storageKey, { text: clean, generatedAt: new Date().toISOString() }).catch(() => {});
+    } catch (e) {
+      setState({ text: null, loading: false, error: 'AI narrative unavailable: ' + (e?.message || 'unknown error') });
+    }
+  };
+
+  return div({
+    style: {
+      display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surf2,#f3f4f6)',
+      border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 12, padding: '12px 16px', marginBottom: 14,
+    },
+  },
+    span({ style: { fontSize: 18, lineHeight: 1 } }, '🗣️'),
+    div({ style: { flex: 1, minWidth: 0 } },
+      state.text
+        ? span({ style: { fontSize: '13.5px', color: 'var(--text2,#4b5563)', fontStyle: 'italic' } }, state.text)
+        : state.error
+        ? span({ style: { fontSize: '12.5px', color: 'var(--crit,#dc2626)' } }, state.error)
+        : span({ style: { fontSize: '12.5px', color: 'var(--text3,#6b7280)' } }, 'No huddle note yet for today.'),
+    ),
+    h('button', {
+      type: 'button', onClick: generate, disabled: state.loading,
+      title: state.text ? 'Regenerate today’s huddle note' : 'Generate today’s huddle note',
+      style: {
+        flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 999,
+        border: '1px solid var(--bdr2,#d1d5db)', background: 'var(--surf,#fff)',
+        color: 'var(--text2,#4b5563)', cursor: state.loading ? 'default' : 'pointer',
+      },
+    }, state.loading ? '…' : (state.text ? '↻ Redo' : '✨ Huddle')),
+  );
+}
+
 export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName, viewAsScope }) {
   const [briefDate] = React.useState(() => getLatestBriefDate(ds));
   const darByLoc = useBriefDarByLoc(briefDate, darRows);
@@ -394,6 +459,14 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       border: '1px solid var(--amber,#f5bc00)', borderRadius: 999, padding: '3px 10px' },
   }, '@ ' + (altitude === 'store' ? sNameC(viewAsScope) : viewAsScope));
 
+  // The Huddle (owner request 2026-11-08, Phase 1) -- scope/date key for the cached AI
+  // narrative; see src/engine/huddle-narrative.js. operatorGroup wins over viewAsScope (a real
+  // operator identity is a stronger, more specific scope than any simulation), same precedence
+  // The Ledger's own default-format logic already gives operator over altitude.
+  const huddleScope = huddleScopeKey(altitude, viewAsScope, operatorGroup);
+  const huddleDateKey = dKey(briefDate);
+  const huddleStores = operatorGroup ? operatorStores(scopedBrief.stores, operatorGroup) : scopedBrief.stores;
+
   // Game Plan / The Patch / The Ledger are each their OWN full screen, not a renderer slotted
   // into the generic stat-tiles/severity-bar/card shell every other format shares -- they're the
   // things the owner asked to make "the front facing version," not a peer inside the old one.
@@ -401,6 +474,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // Narrative is always one click, per "keep the other intact and make it optional for users."
   if (format === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(GamePlanFormat, {
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
@@ -410,12 +484,14 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   }
   if (format === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(PatchPlanFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, onNav }),
     );
   }
   if (format === 'ledger') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(OperatorLedgerFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
     );
@@ -425,6 +501,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   const altitudeLabel = altitude === 'store' ? 'Store' : altitude === 'patch' ? 'Patch' : 'District';
 
   return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+    h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
     div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 16 } },
       div(null,
         div({ style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } },
