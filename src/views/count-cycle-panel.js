@@ -41,14 +41,28 @@ const CLS_COL = { Food: '#60a5fa', Condiment: '#f5bc00', Paper: '#a78bfa', 'Non-
 // #357-A — s.kind is now sessionLabel()'s output, already human-readable (a session can
 // satisfy more than one requirement, e.g. "Weekly + Mid-Month Paper") — no lookup needed.
 
+// Task #126 (memory/plan-count-cycle-classification-2026-11-08.md) — a session that clearly
+// ATTEMPTED a cycle (Weekly/Mid-Month Paper/EOM) but missed the strict 100% compliance bar
+// now carries a longer, sentence-like kind string from sessionLabel() (e.g. "End-of-Month —
+// Food 98%, Condiment 97%, Paper 88%") instead of the old one-word "Partial" — the real
+// Holdenville 2026-10-30 case this was built to fix. The small fixed-width uppercase badge
+// below was sized for one-word labels; detect the richer case (an attempt that isn't ALSO
+// fully compliant — s.isEom/satisfiesWeekly/satisfiesMidPaper, whose labels are unchanged
+// and keep the original badge styling) and let it wrap/left-align instead of truncating.
+const isAttemptLabel = (s) => !!(s.attemptsEom || s.attemptsWeekly || s.attemptsMidPaper)
+  && !(s.isEom || s.satisfiesWeekly || s.satisfiesMidPaper);
+
 /** One store's session timeline — the evidence behind its status. */
 function SessionRow({ s }) {
   const classes = Object.keys(s.counts).sort();
-  return div({ style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 11 } },
+  const rich = isAttemptLabel(s);
+  return div({ style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 11, flexWrap: rich ? 'wrap' : 'nowrap' } },
     span({ style: { fontFamily: 'var(--mono)', color: 'var(--text3,#6b7280)', minWidth: 78 } }, s.date),
     span({ style: {
-      fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em',
-      padding: '1px 6px', borderRadius: 4, minWidth: 74, textAlign: 'center',
+      fontSize: rich ? 10.5 : 9, fontWeight: 700,
+      textTransform: rich ? 'none' : 'uppercase', letterSpacing: rich ? 'normal' : '.04em',
+      padding: '1px 6px', borderRadius: 4, minWidth: rich ? 0 : 74, textAlign: rich ? 'left' : 'center',
+      whiteSpace: rich ? 'normal' : 'nowrap',
       color: s.isSpot ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
       border: '.5px solid var(--bdr,#2a2f3a)',
     } }, s.kind),

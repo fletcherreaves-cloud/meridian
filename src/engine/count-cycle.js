@@ -102,6 +102,18 @@ export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 // threshold" comment, eom-dashboard.js) that this change does not touch.
 export const COVER_FRAC = 1;
 
+// Task #126 (memory/plan-count-cycle-classification-2026-11-08.md, 2026-11-08) — the floor
+// for "touched in real volume" that Axis-1 Cycle-Attempt identification (sessionQualities()
+// below) uses to decide whether a class was genuinely ATTEMPTED this session, independent of
+// whether it hit the strict COVER_FRAC=1 compliance bar above. The doc's own open Q2 asks
+// what this number should be and recommends, as its stated default, reusing the EXISTING
+// isPartial/isSpot boundary (n>=25) rather than inventing a third threshold — that is what
+// this constant is. It is doing double duty now (session-level "is this worth a label at
+// all" AND per-class "was this class really worked this session") and is explicitly flagged
+// in the doc as worth a fresh look later; revise here if that review calls for a different
+// number, not by re-deriving a bare 25 inline somewhere else.
+export const TOUCHED_FLOOR = 25;
+
 // A WRIN newly added to a store's ACTIVE item universe this period — i.e. absent from the
 // prior period's active set for that same store/class — gets a pass on COVER_FRAC for this
 // one period only: nobody can be faulted for not counting a product that didn't exist in
@@ -300,7 +312,10 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
         if (universe === 0) return true;
         return (counts[c] || 0) > 0 && (counts[c] || 0) >= universe * COVER_FRAC;
       });
-      const q = sessionQualities(date, covered, n);
+      // Task #126 — pass this session's own per-class counts and this loc's active-item
+      // totals so sessionQualities() can compute Axis-1 Cycle-Attempt identification +
+      // per-class coveragePct alongside the unchanged Axis-2 compliance flags.
+      const q = sessionQualities(date, covered, n, { counts, totals: totals[loc] || {} });
       // #357-A — touchedWeeklyClasses is independent of `covered` (which requires
       // COVER_FRAC): a Paper-only session touches ZERO Food/Condiment items, so it must
       // never be mistaken for a partial/botched weekly attempt (#357-B1) even though it
@@ -516,29 +531,116 @@ export function countDayDrift(derivedByLoc = {}, overridesByLoc = {}, { confiden
  *                        above; never consulted for compliance, only for the session label
  *                        and (isPartial) as the substantial-but-incomplete signal B1 gates on.
  */
-export function sessionQualities(date, covered, n) {
+// Task #126 (memory/plan-count-cycle-classification-2026-11-08.md) — `extra` is OPTIONAL and
+// NEW. Every pre-existing call site (and every pre-existing test, several of which assert the
+// FULL returned object with toEqual) calls this with the original 3 positional args, so
+// `extra` is `undefined` there and this function returns EXACTLY the original 5-key object,
+// byte-identical to before this change. Only a caller that explicitly passes `extra` (today:
+// detectSessions()/sessionsFromLog() below, which have per-class counts/totals in hand) gets
+// the additive Axis-1 fields. This is the mechanism that keeps this change purely additive
+// rather than a new required parameter every caller must be updated for.
+export function sessionQualities(date, covered, n, extra) {
   const has = (c) => covered.includes(c);
   const eomWindow = inCloseWindow(date);
   const satisfiesWeekly = has('Food') && has('Condiment');
   const satisfiesMidPaper = has('Paper') && !eomWindow;
   const isEom = eomWindow && has('Paper') && n >= 50;
   const satisfiesAny = satisfiesWeekly || satisfiesMidPaper || isEom;
-  return {
+  const base = {
     satisfiesWeekly, satisfiesMidPaper, isEom,
-    isPartial: !satisfiesAny && n >= 25,
-    isSpot: !satisfiesAny && n < 25,
+    isPartial: !satisfiesAny && n >= TOUCHED_FLOOR,
+    isSpot: !satisfiesAny && n < TOUCHED_FLOOR,
   };
+  if (!extra) return base;
+
+  // ── Axis 1 — Cycle Attempt (identification), task #126 ──────────────────────────────
+  // Same timing + "which classes did this session really work" logic as satisfiesWeekly/
+  // satisfiesMidPaper/isEom above, but with the 100%-coverage requirement (`has(c)`, which
+  // means COVER_FRAC) swapped for a lower "touched in real volume" floor (TOUCHED_FLOOR).
+  // This is deliberately a SEPARATE axis, not a replacement: `covered`/satisfiesWeekly/
+  // satisfiesMidPaper/isEom above are Axis 2 (Compliance) and are completely untouched by
+  // this block — a session can be attemptsEom===true (this WAS the EOM count) and
+  // isEom===false (it was NOT 100% compliant) at the same time. That is the whole point:
+  // the real Holdenville 2026-10-30 case (Food 118/120, Condiment 31/32, Paper 84/96 — every
+  // class a hair under 100%) used to read identically to a 3-item spot check because
+  // identification was gated on compliance. It no longer is.
+  // Each attempt flag mirrors its OWN Axis-2 counterpart's window-gating exactly, not a
+  // uniform !eomWindow rule — found and fixed during independent review (the first draft of
+  // this file forced `!eomWindow` onto attemptsWeekly too, which would have dropped a real
+  // near-miss weekly-shaped count that happens to fall inside the last 4 days of the month
+  // back into the generic Partial bucket, exactly the failure this change exists to fix).
+  // satisfiesWeekly above has NO window condition (a 100% Food+Condiment count is "Weekly"
+  // whenever it happens, close window or not) — attemptsWeekly must not invent one.
+  // satisfiesMidPaper IS window-gated (!eomWindow, since "mid-month" is defined as "not the
+  // EOM window") — attemptsMidPaper keeps that gate for the same reason. isEom is the only
+  // one gated TO the window. So attemptsEom and attemptsWeekly CAN legitimately both be true
+  // at once (same as isEom/satisfiesWeekly already can) — sessionLabel() below already
+  // handles that overlap correctly, since the EOM cycle's own class list already includes
+  // Food/Condiment, so nothing is lost by naming it "End-of-Month" rather than both.
+  const { counts = {}, totals = {} } = extra;
+  const touched = (c) => (counts[c] || 0) >= TOUCHED_FLOOR;
+  const attemptsEom = eomWindow && touched('Paper') && n >= 50;
+  const attemptsWeekly = touched('Food') && touched('Condiment');
+  const attemptsMidPaper = !eomWindow && touched('Paper');
+
+  // Per-class coverage PERCENTAGE only (task #126 open Q3's resolved scope) — a number
+  // computable right now from counts/totals already in hand, deliberately NOT a named list
+  // of which WRINs were missed. A named-missing-item list would need `inv_count_sessions`
+  // (the durable log sessionsFromLog() reads) widened to persist per-WRIN detail going
+  // forward — a real schema migration (Tier C), explicitly left as a future follow-on by the
+  // design doc and NOT done here. `null` (not 0) for a class with no active universe at all,
+  // same "nothing to divide by" convention COVER_FRAC's own 0-universe handling uses above.
+  const coveragePct = {};
+  for (const c of CLASSES) {
+    const universe = totals[c] || 0;
+    coveragePct[c] = universe > 0 ? Math.round(((counts[c] || 0) / universe) * 100) : null;
+  }
+
+  return { ...base, attemptsEom, attemptsWeekly, attemptsMidPaper, coveragePct };
 }
 
 /** Human-readable label derived from the qualities — for display ONLY, never for grading.
  *  A session can legitimately earn more than one label, e.g. "Weekly + Mid-Month Paper"
- *  (Marietta's 2026-08-11 session — the exact case #357-A was filed over). */
+ *  (Marietta's 2026-08-11 session — the exact case #357-A was filed over).
+ *
+ *  Task #126 — when a session is fully COMPLIANT (Axis 2: isEom/satisfiesWeekly/
+ *  satisfiesMidPaper), the label is UNCHANGED from before this change ('Weekly', 'End of
+ *  month', 'Weekly + Mid-month paper', ...) — existing call sites and tests depend on these
+ *  exact strings and none of that is touched. Only the previous generic 'Partial' bucket
+ *  gets richer: when a session clearly ATTEMPTED a specific cycle (Axis 1) but missed the
+ *  100% bar, the label now names which cycle plus the real per-class coverage (the doc's own
+ *  worked example, 2026-11-08 — "End-of-Month — Food 98%, Condiment 97%, Paper 88%") instead
+ *  of a bare 'Partial' that reads identically to a 3-item spot check. 'Spot check' is
+ *  unchanged either way — TOUCHED_FLOOR means a session too small to be any real cycle
+ *  attempt can never satisfy attemptsEom/Weekly/MidPaper (they all require at least one class
+ *  at n>=TOUCHED_FLOOR, which already implies n>=TOUCHED_FLOOR overall, i.e. not isSpot). */
 export function sessionLabel(q) {
   const parts = [];
   if (q.isEom) parts.push('End of month');
   if (q.satisfiesWeekly) parts.push('Weekly');
   if (q.satisfiesMidPaper) parts.push('Mid-month paper');
   if (parts.length) return parts.join(' + ');
+
+  // `q.attemptsEom`/`attemptsWeekly`/`attemptsMidPaper` only exist when sessionQualities()
+  // was called with its optional `extra` (counts/totals) — i.e. never for a legacy 3-arg
+  // call, so this branch is unreachable (and this function's output byte-identical to
+  // before) for any pre-existing caller that never passes that data.
+  if (q.attemptsEom || q.attemptsWeekly || q.attemptsMidPaper) {
+    // attemptsWeekly has no window gate (mirrors satisfiesWeekly), so it CAN co-occur with
+    // attemptsEom inside the close window — same as isEom/satisfiesWeekly already can
+    // ('End of month + Weekly' is a real existing compliant label above). Display-only
+    // simplification: when both are true, name it End-of-Month — its own class list already
+    // includes Food/Condiment, so the real numbers still show, nothing is lost by not also
+    // saying "Weekly". attemptsMidPaper stays mutually exclusive with attemptsEom (opposite
+    // window gates), so the only real ambiguity is Eom-vs-Weekly, resolved the same way.
+    const cycleName = q.attemptsEom ? 'End-of-Month' : q.attemptsWeekly ? 'Weekly' : 'Mid-Month Paper';
+    const classList = q.attemptsEom ? ['Food', 'Condiment', 'Paper']
+      : q.attemptsWeekly ? WEEKLY_CLASSES : ['Paper'];
+    const pct = q.coveragePct || {};
+    const bits = classList.filter(c => pct[c] != null).map(c => `${c} ${pct[c]}%`);
+    return bits.length ? `${cycleName} — ${bits.join(', ')}` : cycleName;
+  }
+
   return q.isPartial ? 'Partial' : 'Spot check';
 }
 
@@ -582,7 +684,9 @@ export function sessionsFromLog(logRows = []) {
       for (const cls of Object.keys(clsRows)) counts[cls] = clsRows[cls].itemsCounted;
       const n = Object.values(counts).reduce((a, b) => a + b, 0);
       const covered = Object.keys(clsRows).filter(cls => clsRows[cls].covered);
-      const q = sessionQualities(date, covered, n);
+      // Task #126 — same enrichment as detectSessions() above, sourced from the log's own
+      // classTotals instead of the live qsr_onhand snapshot.
+      const q = sessionQualities(date, covered, n, { counts, totals: classTotals[loc] || {} });
       const touchedWeeklyClasses = (counts.Food || 0) > 0 || (counts.Condiment || 0) > 0;
       return { loc, date, counts, n, covered, touchedWeeklyClasses, ...q, kind: sessionLabel(q) };
     });
