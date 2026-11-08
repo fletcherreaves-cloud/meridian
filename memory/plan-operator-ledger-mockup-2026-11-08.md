@@ -57,9 +57,52 @@ states and show a combined total. Very different goals in the different markets.
 The per-region cards further down already showed this split — the fix was surfacing it in the
 top-line glance pill too, not computing it for the first time.
 
-## Status
+## Status — built for real, same day (2026-11-08)
 
-Concept only. "Operator" is not a login role in `permissions.js` today — building this for real
-means first deciding whether operators get their own login tier or a filtered view of an existing
-one (same open question noted in the deck's own "why this shape" note). Not scheduled; no task
-currently open for a real build.
+Owner: *"great point, we can fix that. You can or I can add."* — resolved the open design
+question (new RBAC role vs. a view on existing accounts) in favor of **no DDL**: "Operator" is
+NOT a new `profiles.role` value. Any Owner/VP/Admin-tier account can self-service-tag itself with
+a real operator identity (`operatorGroups()` key) via a new `curated_home_operator_group`
+user_settings key — same self-contained load/save pattern `curated_home_format` already uses, no
+schema change, no admin-on-behalf-of write (RLS on `user_settings` only allows a row's own
+`auth.uid()` to write it, so this had to be self-service, not admin-assigned). An account that
+never sets this gets ZERO behavior change.
+
+Also fixed the mockup's own mileage error the owner caught (*"~490 mi is a bit off, closer to
+800-900"*) — the real app version computes the real straight-line (haversine) distance between
+each region's own store centroids from `INV_ORG_COORDS`, never a guessed or copy-pasted number;
+it reads ~770-870 mi for Ryan Thorley's real OK/FL split depending on which stores anchor each
+region's centroid, consistent with the owner's correction.
+
+### Files
+
+- `src/engine/operator-ledger.js` (new) — `operatorStores()`, `operatorRegions()` (groups by
+  each store's own real `INV_ORG_COORDS` state, computes `computePatchRollup()`/
+  `computePatchMap()` independently per region — reused verbatim from `patch-plan.js`, no second
+  implementation), `distanceBetweenRegions()` (real haversine between 2 regions' centroids,
+  `null` for any other region count), `operatorPeerComparison()` (every real operator with real
+  stores, ranked, viewer flagged). Pure, unit-tested.
+- `src/views/operator-ledger-view.js` (new) — `OperatorLedgerFormat`, embeds `GamePlanFormat` for
+  the drill-down, reuses `RollupStat`/`TerritoryMap`/`NeedsAttentionList`/`fmtPct`/`fmtDollar`
+  exported from `patch-plan-view.js` rather than a second copy.
+- `src/views/curated-home.js` — `operatorGroup` state (load/save, self-contained, same pattern as
+  the format preference), a self-service "Operator: [dropdown]" picker (district altitude only,
+  options straight from `operatorGroups()`, never hardcoded), `'ledger'` added to `FORMATS` with
+  its own combined altitude+identity gate in `formatFitsAltitude` (not a plain `FORMAT_ALTITUDE`
+  entry, since availability depends on BOTH altitude and the account's own operator identity),
+  `defaultFormat` becomes `'ledger'` only when both are true AND no saved preference exists.
+- `src/views/patch-plan-view.js` — exported `RollupStat`/`TerritoryMap`/`NeedsAttentionList`/
+  `fmtPct`/`fmtDollar` for reuse (were local-only before).
+- Tests: `src/__tests__/operator-ledger.test.js` (engine, real seeded locs from `constants.js`,
+  not a parallel fixture), `src/__tests__/curated-home-operator-ledger.test.js` (panel-level:
+  no default without an identity set, picker reveals + defaults it, saved-pref respected, the
+  drill-down + back link, the real peer comparison, never offered outside district altitude).
+- `src/app/changelog/5.689.js` + regenerated `changelog-latest.js`.
+
+### Deliberately out of scope for this pass
+
+- No admin-assigned operator identity (would need either a new RLS policy or a service-role Edge
+  Function — real scope, not attempted here since self-service already covers the real, small
+  set of users).
+- 3+ region wording (`distanceBetweenRegions` returns `null` for anything but exactly 2 — no real
+  operator currently spans 3+ states).

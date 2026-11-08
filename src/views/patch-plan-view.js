@@ -19,10 +19,11 @@ const span = (p, ...c) => h('span', p, ...c);
 
 const SEV_DOT = { RED: 'var(--crit,#f43f5e)', AMBER: 'var(--amber,#f59e0b)', GREEN: 'var(--good,#10b981)' };
 
-function fmtPct(v, digits = 1) { return v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(digits) + '%'; }
-function fmtDollar(v) { return v == null ? '—' : '$' + Math.round(v).toLocaleString('en-US'); }
+// Exported for reuse by src/views/operator-ledger-view.js — same formatting, no second copy.
+export function fmtPct(v, digits = 1) { return v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(digits) + '%'; }
+export function fmtDollar(v) { return v == null ? '—' : '$' + Math.round(v).toLocaleString('en-US'); }
 
-function RollupStat({ label, value, tone }) {
+export function RollupStat({ label, value, tone }) {
   return div({ style: { flex: '1 1 110px', minWidth: 100, background: 'var(--surf,#fffdf7)',
     border: '1px solid var(--bdr,#e4dac4)', borderRadius: 14, padding: '11px 14px' } },
     div({ style: { fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text3,#7a6f5c)' } }, label),
@@ -30,7 +31,9 @@ function RollupStat({ label, value, tone }) {
   );
 }
 
-function TerritoryMap({ points, onPick }) {
+// Exported for reuse by src/views/operator-ledger-view.js — a region's own map is drawn with
+// this exact component, just given that region's own (already independently normalized) points.
+export function TerritoryMap({ points, onPick }) {
   if (!points.length) {
     return div({ style: { fontSize: 12.5, color: 'var(--text3,#7a6f5c)', padding: '20px 0', textAlign: 'center' } },
       'No store coordinates available for this patch.');
@@ -52,7 +55,9 @@ function TerritoryMap({ points, onPick }) {
   );
 }
 
-function NeedsAttentionList({ ranked, onPick }) {
+// Exported for reuse by src/views/operator-ledger-view.js — same ranked-list rendering, whether
+// the list is one patch's stores or one operator's (potentially multi-state) stores.
+export function NeedsAttentionList({ ranked, onPick }) {
   if (!ranked.length) {
     return div({ style: { fontSize: 12.5, color: 'var(--good,#10b981)', fontWeight: 600, padding: '8px 0' } },
       'Every store in your patch is clean right now.');
