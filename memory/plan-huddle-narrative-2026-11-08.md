@@ -67,21 +67,28 @@ the voice.
 - **Not scheduled/auto-generated.** A future Phase (per the pitch's own build order) could
   pre-generate this nightly the way `scripts/sage-run.mjs` already runs scheduled SAGE prompts —
   not needed to prove whether the voice lands right first.
-- **Not tied to the Recommendation Accuracy Ledger (yet) — but it should be, and the ledger is
-  closer to ready than this session assumed going in.** Investigated before building this: task
-  #84's "Recommendation Accuracy Ledger Phase 1" is **fully code-wired already**
-  (`saveRecommendation`/`updateRecommendationOutcome`/`loadOpenRecommendations`/
+- **Tied to the Recommendation Accuracy Ledger — and it was already live the whole time.**
+  Investigated before building this: task #84's "Recommendation Accuracy Ledger Phase 1" is
+  fully code-wired (`saveRecommendation`/`updateRecommendationOutcome`/`loadOpenRecommendations`/
   `loadDueForGrading` in `src/lib/supabase.js`, dedupe-keyed, called from Monthly Projections'
-  suggestion badges in `analytics.js`) — it is NOT yet live only because the owner hasn't run
-  `supabase/schema-recommendation-ledger.sql` against production Supabase yet (own-DDL standing
-  rule; see `memory/plan-recommendation-accuracy-ledger-2026-11-04.md`). This is exactly the
-  "closed-loop learning" infrastructure the owner asked for the same night this Phase 1 shipped
-  (*"build a table to track the results of the results ongoing as conditions changed"*) — **it
-  already exists, just isn't switched on.** Once it is, the natural next step is a `source:
-  'huddle'` row type: log each generated huddle note as a checkable recommendation (closest
-  analog: "for the pattern this note identified, did the pattern hold / improve next period") and
-  let the SAME grading job that's already designed for forecasts grade huddle notes too — not a
-  new system, the ledger is deliberately generic across sources for exactly this reason.
+  suggestion badges in `analytics.js`). **This plan originally claimed it was "NOT yet live only
+  because the owner hasn't run `supabase/schema-recommendation-ledger.sql` against production
+  Supabase yet" — that claim was wrong, and was never actually measured against live Supabase
+  before being written down.** ✅ CORRECTED 2026-11-08, same night, after the owner ran the three
+  scripts anyway: a direct service-role query shows `recommendation_ledger` has held real data
+  since **2026-11-04** — 240 rows, all `sales_forecast`/`labor_tpph_forecast`, `created_at`
+  between 21:11 and 23:09 UTC that day (the same day task #84 shipped). The owner's own DDL run
+  that evening was real; this plan's assumption four days later that it still hadn't happened was
+  not. None of the 240 rows are graded yet, but that's expected, not a gap — `outcome_due_at` is
+  the end of the target month (Nov 2026), which hasn't closed; `scripts/grade-recommendations.mjs`
+  exists and is correct, just not due to run anything yet. This is exactly the "closed-loop
+  learning" infrastructure the owner asked for the same night this Phase 1 shipped (*"build a
+  table to track the results of the results ongoing as conditions changed"*) — and it has already
+  been quietly collecting real data for four days. The natural next step is a `source: 'huddle'`
+  row type: log each generated huddle note as a checkable recommendation (closest analog: "for
+  the pattern this note identified, did the pattern hold / improve next period") and let the SAME
+  grading job that's already designed for forecasts grade huddle notes too — not a new system,
+  the ledger is deliberately generic across sources for exactly this reason.
 
 ## Owner's same-night follow-on ideas (not built yet, logged here so they aren't lost)
 

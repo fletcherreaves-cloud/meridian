@@ -2,9 +2,14 @@
 // scripts/grade-recommendations.mjs — Recommendation Accuracy Ledger grading job (task #80
 // follow-on, Phase 1, owner-approved 2026-11-04). See memory/plan-recommendation-accuracy-
 // ledger-2026-11-04.md for the full design. NOT yet wired to a GitHub Action — the owner hasn't
-// asked for scheduling, and the ledger table itself isn't created in live Supabase yet (run
-// supabase/schema-recommendation-ledger.sql first, per that file's own header). Run manually
-// once there's real data to grade.
+// asked for scheduling. ✅ CORRECTED 2026-11-08 — the ledger table has been live in production
+// Supabase since the same day this shipped (confirmed by direct measurement: 240 real rows,
+// all `labor_tpph_forecast`/`sales_forecast`, created_at 2026-11-04 21:11–23:09 UTC — the
+// capture points in analytics.js have been writing real suggestion-badge data the whole time).
+// This comment previously claimed the table "isn't created in live Supabase yet," asserted
+// rather than measured — exactly the trap CLAUDE.md's own "measure it, don't reason about it"
+// rule warns against. Nothing graded yet is NOT a bug: `outcome_due_at` is the end of the
+// target month (Nov 2026), which hasn't closed. Run manually once grading is actually due.
 //
 // Required env vars:
 //   VITE_SUPABASE_URL          — Supabase project URL
