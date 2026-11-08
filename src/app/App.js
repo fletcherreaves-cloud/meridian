@@ -799,15 +799,15 @@ const WORKFLOW_GUIDE_SECTIONS = [
     {t:'4. Spot-check a store',d:'Click any store in District View → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
   ]},
   {day:'WEEKLY (Every Wednesday — start of work week)',color:'#f59e0b',maxLevel:4,items:[
-    {t:'1. Lock the weekly projection',d:'Open ▦ Projections in ⚗ Test Kitchen — this is the only grid with lock/override (Planning → Monthly tab is the monthly Targets editor and has no lock mechanic). Review stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
-    {t:'2. Run Projection vs Actuals report',d:'◑ Proj vs Actuals (⚗ Test Kitchen) — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in DI Calibration.'},
-    {t:'3. Check DI Calibration for drifting stores',d:'⚗ Test Kitchen → ◎ DI Calibration (per-store). ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
+    {t:'1. Lock the weekly projection',d:'Open ▦ Projections (sidebar → Forecasting and Labor Projections — promoted out of Test Kitchen, v5.685) — this is the only grid with lock/override (Planning → Monthly tab is the monthly Targets editor and has no lock mechanic). Review stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
+    {t:'2. Run Projection vs Actuals report',d:'◑ Proj vs Actuals (sidebar → Forecasting and Labor Projections) — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in DI Calibration.'},
+    {t:'3. Check DI Calibration for drifting stores',d:'◎ DI Calibration (sidebar → Forecasting and Labor Projections, per-store). ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
     {t:'4. Review Food Cost',d:'Open Food Cost from the sidebar (was "FOB Analysis"). Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
     {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Letters to generate store-specific coaching letters for each manager.'},
   ]},
   {day:'MONTHLY (By the 15th of prior month)',color:'var(--crit)',maxLevel:4,items:[
-    {t:'1. Lock the monthly projection',d:'Open the Test Kitchen Projections grid (▦ Projections) and set the period to Month — Planning → Monthly tab is the monthly Targets editor, not a projection-locking path. Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
-    {t:'2. Calibrate all forecast models',d:'⚗ Test Kitchen → ◎ DI Calibration → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all stores.'},
+    {t:'1. Lock the monthly projection',d:'Open the Projections grid (▦ Projections, sidebar → Forecasting and Labor Projections) and set the period to Month — Planning → Monthly tab is the monthly Targets editor, not a projection-locking path. Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
+    {t:'2. Calibrate all forecast models',d:'◎ DI Calibration (sidebar → Forecasting and Labor Projections) → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all stores.'},
     {t:'3. Review channel mix',d:'Open 3PO Delivery → Overview tab (Channel Intel was folded into this panel). Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
     {t:'4. Revenue review',d:'Open Revenue (Panel Manager → enable if hidden). District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
     {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator group using the store groups or patch filter. Share with operators at monthly review meeting.'},
@@ -4245,7 +4245,7 @@ function App() {
       routePanel==='morning-brief'&&h(RoutePanelShell,{
         icon:'☀️',
         title:'Morning Intelligence Brief',
-        subtitle:'Correlation engine · 12 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
+        subtitle:h('span',null,'Correlation engine · 12 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',h(InfoIcon,{articleKey:'morning_brief_guide'})),
         onBack:()=>goRoute(null),
       }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})),
       // Curated Home Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §2, task #92) -- same
@@ -4253,7 +4253,7 @@ function App() {
       routePanel==='curated-home'&&h(RoutePanelShell,{
         icon:'🧭',
         title:'Curated Home',
-        subtitle:'Same correlation engine as Daily Brief · role-cascaded voice · your chosen format',
+        subtitle:h('span',null,'Same correlation engine as Daily Brief · role-cascaded voice · your chosen format',h(InfoIcon,{articleKey:'curated_home_guide'})),
         onBack:()=>goRoute(null),
       }, h(CuratedHomePanel,{ds,settings,role:effectiveRole,viewAsScope,darRows,onNav:v=>goRoute(v),userName})),
       // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/

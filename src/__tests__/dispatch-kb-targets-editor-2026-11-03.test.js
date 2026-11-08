@@ -41,10 +41,12 @@ describe('Knowledge Base — new targets_editor article (task #75)', () => {
     expect(container.textContent).toContain('writes the WHOLE row');
   });
 
-  it('explicitly states neither grid has a lock mechanic, and points to the real one', () => {
+  it('explicitly states neither grid has a lock mechanic, and points to the real one (promoted out of Test Kitchen, v5.685)', () => {
     mount();
     openArticle('The in-app Monthly and Yearly Targets grids');
     expect(container.textContent).toContain('Neither grid has a lock, double-click-override, or approval mechanic');
-    expect(container.textContent).toContain('Test Kitchen → ▦ Projections');
+    expect(container.textContent).toContain('▦ Projections');
+    expect(container.textContent).toContain('Forecasting and Labor Projections');
+    expect(container.textContent).not.toContain('Test Kitchen → ▦ Projections');
   });
 });
