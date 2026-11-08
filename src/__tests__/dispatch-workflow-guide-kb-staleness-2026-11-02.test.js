@@ -44,10 +44,12 @@ function openArticle(matchText) {
 }
 
 describe('Knowledge Base — locked_projections article no longer sends users to a demoted panel as if it were a plain sidebar item', () => {
-  it('names Test Kitchen -> Projections as the only lock path, not Planning -> Monthly tab (a separate Targets editor with no lock mechanic)', () => {
+  it('names ▦ Projections (promoted to the real sidebar, no longer Test Kitchen) as the only lock path, not Planning -> Monthly tab (a separate Targets editor with no lock mechanic)', () => {
     mount();
     openArticle('How to lock projections, what happens when you do');
-    expect(container.textContent).toContain('Test Kitchen → ▦ Projections');
+    expect(container.textContent).toContain('▦ Projections');
+    expect(container.textContent).toContain('Forecasting and Labor Projections');
+    expect(container.textContent).not.toContain('⚗ Test Kitchen → ▦ Projections');
     expect(container.textContent).not.toContain('Open Planning → Monthly tab (the day-to-day path)');
     expect(container.textContent).not.toContain('Forecasting > Projections');
     expect(container.textContent).not.toContain('Forecasting > Proj vs Actuals');
@@ -77,10 +79,11 @@ describe('Knowledge Base — planning_hub article no longer claims the Monthly/Y
     expect(container.textContent).toContain('No lock mechanic here either');
   });
 
-  it('names Test Kitchen -> Projections as the real place sales projections get locked', () => {
+  it('names ▦ Projections (the real sidebar panel, no longer Test Kitchen) as the real place sales projections get locked', () => {
     mount();
     openArticle('One panel, five tabs, covering every projection and target workflow');
-    expect(container.textContent).toContain('Test Kitchen → ▦ Projections');
+    expect(container.textContent).toContain('▦ Projections');
+    expect(container.textContent).not.toContain('⚗ Test Kitchen → ▦ Projections');
   });
 });
 
@@ -103,17 +106,19 @@ describe('Workflow Guide modal — WEEKLY/MONTHLY "lock the projection" steps no
     })));
   }
 
-  it('weekly lock step points to Test Kitchen Projections, not Planning -> Monthly tab', () => {
+  it('weekly lock step points to ▦ Projections in the real sidebar (promoted out of Test Kitchen, v5.685), not Planning -> Monthly tab', () => {
     mountGuide();
     expect(container.textContent).toContain('1. Lock the weekly projection');
-    expect(container.textContent).toContain('Open ▦ Projections in ⚗ Test Kitchen');
+    expect(container.textContent).toContain('Open ▦ Projections (sidebar → Forecasting and Labor Projections');
+    expect(container.textContent).not.toContain('Open ▦ Projections in ⚗ Test Kitchen');
     expect(container.textContent).not.toContain('Open Planning → Monthly tab (or ▦ Projections');
   });
 
-  it('monthly lock step points to the Test Kitchen Projections grid, not Planning -> Monthly tab', () => {
+  it('monthly lock step points to the real sidebar Projections grid (promoted out of Test Kitchen, v5.685), not Planning -> Monthly tab', () => {
     mountGuide();
     expect(container.textContent).toContain('1. Lock the monthly projection');
-    expect(container.textContent).toContain('Open the Test Kitchen Projections grid');
+    expect(container.textContent).toContain('Open the Projections grid (▦ Projections, sidebar → Forecasting and Labor Projections)');
+    expect(container.textContent).not.toContain('Open the Test Kitchen Projections grid');
     expect(container.textContent).not.toContain('Open Planning → Monthly tab and set the period to Month');
   });
 });
