@@ -69,13 +69,29 @@ function SessionRow({ s }) {
     div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
       classes.map(c => span({
         key: c,
-        title: `${s.counts[c]} of ${c} counted${s.covered.includes(c) ? ' — full' : ' — partial'}`,
+        // Task #126 follow-on (2026-11-08) — when this session's own missingItems carries this
+        // class (durable per-WRIN detail, supabase/schema-inv-count-sessions-missing-items-
+        // 2026-11-08.sql), name the actual items, not just the count. `null`/absent for any
+        // session logged before that migration + the pull script's populate change — falls
+        // back to the original count-only tooltip, same as every session always showed.
+        title: missingItemsTitle(s, c),
         style: {
           fontSize: 10, fontFamily: 'var(--mono)',
           color: s.covered.includes(c) ? CLS_COL[c] || 'var(--text2)' : 'var(--text3,#6b7280)',
           opacity: s.covered.includes(c) ? 1 : .65,
         },
       }, `${c.slice(0, 4)} ${s.counts[c]}${s.covered.includes(c) ? '✓' : ''}`))));
+}
+
+// Task #126 follow-on — up to 10 named items, then a "+N more" tail so one giant tooltip
+// never blocks out the screen on a class that's barely been touched at all.
+function missingItemsTitle(s, cls) {
+  const base = `${s.counts[cls]} of ${cls} counted${s.covered.includes(cls) ? ' — full' : ' — partial'}`;
+  const missing = s.missingItems && s.missingItems[cls];
+  if (!missing || !missing.length) return base;
+  const names = missing.slice(0, 10).map(it => it.descr || it.wrin);
+  const tail = missing.length > 10 ? `, +${missing.length - 10} more` : '';
+  return `${base}\nNot counted: ${names.join(', ')}${tail}`;
 }
 
 function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {

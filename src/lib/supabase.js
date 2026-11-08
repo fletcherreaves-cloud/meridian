@@ -4979,6 +4979,9 @@ export async function loadInvCountSessions({ period } = {}) {
     loc: String(parseInt(r.loc, 10)), countDate: _fromISO(r.count_date), cls: r.cls, period: r.period,
     itemsCounted: r.items_counted, classTotal: r.class_total, covered: r.covered,
     sessionKind: r.session_kind, updatedAt: r.updated_at,
+    // Task #126 follow-on (2026-11-08) — null for any row predating
+    // schema-inv-count-sessions-missing-items-2026-11-08.sql / the pull script's own update.
+    missingItems: r.missing_items || null,
   }));
 }
 

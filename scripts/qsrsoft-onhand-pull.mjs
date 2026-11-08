@@ -1002,7 +1002,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 // session_kind as advisory and recompute qualities at read time if it matters.
 function deriveSessionRows(loc, period, rows) {
   const totals = {};
-  for (const r of rows) if (r.cls) totals[r.cls] = (totals[r.cls] || 0) + 1;
+  const universeByCls = {}; // cls -> [{wrin, descr, last_counted}], SAME unfiltered population
+  // `totals` already counts (deliberately, see this function's own existing convention —
+  // no isActive filter here, unlike count-cycle.js's detectSessions()). missing_items below
+  // (task #126, 2026-11-08 — memory/plan-count-cycle-classification-2026-11-08.md's open Q3)
+  // must stay symmetric with that SAME population, or items_counted + |missing| would stop
+  // summing to class_total for no good reason.
+  for (const r of rows) {
+    if (!r.cls) continue;
+    totals[r.cls] = (totals[r.cls] || 0) + 1;
+    (universeByCls[r.cls] || (universeByCls[r.cls] = [])).push(r);
+  }
 
   const byDate = {};
   for (const r of rows) {
@@ -1018,12 +1028,21 @@ function deriveSessionRows(loc, period, rows) {
       counts[c] >= (totals[c] || Infinity) * COVER_FRAC);
     const kind = sessionLabel(sessionQualities(date, covered, n));
     for (const [cls, items] of Object.entries(counts)) {
+      // Everything in this class's universe NOT counted on THIS session's date -- named,
+      // not just counted, so a later recount (which moves qsr_onhand's own last_counted
+      // forward) can never erase which specific items a past near-miss session still
+      // needed. {wrin, descr} stored inline (not just the wrin code) so display never
+      // depends on the CURRENT snapshot still carrying that item's description.
+      const missingItems = (universeByCls[cls] || [])
+        .filter(it => it.last_counted !== date)
+        .map(it => ({ wrin: it.wrin, descr: it.descr || '' }));
       out.push({
         loc, count_date: date, cls, period,
         items_counted: items,
         class_total: totals[cls] || 0,
         covered: items >= (totals[cls] || Infinity) * COVER_FRAC,
         session_kind: kind,
+        missing_items: missingItems,
         updated_at: new Date().toISOString(),
       });
     }

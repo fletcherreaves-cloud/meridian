@@ -256,6 +256,12 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
   const byDate = {};      // loc → date → cls → n (counted ACTIVE items)
   const newItems = {};    // loc → [{ wrin, descr, cls }] -- new this period, excluded above
   const staleItems = {};  // loc → [{ wrin, descr, cls }] -- dead pre-period rows, excluded above
+  // Task #126 follow-on, 2026-11-08 (memory/plan-count-cycle-classification-2026-11-08.md's
+  // open Q3) — loc -> cls -> [{wrin, descr, countedOn}] for the SAME population totals[loc][cls]
+  // counts (active, non-new, non-stale), so "which items are missing" stays symmetric with
+  // "how many are in the universe" -- exactly the live-snapshot counterpart of what
+  // scripts/qsrsoft-onhand-pull.mjs's deriveSessionRows() now persists into the durable log.
+  const universeByLoc = {};
   for (const r of (rows || [])) {
     if (!r || !r.cls || !isActive(r)) continue;
     const loc = unpad(r.loc);
@@ -279,6 +285,8 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
     } else {
       (totals[loc] || (totals[loc] = {}));
       totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
+      ((universeByLoc[loc] || (universeByLoc[loc] = {}))[r.cls] || (universeByLoc[loc][r.cls] = []))
+        .push({ wrin: String(r.wrin), descr: r.descr || '', countedOn: countedOf(r) });
     }
     const d = countedOf(r);
     if (!d) continue;
@@ -321,8 +329,18 @@ export function detectSessions(rows = [], { newWrinsByLoc = {} } = {}) {
       // never be mistaken for a partial/botched weekly attempt (#357-B1) even though it
       // can still fail to reach `satisfiesWeekly`.
       const touchedWeeklyClasses = (counts.Food || 0) > 0 || (counts.Condiment || 0) > 0;
+      // Task #126 follow-on — named missing items per touched class, computed live from the
+      // same universeByLoc population `totals` above already counts. Only built for classes
+      // this session actually touched (Object.keys(counts)), same scope coveragePct uses.
+      const missingItems = {};
+      for (const cls of Object.keys(counts)) {
+        const list = ((universeByLoc[loc] || {})[cls] || [])
+          .filter(it => it.countedOn !== date)
+          .map(it => ({ wrin: it.wrin, descr: it.descr }));
+        if (list.length) missingItems[cls] = list;
+      }
       return { loc, date, counts, n, covered, touchedWeeklyClasses,
-        ...q, kind: sessionLabel(q) };
+        ...q, kind: sessionLabel(q), missingItems: Object.keys(missingItems).length ? missingItems : null };
     });
   }
   return { sessions: out, classTotals: totals, newItems, staleItems };
@@ -674,7 +692,13 @@ export function sessionsFromLog(logRows = []) {
     // take the max seen defensively rather than assuming perfect consistency across dates.
     classTotals[loc][r.cls] = Math.max(classTotals[loc][r.cls] || 0, Number(r.classTotal) || 0);
     ((byLocDate[loc] || (byLocDate[loc] = {}))[date] || (byLocDate[loc][date] = {}))[r.cls] =
-      { itemsCounted: Number(r.itemsCounted) || 0, covered: !!r.covered };
+      // Task #126 follow-on, 2026-11-08 (memory/plan-count-cycle-classification-2026-11-08.md's
+      // open Q3, resolved) — `missingItems`: the per-class {wrin, descr} list of this session's
+      // real not-counted items, from the new `missing_items` column. `null` for any row logged
+      // before both the schema migration (supabase/schema-inv-count-sessions-missing-items-
+      // 2026-11-08.sql) and this script's own populate change landed — genuinely unrecoverable
+      // history, not a bug; the UI must handle it as "detail not captured for this session."
+      { itemsCounted: Number(r.itemsCounted) || 0, covered: !!r.covered, missingItems: r.missingItems || null };
   }
   const sessions = {};
   for (const loc of Object.keys(byLocDate)) {
@@ -688,7 +712,12 @@ export function sessionsFromLog(logRows = []) {
       // classTotals instead of the live qsr_onhand snapshot.
       const q = sessionQualities(date, covered, n, { counts, totals: classTotals[loc] || {} });
       const touchedWeeklyClasses = (counts.Food || 0) > 0 || (counts.Condiment || 0) > 0;
-      return { loc, date, counts, n, covered, touchedWeeklyClasses, ...q, kind: sessionLabel(q) };
+      const missingItems = {};
+      for (const cls of Object.keys(clsRows)) {
+        if (clsRows[cls].missingItems) missingItems[cls] = clsRows[cls].missingItems;
+      }
+      return { loc, date, counts, n, covered, touchedWeeklyClasses, ...q, kind: sessionLabel(q),
+        missingItems: Object.keys(missingItems).length ? missingItems : null };
     });
   }
   return { sessions, classTotals };
