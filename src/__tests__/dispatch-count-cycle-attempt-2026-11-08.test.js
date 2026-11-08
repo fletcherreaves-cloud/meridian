@@ -1,0 +1,153 @@
+// Task #126 (memory/plan-count-cycle-classification-2026-11-08.md, on branch
+// claude/count-cycle-classification-scoping-2026-11-08 at the time this test was written) —
+// splitting count-cycle IDENTIFICATION (Axis 1: Cycle Attempt) from COMPLIANCE (Axis 2,
+// COVER_FRAC=1, entirely unchanged) in src/engine/count-cycle.js.
+//
+// The real motivating case: Holdenville, 2026-10-30, inside the EOM close window — a
+// substantial 233-item count (Food 118/120, Condiment 31/32, Paper 84/96) where every single
+// class missed the strict 100% bar by a hair. Before this change, that reads IDENTICALLY to
+// a 3-item spot check: isEom requires has('Paper') (the 100% bar), so covered=[], isEom=false,
+// and the session's kind is the generic 'Partial' bucket. This test proves (a) it is now
+// IDENTIFIED as an EOM attempt with the real per-class coverage shown, and (b) it is STILL
+// graded non-compliant — the 100% bar is untouched, and the overdue/incomplete alerting a GM
+// would see is unaffected. Verified by hand (see this file's own commit body) that this test
+// FAILS against the pre-#126 code: s.kind reads 'Partial', not the two-part label, and
+// s.attemptsEom/s.coveragePct are both undefined.
+import { describe, it, expect } from 'vitest';
+import { detectSessions, cycleCompliance, TOUCHED_FLOOR, COVER_FRAC } from '../engine/count-cycle.js';
+
+const mk = (loc, cls, n, date, from = 0) =>
+  Array.from({ length: n }, (_, i) => ({ loc, cls, wrin: `${cls}-${from + i}`, last_counted: date }));
+
+// Holdenville's real 2026-10-30 numbers: Food 118/120 (98.33%), Condiment 31/32 (96.875%),
+// Paper 84/96 (87.5%). Universe = counted + uncounted (last_counted: null) per class, so
+// classTotals lands on exactly 120/32/96 the same way detectSessions() derives it from real
+// qsr_onhand rows -- active, untouched items included in the denominator same as production.
+function holdenvilleRows() {
+  return [
+    ...mk('13201', 'Food', 118, '2026-10-30'), ...mk('13201', 'Food', 2, null, 118),
+    ...mk('13201', 'Condiment', 31, '2026-10-30'), ...mk('13201', 'Condiment', 1, null, 31),
+    ...mk('13201', 'Paper', 84, '2026-10-30'), ...mk('13201', 'Paper', 12, null, 84),
+  ];
+}
+
+describe('task #126 — Cycle Attempt identification survives a compliance miss (Holdenville 2026-10-30)', () => {
+  it('(a) identifies the session as an EOM attempt, not generic Partial', () => {
+    const { sessions } = detectSessions(holdenvilleRows());
+    const s = sessions['13201'][0];
+    expect(s.attemptsEom).toBe(true);
+    expect(s.attemptsWeekly).toBe(false);
+    expect(s.attemptsMidPaper).toBe(false);
+    expect(s.kind).toBe('End-of-Month — Food 98%, Condiment 97%, Paper 88%');
+  });
+
+  it('(b) per-class coverage percentages are computed exactly, not round-guessed', () => {
+    const { sessions } = detectSessions(holdenvilleRows());
+    const s = sessions['13201'][0];
+    // 118/120 = 98.333...% -> 98; 31/32 = 96.875% -> 97; 84/96 = 87.5% -> 88.
+    expect(s.coveragePct).toEqual({ Food: 98, Condiment: 97, Paper: 88, 'Non-Product': null });
+  });
+
+  it('(c) is STILL graded non-compliant — the 100% COVER_FRAC bar is untouched by identification', () => {
+    expect(COVER_FRAC).toBe(1);
+    const { sessions } = detectSessions(holdenvilleRows());
+    const s = sessions['13201'][0];
+    // None of the three classes reached 100%, so the session is NOT in `covered`, and NONE
+    // of the Axis-2 compliance flags flip to true just because Axis-1 now identifies it.
+    // 'Non-Product' has zero rows in this fixture, so it's vacuously covered (same
+    // 0-universe convention #357-B2/3's own comment documents, untouched by this change) —
+    // Food/Condiment/Paper are the three real classes at stake and none of them clear 100%.
+    expect(s.covered).toEqual(['Non-Product']);
+    expect(s.isEom).toBe(false);
+    expect(s.satisfiesWeekly).toBe(false);
+    expect(s.satisfiesMidPaper).toBe(false);
+  });
+
+  it('CRITICAL CONSTRAINT — a session identified as an EOM attempt but not 100% compliant ' +
+     'still triggers the same overdue alert it would have before this change (not quieted)', () => {
+    // The Holdenville session is the ONLY session on record, so as of a later date, this
+    // store has never had a session that cleared satisfiesWeekly||isEom -- lastWeekly is
+    // null, exactly as it was before #126 (identification change never touches this logic).
+    const c = cycleCompliance(holdenvilleRows(), { asOf: '2026-11-05' })[0];
+    expect(c.lastWeekly).toBeNull();
+    expect(c.overdue).toBe(true);
+    expect(c.status).toBe('crit');
+    const overdueEx = c.exceptions.find(e => e.rule === 'weekly-overdue');
+    expect(overdueEx).toBeTruthy();
+    expect(overdueEx.detail).toBe('No complete weekly count on record');
+    // The verdict line (what a GM actually reads) still tells them to act, unchanged wording.
+    expect(c.verdict).toMatch(/Count Food and Condiment/);
+  });
+
+  it('TOUCHED_FLOOR reuses the existing isPartial/isSpot boundary (task #126 open Q2 default)', () => {
+    expect(TOUCHED_FLOOR).toBe(25);
+  });
+});
+
+// A full, real class universe for Food/Condiment/Paper (the three classes any of the
+// has()/satisfiesX checks can read) — NOT just the classes a given test cares about —
+// so an untouched class never falls into the "0 active items -> vacuously covered" rule
+// (#357-B2/3's own documented convention) and silently flips an unrelated satisfiesWeekly/
+// satisfiesMidPaper flag to true, which would short-circuit sessionLabel() before it ever
+// reaches the new Axis-1 branch this test is actually exercising.
+function fullUniverse(loc) {
+  return [...mk(loc, 'Food', 118, null), ...mk(loc, 'Condiment', 36, null), ...mk(loc, 'Paper', 92, null)];
+}
+// Overwrite last_counted on the first N rows of a class to simulate this session's counts,
+// same pattern count-cycle.test.js's own store() helper uses.
+function withSession(rows, date, counts) {
+  for (const [cls, n] of Object.entries(counts)) {
+    let done = 0;
+    for (const r of rows) { if (r.cls === cls && done < n) { r.last_counted = date; done++; } }
+  }
+  return rows;
+}
+
+describe('task #126 — attemptsWeekly / attemptsMidPaper, same shape as attemptsEom', () => {
+  it('identifies a substantial-but-not-100%-compliant weekly count as a Weekly attempt', () => {
+    // Outside the close window, Food 100/118 and Condiment 30/36 -- both well over
+    // TOUCHED_FLOOR (25) but neither at 100%, so the OLD engine calls this 'Partial'.
+    const rows = withSession(fullUniverse('A'), '2026-06-10', { Food: 100, Condiment: 30 });
+    const { sessions } = detectSessions(rows);
+    const s = sessions['A'][0];
+    expect(s.attemptsWeekly).toBe(true);
+    expect(s.attemptsEom).toBe(false);
+    expect(s.attemptsMidPaper).toBe(false);   // Paper untouched this session
+    expect(s.satisfiesWeekly).toBe(false);   // still non-compliant
+    expect(s.kind).toMatch(/^Weekly — Food \d+%, Condiment \d+%$/);
+  });
+
+  it('identifies a substantial-but-not-100%-compliant mid-month Paper count as a Mid-Month-Paper attempt', () => {
+    // Outside the close window, Paper 80/92 -- over TOUCHED_FLOOR, not 100%.
+    const rows = withSession(fullUniverse('B'), '2026-06-10', { Paper: 80 });
+    const { sessions } = detectSessions(rows);
+    const s = sessions['B'][0];
+    expect(s.attemptsMidPaper).toBe(true);
+    expect(s.attemptsEom).toBe(false);
+    expect(s.attemptsWeekly).toBe(false);   // Food/Condiment untouched this session
+    expect(s.satisfiesMidPaper).toBe(false);   // still non-compliant
+    expect(s.kind).toMatch(/^Mid-Month Paper — Paper \d+%$/);
+  });
+
+  it('a session that is too small in a class (below TOUCHED_FLOOR) is never promoted to an attempt', () => {
+    // Food 10/118, Condiment 5/36 -- real activity, but below the touched floor for both;
+    // this must remain the old generic bucket (isPartial, since n=15 < 25 here -> isSpot).
+    const rows = withSession(fullUniverse('C'), '2026-06-10', { Food: 10, Condiment: 5 });
+    const { sessions } = detectSessions(rows);
+    const s = sessions['C'][0];
+    expect(s.attemptsWeekly).toBe(false);
+    expect(s.attemptsEom).toBe(false);
+    expect(s.attemptsMidPaper).toBe(false);
+    expect(s.kind).toBe('Spot check');
+  });
+});
+
+describe('task #126 — sessionQualities() legacy 3-arg call stays byte-identical', () => {
+  it('omitting `extra` returns exactly the original 5 keys, no attempt/coverage fields', async () => {
+    const { sessionQualities } = await import('../engine/count-cycle.js');
+    const q = sessionQualities('2026-06-10', ['Food', 'Condiment'], 10);
+    expect(q).toEqual({ satisfiesWeekly: true, satisfiesMidPaper: false, isEom: false, isPartial: false, isSpot: false });
+    expect(q.attemptsEom).toBeUndefined();
+    expect(q.coveragePct).toBeUndefined();
+  });
+});
