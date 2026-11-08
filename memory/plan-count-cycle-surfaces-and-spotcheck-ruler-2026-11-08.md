@@ -130,3 +130,74 @@ A generated, printable/shareable worksheet, one per store per count period (week
 4. Threshold for flagging the counterfactual gap as "worth a conversation" — a $ amount, a FOB-
    point swing, or scaled to the store's own sales (so a swing that's material at a small store
    doesn't get buried at a big one, or vice versa)?
+
+### Owner's answers, 2026-11-08
+
+1. ✅ **RESOLVED — "Both, please."** Build the Ruler for every weekly count AND every EOM count,
+   not EOM-only. No scope-narrowing needed in the build.
+2. ✅ **RESOLVED — Curated Home, timed to prompt, plus a durable report.** Owner: *"maybe the new
+   hub we created (Curated Home), somewhere in there that makes sense as it would or should
+   prompt it in a timely manner, but also logged as a report that can be used whenever as well."*
+   Two surfaces, not one: (a) a Curated Home prompt that fires when a count just happened (the
+   natural trigger — a new `inv_count_sessions` row for that store/period), not a static tile
+   anyone has to remember to go check; (b) a standing, re-visitable report (Reports Hub-style or a
+   Count Cycle tab) so a DO can pull up any past store/period's Ruler on demand, not only the one
+   that happened to prompt. Both read the same underlying worksheet data — this is a delivery-
+   surface decision, not two different computations.
+3. 🔶 **PARTIALLY RESOLVED, and surfaces a REAL open engineering question, not a design pick.**
+   Owner: *"It should be both, I believe... We just have to find a way to better dial in our
+   ability to auto detect recounts, even within the perceived same session. We could start
+   looking at the variance of an item and make a calculated guess as to whether a subsequent
+   recount was due to an erroneous result or a mis-entry... we chould be able to do better than
+   what we currently have."* So the ANSWER to the open question is "both" (confirmed), but
+   answering it honestly exposes that detecting a WITHIN-session recount isn't a data-availability
+   problem to design around, it's a genuine signal-detection problem: `qsr_onhand`/
+   `inv_count_sessions` are both keyed off `last_counted`, a single timestamp with no revision
+   history, so two entries of the same item on the same submission leave no direct trace. The
+   owner's own proposed approach — use the item's OWN variance (`qsr_variance_stat`'s `dolDiff`/
+   `variance`, the same field `variance-top5` already ranks by) as a heuristic signal for "this
+   number looks like a correction, not a fresh count" — is a real, buildable idea, but it's
+   RESEARCH, not a known formula to wire in: what variance shape actually distinguishes "GM caught
+   a mis-entry and fixed it" from "the recount found real product" from "ordinary day-to-day
+   count noise" is an empirical question that needs real `qsr_variance_stat` history to measure
+   against, the same "measure it, don't guess" discipline every threshold in this codebase
+   (COVER_FRAC, TOUCHED_FLOOR, the 90% streak default two sections up) was built on. **Not
+   something to silently invent a formula for here** — this is its own follow-on: pull a sample of
+   stores' variance history around known recount events (the ACROSS-session recounts this file's
+   §"What's auto-computable TODAY" already detects are the ground truth to calibrate against) and
+   see whether a real signal shows up before committing to a detection rule. Logged as a dedicated
+   next step, not blocking the Ruler's first build — the Ruler ships with across-session recount
+   detection (already real, already works) and reports "not detectable from today's data" for the
+   within-session case until that research lands, rather than guessing at a threshold with no
+   measurement behind it.
+4. 🔶 **PARTIALLY RESOLVED, same shape as #3 — a real base plus a real open research question.**
+   Owner: *"Targets are generally a good threshold... any wayward swing in an unreasonable amount
+   should be flagged... Targets are a solid base to judge against and then anomalies would close a
+   close second as well as things we just know can not be correct must always be flagged."* Three
+   tiers, in the owner's own priority order:
+   - **Targets, as the primary threshold — buildable NOW, no research needed.** Every store
+     already has real per-metric targets (`DEFAULT_TARGETS`/Smart Targets/Monthly Targets,
+     already Supabase-persisted). The counterfactual box's "worth a conversation" flag should
+     compare FOB-as-reported (and FOB-without-the-top-movers) against the store's own FOB target,
+     not a single district-wide $ or point number — this directly answers the sales-scaling half of
+     the original open question (a target is already store-specific) and is a straight wire-in to
+     data this app already has.
+   - **Anomaly detection, as a second signal — this is the SAME open research question as #3's
+     within-session recount detection**, not a separate one: "a wayward swing in an unreasonable
+     amount" is exactly what Signals' Scanner (`correlation-stats.js`'s effect-size + Benjamini-
+     Hochberg FDR guardrails, already live) was built to catch for metric-pair correlations — reuse
+     that statistical machinery's SHAPE (a measured effect-size floor, not a guessed cutoff) rather
+     than inventing a second threshold engine, but it needs the same real-history calibration pass
+     as #3 before it's trustworthy for this specific use (variance swings, not correlation pairs).
+   - **"Things we just know cannot be correct" — buildable NOW, no research needed either.** This
+     is a HARD rule, not a statistical threshold: a few concrete, named impossibilities (negative
+     on-hand, a swing larger than the item's own on-hand dollar value, a per-unit price that
+     changed implausibly between counts) that should always flag regardless of any threshold math.
+     Worth enumerating as an explicit list once the Ruler's variance data model is in hand, same
+     spirit as `isStaleDeadRow()`'s existing "this specific shape is never real" rule in
+     count-cycle.js.
+   **Net effect on the build:** ship the Ruler with target-based flagging (tier 1) and the
+   hard-impossibility list (tier 3) in its first pass; tier 2 (anomaly detection) and question #3's
+   within-session recount heuristic are the SAME follow-on research task — logged as its own
+   backlog item rather than guessed at here, since both need real historical variance data to
+   calibrate against before either is trustworthy enough to show a GM as a real finding.
