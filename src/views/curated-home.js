@@ -208,34 +208,48 @@ function BulletsFormat({ items, onNav }) {
     items.map(it => h(ItemCard, { key: it.id, it, onNav, compact: true })));
 }
 
-// Narrative groups items by severity into short, flowing paragraphs -- same facts as the other
-// two formats, prose instead of itemization. Deliberately data-driven (never hardcodes wording
-// for a specific category) since any of MORNING_RULES' 12 rules can produce the items here.
-// Phase 2: gains a compact row of drill-through chips under the prose (distinct rules only) so
-// the "clickable links" addition isn't format-gated to Checklist/Bullets.
+// Narrative re-imagined (owner request 2026-11-08: "clean up the narrative view... make it
+// easier to read"). What was wrong: every item of a given severity got concatenated with
+// `.join(' ')` into ONE run-on paragraph -- 5 red flags read as a single wall of text with no
+// visual break between unrelated stores/issues, severity had no color cue at all in this format
+// (unlike Checklist/Bullets' ItemCard), and the action -- the actual "what to do" -- was buried
+// mid-sentence with no visual distinction from the diagnostic detail around it. Same underlying
+// facts as the other two formats (CLAUDE.md's "Voice by role" rule: the number and the decision
+// both stay visible, never replaced), re-laid-out as one short block per item instead of one
+// blob per severity tier:
+//   [severity dot]  Headline   ·  Store A, Store B
+//                    Detail sentence, same prose tone as before.
+//                    → Action, in the item's own severity color so it's the visual lead, not
+//                      the last clause of a run-on sentence.
+// Still genuinely "Narrative" (flowing text, not a tile/card -- that's Checklist/Bullets' job),
+// still fully data-driven (never hardcodes wording for a specific rule/category).
+const NARR_SEV_RANK = { RED: 0, AMBER: 1, GREEN: 2 };
 function NarrativeFormat({ items, summary, onNav }) {
   if (!items.length) {
     return div({ style: { fontSize: 13.5, color: 'var(--text2,#4b5563)', lineHeight: 1.7 } },
       'Nothing worth a call today — all clear across the board.');
   }
-  const red = items.filter(i => i.severity === 'RED');
-  const amber = items.filter(i => i.severity === 'AMBER');
-  const paragraphs = [];
-  if (red.length) {
-    paragraphs.push(red.map(it =>
-      `${it.headline}, at ${it.storesAffected.join(', ')}. ${it.detail} ${it.action || ''}`.trim()
-    ).join(' '));
-  }
-  if (amber.length) {
-    paragraphs.push(amber.map(it =>
-      `${it.headline}, at ${it.storesAffected.join(', ')}. ${it.detail} ${it.action || ''}`.trim()
-    ).join(' '));
-  }
+  const ordered = [...items].sort((a, b) => (NARR_SEV_RANK[a.severity] ?? 9) - (NARR_SEV_RANK[b.severity] ?? 9));
   const distinctRuleIds = [...new Set(items.map(i => i.ruleId))].filter(r => RULE_PANEL[r]);
-  return div({ style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-    paragraphs.map((p, i) => h('p', { key: i, style: { margin: 0, fontSize: 13.5, color: 'var(--text2,#4b5563)', lineHeight: 1.75 } }, p)),
-    distinctRuleIds.length > 0 && div({ style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 } },
-      distinctRuleIds.map(r => h(DrillLink, { key: r, ruleId: r, onNav }))),
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+    ordered.map((it, i) => div({ key: it.id || i, style: { display: 'flex', gap: 10, alignItems: 'flex-start' } },
+      span({ style: { width: 7, height: 7, borderRadius: '50%', background: SEV_COLOR[it.severity],
+        flexShrink: 0, marginTop: 6 } }),
+      div({ style: { flex: 1, minWidth: 0 } },
+        h('p', { style: { margin: 0, fontSize: 13.5, lineHeight: 1.65 } },
+          h('strong', { style: { color: 'var(--text,#111827)', fontWeight: 700 } }, it.headline),
+          it.storesAffected?.length && span({ style: { color: 'var(--text3,#6b7280)', fontWeight: 600 } },
+            '  ·  ' + it.storesAffected.join(', ')),
+        ),
+        it.detail && h('p', { style: { margin: '3px 0 0', fontSize: 13, color: 'var(--text2,#4b5563)', lineHeight: 1.65 } },
+          it.detail),
+        it.action && h('p', { style: { margin: '5px 0 0', fontSize: 12.5, color: SEV_COLOR[it.severity], fontWeight: 600, lineHeight: 1.5 } },
+          '→ ' + it.action),
+      ),
+    )),
+    distinctRuleIds.length > 0 && div({
+      style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4, paddingTop: 12, borderTop: '1px solid var(--bdr,#e5e7eb)' },
+    }, distinctRuleIds.map(r => h(DrillLink, { key: r, ruleId: r, onNav }))),
   );
 }
 
@@ -353,16 +367,22 @@ function HuddleNarrative({ stores, altitude, scopeKey, dateKey }) {
     }
   };
 
+  // Re-imagined alongside Narrative (owner request 2026-11-08) -- this sits above every format
+  // as the one AI-synthesized line of the whole page, so it gets real visual weight (a left
+  // accent in the brand gold, not just a flat grey box) and plain, non-italic text at a size/
+  // color that reads as the lead, not a caption. Structure/state machine unchanged.
   return div({
     style: {
       display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surf2,#f3f4f6)',
-      border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 12, padding: '12px 16px', marginBottom: 14,
+      borderTop: '1px solid var(--bdr,#e5e7eb)', borderRight: '1px solid var(--bdr,#e5e7eb)',
+      borderBottom: '1px solid var(--bdr,#e5e7eb)', borderLeft: '3px solid var(--gold,#f5bc00)',
+      borderRadius: 10, padding: '13px 16px', marginBottom: 14,
     },
   },
     span({ style: { fontSize: 18, lineHeight: 1 } }, '🗣️'),
     div({ style: { flex: 1, minWidth: 0 } },
       state.text
-        ? span({ style: { fontSize: '13.5px', color: 'var(--text2,#4b5563)', fontStyle: 'italic' } }, state.text)
+        ? span({ style: { fontSize: '13.5px', color: 'var(--text,#111827)', lineHeight: 1.6 } }, state.text)
         : state.error
         ? span({ style: { fontSize: '12.5px', color: 'var(--crit,#dc2626)' } }, state.error)
         : span({ style: { fontSize: '12.5px', color: 'var(--text3,#6b7280)' } }, 'No huddle note yet for today.'),

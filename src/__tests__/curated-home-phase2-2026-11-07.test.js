@@ -121,4 +121,28 @@ describe('Curated Home Phase 2 — graphical summary + drill-through', () => {
     const securityLink = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Go to Security'));
     expect(securityLink).toBeTruthy();
   });
+
+  it('Narrative re-imagined (owner request 2026-11-08): each item is its own block, ordered '+
+     'RED before AMBER, with the headline bold, the store name trailing, and the action set '+
+     'apart on its own line rather than run-on-joined into one paragraph per severity tier', async () => {
+    const onNav = vi.fn();
+    await renderPanel(root, { onNav });
+    const narrativeBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Narrative');
+    await act(async () => { narrativeBtn.click(); });
+
+    const paras = [...container.querySelectorAll('p')];
+    // Fixture has exactly 2 items (1 RED, 1 AMBER), each now rendering 3 <p> tags (headline+
+    // store, detail, action) instead of being concatenated into 1 giant paragraph per tier.
+    expect(paras.length).toBeGreaterThanOrEqual(6);
+
+    const strongHeadlines = [...container.querySelectorAll('strong')].map(s => s.textContent);
+    expect(strongHeadlines).toContain('19 drawer opens');
+    expect(strongHeadlines).toContain('Evening OEPE drift');
+    // RED's own block (and its store/detail/action) appears before AMBER's in document order.
+    expect(container.textContent.indexOf('19 drawer opens')).toBeLessThan(container.textContent.indexOf('Evening OEPE drift'));
+
+    expect(container.textContent).toContain('Ardmore-Broadway');
+    expect(container.textContent).toContain('→ DRAWER_OPENS action');
+    expect(container.textContent).toContain('→ DAYPART_OEPE action');
+  });
 });

@@ -1,6 +1,6 @@
 ---
 name: finding-hme-squadle-integration-2026-11-06
-description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints, auth mechanisms, and data shapes confirmed by direct testing during this session; two captures still needed from the owner before either pull script can be built."
+description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. HME needs one more capture (Custom Dates + Hour report request) before its pull script can be built. Squadle's auth is fully solved but its DATA LAYER is not a REST endpoint -- real-time Firebase RTDB + a Squadle Socket.IO relay -- see the 2026-11-08 update for what that actually takes to automate."
 metadata:
   node_type: memory
   type: finding
@@ -80,11 +80,17 @@ capture proves the query-parameter shape. The Scheduled Reports' native email fe
    request. This single capture would confirm both the real date-range parameter shape (unlocks
    backfill) and that hour-level data is reachable via direct API call (not just the email
    schedule).
-2. **The actual login/token-mint request.** Every capture so far reused a token the browser's own
-   login flow already produced. Need either: a simple REST login endpoint (same shape as
-   Squadle's, ideally), or — if HME's portal login is a full browser-rendered form with no clean
-   REST equivalent — a Playwright-based session capture, same fallback pattern as
-   `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`.
+2. **The login/token-mint request — partially captured 2026-11-08, response body still needed.**
+   The owner captured the real browser login flow (`fletcher@mcdok.com` on the HME Cloud login
+   page, DevTools Network tab): `POST https://auth.hmecloud.com/api/auth-service`, JSON body with
+   fields `username`, `password`, `ip`, `portalBaseUrl`, `isAdmin`, `isPartner` — a clean REST
+   login endpoint, same shape as Squadle's, not a Playwright-only form as feared above. Request
+   returned HTTP 202. **The owner's real password was in that capture — it was never written to
+   any file, commit, or this doc, only these field names.** **Not yet captured: the response body**
+   (which field holds the resulting Bearer token — presumably reused as-is by every `portal-service
+   .hmecloud.com` call documented above). One more capture (open the Network tab's response/preview
+   pane on this same request, or repeat the login) closes this out and unblocks a real two-path
+   auth script (`getFreshToken()`-style direct POST, no Playwright needed after all).
 
 ## 2. Squadle (food-safety checklist tablet)
 
@@ -111,6 +117,30 @@ still work after it's already been exchanged once? If rotation is on, the script
 newest `refresh_token` back to the GitHub Secret after every run (a small but real design
 difference from a static secret), never assume the stored one stays valid forever.
 
+**Updated 2026-11-08 — a SECOND login path confirmed, which changes the login-step recommendation
+above.** A fresh browser capture of the real `hq.squadle.com` login shows the front-end is not
+actually calling `verifyPassword` directly — it's calling:
+
+| Step | Endpoint | What it confirms |
+|---|---|---|
+| Custom-token exchange | `POST https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyCustomToken?key=<API_KEY>`, body `{token, returnSecureToken:true}` | The `token` is a short-lived (3600s `iat`/`exp`) JWT **signed server-side by Squadle's own Firebase Admin SDK service account** (`firebase-adminsdk-opv3i@firebase-squadle.iam.gserviceaccount.com`, visible in the JWT's own `iss`/`sub` claims — field names only, not the signature). This confirms Squadle's backend mints a custom Firebase token after its own (not-yet-captured) login step, rather than the client talking to Firebase's `verifyPassword` directly. Exchanging it returns the same `idToken`/`refreshToken` shape as the `verifyPassword` path above. |
+| Account check | `POST .../getAccountInfo?key=<API_KEY>`, body `{idToken}` | Same confirmation role as the `verifyPassword` path — re-observed, not new. |
+| Refresh | `POST https://securetoken.googleapis.com/v1/token?key=<API_KEY>`, form body `grant_type=refresh_token&refresh_token=...` | Same endpoint/shape as above — re-confirmed on a second real session. |
+
+**Practical effect: once a refresh token is captured (from either path), the mint-step question is
+moot for the automation itself** — the pull script never needs to replay a login at all, it only
+ever calls the refresh endpoint. Where this matters is a **one-time bootstrap**: if `verifyPassword`
+ever stops working (e.g. Squadle disables direct password auth in favor of SSO/custom-token-only),
+the *initial* refresh token would need to come from capturing this custom-token exchange instead —
+which itself still depends on whatever (uncaptured) Squadle backend call mints that custom token in
+the first place. Not a blocker today since a `verifyPassword`-sourced refresh token is already
+confirmed working; worth knowing if that path ever goes away.
+
+The Firebase Web API key seen in all these captures (`AIzaSyC3Gu3Ls2l5fIH3eLn5F3HtbZf41YEPr4M`) is
+a public per-project client identifier, not a secret — safe to record and to hardcode in the pull
+script exactly as Squadle's own front-end does; it is the refresh token, not this key, that is the
+credential to protect.
+
 ### Data confirmed (via the owner's own manual exports, not yet via a captured API call)
 
 The download buttons next to each dashboard table are **client-side only** — the page loads
@@ -131,11 +161,58 @@ et al.), just a different vendor and checklist program.
 
 ### Still needed before building `scripts/squadle-pull.mjs`
 
-1. **The real data-loading network request.** Reload the "McD Dashboard v2" tab, or change the
-   Custom Date Range and capture whatever XHR/fetch fires right after — that's the actual backend
-   endpoint behind both tables (almost certainly Squadle's own REST API, authenticated with the
-   Firebase `idToken` as a Bearer header, not Firebase itself).
 2. **Confirm refresh-token rotation behavior** (above).
+
+### ⚠️ Updated 2026-11-08 — item 1 above was WRONG. There is no REST endpoint. This is the
+single biggest correction in this whole doc and changes Squadle's difficulty ranking.
+
+A real, in-sandbox Playwright login + dashboard load (owner's own account, live) captured EVERY
+network event including WebSocket frames — the capture this doc was missing. Result: **the
+checklist/record data never travels over a conventional request/response XHR at all.** Two
+real-time channels carry it instead:
+
+1. **Direct Firebase Realtime Database connections** — `wss://s-gke-usc1-nssi2-{12,21,35,51,56}
+   .firebaseio.com/.ws?v=5&ns=sqdl-prod-cd-0NN`, one socket per shard, each with its OWN logical
+   database (`ns=` differs per socket: observed `sqdl-prod-cd-013/017/019/021/022` on one single
+   login). Each authenticates with the exact custom-token-derived `idToken` from
+   `createRealtimePermissionSession` (§ above) via the RTDB wire protocol's own `{"t":"d","d":
+   {"r":N,"a":"auth","b":{"cred":"<idToken>"}}}` frame — confirmed `{"s":"ok"}` on all 5 sockets.
+   **Multiple shards opening per login, each its own namespace, is the real complexity**: there
+   is no single predictable `databaseURL` the way every other integration in this doc has one.
+2. **A second, Squadle-operated relay** — `wss://cws.squadle.com:700/socket.io/?EIO=4&transport
+   =websocket` (Engine.IO v4/Socket.IO, NOT raw Firebase) — this is the one actually observed
+   carrying real payloads during the captured session: nested JSON under a `records/<date>/
+   <locationPushId>` shape (e.g. `records/2026-11-08/-MIMSCVFsi4_eyehTX-M`), each record holding
+   the full checklist run — shift name, every task's every action (temperature readings, run
+   sizes, select-box answers, pass/fail formulas), `signatureImageUrl`s pointing at
+   `firebasestorage.googleapis.com`, timestamps. This is item-level, not the monthly rollup %
+   the owner's manual exports showed — genuinely richer data than this doc assumed existed.
+
+**A quick REST probe (`GET https://<shard>.firebaseio.com/records/<date>/<id>.json?auth=
+<idToken>`, the standard Firebase RTDB REST fallback) returned a real rules-level `{"error":
+"Permission denied"}`, not an auth error** — inconclusive by itself (could be the wrong shard/
+path guess as easily as a real rules block), so **this is not proof REST is closed**, only proof
+it isn't a simple swap-in-the-idToken-and-GET job the way QSRSoft/LifeLenz/HME are.
+
+**What this means for Phase 1, concretely:** Squadle's AUTH story is still the cleanest in this
+repo (unchanged, still true) — but its DATA LAYER is now the hardest of the three, not the
+easiest. Building `scripts/squadle-pull.mjs` needs one of:
+  - **(a)** Speak the actual `cws.squadle.com` Socket.IO protocol (subscribe/room-join framing,
+    not yet captured) in Node via the `socket.io-client` package — most direct path since that's
+    where the real payloads were observed flowing.
+  - **(b)** Reverse the RTDB shard-selection logic (which shard a given store ID resolves to) by
+    reading Squadle's own compiled bundle (`hq.squadle.com/assets/HQ.*.js`) rather than guessing,
+    then use the real `firebase` Node SDK (not raw REST) with the custom-token credential.
+  - **(c)** Simplest first step, not yet tried: ask the owner whether Squadle's own vendor support
+    offers a documented reporting API or scheduled export (same "ask the vendor" shortcut that
+    would have saved real effort on other integrations in this repo) before reverse-engineering
+    either real-time channel further.
+No credential value (idToken/refreshToken/password) was written anywhere during this capture —
+only endpoint shapes, namespaces, and one illustrative record path/date, per this doc's own
+credential-hygiene note above.
+
+1. ~~The real data-loading network request~~ — captured above; turned out to need (a)/(b)/(c)
+   above instead of a simple REST follow-up.
 
 ## 3. Phasing, once both captures are in hand
 
