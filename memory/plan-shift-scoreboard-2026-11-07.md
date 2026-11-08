@@ -95,7 +95,44 @@ by just "pulling more often" on the current email pipeline.
 ## Status
 
 Not built. Base plan (7 metrics, now with "2nd Side Usage" resolved to the existing `kvsHealthy`
-source) + the 3 divergence-signal additions + the freshness-track split above are the full design
-as of this entry. Next concrete step whenever picked up: confirm whether a QSRSoft
-controls/cash API endpoint exists (mirroring how DAR itself was discovered), then scope cadence +
-UI together.
+source) + the 3 divergence-signal additions are the full design as of this entry.
+
+## Addendum 2026-11-08 — the freshness track is now closed, both halves
+
+Owner follow-up, same day: *"I would suggest every :15 minutes... Might help with data bloat"*
+for signals 1/2, and *"let's see if we can resolve this in any way [for signal 3] — Operations
+report?, check other feeds, explore new pulls"*. Both resolved, by measurement, not guesswork:
+
+- **"Data bloat" was never a real risk — both pulls already upsert, not insert.**
+  `qsrsoft-dar-pull.mjs` (`.upsert(batch, {onConflict:'loc,dt,hour_slot'})`) and
+  `qsrsoft-ops-pull.mjs` (`onConflict:'loc,dt'`) both overwrite existing rows keyed on the
+  primary key — a 15-min cadence refreshes the SAME rows more often, it does not add new ones.
+  Nothing needed changing there.
+- **The cash-integrity signal's "needs a new API" framing in this file's own body (above) was
+  WRONG, and the correction matters: `tRedAPct`/`tRedBPct`/`drawerOpens` (`metric-source.js`)
+  already resolve from `opsCashRows` FIRST** (`qsr_cash_sheet`, populated by
+  `qsrsoft-ops-pull.mjs`'s REAL API-pulled `cash-sheet-extract` endpoint — "Controls: discount,
+  T-Reds, meals, drawer, refunds" per that script's own header comment) — **falling back to the
+  manual/emailed `ctrlRows` only when the auto source is missing.** The email-only Glimpse/cash
+  tables this file originally pointed at are NOT this signal's primary source; they're a
+  secondary stream feeding different metrics. So there was no new API to discover — the real
+  fix was the exact same cadence bump as signals 1/2, just applied to a second workflow.
+- **Shipped 2026-11-08:** both `.github/workflows/qsrsoft-dar-pull.yml` and
+  `qsrsoft-ops-pull.yml` now run every 15 min, ~7:00 AM-10:45 PM CDT (`*/15 12-23 * * *` +
+  `*/15 0-3 * * *`), narrowed to `days_recent=1` for those intraday runs specifically (the
+  once-daily catch-up runs keep their full rolling windows). Measured real per-run cost before
+  shipping (GitHub Actions run history, not estimated): DAR ~90-100s/run, Ops ~100-140s/run.
+  Net new load ≈ 61 extra DAR runs/day + 63 extra Ops runs/day vs. the prior ~8a/10a/2p CT /
+  ~2p CT schedules — roughly **+6,500 GitHub Actions minutes/month combined**, a real recurring
+  cost flagged to the owner at ship time (not previously measured against the account's actual
+  Actions-minutes plan/quota — worth a one-time check in GitHub billing after this lands, same
+  "measure, don't assume a resource cap" lesson as the Vercel deployment-count incident).
+- **The dispatch #153 zero-fill trap (noted above) is now MORE relevant, not less** — a 15-min
+  cadence means "today so far" data in `qsr_daily_activity`/`qsr_cash_sheet` updates near-live,
+  which makes it more tempting (and more wrong, if done naively) for a future live Scoreboard
+  signal to read an in-progress hour as if it were a closed one. Still nothing to fix today —
+  this is a requirement on whichever consumer eventually computes a live intraday rate off these
+  tables, not on the pull cadence itself.
+
+Next concrete step whenever Scoreboard itself is picked up: the data freshness problem is now
+solved end-to-end for all 3 signals; what's left is building the Scoreboard UI/engine itself.
