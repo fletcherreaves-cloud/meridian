@@ -22,7 +22,8 @@ const ReactDOM = { createRoot }
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
+import { altitudeForRole } from '../engine/curated-home.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -1295,9 +1296,27 @@ function App() {
   // display/gating simulation only, not a real RLS re-scope — the signed-in user's own JWT and
   // accessibleLocs never change, so it cannot show data a real holder of that role couldn't
   // already see from this account's own unrestricted access.
-  const [viewAsRole, setViewAsRole] = useState(null);
+  const [viewAsRole, setViewAsRoleState] = useState(null);
   const canViewAsRole = userRole === 'admin' || userRole === 'owner';
   const effectiveRole = (canViewAsRole && viewAsRole) ? viewAsRole : userRole;
+  // Owner request 2026-11-08: "a way for me to select what patch or operator or store to
+  // mimic... Tag @ would be awesome." viewAsRole alone only simulates the NAV/PANEL SHAPE for a
+  // role -- an admin/owner's own ds is unrestricted, so "View as GM" with no further narrowing
+  // would show whichever store happens to sort first, and "View as DO" would show every store in
+  // the district as if it were one patch. viewAsScope narrows that: a real store loc at 'store'
+  // altitude, a real supervisor name (supervisorGroups() key) at 'patch' altitude. Reset whenever
+  // the simulated role changes or is exited, same "resets on reload, never persisted" posture as
+  // viewAsRole itself (see its own comment above). Operator scope needs no equivalent here --
+  // CuratedHomePanel's own self-service "Operator:" picker already covers it for every account.
+  const [viewAsScope, setViewAsScope] = useState(null);
+  const setViewAsRole = (role) => { setViewAsRoleState(role); setViewAsScope(null); };
+  const viewAsAltitude = viewAsRole ? altitudeForRole(viewAsRole) : null;
+  const viewAsScopeLabel = viewAsAltitude === 'store' ? 'Store' : viewAsAltitude === 'patch' ? 'Patch' : null;
+  const viewAsScopeOptions = viewAsAltitude === 'store'
+    ? Object.keys(STORE_NAMES).map(loc => ({ id: loc, label: sNameC(loc) }))
+    : viewAsAltitude === 'patch'
+    ? Object.keys(supervisorGroups()).map(name => ({ id: name, label: name }))
+    : [];
   // showOperatorSummary — dispatch #205: replaced by routePanel==='operator-summary' (see
   // routePanel above).
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
@@ -3960,6 +3979,10 @@ function App() {
         viewAsRole,
         onChangeViewAsRole: canViewAsRole ? setViewAsRole : null,
         viewAsRoleOptions: orgRoles,
+        viewAsScope,
+        onChangeViewAsScope: canViewAsRole ? setViewAsScope : null,
+        viewAsScopeOptions,
+        viewAsScopeLabel,
         // Owner request 2026-11-02: 'users.manage.lower' holders (e.g. a DO) can now also open
         // this -- AdminPanel itself scopes what they see to roles strictly below their own
         // (canManageRole), never a blanket admin view.
@@ -4232,7 +4255,7 @@ function App() {
         title:'Curated Home',
         subtitle:'Same correlation engine as Daily Brief · role-cascaded voice · your chosen format',
         onBack:()=>goRoute(null),
-      }, h(CuratedHomePanel,{ds,settings,role:effectiveRole,darRows,onNav:v=>goRoute(v),userName})),
+      }, h(CuratedHomePanel,{ds,settings,role:effectiveRole,viewAsScope,darRows,onNav:v=>goRoute(v),userName})),
       // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/
       // operator-summary/delivery-mix carry RoutePanelShell inside their own component (same
       // "shell inside the component" pattern as above-store/ranking/perf-reviews/fob-analysis
