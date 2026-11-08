@@ -1,0 +1,61 @@
+name: QSRSoft Security Events — New Fields Probe (task #131)
+
+# Task #131 (owner-shared QSRSoft KB screenshots, 2026-11-08): checks for two things the daily
+# QSRSoft Security Events Pull (qsrsoft-security-events-pull.yml) doesn't cover --
+#   1. A new "General Drawer Open" Security Events category (no matching event_token in
+#      EVENT_TOKENS, src/engine/security-events.js).
+#   2. A new "Manager Authorization Type" field on pos_overring rows (already pulled, but no
+#      field mapped for it in parseSecurityEventRow).
+#
+# Read-only, workflow_dispatch-only, no writes to Supabase or anywhere else.
+#
+# ⚠️ Same self-hosted runner as the production security-events pull, for the same reason (that
+# pull's own header comment: api.security.myqsrsoft.com has only been proven reachable from this
+# machine/network, not from ubuntu-latest). Also note: the daily scheduled pull has been failing
+# every run since at least 2026-10-06 with AUTH_FAILED:403 -- the QSRSoft service account's SAML
+# role lacks the security_access entitlement the security module requires (memory/finding-failed-
+# pull-email-audit-2026-10-06.md). This probe will very likely hit the SAME 403 regardless of
+# event_token, since that's an account-entitlement gap, not a token-string question -- it is run
+# anyway for a conclusive, timestamped answer (and in case a specific resource grants differently
+# than the blanket entitlement).
+
+on:
+  workflow_dispatch:
+    inputs:
+      store_ref:
+        description: 'Unpadded NSN to probe (default: 29760, Duncan-Hwy 81)'
+        required: false
+        default: ''
+      date:
+        description: 'YYYY-MM-DD to probe (default: 7 days ago)'
+        required: false
+        default: ''
+      candidate_tokens:
+        description: 'Extra comma-separated event_token guesses to also try'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, qsr-security]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Probe for new Security Events fields/tokens
+        run: node scripts/qsrsoft-security-events-new-fields-probe-2026-11-08.mjs
+        env:
+          QSRSOFT_USERNAME:              ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:              ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_PROBE_STORE_REF:       ${{ github.event.inputs.store_ref || '' }}
+          QSRSOFT_PROBE_DATE:            ${{ github.event.inputs.date || '' }}
+          QSRSOFT_PROBE_CANDIDATE_TOKENS: ${{ github.event.inputs.candidate_tokens || '' }}
