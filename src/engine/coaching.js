@@ -8,6 +8,9 @@ import { TH, escapeHtml as esc } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { printHtml } from '../utils/print-html.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { loadInvCountSessions } from '../lib/supabase.js';
+import { sessionsFromLog, mostRecentNearMiss } from './count-cycle.js';
+import { periodKey } from './eom-inventory.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -66,6 +69,22 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
 
+  // ── Count Cycle near-miss context (task #126/#125, memory/plan-count-cycle-surfaces-and-
+  // spotcheck-ruler-2026-11-08.md Section A item 1) — owner-approved starting point, 2026-11-08.
+  // Loaded once per panel-open (current + prior period, so a near-miss just inside a month
+  // boundary isn't missed) from the durable inv_count_sessions log -- same source count-cycle-
+  // panel.js's own on-screen card reads, so a coaching letter can never disagree with what the
+  // GM sees in Count Cycle. Fails soft to `null` (no count-cycle fact in the letter) rather than
+  // blocking letter generation on a load error.
+  const [cycleSessionsByLoc, setCycleSessionsByLoc] = React.useState(null);
+  React.useEffect(() => {
+    const now = periodKey(new Date());
+    const prior = periodKey(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
+    Promise.all([loadInvCountSessions({ period: now }), loadInvCountSessions({ period: prior })])
+      .then(([a, b]) => setCycleSessionsByLoc(sessionsFromLog([...(a||[]), ...(b||[])]).sessions))
+      .catch(() => setCycleSessionsByLoc({}));
+  }, []);
+
   // ── Strip severity prefix for cleaner prompt/display text ──────────────────
   const stripPrefix = (msg) => (msg||'')
     .replace(/^CRITICAL\s*—\s*/,'').replace(/^WATCH\s*—\s*/,'')
@@ -111,12 +130,18 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
     // rather than generic operational commentary.
     const whyScan = ds&&ds.loaded ? runWhyEngineScan(loc, ds, userEvents, settings, 4) : null;
 
+    // Most recent count-cycle session that was clearly a real attempt but missed full
+    // compliance — null until cycleSessionsByLoc has loaded, or when this store simply has no
+    // such near-miss on record (every recent session either fully compliant or too small to be
+    // a real attempt at all). See the loader's own comment above for source/scope.
+    const countCycle = cycleSessionsByLoc ? mostRecentNearMiss(cycleSessionsByLoc[loc] || []) : null;
+
     return{store,loc,storeName:STORE_NAMES[loc]||loc,city,state,gm,operator,sup,
       opsScore,ctrlScore,pSales,pLY,vsLY,hasEnoughData,
       laborTrend,tpphTrend,oepeTrend,t,
       crits,watches,oks,fcLine,kbNote:kb&&(kb.note||kb.notes)||'',
-      whyScan};
-  },[stores, ds, userEvents, settings]);
+      whyScan,countCycle};
+  },[stores, ds, userEvents, settings, cycleSessionsByLoc]);
 
   // ── Prompt construction ─────────────────────────────────────────────────────
   const buildPrompt = (ctx) => {
@@ -162,6 +187,21 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
         (ws.avgOpsDollars&&Math.abs(ws.avgOpsDollars)>20?' - Avg ops adjustment: '+(ws.avgOpsDollars>0?'+':'')+Math.round(ws.avgOpsDollars)+'/day\n':'');
     }
 
+    // ── Count-cycle near-miss block (task #126/#125) — name the specific items still not
+    // counted, not a vague "finish your count" nudge. cc.missingItems is per-class {wrin,descr};
+    // flattened and capped here only for prompt length, NOT the on-screen list (which stays
+    // uncapped per the owner's own 2026-11-08 "all uncounted items" direction — this is a
+    // separate, shorter surface with a different budget).
+    let countCycleBlock = '';
+    if(ctx.countCycle){
+      const cc = ctx.countCycle;
+      const pctParts = Object.entries(cc.coveragePct||{}).filter(([,v])=>v!=null).map(([cls,v])=>cls+' '+v+'%');
+      const allMissing = Object.values(cc.missingItems||{}).flat();
+      const missingNames = allMissing.slice(0,8).map(it=>it.descr||it.wrin);
+      countCycleBlock = '\nMost recent inventory count ('+cc.date+', '+cc.kind+'): '+(pctParts.join(', ')||'incomplete')+
+        (missingNames.length?'. Not yet counted: '+missingNames.join(', ')+(allMissing.length>missingNames.length?', and '+(allMissing.length-missingNames.length)+' more':'')+'.':'')+'\n';
+    }
+
     return 'You are writing a weekly performance coaching letter for the General Manager at a McDonald\'s restaurant.\n\n'+
 'Store: '+ctx.storeName+' (#'+ctx.loc+'), '+orgLabel+(ctx.city?', '+ctx.city:'')+'\n'+
 (gmFirst?'GM: '+gmFirst+'\n':'')+
@@ -171,12 +211,13 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 'Scores: Ops '+(ctx.opsScore!=null?ctx.opsScore+'/100':'unknown')+' . Controls '+(ctx.ctrlScore!=null?ctx.ctrlScore+'/100':'unknown')+' (0-100 scale, 90+ = elite, 80+ = strong)\n'+
 'Sales (4wk): '+fmt$(ctx.pSales)+(ctx.vsLY!=null?' ('+(ctx.vsLY>=0?'+':'')+(ctx.vsLY*100).toFixed(2)+'% vs LY)':'')+'\n\n'+
 'Specific findings this period:\n'+findingsBlock+'\n\n'+
+(countCycleBlock||'')+
 (accuracyBlock||'')+
 (ctx.fcLine?'Forward signal: '+stripPrefix(ctx.fcLine.m)+'\n':'')+
 '\nWrite a coaching letter with exactly 5 short paragraphs, each starting with a bold label in brackets:\n\n'+
 '[WIN] One specific, genuine win. Reference an actual strength or trend from the data above. Be precise, not hollow.\n'+
 '[FOCUS] The single most important opportunity this week.'+(hasCritical?' A CRITICAL finding is present above -- this section MUST address it directly and specifically. Do not write something generic instead.':' Use the WATCH findings or trend data to identify the sharpest opportunity.')+'\n'+
-'[ACTION] One concrete action the GM can take this week. Be specific -- name, time, daypart, or metric.\n'+
+'[ACTION] One concrete action the GM can take this week. Be specific -- name, time, daypart, or metric.'+(ctx.countCycle?' A real inventory count near-miss is in the data above -- naming the specific uncounted items makes a stronger, more finishable action than a generic "finish your count" reminder.':'')+'\n'+
 '[INSIGHT] One non-obvious insight the GM might not have made themselves. '+(ctx.whyScan&&ctx.whyScan.explainedPct<50?' The forecast accuracy data shows '+(100-ctx.whyScan.explainedPct).toFixed(2)+'% of misses have no clear cause -- consider whether the GM is missing event context (untagged closures, local events) or whether a specific pattern (like '+( ctx.whyScan.worstDOW?DOW_NAMES[ctx.whyScan.worstDOW.dow]+' accuracy':'')+') suggests a scheduling or pricing opportunity.':'Link a trend, a metric, and a finding together in a way that reveals something the GM\'s gut-check alone would miss.')+'\n'+
 '[NEXT WEEK] What to watch for next week and why, grounded in the forward signal if provided.\n\n'+
 'Rules:\n'+

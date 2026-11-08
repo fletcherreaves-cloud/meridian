@@ -862,6 +862,79 @@ function perClassCounted(sessions, classTotals) {
   return out;
 }
 
+// ── Task #125/#128 — Huddle Phase 2 "Memory" + "The Save" + GM Coaching Letters ─────────────
+// (memory/plan-huddle-phase2-2026-11-08.md, memory/plan-count-cycle-surfaces-and-spotcheck-
+// ruler-2026-11-08.md Section A). Owner-approved starting point, 2026-11-08: "I like this! Lets
+// start there". Three small, pure functions over a store's own `sessions` array (the same shape
+// cycleCompliance()'s own `sessions` field already carries, or detectSessions()/sessionsFromLog()
+// output directly) — no new data source, reusing coveragePct/attemptsX/satisfiesX that task #126
+// already computes.
+//
+// All three filter to sessions that actually TOUCHED the class in question (counts[cls] > 0) —
+// coveragePct[cls] reports a number for every class with an active universe REGARDLESS of
+// whether this particular session meant to touch it (a pure weekly Food+Condiment count still
+// carries coveragePct.Paper, computed as 0/universe), so an untouched week must never read as
+// "0% this week, streak continues." Only a genuine attempt on that class counts as a data point.
+
+const _touchedSessionsFor = (sessions, cls) => (sessions || [])
+  .filter(s => s && (s.counts?.[cls] || 0) > 0 && s.coveragePct && s.coveragePct[cls] != null)
+  .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+/**
+ * The CURRENT under-threshold streak for one class, walking backward from the most recent
+ * genuine attempt on it. threshold defaults to 90 — the exact number both design docs above
+ * already used in their own worked examples ("3rd week in a row Paper landed under 90%"), not a
+ * fresh guess. Returns null when the class has no attempt history at all; `streak:0` (not null)
+ * when there IS history but the most recent attempt already cleared the threshold.
+ */
+export function classStreak(sessions = [], cls, { threshold = 90 } = {}) {
+  const touched = _touchedSessionsFor(sessions, cls);
+  if (!touched.length) return null;
+  let streak = 0;
+  for (let i = touched.length - 1; i >= 0; i--) {
+    if (touched[i].coveragePct[cls] < threshold) streak++;
+    else break;
+  }
+  const latest = touched[touched.length - 1];
+  return { cls, threshold, streak, sampleSize: touched.length, latestDate: latest.date, latestPct: latest.coveragePct[cls] };
+}
+
+/**
+ * "The Save" (task #125 §2) — true only on the session where a real streak just ENDED: the
+ * most recent attempt cleared `threshold` right after at least `minStreak` consecutive attempts
+ * that didn't. Returns null on every other call (streak still running, or never had one to
+ * break) — a caller re-checking after every new session naturally fires this exactly once, the
+ * day the pattern actually breaks, never retroactively.
+ */
+export function classSave(sessions = [], cls, { threshold = 90, minStreak = 2 } = {}) {
+  const touched = _touchedSessionsFor(sessions, cls);
+  if (touched.length < minStreak + 1) return null;
+  const latest = touched[touched.length - 1];
+  if (latest.coveragePct[cls] < threshold) return null;
+  let priorStreak = 0;
+  for (let i = touched.length - 2; i >= 0; i--) {
+    if (touched[i].coveragePct[cls] < threshold) priorStreak++;
+    else break;
+  }
+  if (priorStreak < minStreak) return null;
+  return { cls, threshold, priorStreak, recoveredDate: latest.date, recoveredPct: latest.coveragePct[cls] };
+}
+
+/**
+ * The most recent session that was clearly a real cycle ATTEMPT (Axis 1, task #126) but missed
+ * full compliance (Axis 2) — the exact Holdenville shape task #126 exists to surface, reused
+ * here so GM Coaching Letters (memory/plan-count-cycle-surfaces-and-spotcheck-ruler-2026-11-08.md
+ * Section A item 1) can name a real near-miss instead of a generic nudge. `null` when the most
+ * recent relevant session was either fully compliant or never a real attempt at all (isSpot).
+ */
+export function mostRecentNearMiss(sessions = []) {
+  const attempts = (sessions || [])
+    .filter(s => s && (s.attemptsEom || s.attemptsWeekly || s.attemptsMidPaper))
+    .filter(s => !(s.isEom || s.satisfiesWeekly || s.satisfiesMidPaper))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return attempts.length ? attempts[attempts.length - 1] : null;
+}
+
 /** District rollup for a tile header. */
 export function cycleSummary(compliance = []) {
   const s = { stores: compliance.length, ok: 0, warn: 0, crit: 0, paperMissing: 0, overdue: 0 };
