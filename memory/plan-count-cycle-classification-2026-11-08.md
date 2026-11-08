@@ -96,6 +96,15 @@ case) — it just stops being the only thing a session exposes.
    ever show a percentage, never a named list — unless `inv_count_sessions` is widened to also
    persist a missing-WRIN list going forward (a real schema addition, Tier C, your call). Worth
    deciding: is percentage-only history acceptable, or does this matter enough to widen the log?
+   ✅ **RESOLVED 2026-11-08 — owner: "I'm good with widening the log! That sounds like a great
+   idea!!"** Built the same day: `supabase/schema-inv-count-sessions-missing-items-2026-11-08.sql`
+   (additive `missing_items jsonb` column, owner runs it), `scripts/qsrsoft-onhand-pull.mjs`'s
+   `deriveSessionRows()` now populates it going forward, and `count-cycle.js`'s `detectSessions`/
+   `sessionsFromLog` both expose a `missingItems` map (live path needed no schema change at all —
+   `detectSessions()` already has per-WRIN rows in hand). `count-cycle-panel.js`'s `SessionRow`
+   names the real items in the class-chip tooltip when available, falling back to the original
+   count-only text when not (any session logged before both pieces land, by the nature of the
+   gap this closes). 7 new tests across engine + render level.
 4. **Scope — EOM only, or Weekly/Mid-Month-Paper too?** The exact same conflation exists in
    `satisfiesWeekly`/`satisfiesMidPaper` (both also gated on 100% `covered`). This doc uses EOM as
    the worked example since that's the real case in hand, but the fix is the same shape for all
