@@ -39,13 +39,14 @@
 //      drill-through link simply doesn't render (no dead buttons), so this panel still works
 //      standalone (e.g. in a test) without the App.js wiring.
 import * as React from 'react';
-import { sNameC } from '../constants.js';
+import { sNameC, operatorGroups } from '../constants.js';
 import { withAlpha } from '../utils/fmt.js';
 import { loadUserSetting, saveUserSetting } from '../lib/supabase.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
 import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
 import { GamePlanFormat } from './game-plan-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
+import { OperatorLedgerFormat } from './operator-ledger-view.js';
 
 const h = React.createElement;
 const div  = (p, ...c) => h('div', p, ...c);
@@ -53,6 +54,13 @@ const span = (p, ...c) => h('span', p, ...c);
 
 const FORMAT_KEY = 'curated_home_format';
 const FORMAT_LS_KEY = 'mf_curated_home_format';
+// Which real operator group (src/constants.js's operatorGroups() keys) this account identifies
+// as -- self-service, not a role (owner request 2026-11-08: "Operator" stays a view on top of an
+// existing owner/VP/admin account rather than a new RBAC tier needing a DB CHECK-constraint
+// change; see memory/plan-operator-ledger-mockup-2026-11-08.md). Same load/save pattern as the
+// format preference just below.
+const OPERATOR_GROUP_KEY = 'curated_home_operator_group';
+const OPERATOR_GROUP_LS_KEY = 'mf_curated_home_operator_group';
 // 'gameplan'/'patch' (owner request 2026-11-07, following the "Four Decks" mockup exploration)
 // are the new FRONT-FACING defaults, one per altitude -- Game Plan is the GM/SM/AM/DM day (no
 // meaning for a multi-store pattern), The Patch is the DO/OM/Area Supervisor territory view (no
@@ -62,9 +70,14 @@ const FORMAT_LS_KEY = 'mf_curated_home_format';
 // -- never removed, never the thing being replaced, just no longer the first thing a fresh login
 // sees. FORMAT_ALTITUDE says which single altitude a format is meaningful at; a format absent
 // from this map (Checklist/Bullets/Narrative) is meaningful at every altitude, as before.
+// 'ledger' (owner request 2026-11-07/08) is NOT keyed in FORMAT_ALTITUDE like gameplan/patch --
+// it's meaningful at 'district' altitude, same as Checklist/Bullets/Narrative, but ALSO needs a
+// real operator_group set on this account (an owner/VP/admin with no operator identity gets no
+// change in behavior at all). See formatFitsAltitude below for the combined gate.
 const FORMATS = [
   { id: 'gameplan', label: 'Game Plan' },
   { id: 'patch', label: 'The Patch' },
+  { id: 'ledger', label: 'The Ledger' },
   { id: 'checklist', label: 'Checklist' },
   { id: 'bullets', label: 'Bullets' },
   { id: 'narrative', label: 'Narrative' },
@@ -238,23 +251,53 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
   // this always resolves to whichever store(s) this caller's RLS-scoped `ds` actually covers.
   const myStore = altitude === 'store' ? (brief.stores || []).find(s => s.hasData) : null;
 
-  // The Patch (owner request 2026-11-07, "build The Patch next") needs PER-STORE items for its
-  // drill-down into a specific store's own Game Plan -- buildCuratedHomeItems() at patch
-  // altitude deliberately collapses those into multi-store pattern items, so this forces the
-  // SAME store-altitude grouping buildCuratedHomeItems() already uses for a GM, independent of
-  // the viewer's own role, computed only when it's actually needed.
-  const storeLevelItems = React.useMemo(
-    () => (altitude === 'patch' ? buildCuratedHomeItems(brief, 'gm').items : null),
-    [brief, altitude]);
+  // Which real operator group (if any) this account identifies as -- self-service, loaded the
+  // same local-first/cloud-confirm way as the format preference below. `null` (the common case
+  // for every owner/VP/admin account that isn't one of the real operators) changes nothing
+  // about this panel's default behavior at all.
+  const [operatorGroup, setOperatorGroupState] = React.useState(() => {
+    try {
+      const v = localStorage.getItem(OPERATOR_GROUP_LS_KEY);
+      if (v && operatorGroups()[v]) return v;
+    } catch {}
+    return null;
+  });
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(OPERATOR_GROUP_KEY).then(v => {
+      if (live && v && operatorGroups()[v]) setOperatorGroupState(v);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const setOperatorGroup = (v) => {
+    setOperatorGroupState(v || null);
+    try { v ? localStorage.setItem(OPERATOR_GROUP_LS_KEY, v) : localStorage.removeItem(OPERATOR_GROUP_LS_KEY); } catch {}
+    saveUserSetting(OPERATOR_GROUP_KEY, v || null).catch(() => {});
+  };
 
-  // Default format (owner request 2026-11-07): one real front door per altitude, for anyone who
-  // has never set a preference. An existing saved preference is NEVER overridden (same "don't
-  // retroactively change existing users' settings" convention this app already uses for the
-  // notification-consent screen/onboarding tour) -- Checklist/Bullets/Narrative stay exactly as
-  // reachable as they always were, just not the first thing a FRESH login sees. A format tied to
-  // one altitude (FORMAT_ALTITUDE) never becomes the fallback at a different one.
-  const defaultFormat = DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'checklist';
-  const formatFitsAltitude = (id) => !FORMAT_ALTITUDE[id] || FORMAT_ALTITUDE[id] === altitude;
+  // The Patch/The Ledger (owner requests 2026-11-07/08) both need PER-STORE items for their
+  // drill-down into a specific store's own Game Plan -- buildCuratedHomeItems() at patch/
+  // district altitude deliberately collapses those into multi-store pattern items, so this
+  // forces the SAME store-altitude grouping buildCuratedHomeItems() already uses for a GM,
+  // independent of the viewer's own role, computed only when it's actually needed.
+  const storeLevelItems = React.useMemo(
+    () => (altitude === 'patch' || operatorGroup ? buildCuratedHomeItems(brief, 'gm').items : null),
+    [brief, altitude, operatorGroup]);
+
+  // Default format (owner request 2026-11-07, extended 2026-11-08 for The Ledger): one real
+  // front door per altitude, for anyone who has never set a preference. An existing saved
+  // preference is NEVER overridden (same "don't retroactively change existing users' settings"
+  // convention this app already uses for the notification-consent screen/onboarding tour) --
+  // Checklist/Bullets/Narrative stay exactly as reachable as they always were, just not the
+  // first thing a FRESH login sees. A format tied to one altitude (FORMAT_ALTITUDE) never
+  // becomes the fallback at a different one. The Ledger additionally requires operatorGroup to
+  // be set -- an owner/VP/admin account with no operator identity gets the SAME 'checklist'
+  // default it always has, never a surprise new front door it never asked for.
+  const defaultFormat = (altitude === 'district' && operatorGroup) ? 'ledger' : (DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'checklist');
+  const formatFitsAltitude = (id) => {
+    if (id === 'ledger') return altitude === 'district' && !!operatorGroup;
+    return !FORMAT_ALTITUDE[id] || FORMAT_ALTITUDE[id] === altitude;
+  };
   const [format, setFormat] = React.useState(() => {
     try {
       const v = localStorage.getItem(FORMAT_LS_KEY);
@@ -268,7 +311,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
       if (live && FORMATS.some(f => f.id === v) && formatFitsAltitude(v)) setFormat(v);
     }).catch(() => {});
     return () => { live = false; };
-  }, [altitude]);
+  }, [altitude, operatorGroup]);
   const pickFormat = (id) => {
     setFormat(id);
     try { localStorage.setItem(FORMAT_LS_KEY, id); } catch {}
@@ -289,14 +332,29 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
     }, f.label)),
   );
 
-  // Game Plan / The Patch are each their OWN full screen, not a renderer slotted into the
-  // generic stat-tiles/severity-bar/card shell every other format shares -- they're the things
-  // the owner asked to make "the front facing version," not a peer inside the old one. The
-  // format picker stays visible (small, top-right) so switching back to Checklist/Bullets/
+  // Self-service "which operator are you" picker (owner request 2026-11-08) -- visible only at
+  // district altitude, where The Ledger could ever apply. Deliberately always offered (not
+  // hidden once set) so an account can change or clear it later; the real 4 names come straight
+  // from operatorGroups(), never hardcoded, so this stays correct if the org config changes.
+  const operatorPicker = altitude === 'district' && div({ style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text3,#6b7280)' } },
+    span(null, 'Operator:'),
+    h('select', {
+      value: operatorGroup || '', onChange: (e) => setOperatorGroup(e.target.value || null),
+      style: { fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--bdr,#e5e7eb)', background: 'var(--surf,#fff)', color: 'var(--text2,#4b5563)' },
+    },
+      h('option', { value: '' }, '— not set —'),
+      ...Object.keys(operatorGroups()).map(op => h('option', { key: op, value: op }, op)),
+    ),
+  );
+
+  // Game Plan / The Patch / The Ledger are each their OWN full screen, not a renderer slotted
+  // into the generic stat-tiles/severity-bar/card shell every other format shares -- they're the
+  // things the owner asked to make "the front facing version," not a peer inside the old one.
+  // The format picker stays visible (small, top-right) so switching back to Checklist/Bullets/
   // Narrative is always one click, per "keep the other intact and make it optional for users."
   if (format === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
-      div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 14 } }, formatPicker),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
       h(GamePlanFormat, {
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
         onShowEverything: () => pickFormat('checklist'),
@@ -305,8 +363,14 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
   }
   if (format === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
-      div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 14 } }, formatPicker),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
       h(PatchPlanFormat, { ds, stores: brief.stores, items: storeLevelItems, userName, onNav }),
+    );
+  }
+  if (format === 'ledger') {
+    return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
+      h(OperatorLedgerFormat, { ds, stores: brief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
     );
   }
 
@@ -322,7 +386,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
         div({ style: { fontSize: 12, color: 'var(--text3,#6b7280)', marginTop: 3 } },
           summary.totalFlags + ' flag' + (summary.totalFlags !== 1 ? 's' : '') + ' · ' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ' at ' + altitudeLabel.toLowerCase() + ' altitude'),
       ),
-      formatPicker,
+      div({ style: { display: 'flex', alignItems: 'center', gap: 10 } }, operatorPicker, formatPicker),
     ),
     div({ style: { display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 4 } },
       h(StatTile, { sev: 'RED', count: summary.red || 0, label: 'Red stores' }),
