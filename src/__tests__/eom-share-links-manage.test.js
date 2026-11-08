@@ -73,7 +73,9 @@ async function openLinksModal(container) {
   const trigger = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Reports'));
   expect(trigger, 'Reports ActionMenu trigger not found').toBeTruthy();
   await act(async () => { trigger.click(); });
-  const item = [...container.querySelectorAll('button')].find(b => b.textContent === '🔗 Manage Share Links');
+  // ActionMenu's open dropdown portals to document.body (task #119) -- no longer a descendant
+  // of container.
+  const item = [...document.querySelectorAll('button')].find(b => b.textContent === '🔗 Manage Share Links');
   expect(item, '🔗 Manage Share Links item not found').toBeTruthy();
   await act(async () => {
     item.click();

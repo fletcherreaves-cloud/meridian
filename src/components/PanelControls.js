@@ -9,6 +9,7 @@
 // (MetricCorrelationExplorer / DistrictLensPanel target-pills, store-dash.js's date input),
 // not reinvented — that's the entire point of a shared control.
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { lastClosedBusinessDay } from '../utils/date.js';
 import { supervisorOf } from '../constants.js';
 import { Z } from './ModalShell.js';
@@ -447,7 +448,7 @@ export function nonEmptyActionGroups(groups) {
 }
 
 const _menuStyle = {
-  position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+  position: 'fixed',
   // Above the modal's own body content (Z.modal=300) so the dropdown isn't clipped/hidden
   // behind sibling content in the same band, but below Z.nested=400 so a genuinely nested
   // modal still stacks above an open action menu. Matches ExportDropdown's own menu
@@ -465,30 +466,74 @@ const _itemStyle = {
 // A single grouped dropdown, e.g. {label:'Reports', items:[{label:'Summary', onClick}, ...]}.
 // Outside-click-to-close mirrors ExportDropdown (store-dash.js) — same interaction, same code
 // shape, so the two feel identical when they sit side by side in a panel's action band.
+//
+// Task #119 (owner screenshot, Mac + iPhone) — the dropdown rendered as an absolutely-
+// positioned descendant of the toggle button, which itself lives inside PanelChrome's
+// `overflowX:'auto'` action row (see PanelChrome.js's own overflowY:'visible' comment). Per the
+// CSS Overflow spec, when one axis is a scrolling value, UAs MAY coerce the other axis's
+// `visible` to `auto` too; Chrome/Firefox don't enforce that coercion here, so the menu escaped
+// the row and rendered fine, but WebKit (Safari — same engine on Mac and iPhone) does enforce
+// it and clipped the dropdown into the scroll row's own tiny box, which read as the menu "not
+// opening" even though `open` had flipped true. Fix: render the open menu through a portal to
+// `document.body`, positioned from the toggle button's real screen coordinates — it is then a
+// sibling of every scrollable ancestor, not a descendant, so no ancestor's overflow (on any
+// engine) can clip it. Closing on scroll/resize (rather than re-measuring) keeps this simple and
+// matches the menu's own short-lived, click-then-pick lifecycle.
 export function ActionMenu({ label, items }) {
   const [open, setOpen] = React.useState(false);
+  const [coords, setCoords] = React.useState(null);
   const ref = React.useRef(null);
+  const menuRef = React.useRef(null);
 
   React.useEffect(() => {
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onDoc = (e) => {
+      if (ref.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  React.useEffect(() => {
+    if (!open) return;
+    // Scrolling/resizing while the menu is open would make `coords` stale (the portal is no
+    // longer anchored to anything) — closing is simpler and safer than re-measuring on every
+    // scroll tick, and matches how briefly this menu is actually open in practice.
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, { capture: true, passive: true });
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, { capture: true });
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
   const shown = (items || []).filter(Boolean);
   if (!shown.length) return null;
 
-  return div({ ref, style: { position: 'relative', display: 'inline-block' } },
+  const toggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 4, left: r.left, minWidth: Math.max(180, r.width) });
+    }
+    setOpen((o) => !o);
+  };
+
+  return div({ ref, style: { display: 'inline-block' } },
     btn({
       className: 'btn btn-sm', style: { display: 'flex', alignItems: 'center', gap: 4 },
-      onClick: () => setOpen((o) => !o),
+      onClick: toggle,
     }, label, span({ style: { fontSize: '9px', color: 'var(--text3)' } }, ' ' + (open ? '▲' : '▼'))),
-    open && div({ style: _menuStyle },
-      ...shown.map((it, i) => btn({
-        key: it.label + i,
-        style: { ..._itemStyle, ...(i === shown.length - 1 ? { borderBottom: 'none' } : null) },
-        disabled: it.disabled, title: it.title, onClick: () => { setOpen(false); it.onClick?.(); },
-      }, it.label)),
+    open && coords && createPortal(
+      div({ ref: menuRef, style: { ..._menuStyle, top: coords.top, left: coords.left, minWidth: coords.minWidth } },
+        ...shown.map((it, i) => btn({
+          key: it.label + i,
+          style: { ..._itemStyle, ...(i === shown.length - 1 ? { borderBottom: 'none' } : null) },
+          disabled: it.disabled, title: it.title, onClick: () => { setOpen(false); it.onClick?.(); },
+        }, it.label)),
+      ),
+      document.body,
     ),
   );
 }
