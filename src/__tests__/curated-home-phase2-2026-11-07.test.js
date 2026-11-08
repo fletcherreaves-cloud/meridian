@@ -12,6 +12,10 @@ import { act } from 'react';
 vi.mock('../lib/supabase.js', () => ({
   loadUserSetting: async () => null,
   saveUserSetting: async () => ({}),
+  // Task #125/#128 -- HuddleNarrative also loads count-cycle session history on mount; none of
+  // this file's tests are about that, so "nothing on record" keeps every existing test unchanged.
+  loadInvCountSessions: async () => [],
+  saveRecommendation: async () => ({ saved: 0, errors: [] }),
 }));
 
 function flag(id, over) {

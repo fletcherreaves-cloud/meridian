@@ -41,7 +41,9 @@
 import * as React from 'react';
 import { sNameC, operatorGroups, supervisorGroups, unpadLoc } from '../constants.js';
 import { withAlpha } from '../utils/fmt.js';
-import { loadUserSetting, saveUserSetting } from '../lib/supabase.js';
+import { loadUserSetting, saveUserSetting, loadInvCountSessions, saveRecommendation } from '../lib/supabase.js';
+import { sessionsFromLog, classStreak, classSave, CLASSES } from '../engine/count-cycle.js';
+import { periodKey } from '../engine/eom-inventory.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
 import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
 import { operatorStores } from '../engine/operator-ledger.js';
@@ -263,6 +265,33 @@ function summarizeStores(stores) {
 // why it's click-triggered rather than auto-fired, and why the cache key is shaped the way it is.
 // Renders identically across every format (gameplan/patch/ledger/checklist/bullets/narrative);
 // each render branch below just passes the right `stores` subset for its own altitude/scope.
+// Task #125/#128 (memory/plan-huddle-phase2-2026-11-08.md "Memory"/"The Save") -- the 3 classes
+// that actually matter to a GM-facing count-cycle note (Non-Product has no owner-stated weekly/
+// mid-month rule attached to it, same scope every count-cycle UI surface already uses).
+const HUDDLE_CYCLE_CLASSES = CLASSES.filter(c => c !== 'Non-Product');
+
+// Streak/save highlights across a set of stores, from each store's own session history
+// (sessionsFromLog() output). A streak under 2 isn't a pattern yet (classSave's own minStreak
+// default agrees) -- one bad week is noise, not something to put in front of a GM or DO. Saves
+// sort first (a win is always worth leading with), then the longest-running streaks.
+function countCycleHighlightsFor(stores, sessionsByLoc) {
+  const out = [];
+  for (const s of (stores || [])) {
+    const sessions = (sessionsByLoc || {})[s.loc] || [];
+    if (!sessions.length) continue;
+    for (const cls of HUDDLE_CYCLE_CLASSES) {
+      const save = classSave(sessions, cls);
+      if (save) { out.push({ store: s.name, loc: s.loc, cls, kind: 'save', ...save }); continue; }
+      const streak = classStreak(sessions, cls);
+      if (streak && streak.streak >= 2) out.push({ store: s.name, loc: s.loc, cls, kind: 'streak', ...streak });
+    }
+  }
+  return out.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'save' ? -1 : 1;
+    return (b.streak || b.priorStreak || 0) - (a.streak || a.priorStreak || 0);
+  });
+}
+
 function HuddleNarrative({ stores, altitude, scopeKey, dateKey }) {
   const storageKey = huddleStorageKey(scopeKey, dateKey);
   const [state, setState] = React.useState({ text: null, loading: false, error: null });
@@ -277,10 +306,41 @@ function HuddleNarrative({ stores, altitude, scopeKey, dateKey }) {
     }).catch(() => {});
   }, [storageKey]);
 
+  // Count-cycle session history for this exact set of stores (current + prior period, so a
+  // near-boundary pattern isn't missed) -- loaded once per store-set change, independent of the
+  // narrative cache above, since it's needed whenever `generate` runs, not just on a cache miss.
+  const [cycleSessionsByLoc, setCycleSessionsByLoc] = React.useState(null);
+  const locsKey = (stores || []).map(s => s.loc).sort().join(',');
+  React.useEffect(() => {
+    if (!locsKey) { setCycleSessionsByLoc({}); return; }
+    const now = periodKey(new Date());
+    const prior = periodKey(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
+    Promise.all([loadInvCountSessions({ period: now }), loadInvCountSessions({ period: prior })])
+      .then(([a, b]) => setCycleSessionsByLoc(sessionsFromLog([...(a || []), ...(b || [])]).sessions))
+      .catch(() => setCycleSessionsByLoc({}));
+  }, [locsKey]);
+
   const generate = async () => {
     setState(s => ({ ...s, loading: true, error: null }));
     try {
-      const facts = buildHuddleFacts(stores, altitude);
+      const countCycleHighlights = countCycleHighlightsFor(stores, cycleSessionsByLoc);
+      // "The Save" (task #125 §2) -- log each detected recovery to the Recommendation Ledger,
+      // source:'huddle', so the already-live grading infrastructure (task #84) has a record of
+      // it. Idempotent: the dedupe_key is keyed on the exact recovery date, so re-detecting the
+      // SAME save on a later render upserts the same row rather than creating a duplicate, and a
+      // later, different save for the same store/class gets its own row. Fire-and-forget --
+      // never blocks or fails the narrative itself.
+      for (const hl of countCycleHighlights) {
+        if (hl.kind !== 'save') continue;
+        saveRecommendation({
+          dedupe_key: `huddle:${hl.loc}:${hl.cls}:${hl.recoveredDate}`,
+          source: 'huddle', loc: hl.loc, model_version: 'count-cycle-save-v1',
+          recommendation_text: `${hl.cls} count coverage at ${hl.store} recovered to ${hl.recoveredPct}% on ${hl.recoveredDate}, after ${hl.priorStreak} consecutive under-${hl.threshold}% attempts.`,
+          context: { cls: hl.cls, priorStreak: hl.priorStreak, threshold: hl.threshold, recoveredPct: hl.recoveredPct, kind: 'count_cycle_save' },
+          status: 'graded', graded_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      const facts = buildHuddleFacts(stores, altitude, countCycleHighlights);
       const text = await callSageOnce(
         [{ role: 'user', content: huddleUserMessage(facts) }],
         huddleSystemPrompt(altitude),

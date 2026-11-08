@@ -71,6 +71,26 @@ describe('buildHuddleFacts', () => {
     expect(buildHuddleFacts(null, 'store')).toMatchObject({ storeCount: 0, red: 0, amber: 0, green: 0, flaggedStores: [] });
     expect(buildHuddleFacts([], 'store')).toMatchObject({ storeCount: 0, flaggedStores: [] });
   });
+
+  it('task #125/#128 -- omitting countCycleHighlights keeps the original 5-key shape, byte-'+
+     'identical to before this change', () => {
+    const stores = [{ name: 'A', severity: 'GREEN', flags: [] }];
+    const facts = buildHuddleFacts(stores, 'store');
+    expect(facts).toEqual({ altitude: 'store', storeCount: 1, red: 0, amber: 0, green: 1, flaggedStores: [] });
+    expect(facts.countCycleHighlights).toBeUndefined();
+  });
+
+  it('task #125/#128 -- a non-empty countCycleHighlights is capped at 3 and passed through', () => {
+    const stores = [{ name: 'A', severity: 'GREEN', flags: [] }];
+    const hl = [1, 2, 3, 4].map(n => ({ store: 'A', cls: 'Paper', kind: 'streak', streak: n }));
+    const facts = buildHuddleFacts(stores, 'store', hl);
+    expect(facts.countCycleHighlights).toHaveLength(3);
+  });
+
+  it('task #125/#128 -- an empty countCycleHighlights array is treated the same as omitting it', () => {
+    const facts = buildHuddleFacts([], 'store', []);
+    expect(facts.countCycleHighlights).toBeUndefined();
+  });
 });
 
 describe('huddleSystemPrompt — voice by role/altitude (owner request: "keeping things worded appropriately for each role")', () => {
@@ -103,9 +123,17 @@ describe('huddleUserMessage', () => {
 // ── Render-level: the real CuratedHomePanel + HuddleNarrative wiring ──────────────────────────
 const loadUserSettingMock = vi.fn();
 const saveUserSettingMock = vi.fn();
+// Task #125/#128 -- HuddleNarrative now also loads count-cycle session history (current + prior
+// period) on mount and can log a Save to the Recommendation Ledger. Defaulted to "nothing to
+// report" here so every pre-existing test in this file (none of which is about count-cycle)
+// keeps passing unchanged; the dedicated count-cycle tests below override these per-case.
+const loadInvCountSessionsMock = vi.fn();
+const saveRecommendationMock = vi.fn();
 vi.mock('../lib/supabase.js', () => ({
   loadUserSetting: (...args) => loadUserSettingMock(...args),
   saveUserSetting: (...args) => saveUserSettingMock(...args),
+  loadInvCountSessions: (...args) => loadInvCountSessionsMock(...args),
+  saveRecommendation: (...args) => saveRecommendationMock(...args),
 }));
 const callSageOnceMock = vi.fn();
 vi.mock('../lib/sage-client.js', () => ({
@@ -142,6 +170,8 @@ beforeEach(() => {
   BRIEF_FIXTURE = freshBrief();
   loadUserSettingMock.mockReset().mockResolvedValue(null);
   saveUserSettingMock.mockReset().mockResolvedValue(undefined);
+  loadInvCountSessionsMock.mockReset().mockResolvedValue([]);
+  saveRecommendationMock.mockReset().mockResolvedValue({ saved: 1, errors: [] });
   callSageOnceMock.mockReset().mockResolvedValue('Sample narrative.');
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -212,5 +242,50 @@ describe('HuddleNarrative wired into CuratedHomePanel', () => {
     await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); });
     const [, systemPrompt] = callSageOnceMock.mock.calls[0];
     expect(systemPrompt).toMatch(/Area Supervisor/i);
+  });
+});
+
+// ── Task #125/#128 — count-cycle "Memory"/"The Save" wired into the real HuddleNarrative ─────
+describe('HuddleNarrative — count-cycle Memory/Save wiring (task #125/#128)', () => {
+  it('a real under-threshold streak reaches the prompt as countCycleHighlights', async () => {
+    loadInvCountSessionsMock.mockResolvedValue([
+      { loc: '3708', countDate: '2026-10-01', cls: 'Paper', period: '2026-10', itemsCounted: 70, classTotal: 100, covered: false },
+      { loc: '3708', countDate: '2026-10-08', cls: 'Paper', period: '2026-10', itemsCounted: 60, classTotal: 100, covered: false },
+      { loc: '3708', countDate: '2026-10-15', cls: 'Paper', period: '2026-10', itemsCounted: 65, classTotal: 100, covered: false },
+    ]);
+    await mount({ role: 'gm' });
+    const btn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Huddle'));
+    await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const [messages] = callSageOnceMock.mock.calls[0];
+    expect(messages[0].content).toContain('countCycleHighlights');
+    expect(messages[0].content).toContain('Ardmore-Broadway');
+    expect(messages[0].content).toMatch(/"streak":3/);
+    expect(saveRecommendationMock).not.toHaveBeenCalled(); // a streak is not a save
+  });
+
+  it('a streak that just broke logs a Save to the Recommendation Ledger and reaches the prompt', async () => {
+    loadInvCountSessionsMock.mockResolvedValue([
+      { loc: '3708', countDate: '2026-10-01', cls: 'Paper', period: '2026-10', itemsCounted: 70, classTotal: 100, covered: false },
+      { loc: '3708', countDate: '2026-10-08', cls: 'Paper', period: '2026-10', itemsCounted: 60, classTotal: 100, covered: false },
+      { loc: '3708', countDate: '2026-10-15', cls: 'Paper', period: '2026-10', itemsCounted: 95, classTotal: 100, covered: false },
+    ]);
+    await mount({ role: 'gm' });
+    const btn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Huddle'));
+    await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(saveRecommendationMock).toHaveBeenCalledWith(expect.objectContaining({
+      dedupe_key: 'huddle:3708:Paper:2026-10-15', source: 'huddle', loc: '3708', status: 'graded',
+    }));
+    const [messages] = callSageOnceMock.mock.calls[0];
+    expect(messages[0].content).toMatch(/"kind":"save"/);
+  });
+
+  it('no count-cycle data on record adds no countCycleHighlights key at all', async () => {
+    loadInvCountSessionsMock.mockResolvedValue([]);
+    await mount({ role: 'gm' });
+    const btn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Huddle'));
+    await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const [messages] = callSageOnceMock.mock.calls[0];
+    expect(messages[0].content).not.toContain('countCycleHighlights');
+    expect(saveRecommendationMock).not.toHaveBeenCalled();
   });
 });
