@@ -1,6 +1,6 @@
 ---
 name: finding-hme-squadle-integration-2026-11-06
-description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints, auth mechanisms, and data shapes confirmed by direct testing during this session; two captures still needed from the owner before either pull script can be built."
+description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. HME needs one more capture (Custom Dates + Hour report request) before its pull script can be built. Squadle's auth is fully solved but its DATA LAYER is not a REST endpoint -- real-time Firebase RTDB + a Squadle Socket.IO relay -- see the 2026-11-08 update for what that actually takes to automate."
 metadata:
   node_type: memory
   type: finding
@@ -161,11 +161,58 @@ et al.), just a different vendor and checklist program.
 
 ### Still needed before building `scripts/squadle-pull.mjs`
 
-1. **The real data-loading network request.** Reload the "McD Dashboard v2" tab, or change the
-   Custom Date Range and capture whatever XHR/fetch fires right after — that's the actual backend
-   endpoint behind both tables (almost certainly Squadle's own REST API, authenticated with the
-   Firebase `idToken` as a Bearer header, not Firebase itself).
 2. **Confirm refresh-token rotation behavior** (above).
+
+### ⚠️ Updated 2026-11-08 — item 1 above was WRONG. There is no REST endpoint. This is the
+single biggest correction in this whole doc and changes Squadle's difficulty ranking.
+
+A real, in-sandbox Playwright login + dashboard load (owner's own account, live) captured EVERY
+network event including WebSocket frames — the capture this doc was missing. Result: **the
+checklist/record data never travels over a conventional request/response XHR at all.** Two
+real-time channels carry it instead:
+
+1. **Direct Firebase Realtime Database connections** — `wss://s-gke-usc1-nssi2-{12,21,35,51,56}
+   .firebaseio.com/.ws?v=5&ns=sqdl-prod-cd-0NN`, one socket per shard, each with its OWN logical
+   database (`ns=` differs per socket: observed `sqdl-prod-cd-013/017/019/021/022` on one single
+   login). Each authenticates with the exact custom-token-derived `idToken` from
+   `createRealtimePermissionSession` (§ above) via the RTDB wire protocol's own `{"t":"d","d":
+   {"r":N,"a":"auth","b":{"cred":"<idToken>"}}}` frame — confirmed `{"s":"ok"}` on all 5 sockets.
+   **Multiple shards opening per login, each its own namespace, is the real complexity**: there
+   is no single predictable `databaseURL` the way every other integration in this doc has one.
+2. **A second, Squadle-operated relay** — `wss://cws.squadle.com:700/socket.io/?EIO=4&transport
+   =websocket` (Engine.IO v4/Socket.IO, NOT raw Firebase) — this is the one actually observed
+   carrying real payloads during the captured session: nested JSON under a `records/<date>/
+   <locationPushId>` shape (e.g. `records/2026-11-08/-MIMSCVFsi4_eyehTX-M`), each record holding
+   the full checklist run — shift name, every task's every action (temperature readings, run
+   sizes, select-box answers, pass/fail formulas), `signatureImageUrl`s pointing at
+   `firebasestorage.googleapis.com`, timestamps. This is item-level, not the monthly rollup %
+   the owner's manual exports showed — genuinely richer data than this doc assumed existed.
+
+**A quick REST probe (`GET https://<shard>.firebaseio.com/records/<date>/<id>.json?auth=
+<idToken>`, the standard Firebase RTDB REST fallback) returned a real rules-level `{"error":
+"Permission denied"}`, not an auth error** — inconclusive by itself (could be the wrong shard/
+path guess as easily as a real rules block), so **this is not proof REST is closed**, only proof
+it isn't a simple swap-in-the-idToken-and-GET job the way QSRSoft/LifeLenz/HME are.
+
+**What this means for Phase 1, concretely:** Squadle's AUTH story is still the cleanest in this
+repo (unchanged, still true) — but its DATA LAYER is now the hardest of the three, not the
+easiest. Building `scripts/squadle-pull.mjs` needs one of:
+  - **(a)** Speak the actual `cws.squadle.com` Socket.IO protocol (subscribe/room-join framing,
+    not yet captured) in Node via the `socket.io-client` package — most direct path since that's
+    where the real payloads were observed flowing.
+  - **(b)** Reverse the RTDB shard-selection logic (which shard a given store ID resolves to) by
+    reading Squadle's own compiled bundle (`hq.squadle.com/assets/HQ.*.js`) rather than guessing,
+    then use the real `firebase` Node SDK (not raw REST) with the custom-token credential.
+  - **(c)** Simplest first step, not yet tried: ask the owner whether Squadle's own vendor support
+    offers a documented reporting API or scheduled export (same "ask the vendor" shortcut that
+    would have saved real effort on other integrations in this repo) before reverse-engineering
+    either real-time channel further.
+No credential value (idToken/refreshToken/password) was written anywhere during this capture —
+only endpoint shapes, namespaces, and one illustrative record path/date, per this doc's own
+credential-hygiene note above.
+
+1. ~~The real data-loading network request~~ — captured above; turned out to need (a)/(b)/(c)
+   above instead of a simple REST follow-up.
 
 ## 3. Phasing, once both captures are in hand
 
