@@ -1275,3 +1275,116 @@ standing rule to leave stale-content calls for whoever next touches that panel's
 - `priority_brief` and `proj`/`proj-brief` remain real, legitimate candidates for a future pass
   (the first is already-good content per batch 9's own find; `proj`/`proj-brief` is Test-Kitchen-
   tier and was explicitly deferred by the batch-12 entry above).
+
+## 2026-11-08 — batch 13: both carry-over items resolved, 15 more panels wired
+
+Re-measured the real gap before starting (grepped `articleKey:\s*'...'` across `src/app/App.js`,
+`src/views/*.js`, `src/features/*.js`, cross-checked against a direct walk of the `KB_ARTICLES`
+object literal in `src/engine/forecast.js`): **117 real keys, 55 wired, 62 unwired** — matching
+this prompt's own "roughly 55/62" expectation almost exactly (off by nothing once main had moved).
+
+**Carry-over item 1 — `security_guide` duplicate: already resolved, not by this pass.** Grepping
+`KB_ARTICLES` found zero `security_guide` key at all, and
+`dispatch-kb-proj-workflow-staleness-2026-11-08.test.js` already carries a regression test
+("only one 'Security — Panel Guide' article exists"). `git log` traces this to PR #1744 (commit
+`79dc85af`, already merged to `main` before this session started), which this prompt's own
+carry-over list predates. Nothing to do here — re-confirmed, not re-fixed.
+
+**Carry-over item 2 — `targets_editor`'s real mount point: located and wired.** Grepped
+`saveMonthlyTargets`/`saveYearlyTargets`'s real call sites (per the prior batch's own
+instruction, rather than guessing from a `panel-registry.js` id) and found both: `saveMonthlyTargets`
+is called from `MonthlyProjectionsPanel` (`src/views/analytics.js`, Planning → Monthly tab);
+`saveYearlyTargets` is called from `YearlyProjectionsPanel`'s `TargetCategoriesView`
+(`src/views/yearly-projections.js`, Planning → Yearly tab → 🎯 Target Categories view). Re-read
+the existing `targets_editor` article content against both real components before wiring — it
+already correctly describes both grids' real editing mechanic (click a cell, commit the WHOLE
+row via `saveMonthlyTargets`/`saveYearlyTargets`, never a partial write) and the real "no lock
+mechanic here, see Locked Projections" distinction, so no content fix was needed, only the
+wiring. `MonthlyProjectionsPanel`'s header gets the icon unconditionally (it is the panel's only
+mode). `YearlyProjectionsPanel`'s header gets it ONLY when `view==='targets'` — its default
+`'sales'` (Sales Pace) view is a different rollup with no editable grid, so showing this article's
+icon there would be wrong; the ternary matches the same mode-dependent-articleKey pattern
+`FOBAnalysisPanel`'s Food Cost/EOM modes already use.
+
+**Main batch — 15 more keys wired**, each matched to its real mount point by reading the
+article's own content against the real component, not guessed from the key name:
+
+- **`proj`** (Projections — Panel Guide) → `App.js`'s `routePanel==='proj'` `RoutePanelShell`
+  gate. `locked_projections` (a narrower, already-existing sub-topic this article explicitly
+  cross-references) stays unwired by design — one icon per panel, and `proj` is the panel-level
+  article.
+- **`workflow`** (Workflow Guide) → `WorkflowGuidePanel` (`App.js`), on the `ModalShell`'s own
+  subtitle, conditionally combined with the existing "tailored to your role" text.
+- **`pvsa`** (Proj vs Actuals) → `App.js`'s `showPVSA` `ModalShell`.
+- **`di_calibration_panel`** (DI Calibration — Panel & Workflow) → `App.js`'s `showDialedIn`
+  `ModalShell` (wraps the real `DialedInPanel`). Confirmed this is the right key over the
+  metric-level `dialed_in`/`dialed_in_calibration` articles by reading all three — those two
+  describe the grid-search math itself and stay cross-referenced, not wired to a panel (same
+  treatment `mape`/`model_types` already get elsewhere in this backlog).
+- **`date_range_report_guide`** (Date-Range Report) → `App.js`'s `routePanel==='report'`
+  `RoutePanelShell` gate (wraps `DateRangeReport`).
+- **`planning_hub`** / **`scheduling_hub`** → `PlanningHubPanel`/`SchedulingHubPanel` (`App.js`,
+  "shell lives inside the component" pattern) — both `RoutePanelShell` calls had no `subtitle` at
+  all before this, so the icon is the subtitle's entire content now. `PlanningHubPanel` was not
+  previously exported from `App.js`; exported it (same treatment `SchedulingHubPanel` already
+  got, per its own code comment, specifically so a render test could mount it).
+- **`panel_manager_guide`** → `PanelManagerPanel` (`App.js`), hand-rolled header (no
+  `RoutePanelShell`, same workaround pattern Data Manager/Forms Library/Labor Analysis already
+  use elsewhere in this backlog).
+- **`home_at_a_glance`** → `AtAGlance` (`at-a-glance.js`)'s own "At a Glance" title div — only
+  when the header is NOT in its scrolled-compact state, since the compact header drops most of
+  its own text too.
+- **`store_dashboard_overview`** → `StoreDash` (`store-analytics.js`)'s store-name header,
+  conditionally shown only when `tab==='overview'` (the header itself is shared across all of
+  the dashboard's dozen-plus tabs).
+- **`shift_analysis_tab`** → `ShiftAnalysisTab` (`store-analytics.js`, independently exported)'s
+  own "⏱ Shift Analysis" title div.
+- **`why_engine_guide`** → `WhyEnginePanel` (`analytics.js`), wired into both its no-data
+  empty-state title AND its main header (same "both branches" treatment Inventory
+  Intelligence/SMG VOICE got in earlier phases).
+- **`gm_letters`** → `GMCoachingBrief` (`src/engine/coaching.js`), wired into both its no-data
+  `ModalShell` and its main `ModalShell`'s subtitle.
+- **`smart_targets`** → `SmartTargetsPanel` (`src/views/smart-targets.js`)'s own "Smart Targets"
+  title div — a real gap despite `smart_targets` being one of the original 5 panel-level App
+  Guide entries from the very first KB batch; it had simply never been wired into this
+  component's own header until now.
+
+**Verification split, by design, matching an existing precedent:** `proj`/`pvsa`/
+`di_calibration_panel`/`date_range_report_guide` all use the "shell lives at the `App.js` routing
+gate, not inside the mounted sub-component" pattern — the exact same pattern `security_panel_guide`
+was wired into (2026-11-07 entry above), which that entry explicitly notes was verified by "local
+build + full suite, no new test" rather than a dedicated render test, since meaningfully mounting
+the wiring means mounting `App.js`'s own routing JSX, not the sub-component it renders. These four
+get the same treatment here, for the same reason. The other 11 keys each wire an `InfoIcon`
+directly inside an exported, independently-mountable component and get a real
+mount-the-real-panel-click-the-real-"?"-assert-the-real-title test, in
+`dispatch-kb-panel-guide-batch13-2026-11-08.test.js` (13 tests — some keys, like
+`why_engine_guide` and `targets_editor`, get more than one test for their multiple real
+branches/modes).
+
+No stale `panel_index`/Workflow-Guide wording was found for any of the 15 panels touched this
+pass (not re-checked exhaustively against every one, but nothing surfaced while reading each
+component for its real mount point).
+
+**Measured running total: 70 of 117 `KB_ARTICLES` keys now wired** (55 before this batch + 15
+here). Full suite: 792/792 files, 7264/7264 tests passing. Build clean, eager payload
+418.78 KB gzip entry / 682.16 KB gzip eager total (budget 850 KB, 167.84 KB headroom) — unchanged
+in shape from before this batch, since every wiring here is a one-line `InfoIcon` sibling add, no
+new chunk. **Still open:** ~47 unwired keys, including the still-deferred `calendar_manager_guide`
+(real content exists for `CalendarManagerPanel`, `src/features/calendar.js`, but it renders
+inside the already-icon-wired `EventsPanel` with no distinct sub-header of its own to attach a
+second, more specific icon to — left unwired rather than forced, same judgment call this backlog
+has made elsewhere for a sub-view with no clean header), `priority_brief`, `proj-brief`/`proj`
+(Test-Kitchen-tier internal id, distinct from the now-wired `proj` nav panel), and the
+metric/engine-concept articles this backlog has consistently left cross-referenced rather than
+wired to any one panel (`mape`-style keys: `adaptive_di`, `adaptive_ensemble`, `cash_os`,
+`condiment_pct`, `confidence_interval`, `daypart_engine`, `dialed_in`, `dialed_in_calibration`,
+`drawer_open`, `event_registry`, `ewma_model`, `forecast_formula`, `gc_crosscheck`, `labor_pct`,
+`mape_drift`, `model_health_scoring`, `model_types`, `new_store_ramp`, `oepe`, `plus_up`, `r2p`,
+`roles_and_permissions`, `t_red`, `tpph`, `weather_adjustment`). The remaining real panel-level
+candidates (`revenue_intelligence`, `intelligence_brief`, `competitive_impact_guide`,
+`store_kb_guide`, `file_import_guide`, `lifelenz_bridge`, `store_compare_guide`,
+`district_lens_guide`, `email_digests_guide`, `fcst_accuracy_guide`, `forms_print_guide`,
+`metric_lineage_guide`, `pay_rate_history_guide`, `count_cycle_guide`, `brief_guide`,
+`panel_index`) are candidates for the next batch — not yet re-checked against their real mount
+points this pass.

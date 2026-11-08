@@ -17,6 +17,7 @@
 //     review-engine.js's mergedTargetsForLoc() already merges into Performance Review
 //     — this panel previously never displayed it at all (owner-reported gap).
 import * as React from 'react';
+import { InfoIcon } from '../engine/forecast.js';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import { loadDailySales, saveYearlyTargets, loadCustomMetricTargets, saveCustomMetricTarget } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
@@ -575,6 +576,7 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 } }, 'Yearly Projections',
             stepBtn('‹', -1),
             span({ style: { fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, year),
+            view === 'targets' && h(InfoIcon, { articleKey: 'targets_editor' }),
             stepBtn('›', 1)),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, view === 'sales'
             ? 'Annual official target (Σ monthly_targets) vs actual product sales · YTD-to-date (current month prorated) · Projected FY = actual banked + remaining plan.'

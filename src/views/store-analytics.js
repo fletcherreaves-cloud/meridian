@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB, supervisorGroups } from '../constants.js';
 import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo } from '../utils/date.js';
-import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
+import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync, InfoIcon } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
@@ -187,7 +187,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
 
   return div(null,
     div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:8,flexWrap:'wrap'}},
-    div({style:{fontSize:'13px',fontWeight:700}},'⏱ Shift Analysis'),
+    div({style:{fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',gap:5}},'⏱ Shift Analysis',h(InfoIcon,{articleKey:'shift_analysis_tab'})),
     div({style:{fontSize:'10px',color:'var(--text3)',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'2px 8px'}},
       'Last '+wb+' weeks · '+new Date(Date.now()-wb*7*86400000).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – Today · Avg per day of week'
     )
@@ -2236,6 +2236,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
       div({style:{flex:1}},
         div({style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
           div({style:{fontSize:'15px',fontWeight:700}},store.name),
+          tab==='overview'&&h(InfoIcon,{articleKey:'store_dashboard_overview'}),
           store.org&&store.org!=='MCDOK'&&span({style:{fontSize:'9px',fontWeight:700,padding:'2px 7px',
             borderRadius:3,background:'rgba(167,139,250,.15)',color:'#a78bfa',
             border:'.5px solid rgba(167,139,250,.3)'}},store.org)

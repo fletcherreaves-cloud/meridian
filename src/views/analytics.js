@@ -2565,7 +2565,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
   if(!ds||!ds.loaded) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:464,display:'flex',alignItems:'center',justifyContent:'center'}},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:40,marginBottom:12}},'🔬'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
+      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},'No Data Loaded',h(InfoIcon,{articleKey:'why_engine_guide'})),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to run the Why Engine.'),
       btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
@@ -2587,7 +2587,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
         display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         span({style:{fontSize:'18px'}},'🔬'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Why Engine'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:6}},'Why Engine',h(InfoIcon,{articleKey:'why_engine_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)'}},'Systematic miss attribution — composition + diagnosis, run across every day instead of one click at a time')
         ),
         div({style:{display:'flex',gap:3}},
@@ -8967,7 +8967,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     // Header
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'12px 20px',
       borderBottom:'1px solid var(--bdr)',flexShrink:0,flexWrap:'wrap'}},
-      div({style:{fontSize:16,fontWeight:700,color:'var(--text)'}},'📊 Monthly Projections'),
+      div({style:{fontSize:16,fontWeight:700,color:'var(--text)',display:'flex',alignItems:'center',gap:6}},'📊 Monthly Projections',h(InfoIcon,{articleKey:'targets_editor'})),
       locs.length>0&&span({style:{fontSize:11,color:'var(--text3)',marginLeft:4}},
         locs.length+' stores'),
       div({style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}),
