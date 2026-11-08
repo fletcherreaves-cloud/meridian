@@ -80,11 +80,17 @@ capture proves the query-parameter shape. The Scheduled Reports' native email fe
    request. This single capture would confirm both the real date-range parameter shape (unlocks
    backfill) and that hour-level data is reachable via direct API call (not just the email
    schedule).
-2. **The actual login/token-mint request.** Every capture so far reused a token the browser's own
-   login flow already produced. Need either: a simple REST login endpoint (same shape as
-   Squadle's, ideally), or — if HME's portal login is a full browser-rendered form with no clean
-   REST equivalent — a Playwright-based session capture, same fallback pattern as
-   `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`.
+2. **The login/token-mint request — partially captured 2026-11-08, response body still needed.**
+   The owner captured the real browser login flow (`fletcher@mcdok.com` on the HME Cloud login
+   page, DevTools Network tab): `POST https://auth.hmecloud.com/api/auth-service`, JSON body with
+   fields `username`, `password`, `ip`, `portalBaseUrl`, `isAdmin`, `isPartner` — a clean REST
+   login endpoint, same shape as Squadle's, not a Playwright-only form as feared above. Request
+   returned HTTP 202. **The owner's real password was in that capture — it was never written to
+   any file, commit, or this doc, only these field names.** **Not yet captured: the response body**
+   (which field holds the resulting Bearer token — presumably reused as-is by every `portal-service
+   .hmecloud.com` call documented above). One more capture (open the Network tab's response/preview
+   pane on this same request, or repeat the login) closes this out and unblocks a real two-path
+   auth script (`getFreshToken()`-style direct POST, no Playwright needed after all).
 
 ## 2. Squadle (food-safety checklist tablet)
 
@@ -110,6 +116,30 @@ empirically** whether Squadle's project has rotation on — i.e., does the origi
 still work after it's already been exchanged once? If rotation is on, the script must write the
 newest `refresh_token` back to the GitHub Secret after every run (a small but real design
 difference from a static secret), never assume the stored one stays valid forever.
+
+**Updated 2026-11-08 — a SECOND login path confirmed, which changes the login-step recommendation
+above.** A fresh browser capture of the real `hq.squadle.com` login shows the front-end is not
+actually calling `verifyPassword` directly — it's calling:
+
+| Step | Endpoint | What it confirms |
+|---|---|---|
+| Custom-token exchange | `POST https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyCustomToken?key=<API_KEY>`, body `{token, returnSecureToken:true}` | The `token` is a short-lived (3600s `iat`/`exp`) JWT **signed server-side by Squadle's own Firebase Admin SDK service account** (`firebase-adminsdk-opv3i@firebase-squadle.iam.gserviceaccount.com`, visible in the JWT's own `iss`/`sub` claims — field names only, not the signature). This confirms Squadle's backend mints a custom Firebase token after its own (not-yet-captured) login step, rather than the client talking to Firebase's `verifyPassword` directly. Exchanging it returns the same `idToken`/`refreshToken` shape as the `verifyPassword` path above. |
+| Account check | `POST .../getAccountInfo?key=<API_KEY>`, body `{idToken}` | Same confirmation role as the `verifyPassword` path — re-observed, not new. |
+| Refresh | `POST https://securetoken.googleapis.com/v1/token?key=<API_KEY>`, form body `grant_type=refresh_token&refresh_token=...` | Same endpoint/shape as above — re-confirmed on a second real session. |
+
+**Practical effect: once a refresh token is captured (from either path), the mint-step question is
+moot for the automation itself** — the pull script never needs to replay a login at all, it only
+ever calls the refresh endpoint. Where this matters is a **one-time bootstrap**: if `verifyPassword`
+ever stops working (e.g. Squadle disables direct password auth in favor of SSO/custom-token-only),
+the *initial* refresh token would need to come from capturing this custom-token exchange instead —
+which itself still depends on whatever (uncaptured) Squadle backend call mints that custom token in
+the first place. Not a blocker today since a `verifyPassword`-sourced refresh token is already
+confirmed working; worth knowing if that path ever goes away.
+
+The Firebase Web API key seen in all these captures (`AIzaSyC3Gu3Ls2l5fIH3eLn5F3HtbZf41YEPr4M`) is
+a public per-project client identifier, not a secret — safe to record and to hardcode in the pull
+script exactly as Squadle's own front-end does; it is the refresh token, not this key, that is the
+credential to protect.
 
 ### Data confirmed (via the owner's own manual exports, not yet via a captured API call)
 
