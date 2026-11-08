@@ -79,7 +79,7 @@ export function OilEfficiencyPanel({ stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Oil Efficiency', icon: '🛢️', onBack: onClose,
+    title: 'Oil Efficiency', icon: '🛢️', onBack: onClose, articleKey: 'oil_efficiency_guide',
     subtitlePrefix: 'Oil use vs. target and filtration compliance by store, from Cargill’s monthly Oil Management Reports',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     datePresets: OE_DATE_PRESETS, defaultPresetId: 'all',

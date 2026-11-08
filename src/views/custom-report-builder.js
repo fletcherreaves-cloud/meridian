@@ -198,7 +198,7 @@ export function CustomReportBuilderPanel({ ds, stores, can, onClose }) {
             ...selectedKeys.map(k => td2(_fmt(r[k], customReportMetricMeta(k).unit))))))));
 
   return h(ReportShell, {
-    title: 'Custom Report Builder', icon: '🧩', onBack: onClose,
+    title: 'Custom Report Builder', icon: '🧩', onBack: onClose, articleKey: 'custom_report_builder_guide',
     subtitlePrefix: 'Pick any metrics, side by side, over a date range and scope — save and share',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

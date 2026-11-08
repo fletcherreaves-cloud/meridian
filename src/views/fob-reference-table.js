@@ -72,7 +72,7 @@ export function FobReferenceTablePanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'FOB Reference Table', icon: '📋', onBack: onClose,
+    title: 'FOB Reference Table', icon: '📋', onBack: onClose, articleKey: 'fob_reference_table_guide',
     subtitlePrefix: 'Rolling L3M / L6W / LM / MTD / Projected / Trend for each store — live off auto-pulled streams, no manual paste',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

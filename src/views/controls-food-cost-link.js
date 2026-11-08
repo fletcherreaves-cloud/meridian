@@ -41,7 +41,7 @@ export function ControlsFoodCostLinkPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Controls ↔ Food Cost Linkage', icon: '🔗', onBack: onClose,
+    title: 'Controls ↔ Food Cost Linkage', icon: '🔗', onBack: onClose, articleKey: 'controls_food_cost_link_guide',
     subtitlePrefix: 'FOB-reported food-cost ratios alongside Controls’ meal/deposit/discount facts, by store and month',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

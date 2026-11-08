@@ -35,7 +35,7 @@ export function ItemVelocityPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Item Velocity', icon: '🔥', onBack: onClose,
+    title: 'Item Velocity', icon: '🔥', onBack: onClose, articleKey: 'item_velocity_guide',
     subtitlePrefix: `What's selling and what's dying, across the selected stores (top ${DEFAULT_TOP_N} by volume)`,
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

@@ -1229,3 +1229,49 @@ Continuing the wiring itself stays task #75's open-ended scope — picking off a
 same pattern as every batch in this file, verifying the real mount point before wiring each one
 rather than assuming from the key name (exactly the discipline that caught `targets_editor` not
 being `unified-targets` above).
+
+## 2026-11-08 — ReportShell batch: one shared-component fix wires 12 panels at once
+
+Re-measured directly before picking this batch (same grep the 2026-11-07 entry above used):
+117 `KB_ARTICLES` keys, 43 wired, **74 unwired** (one fewer than the "75" the prior entry
+recorded — re-measuring found no specific key that flipped; treat small re-measurement deltas in
+this count as noise from grep/regex edge cases, not a tracked fix).
+
+Grepped every real consumer of `ReportShell` (`grep -rl "h(ReportShell" src/views/*.js`) and
+found **12 real "Reports Hub deep-dive" panels** — Cash Variance Pattern, Channel Mix,
+Controls ↔ Food Cost Linkage, Conversion Efficiency Ratio, Custom Report Builder, FOB Reference
+Table, Item Velocity, Labor Opportunity Cost, Loss Prevention Summary, Oil Efficiency, Price
+Change Impact, Weather Impact — every single one of which already had a real, title-matching
+`KB_ARTICLES` entry (confirmed by pulling each key's real `title:` field via regex, not assumed
+from the key name) and **zero** of which could ever show an `InfoIcon`, for one shared reason:
+`src/components/ReportShell.js` itself had no `articleKey` prop, so no per-file wiring could have
+worked regardless of what the calling panel passed. (`access-log.js` was a false positive from
+the initial grep — it only *mentions* `ReportShell` in a comment explaining why it deliberately
+does NOT use it; confirmed real before counting it out.)
+
+Fixed the shared component once instead of 12 separate call-site patches: `ReportShell` now takes
+an optional `articleKey` prop and, when given, renders `InfoIcon` next to its existing subtitle
+text (same visual convention — icon beside the descriptive line — every other `RoutePanelShell`
+wiring in this backlog already uses). Wired all 12 real call sites with their already-verified
+matching key. Each `panel-registry.js` label was also checked against the component's own
+`title:` string passed to `ReportShell` (all 12 matched exactly — e.g. `custom-reports`/"Custom
+Report Builder", `loss-prevention`/"Loss Prevention Summary") before wiring, catching no drift
+this time.
+
+12 new tests, one per panel, mounting the REAL panel component and clicking the real "?" control
+(`dispatch-kb-reportshell-infoicon-2026-11-08.test.js`) — the same "would this still pass if
+reverted" bar every phase in this file holds itself to: removing either the new `ReportShell`
+prop or any one call site's `articleKey` makes that panel's control vanish and its test fail.
+
+**Running total: 55 of 117 real `KB_ARTICLES` keys now wired.** Still open: ~62 unwired keys.
+Flagged in passing, not acted on (outside this pass's pure-wiring scope, per task #75's own
+standing rule to leave stale-content calls for whoever next touches that panel's copy):
+- `security_guide` remains a genuine duplicate of the already-wired `security_panel_guide` — two
+  separately-written articles for the same panel, under different keys. Still undecided which
+  should win or whether one should redirect to the other.
+- `targets_editor`'s real on-screen home was still not conclusively located this pass either —
+  same open item the 2026-11-07 entry left (grep `saveMonthlyTargets`/`saveYearlyTargets` next
+  time rather than guessing from `panel-registry.js` id names).
+- `priority_brief` and `proj`/`proj-brief` remain real, legitimate candidates for a future pass
+  (the first is already-good content per batch 9's own find; `proj`/`proj-brief` is Test-Kitchen-
+  tier and was explicitly deferred by the batch-12 entry above).

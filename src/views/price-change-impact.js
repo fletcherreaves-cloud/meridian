@@ -54,7 +54,7 @@ export function PriceChangeImpactPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Price Change Impact', icon: '🎚️', onBack: onClose,
+    title: 'Price Change Impact', icon: '🎚️', onBack: onClose, articleKey: 'price_change_impact_guide',
     subtitlePrefix: 'What happened to sales and guest counts in the 14 days after each confirmed repricing event',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

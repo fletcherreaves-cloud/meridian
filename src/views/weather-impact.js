@@ -54,7 +54,7 @@ export function WeatherImpactPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Weather Impact', icon: '🌦️', onBack: onClose,
+    title: 'Weather Impact', icon: '🌦️', onBack: onClose, articleKey: 'weather_impact_guide',
     subtitlePrefix: 'How rain and heat have historically moved this store’s sales and guest counts',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

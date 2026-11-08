@@ -96,7 +96,7 @@ export function ConversionEfficiencyPanel({ stores, onClose }) {
   const drillItems = drillLoc && report ? itemsForStore(report.itemsByLoc, drillLoc) : [];
 
   return h(ReportShell, {
-    title: 'Conversion Efficiency Ratio', icon: '🍟', onBack: onClose,
+    title: 'Conversion Efficiency Ratio', icon: '🍟', onBack: onClose, articleKey: 'conversion_efficiency_guide',
     subtitlePrefix: 'Food usage vs. target by raw item, from McDonald’s corporate Owner Operator Reports',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     datePresets: CE_DATE_PRESETS, defaultPresetId: 'all',

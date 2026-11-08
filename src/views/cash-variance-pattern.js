@@ -42,7 +42,7 @@ export function CashVariancePatternPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Cash Variance Pattern', icon: '🧾', onBack: onClose,
+    title: 'Cash Variance Pattern', icon: '🧾', onBack: onClose, articleKey: 'cash_variance_pattern_guide',
     subtitlePrefix: 'Cash O/S, POS overrides, refunds and T-Reds averaged by store and day of week — never by register or employee',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

@@ -39,7 +39,7 @@ export function ChannelMixPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Channel Mix', icon: '🔀', onBack: onClose,
+    title: 'Channel Mix', icon: '🔀', onBack: onClose, articleKey: 'channel_mix_guide',
     subtitlePrefix: 'DT / Delivery / Mobile Order Pickup / Kiosk / Front Counter — % of sales and how it’s trending',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,

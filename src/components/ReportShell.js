@@ -21,6 +21,7 @@ import {
   buildReportFilename, exportReportCSV, exportReportXLSX, exportReportPDF, printReportHTML,
 } from '../utils/report-export.js';
 import { sNameC } from '../constants.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -40,7 +41,7 @@ export function reportScopeLabel(value, tree) {
 export function ReportShell({
   title, icon, subtitlePrefix, stores, invOrgCoords, storeNames,
   defaultPresetId = '28d', datePresets = DATE_RANGE_PRESETS, locationMode = 'full',
-  onRun, getExportData, onBack, children,
+  onRun, getExportData, onBack, children, articleKey,
 }) {
   const { useState, useMemo, useCallback } = React;
   const [range, setRange] = useState(() => resolveDatePreset(defaultPresetId, datePresets));
@@ -72,9 +73,15 @@ export function ReportShell({
     { label: '⬇ PDF', onClick: () => exportReportPDF({ filename: filenameFor(), ...getExportData() }) },
   ];
 
+  const subtitleText = (subtitlePrefix ? subtitlePrefix + ' — ' : '') + scope + (range ? ` · ${range.s} to ${range.e}` : '');
+
   return h(RoutePanelShell, {
     title, icon, onBack,
-    subtitle: (subtitlePrefix ? subtitlePrefix + ' — ' : '') + scope + (range ? ` · ${range.s} to ${range.e}` : ''),
+    subtitle: articleKey
+      ? div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+          h('span', null, subtitleText),
+          h(InfoIcon, { articleKey }))
+      : subtitleText,
     headerExtra: h(ActionMenu, { label: 'Export ▾', items: exportItems }),
   },
     div({ style: { padding: '12px 18px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' } },

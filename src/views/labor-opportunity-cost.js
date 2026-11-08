@@ -66,7 +66,7 @@ export function LaborOpportunityCostPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Labor Opportunity Cost', icon: '⏱️', onBack: onClose,
+    title: 'Labor Opportunity Cost', icon: '⏱️', onBack: onClose, articleKey: 'labor_opportunity_cost_guide',
     subtitlePrefix: 'OT, overstaffing and understaffing $ — broken into drivers, by store',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,
