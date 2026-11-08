@@ -10,10 +10,14 @@ on:
     - cron: '0 8 * * *'
     # 10:00 UTC = 5:00 AM CDT — previous day is fully closed by then (morning batch)
     - cron: '0 10 * * *'
-    # Intraday current-day refreshes — qsr_daily_activity carries today's live sales + DT
-    - cron: '0 13 * * *'   # ~8:00 AM CDT
-    - cron: '0 15 * * *'   # ~10:00 AM CDT
-    - cron: '0 19 * * *'   # ~2:00 PM CDT
+    # Intraday current-day refreshes, every 15 min through the operating day (owner
+    # request 2026-11-08, re: Shift Scoreboard freshness — memory/plan-shift-scoreboard-
+    # 2026-11-07.md). qsr_daily_activity upserts on (loc,dt,hour_slot), so more frequent
+    # runs refresh today's existing rows rather than add new ones — no row-count growth.
+    # Covers ~7:00 AM-6:45 PM CDT; continued below for the evening span (UTC date rolls).
+    - cron: '*/15 12-23 * * *'
+    # Same 15-min cadence, continuing ~7:00 PM-10:45 PM CDT.
+    - cron: '*/15 0-3 * * *'
   workflow_dispatch:
     inputs:
       days_back:
@@ -71,7 +75,10 @@ jobs:
           QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_DAR_DAYS_BACK:      ${{ github.event.inputs.days_back   || '90' }}
-          QSRSOFT_DAR_DAYS_RECENT:    ${{ github.event.inputs.days_recent || '4'  }}
+          # The two 15-min intraday schedules only need today — narrowing them to
+          # days_recent=1 keeps each run fast and considerate of QSRSoft's API; the two
+          # once-daily catch-up schedules above keep the full 4-day rolling window.
+          QSRSOFT_DAR_DAYS_RECENT:    ${{ github.event.inputs.days_recent || (contains(fromJSON('["*/15 12-23 * * *","*/15 0-3 * * *"]'), github.event.schedule) && '1' || '4') }}
           QSRSOFT_DAR_FORCE_FULL:     ${{ github.event.inputs.force_full  || '0'  }}
           QSRSOFT_DAR_START_DATE:     ${{ github.event.inputs.start_date  || ''   }}
           QSRSOFT_DAR_END_DATE:       ${{ github.event.inputs.end_date    || ''   }}

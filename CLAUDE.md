@@ -322,7 +322,9 @@ trusting either, same standing warning as the top of this paragraph.
 - **At A Glance tiles use freshest-wins** (manual upload overrides same-day; auto fills the gap since last upload). Digital Sales ← Sales Ledger; Service (OEPE/KVS) ← Daily Glimpse; Controls ← Glimpse+Cash; Labor % ← Glimpse; **FOB ← qsr_fob, dollar-weighted** (Σ$/ΣprodSales, not straight avg) showing current MTD + last completed month.
 - **Freshness banner** re-anchored to the newest date across all auto streams (fixed the false "data X days old"). Root cause also fixed: `loadQsrActSummary` was truncating at Supabase's 1000-row cap (now paginated).
 - **Movers strip** on At A Glance (top sales-vs-LY movers, slowest DT, stores behind LY — cloud-fresh).
-- **In-app Sync buttons** (Data Manager) dispatch any pull workflow; **intraday DAR** at ~8a/10a/2p CT.
+- **In-app Sync buttons** (Data Manager) dispatch any pull workflow; **intraday DAR and Operations
+  Report pulls run every 15 min, ~7a-11p CT** (bumped from ~8a/10a/2p CT 2026-11-08, owner
+  request — see `memory/plan-shift-scoreboard-2026-11-07.md`'s freshness-track addendum).
 - **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
 - **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 

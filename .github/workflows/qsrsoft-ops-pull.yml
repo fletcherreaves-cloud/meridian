@@ -5,7 +5,17 @@ on:
     # US Central-anchored (GitHub cron is fixed UTC, no DST). The Operations Report
     # finalizes overnight, so a morning pull captures the prior full day + LY.
     - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
-    - cron: '0 19 * * *'   # ~2:00 PM CDT — current-day refresh
+    # Intraday current-day refreshes, every 15 min through the operating day (owner
+    # request 2026-11-08 — cash-integrity/T-Red freshness: qsr_cash_sheet is already
+    # the primary auto source for tRedAPct/tRedBPct/drawerOpens, src/engine/metric-
+    # source.js's opsCashRows chain, not the emailed Glimpse/cash-sheet tables — so
+    # this is the actual fix, not a new API to find). Upserts on (loc,dt), so more
+    # frequent runs refresh today's rows rather than add new ones. Covers ~7:00
+    # AM-6:45 PM CDT; continued below for the evening span (UTC date rolls).
+    - cron: '*/15 12-23 * * *'
+    # Same 15-min cadence, continuing ~7:00 PM-10:45 PM CDT. Supersedes the old
+    # standalone ~2:00 PM CDT current-day-refresh run, which this block now covers.
+    - cron: '*/15 0-3 * * *'
   workflow_dispatch:
     inputs:
       days_back:
@@ -51,7 +61,10 @@ jobs:
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_OPS_DAYS_BACK:     ${{ github.event.inputs.days_back   || '45' }}
-          QSRSOFT_OPS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '14' }}
+          # The two 15-min intraday schedules only need today — narrowing them to
+          # days_recent=1 keeps each run fast and considerate of QSRSoft's API; the
+          # once-daily catch-up schedule above keeps the full 14-day rolling window.
+          QSRSOFT_OPS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || (contains(fromJSON('["*/15 12-23 * * *","*/15 0-3 * * *"]'), github.event.schedule) && '1' || '14') }}
           QSRSOFT_OPS_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
           QSRSOFT_OPS_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
           QSRSOFT_OPS_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
