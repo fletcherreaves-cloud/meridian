@@ -8,6 +8,7 @@ import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js
 import { autoFirstDaily } from '../engine/vs-ly.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { DAYPART_SLOTS } from '../engine/labor-standard.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -627,12 +628,21 @@ function StoreBriefCard({store, expanded, setExpanded}){
 }
 
 // ── Today's Hourly Pace vs 30-Day Mean (qsr_daily_activity) ─────────────────
+// Dinner/Late Night slots corrected (task #104, 2026-11-08) — these used to split at
+// 9pm/10pm ('din' ending '21:00', 'late' starting '22:00'), silently moving the real
+// 9-11pm hours from Dinner into Late Night. labor-standard.js's DAYPART_SLOTS (the VLH
+// guide's own Dinner 5p-11p / Late Night 11p-5a, see that file's header) splits at 11pm —
+// this card now matches it for Dinner exactly. Late Night drops DAYPART_SLOTS' own leading
+// '05:00' entry on purpose: that slot is the 4-5am TAIL of the PRIOR business day's Late
+// Night (hour_slot's business day starts at 4am), and this card shows one single business
+// day, so keeping it out of today's Late Night bucket avoids conflating two different
+// nights under one total — a scope limit of this per-day card, not a boundary error.
 const DAR_DAYPARTS = [
-  {id:'bfst', label:'Breakfast', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
-  {id:'lnch', label:'Lunch',     slots:['12:00','13:00','14:00']},
-  {id:'pm',   label:'Snack',     slots:['15:00','16:00','17:00']},
-  {id:'din',  label:'Dinner',    slots:['18:00','19:00','20:00','21:00']},
-  {id:'late', label:'Late Night',slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
+  {id:'bfst', label:'Breakfast', slots:DAYPART_SLOTS['Breakfast']},
+  {id:'lnch', label:'Lunch',     slots:DAYPART_SLOTS['Lunch']},
+  {id:'pm',   label:'Snack',     slots:DAYPART_SLOTS['Afternoon']},
+  {id:'din',  label:'Dinner',    slots:DAYPART_SLOTS['Dinner']},
+  {id:'late', label:'Late Night',slots:DAYPART_SLOTS['Late Night'].filter(s => s !== '05:00')},
 ];
 const fK = v => v >= 1000 ? '$'+(v/1000).toFixed(1)+'K' : '$'+Math.round(v);
 const pctClr = v => v == null ? '#6b7280' : v >= 0 ? '#10b981' : '#ef4444';

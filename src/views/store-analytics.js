@@ -18,6 +18,7 @@ import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricDaily, metricAvg, metricRate, ensureLazyFill, isLazyFillPending, ensureLazyFillWide, isLazyFillWideLoaded, isLazyFillWideError } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { DAYPART_SLOTS } from '../engine/labor-standard.js';
 import { computeLaborGapSplit, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DAY } from '../engine/labor-gap-split.js';
 // dispatch #200 (Task Group C) -- the same live-data record-computation engine record-day.js's
 // main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
@@ -1619,12 +1620,23 @@ function RegisterAuditTab({ds, loc, dateRange}) {
 // COMPARE COMPONENTS
 
 // ── Daypart Pace Card — today's per-store DAR data ────────────────────────────
+// Dinner/Late Night slots corrected (task #104, 2026-11-08) — these used to split at
+// 9pm/10pm ('din' ending '21:00', 'late' starting '22:00'), silently moving the real
+// 9-11pm hours from Dinner into Late Night. labor-standard.js's DAYPART_SLOTS (the VLH
+// guide's own Dinner 5p-11p / Late Night 11p-5a, see that file's header) splits at 11pm —
+// this card now matches it for Dinner exactly. Late Night drops DAYPART_SLOTS' own leading
+// '05:00' entry on purpose: that slot is the 4-5am TAIL of the PRIOR business day's Late
+// Night (hour_slot's business day starts at 4am), and daypartTimeStatus() below needs one
+// CONTIGUOUS elapsed-hours window per daypart within a single business day — mixing in
+// '05:00' (elapsed hour 1) with '24:00'-'28:00' (elapsed hours 20-24) would make Late
+// Night's isActive/isDone span nearly the entire day. A scope limit of this per-day card,
+// not a boundary error.
 const DAYPARTS_DEF = [
-  {id:'bfst', label:'Breakfast', emoji:'🌅', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
-  {id:'lnch', label:'Lunch',     emoji:'☀',  slots:['12:00','13:00','14:00']},
-  {id:'pm',   label:'Snack',     emoji:'🌤',  slots:['15:00','16:00','17:00']},
-  {id:'din',  label:'Dinner',    emoji:'🌆',  slots:['18:00','19:00','20:00','21:00']},
-  {id:'late', label:'Late Night',emoji:'🌙',  slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
+  {id:'bfst', label:'Breakfast', emoji:'🌅', slots:DAYPART_SLOTS['Breakfast']},
+  {id:'lnch', label:'Lunch',     emoji:'☀',  slots:DAYPART_SLOTS['Lunch']},
+  {id:'pm',   label:'Snack',     emoji:'🌤',  slots:DAYPART_SLOTS['Afternoon']},
+  {id:'din',  label:'Dinner',    emoji:'🌆',  slots:DAYPART_SLOTS['Dinner']},
+  {id:'late', label:'Late Night',emoji:'🌙',  slots:DAYPART_SLOTS['Late Night'].filter(s => s !== '05:00')},
 ];
 
 // Owner-caught 2026-11-05 (screenshot): Lunch correctly showed "done" while Snack correctly
