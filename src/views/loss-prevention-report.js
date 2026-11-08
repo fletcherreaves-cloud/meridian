@@ -42,7 +42,7 @@ export function LossPreventionReportPanel({ ds, stores, onClose }) {
   });
 
   return h(ReportShell, {
-    title: 'Loss Prevention Summary', icon: '🛡️', onBack: onClose,
+    title: 'Loss Prevention Summary', icon: '🛡️', onBack: onClose, articleKey: 'loss_prevention_summary_guide',
     subtitlePrefix: 'Discount / Promo / Cash O-S / Refunds / Overrides / T-Reds, by store',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     onRun: run, getExportData,
