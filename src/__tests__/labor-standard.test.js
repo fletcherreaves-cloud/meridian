@@ -5,7 +5,7 @@
 // proven result, not asserting a newly-invented one.
 import { describe, it, expect } from 'vitest';
 import {
-  daypartOf, DAYPARTS, allocationByStoreDaypart, allocationDistrict,
+  daypartOf, DAYPARTS, DAYPART_SLOTS, allocationByStoreDaypart, allocationDistrict,
   overnightOpenness, fracToHour, preOpenLateNightFraction, lateNightStandardForDay,
   overnightExcessByStore, CLOSE_DOWN_HOURS, PRE_OPEN_HOURS,
 } from '../engine/labor-standard.js';
@@ -37,6 +37,32 @@ describe('daypartOf — the VLH guide\'s own boundaries, single source of truth'
     expect(counts['Afternoon']).toBe(3);    // 15-17
     expect(counts['Dinner']).toBe(6);       // 18-23
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(24);
+  });
+});
+
+// Task #104 (2026-11-08) -- DAYPART_SLOTS exists so display code that buckets by a slot LIST
+// (rather than calling daypartOf() per row) can source the real boundaries instead of
+// hand-rolling its own, which is exactly how dt-speedofservice.js, morning-brief.js and
+// store-analytics.js drifted onto three different (and each wrong) boundary sets. Asserted
+// directly against daypartOf()'s own case statement above so the two can never read
+// differently again.
+describe('DAYPART_SLOTS — the same boundaries as daypartOf, as slot arrays', () => {
+  it('matches daypartOf exactly for every one of the 24 real hour_slot values', () => {
+    for (let hr = 5; hr <= 28; hr++) {
+      const slot = String(hr).padStart(2, '0') + ':00';
+      const dp = daypartOf(slot);
+      expect(DAYPART_SLOTS[dp]).toContain(slot);
+    }
+  });
+  it('Breakfast is 06:00-11:00 (5am-11am), not 05:00-10:00 (the pre-correction 4am-10am)', () => {
+    expect(DAYPART_SLOTS['Breakfast']).toEqual(['06:00','07:00','08:00','09:00','10:00','11:00']);
+  });
+  it('Dinner is 18:00-23:00 (5pm-11pm), not 17:00-20:00 or 18:00-21:00', () => {
+    expect(DAYPART_SLOTS['Dinner']).toEqual(['18:00','19:00','20:00','21:00','22:00','23:00']);
+  });
+  it('Late Night is 05:00 plus 24:00-28:00 (11pm-5am), never a literal 00:00/01:00/02:00 (hour_slot has no such values)', () => {
+    expect(DAYPART_SLOTS['Late Night']).toEqual(['05:00','24:00','25:00','26:00','27:00','28:00']);
+    expect(DAYPART_SLOTS['Late Night']).not.toContain('00:00');
   });
 });
 

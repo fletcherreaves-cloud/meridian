@@ -39,6 +39,32 @@ export function daypartOf(hourSlot) {
   return 'Late Night'; // 05, and the wrapped 24-28 (00:00-04:00)
 }
 
+// ── DAYPART_SLOTS — the SAME boundaries, as hour_slot arrays, for display code that
+// buckets by a slot LIST rather than calling daypartOf() per row (task #104, 2026-11-08).
+// Generated FROM daypartOf() itself (h=5..28, the real qsr_daily_activity hour_slot range --
+// confirmed live: a store-day never actually emits '00:00'/'01:00'/'02:00', only '05:00'->
+// '28:00') so a hand-maintained slot list can never again drift onto a different boundary
+// set than this file's own canonical one. Found drifted on three display-only arrays that
+// predate this file and were never reconciled to it: dt-speedofservice.js's DAYPARTS was
+// still on the PRE-correction (general-knowledge) boundaries this file's own header comment
+// warns about -- every daypart shifted ~1hr early, plus a dead '00:00' entry that can never
+// match a real row -- and morning-brief.js / store-analytics.js both split Dinner/Late Night
+// at 9pm/10pm instead of the VLH guide's 11pm, silently moving two real hours (21:00-22:00,
+// 9-11pm) from Dinner into Late Night. Late Night here therefore starts with '05:00' (the
+// 4-5am tail of the PRIOR business day's Late Night, since hour_slot's own day starts at
+// 4am) before the contiguous '24:00'->'28:00' run -- a consumer that needs one CONTIGUOUS
+// elapsed-hours window within a single business day (e.g. a live/done time-of-day check)
+// must drop '05:00' explicitly and say why, rather than silently keep the old wrong slot.
+export const DAYPART_SLOTS = (() => {
+  const out = {};
+  for (const dp of DAYPARTS) out[dp] = [];
+  for (let h = 5; h <= 28; h++) {
+    const slot = String(h).padStart(2, '0') + ':00';
+    out[daypartOf(slot)].push(slot);
+  }
+  return out;
+})();
+
 const unpad = (l) => String(parseInt(l, 10) || '');
 
 // ── §3a — THE ALLOCATION VIEW ─────────────────────────────────────────────────

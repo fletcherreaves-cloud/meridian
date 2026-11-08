@@ -18,6 +18,7 @@ import { printHtml } from '../utils/print-html.js';
 import { withAlpha } from './patch-heatmap.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
+import { DAYPART_SLOTS } from '../engine/labor-standard.js';
 
 // Dispatch #136 Part 1 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ chart.js/
 // auto, which this panel already pulls in directly) that this session's established pattern
@@ -151,15 +152,24 @@ const HOUR_LABELS = {
   '23:00':'11pm','00:00':'12am','01:00':'1am','02:00':'2am',
 };
 
-// Daypart buckets (inclusive of start hour slot, exclusive of end)
+// Daypart buckets — hour_slot membership for each daypart, sourced from labor-standard.js's
+// DAYPART_SLOTS (task #104, 2026-11-08). This array used to hand-roll its own `hours` lists,
+// one full hour EARLY on every daypart (Breakfast 4am-10am instead of the VLH guide's 5am-11am,
+// Dinner 4pm-8pm instead of 5pm-11pm, etc.) — exactly the "built from general knowledge rather
+// than the authoritative source" boundary error labor-standard.js's own header comment was
+// written to kill, just never reconciled to this file. It also carried a dead '00:00' entry in
+// Late Night that could never match a real row (qsr_daily_activity.hour_slot runs '05:00' ->
+// '28:00' only, confirmed live — a wrapped post-midnight hour is '24:00'-'28:00', never '00:00'),
+// so the old Late Night bucket was silently 3 hours wide instead of 4, on top of being the wrong
+// 4 hours. Pulling the real lists from DAYPART_SLOTS means this can't drift from the canonical
+// boundaries again. Afternoon/Dinner/Late Night's canonical labor-standard.js names are kept as
+// this file's own 'pm'/'dinner'/'late' ids+labels ('Snack' label per owner direction 2026-09-07).
 const DAYPARTS = [
-  { id:'breakfast', label:'Breakfast', hours:['05:00','06:00','07:00','08:00','09:00','10:00'] },
-  { id:'lunch',     label:'Lunch',     hours:['11:00','12:00','13:00'] },
-  // label 'Snack' (owner-directed 2026-09-07) — was 'PM', inconsistent with morning-brief.js and
-  // store-analytics.js labeling this same 2-5pm daypart 'Snack'. id stays 'pm' (internal only).
-  { id:'pm',        label:'Snack',      hours:['14:00','15:00','16:00'] },
-  { id:'dinner',    label:'Dinner',    hours:['17:00','18:00','19:00','20:00'] },
-  { id:'late',      label:'Late Night',hours:['21:00','22:00','23:00','00:00'] },
+  { id:'breakfast', label:'Breakfast', hours:DAYPART_SLOTS['Breakfast'] },
+  { id:'lunch',     label:'Lunch',     hours:DAYPART_SLOTS['Lunch'] },
+  { id:'pm',        label:'Snack',     hours:DAYPART_SLOTS['Afternoon'] },
+  { id:'dinner',    label:'Dinner',    hours:DAYPART_SLOTS['Dinner'] },
+  { id:'late',      label:'Late Night',hours:DAYPART_SLOTS['Late Night'] },
 ];
 
 // ── Chart.js helpers ─────────────────────────────────────────────────────────
