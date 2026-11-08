@@ -39,7 +39,7 @@
 //      drill-through link simply doesn't render (no dead buttons), so this panel still works
 //      standalone (e.g. in a test) without the App.js wiring.
 import * as React from 'react';
-import { sNameC, operatorGroups } from '../constants.js';
+import { sNameC, operatorGroups, supervisorGroups, unpadLoc } from '../constants.js';
 import { withAlpha } from '../utils/fmt.js';
 import { loadUserSetting, saveUserSetting } from '../lib/supabase.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
@@ -239,17 +239,54 @@ const RENDERERS = { checklist: ChecklistFormat, bullets: BulletsFormat, narrativ
 // `onNav` (Phase 2, optional): App.js passes `v=>goRoute(v)` -- the exact mechanism At A
 // Glance's own Action Checklist uses for its "Go to Dialed-In →" links. With no `onNav`, every
 // drill-through link in this panel simply doesn't render -- no dead buttons.
-export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName }) {
+// Same red/amber/green/noData/totalFlags formula computeMorningBrief() itself uses
+// (src/features/morning-brief.js) -- re-derived here for a scoped SUBSET of stores, since
+// brief.summary is always computed over the full `ds` the caller's RLS already returned (correct
+// for a real GM/DO, whose own ds is already scoped that narrowly; wrong for an admin/owner
+// simulating one via viewAsScope, whose own ds covers everything).
+function summarizeStores(stores) {
+  return {
+    red: stores.filter(s => s.severity === 'RED').length,
+    amber: stores.filter(s => s.severity === 'AMBER').length,
+    green: stores.filter(s => s.severity === 'GREEN').length,
+    noData: stores.filter(s => s.severity === 'NODATA').length,
+    totalFlags: stores.reduce((a, s) => a + (s.flags?.length || 0), 0),
+  };
+}
+
+export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName, viewAsScope }) {
   const [briefDate] = React.useState(() => getLatestBriefDate(ds));
   const darByLoc = useBriefDarByLoc(briefDate, darRows);
   const brief = React.useMemo(() => computeMorningBrief(ds, briefDate, darByLoc), [ds, briefDate, darByLoc]);
 
   const altitude = altitudeForRole(role);
-  const { items, summary } = React.useMemo(() => buildCuratedHomeItems(brief, role), [brief, role]);
+
+  // View As Role sandbox scoping (owner request 2026-11-08): an admin/owner simulating a GM
+  // sees ALL stores in their own unrestricted `ds` -- picking one deterministically (rather than
+  // storeItems()'s arbitrary "first with data") needs narrowing down to just that store; same
+  // idea for a simulated DO/OM/AS narrowed to one real supervisor's patch. A real GM/DO's own
+  // `ds` is already RLS-scoped this narrowly, so `viewAsScope` is simply absent/no-op there --
+  // this never changes behavior for a real, non-simulated login.
+  const scopedBrief = React.useMemo(() => {
+    if (!viewAsScope || !brief.stores?.length) return brief;
+    let scopedStores;
+    if (altitude === 'store') {
+      scopedStores = brief.stores.filter(s => unpadLoc(s.loc) === unpadLoc(viewAsScope));
+    } else if (altitude === 'patch') {
+      const locs = new Set((supervisorGroups()[viewAsScope] || []).map(unpadLoc));
+      scopedStores = brief.stores.filter(s => locs.has(unpadLoc(s.loc)));
+    } else {
+      return brief;
+    }
+    return { ...brief, stores: scopedStores, summary: summarizeStores(scopedStores) };
+  }, [brief, altitude, viewAsScope]);
+
+  const { items, summary } = React.useMemo(() => buildCuratedHomeItems(scopedBrief, role), [scopedBrief, role]);
 
   // The GM/SM/AM/DM's own store -- the SAME hasData filter storeItems() already applies, so
-  // this always resolves to whichever store(s) this caller's RLS-scoped `ds` actually covers.
-  const myStore = altitude === 'store' ? (brief.stores || []).find(s => s.hasData) : null;
+  // this always resolves to whichever store(s) this caller's RLS-scoped `ds` actually covers (or,
+  // under the View As Role sandbox, whichever one store viewAsScope narrowed scopedBrief to).
+  const myStore = altitude === 'store' ? (scopedBrief.stores || []).find(s => s.hasData) : null;
 
   // Which real operator group (if any) this account identifies as -- self-service, loaded the
   // same local-first/cloud-confirm way as the format preference below. `null` (the common case
@@ -281,8 +318,8 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
   // forces the SAME store-altitude grouping buildCuratedHomeItems() already uses for a GM,
   // independent of the viewer's own role, computed only when it's actually needed.
   const storeLevelItems = React.useMemo(
-    () => (altitude === 'patch' || operatorGroup ? buildCuratedHomeItems(brief, 'gm').items : null),
-    [brief, altitude, operatorGroup]);
+    () => (altitude === 'patch' || operatorGroup ? buildCuratedHomeItems(scopedBrief, 'gm').items : null),
+    [scopedBrief, altitude, operatorGroup]);
 
   // Default format (owner request 2026-11-07, extended 2026-11-08 for The Ledger): one real
   // front door per altitude, for anyone who has never set a preference. An existing saved
@@ -347,6 +384,16 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
     ),
   );
 
+  // View As Role sandbox scope tag (owner request 2026-11-08: "a way for me to select what
+  // patch or operator or store to mimic... Tag @ would be awesome") -- a visible "@<name>" badge
+  // confirming exactly which real store/patch this view has been narrowed to, alongside the
+  // global ViewAsBanner (shell.js) that already names the simulated ROLE. Renders nothing when
+  // viewAsScope isn't set (every real, non-simulated login).
+  const scopeTag = viewAsScope && (altitude === 'store' || altitude === 'patch') && span({
+    style: { fontSize: 11, fontWeight: 700, color: 'var(--amber,#f5bc00)', background: 'var(--surf2,#f3f4f6)',
+      border: '1px solid var(--amber,#f5bc00)', borderRadius: 999, padding: '3px 10px' },
+  }, '@ ' + (altitude === 'store' ? sNameC(viewAsScope) : viewAsScope));
+
   // Game Plan / The Patch / The Ledger are each their OWN full screen, not a renderer slotted
   // into the generic stat-tiles/severity-bar/card shell every other format shares -- they're the
   // things the owner asked to make "the front facing version," not a peer inside the old one.
@@ -354,7 +401,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
   // Narrative is always one click, per "keep the other intact and make it optional for users."
   if (format === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
-      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(GamePlanFormat, {
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
         onShowEverything: () => pickFormat('checklist'),
@@ -363,14 +410,14 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
   }
   if (format === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
-      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
-      h(PatchPlanFormat, { ds, stores: brief.stores, items: storeLevelItems, userName, onNav }),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
+      h(PatchPlanFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, onNav }),
     );
   }
   if (format === 'ledger') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
-      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, operatorPicker, formatPicker),
-      h(OperatorLedgerFormat, { ds, stores: brief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
+      h(OperatorLedgerFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
     );
   }
 
@@ -386,7 +433,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName 
         div({ style: { fontSize: 12, color: 'var(--text3,#6b7280)', marginTop: 3 } },
           summary.totalFlags + ' flag' + (summary.totalFlags !== 1 ? 's' : '') + ' · ' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ' at ' + altitudeLabel.toLowerCase() + ' altitude'),
       ),
-      div({ style: { display: 'flex', alignItems: 'center', gap: 10 } }, operatorPicker, formatPicker),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 10 } }, scopeTag, operatorPicker, formatPicker),
     ),
     div({ style: { display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 4 } },
       h(StatTile, { sev: 'RED', count: summary.red || 0, label: 'Red stores' }),

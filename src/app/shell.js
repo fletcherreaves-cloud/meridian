@@ -894,7 +894,8 @@ function NotificationBell({ onOpenModal, perm }) {
 // unreachable on mobile): identity/role, theme, save session, help, user management,
 // Test Kitchen toggle, change password, sign out. Standard SaaS profile-menu pattern.
 function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm,
-                       realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions }) {
+                       realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions,
+                       viewAsScope, onChangeViewAsScope, viewAsScopeOptions, viewAsScopeLabel }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   useEffect(() => {
@@ -946,6 +947,22 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestore
             h('option', { value:'' }, 'My real role' + (realUserRole ? ' (' + (realUserRole[0].toUpperCase()+realUserRole.slice(1)) + ')' : '')),
             ...(viewAsRoleOptions||[]).filter(r => r.id !== realUserRole).map(r =>
               h('option', { key:r.id, value:r.id }, r.label)),
+          ),
+          // Owner request 2026-11-08: narrow a store/patch-altitude simulation down to one real
+          // store or one real supervisor's patch — otherwise an unrestricted admin/owner account
+          // would see every store in the district as if it were a single GM's store or a single
+          // DO's patch. Only appears once a role with a real scope to narrow is picked; Operator
+          // scoping has its own self-service picker directly on Curated Home, not duplicated here.
+          viewAsRole && viewAsScopeOptions && viewAsScopeOptions.length > 0 && div({ style:{ marginTop:7 } },
+            h('select', {
+              value: viewAsScope || '',
+              onChange: e => onChangeViewAsScope && onChangeViewAsScope(e.target.value || null),
+              style: { width:'100%', fontSize:'10px', padding:'4px 6px', borderRadius:4,
+                border:'.5px solid var(--bdr)', background:'var(--surf)', color:'var(--text)' },
+            },
+              h('option', { value:'' }, 'Mimic which ' + (viewAsScopeLabel || 'scope').toLowerCase() + '? (optional)'),
+              ...viewAsScopeOptions.map(o => h('option', { key:o.id, value:o.id }, o.label)),
+            ),
           ),
           viewAsRole && div({ style:{ fontSize:'8.5px', color:'var(--amber)', marginTop:5, lineHeight:1.4 } },
             '⚠ Simulated nav/panel view only — your real data access is unchanged.')
@@ -1013,9 +1030,14 @@ function DataErrorBanner() {
 // Role-view sandbox (task #97) — a loud, impossible-to-miss banner whenever a simulated role is
 // active, deliberately styled like DataErrorBanner above (same reasoning: a state this easy to
 // forget you're in needs to announce itself on every screen, not wait to be noticed in a menu).
-function ViewAsBanner({ viewAsRole, viewAsRoleOptions, onExit }) {
+function ViewAsBanner({ viewAsRole, viewAsRoleOptions, viewAsScope, viewAsScopeOptions, onExit }) {
   if (!viewAsRole) return null;
   const label = (viewAsRoleOptions || []).find(r => r.id === viewAsRole)?.label || viewAsRole;
+  // Owner request 2026-11-08 ("Tag @ would be awesome"): once a specific store/patch has been
+  // picked to narrow the simulation (ProfileMenu's own second select), name it right in the
+  // banner too, not just in the picker — a visible "@<name>" tag confirming exactly what's being
+  // mimicked, not just which role.
+  const scopeLabel = viewAsScope ? (viewAsScopeOptions || []).find(o => o.id === viewAsScope)?.label || viewAsScope : null;
   return div({
     style: {
       display: 'flex', alignItems: 'center', gap: 10, padding: '5px 12px',
@@ -1024,7 +1046,7 @@ function ViewAsBanner({ viewAsRole, viewAsRoleOptions, onExit }) {
     },
   },
     span({ style: { fontWeight: 700 } }, '👁 VIEWING AS'),
-    span(null, label + ' — nav and panel visibility only; your own data access is unchanged.'),
+    span(null, label + (scopeLabel ? ' @ ' + scopeLabel : '') + ' — nav and panel visibility only; your own data access is unchanged.'),
     h('button', {
       onClick: onExit,
       style: { marginLeft: 'auto', background: 'none', border: '.5px solid var(--amber)', borderRadius: 4,
@@ -1037,7 +1059,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
                     onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, setView,
                     sessionBanner, onClearSession, userRole, onOpenAdmin, perm,
                     betaMode, onToggleBeta,
-                    realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions}) {
+                    realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions,
+                    viewAsScope, onChangeViewAsScope, viewAsScopeOptions, viewAsScopeLabel}) {
   const today = new Date();
   const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
   React.useEffect(()=>{
@@ -1064,7 +1087,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
   return h(React.Fragment, null,
     h(DataErrorBanner),
-    canViewAsRole && h(ViewAsBanner, { viewAsRole, viewAsRoleOptions, onExit: () => onChangeViewAsRole && onChangeViewAsRole(null) }),
+    canViewAsRole && h(ViewAsBanner, { viewAsRole, viewAsRoleOptions, viewAsScope, viewAsScopeOptions, onExit: () => onChangeViewAsRole && onChangeViewAsRole(null) }),
     div({style:{height:44,background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
     display:'flex',alignItems:'center',padding:'0 8px',gap:isMb?4:12,flexShrink:0}},
 
@@ -1168,7 +1191,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       // Profile menu — consolidates Load, theme, save/restore session, help, user mgmt, Test
       // Kitchen, change password, sign out (previously crowded the top bar / unreachable on mobile)
       h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onRestoreSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm,
-        realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions})
+        realUserRole, canViewAsRole, viewAsRole, onChangeViewAsRole, viewAsRoleOptions,
+        viewAsScope, onChangeViewAsScope, viewAsScopeOptions, viewAsScopeLabel})
     )
   ));
 }
