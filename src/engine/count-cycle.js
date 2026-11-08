@@ -102,16 +102,15 @@ export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 // threshold" comment, eom-dashboard.js) that this change does not touch.
 export const COVER_FRAC = 1;
 
-// Task #126 (memory/plan-count-cycle-classification-2026-11-08.md, 2026-11-08) — the floor
-// for "touched in real volume" that Axis-1 Cycle-Attempt identification (sessionQualities()
-// below) uses to decide whether a class was genuinely ATTEMPTED this session, independent of
-// whether it hit the strict COVER_FRAC=1 compliance bar above. The doc's own open Q2 asks
-// what this number should be and recommends, as its stated default, reusing the EXISTING
-// isPartial/isSpot boundary (n>=25) rather than inventing a third threshold — that is what
-// this constant is. It is doing double duty now (session-level "is this worth a label at
-// all" AND per-class "was this class really worked this session") and is explicitly flagged
-// in the doc as worth a fresh look later; revise here if that review calls for a different
-// number, not by re-deriving a bare 25 inline somewhere else.
+// Task #126's open Q2, answered by the owner 2026-11-08: "It really should be all inclusive.
+// That's the only true measure... All items must be accounted for." Axis-1 Cycle-Attempt
+// identification (sessionQualities() below) therefore uses NO volume floor at all — any
+// class with n>=1 counted earns a real percentage rather than being swept into an
+// undifferentiated bucket below some cutoff. TOUCHED_FLOOR itself is KEPT, but narrowed back
+// to its original, sole remaining job: the isPartial/isSpot session-level split that
+// complianceFromSessions()'s overdue/incomplete alerting (#357-B1) reads — a separate,
+// untouched purpose from identification, pre-dating task #126 and not part of what the owner
+// asked to open up here.
 export const TOUCHED_FLOOR = 25;
 
 // A WRIN newly added to a store's ACTIVE item universe this period — i.e. absent from the
@@ -595,9 +594,20 @@ export function sessionQualities(date, covered, n, extra) {
   // at once (same as isEom/satisfiesWeekly already can) — sessionLabel() below already
   // handles that overlap correctly, since the EOM cycle's own class list already includes
   // Food/Condiment, so nothing is lost by naming it "End-of-Month" rather than both.
+  // Owner-directed 2026-11-08, following the Holdenville case: "It really should be all
+  // inclusive. That's the only true measure... All items must be accounted for." Axis 1 is
+  // IDENTIFICATION, not a worthiness filter -- TOUCHED_FLOOR (the isPartial/isSpot n>=25
+  // boundary, still used for that SEPARATE, untouched B1 overdue-alert purpose below) no
+  // longer gates whether a class counts as "touched" here. ANY real count (n>=1) in a class
+  // now earns a real percentage instead of being swept into an undifferentiated bucket --
+  // there is no volume small enough that the true measure should stop being shown. Likewise
+  // attemptsEom no longer requires the whole-session n>=50 floor isEom's OWN (untouched)
+  // compliance definition still uses -- a 2-item Paper touch inside the close window is a
+  // real, if tiny, EOM attempt, and the percentage itself (2/96 ≈ 2%) already tells that
+  // story honestly; a separate gate hiding it would contradict "all items accounted for".
   const { counts = {}, totals = {} } = extra;
-  const touched = (c) => (counts[c] || 0) >= TOUCHED_FLOOR;
-  const attemptsEom = eomWindow && touched('Paper') && n >= 50;
+  const touched = (c) => (counts[c] || 0) > 0;
+  const attemptsEom = eomWindow && touched('Paper');
   const attemptsWeekly = touched('Food') && touched('Condiment');
   const attemptsMidPaper = !eomWindow && touched('Paper');
 

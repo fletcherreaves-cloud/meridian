@@ -151,16 +151,31 @@ describe('task #126 — attemptsWeekly / attemptsMidPaper, same shape as attempt
     expect(s.kind).toMatch(/^Weekly — Food \d+%, Condiment \d+%$/);
   });
 
-  it('a session that is too small in a class (below TOUCHED_FLOOR) is never promoted to an attempt', () => {
-    // Food 10/118, Condiment 5/36 -- real activity, but below the touched floor for both;
-    // this must remain the old generic bucket (isPartial, since n=15 < 25 here -> isSpot).
+  it('a genuinely tiny touch is STILL identified and measured, not swept into generic Spot '+
+     'check -- owner-directed 2026-11-08: "it really should be all inclusive... All items '+
+     'must be accounted for", answering task #126 open Q2 (superseding TOUCHED_FLOOR as an '+
+     'attempt-eligibility gate; it used to require n>=25 per class here)', () => {
+    // Food 10/118, Condiment 5/36 -- real activity, well below the OLD 25-item floor for
+    // both, but any real touch (n>=1) now earns a real percentage.
     const rows = withSession(fullUniverse('C'), '2026-06-10', { Food: 10, Condiment: 5 });
     const { sessions } = detectSessions(rows);
     const s = sessions['C'][0];
-    expect(s.attemptsWeekly).toBe(false);
+    expect(s.attemptsWeekly).toBe(true);
     expect(s.attemptsEom).toBe(false);
     expect(s.attemptsMidPaper).toBe(false);
-    expect(s.kind).toBe('Spot check');
+    expect(s.kind).toMatch(/^Weekly — Food \d+%, Condiment \d+%$/);
+    // isPartial/isSpot (the SEPARATE, untouched #357-B1 overdue-alert signal) still uses
+    // TOUCHED_FLOOR for its own purpose -- n=15 here is still < 25, so isSpot stays true.
+    // That classification is deliberately independent of the richer identification above.
+    expect(s.isSpot).toBe(true);
+  });
+
+  it('a single-item touch (n=1) still gets a real, if tiny, percentage -- no floor at all', () => {
+    const rows = withSession(fullUniverse('D2'), '2026-06-10', { Paper: 1 }); // outside close window
+    const { sessions } = detectSessions(rows);
+    const s = sessions['D2'][0];
+    expect(s.attemptsMidPaper).toBe(true);
+    expect(s.kind).toMatch(/^Mid-Month Paper — Paper 1%$/);
   });
 });
 

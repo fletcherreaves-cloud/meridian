@@ -83,9 +83,22 @@ case) — it just stops being the only thing a session exposes.
 1. **Terminology.** "Cycle Attempt" / "Compliance" are working labels for this doc, not a
    proposed on-screen vocabulary — what should a GM actually see? ("Logged" vs "Compliant"?
    "Counted" vs "Complete"?)
+   ✅ **Partially resolved 2026-11-08 — owner: "I'm thinking counted and complete with maybe the
+   % complete being shown and all uncounted items."** Shipped the functional half: the real
+   percentage now shows directly on the class chip (not just in a tooltip), and every uncounted
+   item is named with no truncation (was capped at 10 + "+N more"). The exact word choice
+   ("Counted"/"Complete" vs. the shipped cycle-name-plus-percentage format, e.g. "Weekly — Food
+   98%, Condiment 97%") is still open — flagging rather than guessing at new UI copy on top of an
+   already-tested label format.
 2. **The volume floor for "touched in real volume."** Reusing the existing `n>=25` partial
    threshold is the cheap answer; worth a fresh look now that it's deciding "is this a real cycle
    attempt" rather than just "is this worth a label at all."
+   ✅ **RESOLVED 2026-11-08 — owner: "It really should be all inclusive. That's the only true
+   measure... Let's build that out. All items must be accounted for."** Removed the floor
+   entirely from identification: any class with n>=1 counted now earns a real percentage (was
+   gated at n>=25 per class, n>=50 for a whole EOM-shaped session). `TOUCHED_FLOOR` itself is
+   kept, narrowed back to its original, separate, untouched job — the `isPartial`/`isSpot`
+   session-level split `complianceFromSessions()`'s own overdue-alert logic (#357-B1) reads.
 3. **Named missing items — how far to take it.** `detectSessions()` (the live-snapshot path) DOES
    have per-WRIN granularity today — it reads raw `qsr_onhand` rows, so "which exact items weren't
    counted" is computable for the CURRENT/most-recent period right now, no schema change. But the

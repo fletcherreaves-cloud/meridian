@@ -80,18 +80,30 @@ function SessionRow({ s }) {
           color: s.covered.includes(c) ? CLS_COL[c] || 'var(--text2)' : 'var(--text3,#6b7280)',
           opacity: s.covered.includes(c) ? 1 : .65,
         },
-      }, `${c.slice(0, 4)} ${s.counts[c]}${s.covered.includes(c) ? '✓' : ''}`))));
+      }, chipText(s, c)))));
 }
 
-// Task #126 follow-on — up to 10 named items, then a "+N more" tail so one giant tooltip
-// never blocks out the screen on a class that's barely been touched at all.
+// Owner-directed 2026-11-08 ("maybe the % complete being shown") — the on-screen chip itself
+// shows the real percentage, not just the raw count, whenever it's available (coveragePct
+// only exists when sessionQualities() was called with its optional `extra`, i.e. every
+// current real session) and the class isn't already at 100%.
+function chipText(s, cls) {
+  const base = `${cls.slice(0, 4)} ${s.counts[cls]}`;
+  if (s.covered.includes(cls)) return `${base}✓`;
+  const pct = s.coveragePct && s.coveragePct[cls];
+  return pct != null ? `${base} (${pct}%)` : base;
+}
+
+// Task #126 follow-on, owner-directed 2026-11-08 ("it really should be all inclusive...
+// All items must be accounted for") — every uncounted item, named, no truncation. An earlier
+// draft capped this at 10 + "+N more"; the owner's own answer is the opposite instinct on
+// purpose — a true measure doesn't hide the tail of its own list to stay tidy.
 function missingItemsTitle(s, cls) {
   const base = `${s.counts[cls]} of ${cls} counted${s.covered.includes(cls) ? ' — full' : ' — partial'}`;
   const missing = s.missingItems && s.missingItems[cls];
   if (!missing || !missing.length) return base;
-  const names = missing.slice(0, 10).map(it => it.descr || it.wrin);
-  const tail = missing.length > 10 ? `, +${missing.length - 10} more` : '';
-  return `${base}\nNot counted: ${names.join(', ')}${tail}`;
+  const names = missing.map(it => it.descr || it.wrin);
+  return `${base}\nNot counted: ${names.join(', ')}`;
 }
 
 function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
