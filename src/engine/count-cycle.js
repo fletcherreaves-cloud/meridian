@@ -564,10 +564,23 @@ export function sessionQualities(date, covered, n, extra) {
   // the real Holdenville 2026-10-30 case (Food 118/120, Condiment 31/32, Paper 84/96 — every
   // class a hair under 100%) used to read identically to a 3-item spot check because
   // identification was gated on compliance. It no longer is.
+  // Each attempt flag mirrors its OWN Axis-2 counterpart's window-gating exactly, not a
+  // uniform !eomWindow rule — found and fixed during independent review (the first draft of
+  // this file forced `!eomWindow` onto attemptsWeekly too, which would have dropped a real
+  // near-miss weekly-shaped count that happens to fall inside the last 4 days of the month
+  // back into the generic Partial bucket, exactly the failure this change exists to fix).
+  // satisfiesWeekly above has NO window condition (a 100% Food+Condiment count is "Weekly"
+  // whenever it happens, close window or not) — attemptsWeekly must not invent one.
+  // satisfiesMidPaper IS window-gated (!eomWindow, since "mid-month" is defined as "not the
+  // EOM window") — attemptsMidPaper keeps that gate for the same reason. isEom is the only
+  // one gated TO the window. So attemptsEom and attemptsWeekly CAN legitimately both be true
+  // at once (same as isEom/satisfiesWeekly already can) — sessionLabel() below already
+  // handles that overlap correctly, since the EOM cycle's own class list already includes
+  // Food/Condiment, so nothing is lost by naming it "End-of-Month" rather than both.
   const { counts = {}, totals = {} } = extra;
   const touched = (c) => (counts[c] || 0) >= TOUCHED_FLOOR;
   const attemptsEom = eomWindow && touched('Paper') && n >= 50;
-  const attemptsWeekly = !eomWindow && touched('Food') && touched('Condiment');
+  const attemptsWeekly = touched('Food') && touched('Condiment');
   const attemptsMidPaper = !eomWindow && touched('Paper');
 
   // Per-class coverage PERCENTAGE only (task #126 open Q3's resolved scope) — a number
@@ -613,11 +626,13 @@ export function sessionLabel(q) {
   // call, so this branch is unreachable (and this function's output byte-identical to
   // before) for any pre-existing caller that never passes that data.
   if (q.attemptsEom || q.attemptsWeekly || q.attemptsMidPaper) {
-    // Priority mirrors the window-gating above: attemptsEom is mutually exclusive with
-    // attemptsWeekly/attemptsMidPaper (eomWindow vs !eomWindow), so only Weekly-vs-MidPaper
-    // can ever co-occur (both outside the close window). Display-only simplification: name
-    // the Weekly attempt first in that rare overlap rather than joining two coverage strings
-    // into one line — this label is never consulted for compliance, only shown.
+    // attemptsWeekly has no window gate (mirrors satisfiesWeekly), so it CAN co-occur with
+    // attemptsEom inside the close window — same as isEom/satisfiesWeekly already can
+    // ('End of month + Weekly' is a real existing compliant label above). Display-only
+    // simplification: when both are true, name it End-of-Month — its own class list already
+    // includes Food/Condiment, so the real numbers still show, nothing is lost by not also
+    // saying "Weekly". attemptsMidPaper stays mutually exclusive with attemptsEom (opposite
+    // window gates), so the only real ambiguity is Eom-vs-Weekly, resolved the same way.
     const cycleName = q.attemptsEom ? 'End-of-Month' : q.attemptsWeekly ? 'Weekly' : 'Mid-Month Paper';
     const classList = q.attemptsEom ? ['Food', 'Condiment', 'Paper']
       : q.attemptsWeekly ? WEEKLY_CLASSES : ['Paper'];

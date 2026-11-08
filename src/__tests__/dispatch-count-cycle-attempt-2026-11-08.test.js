@@ -36,7 +36,14 @@ describe('task #126 — Cycle Attempt identification survives a compliance miss 
     const { sessions } = detectSessions(holdenvilleRows());
     const s = sessions['13201'][0];
     expect(s.attemptsEom).toBe(true);
-    expect(s.attemptsWeekly).toBe(false);
+    // attemptsWeekly is ALSO true here -- it mirrors satisfiesWeekly's own lack of a window
+    // gate (found during independent review: an earlier draft forced !eomWindow onto
+    // attemptsWeekly too, which is wrong -- see the dedicated regression test below), and
+    // this session genuinely touched Food+Condiment well past TOUCHED_FLOOR alongside Paper.
+    // That's correct, not a conflict: the same "isEom && satisfiesWeekly both true" overlap
+    // already exists on the compliant axis above. sessionLabel() still shows "End-of-Month"
+    // (its own class list already includes Food/Condiment), so nothing is lost or ambiguous.
+    expect(s.attemptsWeekly).toBe(true);
     expect(s.attemptsMidPaper).toBe(false);
     expect(s.kind).toBe('End-of-Month — Food 98%, Condiment 97%, Paper 88%');
   });
@@ -127,6 +134,21 @@ describe('task #126 — attemptsWeekly / attemptsMidPaper, same shape as attempt
     expect(s.attemptsWeekly).toBe(false);   // Food/Condiment untouched this session
     expect(s.satisfiesMidPaper).toBe(false);   // still non-compliant
     expect(s.kind).toMatch(/^Mid-Month Paper — Paper \d+%$/);
+  });
+
+  it('a near-miss WEEKLY-shaped count INSIDE the close window is still identified as a Weekly '+
+     'attempt, not dropped back to generic Partial (found + fixed during independent review: '+
+     'attemptsWeekly must mirror satisfiesWeekly\'s own lack of a window gate, not borrow '+
+     'attemptsMidPaper\'s !eomWindow restriction)', () => {
+    // 2026-06-28 is inside June's close window (day 28 > 30-4=26). Food/Condiment well over
+    // TOUCHED_FLOOR but not 100%; Paper untouched this session (not an EOM-shaped count at all).
+    const rows = withSession(fullUniverse('D'), '2026-06-28', { Food: 100, Condiment: 30 });
+    const { sessions } = detectSessions(rows);
+    const s = sessions['D'][0];
+    expect(s.attemptsWeekly).toBe(true);
+    expect(s.attemptsEom).toBe(false);     // Paper never touched -- not an EOM attempt
+    expect(s.satisfiesWeekly).toBe(false); // still non-compliant
+    expect(s.kind).toMatch(/^Weekly — Food \d+%, Condiment \d+%$/);
   });
 
   it('a session that is too small in a class (below TOUCHED_FLOOR) is never promoted to an attempt', () => {
