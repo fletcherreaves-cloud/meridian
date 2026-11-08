@@ -8,7 +8,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum, allocateShares, periodTotal } from '../engine/smart-targets.js';
-import { forecastModels } from '../engine/forecast.js';
+import { forecastModels, InfoIcon } from '../engine/forecast.js';
 import { businessDate } from '../engine/swing-feed.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadQsrActSummary, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -995,7 +995,8 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded,
         span({ style: { fontSize: 18 } }, '🧭'),
         div({ style: { flex: 1 } },
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Smart Targets',
-            span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Target: ' + targetLabel)),
+            span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Target: ' + targetLabel),
+            h(InfoIcon, { articleKey: 'smart_targets' })),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, metric.ratio
             ? 'Recommended ' + metric.label.split(' ')[0].toLowerCase() + ' target = recency-weighted, ' + (metric.key === 'oepe' ? 'car' : 'sales') + '-weighted trailing level (Σ value·weight / Σ weight — never an average of daily ratios), nudged toward the best quartile of like-sized same-state peers. Lower is better. Hover a row for the build-up.'
             : 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ' = median of three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — the family a 27-store backtest proved beats every engineered model. Hover a row for the peer-stretch build-up.')),

@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, getKB } from '../constants.js';
 import { runWhyEngineScan } from '../engine/why.js';
-import { compute6wk } from '../engine/forecast.js';
+import { compute6wk, InfoIcon } from '../engine/forecast.js';
 import { buildBrief, buildStore } from '../engine/pipeline.js';
 import { TH, escapeHtml as esc } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -316,7 +316,8 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 
   // ── No-data guard ────────────────────────────────────────────────────────────
   const hasAnyData = ds&&ds.loaded;
-  if(!hasAnyData) return h(ModalShell,{title:'GM Coaching Letters',icon:'👨‍💼',onClose,maxWidth:480,zIndex:Z.nested},
+  if(!hasAnyData) return h(ModalShell,{title:'GM Coaching Letters',icon:'👨‍💼',onClose,maxWidth:480,zIndex:Z.nested,
+    subtitle:h(InfoIcon,{articleKey:'gm_letters'})},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:'11px',lineHeight:1.6}},'Load an Operations Report or Labor Analysis to generate coaching letters.')));
 
@@ -389,7 +390,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 
   return h(ModalShell,{
     title:'GM Coaching Letters',icon:'👨‍💼',onClose,maxWidth:760,zIndex:Z.nested,
-    subtitle:'AI-drafted, data-grounded coaching for your GMs — every letter is a draft for your review',
+    subtitle:h('span',null,'AI-drafted, data-grounded coaching for your GMs — every letter is a draft for your review',h(InfoIcon,{articleKey:'gm_letters'})),
     headerExtra: div({style:{display:'flex',gap:3}},
       ...[['single','Single Store'],['batch','All 27 (Batch)']].map(([id,l])=>
         btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',

@@ -459,7 +459,7 @@ const PLANNING_TABS = [
   { id: 'yearly',  label: 'Yearly',      icon: '📆' },
   { id: 'smart',   label: 'Smart',       icon: '🧭' },
 ];
-function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onUpdateSettings, onClose,
+export function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onUpdateSettings, onClose,
   canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners }) {
   const [tab, setTab] = useState(initialTab && PLANNING_TABS.some(t => t.id === initialTab) ? initialTab : 'targets');
   // Projection/Targets ownership (owner request 2026-11-07) — Targets/Monthly/Yearly/Smart all
@@ -486,6 +486,7 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
       span({ style: { fontSize: 12 } }, t.icon), t.label)));
   return h(RoutePanelShell, {
     title: 'Planning', icon: '🎯', onBack: onClose, headerExtra: tabBar,
+    subtitle: h(InfoIcon, { articleKey: 'planning_hub' }),
     bodyStyle: { minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   }, active);
 }
@@ -555,6 +556,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
       span({ style: { fontSize: 12 } }, t.icon), t.label)));
   return h(RoutePanelShell, {
     title: 'Labor & Scheduling', icon: '🗓', onBack: onClose, headerExtra: tabBar,
+    subtitle: h(InfoIcon, { articleKey: 'scheduling_hub' }),
     bodyStyle: { minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   }, active);
 }
@@ -608,7 +610,7 @@ export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, o
       div({ style:{ padding:'10px 16px', borderBottom:'.5px solid var(--bdr)', flexShrink:0, background:'var(--surf2)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' } },
         span({ style:{ fontSize:18 } }, '🧩'),
         div({ style:{ flex:1, minWidth:160 } },
-          div({ style:{ fontSize:14, fontWeight:800, color:'var(--text)' } }, 'Panel Manager'),
+          div({ style:{ fontSize:14, fontWeight:800, color:'var(--text)', display:'flex', alignItems:'center', gap:6 } }, 'Panel Manager', h(InfoIcon,{articleKey:'panel_manager_guide'})),
           div({ style:{ fontSize:9, color:'var(--text3)' } }, 'Show or hide optional / experimental panels in the sidebar. '+shownCount+' of '+OPTIONAL_PANELS.length+' shown. Hidden panels are never deleted — toggle any back on anytime.')),
         btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onShowAll }, 'Show all'),
         btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onHideAll }, 'Hide all'),
@@ -836,8 +838,9 @@ export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour })
   const sections = WORKFLOW_GUIDE_SECTIONS.filter(s => s.maxLevel == null || myLevel <= s.maxLevel);
   return h(ModalShell,{
     title:'📖 Meridian — Workflow Guide',
-    subtitle:sections.length!==WORKFLOW_GUIDE_SECTIONS.length
-      ?`Showing ${sections.length} of ${WORKFLOW_GUIDE_SECTIONS.length} sections — tailored to your role`:undefined,
+    subtitle:h('span',null,sections.length!==WORKFLOW_GUIDE_SECTIONS.length
+      ?`Showing ${sections.length} of ${WORKFLOW_GUIDE_SECTIONS.length} sections — tailored to your role`:null,
+      h(InfoIcon,{articleKey:'workflow'})),
     onClose,maxWidth:800,zIndex:Z.nested,
     bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
     headerExtra:btn({
@@ -4106,14 +4109,14 @@ function App() {
       }, h(ForecastReportsPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null),initialTab:forecastReportsTab})),
       routePanel==='proj'&&h(RoutePanelShell,{
         title:'📋 Projection Workspace',
-        subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
+        subtitle:h('span',null,'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',h(InfoIcon,{articleKey:'proj'})),
         onBack:()=>goRoute(null),
         bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
       }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,
         canOwnProjections,userName,userId,projOwnerGrants,onNotifyOwners:notifyPanelOwners})),
       routePanel==='report'&&h(RoutePanelShell,{
         title:'📊 Date-Range Comprehensive Report',
-        subtitle:'Compares all metrics for any date range across selected locations.',
+        subtitle:h('span',null,'Compares all metrics for any date range across selected locations.',h(InfoIcon,{articleKey:'date_range_report_guide'})),
         onBack:()=>goRoute(null),
       }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       // checklist-fill — RoutePanelShell lives inside ChecklistFillPanel itself (same
@@ -4507,7 +4510,7 @@ function App() {
     }),
     showPVSA&&h(ModalShell,{
       title:'📊 Projection vs Actuals Report',
-      subtitle:'AI forecast accuracy vs actual results — click any cell to expand daily detail',
+      subtitle:h('span',null,'AI forecast accuracy vs actual results — click any cell to expand daily detail',h(InfoIcon,{articleKey:'pvsa'})),
       onClose:()=>setShowPVSA(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
     },
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
@@ -4578,7 +4581,7 @@ function App() {
     ),
     showDialedIn&&h(ModalShell,{
       title:'🎯 Dialed-In — Per-Store Calibration Engine',
-      subtitle:'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',
+      subtitle:h('span',null,'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',h(InfoIcon,{articleKey:'di_calibration_panel'})),
       onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
     },
       h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})

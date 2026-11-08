@@ -16,7 +16,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS } from '../constants.js';
 import { dKey, addD, mwStart, spanTagInfo } from '../utils/date.js';
-import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual } from '../engine/forecast.js';
+import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual, InfoIcon } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
@@ -2289,8 +2289,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         marginBottom:headerScrolled?0:8}},
         div(null,
           div({style:{fontSize:headerScrolled?'14px':'22px',fontWeight:800,color:'var(--amber)',
-            letterSpacing:'-0.5px',lineHeight:1.1,transition:'font-size .2s ease'}},
-            'At a Glance'),
+            letterSpacing:'-0.5px',lineHeight:1.1,transition:'font-size .2s ease',display:'flex',alignItems:'center',gap:6}},
+            'At a Glance',!headerScrolled&&h(InfoIcon,{articleKey:'home_at_a_glance'})),
           !headerScrolled&&(userName
             ?div({style:{fontSize:'13px',color:'var(--text)',marginTop:2,fontWeight:500}},
                 greetWord+', '+userName+'!')
