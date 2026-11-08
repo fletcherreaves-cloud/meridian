@@ -4232,7 +4232,7 @@ function App() {
         title:'Curated Home',
         subtitle:'Same correlation engine as Daily Brief · role-cascaded voice · your chosen format',
         onBack:()=>goRoute(null),
-      }, h(CuratedHomePanel,{ds,settings,role:userRole,darRows,onNav:v=>goRoute(v),userName})),
+      }, h(CuratedHomePanel,{ds,settings,role:effectiveRole,darRows,onNav:v=>goRoute(v),userName})),
       // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/
       // operator-summary/delivery-mix carry RoutePanelShell inside their own component (same
       // "shell inside the component" pattern as above-store/ranking/perf-reviews/fob-analysis
