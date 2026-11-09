@@ -331,6 +331,12 @@ const RULE_UNITS = {
   'LABOR-001': 'post-termination edit(s)',
   'LABOR-002': 'self-approved edit(s)',
   'LABOR-003': 'per 1,000 punches',
+  // EVENT-001/002/003 (schema-security-rules-events-phase1.sql) -- qsr_security_events-sourced,
+  // normalized per 1,000 POS sessions worked (that table carries no sales/GC column to
+  // dollar-normalize against, see memory/design-security-events-risk-rules-2026-11-09.md).
+  'EVENT-001': 'per 1,000 sessions worked',
+  'EVENT-002': 'per 1,000 sessions worked',
+  'EVENT-003': 'per 1,000 sessions worked',
 };
 
 // dispatch #100 follow-up (owner, same-day) -- "a small brief descriptor to the pill... Cash +/-,
