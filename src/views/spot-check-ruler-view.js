@@ -80,7 +80,7 @@ export function SpotCheckRulerWorksheet({ ruler, note, onNoteChange, readOnly = 
       cf.topMovers && cf.topMovers.length ? div(null,
         div({ style: { marginBottom: 4 } },
           `Top ${cf.topMovers.length} mover${cf.topMovers.length === 1 ? '' : 's'}: `,
-          cf.topMovers.map(v => `${v.descr} (${v.dolDiff < 0 ? '-' : '+'}${money(Math.abs(v.dolDiff))})`).join(', '),
+          cf.topMovers.map(v => `${v.descr} (${v.dolDiff < 0 ? '-' : '+'}${money(Math.abs(v.dolDiff))}${v.rolledUpWrins ? `, net of ${v.rolledUpWrins.length} WRINs` : ''})`).join(', '),
           ` — combined ${money(cf.combinedDollars)}, ${cf.swingPts != null ? `${cf.swingPts > 0 ? '+' : ''}${cf.swingPts.toFixed(2)}pp` : '—'} of sales.`),
         div({ className: 'scr-fob-compare', style: { display: 'flex', gap: 18, margin: '6px 0' } },
           div(null, span({ style: { color: 'var(--text3,#6b7280)' } }, 'FOB as reported: '), span({ style: { fontWeight: 700 } }, pct(cf.fobAsReportedPct))),
