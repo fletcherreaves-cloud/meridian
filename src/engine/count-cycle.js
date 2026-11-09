@@ -51,6 +51,10 @@
 // ['Sun'..'Sat'] array. Nothing else is imported from that file — its detection logic is what got
 // superseded, not this one constant.
 import { WEEKDAY_NAMES } from './weekly-cadence.js';
+// isDeactivatedByDescr() reused from eom-inventory.js (a leaf module, no risk of a cycle) rather
+// than a second copy of the same "(Deactivated)"/"(Obsolete)" regex — see isActive() below for
+// why Condiment needs it.
+import { isDeactivatedByDescr } from './eom-inventory.js';
 
 export const CLASSES = ['Food', 'Condiment', 'Paper', 'Non-Product'];
 export const WEEKLY_CLASSES = ['Food', 'Condiment'];
@@ -231,19 +235,32 @@ export function inCloseWindow(dateStr, closeDays = 4) {
 // Condiment class (inert, not broken), while 10/27 stores have exactly one stray active:null row
 // that becomes their ENTIRE Condiment universe — for Tecumseh (33704) that lone row is a stale,
 // $0, pre-period phantom, making Condiment weekly compliance permanently impossible despite ~39
-// real, currently-counted items. Condiment therefore bypasses the flag check entirely; every
-// other class is untouched. (Checked before shipping: a "(Deactivated)" text marker in `descr`
-// does exist and is a real signal — 14/996 Condiment rows, 1.41% — but it's rare enough that
-// COVER_FRAC=0.75's tolerance for not counting every last SKU already covers it, and it doesn't
-// change any store's compliance outcome (Tecumseh's own phantom row carries that marker, but
-// once Condiment is unconditional its universe is ~40 either way, comfortably clearing 0.75×40
-// off the 39 genuinely-counted items) — so no text-based exclusion was added on top. Full
-// measurement in memory/dispatch-96.md's Resolution section.
+// real, currently-counted items. Condiment therefore bypasses the active/recipeItem flag check
+// entirely; every other class is untouched.
+//
+// ⚠️ RE-OPENED 2026-11-09 (owner report, Tecumseh/33704 again) — the "unconditional" bypass above
+// went too far. Dispatch #96 measured a real "(Deactivated)"/"(Obsolete)" text marker in `descr`
+// (14/996 Condiment rows, 1.41%) and explicitly chose NOT to exclude it, reasoning that
+// COVER_FRAC=0.75's slack already absorbed one stray item. COVER_FRAC was later raised to 1.0
+// (owner-directed 2026-10-11, this file's own COVER_FRAC comment) specifically to remove exactly
+// that kind of slack — nobody revisited whether dispatch #96's mitigation depended on it. It did:
+// Tecumseh counted a complete, real 35-item Condiment cycle on 2026-11-06 (verified live in
+// QSRSoft — the item is not shown there as outstanding) but still read 35/36 (97%), short of the
+// now-exact 100% bar, because one phantom row — `MUSTARD/PACKETS (Deactivated)`, last touched
+// 2026-11-02 by an unrelated spot check, so `isStaleDeadRow()`'s pre-period-only rule doesn't
+// catch it either — stayed in the denominator. A live re-measurement the same day found this
+// exact pattern (an undercounted "(Deactivated)"/"(Obsolete)" Condiment row inflating the
+// denominator) on 10+ stores district-wide, not just Tecumseh. So: Condiment still bypasses the
+// active/recipeItem flags (that measurement stands), but now also excludes any row whose `descr`
+// carries the text marker — the one signal dispatch #96 itself found real, now load-bearing again
+// now that COVER_FRAC no longer absorbs it for free.
 // Exported (dispatch #112) so a caller building a per-class uncounted-ITEM list off a different
 // engine (eom-inventory.js's diagnoseIncompleteCount, which has no active/recipeItem filtering of
 // its own) can bound that list to the SAME active universe this file's own classTotals use,
 // instead of re-deriving this predicate a second time.
-export const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== false || r.recipeItem === true);
+export const isActive = (r) => r.cls === 'Condiment'
+  ? !isDeactivatedByDescr(r.descr)
+  : (r.active !== false || r.recipeItem === true);
 
 /**
  * Group on-hand rows into count SESSIONS — one per (store, last_counted date) — with a
