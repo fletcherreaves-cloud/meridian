@@ -22,7 +22,7 @@ import { metricDaily, metricDirection } from './metric-source.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 export const SCOREBOARD_METRICS = [
-  { id: 'oepe',        label: 'OEPE',                        metricKey: 'oepe',       unit: 'sec', targetKey: 'tOepe' },
+  { id: 'oepe',        label: 'OEPE W/O Parked',             metricKey: 'oepe',       unit: 'sec', targetKey: 'tOepe' },
   { id: 'r2p',         label: 'R2P',                         metricKey: 'r2p',        unit: 'sec', targetKey: 'tR2p' },
   { id: 'kvst',        label: 'KVS Time',                    metricKey: 'kvst',       unit: 'sec', targetKey: 'tKvst' },
   { id: 'kvsHealthy',  label: 'Healthy Use of KVS/Side 2',   metricKey: 'kvsHealthy', unit: 'pct', targetKey: 'tKvsu' },
@@ -32,8 +32,17 @@ export const SCOREBOARD_METRICS = [
   { id: 'actVsNeed',   label: 'Act vs Needed (hrs)',         metricKey: 'actVsNeed',  unit: 'hrs', targetKey: null },
   { id: 'tRedAPct',    label: 'T-Red Before %',              metricKey: 'tRedAPct',   unit: 'pct', targetKey: 'tRedAPct' },
   { id: 'tRedBPct',    label: 'T-Red After %',               metricKey: 'tRedBPct',   unit: 'pct', targetKey: 'tRedBPct' },
-  { id: 'posOverAmt',  label: 'POS-Over $',                  metricKey: 'posOverAmt', unit: 'usd', targetKey: 'tPosOverAmt' },
-  { id: 'cashOSAmt',   label: 'Cash O/S $',                  metricKey: 'cashOSAmt',  unit: 'usd', targetKey: 'tCashOSAmt' },
+  // POS-Over $ / Cash O/S $ — DEFAULT_TARGETS' tPosOverAmt/tCashOSAmt are MONTHLY dollar
+  // figures (tPosOverAmt = tPosOverPct × tProdSales, tProdSales a monthly production-sales
+  // total — confirmed across constants.js, e.g. store 3708: tPosOverPct 0.004088 ×
+  // tProdSales 111513.16 = tPosOverAmt 455.91). Every other tile here is a single TODAY
+  // reading, so showing that raw monthly $ as "today's target" reads as a wildly inflated
+  // bar (owner flag, 2026-11-09: "$641 in POS Overings is a bit steep"). `ratePctKey` points
+  // at the store's own rate (%-of-sales) target instead; computeShiftScoreboardTiles rescales
+  // it by TODAY's forecasted sales (projSales) so the target tracks the same single day the
+  // actual does.
+  { id: 'posOverAmt',  label: 'POS-Over $',                  metricKey: 'posOverAmt', unit: 'usd', ratePctKey: 'tPosOverPct' },
+  { id: 'cashOSAmt',   label: 'Cash O/S $',                  metricKey: 'cashOSAmt',  unit: 'usd', ratePctKey: 'tCashOSPct' },
 ];
 
 export const DEFAULT_VISIBLE_METRIC_IDS = SCOREBOARD_METRICS.map(m => m.id);
@@ -45,16 +54,29 @@ export const DEFAULT_VISIBLE_METRIC_IDS = SCOREBOARD_METRICS.map(m => m.id);
 export function computeShiftScoreboardTiles(ds, loc, asOf = new Date(), visibleIds = DEFAULT_VISIBLE_METRIC_IDS) {
   const targets = DEFAULT_TARGETS[String(loc)] || null;
   const wanted = new Set(visibleIds);
+  // Today's forecasted sales — only resolved when at least one visible metric needs it
+  // (ratePctKey), so a Scoreboard with neither POS-Over nor Cash O/S showing costs nothing extra.
+  const needsProjSales = SCOREBOARD_METRICS.some(m => wanted.has(m.id) && m.ratePctKey);
+  const projSales = needsProjSales ? metricDaily(ds, loc, asOf, 'projSales') : null;
   return SCOREBOARD_METRICS
     .filter(m => wanted.has(m.id))
-    .map(m => ({
-      id: m.id,
-      label: m.label,
-      unit: m.unit,
-      value: metricDaily(ds, loc, asOf, m.metricKey),
-      direction: metricDirection(m.metricKey),
-      target: (targets && m.targetKey != null) ? (targets[m.targetKey] ?? null) : null,
-    }));
+    .map(m => {
+      let target = null;
+      if (targets && m.ratePctKey != null) {
+        const ratePct = targets[m.ratePctKey];
+        target = (ratePct != null && projSales > 0) ? ratePct * projSales : null;
+      } else if (targets && m.targetKey != null) {
+        target = targets[m.targetKey] ?? null;
+      }
+      return {
+        id: m.id,
+        label: m.label,
+        unit: m.unit,
+        value: metricDaily(ds, loc, asOf, m.metricKey),
+        direction: metricDirection(m.metricKey),
+        target,
+      };
+    });
 }
 
 // Sales $ and guest-count pace vs plan, today so far -- reuses the SAME QSRSoft plan fields

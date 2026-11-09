@@ -154,11 +154,21 @@ export function ShiftScoreboardFormat({ ds, loc, storeName }) {
       'No store resolved for this account yet.');
   }
 
+  const asOfLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    + ' · ' + now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' });
+
   return div(null,
     div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, position: 'relative' } },
       div(null,
         div({ style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } }, 'Shift Scoreboard'),
         div({ style: { fontSize: 18, fontWeight: 800, color: 'var(--text,#111827)', marginTop: 2 } }, storeName || loc),
+        div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 } },
+          span({ style: {
+            width: 6, height: 6, borderRadius: '50%', background: 'var(--good,#10b981)', flex: '0 0 auto',
+          } }),
+          span({ style: { fontSize: 11.5, fontWeight: 600, color: 'var(--text2,#4b5563)' } }, 'As of ' + asOfLabel),
+          span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } }, '— today so far, running'),
+        ),
       ),
       btn({
         onClick: () => setCustomizeOpen(v => !v),
