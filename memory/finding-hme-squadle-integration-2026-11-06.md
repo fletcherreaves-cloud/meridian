@@ -1,6 +1,6 @@
 ---
 name: finding-hme-squadle-integration-2026-11-06
-description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. HME needs one more capture (Custom Dates + Hour report request) before its pull script can be built. Squadle's auth is fully solved but its DATA LAYER is not a REST endpoint -- real-time Firebase RTDB + a Squadle Socket.IO relay -- see the 2026-11-08 update for what that actually takes to automate."
+description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. UPDATED 2026-11-09: HME's login is now fully solved (direct two-step REST POST, no Playwright needed) but its REST reporting endpoint cannot do real historical date ranges -- that only exists via a Power BI embed, confirmed fragile/not recommended. Squadle's full real-time wire protocol is now captured end-to-end (auth -> squad -> location -> per-day/per-location checklist record) over standard wss/443 -- the earlier-flagged cws.squadle.com:700 relay is blocked in THIS sandbox (non-standard port) but is not the only path to the data; the one remaining unknown is which RTDB shard hosts a given location's records."
 metadata:
   node_type: memory
   type: finding
@@ -80,17 +80,59 @@ capture proves the query-parameter shape. The Scheduled Reports' native email fe
    request. This single capture would confirm both the real date-range parameter shape (unlocks
    backfill) and that hour-level data is reachable via direct API call (not just the email
    schedule).
-2. **The login/token-mint request — partially captured 2026-11-08, response body still needed.**
-   The owner captured the real browser login flow (`fletcher@mcdok.com` on the HME Cloud login
-   page, DevTools Network tab): `POST https://auth.hmecloud.com/api/auth-service`, JSON body with
-   fields `username`, `password`, `ip`, `portalBaseUrl`, `isAdmin`, `isPartner` — a clean REST
-   login endpoint, same shape as Squadle's, not a Playwright-only form as feared above. Request
-   returned HTTP 202. **The owner's real password was in that capture — it was never written to
-   any file, commit, or this doc, only these field names.** **Not yet captured: the response body**
-   (which field holds the resulting Bearer token — presumably reused as-is by every `portal-service
-   .hmecloud.com` call documented above). One more capture (open the Network tab's response/preview
-   pane on this same request, or repeat the login) closes this out and unblocks a real two-path
-   auth script (`getFreshToken()`-style direct POST, no Playwright needed after all).
+2. ✅ **RESOLVED 2026-11-09 — the login/token-mint request is now fully captured end-to-end,
+   live, via an in-sandbox Playwright run against the real HME Cloud login (`fletcher@mcdok.com`).**
+   It's a clean **two-step REST login**, no Playwright needed for production use:
+   - **Step 1:** `POST https://auth.hmecloud.com/api/auth-service`, body `{username, ip,
+     portalBaseUrl, isAdmin, isPartner}` (no password) → `202`, body `{"location":null}`. This
+     looks like a user-exists/SSO-redirect-check step; `location` would presumably carry an SSO
+     redirect URL for an SSO-configured account, `null` here since this account uses a direct
+     password.
+   - **Step 2:** same URL, body `{username, password, ip, portalBaseUrl, isAdmin, isPartner}` →
+     `200`, body `{tokenType:"Bearer", expiresIn:"24h", accessToken, refreshToken,
+     hmeportal_server_version, userId, familyName, givenName}`. **A refresh token comes back too**
+     — field name only, confirmed present, never captured to disk — so a pull script can likely
+     mint fresh access tokens the same low-maintenance way Squadle's does, though the actual
+     refresh endpoint/shape itself was not captured this pass (not needed yet: `expiresIn` is
+     **24h**, not the 1h this doc originally inferred from one JWT's own `iat`/`exp` — plenty of
+     room for a pull that runs once or twice a day without ever needing the refresh token at all).
+   - The owner's real password was used live, in-memory, for this one login call and never written
+     to any file, commit, or this doc — only these field names, which is also true of every other
+     scratch script and capture file this pass produced (all deleted immediately after use, same
+     discipline as 2026-11-06).
+   - `accessToken` is a Bearer token used exactly as-is on every `portal-service.hmecloud.com` call
+     already documented above (`Authorization: Bearer <accessToken>`), confirmed live.
+
+### ⚠️ New finding 2026-11-09 — the Custom-Dates + Hour capture happened, and the answer is NO: the REST dashboard endpoint cannot do it. Real historical ranges only exist via Power BI.
+
+Tested directly (not guessed): `GET .../downloadReport?...&period=custom&startDate=2026-10-01&
+endDate=2026-10-07&hidePreconfiguredDevices=1` (and the `reportType=hour` variant) both return
+`200` with a real xlsx buffer — but decoding both (via `openpyxl`, cross-checked cell-by-cell)
+shows the content is **still only ever "CURRENT DAY vs. PREVIOUS FULL DAY"** (or CURRENT/PREVIOUS
+HOUR), **identical in shape to the `period=undefined` baseline already documented above**. The
+`startDate`/`endDate`/`period=custom` query params are silently accepted (no error) and then
+**ignored server-side** — this is not a parameter-naming guess that needs refinement, it's a
+measured dead end for this specific endpoint.
+
+**Where Custom Dates + Hour actually DOES work:** the live UI. Logging in and clicking
+Reports → **"Multi Store Report"**, **"Trends Report"**, etc. (the `/new-reports/*` routes) loads
+an **embedded Power BI report** (`app.powerbi.com/reportEmbed?reportId=...`) for every one of
+them — confirmed by inspecting the page's actual iframes, not assumed. This matches this doc's own
+2026-11-06 recommendation to treat the Power BI embed path as fragile/skip-worthy (auto-generated
+per-visual query shape, short-lived embed token) — now confirmed to be the ONLY place real
+historical/hour-level HME reporting lives, not an alternate path alongside a working REST one.
+
+**Revised recommendation:** Phase 1's HME pull should target what the REST API actually,
+reliably gives — the **current-day store rollup** (`getDashboardData`/`downloadReport` as already
+documented: store rank, car count, avg seconds, goal% for today vs. yesterday) — using the new
+two-step REST login above, no Playwright, run on a schedule (e.g. hourly or a few times a day,
+matching this repo's existing intraday-pull cadence for Operations Report/DAR). **Historical
+backfill and hour-level granularity are NOT reachable via REST today.** Getting them would need
+either (a) reversing the Power BI embed's own query calls (fragile, short-lived token, explicitly
+not recommended by the 2026-11-06 pass and reconfirmed here), or (b) asking HME/the vendor for a
+real reporting API or the Scheduled Reports' native email export (already documented above as a
+"good *documented fallback*") as a forward-only substitute for backfill. Not a blocker for
+shipping Phase 1 — HME's day-level dashboard is genuinely solid and buildable right now.
 
 ## 2. Squadle (food-safety checklist tablet)
 
@@ -162,6 +204,97 @@ et al.), just a different vendor and checklist program.
 ### Still needed before building `scripts/squadle-pull.mjs`
 
 2. **Confirm refresh-token rotation behavior** (above).
+
+### ✅ Updated 2026-11-09 — the real-time wire protocol is now fully captured end-to-end, live, from a real login through to a real per-store checklist record. This resolves options (a)/(b)/(c) above into a concrete, buildable plan — with one real unknown still open.
+
+**Login: `verifyPassword` still works directly** (re-tested live, HTTP 200, real `idToken`)
+— the 2026-11-08 update's "second login path" (`verifyCustomToken`) is a real, alternate thing
+the web client does, but it does **not** mean `verifyPassword` stopped working; both are live.
+No change needed to the login recommendation above.
+
+**The actual data-loading protocol, captured via an in-sandbox Playwright run with full
+WebSocket frame logging against the real `hq.squadle.com` dashboard (owner's own account,
+live):**
+
+1. On login, the client opens **~20 parallel WebSocket connections**, one per Firebase RTDB
+   project the app might ever need (`wss://<shard-host>.firebaseio.com/.ws?v=5&ns=<namespace>`,
+   e.g. `ns=squadle`, `ns=squadle2`, `ns=sqdl-prod-cd-001` through `sqdl-prod-cd-023`) — this
+   matches the "multiple shards, no single predictable databaseURL" complexity the 2026-11-08
+   update already flagged, now confirmed as a real **fixed list of ~20+ known projects**, not an
+   unbounded or per-session-random set.
+2. Each socket: server sends a handshake (`{"t":"c","d":{"t":"h","d":{...}}}`), client replies
+   with a stats ping (`{"t":"d","d":{"r":1,"a":"s","b":{"c":{"sdk.js.5-10-1":1}}}}`), then an
+   **auth** frame using the SAME idToken on every socket: `{"t":"d","d":{"r":2,"a":"auth",
+   "b":{"cred":"<idToken>"}}}` — confirmed `{"s":"ok", "d":{"auth": {...}}}` on the primary
+   `squadle` project via a direct, non-browser raw-WebSocket re-test (not just observed in the
+   browser capture).
+3. **Reads are a `"q"` (query/listen) action**, not a raw Firebase REST GET:
+   `{"t":"d","d":{"r":N,"a":"q","b":{"p":"<path>","h":""}}}` → response
+   `{"t":"d","d":{"b":{"p":"<path-without-leading-slash>","d":<value>},"a":"d"}}`.
+4. **The real path hierarchy, walked and confirmed live, end to end:**
+   - `/channels/email/<url-encoded-email>` → a user id (e.g. `-P5m_zSDuPJHXVGrcz4y`), on the
+     primary **`squadle`** project (host observed as `s-gke-usc1-nssi3-45.firebaseio.com` this
+     run — Firebase's own redirect-to-assigned-host behavior, the hostname can vary by run).
+   - `/users/<userId>` → profile incl. `squads: {<squadId>: <squadId>}` (the owner's account
+     has exactly one squad, `-M8rk3muuQsnkOLhK0Fz`, named `"McDOK | Gary Mornhinweg, Ryan
+     Thorley"` in the real data).
+   - `/squads/<squadId>` (full object, also on the primary `squadle` project) → `locations: {...}`
+     (21 location ids for this tenant), `shifts: {...}` (hundreds of shift-template ids), `brands`,
+     `dispatches`, `meta`. **No shard/database field found anywhere in this object** — see the one
+     open question below.
+   - `/locations/<locationId>/brand` → `"McDonald's"` — the **full** `/locations/<locationId>`
+     object itself came back `permission_denied` on a direct re-test (narrower, named sub-paths
+     are readable; the whole object is rules-blocked) — this is why the real app only ever
+     queries specific known sub-paths like `/brand`, never the bare `/locations/<id>`.
+   - **`/records/<YYYY-MM-DD>/<locationId>`** → the real prize: a full, item-level checklist
+     record for that store and day — `shifts` (keyed by shift, e.g. `"Start-Up"`), each shift's
+     `tasks`/`actions` with real field names (`attributes`, `description`, temperature/bluetooth
+     readings), `tags` (one of which is the literal store number, e.g. `{"0":{"text":"rfp-2"},
+     "1":{"text":"6972"}}` — **a direct, confirmed way to map a Squadle `locationId` back to a
+     Meridian store number** without needing a separate lookup table), `createdOn` timestamp. This
+     is genuinely the item-level checklist detail the 2026-11-08 update said existed on the
+     Socket.IO relay — it turns out the **same data is also reachable directly over RTDB**, no
+     relay needed at all.
+5. **`cws.squadle.com:700` (the Socket.IO relay) is NOT needed to get this data** — direct RTDB
+   access via `"q"` on the paths above is sufficient and was the actual source of every record
+   captured this pass. The relay may still carry live push updates for the open dashboard tab, but
+   a once/twice-daily pull script has no need for live pushes, only a point-in-time read.
+
+**Environment note, not a protocol finding:** `wss://cws.squadle.com:700/...` returned
+`net::ERR_CONNECTION_RESET` in **this sandbox** on every attempt — almost certainly this sandbox's
+own egress proxy blocking a non-standard port (700), not a Squadle-side block. Does not matter for
+the plan above since the relay turned out to be unnecessary, but worth knowing before assuming a
+future sandbox run "confirms" the relay is unreachable from anywhere — re-test port 700
+specifically if that path is ever revisited. The standard `wss://*.firebaseio.com` connections
+(port 443) were never blocked.
+
+**The one real open question: which of the ~20 RTDB projects hosts a given squad's `/records`
+data.** The squad and location objects queried above carry no explicit shard/database field. In
+this pass's own capture, 19 of this tenant's 21 locations' records loaded from one project
+(`sqdl-prod-cd-012`) and 2 loaded from a different one (`sqdl-prod-cd-023`) — so it is
+per-location, or at least not uniformly per-squad, and the real client clearly knows this
+up front (it queried each location's `/records` path on exactly one project, never broadcast to
+all ~20). A second attempt at reading the **full** `/locations/<id>` object (not just `/brand`)
+to check for a hidden routing field was blocked by Firebase rules (`permission_denied`, see
+above) before an answer came back. **Three ways to close this, cheapest first:**
+  - **(a) Read the compiled bundle.** `hq.squadle.com`'s own JS almost certainly contains either a
+    static squad-id/location-id → project-name lookup table or a deterministic hash function — this
+    is public, GET-able, non-interactive, and was the original 2026-11-06 recommendation (b); not
+    yet done this pass.
+  - **(b) Brute-force-but-safe fallback for the pull script itself:** for each location, on first
+    run, issue the same `/records/<date>/<id>` query against every one of the ~20 known projects in
+    parallel; exactly one will return real data (the rest return `null`, not an error — confirmed
+    behavior pattern, a `null` body is indistinguishable from "no records today" though, so run this
+    resolution on a date known to have data, then cache the winning project per location). Costs one
+    one-time fan-out per location, not per pull.
+  - **(c) Ask Squadle vendor support** directly which project a given customer's data lives on, or
+    whether a documented reporting API exists at all (still the simplest, still not tried).
+
+**Phasing update:** Squadle's Phase 1 is now genuinely buildable without any further research —
+login (REST, live-confirmed), auth (per-socket), and the real `/records/<date>/<locationId>` path
+shape are all known. Only the shard-resolution question above stands between "known" and "a
+working `scripts/squadle-pull.mjs`," and option (b) above is enough to ship Phase 1 without
+needing (a) or (c) first.
 
 ### ⚠️ Updated 2026-11-08 — item 1 above was WRONG. There is no REST endpoint. This is the
 single biggest correction in this whole doc and changes Squadle's difficulty ranking.
