@@ -3,6 +3,10 @@ import * as React from 'react';
 import * as XLSX from 'xlsx';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { printHtml } from '../utils/print-html.js';
+import { loadQsrVarianceStat, loadQsrOnHand, loadQsrFob, loadQsrInventorySummary } from '../lib/supabase.js';
+import { periodKey, daysInPeriod, pLFoodCostFromRow, pLPaperCostFromRow } from '../engine/eom-inventory.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
+import { INV_ORG_COORDS, STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h     = React.createElement;
@@ -91,6 +95,154 @@ function parsePeriodFromFilename(name) {
     if (mo >= 1 && mo <= 12 && yr >= 2020) return `${MONTHS[mo-1]} ${yr}`;
   }
   return null;
+}
+
+// ── Task #136 — automated report pulls ────────────────────────────────────────
+// Cloud-first equivalents for the manual uploads above. Measured against the live
+// supabase/schema.sql + src/lib/supabase.js (not assumed from the dispatch brief, which
+// turned out to be wrong about one of these — see the PR description): Variance Stat,
+// On-Hand Inventory, and Inventory Summary & Usage each map almost field-for-field onto an
+// existing loader (qsr_variance_stat/qsr_onhand/qsr_inventory_summary -- `descr`→`desc` is
+// the only rename). Contributors and Total P&L Cost have no table of their own; both are
+// derived from qsr_fob (loadQsrFob), the SAME auto stream analytics.js's FOBAnalysisPanel and
+// engine/eom-inventory.js's fobSnapshotByStore already read. Inventory History has no
+// automated source at all (scripts/qsrsoft-inventory-history-pull.mjs is a retention PROBE
+// only, issue #257 — the real pull doesn't exist yet) and stays manual-only, unchanged.
+
+const unpad = l => String(l || '').replace(/^0+/, '') || String(l || '');
+
+// Same day<=6 "still closing last month's EOM" cutover as eom-dashboard.js's defaultPeriod()
+// (periodKey is imported from the same engine/eom-inventory.js module that function already
+// uses) -- duplicated rather than imported because eom-dashboard.js is its own large lazy
+// chunk; pulling one 4-line helper from it would drag that whole panel's code into this
+// panel's bundle the first time someone opens Food Cost > End of Month.
+function defaultEomPeriod() {
+  const now = new Date();
+  const d = now.getDate() <= 6
+    ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  return periodKey(d);
+}
+
+function recentPeriods(n) {
+  const out = []; const d = new Date(); d.setDate(1);
+  for (let i = 0; i < n; i++) { out.push(periodKey(d)); d.setMonth(d.getMonth() - 1); }
+  return out;
+}
+
+const _MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function periodLabel(p) {
+  const m = /^(\d{4})-(\d{2})$/.exec(p || '');
+  return m ? `${_MONTH_NAMES[+m[2] - 1]} ${m[1]}` : (p || '');
+}
+// Inverse of parsePeriodFromFilename's "Month YYYY" output -> 'YYYY-MM', so a manually
+// uploaded file can still move the period selector to match it (same UX the old filename-
+// derived `period` gave, now layered on top of the new explicit selector instead of replacing it).
+function periodLabelToKey(label) {
+  const m = /^([A-Za-z]+)\s+(\d{4})$/.exec(String(label || '').trim());
+  if (!m) return null;
+  const idx = _MONTH_NAMES.findIndex(mo => mo.toLowerCase() === m[1].toLowerCase());
+  return idx < 0 ? null : `${m[2]}-${String(idx + 1).padStart(2, '0')}`;
+}
+
+// Monthly target row for one store+period, same merge precedence as every other consumer of
+// ds.allMonthlyTargets (eom-dashboard.js's monthlyOverrideFor): DEFAULT_TARGETS as the floor,
+// a real monthly_targets row on top when one exists for that loc/period. ds.allMonthlyTargets
+// is already loaded once at the App.js level (per that file's own comment) -- reused here
+// rather than a second loadMonthlyTargets() network call for the same table.
+function monthlyTargetsFor(ds, loc, period) {
+  const m = /^(\d{4})-0?(\d{1,2})$/.exec(period || '');
+  const u = unpad(loc);
+  const bucket = m ? ds?.allMonthlyTargets?.[`${m[1]}-${+m[2]}`] : null;
+  const row = bucket && (bucket[u] || bucket[String(loc)]);
+  return { ...(DEFAULT_TARGETS[u] || {}), ...(row || {}) };
+}
+
+// The 6 controllable FOB components, in the same order FOBStatusBar's COMP_ORDER expects --
+// category labels match that constant EXACTLY (fob-eom.js's own, not analytics.js's
+// differently-spaced FOB_COMP labels, which are a separate component for Food Cost's
+// 'analysis' mode).
+const FOB_COMP_FIELDS = [
+  { cat: 'Completed Waste', amt: 'compWasteAmt',   tgt: 'tCompWaste' },
+  { cat: 'Raw Waste',       amt: 'rawWasteAmt',     tgt: 'tRawWaste'  },
+  { cat: 'Condiments',      amt: 'condimentsAmt',   tgt: 'tCondiment' },
+  { cat: 'Emp/Mgr Meals',   amt: 'empMgrMealsAmt',  tgt: 'tEmpFood'   },
+  { cat: 'Variance Stat',   amt: 'statVarianceAmt', tgt: 'tStatLoss'  },
+  { cat: 'Unexplained',     amt: 'unexplainedAmt',  tgt: 'tUnex'      },
+];
+
+// Contributors-shaped rows (parseContributors()'s own {cat,target,actPct,actDol,diffPct,diffDol}
+// shape) built from one store's qsr_fob daily rows for one period. Dollar-weighted sum/sum
+// throughout -- CLAUDE.md's standing rule, never an average of daily percentages -- the SAME
+// aggregation engine/fob-recount-analysis.js's fobConsistencyByStore() already uses for Food
+// Over Base. Sign convention: diff = target − actual, matching fobTolColor's existing
+// contract in this file (diffDol<0 means the actual is OVER target) -- confirmed against
+// FOBStatusBar's own over/under branch, not guessed. Exported for tests.
+export function contributorsFromFobRows(fobRows, targets) {
+  const rows = fobRows || [];
+  const sumSales = rows.reduce((s, r) => s + (+r.prodSalesAmt || 0), 0);
+  if (!sumSales) return null;
+  const t = targets || {};
+  const mk = (cat, actDol, tgtKey) => {
+    const actPct = actDol / sumSales;
+    const target = t[tgtKey] != null ? t[tgtKey] : null;
+    const diffPct = target != null ? target - actPct : null;
+    const diffDol = diffPct != null ? diffPct * sumSales : null;
+    return { cat, target, actPct, actDol, diffPct, diffDol };
+  };
+  const out = [];
+  let fobDol = 0;
+  for (const f of FOB_COMP_FIELDS) {
+    const actDol = rows.reduce((s, r) => s + (+r[f.amt] || 0), 0);
+    fobDol += actDol;
+    out.push(mk(f.cat, actDol, f.tgt));
+  }
+  out.push(mk('Food Over Base', fobDol, 'tFOBTarget'));
+  // "Total Food Cost" is the real P&L-derived ratio (pLFoodCostFromRow) -- confirmed against
+  // analytics.js's FOB_COMP (the pLFoodPct row, target tFOBTotal, label 'Total Food Cost'),
+  // NOT Food Over Base plus something, which is how the dispatch brief described it.
+  const plFoodDol = rows.reduce((s, r) => s + pLFoodCostFromRow(r, 1).pLFoodCost, 0);
+  out.push(mk('Total Food Cost', plFoodDol, 'tFOBTotal'));
+  return out;
+}
+
+// Total P&L Cost's own shape (parseTotalPL(): {[category]: {food,total}}). analyzeData() never
+// actually reads `pl` today (confirmed -- grepped every use of the `pl` param in this file; the
+// manual upload path parses and stores it but nothing downstream consumes it), so this is
+// forward-compatible plumbing for the file-loaded counter, not a behavior change.
+export function totalPLFromFobRows(fobRows) {
+  const rows = fobRows || [];
+  const sumSales = rows.reduce((s, r) => s + (+r.prodSalesAmt || 0), 0);
+  if (!sumSales) return null;
+  const plFoodDol  = rows.reduce((s, r) => s + pLFoodCostFromRow(r, 1).pLFoodCost, 0);
+  const plPaperDol = rows.reduce((s, r) => s + pLPaperCostFromRow(r, 1).pLPaperCost, 0);
+  return {
+    food:  { food: plFoodDol / sumSales,  total: plFoodDol / sumSales },
+    paper: { food: plPaperDol / sumSales, total: plPaperDol / sumSales },
+  };
+}
+
+// loadQsrOnHand/loadQsrVarianceStat/loadQsrInventorySummary row -> this file's own parser
+// shapes (parseOnHand/parseVarianceStat/parseSummaryUsage). `descr`->`desc` is the only rename;
+// everything else matches field-for-field (confirmed against src/lib/supabase.js's loaders and
+// supabase/schema.sql's column lists, not assumed).
+function onHandFromCloudRow(r) {
+  return { wrin: r.wrin, desc: r.descr || '', cls: r.cls || '', cases: +r.cases || 0,
+    packs: +r.packs || 0, loose: +r.loose || 0, totalUnits: +r.totalUnits || 0,
+    unitPrice: +r.unitPrice || 0, onHandAmt: +r.onHandAmt || 0,
+    lastCounted: r.lastCounted instanceof Date ? r.lastCounted : (r.lastCounted ? new Date(r.lastCounted) : null) };
+}
+function varianceFromCloudRow(r) {
+  return { cls: r.cls || '', wrin: r.wrin, desc: r.descr || '', rawWaste: +r.rawWaste || 0,
+    compWaste: +r.compWaste || 0, expUsage: +r.expUsage || 0, actUsage: +r.actUsage || 0,
+    variance: +r.variance || 0, dolDiff: +r.dolDiff || 0 };
+}
+function summaryFromCloudRow(r) {
+  return { wrin: r.wrin, desc: r.descr || '', cls: r.cls || '', uom: r.uom || '',
+    caseSz: +r.caseSz || 1, cost: +r.cost || 0, startInv: +r.startInv || 0,
+    purchases: +r.purchases || 0, endInv: +r.endInv || 0, actualUsage: +r.actualUsage || 0,
+    usagePerDay: +r.usagePerDay || 0, daysSupply: +r.daysSupply || 0,
+    range: String(r.range || '').toLowerCase() };
 }
 
 // ── File parsers ──────────────────────────────────────────────────────────────
@@ -814,7 +966,11 @@ export { analyzeData };
 // only make sense here (Print, FOB Tolerances) plus the same body every mode below already
 // had. onClose is unused in embedded mode -- Food Cost's own close button covers it.
 export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
-  // storeData: { [storeNum]: { contributors, onhand, summary, variance, pl, history } }
+  // storeData: { [storeNum]: { contributors, onhand, summary, variance, pl, history } } --
+  // MANUAL uploads only, unchanged from before task #136. Automated cloud data lives
+  // separately in `autoStoreData` below and is merged with this at render time (`mergedStoreData`
+  // /`loadedFiles`), so a manual upload can never be silently clobbered by an auto-refresh and
+  // the auto-refresh never has to special-case "is this field manual."
   const [storeData,    setStoreData]    = useState({});
   const [selStore,     setSelStore]     = useState('');
   const [errors,       setErrors]       = useState({});
@@ -829,6 +985,31 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
     try { localStorage.setItem('mf_eom_classes', JSON.stringify([...next])); } catch {}
   };
 
+  // ── Task #136 — period + store-scope pickers, so the panel has something to show before
+  // any file is dropped. `period` is now the single authoritative selector (defaults to the
+  // current/prior EOM month, same cutover every other EOM panel in this repo uses) instead of
+  // being silently inferred from an uploaded filename -- but a manual upload whose filename
+  // names a different period still moves the selector to match it (see onLoad below), keeping
+  // the old "upload jumps you to the right month" convenience on top of the new explicit control.
+  const [period, setPeriod] = useState(() => defaultEomPeriod());
+  const periodOptions = useMemo(() => {
+    const list = recentPeriods(13);
+    return list.includes(period) ? list : [period, ...list].sort().reverse();
+  }, [period]);
+
+  // Store-scope picker — the shared LocationSelector (feedback-selector-ui-standard.md),
+  // same 'progressive' mode + value/onChange shape as eom-dashboard.js's own locSelValue/
+  // onLocSelChange. Only narrows which stores get MATERIALIZED into autoStoreData below (the
+  // Supabase reads themselves are already district-wide per period, same as every other
+  // qsr_* loader in this codebase) -- a perf/clarity scope, not a second server-side filter.
+  const [locSelValue, setLocSelValue] = useState({level:'all', id:null});
+  const onLocSelChange = useCallback(v=>{
+    setLocSelValue(v||{level:'all', id:null});
+    if (v && v.level==='store' && v.id) setSelStore(v.id);
+  },[]);
+  const locTree = useMemo(()=>buildLocationHierarchy(stores, INV_ORG_COORDS, STORE_NAMES),[stores]);
+  const scopedLocs = useMemo(()=>locationSelectorLocs(locSelValue, locTree),[locSelValue, locTree]);
+
   // Route each uploaded file to the right store bucket by parsing store# from filename
   const onLoad = useCallback((type, data, name, err)=>{
     if (err) { setErrors(prev=>({...prev,[name]:err})); return; }
@@ -840,10 +1021,87 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
     });
     // Auto-select first store loaded
     setSelStore(prev=>prev||storeNum);
+    // A real upload is deliberate intent -- follow its named period if it differs from
+    // what's currently selected (same convenience the old filename-derived `period` gave).
+    const detected = periodLabelToKey(parsePeriodFromFilename(name));
+    if (detected) setPeriod(prev=>prev===detected?prev:detected);
   },[]);
 
+  // ── Task #136 — automated pull: Variance Stat, On-Hand, and Inventory Summary & Usage come
+  // straight off their own loaders for this period; Contributors + Total P&L Cost are both
+  // derived from qsr_fob for the period's calendar days. One failed stream degrades to
+  // "whatever did load" rather than losing the whole panel -- manual upload still covers any gap.
+  const [autoRows, setAutoRows] = useState({variance:[], onhand:[], fob:[], summary:[]});
+  const [autoPending, setAutoPending] = useState(true);
+  const [autoErr, setAutoErr] = useState(null);
+  useEffect(()=>{
+    let alive = true;
+    setAutoPending(true); setAutoErr(null);
+    const dim = daysInPeriod(period);
+    const dates = Array.from({length:dim},(_,i)=>`${period}-${String(i+1).padStart(2,'0')}`);
+    const tag = (label, p) => p.catch(e=>{console.warn(`[FOBEOMPanel] ${label} failed, continuing without it:`,e?.message||e); return null;});
+    Promise.all([
+      tag('loadQsrVarianceStat',  loadQsrVarianceStat({period})),
+      tag('loadQsrOnHand',        loadQsrOnHand({period})),
+      tag('loadQsrFob',           loadQsrFob({dates})),
+      tag('loadQsrInventorySummary', loadQsrInventorySummary({period})),
+    ]).then(([variance, onhand, fob, summary])=>{
+      if (!alive) return;
+      const anyFailed = [variance,onhand,fob,summary].some(x=>x===null);
+      setAutoErr(anyFailed ? 'One or more automated FOB report streams failed to load for this period — showing whatever did load. Manual upload still covers any gap.' : null);
+      setAutoRows({ variance: variance||[], onhand: onhand||[], fob: fob||[], summary: summary||[] });
+      setAutoPending(false);
+    });
+    return ()=>{alive=false;};
+  },[period]);
+
+  // Per-store automated data for the selected period, scoped to the LocationSelector's current
+  // value (or everything when scope is 'all'). Built from the SAME district-wide fetch above --
+  // narrowing scope never re-fetches, it just changes which stores get materialized here.
+  const autoStoreData = useMemo(()=>{
+    if (autoPending) return {};
+    const byLoc = (rows) => { const m={}; for (const r of rows) { const l=unpad(r.loc); (m[l]||(m[l]=[])).push(r); } return m; };
+    const varByLoc = byLoc(autoRows.variance), ohByLoc = byLoc(autoRows.onhand),
+          sumByLoc = byLoc(autoRows.summary),  fobByLoc = byLoc(autoRows.fob);
+    const allLocsWithData = new Set([...Object.keys(varByLoc), ...Object.keys(ohByLoc), ...Object.keys(sumByLoc), ...Object.keys(fobByLoc)]);
+    const inScope = loc => locSelValue.level==='all' || scopedLocs.includes(loc);
+    const out = {};
+    for (const loc of allLocsWithData) {
+      if (!inScope(loc)) continue;
+      const slot = {};
+      if (varByLoc[loc]?.length) slot.variance = varByLoc[loc].filter(r=>r.wrin).map(varianceFromCloudRow);
+      if (ohByLoc[loc]?.length)  slot.onhand   = ohByLoc[loc].filter(r=>r.wrin).map(onHandFromCloudRow);
+      if (sumByLoc[loc]?.length) slot.summary  = sumByLoc[loc].filter(r=>r.wrin).map(summaryFromCloudRow);
+      if (fobByLoc[loc]?.length) {
+        const t = monthlyTargetsFor(ds, loc, period);
+        slot.contributors = contributorsFromFobRows(fobByLoc[loc], t);
+        slot.pl = totalPLFromFobRows(fobByLoc[loc]);
+      }
+      if (Object.keys(slot).length) out[loc] = slot;
+    }
+    return out;
+  },[autoRows, autoPending, locSelValue, scopedLocs, ds, period]);
+
+  // Auto-select the first auto-populated store once the pull resolves, same courtesy onLoad
+  // already gives a manual upload. Guarded with prev||... so it never fights a user's own pick.
+  useEffect(()=>{
+    const first = Object.keys(autoStoreData).sort((a,b)=>+a-+b)[0];
+    if (first) setSelStore(prev=>prev||first);
+  },[autoStoreData]);
+
+  // Merged view for display only -- manual (storeData) always wins per field when present,
+  // auto (autoStoreData) fills the rest. storeData itself is never written to by the auto
+  // effect above, so a manual upload can't be clobbered by a later period/scope refresh.
+  const mergedStoreData = useMemo(()=>{
+    const out = {};
+    for (const loc of new Set([...Object.keys(autoStoreData), ...Object.keys(storeData)])) {
+      out[loc] = { ...(autoStoreData[loc]||{}), ...(storeData[loc]||{}) };
+    }
+    return out;
+  },[autoStoreData, storeData]);
+
   // Files for the currently selected store
-  const loadedFiles = useMemo(()=>storeData[selStore]||{},[storeData,selStore]);
+  const loadedFiles = useMemo(()=>mergedStoreData[selStore]||{},[mergedStoreData,selStore]);
 
   const allClasses = useMemo(()=>{
     const s=new Set();
@@ -852,25 +1110,6 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
     (loadedFiles.variance||[]).forEach(r=>r.cls&&s.add(r.cls));
     return [...s].filter(Boolean).sort();
   },[loadedFiles]);
-
-  // Detect period from uploaded filenames (stored as _name_<type> keys in storeData) --
-  // computed before `analysis` below so it can be passed into analyzeData().
-  const period = useMemo(()=>{
-    // Try each file type in priority order
-    for (const type of ['contributors','pl','onhand','summary','variance']) {
-      const fname = loadedFiles[`_name_${type}`];
-      const parsed = parsePeriodFromFilename(fname);
-      if (parsed) return parsed;
-    }
-    // Fallback: check other stores' files for a period clue
-    for (const store of Object.values(storeData)) {
-      for (const type of ['contributors','pl','onhand','summary','variance']) {
-        const parsed = parsePeriodFromFilename(store[`_name_${type}`]);
-        if (parsed) return parsed;
-      }
-    }
-    return 'Current Month';
-  },[loadedFiles,storeData]);
 
   const analysis = useMemo(()=>{
     const {contributors,onhand,summary,variance,pl} = loadedFiles;
@@ -882,11 +1121,11 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
       summary:  summary  ? summary.filter(byClass)  : null,
       variance: variance ? variance.filter(byClass) : null,
       pl: pl||null,
-      period,
+      period: periodLabel(period),
     });
   },[loadedFiles, selClasses, period]);
 
-  const anyLoaded = Object.keys(storeData).length>0;
+  const anyLoaded = Object.keys(mergedStoreData).length>0;
   const hasData = !!analysis;
 
   const TABS = [
@@ -920,10 +1159,10 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
             div({style:{fontSize:'9px',color:'var(--text3)'}},
               'Identify count accuracy issues before EOM close · Food & Condiment items only',
               selStore&&span({style:{marginLeft:8,color:'var(--text2)',fontWeight:600}},'Store '+selStore),
-              period&&span({style:{marginLeft:6}},'· '+period)
+              period&&span({style:{marginLeft:6}},'· '+periodLabel(period))
             )
           ),
-          hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
+          hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period:periodLabel(period),selClasses}),
           btn({onClick:()=>setShowFobSet(v=>!v),title:'Edit FOB tolerances',
             style:{padding:'4px 10px',fontSize:'11px',border:'.5px solid var(--bdr)',borderRadius:4,
               background:showFobSet?'var(--amber)':'transparent',color:showFobSet?'#000':'var(--text3)',cursor:'pointer'}},
@@ -934,12 +1173,12 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
         div({style:{fontWeight:700,fontSize:'14px',color:'var(--text)'}},
           'FOB End-of-Month Troubleshooter',
           selStore&&span({style:{marginLeft:8,fontSize:'12px',color:'var(--text3)',fontWeight:400}},'Store '+selStore),
-          period&&span({style:{marginLeft:6,fontSize:'11px',color:'var(--text3)',fontWeight:400}},'· '+period)
+          period&&span({style:{marginLeft:6,fontSize:'11px',color:'var(--text3)',fontWeight:400}},'· '+periodLabel(period))
         ),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},'Identify count accuracy issues before EOM close · Food & Condiment items only')
       ),
       hasData&&div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2}},
-        h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
+        h(PrintReport,{analysis,storeName:'Store '+selStore,period:periodLabel(period),selClasses}),
         selClasses.size>0&&span({style:{fontSize:'8px',color:'var(--accent)',letterSpacing:'.3px',opacity:.8}},
           'Printing: '+[...selClasses].sort().join(', ')+' only'
         )
@@ -951,11 +1190,35 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
       btn({onClick:onClose,style:{padding:'4px 10px',fontSize:'13px',border:'.5px solid var(--bdr)',borderRadius:4,background:'transparent',color:'var(--text)',cursor:'pointer'}},'✕')
     ),
 
+    // Task #136 — period + store-scope pickers. Always visible (not gated on anyLoaded) since
+    // their whole point is to drive the automated pull BEFORE any file is dropped; once the pull
+    // resolves, stores show up in the StoreSelectorBar below on their own.
+    div({style:{display:'flex',alignItems:'center',gap:14,padding:'6px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',flexWrap:'wrap',flexShrink:0}},
+      div({style:{display:'flex',alignItems:'center',gap:6}},
+        span({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',whiteSpace:'nowrap'}},'Period:'),
+        h('select',{value:period,onChange:e=>setPeriod(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:4,color:'var(--text)',fontSize:'10px',padding:'3px 8px'}},
+          periodOptions.map(p=>h('option',{key:p,value:p},periodLabel(p))))
+      ),
+      div({style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
+        span({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',whiteSpace:'nowrap'}},'Store Scope:'),
+        h(LocationSelector,{stores,invOrgCoords:INV_ORG_COORDS,storeNames:STORE_NAMES,value:locSelValue,onChange:onLocSelChange,mode:'progressive'})
+      ),
+      autoPending&&span({style:{fontSize:'9px',color:'var(--text3)'}},'☁ Loading auto data…'),
+      !autoPending&&!autoErr&&span({
+        title:'Variance Stat, On-Hand Inventory, Contributors + Total P&L Cost (both derived from qsr_fob), and Inventory Summary & Usage are auto-pulled from Supabase for this period/scope — no upload needed. Inventory History still needs a manual upload. A manual upload always overrides its auto data for that store/field.',
+        style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)',cursor:'help'}},
+        '☁ 5/6 reports auto'),
+      autoErr&&span({title:autoErr,
+        style:{fontSize:'9px',fontWeight:700,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.14)',color:'var(--crit)',border:'.5px solid rgba(244,63,94,.45)',cursor:'help'}},
+        '⚠ Partial auto load'),
+    ),
+
     // Tolerance settings editor (collapsible)
     showFobSet&&h(FobSettingsEditor,{settings:fobSettings,onChange:s=>{setFobSettings(s);setShowFobSet(false);}}),
 
     // Store selector (appears when any files loaded)
-    anyLoaded&&h(StoreSelectorBar,{storeData,selStore,setSelStore,stores}),
+    anyLoaded&&h(StoreSelectorBar,{storeData:mergedStoreData,selStore,setSelStore,stores}),
 
     // FOB Status (when data loaded for selected store)
     hasData&&analysis.fobStatus.length>0&&h(FOBStatusBar,{fobStatus:analysis.fobStatus,fobSettings}),
@@ -993,7 +1256,7 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
             'Loaded stores — drop more files to add or update'
           ),
           div({style:{display:'flex',gap:6,flexWrap:'wrap'}},
-            ...Object.entries(storeData).map(([num, files])=>{
+            ...Object.entries(mergedStoreData).map(([num, files])=>{
               const cnt=Object.values(files).filter(Boolean).length;
               return div({key:num,style:{padding:'4px 10px',borderRadius:4,border:'.5px solid var(--bdr)',background:'var(--surf2)',fontSize:'10px'}},
                 span({style:{fontWeight:700}},'Store '+num),
