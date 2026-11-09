@@ -58,7 +58,7 @@ const REPORT_URL = 'https://v3.myqsrsoft.com/reports/mcd/product/productOutage';
 const STORE_NSNS = [
   3708, 5183, 5985, 6178, 6838, 6972, 10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109, 33222, 33704, 34222, 35064, 35242,
-  37566, 38609, 43380, 43701,
+  37566, 38609, 43380, 43701, 44689,
 ];
 // Same 9-value list qsrsoft-pmix-pull.mjs already uses on the sibling /reporting/v2/product/
 // endpoint family -- the owner's own outages capture showed this same set (truncated in the

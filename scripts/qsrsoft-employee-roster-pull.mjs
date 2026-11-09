@@ -115,7 +115,7 @@ const STORE_NSNS = (process.env.ROSTER_STORES
     10034, 10422, 10915, 11657, 13113, 18213,
     20475, 24471, 29760, 31357, 32525, 33109,
     33222, 33704, 34222, 35064, 35242, 37566,
-    38609, 43380, 43701,
+    38609, 43380, 43701, 44689,
   ]).map(String);
 
 // Guarded, not unconditional -- toTenureRows()/assertNoDeniedSelectCols() are unit-tested by
