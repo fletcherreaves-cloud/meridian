@@ -98,6 +98,15 @@ const DEFAULT_MODEL_ASSIGNMENTS = {
   '38609':{weekly:{model:'ae',mape:6.6,ref:'🤖 AE 6.6% (Sep2025-May2026, n=269)',n:269},monthly:{model:'di',mape:6.7,ref:'6W: DI 6.7% vs DOW 7.6%',n:42},yearly:{model:'di',mape:7.8,ref:'ALL: DI 7.8% vs LY 99.5%',n:1581},note:'Freeport FL beach-adjacent. DOW weekly (seasonal DOW strong). DI monthly+yearly.'},
   '43380':{weekly:{model:'ae',mape:14.4,ref:'🤖 AE 14.4% (Sep2025-May2026, n=267)',n:267},monthly:{model:'ly',mape:8.3,ref:'6W: LY 8.3% vs DOW 9.6% vs DI 9.8%',n:42},yearly:{model:'dow',mape:13.7,ref:'ALL: DOW 13.7% vs DI 26.4%',n:503},note:'Tishomingo. Limited history (503 days). LY short+medium. DOW annual. DI not viable yet.',recentOnly:true},
   '43701':{weekly:{model:'ae',mape:10.0,ref:'🤖 AE 10.0% (Sep2025-May2026, n=65)',n:65},monthly:{model:'dow',mape:null,ref:'No LY data',n:0},yearly:{model:'dow',mape:null,ref:'Insufficient data',n:0},note:'Ponce de Leon FL — opened 03/13/26. DOW only until ~Sep 2026.',recentOnly:true},
+  // Lindsay -- relocated from 18213 (Lindsay-Walmart), same supervisor/operator (see 18213's own
+  // note and STORE_NAMES' comment). Added to the app 2026-11-09; the only history on record is a
+  // single owner-provided LifeLenz export backfilled the same day (dispatch
+  // finding-lifelenz-forecast-capture-44689-2026-11-09.md), so no real calibration has run yet --
+  // mirrors 43701's "newly opened, DOW fallback until enough history exists" shape rather than
+  // inventing a weekly AE number nothing has actually measured. Without this entry,
+  // modelHealthScore() has no recentOnly flag to exempt it and scores it against the full
+  // algorithm on a week of data, which is what was producing the false "red model health" flag.
+  '44689':{weekly:{model:'dow',mape:null,ref:'No calibration history yet',n:0},monthly:{model:'dow',mape:null,ref:'No LY data',n:0},yearly:{model:'dow',mape:null,ref:'Insufficient data',n:0},note:'Lindsay — relocated from 18213, added 2026-11-09. DOW fallback until enough history exists.',recentOnly:true},
 };
 
 
