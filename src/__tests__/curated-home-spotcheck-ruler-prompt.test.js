@@ -74,8 +74,8 @@ const FRESH_SESSION_ROWS = [
 describe('CuratedHomePanel — Spot-Check Ruler prompt (task #129)', () => {
   it('shows nothing when no store has a fresh qualifying count session', async () => {
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
-    expect(container.textContent).not.toContain('Spot-Check Ruler');
-    expect(container.textContent).not.toContain('run the Spot-Check Ruler');
+    expect(container.textContent).not.toContain('Count Follow-Up');
+    expect(container.textContent).not.toContain('run the Count Follow-Up');
   });
 
   it('prompts when a store just logged a fresh qualifying weekly count session', async () => {
@@ -83,8 +83,8 @@ describe('CuratedHomePanel — Spot-Check Ruler prompt (task #129)', () => {
       Promise.resolve(period === '2026-11' ? FRESH_SESSION_ROWS : []));
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
     expect(container.textContent).toContain('Ardmore-Broadway');
-    expect(container.textContent).toContain('Spot-Check Ruler');
-    const openBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Open Ruler');
+    expect(container.textContent).toContain('Count Follow-Up');
+    const openBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Open Follow-Up');
     expect(openBtn).toBeTruthy();
   });
 
@@ -92,15 +92,18 @@ describe('CuratedHomePanel — Spot-Check Ruler prompt (task #129)', () => {
     loadInvCountSessionsMock.mockImplementation(({ period } = {}) =>
       Promise.resolve(period === '2026-11' ? FRESH_SESSION_ROWS : []));
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
-    const openBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Open Ruler');
+    const openBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Open Follow-Up');
     await act(async () => { openBtn.click(); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(container.textContent).toContain('📋 Spot-Check Ruler');
-    // The 5 real questions, verbatim from the owner's own example.
+    expect(container.textContent).toContain('📋 Count Follow-Up');
+    // The 7 real questions, verbatim from the owner's own example + the 2026-11-09 expansion.
     expect(container.textContent).toContain('What was FOB after you counted?');
+    expect(container.textContent).toContain('What FOB component has the most opportunity for the current count?');
     expect(container.textContent).toContain('What were your biggest variance/stat items?');
     expect(container.textContent).toContain('What items did you recount?');
     expect(container.textContent).toContain('How confident are you in your counts?');
+    expect(container.textContent).toContain('Did you review the reports (FOB, On Hand, Variance/Stat)?');
+    expect(container.textContent).toContain('If yes, what did you find?');
   });
 
   it('never prompts for a partial/spot session, even a recent one', async () => {
@@ -109,6 +112,6 @@ describe('CuratedHomePanel — Spot-Check Ruler prompt (task #129)', () => {
         ? [{ loc: '3708', countDate: '2026-11-05', cls: 'Food', period: '2026-11', itemsCounted: 3, classTotal: 50, covered: false }]
         : []));
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
-    expect(container.textContent).not.toContain('Spot-Check Ruler');
+    expect(container.textContent).not.toContain('Count Follow-Up');
   });
 });

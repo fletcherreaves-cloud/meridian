@@ -2,12 +2,14 @@
 // ── The Spot-Check Ruler (task #129) ──────────────────────────────────────────────────────────
 // memory/plan-count-cycle-surfaces-and-spotcheck-ruler-2026-11-08.md §B. A standard follow-up
 // conversation framework, modeled verbatim on the owner's real example to Ashley re: Holdenville's
-// FOB and weekly inventory count:
+// FOB and weekly inventory count. Expanded from 5 to 7 questions (owner-directed 2026-11-09):
 //   1. What was FOB after you counted?
-//   2. What were your biggest variance/stat items?
-//   3. What items did you recount?
-//   4. How confident are you in your counts?
-//   5. Did you look at your reports (FOB, On Hand, Variance/Stat)? If so, what did you learn?
+//   2. What FOB component has the most opportunity for the current count?
+//   3. What were your biggest variance/stat items?
+//   4. What items did you recount?
+//   5. How confident are you in your counts? (1-5 rating scale, UI layer)
+//   6. Did you review the reports (FOB, On Hand, Variance/Stat)?
+//   7. If yes, what did you find?
 // Pure, testable logic — no React, no Supabase calls. Every input is already-loaded data; callers
 // (the UI worksheet, the Curated Home prompt, the weekly digest script) fetch it and pass it in.
 //
@@ -28,7 +30,7 @@
 //     effect-size/FDR machinery) — needs a real-history calibration pass first. flagCounterfactual()
 //     below ships tier 1 (target-based) and tier 3 (hard "impossible values") only.
 
-import { fobComponentDeltas } from './eom-diagnosis.js';
+import { fobComponentDeltas, DRIVER_KEYS } from './eom-diagnosis.js';
 import { normClass, isDeactivatedByDescr } from './eom-inventory.js';
 
 export const DEFAULT_TOP_N = 3; // matches the owner's own example (3 items, not variance-top5's default 5)
@@ -43,10 +45,12 @@ export const CLASS_DISPLAY = { food: 'Food', condiment: 'Condiment', paper: 'Pap
 
 const QUESTIONS_TEXT = {
   fob: 'What was FOB after you counted?',
+  fobOpportunity: 'What FOB component has the most opportunity for the current count?',
   varianceTop: 'What were your biggest variance/stat items?',
   recount: 'What items did you recount?',
   confidence: 'How confident are you in your counts?',
-  reportsReviewed: 'Did you look at your reports (FOB, On Hand, Variance/Stat)? If so, what did you learn?',
+  reportsReviewed: 'Did you review the reports (FOB, On Hand, Variance/Stat)?',
+  reportsFindings: 'If yes, what did you find?',
 };
 
 // The "master WRIN" (first 5 digits before the dash) a row belongs to — the same base-WRIN rollup
@@ -236,9 +240,27 @@ export function buildSpotCheckRuler({
   const impossibilities = impossibilityFlags({ varianceRows, onHandByWrin });
   const classesTouched = [...new Set(cf.topMovers.map(v => CLASS_DISPLAY[v.cls] || v.cls))];
   const recount = recountDetection({ sessionLogRows, loc, classesOfInterest: classesTouched });
+  const fobComponents = fobSnap && fobSnap.sales ? fobComponentDeltas(fobSnap, targets) : [];
 
   const money = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const pct = n => n == null ? null : `${(n * 100).toFixed(2)}%`;
+  // Q3's dates — a real JS Date joined with .join(', ') calls each one's default toString(), which
+  // is exactly what put "GMT-0500 (Central Daylight Time)" into the worksheet (owner-flagged
+  // 2026-11-09). No computation bug behind it — verified live against production that
+  // inv_count_sessions has zero duplicate (loc, cls, count_date) rows, so there was nothing for
+  // recountDetection's Set-based dedup to silently miss; the CDT/CST split across a date list is
+  // just the real 2026-11-01 US fall-back landing inside the lookback window. Pure display fix.
+  const fmtRecountDate = d => (d instanceof Date ? d : new Date(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  // Q2 (owner-directed 2026-11-09, inserted between FOB and the variance-top list) — same
+  // DRIVER_KEYS set (Comp/Raw Waste, Condiments, Stat Variance) formatDiagnosisReport's own
+  // FOB-over-target driver analysis uses; Emp Meals/Unexplained excluded there for the same
+  // reason here — policy/reconciliation line items, not a coaching lever for "the most opportunity
+  // this count."
+  const opportunityComponents = fobComponents
+    .filter(c => DRIVER_KEYS.has(c.key) && c.deltaPp != null && c.deltaPp > 0.005)
+    .sort((a, b) => b.deltaPp - a.deltaPp);
+  const topOpportunity = opportunityComponents[0] || null;
 
   const questions = [
     {
@@ -247,6 +269,14 @@ export function buildSpotCheckRuler({
         ? `${pct(cf.fobAsReportedPct)}${targetPct != null ? ` (target ${pct(targetPct)})` : ''}`
         : null,
       note: cf.fobAsReportedPct == null ? 'No FOB data on record for this period yet.' : null,
+    },
+    {
+      id: 'fob-opportunity', q: QUESTIONS_TEXT.fobOpportunity, auto: true,
+      source: 'qsr_fob component breakdown vs targets (same driver set as eom-diagnosis.js\'s FOB-over-target analysis)',
+      answer: topOpportunity
+        ? `${topOpportunity.label} — ${topOpportunity.deltaPp > 0 ? '+' : ''}${topOpportunity.deltaPp.toFixed(2)}pp vs target (${money(topOpportunity.amt)})`
+        : null,
+      note: !topOpportunity ? 'No FOB component is currently over its own target this period.' : null,
     },
     {
       id: 'variance-top', q: QUESTIONS_TEXT.varianceTop, auto: true, source: 'qsr_variance_stat (same ranking as eom-diagnosis.js\'s variance-top5 check, rolled up by master WRIN)',
@@ -258,7 +288,7 @@ export function buildSpotCheckRuler({
     {
       id: 'recount', q: QUESTIONS_TEXT.recount, auto: true, source: 'inv_count_sessions',
       answer: recount.recounts.length
-        ? recount.recounts.map(r => `${r.cls} — recounted on ${r.recountDates.join(', ')}`).join(' · ')
+        ? recount.recounts.map(r => `${r.cls} — recounted on ${r.recountDates.map(fmtRecountDate).join(', ')}`).join(' · ')
         : 'None on record for the classes in play this period.',
       note: `Which exact item(s) were re-entered within a single session is ${recount.withinSessionNote}`,
     },
@@ -274,12 +304,17 @@ export function buildSpotCheckRuler({
         ? 'Hand them this link to the real FOB/On-Hand/Variance reports for this exact store+period — "go look" is one click.'
         : 'Not auto-computable — generate a report link so "go look" is one click.',
     },
+    {
+      id: 'reports-findings', q: QUESTIONS_TEXT.reportsFindings, auto: false,
+      answer: null,
+      note: 'Only relevant if the answer to the previous question was yes.',
+    },
   ];
 
   return {
     loc, storeName, period, periodType, countDate,
     questions,
-    fobComponents: fobSnap && fobSnap.sales ? fobComponentDeltas(fobSnap, targets) : [],
+    fobComponents,
     counterfactual: {
       ...cf, targetPct,
       flagged: flag.flagged, flagTier: flag.tier, flagReason: flag.reason,

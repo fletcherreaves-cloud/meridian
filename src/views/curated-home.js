@@ -608,12 +608,12 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
         span({ style: { fontSize: 16, lineHeight: 1 } }, '📋'),
         div({ style: { flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text,#111827)' } },
           rulerPrompts.length === 1
-            ? `${rulerPrompts[0].storeName} just logged a qualifying ${rulerPrompts[0].periodType === 'eom' ? 'EOM' : 'weekly'} count — run the Spot-Check Ruler while it's fresh.`
-            : `${rulerPrompts.length} stores just logged a qualifying count — run the Spot-Check Ruler while it's fresh.`),
+            ? `${rulerPrompts[0].storeName} just logged a qualifying ${rulerPrompts[0].periodType === 'eom' ? 'EOM' : 'weekly'} count — run the Count Follow-Up while it's fresh.`
+            : `${rulerPrompts.length} stores just logged a qualifying count — run the Count Follow-Up while it's fresh.`),
         rulerPrompts.slice(0, 5).map(p => h('button', {
           key: p.loc, className: 'btn btn-sm', onClick: () => setRulerOpenFor(p),
           style: { fontSize: 11, padding: '4px 10px' },
-        }, rulerPrompts.length === 1 ? 'Open Ruler' : p.storeName)),
+        }, rulerPrompts.length === 1 ? 'Open Follow-Up' : p.storeName)),
       )
     : null);
   const rulerModal = rulerOpenFor ? h(SpotCheckRulerModal, {
