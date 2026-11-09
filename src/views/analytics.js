@@ -8535,6 +8535,14 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const [sheetGroup,   setSheetGroup]   = useState('');
   const [sheetLoading, setSheetLoading] = useState(false);
   const [fieldConfigOpen, setFieldConfigOpen] = useState(false); // "Customize Fields" editor
+  // Owner request 2026-11-09 -- "I cannot figure out how to start December projections." There
+  // was no path at all: a month with zero monthly_targets rows rendered a dead-end empty state
+  // (the old copy even pointed at the pre-#62 Excel-upload flow). The only working path was an
+  // undiscoverable detour through Smart Targets' "Apply Official." This seeds one bare row per
+  // known store for the selected period so the grid becomes editable in place -- same upsert
+  // saveMonthlyTargets already uses for every other save, just with every field left null (the
+  // existing EditableProjCell / DEFAULT_TARGETS fallback already renders a null field sanely).
+  const [starting, setStarting] = useState(false);
   // Task #93 (owner-requested 2026-11-05) -- Targets Editor Tier 2: a genuinely NEW metric, with
   // no existing monthly_targets column, added via the Customize editor's "+ Add a metric" picker
   // and stored in its own custom_metric_targets table (schema-custom-metric-targets.sql). Loaded
@@ -8929,6 +8937,20 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     setManualOpen(false);
   };
 
+  const handleStartMonth = async () => {
+    if (starting || !canOwnProjections) return;
+    const period = selPeriod || {year:new Date().getFullYear(), month:new Date().getMonth()+1};
+    setStarting(true);
+    const seedLocs = (stores||[]).map(s=>String(s.loc));
+    const targets = Object.fromEntries(seedLocs.map(l=>[l, {}]));
+    await saveMonthlyTargets(targets, period.year, period.month).catch(()=>{});
+    if (!selPeriod) setSelPeriod(period);
+    const fresh = await loadMonthlyTargets(period.year, period.month).catch(()=>({}));
+    setFetchedMt(fresh || {});
+    listMonthlyTargetPeriods().then(p=>setPeriods(p||[]));
+    setStarting(false);
+  };
+
   // Build and open a per-group vertical-layout "patch sheet" report
   const openGroupSheet = async () => {
     if(!sheetGroup||sheetLoading) return;
@@ -9138,9 +9160,18 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
 
     // Table
     locs.length===0
-      ? div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
-          color:'var(--text3)',fontSize:14}},
-          'No monthly target data loaded. Upload a QSRSoft Monthly Targets report to get started.')
+      ? div({style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',
+          justifyContent:'center',gap:12,color:'var(--text3)',fontSize:14,padding:24,textAlign:'center'}},
+          div(null, selPeriod
+            ? `No projections started yet for ${MONTH_NAMES[selPeriod.month-1]} ${selPeriod.year}.`
+            : 'No monthly target data loaded yet.'),
+          canOwnProjections
+            ? btn({onClick:handleStartMonth, disabled:starting, style:{
+                padding:'9px 18px',fontSize:13,fontWeight:700,borderRadius:6,cursor:starting?'default':'pointer',
+                background:'var(--accent)',color:'#fff',border:'none',opacity:starting?.6:1}},
+                starting ? 'Starting…' : `▶ Start ${selPeriod?MONTH_NAMES[selPeriod.month-1]+' '+selPeriod.year:'This Month'} Projections`)
+            : div({style:{fontSize:12}}, 'You don\'t have edit access for Projections — ask an owner to start this month.'),
+          div({style:{fontSize:11}}, 'Seeds a blank row per store so the grid below becomes editable — or set initial numbers via Smart Targets\' "Apply Official," or upload a Monthly Targets Excel report.'))
       : div({style:{flex:1,overflow:'auto'}},
           tbl({style:{borderCollapse:'collapse',width:'max-content',minWidth:'100%'}},
             thead(null,
