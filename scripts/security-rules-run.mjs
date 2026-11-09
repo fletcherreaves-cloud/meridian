@@ -692,6 +692,118 @@ export function joinManagerEditsWithPunchVolume(editRows, punchIndex) {
   return [...buckets.values()];
 }
 
+// ── EVENTS -- qsr_security_events (dispatch 2026-11-09, memory/design-security-events-risk-rules-
+// 2026-11-09.md) ─────────────────────────────────────────────────────────────────────────────────
+// Two subject grains from the SAME table, same disambiguation-by-DATA_REQUIRED idiom LABOR's
+// three branches already use: "qsr_security_events" (crew subject, EVENT-001/002) vs
+// "qsr_security_events:manager" (manager subject, EVENT-003) -- a qualified variant of the one
+// real table name, not a second fake table.
+//
+// Deliberately does NOT re-score all_promo/t_red_before/t_red_after/cash_refund/cashless_refund --
+// already covered by active CASH-002/003/004 reading audit_rows (a different QSRSoft endpoint).
+// See the design doc's own "what's already covered" section for the field-by-field check.
+
+export function supportsSecurityEventsCrew(rule) {
+  return dataRequiredList(rule).includes('qsr_security_events');
+}
+export function supportsSecurityEventsMgr(rule) {
+  return dataRequiredList(rule).includes('qsr_security_events:manager');
+}
+
+// event_token -> the aggregated count column it contributes to. One line per token to add
+// coverage for a new event_token later -- never a per-rule special case.
+export const EVENT_TOKEN_FIELD = {
+  all_promo: 'allPromoCnt',
+  t_red_before: 'tRedBeforeCnt',
+  t_red_after: 'tRedAfterCnt',
+  cash_refund: 'cashRefundCnt',
+  cashless_refund: 'cashlessRefundCnt',
+  employee_meal: 'employeeMealCnt',
+  manager_meal: 'managerMealCnt',
+  pos_overring: 'posOverringCnt',
+};
+
+export function mapSecurityEventRow(r) {
+  return {
+    loc: r.loc, eventDt: r.event_dt, eventToken: r.event_token,
+    crewToken: r.crew_token, mgrToken: r.mgr_token,
+    sessionKey: (r.pos_session_start_dt && r.pos_session_start_tm)
+      ? `${r.pos_session_start_dt}|${r.pos_session_start_tm}` : null,
+  };
+}
+
+// Collapses raw per-event rows into one row per (loc, event_dt, subjectToken) -- the same grain
+// audit_rows already uses (one row per subject per day), carrying one named count column per
+// event_token (EVENT_TOKEN_FIELD) plus sessionCnt (distinct non-null session keys that day).
+// Rows with no token for the requested subjectField are excluded -- unkeyable, same honest drop
+// as every other mapper in this file. `emp`/`empToken` are both set to the token value itself --
+// qsr_security_events never stores a plaintext name (tokenized before the DB write, per
+// src/engine/security-events.js's own PII contract), and security-baselines.js's own header
+// states its contract generically ("emp" is read as an opaque grouping key, never assumed to be a
+// name), so no engine change is needed for either field.
+export function aggregateSecurityEventsBySubject(rawRows, subjectField) {
+  const buckets = new Map(); // loc|date|token -> aggregated row
+  for (const raw of rawRows) {
+    const r = mapSecurityEventRow(raw);
+    const token = r[subjectField];
+    if (!token || !r.loc || !r.eventDt) continue;
+    const key = `${r.loc}::${r.eventDt}::${token}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        loc: r.loc, date: r.eventDt, emp: token, empToken: token,
+        allPromoCnt: 0, tRedBeforeCnt: 0, tRedAfterCnt: 0, cashRefundCnt: 0, cashlessRefundCnt: 0,
+        employeeMealCnt: 0, managerMealCnt: 0, posOverringCnt: 0,
+        _sessions: new Set(),
+      });
+    }
+    const bucket = buckets.get(key);
+    const field = EVENT_TOKEN_FIELD[r.eventToken];
+    if (field) bucket[field] += 1;
+    if (r.sessionKey) bucket._sessions.add(r.sessionKey);
+  }
+  return [...buckets.values()].map(b => {
+    const { _sessions, ...rest } = b;
+    return { ...rest, sessionCnt: _sessions.size };
+  });
+}
+
+// EVENT-001/002/003 compute -- structurally identical to computeLaborEmployeeFindingsForRule
+// (dynamic primary key from data_required[0], same personal/peer/store/network dispatch). No new
+// primitive -- rows are already the per-subject-per-day bucket rows aggregateSecurityEventsBySubject
+// produces, which satisfy the SAME {loc, date, emp, numField, denField} contract audit_rows rows do.
+export function computeSecurityEventFindingsForRule(rule, rows, { windowStart, windowEnd }) {
+  const { numField, denField, scale, abs } = fieldsFromExpr(rule);
+  const primary = dataRequiredList(rule)[0];
+
+  const pairs = new Map();
+  for (const r of rows) {
+    if (!r.empToken || !r.loc) continue;
+    const key = r.loc + '::' + r.empToken;
+    if (!pairs.has(key)) pairs.set(key, { loc: r.loc, empToken: r.empToken, emp: r.emp });
+  }
+
+  const findings = [];
+  for (const { loc, empToken, emp } of pairs.values()) {
+    const subjectRows = rows.filter(r => r.loc === loc && r.empToken === empToken);
+
+    const baselineOpts = { emp, loc, numField, denField, scale, abs, start: windowStart, end: windowEnd };
+    let baseline = null;
+    if (rule.baseline_type === 'personal') baseline = personalBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'peer') baseline = peerBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'store') baseline = storeBaseline(rows, baselineOpts);
+    else if (rule.baseline_type === 'network') baseline = networkBaseline(rows, baselineOpts);
+
+    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
+
+    findings.push({
+      empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
+      value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
+      baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+    });
+  }
+  return findings;
+}
+
 // LABOR-003 compute -- the manager x store grain, same shape as computeManagerDaypartFindingsForRule
 // immediately above (pre-aggregated rows in, 'store' baseline pooling ALL other-store rows
 // unfiltered by subject, since there is no further stratification dimension here the way INV-004
@@ -867,6 +979,24 @@ async function loadPunchTimesDateWindow(startDate, endExclusive) {
   return rows;
 }
 
+// qsr_security_events -- daily grain, CASH-*'s own date-range convention (not qsr_variance_stat's
+// monthly shape). Loads only the columns the EVENT-* rules' aggregator reads.
+async function loadSecurityEventsWindow(startDate, endDate) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_security_events')
+      .select('loc,event_dt,event_token,crew_token,mgr_token,pos_session_start_dt,pos_session_start_tm')
+      .gte('event_dt', startDate).lte('event_dt', endDate).range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadSecurityEventsWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 async function upsertFindings(findings) {
   if (!findings.length) return { saved: 0, errors: [] };
   const now = new Date().toISOString();
@@ -914,6 +1044,7 @@ async function main() {
   const punchEditCache = new Map();       // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped lifelenz_punch_edits rows
   const punchTimeDateCache = new Map();   // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_punch_times {loc,date} rows
   let tenureAllCache = null;              // qsr_employee_tenure, loaded once, not windowed
+  const securityEventsRawCache = new Map(); // 'YYYY-MM-DD..YYYY-MM-DD' -> raw qsr_security_events rows (unaggregated, shared by crew/mgr branches)
   let totalFindings = 0, totalErrors = 0, skipped = 0;
 
   for (const rule of rules) {
@@ -991,6 +1122,18 @@ async function main() {
       const managerRows = await tokenizeManagerRows(punchEditCache.get(cacheKey));
       rows = joinManagerEditsWithPunchVolume(managerRows, punchIndex);
       findings = computeManagerEditFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsSecurityEventsCrew(rule) || supportsSecurityEventsMgr(rule)) {
+      // Daily grain, CASH-*'s own date-range convention. Both branches share the SAME raw-row
+      // cache (one query covers both subject grains) and differ only in which token field the
+      // aggregator groups by.
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!securityEventsRawCache.has(cacheKey)) securityEventsRawCache.set(cacheKey, await loadSecurityEventsWindow(windowStart, windowEnd));
+      const raw = securityEventsRawCache.get(cacheKey);
+      rows = aggregateSecurityEventsBySubject(raw, supportsSecurityEventsMgr(rule) ? 'mgrToken' : 'crewToken');
+      findings = computeSecurityEventFindingsForRule(rule, rows, { windowStart, windowEnd });
     } else {
       console.warn(`[security-rules-run] ${rule.rule_id}: DATA_REQUIRED not yet supported by this job — skipping`);
       skipped++; continue;
