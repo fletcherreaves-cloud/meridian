@@ -1,0 +1,43 @@
+name: Forecast Rolling Capture
+
+# Rolling Forecast — Commit & Drift (owner-directed 2026-11-09). Daily compute job: appends
+# today's forecast read for every store to forecast_rolling_captures (NEVER overwriting a prior
+# day's row — see supabase/schema-forecast-rolling-captures.sql), then drift-checks every active
+# forecast_commits pointer and fires an app_notifications alert (in-app + push) for anything that
+# has drifted into the 'alert' tier. See scripts/forecast-rolling-capture.mjs's own header and
+# memory/project-rolling-forecast-snapshots-2026-11-09.md for the full design.
+#
+# A pure COMPUTE job over already-stored data (labor_rows / qsr_daily_activity_rollup / org
+# events, the same inputs forecast-week-precompute.mjs already reads) — no QSRSoft/LifeLenz auth
+# needed, same shape as Security Rules Run's own workflow. Scheduled at 13:00 UTC: after every
+# other daily data-refresh pull (most cluster at 10:00-12:00 UTC) so the day's forecast read
+# reflects that day's freshest numbers, and on an unclaimed hour so it doesn't compete with them.
+
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Capture today's rolling forecast + drift check
+        run: node scripts/forecast-rolling-capture.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_VAPID_PUBLIC_KEY:     ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY:         ${{ secrets.VAPID_PRIVATE_KEY }}

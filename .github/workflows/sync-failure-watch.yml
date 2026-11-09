@@ -54,6 +54,7 @@ on:
       - EOM Digest Send (roll-up email)
       - Event Impact — Retail Lift Measurement
       - Event Impact — Weather Lift Measurement
+      - Forecast Rolling Capture
       - Forecast Week Precompute
       - Hourly Projection Accuracy
       - LifeLenz Attendance Pull

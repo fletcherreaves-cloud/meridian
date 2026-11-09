@@ -63,7 +63,7 @@ const ROOTS = ['src/views', 'src/features'];
 // were still reading raw ds.opsRows — the same bug the R1 ratchet above tracks). Now bucketed
 // through metricSeries like every sibling field, so _toD/the raw opsRows filter were removed
 // entirely rather than just losing one caller.
-const CEILING = 55;
+const CEILING = 52;
 
 const PATTERN = /\.getDay\(\)/g;
 

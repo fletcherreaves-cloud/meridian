@@ -9,7 +9,8 @@ import { computeScheduleRollup } from '../engine/schedule-summary.js';
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
-import { supabase } from '../lib/supabase.js';
+import { supabase, loadRollingCaptures, loadAllCommits, saveCommit } from '../lib/supabase.js';
+import { computeDrift, freshestCapture, committedCapture } from '../engine/forecast-drift.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { callSageOnce } from '../lib/sage-client.js';
 
@@ -248,6 +249,56 @@ function LockHistoryPanel({stores, onClose}) {
           }))
         )
       )
+    )
+  );
+}
+
+// ── Commit & Drift Panel (owner-directed 2026-11-09) ────────────────────────────────────────────
+// Read-only drift list + the one write action this feature ships in v1 ("commit this week's
+// live forecast for every store"). Deliberately NOT a full forecast-history browser -- the
+// directive scoping this explicitly allows "View forecast history" to stay an honest stub for a
+// first pass, and the real per-day revision log (every row in forecast_rolling_captures) is a
+// separate, later UI; this panel's job is "what's committed, and is it drifting," which the
+// driftRows this panel is handed already answers for every CURRENTLY ACTIVE commit.
+function DriftPanel({driftRows, driftLoading, committingWeek, weekStart, onRefresh, onCommitWeek, onClose}) {
+  const tierColor = t => t==='alert' ? 'var(--red)' : t==='watching' ? 'var(--amber)' : 'var(--green)';
+  const tierLabel = t => t==='alert' ? 'ALERT' : t==='watching' ? 'Watching' : 'On track';
+  const sorted = React.useMemo(()=>{
+    const rank={'alert':2,'watching':1,'on-track':0};
+    return [...(driftRows||[])].sort((a,b)=>rank[b.tier]-rank[a.tier]);
+  },[driftRows]);
+
+  return h(ModalShell,{
+    icon:'🔖', title:'Commit & Drift',
+    subtitle:'Every day the engine re-forecasts and appends a new reading, never overwriting. Committing names which reading is the official plan; drift compares today\'s freshest reading against it.',
+    maxWidth:900, zIndex:Z.modal, onClose,
+    headerExtra:div({style:{display:'flex',gap:6}},
+      btn({className:'btn btn-sm',disabled:driftLoading,onClick:onRefresh},driftLoading?'⏳':'↻ Refresh'),
+      btn({className:'btn btn-sm btn-a',disabled:committingWeek,
+        title:'Commits every store to its own freshest captured weekly forecast for the week of '+weekStart+'. A store whose capture job hasn\'t run yet for this week is skipped.',
+        onClick:onCommitWeek},committingWeek?'⏳ Committing…':'🔖 Commit this week')),
+  },
+    !sorted.length ? div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'11px'}},
+      driftLoading?'Loading…':'No active commits yet. Use "🔖 Commit this week" above to name this week\'s plan for every store, then come back here to watch for drift.') :
+    h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+      h('thead',null,h('tr',null,
+        ...['Store','Period','For','Live','Committed','Δ%','Status']
+         .map((l,i)=>th({key:i,style:{padding:'4px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',
+           letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',
+           textAlign:i>=3?'right':'left',paddingLeft:i===0?14:8}},l))
+      )),
+      h('tbody',null,...sorted.map((r,i)=>
+        tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
+          td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',fontSize:'8.5px',whiteSpace:'nowrap'}},sName(r.loc)),
+          td({style:{padding:'4px 8px',fontSize:'8px',color:'var(--text3)'}},r.periodType==='daily'?'Day':'Week'),
+          td({style:{padding:'4px 8px',fontFamily:'var(--mono)',fontSize:'8px',color:'var(--text3)'}},r.targetPeriod),
+          td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},f$(r.liveValue)),
+          td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},f$(r.committedValue)),
+          td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
+            color:tierColor(r.tier)}},(r.deltaPct>=0?'+':'')+r.deltaPct.toFixed(1)+'%'),
+          td({style:{padding:'4px 8px',textAlign:'right',fontSize:'8px',fontWeight:700,color:tierColor(r.tier)}},tierLabel(r.tier))
+        )
+      ))
     )
   );
 }
@@ -526,6 +577,20 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   const [showLockHistory, setShowLockHistory] = useState(false); // lock history panel
   const [monthLocking,   setMonthLocking]    = useState(false);  // in-progress month lock
   const [qsrProjByLoc,   setQsrProjByLoc]   = useState({});     // {loc: total proj_sales_dollars for period}
+
+  // ── Rolling Forecast — Commit & Drift (owner-directed 2026-11-09) ──────────────────────────
+  // Deliberately ADDITIVE and independent of the Lock system above -- see
+  // memory/project-rolling-forecast-snapshots-2026-11-09.md for why Lock/locked_projections was
+  // left untouched in this pass. 'Committing' here names which day's forecast_rolling_captures
+  // row (written daily by scripts/forecast-rolling-capture.mjs) is the official plan for a
+  // (loc, period_type, target_period); drift is the live comparison between that pointer and
+  // today's freshest capture, using the same pure engine (src/engine/forecast-drift.js) the
+  // capture job's own alert check uses, so a store never shows a different verdict here than
+  // what actually triggered (or didn't trigger) a push notification.
+  const [showDriftPanel, setShowDriftPanel] = useState(false);
+  const [driftRows,      setDriftRows]      = useState([]);     // [{loc,periodType,targetPeriod,committedCapturedDate,committedValue,drift}]
+  const [driftLoading,   setDriftLoading]   = useState(false);
+  const [committingWeek, setCommittingWeek] = useState(false);
 
   // ── Week days (Wed-Tue) ────────────────────────────────
   const projDays = React.useMemo(()=>{
@@ -1353,6 +1418,67 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     return {dueWeeks,worstWeek,weeklyAlert,monthName,lockedMonthDays,monthDaysLen:monthDays.length,mWarn,monthFullyLocked};
   },[settings,lockedProjections,ALL_LOCS.join(',')]);
 
+  // ── Commit & Drift — load active commits + drift-check them ──────────────────────────────────
+  // Deliberately bounded: loadAllCommits() only reads the (small) current-pointer table, then for
+  // each commit this asks for ONLY that one target_period's own capture history
+  // (loadRollingCaptures fromDate===toDate===targetPeriod) rather than a store's whole rolling
+  // history, so this stays cheap even as forecast_rolling_captures grows unbounded over time. Runs
+  // once on mount (same cadence as the daily capture job that feeds it) -- "Refresh" on the panel
+  // re-runs it on demand rather than polling.
+  const loadDriftRows = React.useCallback(async ()=>{
+    if(!supabase) return;
+    setDriftLoading(true);
+    try{
+      const tolerancePct = (settings&&settings.tolerance)||5;
+      const rows=[];
+      for(const periodType of ['daily','weekly']){
+        const commits = await loadAllCommits(periodType);
+        for(const c of commits){
+          const periodCaptures = await loadRollingCaptures(c.loc, periodType, {fromDate:c.targetPeriod, toDate:c.targetPeriod});
+          const fresh = freshestCapture(periodCaptures);
+          const committed = committedCapture(periodCaptures, c.committedCapturedDate);
+          if(!fresh||!committed) continue; // committed row rolled off the loaded window or hasn't been captured yet -- nothing to show
+          const drift = computeDrift(fresh.forecastValue, committed.forecastValue, tolerancePct);
+          if(!drift) continue;
+          rows.push({loc:c.loc, periodType, targetPeriod:c.targetPeriod, committedCapturedDate:c.committedCapturedDate, ...drift});
+        }
+      }
+      setDriftRows(rows);
+    } finally { setDriftLoading(false); }
+  },[settings]);
+
+  React.useEffect(()=>{ loadDriftRows(); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const worstDrift = React.useMemo(()=>{
+    if(!driftRows.length) return null;
+    const rank={'alert':2,'watching':1,'on-track':0};
+    return driftRows.reduce((a,b)=>rank[b.tier]>rank[a.tier]?b:a);
+  },[driftRows]);
+
+  // Commits every store in ALL_LOCS to its OWN freshest existing weekly capture for `weekStart`
+  // -- never fabricates a number: a store the capture job hasn't reached yet for this period is
+  // silently skipped (self-heals once that store has at least one capture row for the period),
+  // reported in the returned count rather than thrown.
+  const commitWeekForAllStores = React.useCallback(async ()=>{
+    setCommittingWeek(true);
+    let committed=0, skipped=0;
+    try{
+      for(const loc of ALL_LOCS){
+        const periodCaptures = await loadRollingCaptures(loc, 'weekly', {fromDate:weekStart, toDate:weekStart});
+        const fresh = freshestCapture(periodCaptures);
+        if(!fresh){ skipped++; continue; }
+        await saveCommit(loc, 'weekly', weekStart, {
+          committedCapturedDate: fresh.capturedDate,
+          committedValue: fresh.forecastValue,
+          committedBy: (settings&&settings.dmName)||'DM',
+        });
+        committed++;
+      }
+    } finally { setCommittingWeek(false); }
+    await loadDriftRows();
+    alert(`Committed ${committed} store(s) to this week's live forecast`+(skipped?` — ${skipped} store(s) skipped (no forecast captured yet for this week, try again after the next daily capture run)`:'')+'.');
+  },[ALL_LOCS.join(','),weekStart,settings,loadDriftRows]);
+
   // ── Layered plan-vs-effective status, by patch × week (v4.195, Concept C) ──
   // Only meaningful in Month view (projWeeks holds the month's weekly buckets
   // there). For each patch and each week-bucket, determines: is every
@@ -1502,6 +1628,14 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
       onClose:()=>setShowLockHistory(false)
     }),
 
+    // ── Commit & Drift Panel (owner-directed 2026-11-09) ──────────────────
+    showDriftPanel&&h(DriftPanel,{
+      driftRows, driftLoading, committingWeek, weekStart,
+      onRefresh:loadDriftRows,
+      onCommitWeek:commitWeekForAllStores,
+      onClose:()=>setShowDriftPanel(false)
+    }),
+
     // ── Body: rail + grid + slide-out ──
     div({style:{display:'flex',flex:1,overflow:'hidden'}},
 
@@ -1576,7 +1710,33 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
               span({style:{fontSize:8,color:'var(--text3)'}},'○')
             ),
             div({style:{fontSize:8.5,color:'var(--text3)',marginTop:3}},'not yet available')
-          )
+          ),
+
+          // — Commit & Drift card (owner-directed 2026-11-09, additive — see header comment
+          // on the state block above) — district-wide: dot/callout reflect the single worst-
+          // drifted committed period across every store+period type, same aggregate-status
+          // shape lockStatus already uses for Week/Month above. ──────────────────────────────
+          (()=>{
+            const dot = !worstDrift ? 'var(--text3)'
+              : worstDrift.tier==='alert' ? 'var(--red)'
+              : worstDrift.tier==='watching' ? 'var(--amber)' : 'var(--green)';
+            const statusTxt = driftLoading ? 'checking…'
+              : !driftRows.length ? 'no commits yet'
+              : worstDrift.tier==='alert' ? 'OFF PLAN'
+              : worstDrift.tier==='watching' ? 'watching'
+              : 'on track';
+            return div({onClick:()=>setShowDriftPanel(true),
+              title:'Commit & Drift — click to view, or commit this week\'s live forecast as the official plan',
+              style:{background:'var(--surf3)',borderRadius:6,padding:'8px 10px',cursor:'pointer',
+                border:'1px solid var(--bdr)'}},
+              div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                span({style:{fontSize:11,fontWeight:700,color:'var(--text2)'}},'🔖 Commit & Drift'),
+                span({style:{fontSize:8,color:dot}},'●')
+              ),
+              div({style:{fontSize:8.5,color:'var(--text3)',marginTop:3}},
+                driftRows.length+' commit(s) tracked · '+statusTxt)
+            );
+          })()
         ),
         // Active model summary, matching Concept B's rail footer
         div({style:{marginTop:14,paddingTop:10,borderTop:'.5px solid var(--bdr)'}},
