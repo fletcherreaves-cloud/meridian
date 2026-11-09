@@ -38,10 +38,20 @@ function parseNameBadge(raw) {
 }
 
 /** True when a raw event_details row carries the minimum fields this table can key on.
- * `loc` is NOT checked here -- it isn't on the raw row at all (see parseSecurityEventRow's own
- * comment); the caller-supplied loc is checked separately. */
+ * `loc` and `eventToken` are NOT checked here -- neither is on the raw row at all (see
+ * parseSecurityEventRow's own comment); the caller-supplied values are checked separately.
+ * ⚠️ MEASURED 2026-11-09: a real, live event_details response row carries no `event_token`
+ * field whatsoever -- confirmed against a live capture, not assumed. The event type is only
+ * known from which `event_token` the request itself was scoped to (the pull's own loop
+ * variable), never echoed back per-row. Requiring `raw.event_token` here (the original
+ * dispatch #58 code, written and unit-tested entirely from a guessed fixture, never against a
+ * real response -- see the #83 rebuild's own "NOT live-verified" header) made every single row
+ * unkeyable, 100% of the time, regardless of credentials or network -- the real root cause of
+ * qsr_security_events staying at zero rows through the entire multi-month investigation in
+ * memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md, independent of that
+ * investigation's own (real, separate) GitHub-Actions-specific 403 finding. */
 function isUsableRow(raw) {
-  return !!(raw && raw.event_token && raw.event_dt && raw.event_tm);
+  return !!(raw && raw.event_dt && raw.event_tm);
 }
 
 /**
@@ -55,15 +65,17 @@ function isUsableRow(raw) {
  *
  * `loc` here is the ALREADY-padded loc (this repo's own convention) -- the caller supplies it
  * (it isn't on the raw row at all; the row belongs to whichever (store, date-range) the request
- * was scoped to), padded via the same convention every other QSRSoft table uses.
+ * was scoped to), padded via the same convention every other QSRSoft table uses. `eventToken` is
+ * the SAME -- the caller's own request-scoped event_token, never read from the raw row (see
+ * isUsableRow's comment for why).
  */
-export function parseSecurityEventRow(raw, { loc } = {}) {
-  if (!isUsableRow(raw) || loc == null) return null;
+export function parseSecurityEventRow(raw, { loc, eventToken } = {}) {
+  if (!isUsableRow(raw) || loc == null || eventToken == null) return null;
   const crew = parseNameBadge(raw.crew);
   const mgr = parseNameBadge(raw.mgr);
   return {
     loc: String(loc),
-    eventToken: raw.event_token,
+    eventToken,
     eventDt: raw.event_dt,
     eventTm: raw.event_tm,
     regNum: raw.reg_num || null,
