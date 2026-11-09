@@ -3965,6 +3965,29 @@ export async function loadLaunchPlan(loc) {
   }));
 }
 
+// All-store variant of loadLaunchPlan() above — no loc filter, since forecast.js's
+// forecastDay() needs to check "does THIS loc have a launch plan" generically across every
+// store, not just the one store the Launch Planner UI has open at a time. Table is realistically
+// tiny (one or two stores "launching" at once, each 60-365 rows), so this is loaded eagerly at
+// app startup alongside laborRows, not through the lazy-fill path large tables use. Same shape/
+// self-heal pattern as loadLaunchPlan() — silent empty-array no-op until the migration runs.
+export async function loadAllNewStoreLaunchPlans() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('new_store_launch_plan')
+    .select('loc,plan_date,day_n,projected_sales,override_sales,note,source')
+    .order('plan_date');
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadAllNewStoreLaunchPlans:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, planDate: r.plan_date, dayN: r.day_n,
+    projectedSales: r.projected_sales, overrideSales: r.override_sales,
+    note: r.note, source: r.source,
+  }));
+}
+
 // ── Session Notes ─────────────────────────────────────────────────────────────
 export async function loadSessionNotes() {
   if (!supabase) return [];
