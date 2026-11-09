@@ -866,6 +866,37 @@ export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour })
         )));
 }
 
+// ── Per-stream reload+merge for the 4 auto-synced ds-backed streams Data Manager's "↻ Sync"
+// button covers (lifelenz/fob/dar/ebos — secevents has no ds field, see DataManagerPanel's
+// own onStreamSynced wiring). Each entry is the EXACT loader call + merge shape the tiered
+// startup loader's own _stLifelenz/_stQsrsoftFob/_stDarRows/_stEbosOpSupplies stages (below)
+// already use — extracted here so a post-"↻ Sync" auto-refresh (App's onStreamSynced,
+// triggered by DataManagerPanel once its own polling sees a newer `updated_at`) can reuse the
+// identical merge instead of a second, driftable copy of it. Returns null when the table came
+// back empty (same "only merge if rows.length>0" guard the startup stages already apply).
+// Exported (same pattern as WorkflowGuidePanel/PanelManagerPanel above) so the per-stream
+// loader+merge shape is directly testable without mounting all of App() — a revert of a single
+// stream's merge shape (e.g. darByLoc dropped from the dar patch) has to fail a real test here,
+// not just "the tiered startup stage still calls SOMETHING."
+export const STREAM_RELOADERS = {
+  lifelenz: async () => {
+    const rows = await loadLifeLenzSchedule();
+    return rows.length ? { patch: { schedRows: rows }, count: rows.length } : null;
+  },
+  fob: async () => {
+    const rows = await loadQsrFob();
+    return rows.length ? { patch: { qsrFobRows: rows }, count: rows.length } : null;
+  },
+  dar: async () => {
+    const rows = await loadDarRows();
+    return rows.length ? { patch: { darRows: rows, darByLoc: bLocIdx(rows) }, count: rows.length } : null;
+  },
+  ebos: async () => {
+    const rows = await loadEbosDaily(400);
+    return rows.length ? { patch: { ebosRows: rows }, count: rows.length } : null;
+  },
+};
+
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
   // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
@@ -1503,6 +1534,36 @@ function App() {
     setDarRows(data || []);
   }, []);
 
+  // Auto-refresh-after-manual-sync (owner request, 2026-11-09): Data Manager's "↻ Sync" button
+  // dispatches a GitHub Actions pull but the new rows land in Supabase ~10 min later, and until
+  // today nothing re-read them — the owner had to hard-reload the page to see fresh data. This is
+  // the entry point DataManagerPanel calls (as `onStreamSynced`) once ITS OWN polling (not this
+  // function) detects the stream's `updated_at` has actually moved. It reloads + merges that ONE
+  // stream using the exact STREAM_RELOADERS entry the tiered startup loader's own
+  // _stLifelenz/_stQsrsoftFob/_stDarRows/_stEbosOpSupplies stages call — never a second copy of
+  // the merge — then surfaces the same global toast (`loadMsg`) manual uploads already use, so
+  // the confirmation is visible even if the owner has since closed the Data Manager modal.
+  // `secevents` has no entry in STREAM_RELOADERS: Security Events never loads into `ds` at all
+  // (loadQsrSecurityEventsForSubject is called on demand, per-subject, inside the Security panel
+  // — there is nothing here to merge), so this just acks it — DataManagerPanel's own
+  // loadQsrSecurityEventsCoverage() re-fetch already refreshes what IT shows.
+  const onStreamSynced = React.useCallback(async (wf, label) => {
+    const reloader = STREAM_RELOADERS[wf];
+    const want = label || wf;
+    if (!reloader) return { ok: true, count: 0 };
+    try {
+      const res = await reloader();
+      if (res) setDs(prev => prev ? {...prev, ...res.patch} : prev);
+      const count = res ? res.count : 0;
+      setLoadMsg(`✓ New ${want} data loaded — no refresh needed${count ? ' ('+count.toLocaleString()+' rows)' : ''}`);
+      setTimeout(() => setLoadMsg(null), 8000);
+      return { ok: true, count };
+    } catch (e) {
+      console.warn('[Meridian] onStreamSynced failed:', wf, e);
+      return { ok: false, error: e.message || String(e) };
+    }
+  }, [setDs]);
+
   // Fetch on mount + refresh on visibility change + first interaction after stale
   const lastActivityCheckRef = useRef(0);
   React.useEffect(() => {
@@ -2045,13 +2106,10 @@ function App() {
       }catch(e){console.warn('[Meridian] SMG comments load failed:',e);} };
       const _stLifelenz = async () => {
       try{
-        const lfzRows = await loadLifeLenzSchedule();
-        if(lfzRows.length>0){
-          setDs(prev=>{
-            if(!prev) return prev;
-            return {...prev, schedRows: lfzRows};
-          });
-          console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
+        const res = await STREAM_RELOADERS.lifelenz();
+        if(res){
+          setDs(prev => prev ? {...prev, ...res.patch} : prev);
+          console.log(`[Meridian] ✓ Loaded ${res.count} LifeLenz schedule rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);} };
       const _stLifelenzJobHours = async () => {
@@ -2176,10 +2234,10 @@ function App() {
       }catch(e){console.warn('[Meridian] FOB rows load failed:',e);} };
       const _stQsrsoftFob = async () => {
       try{
-        const qsrFobRows=await loadQsrFob();
-        if(qsrFobRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev,qsrFobRows};});
-          console.log(`[Meridian] ✓ Loaded ${qsrFobRows.length} QSRSoft FOB rows from Supabase`);
+        const res = await STREAM_RELOADERS.fob();
+        if(res){
+          setDs(prev => prev ? {...prev, ...res.patch} : prev);
+          console.log(`[Meridian] ✓ Loaded ${res.count} QSRSoft FOB rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);} };
       const _stPeaksRows = async () => {
@@ -2216,10 +2274,10 @@ function App() {
       }catch(e){console.warn('[Meridian] Ctrl rows load failed:',e);} };
       const _stDarRows = async () => {
       try{
-        const darRows=await loadDarRows();
-        if(darRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev,darRows,darByLoc:bLocIdx(darRows)};});
-          console.log(`[Meridian] ✓ Loaded ${darRows.length} DAR rows from Supabase`);
+        const res = await STREAM_RELOADERS.dar();
+        if(res){
+          setDs(prev => prev ? {...prev, ...res.patch} : prev);
+          console.log(`[Meridian] ✓ Loaded ${res.count} DAR rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] DAR rows load failed:',e);} };
       // #208 — coaching feedback loop. Small, slow-growing table (a handful of coaching
@@ -2340,10 +2398,10 @@ function App() {
       // window so a full review year is covered on any device.
       const _stEbosOpSupplies = async () => {
       try{
-        const ebosRows=await loadEbosDaily(400);
-        if(ebosRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return{...prev,ebosRows};});
-          console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
+        const res = await STREAM_RELOADERS.ebos();
+        if(res){
+          setDs(prev => prev ? {...prev, ...res.patch} : prev);
+          console.log(`[Meridian] ✓ Loaded ${res.count} eBOS op-supplies rows`);
         }
       }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);} };
       // Inventory Summary/Usage freshness probe ONLY — a single {date} row, not the full
@@ -4345,6 +4403,7 @@ function App() {
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
+      onStreamSynced,
       onOpenStoreConfig:()=>{setShowDataManager(false);setShowStoreVlhConfig(true);}}),
     showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
     // showPromoRoi — Dispatch #192: moved to the routePanel gate in the main content area

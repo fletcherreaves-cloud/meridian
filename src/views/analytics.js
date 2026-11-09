@@ -1082,8 +1082,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 // View and manage persisted IndexedDB data coverage.
 // Shows row counts and date ranges per data type.
 // Allows selective clear or full reset.
-function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig}) {
-  const {useState:uSt, useEffect:uE} = React;
+function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, onStreamSynced}) {
+  const {useState:uSt, useEffect:uE, useRef:uRef} = React;
   const [tab,    setTab]   = uSt('overview');
   const [cov,    setCov]   = uSt(idbCoverage||{});
   const [status, setStatus]= uSt('');
@@ -1094,7 +1094,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   // loadQsrSecurityEventsCoverage()'s own comment for why min/max alone hides a stream that
   // "succeeds" while covering almost none of its own claimed date span.
   const [secEventsCov, setSecEventsCov] = uSt({count:0, coveredDays:0, windowDays:14});
-  const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
+  const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null, fob:null});
   // #191: auditRows is lazy-loaded on demand, not eager at startup — this panel's own job is
   // reporting row COUNTS per stream (the "coverage tiles" the fix's own design doc calls out as
   // the trap: naively demanding the full stream here would just move the eager load from startup
@@ -1117,8 +1117,114 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   // loudly instead of silently trusting it (it once always fired DAR regardless of key).
   const SYNC_LABEL = { dar:'QSRSoft Daily Activity', ebos:'eBOS Purchases', fob:'FOB / P&L Cost', lifelenz:'LifeLenz Schedule', secevents:'Security Events' };
   const SYNC_KW    = { dar:'daily activity', ebos:'ebos', fob:'fob', lifelenz:'lifelenz', secevents:'security' };
+
+  // ── Auto-refresh after a manual "↻ Sync" (owner request, 2026-11-09) ─────────────────────
+  // The dispatch above returns almost immediately ("sync started; data refreshes in ~10 min")
+  // but the real rows don't land in Supabase until the GitHub Actions pull finishes. Previously
+  // the only way to see them was a hard browser reload. This polls the SAME stream's own
+  // `updated_at` (already the freshness column syncTimes/secEventsCov read) until it moves past
+  // the baseline captured right before dispatch, then calls back into App.js's onStreamSynced —
+  // which reuses the exact loader+merge the tiered startup loader already has for this stream
+  // (STREAM_RELOADERS in App.js) — so the merge logic is never duplicated here.
+  // table + the syncTimes key each ds-backed stream's freshness lives under, combined into one
+  // lookup (not two parallel ones) so a future stream only has one freshness entry to add, not
+  // two that can silently drift apart. secevents has no entry: its own secEventsCov.latestSync,
+  // refreshed via loadQsrSecurityEventsCoverage below, already covers it — see that function's
+  // own header comment.
+  const SYNC_FRESHNESS = {
+    lifelenz: {table:'lifelenz_schedule', timeKey:'life'},
+    fob:      {table:'qsr_fob',           timeKey:'fob'},
+    ebos:     {table:'qsr_ebos_daily',    timeKey:'ebos'},
+    dar:      {table:'qsr_daily_activity',timeKey:'dar'},
+  };
+  // Interval chosen inside the brief's 30-60s band: wide enough that 5 possible concurrent
+  // polls (one per stream) never hammer Supabase, tight enough to notice promptly once the
+  // ~10-minute Action actually finishes. Max attempts gives it ~1.5x that "~10 min" estimate
+  // before giving up with a clear message rather than polling forever.
+  const SYNC_POLL_MS = 45000;
+  const SYNC_POLL_MAX_ATTEMPTS = 20; // 20 * 45s = 15 min
+
+  const fetchStreamFreshness = async (wf) => {
+    if (wf === 'secevents') {
+      const cov = await loadQsrSecurityEventsCoverage({windowDays:14});
+      setSecEventsCov(cov);
+      return cov.latestSync || null;
+    }
+    const table = SYNC_FRESHNESS[wf]?.table;
+    if (!table || !supabase) return null;
+    const { data } = await supabase.from(table).select('updated_at')
+      .order('updated_at',{ascending:false}).limit(1).single();
+    return data?.updated_at || null;
+  };
+
+  // Per-stream poll state — keyed by `wf` (not a single flag) so syncing two different streams
+  // in quick succession tracks each independently, same shape syncBusy/syncNote already use for
+  // their own per-click state. pollTimersRef (not state) holds the live interval ids so cleanup
+  // can clear them synchronously without waiting on a render.
+  const [pollState, setPollState] = uSt({});   // { [wf]: {active, attempts} }
+  const pollTimersRef = uRef({});
+  const stopPolling = (wf) => {
+    if (pollTimersRef.current[wf]) { clearInterval(pollTimersRef.current[wf]); delete pollTimersRef.current[wf]; }
+  };
+  // Unmount guard: never let a 45s interval outlive the panel it was started from (closing Data
+  // Manager mid-poll stops watching — reopening and clicking ↻ Sync again starts a fresh poll).
+  uE(() => () => { Object.keys(pollTimersRef.current).forEach(stopPolling); }, []);
+
+  const startPolling = (wf, baseline, label, baselineUnknown) => {
+    stopPolling(wf); // a second click on the SAME stream restarts its poll, never doubles it up
+    // `attempts` is a plain closure counter, NOT read back out of React state — setPollState's
+    // functional updater only runs when React actually processes the update (batched, not
+    // necessarily synchronous with the call), so using it as the counter's source of truth
+    // under-counted every tick in practice. setPollState below is purely for the UI (the
+    // "👀 watching" button state); this closure variable is what the give-up logic trusts.
+    let attempts = 0;
+    // `needsBaseline` covers a real bug a self-review caught: if the pre-dispatch baseline read
+    // itself failed (network blip), `baseline` came back null not because the table was
+    // genuinely empty but because we never found out — and `!baseline` below would then treat
+    // the very FIRST successful poll read as "newer than nothing", firing a false-positive
+    // "✓ synced" on data that was already there before the sync even started. When the baseline
+    // read failed, the first successful poll read becomes the trusted baseline instead (not
+    // treated as a detection); comparisons only start from the poll after that.
+    let needsBaseline = !!baselineUnknown;
+    setPollState(prev => ({...prev, [wf]: {active:true, attempts:0}}));
+    const tick = async () => {
+      attempts++;
+      setPollState(prev => ({...prev, [wf]: {active:true, attempts}}));
+      let fresh = null;
+      try { fresh = await fetchStreamFreshness(wf); }
+      catch(e) { console.warn('[DataManager] freshness poll failed:', wf, e); }
+      if (needsBaseline) {
+        if (fresh !== null) { baseline = fresh; needsBaseline = false; }
+      } else {
+        const isNewer = !!fresh && (!baseline || new Date(fresh).getTime() > new Date(baseline).getTime());
+        if (isNewer) {
+          stopPolling(wf);
+          setPollState(prev => ({...prev, [wf]: {active:false, attempts}}));
+          const syncKey = SYNC_FRESHNESS[wf]?.timeKey;
+          if (syncKey) setSyncTimes(s => ({...s, [syncKey]: fresh}));
+          const res = onStreamSynced ? await onStreamSynced(wf, label) : {ok:true, count:0};
+          setSyncNote({ wf, err: !res.ok, msg: res.ok
+            ? `✓ ${label} — new data loaded, no refresh needed${res.count ? ' ('+res.count.toLocaleString()+' rows)' : ''}.`
+            : `⚠ ${label} data arrived but the auto-reload failed (${res.error||'unknown error'}) — reload the page to see it.` });
+          return;
+        }
+      }
+      if (attempts >= SYNC_POLL_MAX_ATTEMPTS) {
+        stopPolling(wf);
+        setPollState(prev => ({...prev, [wf]: {active:false, attempts}}));
+        setSyncNote({ wf, err:false, msg: `⏳ ${label}: still not back yet after ~15 min — check again later.` });
+      }
+    };
+    pollTimersRef.current[wf] = setInterval(tick, SYNC_POLL_MS);
+  };
+
   const doSync = async (wf) => {
     setSyncBusy(wf); setSyncNote(null);
+    // Baseline captured BEFORE dispatch — what "newer" below gets compared against. A failed
+    // read (vs. a genuinely empty table) is tracked separately — see startPolling's own comment.
+    let baseline = null, baselineUnknown = false;
+    try { baseline = await fetchStreamFreshness(wf); }
+    catch(e) { baselineUnknown = true; console.warn('[DataManager] baseline freshness read failed:', wf, e); }
     const r = await triggerSync(wf, {});
     setSyncBusy(null);
     const want = SYNC_LABEL[wf] || wf;
@@ -1129,18 +1235,24 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
     // positives on a generic "Sync started" message that names nothing).
     const namesOther = Object.entries(SYNC_KW).some(([k, kw]) => k !== wf && lower.includes(kw));
     const mismatch = !!srv && SYNC_KW[wf] && !lower.includes(SYNC_KW[wf]) && namesOther;
-    setSyncNote(mismatch
-      ? { wf, err:true, msg: `⚠ You clicked ${want}, but the server started a different sync — "${srv}". The trigger-dar-sync Edge Function is likely stale; redeploy it (supabase functions deploy trigger-dar-sync).` }
-      : { wf, err:false, msg: `✓ ${want} — ${srv || 'sync started; data refreshes in ~10 min.'}` });
+    if (mismatch) {
+      setSyncNote({ wf, err:true, msg: `⚠ You clicked ${want}, but the server started a different sync — "${srv}". The trigger-dar-sync Edge Function is likely stale; redeploy it (supabase functions deploy trigger-dar-sync).` });
+      return;
+    }
+    setSyncNote({ wf, err:false, msg: `✓ ${want} — ${srv || 'sync started; data refreshes in ~10 min.'} Watching for it to land…` });
+    startPolling(wf, baseline, want, baselineUnknown);
   };
-  const syncBtn = (wf) => h('button',{
-    onClick:()=>doSync(wf), disabled:syncBusy===wf, title:'Pull fresh data now',
-    style:{marginLeft:6,fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,
-      cursor:syncBusy===wf?'default':'pointer',verticalAlign:'middle',whiteSpace:'nowrap',
-      background:syncBusy===wf?'var(--surf3)':'rgba(245,188,0,.15)',
-      color:syncBusy===wf?'var(--text3)':'var(--accent)',
-      border:'.5px solid '+(syncBusy===wf?'var(--bdr2)':'rgba(245,188,0,.4)')}},
-    syncBusy===wf?'…':'↻ Sync');
+  const syncBtn = (wf) => {
+    const watching = !!pollState[wf]?.active && syncBusy!==wf;
+    return h('button',{
+      onClick:()=>doSync(wf), disabled:syncBusy===wf, title:watching?'Watching for fresh data…':'Pull fresh data now',
+      style:{marginLeft:6,fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,
+        cursor:syncBusy===wf?'default':'pointer',verticalAlign:'middle',whiteSpace:'nowrap',
+        background:syncBusy===wf?'var(--surf3)':watching?'rgba(96,165,250,.15)':'rgba(245,188,0,.15)',
+        color:syncBusy===wf?'var(--text3)':watching?'#60a5fa':'var(--accent)',
+        border:'.5px solid '+(syncBusy===wf?'var(--bdr2)':watching?'rgba(96,165,250,.4)':'rgba(245,188,0,.4)')}},
+      syncBusy===wf?'…':watching?'👀 watching':'↻ Sync');
+  };
 
   uE(()=>{
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
@@ -1162,13 +1274,15 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       supabase.from('lifelenz_schedule').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
       supabase.from('qsr_ebos_daily').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
       supabase.from('qsr_daily_activity').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
-    ]).then(([cnt,mn,mx,darCnt,darMn,darMx,lifeSy,ebosSy,darSy])=>{
+      supabase.from('qsr_fob').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
+    ]).then(([cnt,mn,mx,darCnt,darMn,darMx,lifeSy,ebosSy,darSy,fobSy])=>{
       if(cnt.count) setEbosCov({count:cnt.count,from:mn.data?.date||'?',to:mx.data?.date||'?'});
       if(darCnt.count) setDarCov({count:darCnt.count,from:darMn.data?.dt||'?',to:darMx.data?.dt||'?'});
       setSyncTimes({
         life: lifeSy.data?.updated_at||null,
         ebos: ebosSy.data?.updated_at||null,
         dar:  darSy.data?.updated_at||null,
+        fob:  fobSy.data?.updated_at||null,
       });
     });
   },[]);
@@ -1615,7 +1729,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           hasData?staleDot(c):null,
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft FOB Daily',
-            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},'QSRSoft FOB · auto-pull daily — daily food-cost actuals')),
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},'QSRSoft FOB · auto-pull daily — daily food-cost actuals'),
+            syncLabel(syncTimes.fob)),
           autoTag,syncBtn('fob')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
