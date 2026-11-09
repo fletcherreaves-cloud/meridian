@@ -70,20 +70,33 @@ describe('task #126 — Cycle Attempt identification survives a compliance miss 
     expect(s.satisfiesMidPaper).toBe(false);
   });
 
-  it('CRITICAL CONSTRAINT — a session identified as an EOM attempt but not 100% compliant ' +
-     'still triggers the same overdue alert it would have before this change (not quieted)', () => {
-    // The Holdenville session is the ONLY session on record, so as of a later date, this
-    // store has never had a session that cleared satisfiesWeekly||isEom -- lastWeekly is
-    // null, exactly as it was before #126 (identification change never touches this logic).
+  // SUPERSEDED 2026-11-09 (owner-directed, the Seminole/Madill/Durant/etc. false-flag batch)
+  // — this test used to assert the OPPOSITE of what it now asserts: that identifying this
+  // session as a real attempt (Axis 1) must NOT quiet the overdue alert (Axis 2 stays the only
+  // thing compliance reads). That was the deliberate scope boundary task #126 drew at the time
+  // ("identification change never touches this logic"). The owner's own words superseding it:
+  // "we need to be ok with dropping the 100% requirement, at least as it pertains to determining
+  // a count status... acknowledge the count for what it is. An attempt to count... but a count
+  // nonetheless that should be recognized." Holdenville's 118/120 Food, 31/32 Condiment, 84/96
+  // Paper IS exactly that case — a real, substantial count a hair under 100% on every class —
+  // and is now the textbook example of what should read as "verify what's left," not "no
+  // complete count on record." complianceFromSessions()'s lastWeekly now also qualifies on
+  // attemptsWeekly (Axis 1) + a real-volume floor, not satisfiesWeekly/isEom (Axis 2) alone;
+  // COVER_FRAC/satisfiesWeekly is NOT removed — it still drives the coveragePct/missing-class
+  // detail in the exception below, just no longer gates whether a real attempt is recognized.
+  it('a near-miss EOM attempt is recognized as the count, with the shortfall surfaced as a ' +
+     'verify-what\'s-left nudge instead of "no complete count"', () => {
     const c = cycleCompliance(holdenvilleRows(), { asOf: '2026-11-05' })[0];
-    expect(c.lastWeekly).toBeNull();
-    expect(c.overdue).toBe(true);
-    expect(c.status).toBe('crit');
-    const overdueEx = c.exceptions.find(e => e.rule === 'weekly-overdue');
-    expect(overdueEx).toBeTruthy();
-    expect(overdueEx.detail).toBe('No complete weekly count on record');
-    // The verdict line (what a GM actually reads) still tells them to act, unchanged wording.
-    expect(c.verdict).toMatch(/Count Food and Condiment/);
+    expect(c.lastWeekly).not.toBeNull();
+    expect(c.lastWeekly.date).toBe('2026-10-30');
+    expect(c.overdue).toBe(false);
+    expect(c.status).toBe('warn');
+    expect(c.exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy();
+    const incompleteEx = c.exceptions.find(e => e.rule === 'weekly-incomplete');
+    expect(incompleteEx).toBeTruthy();
+    expect(incompleteEx.detail).toContain('2026-10-30');
+    // The verdict line still tells them exactly what to finish, just not "go count from zero."
+    expect(c.verdict).toMatch(/Finish the .* count from 2026-10-30/);
   });
 
   it('TOUCHED_FLOOR reuses the existing isPartial/isSpot boundary (task #126 open Q2 default)', () => {
