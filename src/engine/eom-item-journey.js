@@ -43,31 +43,59 @@ const tmMin = (tm) => {
 };
 
 // Every timestamped count event across a store's raw items, as flat `{when, dayT, dt, tm,
-// hasTime}` stamps (`when` = ms incl. time-of-day for ordering; `dayT` = ms at midnight, for
-// day-grouping) — the shared first step both computeCountTiming and computeCountSessions build
-// on, so the two can never read the underlying history differently.
+// hasTime, wrin, cls}` stamps (`when` = ms incl. time-of-day for ordering; `dayT` = ms at
+// midnight, for day-grouping) — the shared first step both computeCountTiming and
+// computeCountSessions build on, so the two can never read the underlying history differently.
+// `wrin`/`cls` (the item's class, `it.itemClass`) ride along on every stamp so summarizeDaySession
+// can dedupe "how many ITEMS were counted" by wrin, per class — distinct from `nCounts`, which is
+// a count of raw count-EVENTS and double-counts an item corrected twice the same day (owner req
+// 2026-11-09: "add how many items were counted... specify classes too").
+// Also returns `classTotals` ({cls -> distinct item count}) and `itemsTotal` (distinct items
+// overall) — the denominator side of "xxx/xxx", counted once from the FULL `rawItems` population
+// passed in (the store's whole item universe for the period), not from any one day's stamps. Same
+// "class_total from the unfiltered population" reasoning scripts/qsrsoft-onhand-pull.mjs's
+// deriveSessionRows() already uses for its own class_total — matched here, not imported (that
+// script computes totals from on-hand snapshot rows, a different shape).
 function collectCountStamps(rawItems) {
   const stamps = [];
   const itemLastDate = [];   // each item's MOST RECENT count date (one per item) — computeCountTiming's nDays only
+  const classUniverse = {};  // cls -> Set<wrin>, for classTotals
+  const allUniverse = new Set(); // every wrin seen, regardless of class, for itemsTotal
   for (const it of (rawItems || [])) {
+    const wrin = it.wrin != null ? String(it.wrin) : null;
+    // Accept either field name a caller might carry the class under — count-timing-report.js's
+    // groupByLoc passes `itemClass` (loadQsrRawItemDetail's own field name), but eom-dashboard.js's
+    // OWN rawByLoc (the Diagnose modal's computeCountTiming call) renames it to `cls` on the way
+    // in. Falling back avoids a silent, field-name-mismatch-shaped empty byClass for that caller.
+    const cls = it.itemClass || it.cls || null;
+    if (wrin != null) {
+      allUniverse.add(wrin);
+      if (cls) (classUniverse[cls] || (classUniverse[cls] = new Set())).add(wrin);
+    }
     let itemLatest = null;
     for (const h of (it.history || [])) {
       if (!h.isCount) continue;
       const dayT = ts(h.dt); if (dayT == null) continue;
       const hasTime = !!String(h.tm || '').trim();
-      stamps.push({ when: dayT + tmMin(h.tm) * 60000, dayT, dt: h.dt, tm: h.tm, hasTime });
+      stamps.push({ when: dayT + tmMin(h.tm) * 60000, dayT, dt: h.dt, tm: h.tm, hasTime, wrin, cls });
       if (itemLatest == null || dayT > itemLatest.dayT) itemLatest = { dayT, dt: h.dt };
     }
     if (itemLatest) itemLastDate.push(itemLatest.dt);
   }
-  return { stamps, itemLastDate };
+  const classTotals = {};
+  for (const [cls, set] of Object.entries(classUniverse)) classTotals[cls] = set.size;
+  return { stamps, itemLastDate, classTotals, itemsTotal: allUniverse.size };
 }
 
 // One day's worth of count stamps (already filtered to a single `dayT`, sorted by `when`) -> the
 // began/ended/duration + bulk-submit read shared by computeCountTiming (the final day only) and
 // computeCountSessions (every day) — one implementation so the two can never disagree on what
-// "bulk-submitted" means.
-function summarizeDaySession(dayStamps) {
+// "bulk-submitted" means. `classTotals`/`itemsTotal` (from collectCountStamps, the FULL rawItems
+// population) are the denominators for the counted-vs-total figures this computes from THIS day's
+// stamps alone: `nItemsCounted`/`nItemsTotal` (distinct items counted today vs the store's whole
+// item universe) and `byClass` ({cls -> {counted, total}}, one entry per class actually touched
+// this day/session — a class with zero activity that day is omitted, not shown as "0/N").
+function summarizeDaySession(dayStamps, { classTotals = {}, itemsTotal = null } = {}) {
   const b = dayStamps[0], e = dayStamps[dayStamps.length - 1];
   const hasTimes = dayStamps.some(s => s.hasTime);
   const timed = dayStamps.filter(s => s.hasTime);
@@ -90,6 +118,20 @@ function summarizeDaySession(dayStamps) {
     (dayStamps.length >= 2 && allSame) ||
     (timed.length >= 5 && domFrac >= 0.8 && !allSame)
   );
+  // Distinct ITEMS counted this day/session — dedupe by wrin, not raw event count (an item
+  // corrected twice the same day is one item, not two toward nItemsCounted). Same dedupe,
+  // bucketed by class, for byClass.
+  const countedWrins = new Set();
+  const countedByClass = {};
+  for (const s of dayStamps) {
+    if (s.wrin == null) continue;
+    countedWrins.add(s.wrin);
+    if (s.cls) (countedByClass[s.cls] || (countedByClass[s.cls] = new Set())).add(s.wrin);
+  }
+  const byClass = {};
+  for (const [cls, set] of Object.entries(countedByClass)) {
+    byClass[cls] = { counted: set.size, total: classTotals[cls] || 0 };
+  }
   return {
     countDate: b.dt,
     began: b.when, beganTm: b.tm,
@@ -100,6 +142,9 @@ function summarizeDaySession(dayStamps) {
     bulkSubmit, allSame,
     domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging
     hasTimes,   // false → date only (no time recorded, duration unknown)
+    nItemsCounted: countedWrins.size,   // distinct items, deduped by wrin (not nCounts' raw events)
+    nItemsTotal: itemsTotal,            // the store's whole item universe for the period
+    byClass,                            // {cls -> {counted, total}}, classes actually touched only
   };
 }
 
@@ -108,14 +153,14 @@ function summarizeDaySession(dayStamps) {
 // all items, ended = latest, duration = the span. Also nDays (a multi-day count) + nCounts.
 // `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
 export function computeCountTiming(rawItems = []) {
-  const { stamps, itemLastDate } = collectCountStamps(rawItems);
+  const { stamps, itemLastDate, classTotals, itemsTotal } = collectCountStamps(rawItems);
   if (!stamps.length) return null;
   // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
   // recorded time that day. Mid-cycle count days telescope out of the EOM result; the meaningful
   // count is the final one, and its start→end is the actual time spent counting.
   const lastDayT = Math.max(...stamps.map(s => s.dayT));
   const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
-  const day = summarizeDaySession(onLast);
+  const day = summarizeDaySession(onLast, { classTotals, itemsTotal });
   return {
     ...day,
     nCountsLastDay: day.nCounts,
@@ -144,13 +189,13 @@ export function computeCountTiming(rawItems = []) {
 // multi-hour duration and `bulkSubmit:false`; a store cramming everything in at the end shows
 // few sessions, most `bulkSubmit:true`. Returns [] when no timestamped count events exist.
 export function computeCountSessions(rawItems = []) {
-  const { stamps } = collectCountStamps(rawItems);
+  const { stamps, classTotals, itemsTotal } = collectCountStamps(rawItems);
   if (!stamps.length) return [];
   const byDay = new Map();
   for (const s of stamps) { const arr = byDay.get(s.dayT); if (arr) arr.push(s); else byDay.set(s.dayT, [s]); }
   return [...byDay.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([, dayStamps]) => summarizeDaySession(dayStamps.slice().sort((a, b) => a.when - b.when)));
+    .map(([, dayStamps]) => summarizeDaySession(dayStamps.slice().sort((a, b) => a.when - b.when), { classTotals, itemsTotal }));
 }
 
 // "2h 15m 30s" / "45m 0s" from a millisecond duration (count-duration display; H:M:S per owner).
