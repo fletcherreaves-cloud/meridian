@@ -51,6 +51,7 @@ import { dKey } from '../utils/date.js';
 import { callSageOnce } from '../lib/sage-client.js';
 import { huddleScopeKey, huddleStorageKey, buildHuddleFacts, huddleSystemPrompt, huddleUserMessage } from '../engine/huddle-narrative.js';
 import { GamePlanFormat } from './game-plan-view.js';
+import { ShiftScoreboardFormat } from './shift-scoreboard-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
 import { OperatorLedgerFormat } from './operator-ledger-view.js';
 
@@ -82,13 +83,14 @@ const OPERATOR_GROUP_LS_KEY = 'mf_curated_home_operator_group';
 // change in behavior at all). See formatFitsAltitude below for the combined gate.
 const FORMATS = [
   { id: 'gameplan', label: 'Game Plan' },
+  { id: 'scoreboard', label: 'Shift Scoreboard' },
   { id: 'patch', label: 'The Patch' },
   { id: 'ledger', label: 'The Ledger' },
   { id: 'checklist', label: 'Checklist' },
   { id: 'bullets', label: 'Bullets' },
   { id: 'narrative', label: 'Narrative' },
 ];
-const FORMAT_ALTITUDE = { gameplan: 'store', patch: 'patch' };
+const FORMAT_ALTITUDE = { gameplan: 'store', scoreboard: 'store', patch: 'patch' };
 const DEFAULT_FORMAT_BY_ALTITUDE = { store: 'gameplan', patch: 'patch', district: 'checklist' };
 
 const SEV_COLOR = { RED: '#ef4444', AMBER: '#f59e0b', GREEN: '#10b981' };
@@ -560,6 +562,13 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
         onShowEverything: () => pickFormat('checklist'),
       }),
+    );
+  }
+  if (format === 'scoreboard') {
+    return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
+      h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
+      h(ShiftScoreboardFormat, { ds, loc: myStore?.loc, storeName: myStore?.name }),
     );
   }
   if (format === 'patch') {
