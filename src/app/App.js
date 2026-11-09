@@ -347,7 +347,7 @@ const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1447,6 +1447,10 @@ function App() {
             weatherIdx:bIdx(weather||[]),
           }))),
           wxByDate:wxIdx,
+          // Real rows arrive via the loadAllNewStoreLaunchPlans() effect below (not persisted to
+          // IDB -- see that effect's own comment); defaulted here so it's never undefined between
+          // restore and that fetch resolving.
+          launchPlanByLoc:{},
           storeIds:[...new Set(labor.map(r=>r.loc))].sort(),
           lastActual:lastAct,
         };
@@ -1488,7 +1492,7 @@ function App() {
           smgVoicePerf:[], loaded:false,
           laborIdx:{}, opsIdx:{}, ctrlIdx:{},
           laborByLoc:{}, opsByLoc:{}, ctrlByLoc:{}, darByLoc:{},
-          weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{},
+          weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{}, launchPlanByLoc:{},
         });
         setLoadMsg(null);
         console.log('[Meridian] No IDB data — initialized empty ds; Supabase loads will populate');
@@ -1505,7 +1509,7 @@ function App() {
         smgVoicePerf:[], loaded:false,
         laborIdx:{}, opsIdx:{}, ctrlIdx:{},
         laborByLoc:{}, opsByLoc:{}, ctrlByLoc:{}, darByLoc:{},
-        weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{},
+        weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{}, launchPlanByLoc:{},
       });
       setLoadMsg('❌ Auto-restore failed — load data via Upload');
       setTimeout(()=>setLoadMsg(null),8000);
@@ -1619,6 +1623,27 @@ function App() {
         if(supplemented===merged&&!fresh.length) return prev;
         return {...prev, laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
       });
+    }).catch(()=>{});
+    // New Store Launch Plan (memory/project-new-store-launch-planner.md) -- feeds forecast.js's
+    // forecastDay() launch-plan short-circuit for a store with a real ramp plan but no usable
+    // trading history yet (e.g. 44689/Lindsay, opening 2026-11-14). Table stays tiny (one or two
+    // stores "launching" at a time), so this loads eagerly alongside laborRows above rather than
+    // through the lazy-fill path large tables use -- forecastDay is a synchronous function called
+    // during render, so the index has to already be in `ds` before any forecast call, not fetched
+    // on demand. loc is stored UNPADDED in new_store_launch_plan (matching DEFAULT_TARGETS/
+    // STORE_NAMES), unlike most QSRSoft-sourced tables -- used as-is here, no padding.
+    loadAllNewStoreLaunchPlans().then(rows=>{
+      if(!rows.length) return;
+      const idx={};
+      for(const r of rows){
+        if(!r.loc||!r.planDate) continue;
+        const effective = r.overrideSales ?? r.projectedSales;
+        if(effective==null) continue;
+        (idx[r.loc]||(idx[r.loc]={}))[dKey(r.planDate)] = {
+          effective, projectedSales:r.projectedSales, overrideSales:r.overrideSales, source:r.source,
+        };
+      }
+      setDs(prev=>prev?{...prev, launchPlanByLoc:idx}:prev);
     }).catch(()=>{});
     syncReviewsFromSupabase(supabase).catch(()=>{});
     syncConfigFromSupabase(supabase).catch(()=>{});

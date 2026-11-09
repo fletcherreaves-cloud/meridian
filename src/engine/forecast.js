@@ -2366,6 +2366,42 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   // the matching loc on every call; using the per-store slice is identical math
   // but ~80× faster (1,539 rows vs 123k rows per call × hundreds of calls).
   const _locLaborRows = locRows(ds.laborByLoc, ds.laborRows, loc);
+  // ── New Store Launch Plan short-circuit (memory/project-new-store-launch-planner.md) ──────
+  // A store with a real comparable-store ramp plan (new_store_launch_plan, built by the Launch
+  // Planner tool) but no usable real trading history yet — e.g. 44689/Lindsay before its
+  // 2026-11-14 opening — has nothing for ANY model below to work from: ae/ewma/simple/dow/di all
+  // key off `_locLaborRows`, which is empty, so every one of them returns 0 or falls through.
+  // `fetchRampSales` above only ever substitutes a LY figure (65% of district DOW average) and
+  // only once `ageDays>0`, which a store with zero rows never reaches — so without this, a
+  // genuinely-ramp-modeled store (real $/week assumption, real day-of-week shape from its real
+  // predecessor) silently showed 0 everywhere Monthly Projections/Forecast Accuracy/etc. read it.
+  // Checked BEFORE the model dispatch below (a model "trained" on zero real rows is meaningless
+  // regardless of which one the store happens to be assigned) but gated tightly: only when this
+  // exact (loc,date) has a real plan row AND the store has nothing real to forecast from
+  // otherwise (`noLYData` AND zero real rows for this loc) — so a store that starts accumulating
+  // real trading data (even inside the plan's own date window) stops being short-circuited the
+  // moment it has real history, and every other store (no launchPlanByLoc entry at all) is
+  // completely unaffected.
+  const _launchPlanDay = ds.launchPlanByLoc && ds.launchPlanByLoc[loc] && ds.launchPlanByLoc[loc][dKey(date)];
+  if (_launchPlanDay && noLYData && _locLaborRows.length === 0) {
+    const _lpVal = Math.round(_launchPlanDay.effective);
+    const _lpFut = date > sodOf(new Date());
+    const _lpAct = _lpFut ? 0 : (fetchRow(_qsrActIdx(ds), loc, date, 'sales') || 0);
+    const _lpVarPct = _lpAct > 0 ? (_lpAct - _lpVal) / _lpAct : null;
+    const _lpPass = _lpVarPct !== null ? Math.abs(_lpVarPct) <= (settings.tolerance || 5) / 100 : null;
+    return {
+      date, loc, forecast: _lpVal, ly: 0, lyAdj: _lpVal, t2: 0, t4: 0, t6: 0,
+      actual: _lpAct,
+      // goal = forecast, not _goalOf(lyRaw) — there's no real prior year to grow from for a
+      // brand-new store; the launch plan's own projection IS the target.
+      goal: _lpVal,
+      varPct: _lpVarPct, pass: _lpPass, isFuture: _lpFut, opsFactor: 1, wAdj: 0, m1: _lpVal, m2: _lpVal,
+      oepe: _lpFut ? 0 : (metricDaily(ds, loc, date, 'oepe') || 0),
+      tpph: _lpFut ? 0 : (metricDaily(ds, loc, date, 'tpph') || 0),
+      labor: _lpFut ? 0 : (metricDaily(ds, loc, date, 'laborPct') || 0),
+      actualGC: 0, forecastGC: 0, lyGC: 0, noLYData: true, modelUsed: 'launch-plan',
+    };
+  }
   // ── Enhancement 5: Event Registry ────────────────────────────────────────
   // Hoisted above the ae/ewma/simple short-circuits (was previously only computed in the
   // dow/di pipeline further below) so every model path can see a tagged event — see
