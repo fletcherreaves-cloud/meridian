@@ -409,7 +409,10 @@ function VisitReadinessTile({ ds, onNav }) {
     div({ style: { padding: '14px 16px' } },
       div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, (sNameC ? sNameC(weakest.loc) : weakest.loc)),
       div({ style: { display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 } },
-        h('span', { style: { fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', color: bandColor } }, Math.round(weakest.readiness)),
+        // Bolder hero-number treatment (owner-directed 2026-11-09, "Today vs Bolder" study) —
+        // 22px -> 36px: this is the one figure the whole tile exists to show, same "give the
+        // number that matters the scale to match" pattern as the mockup's Weather-app reference.
+        h('span', { style: { fontSize: 36, fontWeight: 800, fontFamily: 'var(--mono)', color: bandColor, lineHeight: 1 } }, Math.round(weakest.readiness)),
         h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, `/100 · ${weakest.band === 'at-risk' ? 'at-risk' : weakest.band === 'watch' ? 'watch' : 'ready'} band`)),
       div({ style: { display: 'flex', gap: 3, marginTop: 10 } },
         ...['speed', 'accuracy', 'quality', 'leadership'].map(k => h('div', { key: k, style: { flex: 1, height: 6, borderRadius: 3, background: segColor(subs[k]?.score) } }))),

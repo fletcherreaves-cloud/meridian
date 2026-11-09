@@ -49,7 +49,11 @@ const ROOT = 'src';
 // model-health-badge.js's own #351-shaped bug converted its 2 sites to withAlpha()). Fuzzy
 // pattern (unlike R1/R3's clean literal matches) — hand-reviewed every candidate hit before
 // trusting this number. See PATTERN below for exactly what counts as a hit.
-const CEILING = 87;
+// Lowered 87->85 2026-11-09 (owner-directed "Today vs Bolder" study, v5.714): visit-readiness.js's
+// band/EcoSure badges converted from `b.c + '22'`/`fs.c + '18'` tints to the new bold-fill
+// `badgeFill()` lookup — removes 2 sites from the at-risk count, not a withAlpha() migration, but
+// the same net effect (one fewer hand-rolled concat to ever regress into the #351/#368 bug).
+const CEILING = 85;
 
 // Matches `<value> + '<2 hex chars>'` (any quote style). Two shapes for <value>, alternated:
 //   1. A literal var() reference — 'var(--crit)' + '18' — the dispatch's own #351/#368 example.

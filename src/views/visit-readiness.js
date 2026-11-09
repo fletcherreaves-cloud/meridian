@@ -31,6 +31,19 @@ const FS = { low: { c: '#10b981', l: 'W&V low' }, watch: { c: '#f59e0b', l: 'W&V
 const FS_ECO = { low: { c: '#10b981', l: 'EcoSure: Pass' }, watch: { c: '#f59e0b', l: 'EcoSure: Watch' }, elevated: { c: '#ef4444', l: 'EcoSure: CRITICAL' }, unknown: { c: '#6b7280', l: 'EcoSure: n/a' } };
 const fsBadge = s => (s.fsSource === 'ecosure' ? FS_ECO : FS)[s.fsFlag];
 
+// Bold-fill badge treatment (owner-directed 2026-11-09, "Today vs Bolder" study) — this panel's
+// existing severity palette (ready/watch/at-risk/unknown, both BAND and FS/FS_ECO above) is
+// already a 1:1 match for meridian.css's good/warn/crit tokens, so this just redirects the
+// on-screen badges from the old ~18% alpha tint to the new solid-fill classes. 'unknown' isn't a
+// severity, so it falls back to a solid neutral gray rather than joining the crit/warn/good set.
+const BADGE_FILL = {
+  '#10b981': { bg: 'var(--good)', fg: 'var(--on-good-fill)' },
+  '#f59e0b': { bg: 'var(--warn)', fg: 'var(--on-gold-fill)' },
+  '#ef4444': { bg: 'var(--crit-fill)', fg: 'var(--on-crit-fill)' },
+  '#6b7280': { bg: '#6b7280', fg: '#fff' },
+};
+const badgeFill = c => BADGE_FILL[c] || { bg: c, fg: '#fff' };
+
 // One formatter for screen, print and CSV (imported from the report module) so a value
 // never reads differently depending on where you looked at it.
 const fmt = fmtMetric;
@@ -214,8 +227,8 @@ function StoreRow({ s, suspended, expanded, onToggle }) {
         h('div', { style: { display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' } },
           suspended
             ? h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: suspColor, background: withAlpha(suspColor, '22') } }, 'Suspended — no visit scheduled')
-            : h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
-          h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
+            : h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: badgeFill(b.c).fg, background: badgeFill(b.c).bg } }, b.l),
+          h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: badgeFill(fs.c).fg, background: badgeFill(fs.c).bg } }, fs.l),
           s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, (s.coverage * 100).toFixed(2) + '% data'),
           s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`),
           // Critical fail count surfaced SEPARATELY from score, per the EcoSure finding's own
