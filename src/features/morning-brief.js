@@ -169,10 +169,18 @@ const MORNING_RULES = [
       const v=d.cashOSAmt;
       if(v==null||v===0) return null;
       const abs = Math.abs(v);
+      // Owner request 2026-11-09, prompted by a real "Today's One Thing" card: "make sure to
+      // point out that End of Business Day is the first thing to verify has been completed,
+      // first. Then follow with regular recommendations/suggestions." A cash variance pulled
+      // before the register session has actually closed out can read as a real short/over when
+      // it's just an unfinished day -- the EOD check comes first so nobody chases a number that
+      // isn't final yet, exactly the same spirit as this app's own "watch for an in-progress day"
+      // standing caution elsewhere (CLAUDE.md's business-day-boundary section).
+      const eodCheck = `First, confirm End of Business Day has been completed in QSRSoft for this date — an unclosed register session can show a variance that isn't final yet. `;
       if(abs >= 20) return {severity: abs>=50?'RED':'AMBER',
         headline:`Cash O/S ${v<0?'short':'over'} by $${abs.toFixed(2)}`,
-        detail:`${abs>=50?'Significant cash variance warrants immediate investigation.':'Cash variance above normal threshold.'} ${v<0?'Cash shorts are more concerning than overs and should always be traced.':'Cash overs can indicate pricing errors or transaction manipulation.'}`,
-        action:`Reconcile drawer counts and identify the shift(s) with variance. Cross-reference with drawer opens and T-Red activity.`};
+        detail:`${eodCheck}${abs>=50?'Significant cash variance warrants immediate investigation.':'Cash variance above normal threshold.'} ${v<0?'Cash shorts are more concerning than overs and should always be traced.':'Cash overs can indicate pricing errors or transaction manipulation.'}`,
+        action:`${eodCheck}Then: reconcile drawer counts and identify the shift(s) with variance. Cross-reference with drawer opens and T-Red activity.`};
       return null;
     }},
 
