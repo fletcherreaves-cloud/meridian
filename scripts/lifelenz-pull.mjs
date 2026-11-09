@@ -519,8 +519,22 @@ function parseCSV(text) {
   // Row 1: headers
   const headers = parseCsvLine(lines[1]).map(h => h.trim());
 
-  // Column finder
+  // Column finder (owner-reported 2026-11-09, dispatch 44689 LifeLenz gap investigation):
+  // a pure substring match silently picked the WRONG column for `tcs: fc('TCs')` -- "TCs" is
+  // also a substring of "Fcst. TCs", "Adj. TCs.", and "TCs +/-", and since those all sit
+  // BEFORE the real "TCs" header in this report's own column order, findIndex's first match
+  // resolved to "Fcst. TCs" instead -- every pull silently wrote the FORECAST transaction
+  // count into the actual-TCs column. Reproduced directly against a real exported report
+  // (Labor_Analysis_Summary_Report.csv, store 44689, 2026-11-09) before writing this fix, per
+  // CLAUDE.md's "measure, don't reason" rule. Fixed generically: try an EXACT (trimmed,
+  // case-insensitive) match across every candidate first, and only fall back to substring
+  // matching if no exact match exists anywhere in the header row -- every other field already
+  // has an exact match as its own header text, so this changes `tcs` and nothing else.
   const fc = (...names) => {
+    for (const n of names) {
+      const i = headers.findIndex(h => h.toLowerCase() === n.toLowerCase());
+      if (i >= 0) return i;
+    }
     for (const n of names) {
       const i = headers.findIndex(h => h.toLowerCase().includes(n.toLowerCase()));
       if (i >= 0) return i;
@@ -1704,4 +1718,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 export {
   buildLeadTimeCaptures, getLatestDate, parsePunchEditCSV, parsePunchDateTime,
   parseEmployeeRosterCSV, resolveRosterPersonKeys, normalizeRosterName,
+  parseCSV,
 };
