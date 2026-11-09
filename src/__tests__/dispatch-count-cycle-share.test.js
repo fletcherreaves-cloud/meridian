@@ -14,7 +14,13 @@ import { act } from 'react';
 
 const createEomShareLink = vi.fn(async () => ({ token: '66666666-6666-6666-6666-666666666666', error: null }));
 
-vi.mock('../lib/supabase.js', () => ({ createEomShareLink }));
+vi.mock('../lib/supabase.js', () => ({
+  createEomShareLink,
+  // Task #129 -- SpotCheckRulerDigestSettings (rendered unconditionally inside CountCycleSection
+  // now) reads its schedule config on mount; this test never opens the Ruler itself.
+  loadSpotCheckRulerConfig: async () => ({ enabled: true, dowUtc: 1, hourUtc: 12, topN: 3 }),
+  saveSpotCheckRulerConfig: async () => ({ saved: true }),
+}));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { CountCycleSection } = await import('../views/count-cycle-panel.js');

@@ -27,6 +27,7 @@ import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES, formatWeeklyCom
 import { sName } from '../constants.js';
 import { createEomShareLink } from '../lib/supabase.js';
 import { shareOrCopy } from '../utils/share.js';
+import { SpotCheckRulerModal, SpotCheckRulerDigestSettings } from './spot-check-ruler-view.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -106,7 +107,7 @@ function missingItemsTitle(s, cls) {
   return `${base}\nNot counted: ${names.join(', ')}`;
 }
 
-function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
+function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc, onOpenRuler }) {
   const meta = SEV[c.status] || SEV.ok;
   return div({ style: {
     border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: `3px solid ${meta.col}`,
@@ -169,16 +170,28 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
       div({ style: { fontSize: 9.5, color: 'var(--text3,#6b7280)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 } },
         `Active item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
         'A class counts as fully counted only when every active item is counted — new items excepted.'),
-      onShare ? h('button', {
-        onClick: (e) => { e.stopPropagation(); onShare(c); },
-        disabled: shareBusyLoc === c.loc,
-        title: 'Create a read-only, no-login link to this store\'s Count Cycle status — paste it anywhere',
-        style: {
-          marginTop: 8, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
-          color: shareBusyLoc === c.loc ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
-          padding: '5px 10px', fontSize: 11, cursor: shareBusyLoc === c.loc ? 'default' : 'pointer',
-        },
-      }, shareBusyLoc === c.loc ? '…' : '🔗 Share') : null) : null);
+      div({ style: { display: 'flex', gap: 8, marginTop: 8 } },
+        onShare ? h('button', {
+          onClick: (e) => { e.stopPropagation(); onShare(c); },
+          disabled: shareBusyLoc === c.loc,
+          title: 'Create a read-only, no-login link to this store\'s Count Cycle status — paste it anywhere',
+          style: {
+            background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
+            color: shareBusyLoc === c.loc ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
+            padding: '5px 10px', fontSize: 11, cursor: shareBusyLoc === c.loc ? 'default' : 'pointer',
+          },
+        }, shareBusyLoc === c.loc ? '…' : '🔗 Share') : null,
+        // Task #129 — the Spot-Check Ruler worksheet for this store's most recent qualifying
+        // (weekly or EOM) count session. Only offered once a real qualifying session exists —
+        // there's nothing to spot-check against a store that hasn't completed one yet.
+        (onOpenRuler && c.lastWeekly) ? h('button', {
+          onClick: (e) => { e.stopPropagation(); onOpenRuler(c); },
+          title: 'Open the Spot-Check Ruler — the 5-question follow-up + counterfactual FOB check for this count',
+          style: {
+            background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
+            color: 'var(--text2,#9aa4b2)', padding: '5px 10px', fontSize: 11, cursor: 'pointer',
+          },
+        }, '📋 Ruler') : null)) : null);
 }
 
 /**
@@ -193,6 +206,8 @@ export function CountCycleSection({ rows, period, newWrinsByLoc = {}, onOpenModa
   const [showClean, setShowClean] = React.useState(false);
   const [shareBusyLoc, setShareBusyLoc] = React.useState(null);
   const [shareMsg, setShareMsg] = React.useState('');
+  // Task #129 — which store's Spot-Check Ruler is open, if any.
+  const [rulerFor, setRulerFor] = React.useState(null);
 
   // newWrinsByLoc (owner-directed 2026-10-11) — items new to a store's active universe this
   // period are excluded from the coverage math and surfaced separately (c.newItems) rather
@@ -258,7 +273,7 @@ export function CountCycleSection({ rows, period, newWrinsByLoc = {}, onOpenModa
       : div(null,
           // Exceptions first — a screen that opens on green rows buries the ones to chase.
           flagged.length
-            ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc }))
+            ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc, onOpenRuler: setRulerFor }))
             : div({ style: { padding: '20px 12px', textAlign: 'center', color: '#10b981', fontSize: 12 } },
                 '✅ Every store is on cycle.'),
           clean.length ? div(null,
@@ -267,8 +282,22 @@ export function CountCycleSection({ rows, period, newWrinsByLoc = {}, onOpenModa
               style: { width: '100%', marginTop: 10, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 7, color: 'var(--text3,#6b7280)', padding: '7px', cursor: 'pointer', fontSize: 11 },
             }, showClean ? `▾ Hide ${clean.length} stores on cycle` : `▸ Show ${clean.length} stores on cycle`),
             showClean ? div({ style: { marginTop: 6 } },
-              clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc }))) : null) : null),
+              clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc, onOpenRuler: setRulerFor }))) : null) : null),
 
     div({ style: { padding: '9px 2px 0', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
-      `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`));
+      `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`),
+
+    // Task #129 — the weekly "needs a deep dive" digest's own schedule, editable here rather
+    // than requiring a new PR every time the owner wants a different day/hour (see
+    // scripts/spot-check-ruler-digest.mjs's own header for the full reasoning).
+    div({ style: { marginTop: 10 } }, h(SpotCheckRulerDigestSettings)),
+
+    // Task #129 — the Spot-Check Ruler, opened on demand for one store's most recent
+    // qualifying count session (c.lastWeekly — a real satisfiesWeekly/isEom session).
+    rulerFor ? h(SpotCheckRulerModal, {
+      loc: rulerFor.loc, storeName: sName(rulerFor.loc) || rulerFor.loc,
+      periodType: rulerFor.lastWeekly.isEom ? 'eom' : 'weekly',
+      countDate: rulerFor.lastWeekly.date,
+      onClose: () => setRulerFor(null),
+    }) : null);
 }

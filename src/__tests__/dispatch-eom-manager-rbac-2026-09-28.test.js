@@ -60,6 +60,10 @@ vi.mock('../lib/supabase.js', () => ({
   loadEomShareLinks: async () => [],
   revokeEomShareLink: async () => ({}),
   loadEbosMonthlyByStore: async () => ({}),
+  // Task #129 -- SpotCheckRulerDigestSettings (rendered unconditionally inside CountCycleSection,
+  // a tab this panel folds in) reads its schedule config on mount.
+  loadSpotCheckRulerConfig: async () => ({ enabled: true, dowUtc: 1, hourUtc: 12, topN: 3 }),
+  saveSpotCheckRulerConfig: async () => ({ saved: true }),
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
