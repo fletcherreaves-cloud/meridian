@@ -12,6 +12,13 @@
 // memory/curated-home-phase2-2026-11-07.md. The three assertions below that checked for those
 // old DOM shapes are updated to the new one; what they verify (real content renders, format
 // switching works, a hydrated cloud preference renders correctly) is unchanged.
+//
+// Consolidated 2026-11-09 (owner: "Checklist, Bullets and Narrative are all the same except the
+// look... add an in panel view options... Also, can drop the word Format"): the top picker now
+// shows ONE entry for all three (labeled with whichever is currently picked), and switching
+// between Checklist/Bullets/Narrative happens via a separate in-panel "View" control that only
+// renders once that entry is active. Tests below click the top entry (by whatever label it
+// currently shows) to reach the data view, then use the in-panel "View" buttons to switch style.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -80,8 +87,10 @@ describe('CuratedHomePanel — real render', () => {
     expect(container.querySelector('.ch-item')).toBeTruthy();
   });
 
-  it('switches to bullets format on click, same underlying facts', async () => {
+  it('switches to bullets view via the in-panel View control, same underlying facts', async () => {
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); }); // top entry defaults to Checklist -> reach the data view
     const bulletsBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Bullets');
     expect(bulletsBtn).toBeTruthy();
     await act(async () => { bulletsBtn.click(); });
@@ -89,8 +98,10 @@ describe('CuratedHomePanel — real render', () => {
     expect(container.textContent).toContain('19 drawer opens');
   });
 
-  it('switches to narrative format on click, same underlying facts, as prose not itemization', async () => {
+  it('switches to narrative view via the in-panel View control, same underlying facts, as prose not itemization', async () => {
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); });
     const narrBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Narrative');
     await act(async () => { narrBtn.click(); });
     expect(container.querySelector('p')).toBeTruthy();
@@ -98,18 +109,35 @@ describe('CuratedHomePanel — real render', () => {
     expect(container.querySelector('.ch-item')).toBeFalsy(); // narrative is prose, not itemized tiles
   });
 
-  it('persists the chosen format via saveUserSetting and localStorage', async () => {
+  it('persists the chosen data-view style via saveUserSetting and localStorage, separately from the top-level format', async () => {
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
+    const checklistBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Checklist');
+    await act(async () => { checklistBtn.click(); });
     const narrBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Narrative');
     await act(async () => { narrBtn.click(); });
-    expect(saveUserSettingMock).toHaveBeenCalledWith('curated_home_format', 'narrative');
-    expect(localStorage.getItem('mf_curated_home_format')).toBe('narrative');
+    expect(saveUserSettingMock).toHaveBeenCalledWith('curated_home_data_view', 'narrative');
+    expect(saveUserSettingMock).toHaveBeenCalledWith('curated_home_format', 'dataview');
+    expect(localStorage.getItem('mf_curated_home_data_view')).toBe('narrative');
+    expect(localStorage.getItem('mf_curated_home_format')).toBe('dataview');
   });
 
-  it('hydrates a previously-saved format preference from the cloud on mount', async () => {
+  it('hydrates a previously-saved format preference from the cloud on mount, migrating a pre-consolidation value (checklist/bullets/narrative) to the single dataview entry', async () => {
     loadUserSettingMock.mockResolvedValue('bullets');
     await mount({ ds: {}, settings: {}, role: 'gm', darRows: [] });
     expect(container.querySelector('.ch-item')).toBeTruthy();
+  });
+
+  it('shows one picker entry for Checklist/Bullets/Narrative (not three), drops the word "Format", and offers an in-panel "View" control to switch between them', async () => {
+    await mount({ ds: {}, settings: {}, role: 'admin', darRows: [] }); // district altitude defaults straight into the data view
+    expect(container.textContent).not.toContain('Format');
+    expect(container.textContent).toContain('View');
+    const buttonText = Array.from(container.querySelectorAll('button')).map(b => b.textContent);
+    // One top-level entry (dynamically labeled "Checklist", the default style) + the in-panel
+    // View control's own "Checklist" option = 2 total; Bullets/Narrative appear ONLY as in-panel
+    // View options, never as their own top-level picker entries.
+    expect(buttonText.filter(t => t === 'Checklist').length).toBe(2);
+    expect(buttonText.filter(t => t === 'Bullets').length).toBe(1);
+    expect(buttonText.filter(t => t === 'Narrative').length).toBe(1);
   });
 
   it('shows patch-altitude framing for an area_supervisor once Checklist is selected (The Patch is now the default there -- see curated-home-patch-plan.test.js)', async () => {

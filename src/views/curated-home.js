@@ -83,17 +83,31 @@ const OPERATOR_GROUP_LS_KEY = 'mf_curated_home_operator_group';
 // it's meaningful at 'district' altitude, same as Checklist/Bullets/Narrative, but ALSO needs a
 // real operator_group set on this account (an owner/VP/admin with no operator identity gets no
 // change in behavior at all). See formatFitsAltitude below for the combined gate.
+// Checklist/Bullets/Narrative consolidation (owner request 2026-11-09: "Checklist, Bullets and
+// Narrative are all the same except the look... give user preference in how they want to see the
+// data... add an in panel view options... That way only the one they chose is visible. Also, can
+// drop the word Format at this point as well.") -- these three used to be three separate always-
+// visible entries in this same top picker. They're now ONE entry ('dataview') in the top picker,
+// labeled dynamically with whichever of the three the user currently has picked; the actual
+// Checklist/Bullets/Narrative CHOICE moves to a small in-panel "View" control rendered alongside
+// the data itself (see dataViewPicker below), so only the chosen one is ever visible -- never
+// three competing buttons for what is, underneath, the identical item list.
 const FORMATS = [
   { id: 'gameplan', label: 'Game Plan' },
   { id: 'scoreboard', label: 'Shift Scoreboard' },
   { id: 'patch', label: 'The Patch' },
   { id: 'ledger', label: 'The Ledger' },
-  { id: 'checklist', label: 'Checklist' },
-  { id: 'bullets', label: 'Bullets' },
-  { id: 'narrative', label: 'Narrative' },
+  { id: 'dataview', label: 'Checklist' }, // label unused -- overridden dynamically, see formatPicker
 ];
 const FORMAT_ALTITUDE = { gameplan: 'store', scoreboard: 'store', patch: 'patch' };
-const DEFAULT_FORMAT_BY_ALTITUDE = { store: 'gameplan', patch: 'patch', district: 'checklist' };
+const DEFAULT_FORMAT_BY_ALTITUDE = { store: 'gameplan', patch: 'patch', district: 'dataview' };
+
+// The three data-view styles, now a SEPARATE per-user preference from the top-level format pick
+// (same Supabase user_settings + localStorage mirror pattern as FORMAT_KEY/FORMAT_LS_KEY above).
+const DATA_VIEW_STYLES = ['checklist', 'bullets', 'narrative'];
+const DATA_VIEW_LABELS = { checklist: 'Checklist', bullets: 'Bullets', narrative: 'Narrative' };
+const DATA_VIEW_KEY = 'curated_home_data_view';
+const DATA_VIEW_LS_KEY = 'mf_curated_home_data_view';
 
 const SEV_COLOR = { RED: '#ef4444', AMBER: '#f59e0b', GREEN: '#10b981' };
 const SEV_DOT   = { RED: '!', AMBER: '~', GREEN: '✓' };
@@ -477,24 +491,43 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // Checklist/Bullets/Narrative stay exactly as reachable as they always were, just not the
   // first thing a FRESH login sees. A format tied to one altitude (FORMAT_ALTITUDE) never
   // becomes the fallback at a different one. The Ledger additionally requires operatorGroup to
-  // be set -- an owner/VP/admin account with no operator identity gets the SAME 'checklist'
-  // default it always has, never a surprise new front door it never asked for.
-  const defaultFormat = (altitude === 'district' && operatorGroup) ? 'ledger' : (DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'checklist');
+  // be set -- an owner/VP/admin account with no operator identity gets the SAME 'dataview'
+  // (Checklist, by default) it always has, never a surprise new front door it never asked for.
+  const defaultFormat = (altitude === 'district' && operatorGroup) ? 'ledger' : (DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'dataview');
   const formatFitsAltitude = (id) => {
     if (id === 'ledger') return altitude === 'district' && !!operatorGroup;
     return !FORMAT_ALTITUDE[id] || FORMAT_ALTITUDE[id] === altitude;
   };
+  // A saved format value from BEFORE this consolidation is one of the three data-view style ids
+  // directly (a user who had explicitly picked Checklist/Bullets/Narrative) -- migrated losslessly
+  // below into format='dataview' + that same style, rather than falling back to a default and
+  // silently discarding an existing preference.
   const [format, setFormat] = React.useState(() => {
     try {
       const v = localStorage.getItem(FORMAT_LS_KEY);
+      if (DATA_VIEW_STYLES.includes(v)) return 'dataview';
       if (FORMATS.some(f => f.id === v) && formatFitsAltitude(v)) return v;
     } catch {}
     return defaultFormat;
   });
+  const [dataViewStyle, setDataViewStyle] = React.useState(() => {
+    try {
+      const v = localStorage.getItem(FORMAT_LS_KEY);
+      if (DATA_VIEW_STYLES.includes(v)) return v;
+      const dv = localStorage.getItem(DATA_VIEW_LS_KEY);
+      if (DATA_VIEW_STYLES.includes(dv)) return dv;
+    } catch {}
+    return 'checklist';
+  });
   React.useEffect(() => {
     let live = true;
     loadUserSetting(FORMAT_KEY).then(v => {
-      if (live && FORMATS.some(f => f.id === v) && formatFitsAltitude(v)) setFormat(v);
+      if (!live) return;
+      if (DATA_VIEW_STYLES.includes(v)) { setFormat('dataview'); setDataViewStyle(v); }
+      else if (FORMATS.some(f => f.id === v) && formatFitsAltitude(v)) setFormat(v);
+    }).catch(() => {});
+    loadUserSetting(DATA_VIEW_KEY).then(v => {
+      if (live && DATA_VIEW_STYLES.includes(v)) setDataViewStyle(v);
     }).catch(() => {});
     return () => { live = false; };
   }, [altitude, operatorGroup]);
@@ -503,10 +536,19 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     try { localStorage.setItem(FORMAT_LS_KEY, id); } catch {}
     saveUserSetting(FORMAT_KEY, id).catch(() => {});
   };
+  const pickDataViewStyle = (id) => {
+    setDataViewStyle(id);
+    setFormat('dataview');
+    try {
+      localStorage.setItem(DATA_VIEW_LS_KEY, id);
+      localStorage.setItem(FORMAT_LS_KEY, 'dataview');
+    } catch {}
+    saveUserSetting(DATA_VIEW_KEY, id).catch(() => {});
+    saveUserSetting(FORMAT_KEY, 'dataview').catch(() => {});
+  };
 
   const visibleFormats = FORMATS.filter(f => formatFitsAltitude(f.id));
-  const formatPicker = div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px 4px 4px 10px' } },
-    span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', fontWeight: 600 } }, 'Format'),
+  const formatPicker = div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px' } },
     ...visibleFormats.map(f => h('button', {
       key: f.id, type: 'button', onClick: () => pickFormat(f.id),
       style: {
@@ -515,7 +557,25 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
         background: format === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
         color: format === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
       },
-    }, f.label)),
+    }, f.id === 'dataview' ? DATA_VIEW_LABELS[dataViewStyle] : f.label)),
+  );
+  // In-panel "View" control (owner request 2026-11-09) -- only the owner's CURRENT choice of
+  // Checklist/Bullets/Narrative is ever on screen at once; this is how they change which one.
+  // Deliberately small/secondary styling vs. formatPicker above -- this is a sub-choice within the
+  // single "dataview" entry, not a peer of Game Plan/The Patch/The Ledger.
+  const dataViewPicker = div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 10 } },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 4, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '3px', fontSize: 10 } },
+      span({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', fontWeight: 600, padding: '0 6px' } }, 'View'),
+      ...DATA_VIEW_STYLES.map(id => h('button', {
+        key: id, type: 'button', onClick: () => pickDataViewStyle(id),
+        style: {
+          padding: '4px 9px', borderRadius: 999, border: 'none', fontSize: 10, fontWeight: 700,
+          cursor: 'pointer',
+          background: dataViewStyle === id ? 'var(--gold,#f5bc00)' : 'transparent',
+          color: dataViewStyle === id ? '#1a1200' : 'var(--text3,#6b7280)',
+        },
+      }, DATA_VIEW_LABELS[id])),
+    ),
   );
 
   // Self-service "which operator are you" picker (owner request 2026-11-08) -- visible only at
@@ -634,7 +694,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(GamePlanFormat, {
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
-        onShowEverything: () => pickFormat('checklist'),
+        onShowEverything: () => pickFormat('dataview'),
       }),
     );
   }
@@ -663,7 +723,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     );
   }
 
-  const Renderer = RENDERERS[format] || ChecklistFormat;
+  const Renderer = RENDERERS[dataViewStyle] || ChecklistFormat;
   const altitudeLabel = altitude === 'store' ? 'Store' : altitude === 'patch' ? 'Patch' : 'District';
 
   return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
@@ -685,7 +745,8 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       h(StatTile, { sev: 'GREEN', count: summary.green || 0, label: 'Green stores' }),
     ),
     h(SeverityBar, { summary }),
-    div({ style: { background: 'var(--surf,#fff)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 14, padding: format === 'checklist' ? '14px 20px' : '20px 22px', marginTop: 16 } },
+    div({ style: { background: 'var(--surf,#fff)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 14, padding: dataViewStyle === 'checklist' ? '14px 20px' : '20px 22px', marginTop: 16 } },
+      dataViewPicker,
       h(Renderer, { items, summary, onNav }),
     ),
   );
