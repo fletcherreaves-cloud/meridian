@@ -21,6 +21,7 @@ import {
   loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled,
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
   loadQsrSecurityEventsForSubject, loadSecurityFindingsForSubject,
+  loadSecurityFindingActionsForFindings, saveSecurityFindingAction,
 } from '../lib/supabase.js';
 import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
 import { RevealName } from './store-analytics.js';
@@ -29,6 +30,7 @@ import {
   monthsBack, assembleInventoryDrilldown, assembleCashDrilldown,
   classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
 } from '../engine/security-drilldown.js';
+import { playbookForRule } from '../engine/security-playbook.js';
 // dispatch #100 -- the date-range control reuses the shared DateRangeControl (issue #126 Spine 1)
 // rather than a bespoke date-input pair, matching this repo's "don't invent a new pattern"
 // standing rule.
@@ -140,7 +142,7 @@ export function buildHistoryByRule(findingsForOneSubject) {
   const byRule = new Map();
   for (const f of findingsForOneSubject) {
     const entry = {
-      ruleId: f.ruleId, pass: f.pass, value: f.value, thresholdUsed: f.thresholdUsed,
+      id: f.id, ruleId: f.ruleId, pass: f.pass, value: f.value, thresholdUsed: f.thresholdUsed,
       baselineContext: f.baselineContext || {}, explanation: f.explanation || [],
       windowStart: f.windowStart, windowEnd: f.windowEnd, computedAt: f.computedAt,
       lifecycleCategory: f.lifecycleCategory || null, exonerationShare: f.exonerationShare ?? null,
@@ -598,7 +600,7 @@ function SubjectHistory({ group }) {
   );
 }
 
-function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds }) {
+function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
     h(SubjectHistory, { group }),
     group.verdicts.map((v, i) => {
@@ -643,6 +645,13 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
         // shipped in Part A).
         corrob.length > 0 && div({ style: { fontSize: 11, color: 'var(--crit,#ef4444)', marginTop: 3 } },
           `⚠ Corroborated by ${corrob.join(', ')} — also flagged for this subject.`),
+        // dispatch 2026-11-09 -- case tracking, only offered on a real finding row (v.id) with an
+        // actual verdict to act on (never for undetermined/hygiene, which have nothing to
+        // investigate yet).
+        v.id && v.pass != null && !v.lifecycleCategory && h(FindingActions, {
+          findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
+          error: actionError?.[v.id], onSubmit: onFindingAction,
+        }),
         // dispatch #46 §C item 1 -- chronic vs. new, from the subject's own history for this rule.
         div({ style: { fontSize: 10.5, color: trendMeta.color, marginTop: 3 } }, trendMeta.label),
         shapeLabel && div({ style: { fontSize: 10.5, color: shapeMeta.color, marginTop: 1 } }, shapeLabel),
@@ -664,6 +673,58 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
   );
 }
 
+// dispatch 2026-11-09 -- case tracking. Owner's own ask, named the highest-value follow-on in
+// memory/design-security-events-risk-rules-2026-11-09.md's Phase 2 list: today a flagged finding
+// is read-only -- nothing records whether anyone ever looked at it, let alone what they decided.
+// Append-only (supabase/schema-security-finding-actions.sql) -- a correction is a NEW action, not
+// an edit of an old one, same discipline identity_reveal_log already uses for this panel.
+const ACTION_LABEL = {
+  investigated_cleared: { label: 'Investigated — cleared', color: 'var(--ok,#10b981)' },
+  escalated: { label: 'Escalated', color: 'var(--crit,#ef4444)' },
+  noted: { label: 'Note added', color: 'var(--text3)' },
+};
+
+function FindingActions({ findingId, actions, busy, error, onSubmit }) {
+  const [draft, setDraft] = React.useState(null); // null | 'investigated_cleared' | 'escalated' | 'noted'
+  const [note, setNote] = React.useState('');
+  const [showHistory, setShowHistory] = React.useState(false);
+  if (!findingId) return null; // no real finding row to anchor an action to (shouldn't happen for a real verdict, but never crash)
+  const list = actions || [];
+  const latest = list.length ? list[list.length - 1] : null;
+
+  const submit = () => {
+    onSubmit(findingId, draft, note.trim() || null);
+    setDraft(null); setNote('');
+  };
+
+  return div({ style: { marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--bdr)' } },
+    div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+      latest && span({ style: { fontSize: 10.5, fontWeight: 700, color: (ACTION_LABEL[latest.action] || {}).color || 'var(--text3)' } },
+        `${(ACTION_LABEL[latest.action] || {}).label || latest.action} · ${latest.createdByRole || '—'} · ${fDateTime(latest.createdAt)}`),
+      btn({ onClick: () => setDraft('investigated_cleared'), disabled: busy, style: caseBtnStyle }, '✓ Mark investigated'),
+      btn({ onClick: () => setDraft('escalated'), disabled: busy, style: caseBtnStyle }, '⬆ Escalate'),
+      list.length > 0 && btn({ onClick: () => setShowHistory(s => !s), style: { ...caseBtnStyle, border: 'none' } }, `History (${list.length})`),
+    ),
+    draft && div({ style: { marginTop: 6, display: 'flex', gap: 6, alignItems: 'flex-start' } },
+      h('textarea', {
+        value: note, onChange: e => setNote(e.target.value), placeholder: 'Optional note…', rows: 2,
+        style: { flex: 1, fontSize: 11.5, padding: 6, borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', resize: 'vertical' },
+      }),
+      btn({ onClick: submit, disabled: busy, style: { ...caseBtnStyle, background: 'var(--accent,#f5bc00)', color: '#000', border: 'none' } }, busy ? 'Saving…' : 'Submit'),
+      btn({ onClick: () => { setDraft(null); setNote(''); }, style: caseBtnStyle }, 'Cancel'),
+    ),
+    // dispatch 2026-11-09 -- a write failure (most likely cause today: the owner hasn't yet run
+    // schema-security-finding-actions.sql) must reach the screen, not just the console -- this
+    // panel's own standing voice rule applies to its own errors too.
+    error && div({ style: { marginTop: 4, fontSize: 10.5, color: 'var(--crit,#ef4444)' } }, `⚠ ${error}`),
+    showHistory && div({ style: { marginTop: 6, fontSize: 10.5, color: 'var(--text3)' } },
+      list.slice().reverse().map(a => div({ key: a.id, style: { padding: '2px 0' } },
+        `${(ACTION_LABEL[a.action] || {}).label || a.action} · ${a.createdByRole || '—'} · ${fDateTime(a.createdAt)}${a.note ? ' — ' + a.note : ''}`)),
+    ),
+  );
+}
+const caseBtnStyle = { fontSize: 10.5, fontWeight: 600, color: 'var(--text)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' };
+
 function explanationReason(explanation) {
   const e = Array.isArray(explanation) ? explanation[0] : null;
   return e && e.value == null ? e.label : null;
@@ -677,7 +738,7 @@ function fDateTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
 // the parent's <tbody> gets valid direct children -- same cell content as before the table
 // conversion, just laid out in columns instead of one flex row.
 const SUBJECT_ROW_COLS = 6;
-function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item }) {
+function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item, findingActions, actionBusy, actionError, onFindingAction }) {
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
     .map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v }));
@@ -724,7 +785,7 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
     ),
     expanded && h('tr', null,
       td({ colSpan: SUBJECT_ROW_COLS, style: { padding: 0 } },
-        h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds }))),
+        h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction }))),
   );
 }
 
@@ -757,12 +818,18 @@ function Legend({ onDismiss, rules }) {
   );
 }
 
-const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory', labor: 'Labor' };
+// 'events' added dispatch 2026-11-09 (schema-security-rules-events-phase1.sql's EVENT-001/002/003)
+// -- qsr_security_events-sourced, emp-keyed same as cash/labor. Without a tab here those rules'
+// findings could never be selected in this panel at all -- domainRuleIds is built from whichever
+// of these four strings `domain` state holds, and the rule-directory/legend sections already list
+// every domain regardless of tab (RuleDirectory's own "both domains shown... reference material"
+// comment), so this was the one place actually gating visibility.
+const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory', labor: 'Labor', events: 'Events' };
 
 // dispatch 2026-10-12 -- the domain tab's own icon+label, read by both the tab row and (via
 // RULE_DOMAIN_LABEL above) the rule directory/print-report/export titles. Was a two-way ternary
 // (`d === 'cash' ? ... : ...`) that had no room for a third domain.
-const DOMAIN_TAB_LABEL = { cash: '💵 Cash', inventory: '📦 Inventory', labor: '🕐 Labor' };
+const DOMAIN_TAB_LABEL = { cash: '💵 Cash', inventory: '📦 Inventory', labor: '🕐 Labor', events: '🧾 Events' };
 
 // Owner-reported live 2026-10-14: Labor looked identical to "broken" on first click (0 groups,
 // "No findings match the current filters") even though LABOR-001/002 both had real data -- 330
@@ -773,7 +840,10 @@ const DOMAIN_TAB_LABEL = { cash: '💵 Cash', inventory: '📦 Inventory', labor
 // Inventory both have real flagged findings today, so 1+ is still the right default there (it's
 // what makes those two domains open straight to "here's what needs attention" instead of a wall
 // of clear subjects) -- only Labor needs to default to All.
-const DOMAIN_DEFAULT_MIN_SIGNALS = { cash: 1, inventory: 1, labor: 0 };
+// 'events' defaults to All too (dispatch 2026-11-09) -- EVENT-001/002/003 ship active=false with
+// zero findings computed yet (same as LABOR's own day-one state the 2026-10-14 comment above
+// describes), so a 1+ floor would render the identical "looks broken" empty table.
+const DOMAIN_DEFAULT_MIN_SIGNALS = { cash: 1, inventory: 1, labor: 0, events: 0 };
 
 // dispatch #56 Part A -- owner: "let's add directory of what each policy covers." Renders
 // ENTIRELY from the live `rules` array (loadSecurityRules()'s own security_rules read) -- never a
@@ -840,6 +910,28 @@ function RuleDirectoryRow({ rule: r }) {
       corrob.length > 0 && exon.length > 0 && span(null, '   ·   '),
       exon.length > 0 && span(null, `Weakened by: ${exon.join(', ')}`),
     ),
+    h(RulePlaybook, { ruleId: r.ruleId }),
+  );
+}
+
+// dispatch 2026-11-09 -- owner's own ask: "generally available techniques on how to best control
+// cash controls on the floor." One level up from the row's already-live fields just above
+// (description/investigation_action/false_positives, all security_rules columns) -- this is
+// curated, general loss-prevention practice (src/engine/security-playbook.js), never a number
+// derived from this org's own data. Renders nothing for a rule with no playbook entry yet
+// (playbookForRule's own honest-null contract), so a brand-new rule family degrades silently
+// instead of showing an empty box.
+function RulePlaybook({ ruleId }) {
+  const p = playbookForRule(ruleId);
+  if (!p) return null;
+  const row = (label, text) => div({ style: { marginTop: 4 } },
+    span({ style: { fontWeight: 700, color: 'var(--text)' } }, label + ': '),
+    span({ style: { color: 'var(--text2)' } }, text));
+  return div({ style: { marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--bdr)', fontSize: 10.5 } },
+    span({ style: { fontWeight: 700, color: 'var(--accent,#f5bc00)' } }, `📖 Playbook — ${p.title}`),
+    row('What it is', p.what),
+    row('The real tell', p.tell),
+    row('Floor technique', p.floor),
   );
 }
 
@@ -1056,7 +1148,7 @@ export function SecurityPanel({ userRole, onClose }) {
   const [dataState, setDataState] = React.useState('idle');     // idle | loading | loaded | error
   const [findings, setFindings] = React.useState([]);
   const [rules, setRules] = React.useState([]);
-  const [domain, setDomain] = React.useState('cash'); // 'cash' | 'inventory'
+  const [domain, setDomain] = React.useState('cash'); // 'cash' | 'inventory' | 'labor' | 'events'
   const [scope, setScope] = React.useState({ level: 'all' });
   const [ruleFilter, setRuleFilter] = React.useState(null);
   const [minSignals, setMinSignals] = React.useState(1);
@@ -1222,6 +1314,52 @@ export function SecurityPanel({ userRole, onClose }) {
     return () => { cancelled = true; };
   }, [expanded, groups]);
 
+  // dispatch 2026-11-09 -- case-tracking actions, fetched lazily per expanded subject (same shape
+  // as the subjectHistory effect immediately above it -- "on-demand, not eager at startup").
+  // findingActionsAttempted tracks individual FINDING ids, not subject keys, since a subject's
+  // verdicts span multiple rules/finding rows and each needs its own fetch tracked once.
+  const [findingActions, setFindingActions] = React.useState({}); // findingId -> action[]
+  const [actionBusy, setActionBusy] = React.useState(null); // the one findingId currently submitting, or null
+  const [actionError, setActionError] = React.useState({}); // findingId -> last submit error message, or absent
+  const findingActionsAttempted = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!expanded) return;
+    const g = groups.find(x => x.key === expanded);
+    if (!g) return;
+    const toFetch = g.verdicts.map(v => v.id).filter(id => id && !findingActionsAttempted.current.has(id));
+    if (!toFetch.length) return;
+    toFetch.forEach(id => findingActionsAttempted.current.add(id));
+    let cancelled = false;
+    (async () => {
+      const rows = await loadSecurityFindingActionsForFindings(toFetch);
+      if (cancelled || !rows.length) return;
+      setFindingActions(prev => {
+        const next = { ...prev };
+        for (const r of rows) next[r.findingId] = [...(next[r.findingId] || []), r];
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [expanded, groups]);
+
+  const handleFindingAction = React.useCallback(async (findingId, action, note) => {
+    setActionBusy(findingId);
+    setActionError(prev => { const { [findingId]: _drop, ...rest } = prev; return rest; });
+    try {
+      const saved = await saveSecurityFindingAction({ findingId, action, note, role: userRole });
+      setFindingActions(prev => ({ ...prev, [findingId]: [...(prev[findingId] || []), saved] }));
+    } catch (e) {
+      // security_finding_actions' own write path throws deliberately (its header comment: "a
+      // write failure must never degrade silently") -- most likely cause right now is the table
+      // itself not existing yet (the owner hasn't run schema-security-finding-actions.sql), so
+      // this must actually reach the screen, not just the console.
+      console.warn('[SecurityPanel] saveSecurityFindingAction failed:', e.message);
+      setActionError(prev => ({ ...prev, [findingId]: e.message || 'Could not save — try again.' }));
+    } finally {
+      setActionBusy(null);
+    }
+  }, [userRole]);
+
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
 
@@ -1300,7 +1438,7 @@ export function SecurityPanel({ userRole, onClose }) {
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     // ── Domain tabs + Legend ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
-      ['cash', 'inventory', 'labor'].map(d => btn({
+      ['cash', 'inventory', 'labor', 'events'].map(d => btn({
         key: d, onClick: () => { setDomain(d); setRuleFilter(null); setMinSignals(DOMAIN_DEFAULT_MIN_SIGNALS[d] ?? 1); },
         style: {
           padding: '5px 12px', borderRadius: 'var(--r)', border: '1px solid ' + (domain === d ? 'var(--accent)' : 'var(--bdr)'),
@@ -1439,8 +1577,10 @@ export function SecurityPanel({ userRole, onClose }) {
               // further" at all. Falling through to SubjectDrilldown's existing cash/inventory
               // branches for a domain neither one actually sources would silently run the WRONG
               // query (audit_rows) and render a misleading empty result, worse than offering
-              // nothing.
-              domainRuleIds: domain === 'labor' ? null : domainRuleIds, item,
+              // nothing. 'events' (dispatch 2026-11-09) has the identical gap -- no
+              // assembleEventsDrilldown() exists either -- so it's nulled here for the same reason.
+              domainRuleIds: (domain === 'labor' || domain === 'events') ? null : domainRuleIds, item,
+              findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
             });
           })),
         ),

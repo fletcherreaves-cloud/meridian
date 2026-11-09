@@ -6622,6 +6622,55 @@ export async function loadGmIdentityRevealEnabled() {
   return !!(data?.data?.enabled);
 }
 
+// ── security_finding_actions — case-tracking audit trail (dispatch 2026-11-09) ─────────────────
+// supabase/schema-security-finding-actions.sql. Lazy, per-subject-on-expand (same shape
+// loadSecurityFindingsForSubject already uses) -- this panel's own standing discipline is
+// "on-demand, not eager at startup" (dispatch #43), and a finding's action history is exactly
+// that: nobody needs it until they expand that one subject.
+//
+// No automated migration runner exists in this repo (every supabase/schema-*.sql file's own
+// header says so) -- this ships safely ahead of the owner applying that migration by hand,
+// exactly like loadSecurityFindings() already does for security_findings_latest: probe once,
+// cache the "table missing" verdict for the session, degrade to an empty read rather than a
+// crash. PGRST205 is PostgREST's own schema-cache-miss code for "relation does not exist"
+// (confirmed live by loadSecurityFindings' own comment, same error family).
+let _securityFindingActionsTableMissing = null; // null = not probed; cached true/false after
+function _mapFindingActionRow(r) {
+  return {
+    id: r.id, findingId: r.finding_id, action: r.action, note: r.note,
+    createdByRole: r.created_by_role, createdAt: r.created_at,
+  };
+}
+export async function loadSecurityFindingActionsForFindings(findingIds) {
+  if (!supabase || !Array.isArray(findingIds) || !findingIds.length) return [];
+  if (_securityFindingActionsTableMissing) return [];
+  const { data, error } = await supabase.from('security_finding_actions')
+    .select('id,finding_id,action,note,created_by_role,created_at')
+    .in('finding_id', findingIds).order('created_at', { ascending: true });
+  if (error) {
+    if (error.code === 'PGRST205') { _securityFindingActionsTableMissing = true; return []; }
+    console.warn('[loadSecurityFindingActionsForFindings]', error.message);
+    return [];
+  }
+  return (data || []).map(_mapFindingActionRow);
+}
+
+// Writes from the BROWSER under RLS (not service-role) -- the insert policy itself enforces who
+// may write and that created_by matches the caller (schema-security-finding-actions.sql). Throws
+// on failure (including "table not set up yet") so the caller's UI can show a real error instead
+// of silently pretending the action was recorded -- unlike the read path above, a write failure
+// must never degrade silently.
+export async function saveSecurityFindingAction({ findingId, action, note, role }) {
+  if (!supabase) throw new Error('No Supabase client');
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData?.user?.id || null;
+  const { data, error } = await supabase.from('security_finding_actions').insert({
+    finding_id: findingId, action, note: note || null, created_by: uid, created_by_role: role || null,
+  }).select('id,finding_id,action,note,created_by_role,created_at').single();
+  if (error) throw error;
+  return _mapFindingActionRow(data);
+}
+
 // Dispatch #170 — default trimmed from 400 to 40. Measured live 2026-08-27:
 // `qsr_product_mix`'s real data starts 2026-01-01, so the old 400-day default was not
 // "the last 400 days," it was "the entire table" — `content-range: 0-0/2526181`, 2.5M+
