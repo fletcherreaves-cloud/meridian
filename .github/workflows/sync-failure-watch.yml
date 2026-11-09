@@ -50,6 +50,7 @@ on:
   workflow_run:
     workflows:
       - Data Completeness Check
+      - DI Calibration Run
       - EOM Baseline Snapshot
       - EOM Digest Send (roll-up email)
       - Event Impact — Retail Lift Measurement

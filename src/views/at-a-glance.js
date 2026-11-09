@@ -1007,14 +1007,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
     if(redStores.length>0) items.push({id:'auto_red_health',priority:'high',
       text:redStores.length+' store'+(redStores.length>1?'s':'')+' at red model health',
       detail:redStores.map(l=>STORE_NAMES[l]||l).join(', ')});
-    const uncal=allLocs.filter(loc=>{
-      const di=settings.dialedIn&&settings.dialedIn[loc];
-      if(!di)return true;
-      return di.runDate&&Math.floor((today-new Date(di.runDate))/864e5)>30;
-    });
-    if(uncal.length>3) items.push({id:'auto_calibration',priority:'medium',
-      text:uncal.length+' stores need Dialed-In calibration (>30 days)',
-      detail:'Go to Dialed-In → Run & Apply'});
+    // "N stores need Dialed-In calibration (>30 days)" removed here (owner-directed 2026-11-09,
+    // DI Calibration automation): that was purely a staleness nudge — di-calibration-run.mjs now
+    // recalibrates on drift weekly and district-wide monthly regardless, so every store's
+    // calibration age is already bounded without anyone needing to act on this checklist. The
+    // red-model-health item right above this is a DIFFERENT, still-live signal (an actual bad
+    // score, not a stale-calibration staleness clock) and stays exactly as-is — per the owner's
+    // own framing, "take away references... unless something is wrong and needs to be deep
+    // dived" keeps anything that means something is still wrong, drops anything that only meant
+    // "this hasn't run in a while."
     return items;
   }),[worstAuto,ds?.laborRows?.length,allLocs,settings,weeklyCommittedLocs]);
 

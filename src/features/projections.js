@@ -530,7 +530,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
 // PROJECTION WORKSPACE — Enterprise One-Stop Projection Hub
 // Wed-Tue work week | Group toggles | Inline overrides | Lock workflow
 function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections, onSaveLocked,
-  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners}) {
+  canOwnProjections, userId, userName, projOwnerGrants, onNotifyOwners, onOpenYearly}) {
   const ALL_LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
 
   // ── State ──────────────────────────────────────────────
@@ -1701,15 +1701,22 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             );
           })(),
 
-          // — Year card (placeholder; no Yearly view exists yet) —
-          div({title:'Yearly projections are on the roadmap but not yet built in Projection Workspace.',
-            style:{background:'var(--surf3)',borderRadius:6,padding:'8px 10px',opacity:.45,
-              border:'.5px solid var(--bdr)',cursor:'default'}},
+          // — Year card (owner-directed 2026-11-09: "need to remedy this soon so I can properly
+          // forecast next year") — the real Yearly Targets/Projections panel already exists
+          // (src/views/yearly-projections.js, Planning Hub's Yearly tab); what was missing was
+          // only this link. This card doesn't try to show yearly data inline the way Week/Month
+          // do (that's `railSelected` state driving THIS panel's own body) — a year's worth of
+          // targets genuinely lives in its own panel, so this is a real nav-away action, same
+          // `modal==='yearly-proj'` destination App.js's own nav already uses elsewhere. The ➜
+          // and "Open" wording keep that honest rather than pretending it's a local toggle. ──
+          onOpenYearly&&div({onClick:onOpenYearly,title:'Open Yearly Targets (Planning Hub)',
+            style:{background:'var(--surf3)',borderRadius:6,padding:'8px 10px',cursor:'pointer',
+              border:'.5px solid var(--bdr)'}},
             div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-              span({style:{fontSize:11,fontWeight:600,color:'var(--text3)'}},'📆 FY Year'),
-              span({style:{fontSize:8,color:'var(--text3)'}},'○')
+              span({style:{fontSize:11,fontWeight:700,color:'var(--text2)'}},'📆 FY Year'),
+              span({style:{fontSize:8,color:'var(--text3)'}},'➜')
             ),
-            div({style:{fontSize:8.5,color:'var(--text3)',marginTop:3}},'not yet available')
+            div({style:{fontSize:8.5,color:'var(--text3)',marginTop:3}},'Open Yearly Targets →')
           ),
 
           // — Commit & Drift card (owner-directed 2026-11-09, additive — see header comment
