@@ -255,7 +255,7 @@ export const STORE_NSNS = [
   10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109,
   33222, 33704, 34222, 35064, 35242, 37566,
-  38609, 43380, 43701,
+  38609, 43380, 43701, 44689,
 ];
 
 // safeCreateClient (scripts/lib/safe-supabase-client.mjs) — dispatch #209's own tests import this

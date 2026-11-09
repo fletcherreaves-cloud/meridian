@@ -89,7 +89,7 @@ const USER_ID = '26a9c0de-c5f8-4712-b7a4-37a8160c7b28';
 const STORE_NSNS = [
   3708, 5183, 5985, 6178, 6838, 6972, 10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109, 33222, 33704, 34222, 35064, 35242,
-  37566, 38609, 43380, 43701,
+  37566, 38609, 43380, 43701, 44689,
 ].map(String);
 
 const MIN_CHUNK_DAYS = 2; // quirk 1 above -- a 1-day-wide request returns zero rows, for every form
