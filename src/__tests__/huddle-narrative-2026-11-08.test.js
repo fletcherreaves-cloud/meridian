@@ -12,8 +12,19 @@ import {
 } from '../engine/huddle-narrative.js';
 
 describe('huddleScopeKey', () => {
-  it('operatorGroup wins over everything else (a real operator identity beats any simulation)', () => {
+  // ✅ CORRECTED 2026-11-09 (owner bug report: View-As-Role on Durant showed a district-wide
+  // note naming other OK stores) — this used to read "operatorGroup wins over everything else,
+  // beats any simulation." That was backwards: operatorGroup is a STICKY cross-session setting
+  // (any district-altitude viewer, including an Owner who clicked the picker once, can leave it
+  // set) and must never silently override an explicit, in-the-moment View-As-Role simulation at
+  // store/patch altitude. See huddle-narrative.js's own comment for the full story.
+  it('a store/patch-altitude View-As-Role simulation wins over a leftover operatorGroup setting', () => {
+    expect(huddleScopeKey('store', '3708', 'Ryan Thorley')).toBe('store:3708');
+    expect(huddleScopeKey('patch', 'Zukarr Eaves', 'Ryan Thorley')).toBe('patch:Zukarr Eaves');
+  });
+  it('operatorGroup still wins at district altitude (no narrower simulation is active there)', () => {
     expect(huddleScopeKey('district', '3708', 'Ryan Thorley')).toBe('operator:Ryan Thorley');
+    expect(huddleScopeKey('district', null, 'Ryan Thorley')).toBe('operator:Ryan Thorley');
   });
   it('viewAsScope narrows a store-altitude key to the specific store', () => {
     expect(huddleScopeKey('store', '3708', null)).toBe('store:3708');
@@ -242,6 +253,34 @@ describe('HuddleNarrative wired into CuratedHomePanel', () => {
     await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); });
     const [, systemPrompt] = callSageOnceMock.mock.calls[0];
     expect(systemPrompt).toMatch(/Area Supervisor/i);
+  });
+
+  // ✅ CORRECTED 2026-11-09 (owner bug report) — real regression coverage for the fix: an Owner
+  // account with a leftover operatorGroup selection (left in localStorage from an earlier,
+  // unrelated district-altitude session) simulating a SINGLE store via View-As-Role must get
+  // that store's own cache slot and its own facts — never the operator-wide one a prior district
+  // session already generated and cached text under.
+  it('a View-As-Role store simulation is NOT hijacked by a leftover operatorGroup setting', async () => {
+    try { localStorage.setItem('mf_curated_home_operator_group', 'Ryan Thorley'); } catch {}
+    await mount({ role: 'gm', viewAsScope: '3708' });
+    // Loads from the STORE-specific cache slot, not 'huddle_narrative_operator:Ryan Thorley_...'.
+    expect(loadUserSettingMock).toHaveBeenCalledWith(
+      expect.stringContaining('huddle_narrative_store:3708_'));
+    expect(loadUserSettingMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('huddle_narrative_operator:'));
+
+    const btn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Huddle'));
+    await act(async () => { btn.click(); await Promise.resolve(); await Promise.resolve(); });
+    // Saves to that same store-specific slot.
+    expect(saveUserSettingMock).toHaveBeenCalledWith(
+      expect.stringContaining('huddle_narrative_store:3708_'),
+      expect.objectContaining({ text: 'Sample narrative.' }),
+    );
+    // And the facts sent to the model are this one store's own, not the operator's full roster
+    // (24471 is also Ryan Thorley/Oklahoma per this file's own fixture, and must NOT appear).
+    const [messages] = callSageOnceMock.mock.calls[0];
+    expect(messages[0].content).toContain('Ardmore-Broadway');
+    expect(messages[0].content).not.toContain('Ardmore-Cooper');
   });
 });
 

@@ -16,9 +16,21 @@
 
 // A stable string identifying "whose narrative is this", for the cache key -- NOT the full
 // user_settings key by itself (the caller appends the business day via huddleStorageKey).
+// ✅ CORRECTED 2026-11-09 (owner bug report, View-As-Role sandbox on Durant showed a district-
+// wide note naming other OK stores) -- this used to check operatorGroup FIRST ("a real operator
+// identity beats any simulation"), on the theory that a genuine operator self-identifying their
+// own district should never have that overridden. Measured wrong in practice: operatorGroup is
+// a STICKY, cross-session setting (localStorage + user_settings) that any district-altitude
+// viewer can set via the operator picker -- including an Owner/Admin account that clicked it
+// once while at district altitude. View-As-Role (viewAsScope) is a DELIBERATE, explicit "show me
+// what this narrower role/scope sees" simulation (task #97) -- the one tool that exists
+// specifically to preview a store/patch-level view honestly. A leftover operatorGroup selection
+// silently overriding that simulation is backwards: the explicit, in-the-moment narrowing must
+// win over a sticky setting from an unrelated earlier session. operatorGroup now only applies
+// when no narrower View-As-Role simulation is active.
 export function huddleScopeKey(altitude, viewAsScope, operatorGroup) {
-  if (operatorGroup) return 'operator:' + operatorGroup;
   if ((altitude === 'store' || altitude === 'patch') && viewAsScope) return altitude + ':' + viewAsScope;
+  if (operatorGroup) return 'operator:' + operatorGroup;
   return altitude; // 'store' | 'patch' | 'district' for a real, non-simulated login
 }
 
