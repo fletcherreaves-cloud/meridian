@@ -183,18 +183,36 @@ describe('recountDetection — across-session only (task #130 scope line)', () =
 });
 
 describe('buildSpotCheckRuler — full worksheet assembly', () => {
-  it('assembles all 5 questions with the owner\'s real example numbers, pre-filled where auto-computable', () => {
+  // Per-component targets added (2026-11-09, expanded from 5 to 7 questions) so Q2's "most
+  // opportunity" answer resolves to something concrete, not the no-target fallback note. Chosen
+  // so Stat Variance is the clear winner: pct_statv (400/46511.63 ≈ 0.86%) vs tStatLoss 0.3% is
+  // the largest positive gap among the DRIVER_KEYS components (raw/cond are UNDER their targets
+  // here and correctly excluded as opportunities, not just "smaller").
+  const targetsWithComponents = {
+    tFOBTarget: 0.04, tCompWaste: 0.008, tRawWaste: 0.01, tCondiment: 0.01, tStatLoss: 0.003,
+  };
+
+  it('assembles all 7 questions with the owner\'s real example numbers, pre-filled where auto-computable', () => {
     const w = buildSpotCheckRuler({
       loc: '13113', storeName: 'Madill', period: '2026-11', periodType: 'weekly', countDate: '2026-11-07',
-      fobSnap, targets: { tFOBTarget: 0.04 }, varianceRows, topN: 3,
+      fobSnap, targets: targetsWithComponents, varianceRows, topN: 3,
       sessionLogRows: [{ loc: '13113', countDate: '2026-11-07', cls: 'Food' }],
       reportLink: 'https://meridianbi.vercel.app/?share=abc123',
     });
-    expect(w.questions).toHaveLength(5);
-    const [fobQ, varQ, recountQ, confQ, reportsQ] = w.questions;
+    expect(w.questions).toHaveLength(7);
+    const [fobQ, oppQ, varQ, recountQ, confQ, reportsQ, findingsQ] = w.questions;
+    expect(w.questions.map(q => q.id)).toEqual([
+      'fob', 'fob-opportunity', 'variance-top', 'recount', 'confidence', 'reports-reviewed', 'reports-findings',
+    ]);
 
     expect(fobQ.answer).toMatch(/3\.37%/);
     expect(fobQ.auto).toBe(true);
+
+    expect(oppQ.auto).toBe(true);
+    expect(oppQ.answer).toContain('Stat Variance');
+    expect(oppQ.answer).toMatch(/\+0\.5\dpp/);
+    expect(oppQ.answer).not.toContain('Comp Waste'); // real opportunity (deltaPp > 0) but smaller than Stat Variance
+    expect(oppQ.answer).not.toContain('Raw Waste'); // under its own target here -- not an opportunity at all
 
     expect(varQ.answer).toContain('Nuggets');
     expect(varQ.answer).toContain('Espresso Beans');
@@ -207,18 +225,33 @@ describe('buildSpotCheckRuler — full worksheet assembly', () => {
     expect(confQ.auto).toBe(false);
     expect(confQ.answer).toBeNull();
 
+    expect(reportsQ.auto).toBe(false);
     expect(reportsQ.link).toBe('https://meridianbi.vercel.app/?share=abc123');
+
+    expect(findingsQ.auto).toBe(false);
+    expect(findingsQ.answer).toBeNull();
+    expect(findingsQ.note).toMatch(/previous question was yes/);
 
     expect(w.counterfactual.swingPts).toBeCloseTo(1.72, 1);
     expect(w.counterfactual.flagged).toBe(true); // 3.37% clears 4% target, 5.09% without the movers does not
     expect(w.counterfactual.flagTier).toBe('target');
   });
 
+  it('Q2 falls back to the honest "no opportunity" note when no component target is configured', () => {
+    const w = buildSpotCheckRuler({
+      loc: '13113', period: '2026-11', periodType: 'weekly', fobSnap, targets: { tFOBTarget: 0.04 },
+    });
+    const oppQ = w.questions.find(q => q.id === 'fob-opportunity');
+    expect(oppQ.answer).toBeNull();
+    expect(oppQ.note).toMatch(/No FOB component is currently over its own target/);
+  });
+
   it('never fabricates an answer when the underlying data is absent', () => {
     const w = buildSpotCheckRuler({ loc: '13113', period: '2026-11', periodType: 'eom' });
     expect(w.questions[0].answer).toBeNull();
     expect(w.questions[0].note).toMatch(/No FOB data/);
-    expect(w.questions[1].answer).toBeNull();
+    expect(w.questions.find(q => q.id === 'fob-opportunity').answer).toBeNull();
+    expect(w.questions.find(q => q.id === 'variance-top').answer).toBeNull();
     expect(w.counterfactual.flagged).toBe(false);
     expect(w.impossibilities).toEqual([]);
   });

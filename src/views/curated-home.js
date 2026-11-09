@@ -544,12 +544,25 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   }, '@ ' + (altitude === 'store' ? sNameC(viewAsScope) : viewAsScope));
 
   // The Huddle (owner request 2026-11-08, Phase 1) -- scope/date key for the cached AI
-  // narrative; see src/engine/huddle-narrative.js. operatorGroup wins over viewAsScope (a real
-  // operator identity is a stronger, more specific scope than any simulation), same precedence
-  // The Ledger's own default-format logic already gives operator over altitude.
+  // narrative; see src/engine/huddle-narrative.js. ✅ CORRECTED 2026-11-09 (owner bug report —
+  // View-As-Role on Durant showed a district-wide note naming other OK stores): the ROOT CAUSE
+  // was huddleScope colliding with a stale cache key. operatorGroup is a STICKY cross-session
+  // setting (any district-altitude viewer, including an Owner who clicked the picker once, can
+  // leave it set) — with the old 'operator:X' always winning, simulating Durant via View-As-Role
+  // still resolved to the SAME cache key ('operator:X') a prior district-altitude session had
+  // already generated and cached a real multi-store note under, so the stale note loaded instead
+  // of a fresh Durant-specific one ever being requested. Fixed at the source in
+  // huddleScopeKey() — store/patch simulation now wins the key, so simulating a store always
+  // gets its own cache slot. huddleStores gets the same precedence below, defense in depth for
+  // the regenerate path: even though scopedBrief.stores is already narrowed to the simulated
+  // scope by this point, this stops a leftover operatorGroup from FURTHER narrowing a multi-
+  // store PATCH simulation down to just its overlap with an unrelated operator's roster.
   const huddleScope = huddleScopeKey(altitude, viewAsScope, operatorGroup);
   const huddleDateKey = dKey(briefDate);
-  const huddleStores = operatorGroup ? operatorStores(scopedBrief.stores, operatorGroup) : scopedBrief.stores;
+  const huddleSimulating = (altitude === 'store' || altitude === 'patch') && viewAsScope;
+  const huddleStores = (!huddleSimulating && operatorGroup)
+    ? operatorStores(scopedBrief.stores, operatorGroup)
+    : scopedBrief.stores;
 
   // Task #129 — the Spot-Check Ruler prompt, "timed to prompt it in a timely manner" (owner,
   // 2026-11-08): fires when one of this view's stores just logged a fresh, qualifying count
@@ -595,12 +608,12 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
         span({ style: { fontSize: 16, lineHeight: 1 } }, '📋'),
         div({ style: { flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text,#111827)' } },
           rulerPrompts.length === 1
-            ? `${rulerPrompts[0].storeName} just logged a qualifying ${rulerPrompts[0].periodType === 'eom' ? 'EOM' : 'weekly'} count — run the Spot-Check Ruler while it's fresh.`
-            : `${rulerPrompts.length} stores just logged a qualifying count — run the Spot-Check Ruler while it's fresh.`),
+            ? `${rulerPrompts[0].storeName} just logged a qualifying ${rulerPrompts[0].periodType === 'eom' ? 'EOM' : 'weekly'} count — run the Count Follow-Up while it's fresh.`
+            : `${rulerPrompts.length} stores just logged a qualifying count — run the Count Follow-Up while it's fresh.`),
         rulerPrompts.slice(0, 5).map(p => h('button', {
           key: p.loc, className: 'btn btn-sm', onClick: () => setRulerOpenFor(p),
           style: { fontSize: 11, padding: '4px 10px' },
-        }, rulerPrompts.length === 1 ? 'Open Ruler' : p.storeName)),
+        }, rulerPrompts.length === 1 ? 'Open Follow-Up' : p.storeName)),
       )
     : null);
   const rulerModal = rulerOpenFor ? h(SpotCheckRulerModal, {

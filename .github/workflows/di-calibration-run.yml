@@ -1,0 +1,64 @@
+name: DI Calibration Run
+
+# DI Calibration automation (owner-directed 2026-11-09): "can we automate the DI calibration and
+# have it execute either by our own conditions as we previously defined or just schedule them
+# update on a schedule per your determination." See scripts/di-calibration-run.mjs's own header
+# for the full design (what gets recalibrated when, and the per-user cloud-write mechanism).
+#
+# Two schedules, same job, mode picked from which cron fired (github.event.schedule):
+#   - weekly (Mondays 14:00 UTC): drift-check only — recalibrates a store only when its LIVE
+#     mape2w/mape6w drift has crossed the same threshold the in-app ⚠ Drift Warning badge uses.
+#     14:00 UTC is clear of every other scheduled workflow at that hour on Mondays (checked
+#     against the rest of .github/workflows/ at the time this was added).
+#   - full (1st of the month, 14:30 UTC): recalibrates every eligible store regardless of drift,
+#     matching the documented monthly "Calibrate All" cadence from the in-app DI Calibration
+#     Workflow Guide text.
+# workflow_dispatch's own `mode` input lets either be run on demand (e.g. right after this first
+# ships, or to force a full recalibrate without waiting for the 1st).
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'   # weekly — Mondays 14:00 UTC
+    - cron: '30 14 1 * *'  # monthly — 1st of month, 14:30 UTC (offset from the weekly slot so the two never collide even when the 1st falls on a Monday)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'weekly (drift-check only) or full (recalibrate every eligible store)'
+        required: false
+        default: weekly
+        type: choice
+        options: [weekly, full]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine mode
+        id: mode
+        run: |
+          if [ -n "${{ github.event.inputs.mode }}" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "30 14 1 * *" ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=weekly" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run DI calibration
+        run: node scripts/di-calibration-run.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DI_CALIBRATION_MODE:       ${{ steps.mode.outputs.mode }}

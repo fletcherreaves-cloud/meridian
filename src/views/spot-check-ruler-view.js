@@ -52,7 +52,7 @@ export function SpotCheckRulerWorksheet({ ruler, note, onNoteChange, readOnly = 
     div({ style: { marginBottom: 10, color: 'var(--text3,#6b7280)', fontSize: 11.5 } },
       `${ruler.storeName || ruler.loc} · ${ruler.periodType === 'eom' ? 'End-of-Month' : 'Weekly'} count · ${ruler.countDate || ruler.period || ''}`),
 
-    // ── The 5 questions ──────────────────────────────────────────────────────────────────────
+    // ── The 7 questions ──────────────────────────────────────────────────────────────────────
     div({ className: 'scr-questions' },
       ruler.questions.map((qq, i) => div({
         key: qq.id, className: 'scr-q', 'data-qid': qq.id,
@@ -101,14 +101,17 @@ export function SpotCheckRulerWorksheet({ ruler, note, onNoteChange, readOnly = 
       ruler.impossibilities.map((f, i) => div({ key: i, style: { fontSize: 12, marginBottom: 2 } }, `${f.descr || f.wrin}: ${f.detail}`)),
     ) : null,
 
-    // ── DO/supervisor notes (Q4/Q5 answers + free text) ─────────────────────────────────────
+    // ── DO/supervisor notes (Q5/Q6/Q7 answers + free text) ──────────────────────────────────
     div({ className: 'scr-notes', style: { marginTop: 14, borderTop: '1px solid var(--bdr,#e5e7eb)', paddingTop: 10 } },
       div({ style: { fontWeight: 700, marginBottom: 6, fontSize: 12 } }, 'From the actual conversation'),
       readOnly
         ? div({ style: { fontSize: 12.5, color: 'var(--text2,#4b5563)', whiteSpace: 'pre-wrap' } }, note?.notes || 'No notes logged yet.')
         : div(null,
-            labeledTextarea('Q4 — confidence answer', note?.confidenceAnswer, v => onNoteChange?.({ ...note, confidenceAnswer: v })),
-            labeledTextarea('Q5 — what did the reports show', note?.reportsReviewedAnswer, v => onNoteChange?.({ ...note, reportsReviewedAnswer: v })),
+            ratingScale('Q5 — confidence (1 = not confident, 5 = very confident)', note?.confidenceRating, v => onNoteChange?.({ ...note, confidenceRating: v })),
+            yesNo('Q6 — did they review the reports?', note?.reportsReviewed, v => onNoteChange?.({ ...note, reportsReviewed: v })),
+            note?.reportsReviewed === true
+              ? labeledTextarea('Q7 — what did they find?', note?.reportsReviewedAnswer, v => onNoteChange?.({ ...note, reportsReviewedAnswer: v }))
+              : null,
             labeledTextarea('Notes', note?.notes, v => onNoteChange?.({ ...note, notes: v })),
           ),
     ),
@@ -125,11 +128,50 @@ function labeledTextarea(label, value, onChange) {
   );
 }
 
+// 1-5 click scale (owner-directed 2026-11-09: "give a rating scale for them to choose their
+// confidence level"). A plain number, not a text answer — the worksheet's own point is an honest,
+// low-friction answer, and a 5-button row is as fast to fill in as it gets.
+function ratingScale(label, value, onChange) {
+  return div({ style: { marginBottom: 8 } },
+    div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', marginBottom: 3 } }, label),
+    div({ style: { display: 'flex', gap: 5 } },
+      [1, 2, 3, 4, 5].map(n => h('button', {
+        key: n, type: 'button', onClick: () => onChange(n),
+        style: {
+          width: 32, height: 28, borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
+          border: `1px solid ${value === n ? 'var(--amber,#f5bc00)' : 'var(--bdr,#e5e7eb)'}`,
+          background: value === n ? 'var(--amber,#f5bc00)' : 'var(--surf,#fff)',
+          color: value === n ? '#1a1200' : 'var(--text,#111827)',
+        },
+      }, n)),
+    ),
+  );
+}
+
+// Yes/No click answer (owner-directed 2026-11-09: "can be a yes or no selection, easy to click
+// answer"). `value` is a tri-state boolean (true/false/null-unanswered), not a string, so it saves
+// straight into spot_check_ruler_notes' own `reports_reviewed boolean` column.
+function yesNo(label, value, onChange) {
+  const opt = (v, text) => h('button', {
+    type: 'button', onClick: () => onChange(v),
+    style: {
+      padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+      border: `1px solid ${value === v ? 'var(--amber,#f5bc00)' : 'var(--bdr,#e5e7eb)'}`,
+      background: value === v ? 'var(--amber,#f5bc00)' : 'var(--surf,#fff)',
+      color: value === v ? '#1a1200' : 'var(--text,#111827)',
+    },
+  }, text);
+  return div({ style: { marginBottom: 8 } },
+    div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', marginBottom: 3 } }, label),
+    div({ style: { display: 'flex', gap: 6 } }, opt(true, 'Yes'), opt(false, 'No')),
+  );
+}
+
 /** On-demand container: loads the real data for one store + count date, builds the ruler, renders
  *  it inside ModalShell with a notes field and Save/Share actions. */
 export function SpotCheckRulerModal({ loc, storeName, periodType = 'weekly', countDate, onClose }) {
   const [state, setState] = React.useState({ loading: true, ruler: null, error: null });
-  const [note, setNote] = React.useState({ confidenceAnswer: '', reportsReviewedAnswer: '', notes: '' });
+  const [note, setNote] = React.useState({ confidenceRating: null, reportsReviewed: null, reportsReviewedAnswer: '', notes: '' });
   const [saveMsg, setSaveMsg] = React.useState('');
   const period = periodType === 'eom' ? String(countDate).slice(0, 7) : `wk:${countDate}`;
 
@@ -158,7 +200,7 @@ export function SpotCheckRulerModal({ loc, storeName, periodType = 'weekly', cou
           loc, storeName, period, periodType, countDate, fobSnap, targets, varianceRows, sessionLogRows,
         });
         setState({ loading: false, ruler, error: null });
-        if (savedNote) setNote({ confidenceAnswer: savedNote.confidenceAnswer || '', reportsReviewedAnswer: savedNote.reportsReviewedAnswer || '', notes: savedNote.notes || '' });
+        if (savedNote) setNote({ confidenceRating: savedNote.confidenceRating ?? null, reportsReviewed: savedNote.reportsReviewed ?? null, reportsReviewedAnswer: savedNote.reportsReviewedAnswer || '', notes: savedNote.notes || '' });
       } catch (e) {
         if (!cancelled) setState({ loading: false, ruler: null, error: e?.message || String(e) });
       }
@@ -168,13 +210,13 @@ export function SpotCheckRulerModal({ loc, storeName, periodType = 'weekly', cou
 
   const generateLink = React.useCallback(async () => {
     if (!state.ruler) return;
-    const md = `Spot-Check Ruler — ${storeName || loc} (${period})\n\n` +
+    const md = `Count Follow-Up — ${storeName || loc} (${period})\n\n` +
       state.ruler.questions.map((qq, i) => `${i + 1}. ${qq.q}\n${qq.answer || qq.note || ''}`).join('\n\n');
-    const { token, error } = await createEomShareLink({ loc, period, storeName, title: `Spot-Check Ruler — ${storeName || loc}`, fob: null, recapMd: md, fullMd: md });
+    const { token, error } = await createEomShareLink({ loc, period, storeName, title: `Count Follow-Up — ${storeName || loc}`, fob: null, recapMd: md, fullMd: md });
     if (error || !token) { setSaveMsg(`Link failed: ${error || 'no token'}`); return; }
     const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
     setState(s => ({ ...s, ruler: { ...s.ruler, questions: s.ruler.questions.map(q => q.id === 'reports-reviewed' ? { ...q, link: url } : q) } }));
-    const result = await shareOrCopy({ url, title: `Spot-Check Ruler — ${storeName || loc}` });
+    const result = await shareOrCopy({ url, title: `Count Follow-Up — ${storeName || loc}` });
     setSaveMsg(result.ok ? '✓ Link ready' : `Link: ${url}`);
   }, [state.ruler, loc, storeName, period]);
 
@@ -182,14 +224,14 @@ export function SpotCheckRulerModal({ loc, storeName, periodType = 'weekly', cou
     setSaveMsg('Saving…');
     const res = await saveSpotCheckRulerNote({
       loc, period, periodType, countDate,
-      confidenceAnswer: note.confidenceAnswer, reportsReviewedAnswer: note.reportsReviewedAnswer, notes: note.notes,
+      confidenceRating: note.confidenceRating, reportsReviewed: note.reportsReviewed, reportsReviewedAnswer: note.reportsReviewedAnswer, notes: note.notes,
       flagged: state.ruler?.counterfactual?.flagged ?? null, swingPts: state.ruler?.counterfactual?.swingPts ?? null,
     });
-    setSaveMsg(res.saved ? '✓ Saved' : `Not saved yet — ${res.error || 'migration pending'}`);
+    setSaveMsg(res.saved ? '✓ Saved' : `Not saved — ${res.error || 'unknown error'}`);
   }, [loc, period, periodType, countDate, note, state.ruler]);
 
   return h(ModalShell, {
-    title: `📋 Spot-Check Ruler — ${storeName || loc}`,
+    title: `📋 Count Follow-Up — ${storeName || loc}`,
     subtitle: periodType === 'eom' ? 'End-of-Month count' : 'Weekly count',
     onClose, maxWidth: 680, scroll: true,
     footer: div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
@@ -199,7 +241,7 @@ export function SpotCheckRulerModal({ loc, storeName, periodType = 'weekly', cou
     ),
   },
     state.loading ? div({ style: { padding: 20, textAlign: 'center', color: 'var(--text3,#6b7280)' } }, 'Loading…')
-      : state.error ? div({ style: { padding: 20, color: 'var(--crit,#dc2626)' } }, `Could not build the Ruler: ${state.error}`)
+      : state.error ? div({ style: { padding: 20, color: 'var(--crit,#dc2626)' } }, `Could not build the Count Follow-Up: ${state.error}`)
       : h(SpotCheckRulerWorksheet, { ruler: state.ruler, note, onNoteChange: setNote }),
   );
 }
