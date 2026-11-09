@@ -29,7 +29,7 @@
 //     below ships tier 1 (target-based) and tier 3 (hard "impossible values") only.
 
 import { fobComponentDeltas } from './eom-diagnosis.js';
-import { normClass } from './eom-inventory.js';
+import { normClass, isDeactivatedByDescr } from './eom-inventory.js';
 
 export const DEFAULT_TOP_N = 3; // matches the owner's own example (3 items, not variance-top5's default 5)
 export const MATERIAL_GAP_PTS = 1.0; // a swing this size or larger is "worth a conversation" on its own,
@@ -49,23 +49,57 @@ const QUESTIONS_TEXT = {
   reportsReviewed: 'Did you look at your reports (FOB, On Hand, Variance/Stat)? If so, what did you learn?',
 };
 
+// The "master WRIN" (first 5 digits before the dash) a row belongs to — the same base-WRIN rollup
+// convention src/engine/inventory-transfers.js's rollupByWRIN() already uses for Inventory Summary
+// & Usage, applied here to variance rows. A product mid-transition between an old and a new WRIN
+// suffix (a reformulation, a case-pack change, an "(Deactivated)"/"(New)" swap QSRSoft itself
+// labels) shows up as TWO separate rows for the SAME physical item — often with opposite signs
+// that are really one net story, not two real movers. Live-measured, 2026-11-09 (owner report):
+// "ICE CREAM MIX/VANILLA/RED FAT" (06294-045, being phased out) paired with "MCDN ICM RDFAT VAN
+// WHEY (New)" (06294-072) at 8 of 20 Oklahoma stores this period — one store's unrolled-up reading
+// overstated its real net swing by 89% ($145.83 vs. a true $15.80), because the old WRIN's big
+// negative was mostly offset by the new WRIN's positive, and un-rolled-up ranking only ever shows
+// one side of that pair. NOT every multi-WRIN group is a transition artifact, though: Florida's own
+// `06294-054` (a distinct, stable regional WRIN for the identical master item, never paired with
+// -045/-072 at any Florida store) is just that store's normal code for the product, so rolling up
+// never invents a false "this was fine all along" reading for a genuinely real variance.
+const masterWrinOf = (wrin) => String(wrin || '').replace('-', '').slice(0, 5);
+
 // ── Q2 answer key — "the biggest variance/stat items" ──────────────────────────────────────────
 // Deliberately NOT a call through eom-diagnosis.js's runDiagnosis()/variance-top5 check: that
 // check's own finding wrapper (mkFinding) stores the dollar magnitude as Math.abs(dolDiff) and
 // drops the sign entirely (only visible, lossily, inside a formatted detail STRING) — exactly the
 // sign the counterfactual math below needs to know whether removing an item's swing would raise or
-// lower reported FOB. This reuses that check's own ranking algorithm verbatim (sort by |dolDiff|
-// desc, same tie-break, same field names) rather than a second ranking scheme — see
-// eom-diagnosis.js's `variance-top5` check, id-for-id the same sort/slice.
+// lower reported FOB. This reuses that check's own ranking algorithm (sort by |dolDiff| desc, same
+// tie-break, same field names) rather than a second ranking scheme — see eom-diagnosis.js's
+// `variance-top5` check, id-for-id the same sort/slice, EXCEPT that check does not roll up by
+// master WRIN (a separate, live-measured gap of its own, not fixed here — see this function's
+// masterWrinOf() comment above for why that matters).
 export function topVarianceMovers(varianceRows = [], topN = DEFAULT_TOP_N) {
-  return (varianceRows || [])
-    .slice()
+  const byMaster = {};
+  for (const v of (varianceRows || [])) {
+    if (!v || !v.wrin) continue;
+    const key = masterWrinOf(v.wrin);
+    (byMaster[key] || (byMaster[key] = [])).push(v);
+  }
+  const rolled = Object.values(byMaster).map(items => {
+    if (items.length === 1) {
+      const v = items[0];
+      return { wrin: v.wrin, descr: v.descr || v.wrin || '(unnamed item)', cls: normClass(v.cls), dolDiff: Number(v.dolDiff) || 0 };
+    }
+    // Multiple WRINs sharing a master -- combine into one net dollar figure. Represent the group
+    // under whichever row's descr is NOT text-marked "(Deactivated)"/"(Obsolete)" (the one that
+    // will still be around next period), falling back to the first row if every variant is marked.
+    const dolDiff = items.reduce((s, v) => s + (Number(v.dolDiff) || 0), 0);
+    const rep = items.find(v => !isDeactivatedByDescr(v.descr)) || items[0];
+    return {
+      wrin: rep.wrin, descr: rep.descr || rep.wrin || '(unnamed item)', cls: normClass(rep.cls), dolDiff,
+      rolledUpWrins: items.map(v => v.wrin),
+    };
+  });
+  return rolled
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0))
-    .slice(0, Math.max(0, topN))
-    .map(v => ({
-      wrin: v.wrin, descr: v.descr || v.wrin || '(unnamed item)',
-      cls: normClass(v.cls), dolDiff: Number(v.dolDiff) || 0,
-    }));
+    .slice(0, Math.max(0, topN));
 }
 
 // ── The counterfactual box ──────────────────────────────────────────────────────────────────────
@@ -215,9 +249,9 @@ export function buildSpotCheckRuler({
       note: cf.fobAsReportedPct == null ? 'No FOB data on record for this period yet.' : null,
     },
     {
-      id: 'variance-top', q: QUESTIONS_TEXT.varianceTop, auto: true, source: 'qsr_variance_stat (same ranking as eom-diagnosis.js\'s variance-top5 check)',
+      id: 'variance-top', q: QUESTIONS_TEXT.varianceTop, auto: true, source: 'qsr_variance_stat (same ranking as eom-diagnosis.js\'s variance-top5 check, rolled up by master WRIN)',
       answer: cf.topMovers.length
-        ? cf.topMovers.map(v => `${v.descr} (${v.dolDiff < 0 ? '-' : '+'}${money(Math.abs(v.dolDiff))}, ${CLASS_DISPLAY[v.cls] || v.cls})`).join(' · ')
+        ? cf.topMovers.map(v => `${v.descr} (${v.dolDiff < 0 ? '-' : '+'}${money(Math.abs(v.dolDiff))}, ${CLASS_DISPLAY[v.cls] || v.cls}${v.rolledUpWrins ? `, net of ${v.rolledUpWrins.length} WRINs` : ''})`).join(' · ')
         : null,
       note: !cf.topMovers.length ? 'No variance/stat data on record for this period yet.' : null,
     },

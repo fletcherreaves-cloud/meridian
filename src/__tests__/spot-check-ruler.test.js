@@ -32,6 +32,66 @@ describe('topVarianceMovers', () => {
     expect(DEFAULT_TOP_N).toBe(3);
     expect(topVarianceMovers(varianceRows).length).toBe(3);
   });
+
+  // Owner report, 2026-11-09 — real district-wide pattern: "ICE CREAM MIX/VANILLA/RED FAT"
+  // (06294-045, being phased out, QSRSoft-labeled "(Deactivated)") paired with "MCDN ICM RDFAT
+  // VAN WHEY (New)" (06294-072) at several Oklahoma stores. Ardmore-Broadway's real numbers:
+  // 06294-045 = -$145.83, 06294-072 = +$130.04 -- an unrolled-up reading overstates the true net
+  // swing (-$15.80) by 89%, because the two rows are really one product's transition story.
+  describe('master-WRIN rollup (first 5 digits before the dash)', () => {
+    const transitionRows = [
+      { wrin: '06294-045', descr: 'ICE CREAM MIX/VANILLA/RED FAT (Deactivated)', cls: 'Food', dolDiff: -145.83 },
+      { wrin: '06294-072', descr: 'MCDN ICM RDFAT VAN WHEY (New)', cls: 'Food', dolDiff: 130.04 },
+    ];
+
+    it('combines two WRINs sharing a master into one net dolDiff, not two separate movers', () => {
+      const top = topVarianceMovers(transitionRows, 3);
+      expect(top.length).toBe(1);
+      expect(top[0].dolDiff).toBeCloseTo(-15.79, 2);
+    });
+
+    it('represents the rolled-up group under the non-"(Deactivated)" row\'s description', () => {
+      const top = topVarianceMovers(transitionRows, 3);
+      expect(top[0].descr).toBe('MCDN ICM RDFAT VAN WHEY (New)');
+      expect(top[0].wrin).toBe('06294-072');
+    });
+
+    it('carries rolledUpWrins listing every WRIN in the group', () => {
+      const top = topVarianceMovers(transitionRows, 3);
+      expect(top[0].rolledUpWrins).toEqual(['06294-045', '06294-072']);
+    });
+
+    it('does NOT roll up unrelated WRINs that merely share no prefix', () => {
+      const top = topVarianceMovers(varianceRows, 4);
+      expect(top.every(v => v.rolledUpWrins === undefined)).toBe(true);
+    });
+
+    it('a WRIN with no transition partner is untouched (single-item group, no rolledUpWrins field)', () => {
+      const top = topVarianceMovers([{ wrin: '06294-045', descr: 'ICE CREAM MIX/VANILLA/RED FAT', cls: 'Food', dolDiff: -220.73 }], 3);
+      expect(top[0].dolDiff).toBe(-220.73);
+      expect(top[0].rolledUpWrins).toBeUndefined();
+    });
+
+    it('a regional WRIN variant that never pairs with a transition partner reads as its own real variance, not rolled into anything', () => {
+      // Florida's 06294-054 is a distinct, stable regional code for the same master item --
+      // confirmed live, never co-occurs with 06294-045/-072 at any Florida store. Rolling up
+      // must not manufacture a false offset for a genuinely real, standalone variance.
+      const flRows = [{ wrin: '06294-054', descr: 'ICE CREAM MIX/VANILLA/RED FAT', cls: 'Food', dolDiff: -240.62 }];
+      const top = topVarianceMovers(flRows, 3);
+      expect(top[0].dolDiff).toBe(-240.62);
+    });
+
+    it('two real, non-offsetting variants sharing a master still combine to their true (larger) net', () => {
+      // Lindsay-Wal-Mart's real numbers: both the old and new WRIN read negative -- rolling up
+      // must surface the WORSE combined truth, not hide it the way an offsetting pair would.
+      const bothBadRows = [
+        { wrin: '06294-045', descr: 'ICE CREAM MIX/VANILLA/RED FAT', cls: 'Food', dolDiff: -46.29 },
+        { wrin: '06294-072', descr: 'MCDN ICM RDFAT VAN WHEY (New)', cls: 'Food', dolDiff: -63.48 },
+      ];
+      const top = topVarianceMovers(bothBadRows, 3);
+      expect(top[0].dolDiff).toBeCloseTo(-109.77, 2);
+    });
+  });
 });
 
 describe('counterfactualFob — the real insight', () => {
