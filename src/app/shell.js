@@ -252,9 +252,9 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
       // Stable hook for OnboardingTour.js's spotlight steps -- matched by exact label text, same
       // coupling this file already accepts for the collapse-toggle's `title` string (matched by
-      // tests). Only 'Home' and 'Data Manager' carry a hook; every other nav item's `data-tour`
-      // prop is simply undefined, which React omits from the DOM.
-      'data-tour':(label==='Home'?'home':label==='Data Manager'?'data-manager':undefined),
+      // tests). Only 'Home' carries a hook here; every other nav item's `data-tour` prop is
+      // simply undefined, which React omits from the DOM.
+      'data-tour':(label==='Home'?'home':undefined),
       onClick:disabled?undefined:(...a)=>{onClick(...a);closeMobile();},
       // Always carry the full label as a tooltip, not just when collapsed -- a label longer
       // than the sidebar's fixed width (dispatch #55 Part A's LifeLenz Bridge rename, ~3x its
@@ -1160,8 +1160,10 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           background:'rgba(245,188,0,.06)',marginRight:4},
         title:'Open Pre-Forecast Brief — analysis of the upcoming projection period',
         onClick:()=>onOpenModal&&onOpenModal('proj-brief')},'📋 Pre-Brief'),
-      // Scope filter — OK / FL / All (now visible on mobile too — Notes 24 #1)
-      div({style:{display:'flex',gap:1,marginRight:isMb?0:4}},
+      // Scope filter — OK / FL / All (now visible on mobile too — Notes 24 #1). 'data-tour'
+      // hook for OnboardingTour.js (task #107) — a persistent topbar control, present regardless
+      // of which panel is open, unlike the panel-embedded LocationSelector.
+      div({style:{display:'flex',gap:1,marginRight:isMb?0:4},'data-tour':'scope-filter'},
         ...[['all','All'],['ok','OK'],['fl','FL']].map(([s,l])=>
           btn({key:s,className:'btn btn-sm',
             style:{fontSize:'9px',padding:'2px 7px',

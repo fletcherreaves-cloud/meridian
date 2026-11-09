@@ -1,10 +1,21 @@
 // @ts-nocheck
 // First-login nav walkthrough — task #107 (2026-11-07), the owner's "interactive overlay
 // walkthrough" idea, deliberately scoped NARROW per that discussion: a short spotlight tour of
-// the STABLE nav shell landmarks only (sidebar, Home, Data Manager, the notification bell), not
-// a per-panel feature tour. A full click-through tour of every panel would be a maintenance trap
-// in an app whose nav has already been reshuffled several times this year (sidebar collapse,
-// section accordion, panel promotions) — see this file's own header comments in shell.js.
+// the STABLE nav shell landmarks only (sidebar, Home, the location scope filter, the
+// notification bell), not a per-panel feature tour. A full click-through tour of every panel
+// would be a maintenance trap in an app whose nav has already been reshuffled several times this
+// year (sidebar collapse, section accordion, panel promotions) — see this file's own header
+// comments in shell.js.
+//
+// Data Manager -> scope filter swap (owner request 2026-11-08/09): "I don't know if we need to
+// be referencing uploading data at this point though. Not really doing that except for me to
+// make updates!" — almost everything auto-pulls now (CLAUDE.md's standing "auto-first" rule), so
+// a brand-new user (think: a future second operator, not the owner) needs orienting on the
+// control they'll actually use on day one, not where to upload a spreadsheet. The scope filter
+// (AppTopbar's All/OK/FL pills, shell.js) was picked over the panel-embedded LocationSelector
+// component specifically because it's SHELL-level — always present in the topbar regardless of
+// which panel is open — matching this file's own "stable landmark only" rule; LocationSelector
+// is panel content and would often be absent from whatever a fresh user happens to land on.
 //
 // Trigger: AuthGate.js's NotificationConsentScreen sets sessionStorage['mf_new_signin_tour_pending']
 // right before handing control to the real app, on the EXACT SAME first-sign-in path as the
@@ -26,19 +37,19 @@ const span = (p, ...c) => h('span', p, ...c);
 export const TOUR_PENDING_FLAG_KEY = 'mf_new_signin_tour_pending';
 
 // Matches the `data-tour` hooks added to src/app/shell.js (AppSidebar's outer container, the
-// Home/Data Manager nav items, and NotificationBell's wrapper).
+// Home nav item, AppTopbar's scope filter, and NotificationBell's wrapper).
 const STEPS = [
   { anchor: 'sidebar', title: 'Your navigation', body:
     'Every panel lives here, grouped by section. Click a section header to open it — opening one collapses the others, so the list stays short.' },
   { anchor: 'home', title: 'Home', body:
     'Your landing page. District-wide signals, priority briefs, and whatever needs attention today.' },
-  { anchor: 'data-manager', title: 'Data Manager', body:
-    'Upload fresh reports here, or check when each automated data stream last synced.' },
+  { anchor: 'scope-filter', title: 'Location scope', body:
+    'Filter everything you see to All stores, or just OK/FL — it controls the whole app, not just one panel.' },
   { anchor: 'bell', title: 'Notifications', body:
     'Alerts land here — count reminders and anything else flagged for your role.' },
 ];
 
-const SIDEBAR_ANCHORS = new Set(['sidebar', 'home', 'data-manager']);
+const SIDEBAR_ANCHORS = new Set(['sidebar', 'home']);
 
 function rectOf(el) {
   const r = el.getBoundingClientRect();
@@ -70,40 +81,27 @@ export function OnboardingTour() {
   }, []);
 
   // Measure the current step's anchor; skip straight past a step whose anchor isn't on screen
-  // (e.g. a role without Data Manager access) rather than spotlighting nothing.
-  //
-  // Data Manager lives in the sidebar's 'admin' section, which starts COLLAPSED by default for
-  // every user (task #72's accordion) -- without the nudge below, this step would be skipped for
-  // literally everyone, every time, defeating the point of including it. 'mf:expandSection' is
-  // AppSidebar's own event (shell.js); dispatching it updates that component's state, so the
-  // actual query+measure has to wait a couple of frames for that re-render to commit first.
+  // (e.g. a role without the scope filter, or any future step scoped to a role) rather than
+  // spotlighting nothing. Every current anchor (sidebar, home, scope-filter, bell) is a top-level
+  // shell element, never hidden inside a collapsed sidebar section, so no expand-first nudge is
+  // needed (unlike the old Data Manager step, which lived in the collapsed 'admin' accordion).
   useEffect(() => {
     if (!active) return;
-    let cancelled = false;
     const anchor = STEPS[step].anchor;
 
-    const measureNow = () => {
-      if (cancelled) return undefined;
-      const el = document.querySelector(`[data-tour="${anchor}"]`);
-      if (!el) {
-        if (step < STEPS.length - 1) setStep(s => s + 1); else setActive(false);
-        return undefined;
-      }
-      const update = () => setRect(rectOf(el));
-      update();
-      window.addEventListener('resize', update);
-      window.addEventListener('scroll', update, true);
-      return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
-    };
-
-    if (anchor === 'data-manager') {
-      try { window.dispatchEvent(new CustomEvent('mf:expandSection', { detail: { id: 'admin' } })); } catch {}
-      let cleanup;
-      requestAnimationFrame(() => requestAnimationFrame(() => { if (!cancelled) cleanup = measureNow(); }));
-      return () => { cancelled = true; cleanup && cleanup(); };
+    const el = document.querySelector(`[data-tour="${anchor}"]`);
+    if (!el) {
+      if (step < STEPS.length - 1) setStep(s => s + 1); else setActive(false);
+      return undefined;
     }
-
-    return measureNow();
+    const update = () => setRect(rectOf(el));
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
   }, [active, step]);
 
   if (!active || !rect) return null;
