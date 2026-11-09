@@ -1,6 +1,6 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
-description: ⚠️ RE-OPENED 2026-08-23. The 08-22 supersede concluded SOURCE-IP after a table that never contained the deciding cell. That cell now exists: our minted token, run from the owner's OWN Mac mini, 403s -- same machine and network where curl with the owner's browser token returns 200. Same network, different token, different answer. The variable looks like the TOKEN after all, so the original entitlement reading may be right. Read the 08-23 block first; send nothing until the one-variable probe has run.
+description: ✅ RESOLVED (diagnosis) 2026-11-09 -- the token-injection test this file called for finally ran. Identity hash is byte-identical across three independently-tested networks (cloud sandbox, GitHub-hosted ubuntu-latest, the self-hosted Mac mini) -- same account, same credential, same code -- yet only the cloud sandbox gets 200; both GitHub Actions paths get 403 AccessDeniedException. This is a network-origin block covering GitHub Actions' infrastructure broadly, not an entitlement gap, not account-specific, and not Mac-mini-specific (the Mac mini, historically the only place that worked, is now itself blocked too). Read the 2026-11-09 section at the bottom first. Not yet fixed -- the pull needs to run from a network GitHub Actions doesn't cover.
 sensitivity: open
 metadata:
   node_type: memory
@@ -241,3 +241,72 @@ for the full measurement trail if support asks for more detail.
 `fetchOne` can return 200 at all from this account, on this machine, with a minted token, then a
 blanket entitlement gap is not the whole story. **Run the token-injection test before filing the
 support ticket** — the answer changes what to ask them for.
+
+## ✅ RESOLVED (diagnosis, not yet the fix) — 2026-11-09, the token-injection test from the
+appended block finally ran, live, and settles the question this file has chased since August.
+
+**Sequence of measurements, each one live, none guessed:**
+
+1. The owner reset `QSRSOFT_PASSWORD` and shared it for a live test. A cloud-sandbox session
+   (not a self-hosted or GitHub-hosted runner — an interactive Claude Code session) ran the
+   production pull's own `getFreshToken()`/`fetchOne()` functions directly: **40/40 real 200s**
+   across 6 stores × 3 dates × 6 event_tokens, zero failures. The real interactive browser login
+   (`v3.myqsrsoft.com`) also loaded the Security Events page fine in the same session, hitting
+   `api.security.myqsrsoft.com/security/suspicious_activity` (a different, newer route the real
+   UI now uses) with real data — both routes, `event_details` (what the pull calls) and
+   `suspicious_activity` (what the UI calls), returned 200 with the same minted token.
+2. The owner updated the `QSRSOFT_PASSWORD` GitHub Secret to match and confirmed the save (exact
+   same string, same source). The next `workflow_dispatch` run on the self-hosted Mac mini
+   runner — same code, same moment — **still failed, 100%, `AUTH_FAILED:403`**, zero rows across
+   3024 units.
+3. **The decisive test: identity comparison.** The pull's own `identityFp()` (sha256 of
+   `sub`+`cognito:username`, never raw claims — exactly the privacy-safe mechanism dispatch #91
+   built for this) was pulled from the failing self-hosted run's log: `IDENTITY 3f73c22fba95`.
+   The SAME value was independently computed from a fresh mint in the sandbox session, seconds
+   later: `IDENTITY 3f73c22fba95`. **Byte-identical.** Same Cognito principal, same credential,
+   same code — the only thing that differs between a 200 and a 403 is which network the request
+   left from.
+4. **To rule out "maybe it's specifically the Mac mini's flagged IP, not GitHub Actions in
+   general"**, a one-off read-only probe ran the identical call from a GitHub-**hosted**
+   `ubuntu-latest` runner (PR #1763, deleted after use). **Also `403`, also
+   `AccessDeniedException`, also `IDENTITY 3f73c22fba95`.**
+
+**Conclusion, now proven across three networks, not inferred:** this was never an entitlement gap,
+an auth-flow difference, a CORS/fingerprint artifact, or a Referer bug (all four were real things
+this investigation found and fixed along the way, and all four were real but **none of them was
+the gate**). It is a **network-origin block on `api.security.myqsrsoft.com` that covers GitHub
+Actions' infrastructure broadly** — both a residential/office network (the Mac mini, historically
+the ONLY place that ever worked, now itself blocked) and GitHub's own hosted datacenter IP ranges
+— while at least one other cloud network (the Claude Code Remote sandbox this test ran from) is
+not on whatever blocklist this is. The most likely mechanism, consistent with every observation:
+an AWS WAF / API Gateway resource policy on this one security-sensitive module that denies known
+cloud/datacenter ASNs, or an anomaly-detection rule that flagged the Mac mini's IP specifically
+after months of this pull's own repeated `403`s — either way, **not something any code change in
+this repo can route around**, same as this file's original conclusion back in August, just now
+with the actual mechanism narrowed instead of guessed at.
+
+**This also means the Mac mini self-hosted runner — the pin every probe and the production pull
+have carried since the beginning of this investigation on the theory that it was the only place
+that worked — is no longer special.** Whatever blocked it is the same thing blocking GitHub's own
+runners. Do not reach for "switch back to self-hosted" as a fix; that network is itself now denied.
+
+**Real next step: run the pull from a network that isn't GitHub Actions.** Two live options,
+neither yet shipped:
+- **A scheduled Claude Code Remote session** — this environment supports owner-configured secrets
+  (`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` added via the environment's own settings, not a GitHub
+  Secret) and a cron-triggered session fires on the same network this test already proved works.
+  Fastest to stand up, no new infrastructure — the real tradeoff is depending on an AI-agent
+  platform's uptime/cost model for a daily production data pull, not a traditional server.
+- **A small dedicated VPS** with its own static IP, running the pull on a plain cron job —
+  conventional, disposable/swappable if its IP gets blocked too. **Not guaranteed to dodge the
+  same block**: most VPS providers (DigitalOcean, AWS Lightsail, etc.) sit on well-known
+  datacenter ASN ranges that a cloud/datacenter blocklist would likely also catch — this has NOT
+  been tested, so don't assume it succeeds where `ubuntu-latest` failed just because it isn't
+  GitHub-branded infrastructure.
+
+**Filing the QSRSoft support ticket is still worth doing, now with much sharper evidence** than
+the original 2026-08-22 ask: the identity-hash proof that it's the same account succeeding and
+failing depending only on network, across three independently-tested networks. If this is a
+blanket cloud/datacenter-ASN block, QSRSoft support may be able to allowlist a specific static IP
+(whichever network ends up hosting the pull) in minutes — which would make either workaround above
+unnecessary long-term.
