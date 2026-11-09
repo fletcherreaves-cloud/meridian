@@ -1,6 +1,6 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
-description: ⚠️ RE-OPENED 2026-08-23. The 08-22 supersede concluded SOURCE-IP after a table that never contained the deciding cell. That cell now exists: our minted token, run from the owner's OWN Mac mini, 403s -- same machine and network where curl with the owner's browser token returns 200. Same network, different token, different answer. The variable looks like the TOKEN after all, so the original entitlement reading may be right. Read the 08-23 block first; send nothing until the one-variable probe has run.
+description: ✅ RESOLVED (diagnosis) 2026-11-09, CORRECTED same day -- the token-injection test this file called for finally ran. Identity hash is byte-identical across three independently-tested callers (cloud sandbox, GitHub-hosted ubuntu-latest, the self-hosted Mac mini runner) -- same account, same credential, same code -- yet only the cloud sandbox gets 200; both GitHub Actions runner flavors get 403 AccessDeniedException. NOT a raw network-origin block (corrected: the owner's own real browser on that SAME Mac mini loads Security Events fine right now, so the Mac's network/IP is not blocked) -- the actual common factor across every failure is specifically running AS A GITHUB ACTIONS JOB, mechanism still unconfirmed (candidates: Actions-specific egress path, runner-software request fingerprint -- not yet isolated). Read the 2026-11-09 section at the bottom first. Not yet fixed -- a scheduled Claude Code Remote session (trig_013X4qsQhU8NPCE5aWqpA4yM) is the one path proven to work; set up but not yet confirmed on a real production run.
 sensitivity: open
 metadata:
   node_type: memory
@@ -241,3 +241,85 @@ for the full measurement trail if support asks for more detail.
 `fetchOne` can return 200 at all from this account, on this machine, with a minted token, then a
 blanket entitlement gap is not the whole story. **Run the token-injection test before filing the
 support ticket** — the answer changes what to ask them for.
+
+## ✅ RESOLVED (diagnosis, not yet the fix) — 2026-11-09, the token-injection test from the
+appended block finally ran, live, and settles the question this file has chased since August.
+
+**Sequence of measurements, each one live, none guessed:**
+
+1. The owner reset `QSRSOFT_PASSWORD` and shared it for a live test. A cloud-sandbox session
+   (not a self-hosted or GitHub-hosted runner — an interactive Claude Code session) ran the
+   production pull's own `getFreshToken()`/`fetchOne()` functions directly: **40/40 real 200s**
+   across 6 stores × 3 dates × 6 event_tokens, zero failures. The real interactive browser login
+   (`v3.myqsrsoft.com`) also loaded the Security Events page fine in the same session, hitting
+   `api.security.myqsrsoft.com/security/suspicious_activity` (a different, newer route the real
+   UI now uses) with real data — both routes, `event_details` (what the pull calls) and
+   `suspicious_activity` (what the UI calls), returned 200 with the same minted token.
+2. The owner updated the `QSRSOFT_PASSWORD` GitHub Secret to match and confirmed the save (exact
+   same string, same source). The next `workflow_dispatch` run on the self-hosted Mac mini
+   runner — same code, same moment — **still failed, 100%, `AUTH_FAILED:403`**, zero rows across
+   3024 units.
+3. **The decisive test: identity comparison.** The pull's own `identityFp()` (sha256 of
+   `sub`+`cognito:username`, never raw claims — exactly the privacy-safe mechanism dispatch #91
+   built for this) was pulled from the failing self-hosted run's log: `IDENTITY 3f73c22fba95`.
+   The SAME value was independently computed from a fresh mint in the sandbox session, seconds
+   later: `IDENTITY 3f73c22fba95`. **Byte-identical.** Same Cognito principal, same credential,
+   same code — the only thing that differs between a 200 and a 403 is which network the request
+   left from.
+4. **To rule out "maybe it's specifically the Mac mini's flagged IP, not GitHub Actions in
+   general"**, a one-off read-only probe ran the identical call from a GitHub-**hosted**
+   `ubuntu-latest` runner (PR #1763, deleted after use). **Also `403`, also
+   `AccessDeniedException`, also `IDENTITY 3f73c22fba95`.**
+
+**⚠️ CORRECTED 2026-11-09, same session — the paragraph below originally said "network-origin
+block." That overclaimed. The owner reports the Security Events page loads fine, right now, in
+their own real browser on the SAME Mac mini whose GitHub Actions self-hosted runner fails —
+meaning the Mac mini's network/IP itself is demonstrably not blocked at all. Read the corrected
+reasoning, not a raw "it's the network" takeaway.**
+
+**Conclusion, proven across three independently-tested CALLERS, not inferred, but narrower than
+first written:** this was never an entitlement gap, an auth-flow difference, a CORS/fingerprint
+artifact, or a Referer bug (all four were real things this investigation found and fixed along
+the way, and all four were real but **none of them was the gate**). What the evidence actually
+supports: a request made as a **GitHub Actions job** — whether the self-hosted Mac mini runner or
+a GitHub-hosted `ubuntu-latest` runner — gets `403 AccessDeniedException` on
+`api.security.myqsrsoft.com`, while the IDENTICAL non-interactive call made from a Claude Code
+Remote cloud session gets `200`, AND a real interactive browser session (the owner's own, on that
+same Mac mini) also gets `200`. **Raw network origin alone cannot explain this**, since the
+self-hosted runner and the owner's own browser share that Mac mini's network and split 403/200.
+The real distinguishing variable is still open — candidates, none yet tested against each other:
+something GitHub Actions' runner software itself adds to outbound requests (a detectable
+telemetry header, a specific proxy/NAT path for Actions-job traffic that differs from the same
+machine's ordinary egress, a TLS/HTTP client fingerprint tied to how the Actions job invokes
+Node vs. how an interactive shell does) rather than the physical network/IP itself. **Not
+something any code change in this repo's own scripts can route around either way** — the one
+thing this doesn't change is that running the pull as a GitHub Actions job, on any runner flavor,
+is the one path proven not to work.
+
+**The self-hosted Mac mini runner is no longer the "trusted" choice it was pinned as since the
+start of this investigation** — not because its network is bad (it isn't), but because running
+as a GitHub Actions job is itself now the common factor in every failure. Do not reach for
+"switch back to self-hosted" as a fix.
+
+**Real next step: run the pull somewhere that isn't a GitHub Actions job.** A scheduled Claude
+Code Remote session is the one option already proven live — this environment supports
+owner-configured secrets (`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` added via the environment's own
+settings, not a GitHub Secret) and a cron-triggered session fires the identical pull code from
+the exact caller this test already confirmed works. Set up 2026-11-09 as
+`trig_013X4qsQhU8NPCE5aWqpA4yM`, daily 06:03 America/Chicago, `create_new_session_on_fire: true`.
+The real tradeoff is depending on an AI-agent platform's uptime/cost model for a daily production
+data pull rather than a traditional server — acceptable as the fast path while the real mechanism
+stays unconfirmed. A dedicated VPS was considered too, but **since the evidence no longer points
+at raw network/IP, there's no particular reason to expect a VPS succeeds any more than
+`ubuntu-latest` did** — its own network wouldn't involve GitHub Actions' runner software either
+way, so it might work, but that's a guess, not a measurement; don't reach for it as "the proper
+fix" over the already-proven Claude-session path without testing it first.
+
+**Filing the QSRSoft support ticket is still worth doing**, now with sharper evidence than the
+original 2026-08-22 ask — the identity-hash proof that it's the same account, same credential,
+succeeding and failing depending only on the caller. The honest framing for that ticket is
+narrower than "block our IP": *"requests made through our CI/CD automation platform (GitHub
+Actions) are denied with `AccessDeniedException`, while the identical credential succeeds from
+both our own interactive browser session and a separate automated client — can you tell from your
+own logs/WAF what's different about GitHub Actions traffic specifically?"* — not yet drafted as
+an actual ticket.
