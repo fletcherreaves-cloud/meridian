@@ -4216,7 +4216,11 @@ function App() {
         onBack:()=>goRoute(null),
         bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
       }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,
-        canOwnProjections,userName,userId,projOwnerGrants,onNotifyOwners:notifyPanelOwners})),
+        canOwnProjections,userName,userId,projOwnerGrants,onNotifyOwners:notifyPanelOwners,
+        // FY Year rail card (owner-directed 2026-11-09) — same destination/permission as the
+        // existing modal==='yearly-proj' nav handler above, just reachable from inside
+        // Projection Workspace too now.
+        onOpenYearly:perm('analytics.store')?(()=>{setPlanningTab('yearly');goRoute('planning');}):undefined})),
       routePanel==='report'&&h(RoutePanelShell,{
         title:'📊 Date-Range Comprehensive Report',
         subtitle:h('span',null,'Compares all metrics for any date range across selected locations.',h(InfoIcon,{articleKey:'date_range_report_guide'})),
