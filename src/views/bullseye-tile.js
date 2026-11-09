@@ -99,6 +99,28 @@ const METRICS = {
     getTarget: s => (s.t && s.t.tRedAPct > 0) ? s.t.tRedAPct : null,
     fmt: v => (v * 100).toFixed(2) + '%',
   },
+  // Three more tabs (2026-11-09, owner: "any other metrics this view would benefit... adding
+  // tabs should not be too big of an addition") — same store.p/store.t shape already proven in
+  // for the four metrics above, each confirmed against real buildStore()/DEFAULT_TARGETS fields
+  // (pipeline.js) before adding, not guessed: p.r2p/t.tR2p, p.kvst/t.tKvst, p.kvsu/t.tKvsu.
+  r2p: {
+    label: 'R2P', short: 'R2P', higherBetter: false,
+    getVal: s => (s.p && s.p.r2p > 0) ? s.p.r2p : null,
+    getTarget: s => (s.t && s.t.tR2p > 0) ? s.t.tR2p : null,
+    fmt: v => Math.round(v) + 's',
+  },
+  kvst: {
+    label: 'KVS Time', short: 'KVS Time', higherBetter: false,
+    getVal: s => (s.p && s.p.kvst > 0) ? s.p.kvst : null,
+    getTarget: s => (s.t && s.t.tKvst > 0) ? s.t.tKvst : null,
+    fmt: v => Math.round(v) + 's',
+  },
+  kvsu: {
+    label: 'Healthy Use of KVS/Side 2', short: 'KVS Use', higherBetter: true,
+    getVal: s => (s.p && s.p.kvsu != null) ? s.p.kvsu : null,
+    getTarget: s => (s.t && s.t.tKvsu > 0) ? s.t.tKvsu : null,
+    fmt: v => (v * 100).toFixed(2) + '%',
+  },
 };
 
 // Tolerance + clamp constants for the radius model (see header). A RELATIVE percent, uniform
@@ -249,6 +271,17 @@ export function BullseyeTile({ stores, onOpenStore }) {
     scopedCells.filter(c => c.pct != null).slice().sort((a, b) => b.pct - a.pct),
     [scopedCells]);
 
+  // Ring counts (2026-11-09, owner: "add numbers to the bands... to represent the different
+  // rings"). Dynamic, not static — counts the current SCOPE's own cells (so All vs FL vs a
+  // single patch each show their own real distribution), same band classification the dots
+  // themselves already use (bandKey/radiusFor), so the number next to a ring always matches
+  // what's actually plotted in it.
+  const ringCounts = useMemo(() => {
+    const out = { beating: 0, at: 0, below: 0 };
+    for (const c of scopedCells) { if (c.band && out[c.band] != null) out[c.band]++; }
+    return out;
+  }, [scopedCells]);
+
   if (!allCells.length) return null;
 
   const states = [...new Set(allCells.map(c => c.state))].sort();
@@ -306,9 +339,9 @@ export function BullseyeTile({ stores, onOpenStore }) {
           h('circle', { cx, cy, r: r2, fill: 'none', stroke: 'var(--bdr)', strokeWidth: .75 }),
           h('circle', { cx, cy, r: maxR, fill: 'none', stroke: 'var(--bdr2)', strokeWidth: .75 }),
           // Ring labels, fixed at the top (12 o'clock) so they never collide with a sector label
-          h('text', { x: cx, y: cy - r1 - 4, textAnchor: 'middle', fontSize: 6, fill: GOOD_COLOR, fontWeight: 700 }, 'BEATING'),
-          h('text', { x: cx, y: cy - r2 - 4, textAnchor: 'middle', fontSize: 6, fill: WARN_COLOR, fontWeight: 700 }, 'AT TARGET'),
-          h('text', { x: cx, y: cy - maxR - 4, textAnchor: 'middle', fontSize: 6, fill: CRIT_COLOR, fontWeight: 700 }, 'BELOW TARGET'),
+          h('text', { x: cx, y: cy - r1 - 4, textAnchor: 'middle', fontSize: 6, fill: GOOD_COLOR, fontWeight: 700 }, `BEATING (${ringCounts.beating})`),
+          h('text', { x: cx, y: cy - r2 - 4, textAnchor: 'middle', fontSize: 6, fill: WARN_COLOR, fontWeight: 700 }, `AT TARGET (${ringCounts.at})`),
+          h('text', { x: cx, y: cy - maxR - 4, textAnchor: 'middle', fontSize: 6, fill: CRIT_COLOR, fontWeight: 700 }, `BELOW TARGET (${ringCounts.below})`),
           // Sector boundary spokes + labels
           ...sectors.flatMap((sec, si) => {
             const midR = maxR * 1.2;
