@@ -523,6 +523,50 @@ export function computeMissedCountItems(onHandRows, { period, asOfOverride = nul
   return { items, anchor };
 }
 
+// ── Historical "missed" lookup — frozen count sessions, not the rolling snapshot ─────────────────
+// computeMissedCountItems (above) always reads qsr_onhand, which is rolling-latest: a later
+// recount overwrites last_counted/last_submitted in place, so asking it "what was missed as of a
+// PAST date" with asOfOverride set only changes which date the CURRENT snapshot is compared
+// against — it can't un-overwrite a recount that already happened by today. `inv_count_sessions`
+// is the durable alternative: for every (loc, count_date, cls) that ever had a real session,
+// scripts/qsrsoft-onhand-pull.mjs's deriveSessionRows() freezes `missing_items` — every item in
+// that class's universe NOT counted on THAT exact session date — at the time, specifically so a
+// later recount can never erase which items a past near-miss session still needed.
+//
+// Returns a map keyed by the NORMALIZED class (normClass — 'food'/'condiment'/'paper'/
+// 'nonproduct'), one entry per class that has at least one matching session row for this
+// loc + exact date:
+//   { items: [{wrin, descr, cls}], legacy: false, classTotal, itemsCounted }  — real item-level detail
+//   { items: [],                   legacy: true,  classTotal, itemsCounted }  — a real session row,
+//     but it predates schema-inv-count-sessions-missing-items-2026-11-08.sql (missing_items is
+//     null), so only the counted/total tally survives for it, not which specific items.
+// A class with NO key in the returned map means no session row exists at all for this exact
+// (loc, date, class) — the caller must say so plainly, never silently fall back to onHand (that
+// reintroduces the exact bug this function exists to avoid) and never silently show nothing.
+export function missedItemsFromSessions(sessionRows, { loc, asOf } = {}) {
+  const out = {};
+  if (!loc || !asOf) return out;
+  const wantLoc = String(parseInt(loc, 10));
+  for (const r of (sessionRows || [])) {
+    if (String(parseInt(r.loc, 10)) !== wantLoc) continue;
+    const cd = r.countDate instanceof Date ? r.countDate.toISOString().slice(0, 10) : String(r.countDate || '').slice(0, 10);
+    if (cd !== asOf) continue;
+    const cls = normClass(r.cls);
+    const slot = out[cls] || (out[cls] = { items: [], legacy: false, classTotal: 0, itemsCounted: 0 });
+    slot.classTotal += Number(r.classTotal) || 0;
+    slot.itemsCounted += Number(r.itemsCounted) || 0;
+    if (r.missingItems == null) { slot.legacy = true; continue; }
+    for (const it of r.missingItems) {
+      // Same lightweight exclusion computeMissedCountItems makes — deriveSessionRows' own
+      // universeByCls carries no active/isActive filter (by design, see its header comment), so a
+      // deactivated item's name is the only deactivation signal frozen into this snapshot.
+      if (isDeactivatedByDescr(it.descr)) continue;
+      slot.items.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls });
+    }
+  }
+  return out;
+}
+
 // ── Variance follow-ups ───────────────────────────────────────────────────────
 // Rank variance-stat items by how likely a count correction explains the miss.
 // Mirrors the priority heuristic in fob-eom.js analyzeData:

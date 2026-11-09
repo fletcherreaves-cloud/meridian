@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeMissedCountItems } from '../engine/eom-inventory.js';
+import { computeMissedCountItems, missedItemsFromSessions } from '../engine/eom-inventory.js';
 
 const row = (wrin, cls, lastCounted, extra = {}) => ({ loc: '3708', wrin, cls, lastCounted, onHandAmt: 10, active: true, ...extra });
 
@@ -94,5 +94,63 @@ describe('computeMissedCountItems — store-relative "same count date" check (ow
     ];
     const { items } = computeMissedCountItems(rows, { period: '2026-10' });
     expect(items).toHaveLength(0);
+  });
+});
+
+// Owner req (2026-11-09): "if previous date is selected, it needed to represent the snapshot in
+// time as of that point for analyzing trends." qsr_onhand (computeMissedCountItems's own input)
+// is rolling-latest — a later recount overwrites it, so it can never answer that question for a
+// past date. inv_count_sessions' own missing_items freezes it. These tests exercise the reader,
+// not the pull script that writes the frozen rows (that logic lives in
+// scripts/qsrsoft-onhand-pull.mjs's deriveSessionRows, which this function trusts verbatim).
+const sessionRow = (loc, countDate, cls, missingItems, extra = {}) => ({
+  loc, countDate: new Date(countDate + 'T00:00:00'), cls, period: countDate.slice(0, 7),
+  itemsCounted: 3, classTotal: 4, covered: true, sessionKind: 'bulk', updatedAt: countDate,
+  missingItems, ...extra,
+});
+
+describe('missedItemsFromSessions — frozen-snapshot read for a past "as of" date (owner req 2026-11-09)', () => {
+  it('reads the EXACT (loc, date, class) session\'s own frozen missing_items, not whatever the live onHand now says', () => {
+    const rows = [
+      sessionRow('3708', '2026-11-05', 'Food', [{ wrin: 'f1', descr: 'Lettuce' }]),
+      // A later recount on 11/08 would have moved qsr_onhand's own last_counted forward for f1 --
+      // irrelevant here, since this reads the 11/05 session row directly, not onHand.
+      sessionRow('3708', '2026-11-08', 'Food', []),
+    ];
+    const byCls = missedItemsFromSessions(rows, { loc: '3708', asOf: '2026-11-05' });
+    expect(byCls.food.items.map(i => i.wrin)).toEqual(['f1']);
+    expect(byCls.food.legacy).toBe(false);
+  });
+
+  it('a class with NO matching session row for the exact date is absent from the map (caller must say so, never guess)', () => {
+    const rows = [sessionRow('3708', '2026-11-05', 'Food', [{ wrin: 'f1', descr: 'Lettuce' }])];
+    const byCls = missedItemsFromSessions(rows, { loc: '3708', asOf: '2026-11-05' });
+    expect(byCls.condiment).toBeUndefined();
+    expect(byCls.nonproduct).toBeUndefined();
+  });
+
+  it('a pre-migration row (missing_items === null) reports legacy:true with no item list, not a false "nothing missed"', () => {
+    const rows = [sessionRow('3708', '2026-11-05', 'Food', null)];
+    const byCls = missedItemsFromSessions(rows, { loc: '3708', asOf: '2026-11-05' });
+    expect(byCls.food.legacy).toBe(true);
+    expect(byCls.food.items).toHaveLength(0);
+  });
+
+  it('excludes a deactivated item by its frozen descr text, same lightweight check computeMissedCountItems makes', () => {
+    const rows = [sessionRow('3708', '2026-11-05', 'Condiment', [
+      { wrin: 'c1', descr: 'Old BBQ Sauce (Deactivated)' },
+      { wrin: 'c2', descr: 'Ketchup' },
+    ])];
+    const byCls = missedItemsFromSessions(rows, { loc: '3708', asOf: '2026-11-05' });
+    expect(byCls.condiment.items.map(i => i.wrin)).toEqual(['c2']);
+  });
+
+  it('is scoped to the exact loc and exact date — a different store or a different day on file is ignored', () => {
+    const rows = [
+      sessionRow('5183', '2026-11-05', 'Food', [{ wrin: 'x', descr: 'Other Store' }]),
+      sessionRow('3708', '2026-11-04', 'Food', [{ wrin: 'y', descr: 'Wrong Day' }]),
+    ];
+    const byCls = missedItemsFromSessions(rows, { loc: '3708', asOf: '2026-11-05' });
+    expect(byCls.food).toBeUndefined();
   });
 });
