@@ -188,12 +188,47 @@ export const METRIC_SOURCES = {
   // Glimpse is independently confirmed genuinely punched and auto/cloud-fresh (no upload lag), so
   // ordering it first gets today's best available number without waiting on a re-upload, and
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
-  // laborDollar — crew (punched, hourly) labor $, the numerator laborPct's derivation below
-  // needs. Auto-pulled from the Operations Report labor-summary stream (qsr_labor_summary ->
-  // loadOpsLaborSummary, aliased crew_labor_dollars -> laborDollar, #327). mode:'pos' — a real
-  // operating day never has $0 crew labor; a 0 here means the row is missing, not that the
-  // store ran on zero hours.
-  laborDollar: { mode: 'pos', srcs: [['opsLaborRows', 'laborDollar']] },
+  // laborDollarRaw — crew (punched, hourly) labor $ exactly as the labor-summary stream reports
+  // it, with NO staleness guard — the guard (laborDollar, below) needs an unguarded raw value to
+  // compare against, and actHrsGuard/crewHrsGuard both need a day-coverage anchor that doesn't
+  // itself depend on the guard (see those entries' comments) — using the guarded `laborDollar`
+  // for that would be circular (laborDollar → crewHrsGuard → laborDollar → …).
+  laborDollarRaw: { mode: 'pos', srcs: [['opsLaborRows', 'laborDollar']] },
+  // actHrsGuard / crewHrsGuard — diagnostic-only legs feeding laborDollar's in-progress-day
+  // staleness guard below. NEITHER can ever resolve to null: metricDaily's derive resolution
+  // requires EVERY declared input non-null before it even calls `fn` (`vals.every(v => v !=
+  // null)`), so a guard leg that resolved null whenever its real source was simply absent (true
+  // of most existing callers/tests, predating #327's crewHrs alias and of any day actHrs itself
+  // can't resolve) would silently stop laborDollar's WHOLE derive from resolving — not just skip
+  // the guard. Each has a fallback `derive` returning an "inactive" sentinel: 0 hours (never
+  // exceeds the `actHrsGuard > 2` gate below) / Infinity hours (never reads as "less than half
+  // of actHrs"). "Unknown" must never read as "stale."
+  // The fallback's `inputs` is deliberately NOT empty, even though `fn` ignores it — in
+  // metricSeriesWithSource (series/range mode, unlike the single-date metricDaily), a derive's
+  // day coverage is driven by the UNION of its own inputs' resolved days (`days = new
+  // Set(parts.flatMap(...))`); an empty `inputs` array makes that union empty too, so the
+  // sentinel would never fire for ANY day in series mode even though metricDaily (which calls
+  // `fn` once per requested date regardless) tolerates it fine. Piggybacking on 'sales'/
+  // 'laborDollarRaw' — already-required legs wherever this guard matters — guarantees the
+  // sentinel covers at least every day laborDollar's derive would otherwise attempt, with no
+  // circular dependency (neither 'sales' nor 'laborDollarRaw' depends on either guard).
+  actHrsGuard:  { mode: 'any', srcs: [['qsrActSummaryRows', 'actHrs'], ['ctrlRows', 'actHrs']],
+                  derive: { inputs: ['sales'], fn: (_sales) => 0 } },
+  crewHrsGuard: { mode: 'any', srcs: [['opsLaborRows', 'crewHrs']],
+                  derive: { inputs: ['laborDollarRaw'], fn: (_laborDollarRaw) => Infinity } },
+  // laborDollar — the guarded numerator laborPct's `kind:'ratio'` derive actually reads.
+  // Derive-only (no `srcs` of its own — laborDollarRaw already covers the real read), so the
+  // guard can VETO an already-present stale value, not just fill a gap a plain `srcs` chain
+  // left empty. `rollupCapableMetricKeys()`'s contract requires exactly 2 inputs for any
+  // `kind:'ratio'` metric (metricSumRatio destructures `[numKey, denKey] = derive.inputs`) —
+  // laborPct itself must stay at exactly 2 ('laborDollar','sales'), so the extra guard legs
+  // live HERE instead, one level down, where laborDollar's own derive carries no `kind:'ratio'`
+  // tag and the 2-input contract doesn't apply.
+  // See CLAUDE.md's 2026-11-09 Shift Scoreboard finding (laborPct's own comment below) for what
+  // this guards against and the measured evidence.
+  laborDollar: { mode: 'pos',
+                 derive: { inputs: ['laborDollarRaw', 'actHrsGuard', 'crewHrsGuard'],
+                           fn: (raw, actHrs, crewHrs) => (actHrs > 2 && crewHrs < actHrs * 0.5) ? null : raw } },
   // Labor % (#327) — closes the gap where the only 3 sources are emailed/manual (glimpseRows is
   // forward-only from 2026-07-01, ctrlRows/laborRows go stale the moment uploads stop), so a
   // window past the Glimpse floor with no manual upload resolved null district-wide (At A
@@ -234,6 +269,21 @@ export const METRIC_SOURCES = {
   // glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every render site
   // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
   // shipped a number 100x too large.
+  // ── In-progress-day staleness guard (2026-11-09, Shift Scoreboard Labor % finding) ─────────
+  // Measured live (service-role, dt=2026-11-09, multiple stores, multiple pull cycles hours
+  // apart): qsr_labor_summary's crew_labor_hours leg does NOT track an in-progress business day
+  // in real time — it sat at the SAME tiny value (e.g. 2.92hrs) across >10 successive 15-min
+  // pulls while the DAR's actual_punched_hours climbed to 163+ for the same (loc,dt), and a
+  // freshly-pulled row (updated_at within the same hour) for a second store showed the identical
+  // pattern (crew_labor_hours 1.71 vs DAR actHrs 50.18) — so this isn't a dead pull, it's QSRSoft's
+  // own labor-summary report lagging real punches until some later posting/approval step, for
+  // crew hours specifically (salaried_manager_hours on the same row did NOT show this lag).
+  // Undetected, this derive divides today's full-day sales by a sliver of labor $, producing a
+  // Labor % an order of magnitude too low (0.47% against a ~19.5% target) — worse than showing
+  // nothing. The guard itself lives one level down, on `laborDollar` (see its own comment above)
+  // rather than here, so this derive stays at the exactly-2-inputs shape every `kind:'ratio'`
+  // metric is required to have — `laborDollar` resolving null (stale, vetoed) flows through this
+  // derive's own `d > 0` check exactly like any other missing numerator.
   laborPct:  { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
                derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null), kind: 'ratio' } },
   tpph:      { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],

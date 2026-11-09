@@ -47,6 +47,43 @@ describe('metric-source resolver (auto-first)', () => {
     expect(metricDaily(ds4, '7', d('2026-06-06'), 'laborPct')).toBeCloseTo(0.22, 5);
   });
 
+  // 2026-11-09 Shift Scoreboard finding: qsr_labor_summary's crew_labor_hours leg lags real
+  // punches on an in-progress day — measured live sitting at the same tiny value across >10
+  // successive 15-min pulls while the DAR's actual_punched_hours kept climbing. Undetected, the
+  // laborPct derive (laborDollar ÷ sales) divides a full day's sales by that sliver of labor $,
+  // producing a Labor % an order of magnitude too low.
+  describe("laborPct derive — in-progress-day staleness guard", () => {
+    const dsDerive = (laborDollar, sales, actHrs, crewHrs) => ({
+      qsrActSummaryRows: [{ loc: '7', date: d('2026-06-05'), sales, actHrs }],
+      opsLaborRows: [{ loc: '7', date: d('2026-06-05'), laborDollar, crewHrs }],
+    });
+
+    it('returns null when crewHrsReported covers less than half of actHrs (the measured bug shape)', () => {
+      // Durant, 2026-11-09: crew_labor_hours 2.92 vs DAR actHrs 163.57, laborDollar 41 / sales
+      // 10731.54 would otherwise read 0.0038 (0.38%) against a ~19.5% target.
+      const ds = dsDerive(41, 10731.54, 163.57, 2.92);
+      expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeNull();
+    });
+
+    it('resolves the real ratio when crewHrsReported tracks actHrs normally', () => {
+      const ds = dsDerive(2000, 10000, 160, 155);
+      expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.2, 5);
+    });
+
+    it('does not fire on a genuinely early, low-volume day where both legs are small', () => {
+      const ds = dsDerive(20, 300, 1.5, 1.4);
+      expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(20 / 300, 5);
+    });
+
+    it('never fires when crewHrsReported is simply absent (unknown, not stale)', () => {
+      const ds = {
+        qsrActSummaryRows: [{ loc: '7', date: d('2026-06-05'), sales: 10000, actHrs: 160 }],
+        opsLaborRows: [{ loc: '7', date: d('2026-06-05'), laborDollar: 2000 }],
+      };
+      expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.2, 5);
+    });
+  });
+
   it("'any' mode keeps 0 / negative values (cash O/S)", () => {
     const ds = { ctrlRows: [{ loc: '1', date: d('2026-06-01'), cashOSPct: 0 }, { loc: '1', date: d('2026-06-02'), cashOSPct: -0.03 }] };
     expect(metricDaily(ds, '1', d('2026-06-01'), 'cashOSPct')).toBe(0);
