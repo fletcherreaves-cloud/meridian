@@ -1030,11 +1030,20 @@ describe('weeklyRecountWindows', () => {
     expect(windows['3708']).toEqual({ closeWindowStart: '2026-08-06', closeWindowEnd: '2026-08-09' });
   });
 
-  it('excludes a store with no qualifying weekly count at all this period', () => {
-    // Only 88% Food coverage -- below the raised COVER_FRAC=0.95 bar.
+  it('gives a window for a real, substantial attempt even under 100% coverage (owner-directed ' +
+     '2026-11-09 -- a 104/118 Food + 36/36 Condiment count is a genuine weekly attempt, not "no ' +
+     'qualifying count"; see complianceFromSessions\' lastWeekly comment)', () => {
     const rows = store('5183', [{ date: '2026-08-06', counts: { Food: 104, Condiment: 36 } }]);
     const windows = weeklyRecountWindows(rows, { asOf: '2026-08-10' });
-    expect(windows['5183']).toBeUndefined();
+    expect(windows['5183']).toEqual({ closeWindowStart: '2026-08-06', closeWindowEnd: '2026-08-09' });
+  });
+
+  it('still excludes a store with no real attempt at all -- a handful of items in only one ' +
+     'weekly class is not a weekly attempt (attemptsWeekly requires BOTH Food and Condiment ' +
+     'touched)', () => {
+    const rows = store('5986', [{ date: '2026-08-06', counts: { Food: 118 } }]); // Condiment untouched
+    const windows = weeklyRecountWindows(rows, { asOf: '2026-08-10' });
+    expect(windows['5986']).toBeUndefined();
   });
 
   it('uses the MOST RECENT qualifying session when a store has more than one this period', () => {
@@ -1117,5 +1126,72 @@ describe('sessionsFromLog / cycleComplianceFromLog / weeklyRecountWindowsFromLog
     const windows = weeklyRecountWindowsFromLog(madillLogRows, { asOf: '2026-09-08', windowDays: 3 });
     expect(windows['13113'].closeWindowStart).toBe('2026-09-07');
     expect(windows['13113'].closeWindowEnd).toBe('2026-09-11');
+  });
+});
+
+// Owner-directed 2026-11-09 — "we need to be ok with dropping the 100% requirement, at least as
+// it pertains to determining a count status... acknowledge the count for what it is. An attempt
+// to count... but a count nonetheless." Real cases from re-measuring the false-flag batch that
+// followed dispatch #142's Condiment fix: Seminole/Madill/Durant/Ardmore-Broadway/etc. all showed
+// the SAME shape (a real, substantial Food+Condiment count on one date, plus a handful of
+// make-up items landing 1-4 days later) and were all misread as "no complete count" because the
+// 100%-on-one-exact-date bar can't see a count that finishes across adjacent days. Bonifay is the
+// control case: a real, substantial count that genuinely left 2 items never recounted — still
+// worth surfacing, just reframed as "verify what's left" instead of "no complete count."
+describe('attempt-based weekly status (owner-directed 2026-11-09)', () => {
+  it('Seminole-shaped: a real 11/04 count (121/125 Food, 34/36 Condiment) is recognized as the ' +
+     'weekly count, not "no complete count on record" — the stragglers that follow (1 Food+1 ' +
+     'Condiment on 11/07, 2 Food on 11/09) are normal make-up activity, not evidence it never ' +
+     'happened', () => {
+    const rows = [
+      ...mk('10915', 'Food', 125, null), ...mk('10915', 'Condiment', 36, null),
+    ];
+    let done = 0;
+    for (const r of rows) { if (r.cls === 'Food' && done < 121) { r.last_counted = '2026-11-04'; done++; } }
+    done = 0;
+    for (const r of rows) { if (r.cls === 'Condiment' && done < 34) { r.last_counted = '2026-11-04'; done++; } }
+    const c = cycleCompliance(rows, { asOf: '2026-11-09' });
+    expect(c[0].overdue).toBe(false);
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy();
+    expect(c[0].lastWeekly.date).toBe('2026-11-04');
+  });
+
+  it('Bonifay-shaped: a real, substantial count is recognized as the weekly attempt (not ' +
+     '"no complete count"), but 2 items genuinely never recounted since before the period ' +
+     'still surface as a verify-the-rest nudge, not silently cleared', () => {
+    const rows = [
+      ...mk('10034', 'Food', 124, '2026-11-05'),
+      ...mk('10034', 'Condiment', 35, '2026-11-05'),
+    ];
+    // Two real Condiment items genuinely never recounted this period.
+    rows[rows.length - 1].last_counted = '2026-10-29';
+    rows[rows.length - 2].last_counted = '2026-10-29';
+    const c = cycleCompliance(rows, { asOf: '2026-11-09' });
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy(); // recognized as an attempt
+    const ex = c[0].exceptions.find(e => e.rule === 'weekly-incomplete');
+    expect(ex).toBeTruthy();
+    expect(ex.detail).toContain('2026-11-05');
+    expect(ex.detail).toContain('Condiment');
+    expect(c[0].verdict).toContain('2026-11-05');
+  });
+
+  it('a trivial cross-class double-touch (1 Food + 1 Condiment item) does not masquerade as the ' +
+     'weekly count — attemptsWeekly also needs real session volume (n >= TOUCHED_FLOOR)', () => {
+    const rows = [...mk('9001', 'Food', 118, null), ...mk('9001', 'Condiment', 36, null)];
+    rows[0].last_counted = '2026-08-06'; // 1 Food item
+    rows.find(r => r.cls === 'Condiment').last_counted = '2026-08-06'; // 1 Condiment item
+    const c = cycleCompliance(rows, { asOf: '2026-08-10' });
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeTruthy();
+    expect(c[0].lastWeekly).toBeNull();
+  });
+
+  it('a genuinely never-attempted store still reads weekly-overdue — the attempt axis does not ' +
+     'weaken the rule for a store that counted Paper but never touched Food or Condiment at all', () => {
+    const rows = [...mk('9002', 'Food', 118, null), ...mk('9002', 'Condiment', 36, null),
+      ...mk('9002', 'Paper', 92, '2026-08-06')];
+    const c = cycleCompliance(rows, { asOf: '2026-08-10' });
+    expect(c[0].status).toBe('crit');
+    expect(c[0].exceptions[0].rule).toBe('weekly-overdue');
+    expect(c[0].lastWeekly).toBeNull();
   });
 });

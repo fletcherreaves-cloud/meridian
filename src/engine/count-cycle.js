@@ -794,7 +794,25 @@ function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsBy
     // session satisfying multiple qualities (weekly AND mid-paper) collapsed to whichever
     // the if/else chain hit first. Now every consumer below reads the independent flags.
     const cycles = all.filter(s => !s.isSpot);
-    const lastWeekly = [...all].reverse().find(s => s.satisfiesWeekly || s.isEom) || null;
+    // Owner-directed 2026-11-09 (the Seminole/Madill/Durant/etc. false-flag batch, following
+    // dispatch #142's Condiment fix) — "we need to be ok with dropping the 100% requirement, at
+    // least as it pertains to determining a count status... acknowledge the count for what it
+    // is. An attempt to count... but a count nonetheless that should be recognized." Verified
+    // live: every one of ~15 stores still false-flagged after #142 showed the SAME shape — a
+    // real, substantial Food+Condiment count on one date, plus a handful of make-up/correction
+    // items landing 1-4 days later (normal crew behavior, not a data or pull problem — the
+    // qsr_onhand pull itself was independently re-confirmed current/accurate for all of them).
+    // Requiring the FULL 100% on one exact calendar date made every one of those real counts
+    // invisible. `attemptsWeekly` (Axis 1, task #126 — touched Food AND Condiment at all,
+    // independent of COVER_FRAC) already exists for exactly this distinction; it just wasn't
+    // wired into the compliance gate before now. `n >= TOUCHED_FLOOR` guards against a trivial
+    // cross-class double-touch (e.g. one Food item checked for a recipe question, one unrelated
+    // Condiment item) reading as "the weekly count happened" — same anti-noise bar isPartial/
+    // isSpot already use. satisfiesWeekly/COVER_FRAC is NOT removed — it still drives
+    // `covered`/coveragePct/missingItems below, surfaced as a "verify the rest" nudge instead of
+    // gating whether a real count attempt gets recognized as one.
+    const lastWeekly = [...all].reverse()
+      .find(s => s.satisfiesWeekly || s.isEom || (s.attemptsWeekly && s.n >= TOUCHED_FLOOR)) || null;
     const lastAny = cycles.length ? cycles[cycles.length - 1] : null;
     // A partial session more recent than the last good weekly is the actionable case:
     // they counted, but not completely.
@@ -813,19 +831,41 @@ function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsBy
     const paperMissing = paperExpected && !paperThisMonth;
 
     const exceptions = [];
+    // Verdict wiring for buildCycleVerdict() below — whichever session (if any) is the
+    // "attempted but not 100%" one, so the headline can name its date/missing classes. Kept
+    // separate from the returned `lastPartial` field (unchanged meaning: most recent isPartial
+    // session overall) since nothing outside this function reads that field today.
+    let incompleteSession = null;
     if (overdue) exceptions.push({
       rule: 'weekly-overdue', severity: 'crit',
       detail: daysSinceWeekly == null
         ? 'No complete weekly count on record'
         : `${daysSinceWeekly} days since the last complete Food + Condiment count`,
     });
+    // Owner-directed 2026-11-09 — lastWeekly is now an ATTEMPT (see above), so it can itself
+    // fall short of 100% (e.g. Bonifay: a real, substantial 11/05 count that left mustard
+    // packets and bulk sugar genuinely never recounted). That's still worth surfacing — just
+    // as "verify what's left," not "no complete count" — so this checks the attempt session's
+    // OWN coverage first, before falling through to the older #357-B1 case below.
+    else if (!(lastWeekly.satisfiesWeekly || lastWeekly.isEom)) {
+      incompleteSession = lastWeekly;
+      const missing = WEEKLY_CLASSES.filter(c => !lastWeekly.covered.includes(c));
+      exceptions.push({
+        rule: 'weekly-incomplete', severity: 'warn',
+        detail: `Counted ${lastWeekly.date} but ${missing.join(' and ')} not fully counted — every weekly count needs Food and Condiment`,
+      });
+    }
     // #357-B1 — was: any partial session newer than the last weekly fires this warning,
     // even a session that never touched Food or Condiment at all (e.g. a pure Paper
     // count). Tecumseh counted Food+Condiment completely on 08-14, then counted Paper on
     // 08-15 — the 08-15 session was never a weekly attempt, so it must not be graded as
     // a botched one. Gated on touchedWeeklyClasses: the session actually included at
-    // least one Food or Condiment item.
-    else if (lastPartial && lastWeekly && lastPartial.date > lastWeekly.date && lastPartial.touchedWeeklyClasses) {
+    // least one Food or Condiment item. Now a FALLBACK for the case the branch above can't
+    // catch — a later session lopsided enough (e.g. a Food-only recount, Condiment untouched)
+    // that it never clears attemptsWeekly's own touched-BOTH-classes bar, so it never became
+    // lastWeekly in the first place.
+    else if (lastPartial && lastPartial.date > lastWeekly.date && lastPartial.touchedWeeklyClasses) {
+      incompleteSession = lastPartial;
       const missing = WEEKLY_CLASSES.filter(c => !lastPartial.covered.includes(c));
       exceptions.push({
         rule: 'weekly-incomplete', severity: 'warn',
@@ -854,7 +894,7 @@ function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsBy
       // phantom-row case, reintroduced by raising COVER_FRAC to 1 — see that function's and
       // isStaleDeadRow()'s own comments).
       staleItems: staleItemsByLoc[loc] || [],
-      exceptions, verdict: buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }),
+      exceptions, verdict: buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial: incompleteSession }),
       status: exceptions.some(e => e.severity === 'crit') ? 'crit'
             : exceptions.length ? 'warn' : 'ok',
     };

@@ -97,12 +97,25 @@ describe('cycleCompliance() surfaces newItems per store, and grades Food+Condime
     expect(c[0].newItems).toEqual([{ wrin: 'new-item', descr: 'New Fry Sauce', cls: 'Food' }]);
   });
 
-  it('without newWrinsByLoc at all (the pre-existing call shape), that same store would read ' +
-     'overdue -- confirms the exception is opt-in via the param, not a silent universal grace', () => {
+  // Updated 2026-11-09 (owner-directed attempt-based status change, same session as #142) —
+  // this used to assert `overdue: true` here, confirming the new-WRIN exemption is opt-in via
+  // the param, not automatic. That half is still true (newItems stays [] -- nothing is
+  // exempted without the param), but overdue itself no longer follows from it: a real,
+  // substantial 20 Food + 10 Condiment count is now recognized as a genuine weekly attempt
+  // (attemptsWeekly + real volume) regardless of whether the one extra untouched item is
+  // exempted. The un-exempted new item still surfaces -- just as a weekly-incomplete "verify
+  // what's left" nudge (same place a genuinely missed item would land), not as "no complete
+  // count on record."
+  it('without newWrinsByLoc at all (the pre-existing call shape), the exemption stays opt-in -- ' +
+     'the new item is NOT exempted and still surfaces, but as a verify-the-rest nudge, not an ' +
+     'overdue alert, since a real substantial count genuinely happened', () => {
     const rows = fullStore('5985', { newWrin: true });
     const c = cycleCompliance(rows, { asOf: '2026-10-06' });
-    expect(c[0].overdue).toBe(true);
-    expect(c[0].newItems).toEqual([]);
+    expect(c[0].overdue).toBe(false);
+    expect(c[0].newItems).toEqual([]); // opt-in confirmed: nothing exempted without the param
+    const ex = c[0].exceptions.find(e => e.rule === 'weekly-incomplete');
+    expect(ex).toBeTruthy();
+    expect(ex.detail).toContain('Food');
   });
 });
 
