@@ -1,6 +1,6 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
-description: ✅ RESOLVED (diagnosis) 2026-11-09, CORRECTED same day -- the token-injection test this file called for finally ran. Identity hash is byte-identical across three independently-tested callers (cloud sandbox, GitHub-hosted ubuntu-latest, the self-hosted Mac mini runner) -- same account, same credential, same code -- yet only the cloud sandbox gets 200; both GitHub Actions runner flavors get 403 AccessDeniedException. NOT a raw network-origin block (corrected: the owner's own real browser on that SAME Mac mini loads Security Events fine right now, so the Mac's network/IP is not blocked) -- the actual common factor across every failure is specifically running AS A GITHUB ACTIONS JOB, mechanism still unconfirmed (candidates: Actions-specific egress path, runner-software request fingerprint -- not yet isolated). Read the 2026-11-09 section at the bottom first. Not yet fixed -- a scheduled Claude Code Remote session (trig_013X4qsQhU8NPCE5aWqpA4yM) is the one path proven to work; set up but not yet confirmed on a real production run.
+description: ✅ RESOLVED (diagnosis) 2026-11-09, CORRECTED same day -- the token-injection test this file called for finally ran. Identity hash is byte-identical across three independently-tested callers (cloud sandbox, GitHub-hosted ubuntu-latest, the self-hosted Mac mini runner) -- same account, same credential, same code -- yet only the cloud sandbox gets 200; both GitHub Actions runner flavors get 403 AccessDeniedException. NOT a raw network-origin block (corrected: the owner's own real browser on that SAME Mac mini loads Security Events fine right now, so the Mac's network/IP is not blocked) -- the actual common factor across every failure is specifically running AS A GITHUB ACTIONS JOB, mechanism still unconfirmed (candidates: Actions-specific egress path, runner-software request fingerprint -- not yet isolated). The GitHub-Actions-403 question above is STILL OPEN and this file's own diagnosis of it stands. But a SECOND, fully independent bug was found and fixed the same day (PR #1765, merged): src/engine/security-events.js's parseSecurityEventRow required raw.event_token, a field the real API never sends, so 100% of rows were silently dropped as "unkeyable" on every successful call regardless of auth/network -- qsr_security_events had been staying at zero rows for THIS reason too, hidden behind the 403 saga because nobody had gotten a real 200 back from an automated context before 2026-11-09. Fixed, and a real production pull with the fix landed 113,782 real rows, independently verified via service-role REST count. Read the final section at the very bottom first.
 sensitivity: open
 metadata:
   node_type: memory
@@ -323,3 +323,68 @@ Actions) are denied with `AccessDeniedException`, while the identical credential
 both our own interactive browser session and a separate automated client — can you tell from your
 own logs/WAF what's different about GitHub Actions traffic specifically?"* — not yet drafted as
 an actual ticket.
+
+---
+
+# ✅ SECOND, INDEPENDENT ROOT CAUSE FOUND AND FIXED — 2026-11-09, same session as the above
+
+**Everything above this line is about the GitHub-Actions-403 question, and it is still open** —
+the mechanism behind why a GitHub Actions job (any runner flavor) gets `403` while a cloud
+sandbox or a real browser gets `200` is still not isolated. Nothing below resolves that.
+
+**But fixing the 403 would not, by itself, have produced a single real row either — because a
+second, completely unrelated bug meant the pull had NEVER saved a row, even on its rare/local
+200s, since the day it was written.**
+
+## The bug
+
+`src/engine/security-events.js`'s `isUsableRow(raw)` required `raw.event_token` to treat a row as
+keyable, and `parseSecurityEventRow` read `eventToken: raw.event_token` straight off the raw row.
+**A live-captured real `event_details` API response row never carries an `event_token` field at
+all** — the event type is only known from which `event_token` value the *request itself* was
+scoped to (`scripts/qsrsoft-security-events-pull.mjs`'s own loop variable,
+`for (const eventToken of eventTokens)`), never echoed back per-row by the API. The call site
+(line ~336) never even passed `eventToken` through to `parseSecurityEventRows(rows, { loc })` —
+it was missing from the options object entirely.
+
+**Net effect: 100% of rows were dropped as "unkeyable" on every single successful API call,
+forever** — independent of, and hidden behind, the entire GitHub-Actions-403 investigation above.
+Nobody had ever gotten a real `200` back from an automated/scriptable context before this
+session's sandbox test succeeded (see the 40/40 measurement above) to notice `qsr_security_events`
+was staying at zero rows for this second, unrelated reason too. The original dispatch #58 test
+fixture (`src/__tests__/security-events.test.js`'s old `BASE_ROW`) had `event_token` baked in —
+written and validated entirely against a guessed row shape, never a captured real response,
+consistent with the #83 rebuild's own header comment that the live fetch path had "NEVER been run
+against the real API from this workflow."
+
+## The fix (PR #1765, merged to main `670c34d2`)
+
+`eventToken` is now a **required caller-supplied option** on `parseSecurityEventRow`/
+`parseSecurityEventRows`, threaded from the pull script's own request-scoped loop variable —
+never read from the raw row, even if one happens to be present. `isUsableRow` no longer checks
+for `raw.event_token`. Test fixtures rewritten to match the real API shape; new tests confirm a
+stray `raw.event_token` is ignored and that one batch call tags every row with the same
+caller-supplied token.
+
+## Live-verified, twice
+
+1. **Parsing fix, spot check**: a one-off script called `fetchOne` then the fixed
+   `parseSecurityEventRows` against the real live endpoint — **66/66 rows parsed** (up from 0/66
+   before the fix).
+2. **Full production run, after merge**: ran `node scripts/qsrsoft-security-events-pull.mjs`
+   directly (QSRSOFT_USERNAME/PASSWORD as inline env vars, never written to disk) — a 15-day
+   backfill (2026-10-26 → 2026-11-09), 27 stores × 8 event tokens, 3,240 request units, 920s fetch
+   phase. Result: **`113782 row(s) parsed, 113782 saved`, 27/27 stores had at least one row
+   upserted.** Independently confirmed (not just trusting the script's own log) via a service-role
+   REST count against `qsr_security_events`: `content-range: 0-0/113782` — exact match.
+
+## What this means for the 403 investigation above
+
+**Nothing above is now moot.** The GitHub-Actions-403 block is real and still unfixed — this
+session's production run above succeeded because it ran from an interactive cloud session, not a
+GitHub Actions job, same as the 40/40 sandbox test did. The scheduled Claude Code Remote session
+(`trig_013X4qsQhU8NPCE5aWqpA4yM`) remains the one proven path to run this on a recurring schedule
+without hitting the 403. What changes is the stakes of eventually resolving the 403: real data is
+now flowing and being saved whenever the pull *can* run, so getting it running daily (via the
+scheduled session, a VPS, or a resolved support ticket) is now worth doing — before this fix, a
+403 fix alone would have produced zero rows anyway.
