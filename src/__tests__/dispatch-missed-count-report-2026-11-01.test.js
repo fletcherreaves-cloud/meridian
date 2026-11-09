@@ -26,9 +26,21 @@ const onHand = [
   { loc: '3708', wrin: 'old1', descr: 'Old BBQ Sauce (Deactivated)', cls: 'Condiment', onHandAmt: 5, active: false, lastCounted: '2026-09-01' },
 ];
 
+// Historical-mode ("Force count date" set to a PAST date, owner req 2026-11-09) fixture:
+// inv_count_sessions' own frozen missing_items for the exact (loc, count_date, cls) the test picks.
+// '3708' Food session on 2026-10-27 froze 'f3' (Cheese Slices) as missing THAT day -- note this is
+// a DIFFERENT fact than onHand's live state above (where f3 now reads lastCounted:'2026-10-27',
+// i.e. counted exactly on 10/27) -- deliberately, since the whole point of the fix is that the
+// frozen session is the one source that can't be silently overwritten by a later recount, so this
+// test fixture must be free to disagree with the live onHand snapshot.
+// vi.hoisted (not a bare `let` at module scope) -- vi.mock's factory is hoisted above the rest of
+// this file by vitest's static transform, so a plain top-level `let` referenced only by closure
+// would be read before its own initializer ran. Same pattern push-subscribe.test.js already uses.
+const sessionsHolder = vi.hoisted(() => ({ rows: [] }));
 vi.mock('../lib/supabase.js', () => ({
   supabase: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }), upsert: async () => ({ data: null, error: null }) }) },
   loadQsrOnHand: async () => onHand,
+  loadInvCountSessions: async () => sessionsHolder.rows,
   loadQsrFob: async () => [],
   loadEomPeriods: async () => ['2026-10'],
   loadEomCountStatus: async () => [],
@@ -102,6 +114,7 @@ describe('Missed on Current Count report (owner req 2026-11-01)', () => {
     // month once the 7th arrives (exactly the class of bug dispatch #22 already fixed once).
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-03T12:00:00'));
+    sessionsHolder.rows = [];
     ({ container, root } = mountRoot());
   });
   afterEach(() => { act(() => { root.unmount(); }); container.remove(); vi.useRealTimers(); });
@@ -126,23 +139,98 @@ describe('Missed on Current Count report (owner req 2026-11-01)', () => {
     expect(card.textContent).toMatch(/counted 2026-10-27, before this count/);
   });
 
-  it('the Force count date override changes which items read as missed', async () => {
+  // Setting .value directly bypasses React's value tracker -- go through the native setter so the
+  // SyntheticEvent system actually picks the change up, same pattern every date/text-input test in
+  // this codebase that mutates a controlled input already uses.
+  async function setForceDate(card, iso) {
+    const dateInput = card.querySelector('input[type="date"]');
+    expect(dateInput, 'Force count date input not found').toBeTruthy();
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    await act(async () => {
+      nativeSetter.call(dateInput, iso);
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      // Lets the lazy loadInvCountSessions() fetch (triggered by the date change) resolve and its
+      // state updates flush, same multi-tick pattern renderPanel/openReport already use above.
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+  }
+
+  it('a PAST Force count date reads the FROZEN inv_count_sessions snapshot, not today\'s live onHand re-anchored to that date', async () => {
+    // Root-cause fixture: onHand (above) shows f3/Cheese Slices as counted exactly on 2026-10-27
+    // (today's live state), but the 10/27 count SESSION itself froze a totally different item
+    // (f1/Lettuce) as missing that day. Only the session read can tell the two apart -- the old
+    // behavior (re-anchoring onHand) would have shown Cheese Slices as "on time" and said nothing
+    // was missed that day, which is exactly the bug this fix closes.
+    sessionsHolder.rows = [
+      { loc: '3708', countDate: new Date('2026-10-27T00:00:00'), cls: 'Food', period: '2026-10', itemsCounted: 3, classTotal: 4, covered: true, sessionKind: 'bulk', updatedAt: '2026-10-27', missingItems: [{ wrin: 'f1', descr: 'Lettuce' }] },
+    ];
     await renderPanel(root);
     await openReport(container);
     const card = modalCard(container);
-    const dateInput = card.querySelector('input[type="date"]');
-    expect(dateInput, 'Force count date input not found').toBeTruthy();
-    // Setting .value directly bypasses React's value tracker -- go through the native setter so
-    // the SyntheticEvent system actually picks the change up, same pattern every date/text-input
-    // test in this codebase that mutates a controlled input already uses.
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    await act(async () => {
-      nativeSetter.call(dateInput, '2026-10-27');
-      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    // Forcing the anchor to 10/27 flips which items read as missed -- now the 10/29-counted ones do.
+    await setForceDate(card, '2026-10-27');
     expect(card.textContent).toContain('Lettuce');
     expect(card.textContent).not.toContain('Cheese Slices');
+    expect(card.textContent).toContain('as of: Oct 27');
+  });
+
+  it('a class with no matching session row for the picked date says so plainly, instead of silently showing nothing or falling back to onHand', async () => {
+    // No Condiment/Non-Product session rows at all for 2026-10-27 in this fixture -- only Food.
+    sessionsHolder.rows = [
+      { loc: '3708', countDate: new Date('2026-10-27T00:00:00'), cls: 'Food', period: '2026-10', itemsCounted: 3, classTotal: 4, covered: true, sessionKind: 'bulk', updatedAt: '2026-10-27', missingItems: [] },
+    ];
+    await renderPanel(root);
+    await openReport(container);
+    const card = modalCard(container);
+    await setForceDate(card, '2026-10-27');
+    expect(card.textContent).toMatch(/No count session on file for Condiment on Oct 27/);
+    expect(card.textContent).toMatch(/No count session on file for Non-Product on Oct 27/);
+    expect(card.textContent).not.toContain('Nothing missed in the current scope');
+  });
+
+  it('a pre-migration session row (missing_items null) is flagged as item-detail-unavailable, not treated as nothing missed', async () => {
+    sessionsHolder.rows = [
+      { loc: '3708', countDate: new Date('2026-10-27T00:00:00'), cls: 'Food', period: '2026-10', itemsCounted: 3, classTotal: 4, covered: true, sessionKind: 'bulk', updatedAt: '2026-10-27', missingItems: null },
+    ];
+    await renderPanel(root);
+    await openReport(container);
+    const card = modalCard(container);
+    await setForceDate(card, '2026-10-27');
+    expect(card.textContent).toMatch(/predates per-item tracking/);
+  });
+
+  it('clearing the Force count date returns to today\'s live onHand-based view', async () => {
+    sessionsHolder.rows = [
+      { loc: '3708', countDate: new Date('2026-10-27T00:00:00'), cls: 'Food', period: '2026-10', itemsCounted: 3, classTotal: 4, covered: true, sessionKind: 'bulk', updatedAt: '2026-10-27', missingItems: [{ wrin: 'f1', descr: 'Lettuce' }] },
+    ];
+    await renderPanel(root);
+    await openReport(container);
+    const card = modalCard(container);
+    await setForceDate(card, '2026-10-27');
+    expect(card.textContent).toContain('Lettuce');
+    const clearBtn = [...card.querySelectorAll('button')].find(b => b.textContent === 'clear');
+    expect(clearBtn, 'clear button not found').toBeTruthy();
+    await act(async () => { clearBtn.click(); });
+    expect(card.textContent).toContain('Cheese Slices');
+    expect(card.textContent).toContain('Napkins');
+    expect(card.textContent).toContain('this store\'s count date: Oct 29');
+  });
+
+  it('the Class Filter hides classes from the on-screen view (and the Copy/Print/CSV source) when narrowed', async () => {
+    await renderPanel(root);
+    await openReport(container);
+    const card = modalCard(container);
+    expect(card.textContent).toContain('Cheese Slices');
+    expect(card.textContent).toContain('Napkins');
+    const foodBtn = [...card.querySelectorAll('button')].find(b => b.textContent === 'Food');
+    expect(foodBtn, 'Food class-filter pill not found').toBeTruthy();
+    await act(async () => { foodBtn.click(); });
+    expect(card.textContent).toContain('Cheese Slices');     // Food -- still shown
+    expect(card.textContent).not.toContain('Napkins');       // Non-Product -- filtered out
+    // Flip back to "All" and confirm it un-filters.
+    const allBtn = [...card.querySelectorAll('button')].find(b => b.textContent.startsWith('All ('));
+    expect(allBtn, 'All class-filter pill not found').toBeTruthy();
+    await act(async () => { allBtn.click(); });
+    expect(card.textContent).toContain('Napkins');
   });
 
   it('narrowing the Scope selector to a different state empties the report (no FL stores in this fixture)', async () => {
