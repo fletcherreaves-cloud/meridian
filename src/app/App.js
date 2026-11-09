@@ -347,7 +347,7 @@ const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1262,6 +1262,13 @@ function App() {
     // org_config has no user_id column at all -- every signed-in user reads/writes the SAME row.
     saveOrgConfig('locked_projections', next).catch(()=>{});
   },[]);
+  // Rolling Forecast — Commit & Drift (owner-directed 2026-11-09): which stores have an active
+  // weekly forecast_commits pointer for THIS week's Monday -- feeds At A Glance's "auto_locks"
+  // checklist item + the "X/Y" projection stat, re-pointed from the old locked_projections blob
+  // above (owner's own call: "decide its fate" -- same AAG slot, same shape, Lock→Commit label
+  // only). Loaded once at startup (see _stWeeklyCommits below), same cadence as
+  // lockedProjections' own cloud hydration.
+  const [weeklyCommittedLocs, setWeeklyCommittedLocs] = useState([]);
   // showAttention — dispatch #192: replaced by routePanel==='attention' (see routePanel above).
   const [showFormsPrint, setShowFormsPrint] = useState(false);
   // showLeaderOnePager — dispatch #160 first replaced this with routePanel==='leader-one-pager';
@@ -2535,6 +2542,18 @@ function App() {
           console.log('[Meridian] ✓ Loaded locked projections from Supabase');
         }
       }catch(e){console.warn('[Meridian] locked projections load failed:',e);} };
+      const _stWeeklyCommits = async () => {
+      try{
+        if(!supabase) return;
+        // Monday of the current week -- matches forecast_commits' own target_period convention
+        // for period_type='weekly' (deliberately independent of settings.weekStartDay; see
+        // scripts/forecast-rolling-capture.mjs's header comment), NOT lockedProjections' old
+        // weekStartDay-anchored week key.
+        const d=new Date();const dow=d.getDay();const mon=new Date(d);mon.setDate(d.getDate()+(dow===0?-6:1-dow));
+        const monKey=dKey(mon);
+        const commits=await loadAllCommits('weekly');
+        setWeeklyCommittedLocs(commits.filter(c=>c.targetPeriod===monKey).map(c=>c.loc));
+      }catch(e){console.warn('[Meridian] weekly commits load failed:',e);} };
       const _stAeParams = async () => {
       try{
         const remoteAE=(await _settingsBatch)['ae_params'];
@@ -2751,6 +2770,7 @@ function App() {
         _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
         _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),
         _timedStage('T2 lockedProjections', _stLockedProjections, _t2Start),
+        _timedStage('T2 weeklyCommits', _stWeeklyCommits, _t2Start),
         _timedStage('T2 aeParams', _stAeParams, _t2Start),
         _timedStage('T2 modelAssignments', _stModelAssignments, _t2Start),
         _timedStage('T2 dialedIn', _stDialedIn, _t2Start),
@@ -4132,7 +4152,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,darRows,
+      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,weeklyCommittedLocs,dateRange,darRows,
         onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
         onPayEventSaved:refreshPayEvents,

@@ -847,7 +847,7 @@ function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
   return result;
 }
 
-function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
+function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyCommittedLocs, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
   // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
@@ -987,14 +987,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       detail:'Check the daily pull (Signals → Sync), or upload an Operations Report as fallback.'});
     else if(worst?.severity==='warn') items.push({id:'auto_data_warn',priority:'medium',
       text:worst.label+' is '+worst.staleDays+' days old — verify auto-sync',detail:''});
-    const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-    const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
-    const wsKey=dKey(ws);
-    const lp=lockedProjections||{};
-    const unlocked=allLocs.filter(loc=>!lp[loc+'_'+wsKey]);
-    if(unlocked.length>0) items.push({id:'auto_locks',priority:'high',
-      text:unlocked.length+' store'+(unlocked.length>1?'s':'')+' missing this week\'s projection lock',
-      detail:unlocked.map(l=>STORE_NAMES[l]||l).join(', ')});
+    // Owner decision 2026-11-09 (Rolling Forecast — Commit & Drift): re-pointed from the old
+    // single-overwritten-blob lockedProjections (user_settings/org_config 'locked_projections')
+    // to forecast_commits -- same slot, same checklist shape, Lock→Commit label only. weekly
+    // commits are keyed by the Monday of the week (schema's own convention, deliberately
+    // independent of settings.weekStartDay -- see scripts/forecast-rolling-capture.mjs), so this
+    // no longer needs the wsd/ws/wsKey lock-week math the old blob required.
+    const committedSet=new Set(weeklyCommittedLocs||[]);
+    const uncommitted=allLocs.filter(loc=>!committedSet.has(loc));
+    if(uncommitted.length>0) items.push({id:'auto_locks',priority:'high',
+      text:uncommitted.length+' store'+(uncommitted.length>1?'s':'')+' missing this week\'s projection commit',
+      detail:uncommitted.map(l=>STORE_NAMES[l]||l).join(', ')});
     // Guard null scores: `null < 50` is true in JS, so an insufficient-data store used to
     // count as red here while the header (which skips null) didn't — the 1-vs-2 mismatch.
     const redStores=allLocs.filter(loc=>{const s=modelHealthScore(loc,ds,settings).score;return s!=null&&s<50;});
@@ -1010,7 +1013,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       text:uncal.length+' stores need Dialed-In calibration (>30 days)',
       detail:'Go to Dialed-In → Run & Apply'});
     return items;
-  }),[worstAuto,ds?.laborRows?.length,allLocs,settings,lockedProjections]);
+  }),[worstAuto,ds?.laborRows?.length,allLocs,settings,weeklyCommittedLocs]);
 
   const activeCl=cl.filter(c=>!c.archivedAt);
   const archivedCl=cl.filter(c=>c.archivedAt);
@@ -1467,12 +1470,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(worstAuto?.severity==='crit')issues.push({lvl:'critical',msg:worstAuto.label+' is '+worstAuto.staleDays+' days old'});
     else if(worstAuto?.severity==='warn')issues.push({lvl:'warning',msg:worstAuto.label+' is '+worstAuto.staleDays+' days stale'});
     else good.push(dataAge===0?'data loaded today':'data is '+dataAge+'d old');
-    const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-    const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
-    const wsKey=dKey(ws);const lp=lockedProjections||{};
-    const nLocked=allLocs.filter(loc=>lp[loc+'_'+wsKey]).length;
-    if(nLocked===allLocs.length&&allLocs.length>0)good.push('all '+allLocs.length+' projection locks complete');
-    else if(allLocs.length-nLocked>5)issues.push({lvl:'warning',msg:(allLocs.length-nLocked)+' projection locks still needed'});
+    // Re-pointed to forecast_commits -- see the matching comment on the auto_locks checklist
+    // item above.
+    const nCommitted=new Set(weeklyCommittedLocs||[]).size;
+    if(nCommitted===allLocs.length&&allLocs.length>0)good.push('all '+allLocs.length+' projection commits complete');
+    else if(allLocs.length-nCommitted>5)issues.push({lvl:'warning',msg:(allLocs.length-nCommitted)+' projection commits still needed'});
     if(hlth.red>0)issues.push({lvl:'warning',msg:hlth.red+' store'+(hlth.red>1?'s':'')+' at red model health'});
     else if(hlth.green>=allLocs.length*.75&&allLocs.length>0)good.push(hlth.green+' stores at trusted health');
     if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — check connection or upload Operations Report'});
@@ -1481,7 +1483,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(issues.length>0)
       return{tone:'warning',color:'#f59e0b',text:'⚠️  A few items need attention: '+issues.map(i=>i.msg).join(', ')+'.'};
     return{tone:'good',color:'#10b981',text:'✅ Things are looking up! '+(good.length?good.join(', ').replace(/^./,s=>s.toUpperCase())+'.':"District is on track.")};
-  }),[dataAge,worstAuto,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
+  }),[dataAge,worstAuto,hlth,allLocs,weeklyCommittedLocs,ds?.loaded,settings?.weekStartDay]);
 
   const fetchAIComment=async()=>{
     setAiLoading(true);
@@ -1543,12 +1545,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const flMapeVals=flLocs.map(mapeFn).filter(v=>v!=null);
     const okMape=okMapeVals.length?okMapeVals.reduce((a,b)=>a+b,0)/okMapeVals.length:null;
     const flMape=flMapeVals.length?flMapeVals.reduce((a,b)=>a+b,0)/flMapeVals.length:null;
-    const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-    const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
-    const wsKey=dKey(ws);const lp=lockedProjections||{};
-    const locked=allLocs.filter(loc=>lp[loc+'_'+wsKey]).length;
+    // Re-pointed to forecast_commits -- see the matching comment on the auto_locks checklist
+    // item above. `locked` field name kept as-is (every consumer below reads projSec.locked) --
+    // only the user-facing label changes, Lock→Commit.
+    const locked=new Set(weeklyCommittedLocs||[]).size;
     return{avgMape,okMape,flMape,locked,total:allLocs.length,health:hlth};
-  }),[allLocs,okLocs,flLocs,settings?.dialedIn,lockedProjections,hlth]);
+  }),[allLocs,okLocs,flLocs,settings?.dialedIn,weeklyCommittedLocs,hlth]);
 
   // ── Sales section ─────────────────────────────────────────────
   const salesSec=React.useMemo(()=>_mark('compute:salesSec',()=>{
@@ -2593,7 +2595,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
              nav:()=>onOpenModal&&onOpenModal('fob-analysis')},
             {icon:'🎯',label:'Forecast Accuracy (MAPE)',
              val:mape!=null?mape.toFixed(2)+'%':'—',
-             sub:mape!=null?(projSec.locked||0)+'/'+allLocs.length+' locked · '+(projSec.locked===allLocs.length?'All projections locked':'Locks pending')+'  · Model health: 🟢'+projSec.health.green+' 🟡'+projSec.health.yellow+' 🔴'+projSec.health.red:'Run Dialed-In calibration to compute MAPE',
+             sub:mape!=null?(projSec.locked||0)+'/'+allLocs.length+' committed · '+(projSec.locked===allLocs.length?'All projections committed':'Commits pending')+'  · Model health: 🟢'+projSec.health.green+' 🟡'+projSec.health.yellow+' 🔴'+projSec.health.red:'Run Dialed-In calibration to compute MAPE',
              col:mape==null?'var(--text3)':mape<5?'#10b981':mape<8?'#f59e0b':'#ef4444',
              dot:mape==null?'—':mape<5?'🟢':mape<8?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('forecast-reports')}, // dispatch #106 Phase B: fcst-accuracy merged into forecast-reports
@@ -2697,7 +2699,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
                 color:projSec.locked===projSec.total?'#10b981':projSec.locked>projSec.total*.5?'var(--warn)':'var(--crit)'}},
                 projSec.locked+'/'+projSec.total),
-              div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',textTransform:'uppercase'}},'Locks Complete')
+              div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',textTransform:'uppercase'}},'Commits Complete')
             ),
             div({style:{textAlign:'center'},
               title:'Model Health: Each store scored 0-100 on 4 factors — Data Freshness (30pts), Calibration Quality (30pts), Recent Accuracy/MAPE (20pts), Sample Size (20pts). Green ≥75 | Yellow 50-74 | Red <50. Hover individual store models for breakdown.'},

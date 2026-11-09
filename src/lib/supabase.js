@@ -3988,6 +3988,123 @@ export async function loadAllNewStoreLaunchPlans() {
   }));
 }
 
+// ── Rolling Forecast — Commit & Drift (owner-directed 2026-11-09) ──────────────────────────────
+// supabase/schema-forecast-rolling-captures.sql. See memory/project-rolling-forecast-snapshots-
+// 2026-11-09.md for the full design. Mirrors the loadLaunchPlan/saveLaunchPlanRow self-healing
+// pattern above -- silent no-op/empty-array until the migration has run on a given environment.
+
+export async function loadRollingCaptures(loc, periodType, { fromDate, toDate } = {}) {
+  if (!supabase) return [];
+  let q = supabase
+    .from('forecast_rolling_captures')
+    .select('loc,period_type,target_period,captured_date,lead_days,forecast_value,model_used')
+    .eq('loc', String(loc))
+    .eq('period_type', periodType)
+    .order('target_period').order('captured_date');
+  if (fromDate) q = q.gte('target_period', fromDate);
+  if (toDate) q = q.lte('target_period', toDate);
+  const { data, error } = await q;
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadRollingCaptures:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, periodType: r.period_type, targetPeriod: r.target_period,
+    capturedDate: r.captured_date, leadDays: r.lead_days,
+    forecastValue: Number(r.forecast_value), modelUsed: r.model_used,
+  }));
+}
+
+// All-store variant, mirroring loadAllNewStoreLaunchPlans() above -- the daily capture job needs
+// every store's captures in one pass when computing drift+alerts district-wide, not one store
+// loaded at a time.
+export async function loadAllRollingCaptures(periodType, { fromDate, toDate } = {}) {
+  if (!supabase) return [];
+  let q = supabase
+    .from('forecast_rolling_captures')
+    .select('loc,period_type,target_period,captured_date,lead_days,forecast_value,model_used')
+    .eq('period_type', periodType)
+    .order('target_period').order('captured_date');
+  if (fromDate) q = q.gte('target_period', fromDate);
+  if (toDate) q = q.lte('target_period', toDate);
+  const { data, error } = await q;
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadAllRollingCaptures:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, periodType: r.period_type, targetPeriod: r.target_period,
+    capturedDate: r.captured_date, leadDays: r.lead_days,
+    forecastValue: Number(r.forecast_value), modelUsed: r.model_used,
+  }));
+}
+
+// Current commits (thin pointers) for one store+period type -- one row per target_period, for
+// the UI's Week card (one pointer per due week) and for the capture job's per-period drift check.
+export async function loadCommits(loc, periodType) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('forecast_commits')
+    .select('loc,period_type,target_period,committed_captured_date,committed_by,committed_at')
+    .eq('loc', String(loc))
+    .eq('period_type', periodType);
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadCommits:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, periodType: r.period_type, targetPeriod: r.target_period,
+    committedCapturedDate: r.committed_captured_date, committedBy: r.committed_by, committedAt: r.committed_at,
+  }));
+}
+
+// All-store variant for the capture job's daily district-wide drift sweep.
+export async function loadAllCommits(periodType) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('forecast_commits')
+    .select('loc,period_type,target_period,committed_captured_date,committed_by,committed_at')
+    .eq('period_type', periodType);
+  if (error) {
+    if (!_isMissingTable(error)) console.warn('[supabase] loadAllCommits:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({
+    loc: r.loc, periodType: r.period_type, targetPeriod: r.target_period,
+    committedCapturedDate: r.committed_captured_date, committedBy: r.committed_by, committedAt: r.committed_at,
+  }));
+}
+
+// Names which forecast_rolling_captures row (by captured_date) is the official plan for one
+// (loc, period_type, target_period) -- upserts the thin pointer AND appends to
+// forecast_commit_history in the same call, so "what did we commit to, and when did that change"
+// is never lost even though forecast_commits itself only ever holds the current pointer.
+// committedValue is denormalized onto the history row (per the schema's own comment) so history
+// reads without a join once the pointed-at capture rolls off whatever window a caller loads.
+export async function saveCommit(loc, periodType, targetPeriod, { committedCapturedDate, committedValue, committedBy } = {}) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const row = {
+    loc: String(loc), period_type: periodType, target_period: targetPeriod,
+    committed_captured_date: committedCapturedDate,
+    committed_by: committedBy || null,
+    committed_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('forecast_commits').upsert(row, { onConflict: 'tenant_id,loc,period_type,target_period' });
+  if (error) {
+    if (_isMissingTable(error)) return { error: null }; // not migrated yet -- silent no-op
+    console.warn('[supabase] saveCommit:', error.message);
+    return { error: error.message };
+  }
+  const { error: histError } = await supabase.from('forecast_commit_history').insert({
+    loc: String(loc), period_type: periodType, target_period: targetPeriod,
+    committed_captured_date: committedCapturedDate,
+    committed_value: committedValue ?? null,
+    committed_by: committedBy || null,
+  });
+  if (histError && !_isMissingTable(histError)) console.warn('[supabase] saveCommit (history):', histError.message);
+  return { error: null };
+}
+
 // ── Session Notes ─────────────────────────────────────────────────────────────
 export async function loadSessionNotes() {
   if (!supabase) return [];
