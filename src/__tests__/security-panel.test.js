@@ -32,6 +32,11 @@ const loadSecurityFindingsForSubjectMock = vi.fn().mockResolvedValue([]);
 // existing full-replacement style) so every pre-existing render test below keeps passing
 // instead of hitting "logAppAccess is not a function" the moment access resolves to allowed.
 const logAppAccessMock = vi.fn().mockResolvedValue({ error: null });
+// dispatch 2026-11-09 -- case tracking. Fires only on row-expand (same lazy shape as
+// loadSecurityFindingsForSubjectMock above); defaults to empty/success so every EXISTING
+// expand-a-row test below keeps passing unchanged. Dedicated tests override these per-case.
+const loadSecurityFindingActionsForFindingsMock = vi.fn().mockResolvedValue([]);
+const saveSecurityFindingActionMock = vi.fn().mockResolvedValue({ id: 'action-1', findingId: null, action: 'noted', note: null, createdByRole: null, createdAt: '2026-11-09T00:00:00Z' });
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -44,6 +49,8 @@ vi.mock('../lib/supabase.js', () => ({
   loadQsrSecurityEventsForSubject: (...args) => loadQsrSecurityEventsForSubjectMock(...args),
   loadSecurityFindingsForSubject: (...args) => loadSecurityFindingsForSubjectMock(...args),
   logAppAccess: (...args) => logAppAccessMock(...args),
+  loadSecurityFindingActionsForFindings: (...args) => loadSecurityFindingActionsForFindingsMock(...args),
+  saveSecurityFindingAction: (...args) => saveSecurityFindingActionMock(...args),
 }));
 
 import {
@@ -1843,5 +1850,198 @@ describe('SecurityPanel — Labor defaults to Min Signals: All (dispatch 2026-10
     await flush(container);
     expect(container.textContent).not.toMatch(/No findings match the current filters/);
     expect([...container.querySelectorAll('span')].some(s => s.textContent === 'Store 0000001')).toBe(true);
+  });
+});
+
+// dispatch 2026-11-09 -- owner's own ask, in order: "Case tracking and the Playbook stuff
+// first, the rest can follow." Three things render through the real SecurityPanel here: the
+// new Events domain tab (EVENT-001/002/003 would otherwise be permanently unreachable in the
+// UI -- the domain tab array never had 'events' in it until this dispatch), the curated
+// Playbook content (src/engine/security-playbook.js) surfacing inside the existing Rule
+// Directory, and the case-tracking action buttons (security_finding_actions) surfacing inside
+// an expanded subject's own verdict block.
+describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playbook, case tracking', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'How much cash is over or short at the drawer.', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'Pull drawer-count photos.' },
+    { ruleId: 'EVENT-001', domain: 'events', method: 'Employee meal discount outside scheduled hours', description: 'An employee-meal discount rung when that employee was not clocked in.', baselineType: 'personal', logicType: 'z-score', active: false, investigationAction: 'Check the clock against the meal timestamp.' },
+  ];
+  const FINDINGS = [
+    { id: 'find-cash-1', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { id: 'find-event-1', empToken: 'tok-jordan', wrin: null, loc: '0000001', ruleId: 'EVENT-001', pass: true, value: 3.2, thresholdUsed: 2.5, windowStart: '2026-10-01', windowEnd: '2026-10-28', computedAt: '2026-10-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadSecurityFindingActionsForFindingsMock.mockReset().mockResolvedValue([]);
+    saveSecurityFindingActionMock.mockReset().mockResolvedValue({ id: 'action-1', findingId: 'find-cash-1', action: 'investigated_cleared', note: null, createdByRole: 'admin', createdAt: '2026-11-09T12:00:00Z' });
+    rpcMock.mockReset();
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('a fourth "🧾 Events" tab exists alongside Cash/Inventory/Labor, and switching to it shows the EVENT-001 subject', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const tabs = [...container.querySelectorAll('button')].map(b => b.textContent);
+    expect(tabs).toContain('🧾 Events');
+    const eventsTab = tabs.includes('🧾 Events') && [...container.querySelectorAll('button')].find(b => b.textContent === '🧾 Events');
+    await act(async () => { eventsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/EVENT-001/);
+    expect(container.textContent).not.toMatch(/CASH-001/);
+  });
+
+  it('expanding the Events subject does NOT offer "Investigate further" -- same stated scope decision as Labor, no assembleEventsDrilldown yet', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const eventsTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🧾 Events');
+    await act(async () => { eventsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const subjectSpan = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const clickable = subjectSpan?.parentElement;
+    expect(clickable).toBeTruthy();
+    await act(async () => { clickable.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Employee meal discount outside scheduled hours/);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    expect(investigateBtn).toBeFalsy();
+  });
+
+  it('the Rule Directory renders the Playbook content for a rule that has a playbook entry (CASH-001 -> the "cash" family)', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
+    expect(toggle).toBeTruthy();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/📖 Playbook — Cash drawer variance/);
+    expect(container.textContent).toMatch(/What it is:/);
+    expect(container.textContent).toMatch(/The real tell:/);
+    expect(container.textContent).toMatch(/Floor technique:/);
+    expect(container.textContent).toMatch(/Never let one person count their own drawer and verify it\./);
+  });
+
+  it('a rule with no playbook entry renders no Playbook block at all (playbookForRule\'s honest-null contract, not an empty box)', async () => {
+    loadSecurityRulesMock.mockReset().mockResolvedValue([
+      { ruleId: 'ZZZ-999', domain: 'cash', method: 'Synthetic rule with no playbook family', description: 'desc', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'act' },
+    ]);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Synthetic rule with no playbook family/);
+    expect(container.textContent).not.toMatch(/📖 Playbook/);
+  });
+
+  async function expandAliceRow() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const row = storeLabel?.parentElement;
+    expect(row).toBeTruthy();
+    await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+  }
+
+  it('expanding a flagged subject fetches its finding actions on demand and renders the two case-tracking buttons', async () => {
+    await expandAliceRow();
+    expect(loadSecurityFindingActionsForFindingsMock).toHaveBeenCalledTimes(1);
+    expect(loadSecurityFindingActionsForFindingsMock).toHaveBeenCalledWith(['find-cash-1']);
+    const markBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✓ Mark investigated');
+    const escalateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '⬆ Escalate');
+    expect(markBtn).toBeTruthy();
+    expect(escalateBtn).toBeTruthy();
+  });
+
+  it('clicking "Mark investigated", typing a note, and submitting calls saveSecurityFindingAction with the right shape and then renders the new action as the latest badge', async () => {
+    await expandAliceRow();
+    const markBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✓ Mark investigated');
+    await act(async () => { markBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(textarea, 'Checked drawer photos, matches the count.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const submitBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Submit');
+    await act(async () => { submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(saveSecurityFindingActionMock).toHaveBeenCalledWith({
+      findingId: 'find-cash-1', action: 'investigated_cleared',
+      note: 'Checked drawer photos, matches the count.', role: 'admin',
+    });
+    expect(container.textContent).toMatch(/Investigated — cleared/);
+  });
+
+  it('escalating renders the Escalated badge and a History toggle once there is a prior action', async () => {
+    loadSecurityFindingActionsForFindingsMock.mockReset().mockResolvedValue([
+      { id: 'action-0', findingId: 'find-cash-1', action: 'noted', note: 'First pass, nothing conclusive.', createdByRole: 'gm', createdAt: '2026-11-01T09:00:00Z' },
+    ]);
+    saveSecurityFindingActionMock.mockReset().mockResolvedValue({ id: 'action-2', findingId: 'find-cash-1', action: 'escalated', note: null, createdByRole: 'admin', createdAt: '2026-11-09T12:00:00Z' });
+    await expandAliceRow();
+    await flush(container);
+    const escalateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '⬆ Escalate');
+    await act(async () => { escalateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const submitBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Submit');
+    await act(async () => { submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Escalated/);
+    const historyBtn = [...container.querySelectorAll('button')].find(b => /^History \(\d+\)$/.test(b.textContent));
+    expect(historyBtn).toBeTruthy();
+    expect(historyBtn.textContent).toBe('History (2)');
+    await act(async () => { historyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/First pass, nothing conclusive\./);
+  });
+
+  it('a failed submit (e.g. the table not applied yet) shows a visible error, not just a console warning, and leaves the busy state cleared', async () => {
+    saveSecurityFindingActionMock.mockReset().mockRejectedValue(new Error('relation "public.security_finding_actions" does not exist'));
+    await expandAliceRow();
+    const markBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✓ Mark investigated');
+    await act(async () => { markBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const submitBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Submit');
+    await act(async () => { submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/⚠ relation "public\.security_finding_actions" does not exist/);
+    // Busy cleared -- the button row is interactable again, not stuck on "Saving…".
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === '✓ Mark investigated')).toBe(true);
+  });
+
+  it('case tracking is never offered for an undetermined or hygiene verdict -- nothing real to act on yet', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([
+      { id: 'find-undet-1', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: null, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    ]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Undetermined, never flagged -- falls below Cash's own 1+ Min Signals default, so switch to
+    // the "All" pill first (same mechanic as the Labor-defaults-to-All tests above) to even see the
+    // row. Two buttons read exactly "All" (the Rule: All reset pill comes first in the DOM) -- the
+    // Min Signals one is the second.
+    const allPills = [...container.querySelectorAll('button')].filter(b => b.textContent === 'All');
+    expect(allPills.length).toBe(2);
+    const allPill = allPills[1];
+    await act(async () => { allPill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const row = storeLabel?.parentElement;
+    expect(row).toBeTruthy();
+    await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // The lazy fetch itself fires for any real finding row (it doesn't know the verdict's
+    // pass state until the data is already loaded) -- what must NOT happen is the UI offering an
+    // action on a verdict there is nothing yet to act on.
+    const markBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✓ Mark investigated');
+    const escalateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '⬆ Escalate');
+    expect(markBtn).toBeFalsy();
+    expect(escalateBtn).toBeFalsy();
   });
 });
