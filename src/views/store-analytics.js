@@ -27,6 +27,14 @@ import { computeLaborGapSplit, laborCoachVerdict, DEFAULT_LABOR_COACH_HRS_PER_DA
 import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT, HourRecordTab, buildBreakIndex } from './record-day.js';
 import { computeHourRecords, scopeHourRecords } from '../engine/record-hour.js';
 import { groupEventRanges } from '../engine/events-import.js';
+// Shift Scoreboard (task #122) was only reachable via Curated Home's own format picker, gated
+// to altitude==='store' -- so a district/patch/supervisor altitude drilling into one specific
+// store via StoreDash (THIS component, the one page every altitude's "deep dive a store" click
+// already lands on) had no way to reach it at all (owner request 2026-11-09: "pass the
+// scoreboard to view to all levels upwards when they deep dive their stores"). Reused directly,
+// not re-implemented -- ShiftScoreboardFormat already takes a plain {ds, loc, storeName} and
+// owns its own metric-visibility persistence, so no new engine code is needed here.
+import { ShiftScoreboardFormat } from './shift-scoreboard-view.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -2131,6 +2139,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {id:'laborsched',  l:'Labor & Scheduling'},
     {id:'action',      l:'📋 Action Plan'},
     {id:'shift',       l:'⏱ Shift Analysis'},
+    {id:'scoreboard',  l:'🏁 Shift Scoreboard'},
     {id:'peaks',       l:'3 Peaks'},
     {id:'register',    l:'Register Audit'},
     {id:'records',     l:'🏆 Records'},
@@ -2487,6 +2496,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
       ),
     tab==='action'     && h(ActionPlanTab,{store,ds,settings,dateRange}),
     tab==='shift'      && h(ShiftAnalysisTab,{store,ds,settings,userEvents}),
+    tab==='scoreboard' && h(ShiftScoreboardFormat,{ds,loc:store.loc,storeName:store.name}),
     tab==='peaks'      && h(PeaksTab,{ds,loc:store.loc,tgt:t,settings}),
     tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc,dateRange}),
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),
