@@ -116,6 +116,61 @@ describe('session classification', () => {
   });
 });
 
+describe('Condiment "(Deactivated)" text marker — dispatch 2026-11-09 (Tecumseh/33704 re-opened)', () => {
+  // Real scenario: Tecumseh counted a complete, real 35-item Condiment cycle on 2026-11-06
+  // (confirmed live in QSRSoft -- not shown there as outstanding), but the stored universe
+  // still carried a 36th row -- MUSTARD/PACKETS (Deactivated), last touched 2026-11-02 by an
+  // unrelated spot check -- so isStaleDeadRow()'s pre-period-only rule didn't exclude it either.
+  // 35/36 (97%) missed the exact COVER_FRAC=1 bar and read as "no complete weekly count."
+  function tecumseh() {
+    const rows = [
+      ...Array.from({ length: 35 }, (_, i) => ({
+        loc: '33704', cls: 'Condiment', wrin: `C-${i}`, descr: `Condiment Item ${i}`,
+        active: false, last_counted: '2026-11-06',
+      })),
+      {
+        loc: '33704', cls: 'Condiment', wrin: '00046-048', descr: 'MUSTARD/PACKETS (Deactivated)',
+        active: false, last_counted: '2026-11-02',
+      },
+    ];
+    return rows;
+  }
+
+  it('excludes a "(Deactivated)"-marked row from the Condiment universe entirely', () => {
+    const { classTotals } = detectSessions(tecumseh());
+    expect(classTotals['33704'].Condiment).toBe(35);
+  });
+
+  it('a complete 35/35 Condiment count now satisfies weekly (previously read 35/36, 97%)', () => {
+    const c = cycleCompliance(tecumseh(), { asOf: '2026-11-07' });
+    const s = c.find(x => x.loc === '33704');
+    expect(s.overdue).toBe(false);
+    expect(s.exceptions.find(e => e.rule === 'weekly-overdue')).toBeUndefined();
+  });
+
+  it('the deactivated row never appears in the missing-items list', () => {
+    const { sessions } = detectSessions(tecumseh());
+    const s = sessions['33704'].find(x => x.date === '2026-11-06');
+    const missingCondiment = (s.missingItems && s.missingItems.Condiment) || [];
+    expect(missingCondiment.find(it => it.wrin === '00046-048')).toBeUndefined();
+  });
+
+  it('a genuinely missed (non-deactivated) Condiment item still counts against coverage', () => {
+    const rows = [
+      ...Array.from({ length: 34 }, (_, i) => ({
+        loc: '9999', cls: 'Condiment', wrin: `C-${i}`, descr: `Condiment Item ${i}`,
+        active: false, last_counted: '2026-11-06',
+      })),
+      { loc: '9999', cls: 'Condiment', wrin: 'C-missed', descr: 'Real Item Not Counted', active: false, last_counted: '2026-10-01' },
+      { loc: '9999', cls: 'Condiment', wrin: '00046-048', descr: 'MUSTARD/PACKETS (Deactivated)', active: false, last_counted: '2026-11-02' },
+    ];
+    const { classTotals, sessions } = detectSessions(rows);
+    expect(classTotals['9999'].Condiment).toBe(35); // deactivated row excluded, real miss still counted
+    const s = sessions['9999'].find(x => x.date === '2026-11-06');
+    expect(s.covered).not.toContain('Condiment'); // 34/35 misses the exact COVER_FRAC=1 bar
+  });
+});
+
 describe("the owner's weekly rule", () => {
   it('passes a store that counted Food AND Condiment', () => {
     const c = cycleCompliance(store('A', [{ date: '2026-08-06', counts: { Food: 118, Condiment: 36 } }]), { asOf: '2026-08-07' });
