@@ -15,7 +15,7 @@
 //      always fell through to the 150mi default, so the tighter 80mi FL radius never applied.
 //      Fixed: uses getStoreOrg(loc)==='emerald'.
 import { describe, it, expect } from 'vitest';
-import { storeDistance, regionalRadius, getLatestBriefDate } from '../features/morning-brief.js';
+import { storeDistance, regionalRadius, getLatestBriefDate, computeMorningBrief } from '../features/morning-brief.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
 
 // Real seed stores (constants.js STORE_COORDS): '3708' Ardmore-Broadway OK, '6178' Chipley FL.
@@ -100,5 +100,25 @@ describe('getLatestBriefDate', () => {
     const ds = { laborRows: [{ date: today }], ctrlRows: [], peaksSvcRows: [] };
     const d = getLatestBriefDate(ds);
     expect(d.getTime()).toBeLessThanOrEqual(lastClosedBusinessDay().getTime());
+  });
+});
+
+// Real, live bug (reported by the owner's own browser console, 2026-11-08): App.js's `ds` state
+// starts as useState(null) and only becomes an object once Supabase/IDB hydration resolves.
+// Curated Home (curated-home.js's CuratedHomePanel) calls computeMorningBrief(ds, ...) inside a
+// useMemo with no ds-truthiness guard, so a user whose default landing panel is Curated Home
+// (task #68) hits this on the FIRST render, before ds is ready -- computeMorningBrief's own
+// unguarded `ds.laborRows||[]` reads then throw "Cannot read properties of null (reading
+// 'laborRows')" against a literal null ds, not an empty one.
+describe('computeMorningBrief with a null ds (pre-hydration render)', () => {
+  it('does not throw when ds is null', () => {
+    expect(() => computeMorningBrief(null, new Date(), {})).not.toThrow();
+  });
+
+  it('returns the same no-data shape for null ds as for an empty ds object', () => {
+    const fromNull = computeMorningBrief(null, new Date(), {});
+    const fromEmpty = computeMorningBrief({}, new Date(), {});
+    expect(fromNull.summary).toEqual(fromEmpty.summary);
+    expect(fromNull.stores.length).toBe(fromEmpty.stores.length);
   });
 });

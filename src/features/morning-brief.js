@@ -425,6 +425,12 @@ function evaluateStoreCorrelations(data){
 
 // ── Compute full district morning brief ──────────────────────────────────────
 function computeMorningBrief(ds, targetDate, darByLoc){
+  // ds is null for one render on fresh app load (App.js's useState(null), before IDB/cloud
+  // hydration resolves) -- every read below assumes ds ITSELF is truthy (ds.laborRows||[]),
+  // so a caller that renders before hydration (e.g. Curated Home set as the default landing
+  // panel, task #68) throws "Cannot read properties of null (reading 'laborRows')" on that
+  // first pass. Default to {} here, once, rather than null-guarding every read site.
+  ds = ds || {};
   const stores = Object.keys(STORE_NAMES).map(loc=>{
     const data = assembleBriefStoreData(loc, targetDate, ds, darByLoc);
     const flags = evaluateStoreCorrelations(data);
