@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { computeCountTiming, computeCountSessions, fmtDurationHMS } from '../engine/eom-item-journey.js';
 
 const item = (events) => ({ wrin: 'w', history: events });
+const itemC = (wrin, itemClass, events) => ({ wrin, itemClass, history: events });
 
 describe('computeCountTiming — last count date, start→end', () => {
   it('uses the LAST count date and its earliest→latest recorded time', () => {
@@ -85,6 +86,31 @@ describe('computeCountTiming — last count date, start→end', () => {
     expect(r.durationMs).toBe(0);
     expect(r.countDate).toBe('2026-07-31');
   });
+
+  // Owner req 2026-11-09: "how many items were counted as well? Show as xxx/xxx and specify
+  // classes too." nItemsCounted/nItemsTotal/byClass dedupe by WRIN, not raw count events.
+  it('nItemsCounted/nItemsTotal/byClass dedupe by item, not raw count events', () => {
+    const rawItems = [
+      itemC('a', 'Food', [{ isCount: true, dt: '2026-07-31', tm: '9:00 AM' }, { isCount: true, dt: '2026-07-31', tm: '9:05 AM' }]), // corrected twice same day -> 1 item
+      itemC('b', 'Food', [{ isCount: true, dt: '2026-07-31', tm: '9:10 AM' }]),
+      itemC('c', 'Paper', [{ isCount: true, dt: '2026-07-31', tm: '9:15 AM' }]),
+      itemC('d', 'Food', []),              // never counted -- part of the store's universe only
+      itemC('e', 'Paper', [{ isCount: true, dt: '2026-07-20', tm: '8:00 AM' }]), // counted, but on an EARLIER day
+    ];
+    const r = computeCountTiming(rawItems);
+    expect(r.countDate).toBe('2026-07-31');
+    expect(r.nCounts).toBe(4);             // raw count EVENTS on the last day (a twice, b, c)
+    expect(r.nItemsCounted).toBe(3);       // distinct ITEMS on the last day: a, b, c
+    expect(r.nItemsTotal).toBe(5);         // whole store item universe: a, b, c, d, e
+    expect(r.byClass).toEqual({ Food: { counted: 2, total: 3 }, Paper: { counted: 1, total: 2 } });
+  });
+
+  it('omits classless items from byClass but still counts them toward the overall totals', () => {
+    const r = computeCountTiming([item([{ isCount: true, dt: '2026-07-31', tm: '9:00 AM' }])]); // wrin 'w', no itemClass
+    expect(r.nItemsCounted).toBe(1);
+    expect(r.nItemsTotal).toBe(1);
+    expect(r.byClass).toEqual({});
+  });
 });
 
 describe('computeCountSessions — every distinct count day, not just the final one', () => {
@@ -131,6 +157,24 @@ describe('computeCountSessions — every distinct count day, not just the final 
     expect(sessions[0].nDays).toBeUndefined();
     expect(sessions[0].nCountsTotal).toBeUndefined();
     expect(sessions[0].nCounts).toBe(1);
+  });
+
+  it('each session reports distinct items counted + byClass for THAT DAY only, against the whole-period universe', () => {
+    const rawItems = [
+      itemC('a', 'Food', [{ isCount: true, dt: '2026-07-08', tm: '6:00 AM' }]),
+      itemC('b', 'Food', [{ isCount: true, dt: '2026-07-08', tm: '6:05 AM' }]),
+      itemC('c', 'Paper', [{ isCount: true, dt: '2026-07-15', tm: '7:00 AM' }]),
+      itemC('d', 'Food', []), // universe only, never counted this period
+    ];
+    const sessions = computeCountSessions(rawItems);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0].countDate).toBe('2026-07-08');
+    expect(sessions[0].nItemsCounted).toBe(2);
+    expect(sessions[0].nItemsTotal).toBe(4);          // a, b, c, d — whole period universe, not just this day
+    expect(sessions[0].byClass).toEqual({ Food: { counted: 2, total: 3 } }); // Paper untouched this session -> omitted
+    expect(sessions[1].countDate).toBe('2026-07-15');
+    expect(sessions[1].nItemsCounted).toBe(1);
+    expect(sessions[1].byClass).toEqual({ Paper: { counted: 1, total: 1 } });
   });
 });
 
