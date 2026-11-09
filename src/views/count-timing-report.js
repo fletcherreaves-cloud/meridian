@@ -51,13 +51,32 @@ function lastPeriods(period, n) {
 
 // qsr_raw_item_detail returns `loc` PADDED and never strips it (loadQsrRawItemDetail's own
 // header comment) — unpad on the way in so every downstream key matches STORE_NAMES/locs.
+// Carries `wrin`/`itemClass` through (owner req 2026-11-09, "how many items were counted...
+// specify classes too") — previously dropped here, which was the real reason
+// collectCountStamps/summarizeDaySession (eom-item-journey.js) had no item identity to dedupe by.
 function groupByLoc(rawDetailRows) {
   const m = {};
   for (const r of (rawDetailRows || [])) {
     const loc = unpad(r.loc);
-    (m[loc] || (m[loc] = [])).push({ history: r.history || [] });
+    (m[loc] || (m[loc] = [])).push({ wrin: r.wrin, itemClass: r.itemClass, history: r.history || [] });
   }
   return m;
+}
+
+// "xxx/xxx" for the overall items-counted figure on a row (Latest/Sessions/Monthly all carry
+// nItemsCounted/nItemsTotal from computeCountTiming/computeCountSessions).
+function itemsCountedText(r) {
+  if (r.nItemsCounted == null || r.nItemsTotal == null) return '—';
+  return `${r.nItemsCounted}/${r.nItemsTotal}`;
+}
+
+// "Food 42/45 · Paper 18/18" — only classes actually touched that day/session (byClass omits a
+// class with zero activity, so this never pads out a row with "0/N" noise). Alphabetical so the
+// print/CSV/on-screen outputs are stable and diffable.
+function byClassText(byClass) {
+  const entries = Object.entries(byClass || {}).sort(([a], [b]) => a.localeCompare(b));
+  if (!entries.length) return '—';
+  return entries.map(([cls, { counted, total }]) => `${cls} ${counted}/${total}`).join(' · ');
 }
 
 function downloadCsv(text, filename) {
@@ -85,6 +104,7 @@ function buildLatestRows(locs, rawByLoc) {
       countDate: t?.countDate || null, beganTm: t?.beganTm || null, endedTm: t?.endedTm || null,
       durationMs: t?.durationMs ?? null, bulkSubmit: t?.bulkSubmit ?? null, hasTimes: t?.hasTimes ?? false,
       nDays: t?.nDays ?? null,
+      nItemsCounted: t?.nItemsCounted ?? null, nItemsTotal: t?.nItemsTotal ?? null, byClass: t?.byClass || {},
     };
   });
 }
@@ -94,12 +114,18 @@ function buildSessionRows(locs, rawByLoc) {
   for (const loc of locs) {
     const sessions = computeCountSessions(rawByLoc[loc] || []);
     const name = sName(loc) || loc;
-    if (!sessions.length) { rows.push({ loc, name, countDate: null, beganTm: null, endedTm: null, durationMs: null, bulkSubmit: null, hasTimes: false, nCounts: 0 }); continue; }
-    for (const s of sessions) rows.push({ loc, name, countDate: s.countDate, beganTm: s.beganTm, endedTm: s.endedTm, durationMs: s.durationMs, bulkSubmit: s.bulkSubmit, hasTimes: s.hasTimes, nCounts: s.nCounts });
+    if (!sessions.length) { rows.push({ loc, name, countDate: null, beganTm: null, endedTm: null, durationMs: null, bulkSubmit: null, hasTimes: false, nCounts: 0, nItemsCounted: null, nItemsTotal: null, byClass: {} }); continue; }
+    for (const s of sessions) rows.push({ loc, name, countDate: s.countDate, beganTm: s.beganTm, endedTm: s.endedTm, durationMs: s.durationMs, bulkSubmit: s.bulkSubmit, hasTimes: s.hasTimes, nCounts: s.nCounts, nItemsCounted: s.nItemsCounted, nItemsTotal: s.nItemsTotal, byClass: s.byClass || {} });
   }
   return rows;
 }
 
+// Monthly trend stays to the OVERALL "xxx/xxx" figure, no per-class breakdown — this view is
+// already one row per store PER PERIOD across up to 12 periods; a full class breakdown on top of
+// that (judgment call, no owner spec either way) would overload a grid whose whole point is
+// scanning a slipping/recovering pattern at a glance, not diagnosing a single count. The real
+// per-class diagnostic depth stays one click away in Latest/Sessions mode for any period of
+// interest.
 function buildMonthlyRows(locs, byLocByPeriod, periods) {
   const rows = [];
   for (const loc of locs) {
@@ -110,6 +136,7 @@ function buildMonthlyRows(locs, byLocByPeriod, periods) {
         loc, name, period: p,
         countDate: t?.countDate || null, beganTm: t?.beganTm || null, endedTm: t?.endedTm || null,
         durationMs: t?.durationMs ?? null, bulkSubmit: t?.bulkSubmit ?? null, hasTimes: t?.hasTimes ?? false,
+        nItemsCounted: t?.nItemsCounted ?? null, nItemsTotal: t?.nItemsTotal ?? null,
       });
     }
   }
@@ -125,10 +152,10 @@ const MODE_TITLE = {
 
 function reportHTML(rows, mode, scopeLabel) {
   const cols = mode === 'monthly'
-    ? ['Store', 'Period', 'Count date', 'Began', 'Ended', 'Duration', 'Pattern']
+    ? ['Store', 'Period', 'Count date', 'Began', 'Ended', 'Duration', 'Items counted', 'Pattern']
     : mode === 'sessions'
-      ? ['Store', 'Session date', 'Began', 'Ended', 'Duration', 'Pattern']
-      : ['Store', 'Last count date', 'Began', 'Ended', 'Duration', 'Days spanned', 'Pattern'];
+      ? ['Store', 'Session date', 'Began', 'Ended', 'Duration', 'Items counted', 'By class', 'Pattern']
+      : ['Store', 'Last count date', 'Began', 'Ended', 'Duration', 'Days spanned', 'Items counted', 'By class', 'Pattern'];
   const trs = rows.map(r => {
     const cells = [
       `${esc(r.name)} <span style="color:#888;font-family:monospace;font-size:10px">#${esc(r.loc)}</span>`,
@@ -137,6 +164,8 @@ function reportHTML(rows, mode, scopeLabel) {
       esc(r.beganTm || '—'), esc(r.endedTm || '—'),
       r.hasTimes ? esc(fmtDurationHMS(r.durationMs)) : '—',
       ...(mode === 'latest' ? [esc(r.nDays ?? '—')] : []),
+      esc(itemsCountedText(r)),
+      ...(mode !== 'monthly' ? [esc(byClassText(r.byClass))] : []),
       r.hasTimes ? (r.bulkSubmit ? '⚠ Bulk-submit' : '✅ Spread out') : 'no times recorded',
     ];
     return `<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
@@ -159,19 +188,25 @@ function reportHTML(rows, mode, scopeLabel) {
 }
 
 function reportCSV(rows, mode) {
+  // "Count events" (sessions mode) is the pre-existing raw-event tally (nCounts, kept for anyone
+  // already parsing this export) — renamed from the old "Items counted" header, which was the
+  // exact bug this dispatch fixes: nCounts is count-EVENTS and double-counts an item corrected
+  // twice the same day. The REAL distinct-item figure is the new "Items counted"/"By class" pair.
   const cols = mode === 'monthly'
-    ? ['Store', 'Loc', 'Period', 'Count date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Pattern']
+    ? ['Store', 'Loc', 'Period', 'Count date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Items counted', 'Pattern']
     : mode === 'sessions'
-      ? ['Store', 'Loc', 'Session date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Items counted', 'Pattern']
-      : ['Store', 'Loc', 'Last count date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Days spanned', 'Pattern'];
+      ? ['Store', 'Loc', 'Session date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Count events', 'Items counted', 'By class', 'Pattern']
+      : ['Store', 'Loc', 'Last count date', 'Began', 'Ended', 'Duration (HMS)', 'Duration (ms)', 'Days spanned', 'Items counted', 'By class', 'Pattern'];
   const lines = [cols.map(c => `"${c}"`).join(',')];
   for (const r of rows) {
     const pattern = r.hasTimes ? (r.bulkSubmit ? 'Bulk-submit' : 'Spread out') : 'no times recorded';
     const base = [r.name, r.loc];
     const mid = mode === 'monthly' ? [r.period] : [];
-    const tail = mode === 'sessions' ? [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', r.nCounts ?? '', pattern]
-      : mode === 'monthly' ? [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', pattern]
-      : [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', r.nDays ?? '', pattern];
+    const itemsTxt = itemsCountedText(r);
+    const byClassTxt = byClassText(r.byClass);
+    const tail = mode === 'sessions' ? [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', r.nCounts ?? '', itemsTxt, byClassTxt, pattern]
+      : mode === 'monthly' ? [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', itemsTxt, pattern]
+      : [r.countDate || '', r.beganTm || '', r.endedTm || '', r.hasTimes ? fmtDurationHMS(r.durationMs) : '', r.durationMs ?? '', r.nDays ?? '', itemsTxt, byClassTxt, pattern];
     lines.push([...base, ...mid, ...tail].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
   }
   return lines.join('\n');
@@ -262,6 +297,8 @@ export function CountTimingReportModal({ stores, rawDetail, period, onClose }) {
   const extraCols = mode === 'monthly' ? [{ key: 'period', label: 'Period' }]
     : mode === 'latest' ? [{ key: 'nDays', label: 'Days spanned' }] : [];
 
+  const showByClass = mode !== 'monthly';   // Monthly stays to the overall figure — see buildMonthlyRows
+
   const theadEl = h('thead', null, h('tr', null,
     h(SortTh, { label: 'Store', colKey: 'name', sortKey, sortDir, onSort }),
     ...extraCols.map(c => h(SortTh, { key: c.key, label: c.label, colKey: c.key, sortKey, sortDir, onSort })),
@@ -269,6 +306,8 @@ export function CountTimingReportModal({ stores, rawDetail, period, onClose }) {
     h(SortTh, { label: 'Began', colKey: 'beganTm', sortKey, sortDir, onSort }),
     h(SortTh, { label: 'Ended', colKey: 'endedTm', sortKey, sortDir, onSort }),
     h(SortTh, { label: 'Duration', colKey: 'durationMs', sortKey, sortDir, onSort }),
+    h(SortTh, { label: 'Items counted', colKey: 'nItemsCounted', sortKey, sortDir, onSort, title: 'Distinct items counted vs. the store\'s whole item universe this period — deduped by item, not raw count events.' }),
+    showByClass && h(SortTh, { label: 'By class', colKey: null, sortKey, sortDir, onSort, title: 'Counted/total per class actually touched this day — only classes with activity are shown.' }),
     h(SortTh, { label: 'Pattern', colKey: 'bulkSubmit', sortKey, sortDir, onSort }),
   ));
 
@@ -280,6 +319,8 @@ export function CountTimingReportModal({ stores, rawDetail, period, onClose }) {
     h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, r.beganTm || '—'),
     h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, r.endedTm || '—'),
     h('td', { style: { padding: '6px 10px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, r.hasTimes ? fmtDurationHMS(r.durationMs) : '—'),
+    h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, itemsCountedText(r)),
+    showByClass && h('td', { style: { padding: '6px 10px', color: 'var(--text2)', fontSize: '11px', whiteSpace: 'nowrap' } }, byClassText(r.byClass)),
     h('td', { style: { padding: '6px 10px', whiteSpace: 'nowrap' } }, bulkBadge(r.bulkSubmit, r.hasTimes)),
   )));
 
