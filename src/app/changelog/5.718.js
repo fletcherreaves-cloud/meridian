@@ -1,14 +1,15 @@
 // @ts-nocheck
 export default {version:'5.718', date:'2026-11-09', changes:[
-  '**🏁 Shift Scoreboard now reachable from any altitude\'s store deep-dive** (owner request '+
-  '2026-11-09 — "pass the scoreboard to view to all levels upwards when they deep dive their '+
-  'stores"). Shift Scoreboard (task #122) was only ever reachable through Curated Home\'s own '+
-  'format picker, gated to altitude===\'store\' — so a district, patch, or supervisor altitude '+
-  'drilling into one specific store (Store Dashboard) had no path to it at all. Added a new '+
-  '"🏁 Shift Scoreboard" tab to Store Dashboard (`src/views/store-analytics.js`), distinct from '+
-  'the pre-existing "⏱ Shift Analysis" tab — reusing the real `ShiftScoreboardFormat` component '+
-  'directly rather than re-implementing it, since it already takes a plain `{ds, loc, '+
-  'storeName}`. Store Dashboard is the one per-store page every altitude\'s "click a store" '+
-  'drill-down already lands on and carries no role gating of its own, so this reaches every '+
-  'altitude by construction rather than by listing roles.',
+  '**👥 Admin: proper location/patch picker for accessible_locs** (owner request 2026-11-09 — '+
+  '"indulge me in the user settings... give them not just access to other stores but access '+
+  'to a whole patch"). User Management\'s per-user store grant was a raw comma-separated text '+
+  'box; replaced with `LocationsEditorModal` — a grouped-by-state (OK/FL) checkbox grid of '+
+  'every store plus a "quick add a whole patch" dropdown sourced from the live '+
+  '`supervisorGroups()` (never hardcoded), which unions a supervisor\'s current stores into '+
+  'the selection additively rather than replacing an existing single-store grant. Saves '+
+  'straight to `profiles.accessible_locs` (blank selection clears it back to unrestricted), '+
+  'the same real RLS-enforced mechanism every panel\'s data already scopes against — no new '+
+  'schema, no change to how access is enforced, just a usable way to grant it. Self-service '+
+  '"switch between my own granted stores" and a temporary role-perspective toggle are '+
+  'explicitly deferred as their own follow-up.',
 ]};

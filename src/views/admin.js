@@ -9,6 +9,7 @@ import {
 } from '../engine/permissions.js';
 import { PANELS, SECTIONS } from '../app/panel-registry.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
 
 const h    = React.createElement;
 const div  = (p,...c) => h('div',p,...c);
@@ -57,8 +58,14 @@ function UsersTab({ orgRoles }) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteSent, setInviteSent]   = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
-  const [editingLocs, setEditingLocs] = useState({});
-  const [savingLocs,  setSavingLocs]  = useState({});
+  // Owner request 2026-11-09: "I think I'd like to see the option to be able to assign
+  // locations to the user... maybe we can incorporate new... control... if I had a GM and I
+  // wanted to give them... access to a whole patch." Replaces the old raw comma-separated
+  // accessible_locs text box with a real grouped store picker + a one-click "add a whole
+  // patch" shortcut (supervisorGroups()) -- same underlying profiles.accessible_locs column,
+  // just a usable editor for it. locsModalUser holds the full user row being edited, or null.
+  const [locsModalUser, setLocsModalUser] = useState(null);
+  const [savingLocsFor, setSavingLocsFor] = useState(null);
   // Dispatch #151: profiles.person — admin-set mapping onto the staff_assignments reports-to
   // graph identity space (a geid for a roster-sourced role, or a plain supervisor name string
   // for AS/OM/DO — see src/engine/assignment-graph.js's header comment). Not auto-derived (no
@@ -85,17 +92,15 @@ function UsersTab({ orgRoles }) {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
   };
 
-  const saveLocs = async (userId) => {
-    setSavingLocs(prev => ({ ...prev, [userId]: true }));
-    const raw = editingLocs[userId] || '';
-    const locs = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const saveLocs = async (userId, locs) => {
+    setSavingLocsFor(userId);
     const { error: err } = await supabase.from('profiles')
       .update({ accessible_locs: locs.length ? locs : null }).eq('id', userId);
-    setSavingLocs(prev => ({ ...prev, [userId]: false }));
+    setSavingLocsFor(null);
     if (err) { alert('Location update failed: ' + err.message); return; }
     setUsers(prev => prev.map(u => u.id === userId
       ? { ...u, accessible_locs: locs.length ? locs : null } : u));
-    setEditingLocs(prev => { const n = { ...prev }; delete n[userId]; return n; });
+    setLocsModalUser(null);
   };
 
   const savePerson = async (userId) => {
@@ -185,10 +190,10 @@ function UsersTab({ orgRoles }) {
         div({style:{padding:28,textAlign:'center',color:TEXT3,fontSize:12}},
           'No users yet. Send an invite above to get started.'),
       !loading&&!error&&users.map((user,idx) => {
-        const isEditing = editingLocs[user.id] !== undefined;
-        const isSaving  = savingLocs[user.id];
         const roleObj   = sortedRoles.find(r=>r.id===user.role);
-        const locsDisplay = (user.accessible_locs||[]).join(', ');
+        const locCount  = (user.accessible_locs||[]).length;
+        const locsDisplay = locCount === 1 ? STORE_NAMES[user.accessible_locs[0]] || user.accessible_locs[0]
+          : locCount > 1 ? locCount + ' stores' : '';
         const isEditingPerson = editingPerson[user.id] !== undefined;
         const isSavingPerson  = savingPerson[user.id];
         return div({key:user.id,
@@ -223,29 +228,13 @@ function UsersTab({ orgRoles }) {
           ),
           user.role==='admin'
             ? div({style:{fontSize:11,color:TEXT3,fontStyle:'italic'}},'All stores (admin)')
-            : isEditing
-              ? div({style:{display:'flex',gap:6,alignItems:'center'}},
-                  inp({value:editingLocs[user.id],placeholder:'e.g. 3708, 29760',
-                    onChange:e=>setEditingLocs(prev=>({...prev,[user.id]:e.target.value})),
-                    style:{flex:1,padding:'5px 8px',background:SURF,
-                      border:`1px solid ${AMBER}`,borderRadius:R,color:TEXT,fontSize:11,outline:'none'}}),
-                  btn({onClick:()=>saveLocs(user.id),disabled:isSaving,
-                    style:{padding:'4px 9px',background:AMBER,color:'#000',
-                      border:'none',borderRadius:R,fontSize:11,fontWeight:700,
-                      cursor:isSaving?'not-allowed':'pointer',flexShrink:0}},
-                    isSaving?'…':'Save'),
-                  btn({onClick:()=>setEditingLocs(prev=>{const n={...prev};delete n[user.id];return n;}),
-                    style:{padding:'4px 9px',background:'none',color:TEXT3,
-                      border:`1px solid ${BDR}`,borderRadius:R,fontSize:11,cursor:'pointer',flexShrink:0}},
-                    'Cancel')
-                )
-              : div({style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},
-                  onClick:()=>setEditingLocs(prev=>({...prev,[user.id]:(user.accessible_locs||[]).join(', ')}))},
-                  span({style:{fontSize:11,color:locsDisplay?TEXT2:TEXT3,flex:1,
-                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
-                    locsDisplay||'No stores assigned — click to set'),
-                  span({style:{fontSize:10,color:TEXT3,flexShrink:0}},'✎')
-                ),
+            : div({style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},
+                onClick:()=>setLocsModalUser(user)},
+                span({style:{fontSize:11,color:locsDisplay?TEXT2:TEXT3,flex:1,
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                  locsDisplay||'No stores assigned — click to set'),
+                span({style:{fontSize:10,color:TEXT3,flexShrink:0}},'✎')
+              ),
           // Dispatch #151: profiles.person editor — same geid/supervisor-name identity space
           // staff_assignments.person/target already use (assignment-graph.js header comment).
           // Free text, admin-set, no roster validation here (a geid isn't locally verifiable
@@ -275,7 +264,84 @@ function UsersTab({ orgRoles }) {
               )
         );
       })
-    )
+    ),
+    locsModalUser && h(LocationsEditorModal, {
+      user: locsModalUser, saving: savingLocsFor === locsModalUser.id,
+      onClose: () => setLocsModalUser(null),
+      onSave: (locs) => saveLocs(locsModalUser.id, locs),
+    })
+  );
+}
+
+// Grouped store picker + "add a whole patch" shortcut for profiles.accessible_locs (owner
+// request 2026-11-09, see UsersTab's own comment above). Stores group by state
+// (INV_ORG_COORDS[loc].state) since that's the real, already-used split (CLAUDE.md: OK/FL),
+// not a guessed grouping. The patch quick-add unions a supervisor's current stores (live
+// supervisorGroups(), never hardcoded) into the selection -- it does not replace it, so
+// stacking a patch add onto an existing single-store grant is additive, matching "not just
+// access to other stores but access to a whole patch."
+export function LocationsEditorModal({ user, saving, onClose, onSave }) {
+  const [selected, setSelected] = useState(() => new Set(user.accessible_locs || []));
+  const [patchPick, setPatchPick] = useState('');
+
+  const byState = React.useMemo(() => {
+    const groups = {};
+    for (const loc of Object.keys(STORE_NAMES)) {
+      const state = INV_ORG_COORDS[loc]?.state || 'Other';
+      (groups[state] = groups[state] || []).push(loc);
+    }
+    for (const state of Object.keys(groups)) {
+      groups[state].sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+    }
+    return groups;
+  }, []);
+
+  const toggle = (loc) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(loc) ? next.delete(loc) : next.add(loc);
+    return next;
+  });
+  const addPatch = () => {
+    if (!patchPick) return;
+    const patchLocs = supervisorGroups()[patchPick] || [];
+    setSelected(prev => new Set([...prev, ...patchLocs]));
+    setPatchPick('');
+  };
+
+  return h(ModalShell, {
+    title: 'Accessible Stores', subtitle: user.name || user.email,
+    onClose, maxWidth: 560, scroll: true,
+    footer: div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' } },
+      span({ style: { fontSize: 11, color: TEXT3 } },
+        selected.size ? selected.size + ' store' + (selected.size === 1 ? '' : 's') + ' selected' : 'No stores selected — blank means ALL stores'),
+      div({ style: { display: 'flex', gap: 8 } },
+        btn({ onClick: onClose, style: { padding: '7px 14px', background: 'none', color: TEXT3, border: `1px solid ${BDR}`, borderRadius: R, fontSize: 12, cursor: 'pointer' } }, 'Cancel'),
+        btn({ onClick: () => onSave([...selected]), disabled: saving,
+          style: { padding: '7px 14px', background: AMBER, color: '#000', border: 'none', borderRadius: R, fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' } },
+          saving ? 'Saving…' : 'Save'))),
+  },
+    div({ style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, padding: 12, background: S2, borderRadius: R, border: `1px solid ${BDR}` } },
+      span({ style: { fontSize: 11, fontWeight: 600, color: TEXT2, flexShrink: 0 } }, 'Add a whole patch:'),
+      sel({ value: patchPick, onChange: e => setPatchPick(e.target.value),
+        style: { flex: 1, padding: '5px 8px', background: SURF, border: `1px solid ${BDR}`, borderRadius: R, color: TEXT, fontSize: 11 } },
+        opt({ value: '' }, '— pick a supervisor\'s patch —'),
+        ...Object.keys(supervisorGroups()).sort().map(name => opt({ value: name, key: name }, name)),
+      ),
+      btn({ onClick: addPatch, disabled: !patchPick,
+        style: { padding: '5px 12px', background: patchPick ? AMBER : S2, color: patchPick ? '#000' : TEXT3,
+          border: 'none', borderRadius: R, fontSize: 11, fontWeight: 700, cursor: patchPick ? 'pointer' : 'not-allowed', flexShrink: 0 } },
+        'Add stores')
+    ),
+    ...Object.keys(byState).sort().map(state => div({ key: state, style: { marginBottom: 14 } },
+      div({ style: { fontSize: 10, fontWeight: 700, color: TEXT3, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 } }, state),
+      div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 4 } },
+        ...byState[state].map(loc => h('label', {
+          key: loc, style: { display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', borderRadius: R, cursor: 'pointer', fontSize: 11.5, color: TEXT2 } },
+          h('input', { type: 'checkbox', checked: selected.has(loc), onChange: () => toggle(loc) }),
+          span(null, STORE_NAMES[loc]),
+        )),
+      ),
+    )),
   );
 }
 
