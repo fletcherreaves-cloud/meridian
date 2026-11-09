@@ -33,7 +33,7 @@ describe('OnboardingTour', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
-    anchors = ['sidebar', 'home', 'data-manager', 'bell'].map(makeAnchor);
+    anchors = ['sidebar', 'home', 'scope-filter', 'bell'].map(makeAnchor);
   });
 
   afterEach(() => {
@@ -63,16 +63,13 @@ describe('OnboardingTour', () => {
     const clickBtn = async (text) => {
       const btn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === text);
       await act(async () => { btn.click(); });
-      // Covers the data-manager step's double-rAF wait (for AppSidebar's 'mf:expandSection'
-      // re-render to commit) regardless of which step this click lands on.
-      await act(async () => { await new Promise(r => setTimeout(r, 50)); });
     };
 
     expect(container.textContent).toContain('Your navigation');
     await clickBtn('Next');
     expect(container.textContent).toContain('Home');
     await clickBtn('Next');
-    expect(container.textContent).toContain('Data Manager');
+    expect(container.textContent).toContain('Location scope');
     await clickBtn('Next');
     expect(container.textContent).toContain('Notifications');
     expect(container.textContent).toContain('4 of 4');
@@ -88,9 +85,6 @@ describe('OnboardingTour', () => {
     const clickBtn = async (text) => {
       const btn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === text);
       await act(async () => { btn.click(); });
-      // Covers the data-manager step's double-rAF wait (for AppSidebar's 'mf:expandSection'
-      // re-render to commit) regardless of which step this click lands on.
-      await act(async () => { await new Promise(r => setTimeout(r, 50)); });
     };
     await clickBtn('Next'); // -> Home
     expect(container.textContent).toContain('Home');
@@ -106,23 +100,20 @@ describe('OnboardingTour', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('skips a step whose anchor is missing from the DOM (e.g. a role without Data Manager)', async () => {
-    document.querySelector('[data-tour="data-manager"]').remove();
-    anchors = anchors.filter(a => a.getAttribute('data-tour') !== 'data-manager');
+  it('skips a step whose anchor is missing from the DOM (e.g. a role without the scope filter)', async () => {
+    document.querySelector('[data-tour="scope-filter"]').remove();
+    anchors = anchors.filter(a => a.getAttribute('data-tour') !== 'scope-filter');
     sessionStorage.setItem(TOUR_PENDING_FLAG_KEY, '1');
     ({ container, root } = await mount());
 
     const clickBtn = async (text) => {
       const btn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === text);
       await act(async () => { btn.click(); });
-      // Covers the data-manager step's double-rAF wait (for AppSidebar's 'mf:expandSection'
-      // re-render to commit) regardless of which step this click lands on.
-      await act(async () => { await new Promise(r => setTimeout(r, 50)); });
     };
     expect(container.textContent).toContain('Your navigation');
     await clickBtn('Next'); // -> Home
     expect(container.textContent).toContain('Home');
-    await clickBtn('Next'); // Data Manager anchor missing -> auto-skips straight to Notifications
+    await clickBtn('Next'); // scope-filter anchor missing -> auto-skips straight to Notifications
     expect(container.textContent).toContain('Notifications');
   });
 
