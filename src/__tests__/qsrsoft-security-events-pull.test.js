@@ -128,8 +128,8 @@ describe('runSecurityEvents scoping override (dispatch #91 Case F)', () => {
   });
 
   it('defaults to the full production stores/eventTokens when no override is given', async () => {
-    // The loop sleeps 100ms between units (rate-limiting courtesy) -- 27x8 units would be a
-    // 21.6s real-time test. Fake timers keep this test fast without changing the loop itself.
+    // The loop sleeps 100ms between units (rate-limiting courtesy) -- 28x8 units would be a
+    // 22.4s real-time test. Fake timers keep this test fast without changing the loop itself.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const calls = stubFetchOnce({ body: [] });
@@ -137,8 +137,9 @@ describe('runSecurityEvents scoping override (dispatch #91 Case F)', () => {
       const p = runSecurityEvents('literal-test-token', ['2026-08-22'], tracker);
       await vi.runAllTimersAsync();
       await p;
-      // 27 stores x 8 event tokens x 1 date, matching main()'s own unscoped call shape.
-      expect(calls.length).toBe(27 * 8);
+      // 28 stores (27 + 44689/Lindsay-standalone, added 2026-11-09) x 8 event tokens x 1 date,
+      // matching main()'s own unscoped call shape.
+      expect(calls.length).toBe(28 * 8);
     } finally {
       vi.useRealTimers();
     }
