@@ -1,0 +1,70 @@
+name: Spot-Check Ruler Weekly Digest
+
+# Task #129 (owner request 2026-11-09) — "every week on Sunday night or first thing Monday
+# morning (needs to be configurable) let's identify the locations needing a deep dive analysis
+# on FOB and count controls for the previous week (period at EOM)."
+#
+# CONFIGURABLE SCHEDULE, SAGE's own pattern (scripts/sage-run.mjs / sage-run.yml): this workflow
+# runs HOURLY, and scripts/spot-check-ruler-digest.mjs itself self-gates on whether the current
+# UTC day-of-week AND hour match a small stored config (org_config key
+# 'spot_check_ruler_config' — edited in-app, src/views/spot-check-ruler-view.js's
+# SpotCheckRulerDigestSettings). Changing "Monday" to "Tuesday" is a Settings click, never a new
+# PR or a YAML edit — 167 of 168 hourly runs simply no-op via that gate, same shape
+# eom-digest-send.yml's own hour-only gate already uses.
+on:
+  schedule:
+    - cron: '0 * * * *'   # hourly — scripts/spot-check-ruler-digest.mjs's own day+hour gate (org_config 'spot_check_ruler_config') decides which run actually sends
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Send now regardless of the configured day/hour (1 = on)'
+        required: false
+        default: '0'
+      period:
+        description: 'Override period (YYYY-MM, default: the prior month)'
+        required: false
+        default: ''
+      top:
+        description: 'Override how many ranked stores the email lists in full (default 8)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+# Queue, don't cancel — same reasoning as eom-digest-send.yml: a cancelled mid-send run could
+# plausibly send a partial list and never finish, so a second trigger waits rather than racing it.
+concurrency:
+  group: spot-check-ruler-digest-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send Spot-Check Ruler weekly digest
+        run: node scripts/spot-check-ruler-digest.mjs
+        env:
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RULER_DIGEST_FORCE:        ${{ github.event.inputs.force  || '0' }}
+          RULER_DIGEST_PERIOD:       ${{ github.event.inputs.period || '' }}
+          RULER_DIGEST_TOP:          ${{ github.event.inputs.top    || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}

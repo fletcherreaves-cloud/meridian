@@ -4200,6 +4200,75 @@ export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
   return { saved: true };
 }
 
+// ── Spot-Check Ruler weekly digest schedule (task #129, owner req 2026-11-09) ────────────────
+// "needs to be configurable" -- same org_config key/blob + loadX/saveX shape as
+// loadEomDigestConfig/saveEomDigestConfig directly above (no new migration: org_config already
+// has the RLS this needs), but it ALSO needs a day-of-week, since this digest is weekly, not
+// daily-within-a-window like the EOM one. Read by scripts/spot-check-ruler-digest.mjs's own
+// loadDigestConfig(), mirroring that script's read exactly so a fresh install with no saved row
+// behaves identically whether the config is read from the browser or from the script.
+export const DEFAULT_SPOT_CHECK_RULER_CONFIG = { enabled: true, dowUtc: 1, hourUtc: 12, topN: 3 }; // Monday 12:00 UTC (~6-7am CT) -- "Sunday night or first thing Monday morning"
+export async function loadSpotCheckRulerConfig() {
+  if (!supabase) return DEFAULT_SPOT_CHECK_RULER_CONFIG;
+  const { data, error } = await supabase.from('org_config')
+    .select('data').eq('key', 'spot_check_ruler_config').maybeSingle();
+  if (error) { console.warn('[supabase] loadSpotCheckRulerConfig:', error.message); return DEFAULT_SPOT_CHECK_RULER_CONFIG; }
+  if (!data?.data) return DEFAULT_SPOT_CHECK_RULER_CONFIG;
+  const d = data.data;
+  return {
+    enabled: d.enabled !== false,
+    dowUtc: Number.isInteger(d.dowUtc) ? d.dowUtc : DEFAULT_SPOT_CHECK_RULER_CONFIG.dowUtc,
+    hourUtc: Number.isInteger(d.hourUtc) ? d.hourUtc : DEFAULT_SPOT_CHECK_RULER_CONFIG.hourUtc,
+    topN: Number.isInteger(d.topN) && d.topN > 0 ? d.topN : DEFAULT_SPOT_CHECK_RULER_CONFIG.topN,
+  };
+}
+export async function saveSpotCheckRulerConfig({ enabled, dowUtc, hourUtc, topN } = {}) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const payload = {
+    enabled: enabled !== false,
+    dowUtc: Number.isInteger(dowUtc) ? dowUtc : DEFAULT_SPOT_CHECK_RULER_CONFIG.dowUtc,
+    hourUtc: Number.isInteger(hourUtc) ? hourUtc : DEFAULT_SPOT_CHECK_RULER_CONFIG.hourUtc,
+    topN: Number.isInteger(topN) && topN > 0 ? topN : DEFAULT_SPOT_CHECK_RULER_CONFIG.topN,
+  };
+  const { error } = await supabase.from('org_config')
+    .upsert({ key: 'spot_check_ruler_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) { console.warn('[supabase] saveSpotCheckRulerConfig:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
+// ── Spot-Check Ruler conversation notes (task #129) ──────────────────────────────────────────
+// supabase/schema-spot-check-ruler-notes-2026-11-09.sql -- NOT yet guaranteed to exist (this
+// session has no DDL execution path). Both functions fail soft (PGRST205 = table not found is
+// swallowed, same pattern loadEomIntegrityFlags() above already uses) so the worksheet UI works
+// fully except for persisting the notes until the owner runs that migration.
+export async function saveSpotCheckRulerNote({ loc, period, periodType, countDate, confidenceAnswer, reportsReviewedAnswer, notes, flagged, swingPts } = {}) {
+  if (!supabase || !loc || !period || !periodType) return { saved: false, error: 'no-op' };
+  try {
+    const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+    const { error } = await supabase.from('spot_check_ruler_notes').upsert({
+      loc: String(loc), period: String(period), period_type: String(periodType),
+      count_date: countDate || null,
+      confidence_answer: confidenceAnswer ?? null, reports_reviewed_answer: reportsReviewedAnswer ?? null,
+      notes: notes ?? null, flagged: flagged ?? null, swing_pts: swingPts ?? null,
+      created_by: uid, updated_at: new Date().toISOString(),
+    }, { onConflict: 'loc,period,period_type' });
+    if (error) { console.warn('[spot_check_ruler_notes] save error:', error.message); return { saved: false, error: error.message }; }
+    return { saved: true };
+  } catch (e) { return { saved: false, error: String(e?.message || e) }; } // table may not exist yet
+}
+export async function loadSpotCheckRulerNote({ loc, period, periodType } = {}) {
+  if (!supabase || !loc || !period || !periodType) return null;
+  try {
+    const { data, error } = await supabase.from('spot_check_ruler_notes').select('*')
+      .eq('loc', String(loc)).eq('period', String(period)).eq('period_type', String(periodType)).maybeSingle();
+    if (error || !data) return null;
+    return {
+      confidenceAnswer: data.confidence_answer, reportsReviewedAnswer: data.reports_reviewed_answer,
+      notes: data.notes, flagged: data.flagged, swingPts: data.swing_pts, updatedAt: data.updated_at,
+    };
+  } catch { return null; } // table may not exist yet -> fail-soft
+}
+
 // ── Custom location groups (owner req, 2026-11-01) ──────────────────────────────────────────
 // "a selected group of restaurants of user choice" -- an ad hoc, user-named, saveable set of
 // stores, same org_config key/blob pattern as eom_digest_config just above (shared, not

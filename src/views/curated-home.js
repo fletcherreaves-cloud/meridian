@@ -54,6 +54,8 @@ import { GamePlanFormat } from './game-plan-view.js';
 import { ShiftScoreboardFormat } from './shift-scoreboard-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
 import { OperatorLedgerFormat } from './operator-ledger-view.js';
+import { freshCountSessionPrompts } from '../engine/spot-check-ruler.js';
+import { SpotCheckRulerModal } from './spot-check-ruler-view.js';
 
 const h = React.createElement;
 const div  = (p, ...c) => h('div', p, ...c);
@@ -549,6 +551,64 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   const huddleDateKey = dKey(briefDate);
   const huddleStores = operatorGroup ? operatorStores(scopedBrief.stores, operatorGroup) : scopedBrief.stores;
 
+  // Task #129 — the Spot-Check Ruler prompt, "timed to prompt it in a timely manner" (owner,
+  // 2026-11-08): fires when one of this view's stores just logged a fresh, qualifying count
+  // session. Same inv_count_sessions source + current+prior-period window HuddleNarrative's own
+  // cycleSessionsByLoc effect already loads for Memory/Save (count-cycle.js's sessionsFromLog) —
+  // no new data source, loaded once here instead of duplicated inside every format branch.
+  const rulerLocsKey = (huddleStores || []).map(s => s.loc).sort().join(',');
+  const [rulerSessionsByLoc, setRulerSessionsByLoc] = React.useState(null);
+  // periodKey() coerces any date-ish value (Date, string, ...) to 'YYYY-MM' — never read
+  // briefDate.getFullYear()/.getMonth() directly, since some callers (and this panel's own
+  // tests) pass it as a plain string, same tolerance dKey(briefDate) elsewhere in this file
+  // already relies on.
+  React.useEffect(() => {
+    if (!rulerLocsKey) { setRulerSessionsByLoc({}); return; }
+    const now = periodKey(briefDate);
+    const [y, m] = now.split('-').map(Number);
+    const prior = periodKey(new Date(y, m - 2, 1));
+    Promise.all([loadInvCountSessions({ period: now }), loadInvCountSessions({ period: prior })])
+      .then(([a, b]) => setRulerSessionsByLoc(sessionsFromLog([...(a || []), ...(b || [])]).sessions))
+      .catch(() => setRulerSessionsByLoc({}));
+  }, [rulerLocsKey, briefDate]);
+  const rulerAsOf = React.useMemo(() => {
+    const d = briefDate instanceof Date ? briefDate : new Date(briefDate);
+    return isNaN(d) ? new Date() : d;
+  }, [briefDate]);
+  const rulerPrompts = React.useMemo(
+    () => freshCountSessionPrompts(rulerSessionsByLoc || {}, huddleStores, { asOf: rulerAsOf }),
+    [rulerSessionsByLoc, huddleStores, rulerAsOf]);
+  const [rulerOpenFor, setRulerOpenFor] = React.useState(null); // the prompt entry whose worksheet is open, or null
+
+  // Rendered alongside HuddleNarrative at every format's own call site below (same duplication
+  // pattern this file already uses for that component across its 5 return branches) — a compact
+  // banner naming which store(s) just completed a qualifying count, each opening that store's
+  // real worksheet (SpotCheckRulerModal) on click. Renders nothing when there's nothing fresh.
+  const renderRulerPrompt = () => (rulerPrompts.length
+    ? div({
+        key: 'scr-prompt', style: {
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'var(--surf2,#f3f4f6)',
+          border: '1px solid var(--bdr,#e5e7eb)', borderLeft: '3px solid var(--gold,#f5bc00)',
+          borderRadius: 10, padding: '10px 14px', marginBottom: 10,
+        },
+      },
+        span({ style: { fontSize: 16, lineHeight: 1 } }, '📋'),
+        div({ style: { flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text,#111827)' } },
+          rulerPrompts.length === 1
+            ? `${rulerPrompts[0].storeName} just logged a qualifying ${rulerPrompts[0].periodType === 'eom' ? 'EOM' : 'weekly'} count — run the Spot-Check Ruler while it's fresh.`
+            : `${rulerPrompts.length} stores just logged a qualifying count — run the Spot-Check Ruler while it's fresh.`),
+        rulerPrompts.slice(0, 5).map(p => h('button', {
+          key: p.loc, className: 'btn btn-sm', onClick: () => setRulerOpenFor(p),
+          style: { fontSize: 11, padding: '4px 10px' },
+        }, rulerPrompts.length === 1 ? 'Open Ruler' : p.storeName)),
+      )
+    : null);
+  const rulerModal = rulerOpenFor ? h(SpotCheckRulerModal, {
+    loc: rulerOpenFor.loc, storeName: rulerOpenFor.storeName,
+    periodType: rulerOpenFor.periodType, countDate: rulerOpenFor.countDate,
+    onClose: () => setRulerOpenFor(null),
+  }) : null;
+
   // Game Plan / The Patch / The Ledger are each their OWN full screen, not a renderer slotted
   // into the generic stat-tiles/severity-bar/card shell every other format shares -- they're the
   // things the owner asked to make "the front facing version," not a peer inside the old one.
@@ -557,6 +617,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   if (format === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+      renderRulerPrompt(), rulerModal,
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(GamePlanFormat, {
         ds, loc: myStore?.loc, storeName: myStore?.name, items, summary, userName, onNav,
@@ -567,6 +628,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   if (format === 'scoreboard') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+      renderRulerPrompt(), rulerModal,
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(ShiftScoreboardFormat, { ds, loc: myStore?.loc, storeName: myStore?.name }),
     );
@@ -574,6 +636,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   if (format === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+      renderRulerPrompt(), rulerModal,
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(PatchPlanFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, onNav }),
     );
@@ -581,6 +644,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   if (format === 'ledger') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+      renderRulerPrompt(), rulerModal,
       div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
       h(OperatorLedgerFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
     );
@@ -591,6 +655,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
 
   return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
     h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
+    renderRulerPrompt(), rulerModal,
     div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 16 } },
       div(null,
         div({ style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } },
