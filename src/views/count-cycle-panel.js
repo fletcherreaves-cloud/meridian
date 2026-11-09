@@ -186,12 +186,12 @@ function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc, onOpenRuler }
         // there's nothing to spot-check against a store that hasn't completed one yet.
         (onOpenRuler && c.lastWeekly) ? h('button', {
           onClick: (e) => { e.stopPropagation(); onOpenRuler(c); },
-          title: 'Open the Spot-Check Ruler — the 5-question follow-up + counterfactual FOB check for this count',
+          title: 'Open the Count Follow-Up — the 7-question follow-up + counterfactual FOB check for this count',
           style: {
             background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
             color: 'var(--text2,#9aa4b2)', padding: '5px 10px', fontSize: 11, cursor: 'pointer',
           },
-        }, '📋 Ruler') : null)) : null);
+        }, '📋 Follow-Up') : null)) : null);
 }
 
 /**

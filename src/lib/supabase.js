@@ -4377,18 +4377,25 @@ export async function saveSpotCheckRulerConfig({ enabled, dowUtc, hourUtc, topN 
 }
 
 // ── Spot-Check Ruler conversation notes (task #129) ──────────────────────────────────────────
-// supabase/schema-spot-check-ruler-notes-2026-11-09.sql -- NOT yet guaranteed to exist (this
-// session has no DDL execution path). Both functions fail soft (PGRST205 = table not found is
-// swallowed, same pattern loadEomIntegrityFlags() above already uses) so the worksheet UI works
-// fully except for persisting the notes until the owner runs that migration.
-export async function saveSpotCheckRulerNote({ loc, period, periodType, countDate, confidenceAnswer, reportsReviewedAnswer, notes, flagged, swingPts } = {}) {
+// supabase/schema-spot-check-ruler-notes-2026-11-09.sql -- applied live 2026-11-09 (confirmed via
+// information_schema; this session does have a DDL execution path, per the owner's standing
+// authorization). confidence_rating/reports_reviewed added the same day (owner-directed question
+// redesign: Q5 "how confident" becomes a 1-5 rating scale instead of free text; Q6/Q7 split "did
+// you review the reports / what did you find" into a yes-no click + a conditional follow-up).
+// confidence_answer/reports_reviewed_answer stay as columns -- the latter is exactly what Q7's
+// "what did you find" still needs; the former is unused going forward but untouched for any row
+// already saved under the old free-text Q4. Both functions still fail soft (PGRST205 = table not
+// found swallowed) so the worksheet UI degrades gracefully if a future session's migration state
+// ever regresses.
+export async function saveSpotCheckRulerNote({ loc, period, periodType, countDate, confidenceAnswer, confidenceRating, reportsReviewed, reportsReviewedAnswer, notes, flagged, swingPts } = {}) {
   if (!supabase || !loc || !period || !periodType) return { saved: false, error: 'no-op' };
   try {
     const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
     const { error } = await supabase.from('spot_check_ruler_notes').upsert({
       loc: String(loc), period: String(period), period_type: String(periodType),
       count_date: countDate || null,
-      confidence_answer: confidenceAnswer ?? null, reports_reviewed_answer: reportsReviewedAnswer ?? null,
+      confidence_answer: confidenceAnswer ?? null, confidence_rating: confidenceRating ?? null,
+      reports_reviewed: reportsReviewed ?? null, reports_reviewed_answer: reportsReviewedAnswer ?? null,
       notes: notes ?? null, flagged: flagged ?? null, swing_pts: swingPts ?? null,
       created_by: uid, updated_at: new Date().toISOString(),
     }, { onConflict: 'loc,period,period_type' });
@@ -4403,7 +4410,8 @@ export async function loadSpotCheckRulerNote({ loc, period, periodType } = {}) {
       .eq('loc', String(loc)).eq('period', String(period)).eq('period_type', String(periodType)).maybeSingle();
     if (error || !data) return null;
     return {
-      confidenceAnswer: data.confidence_answer, reportsReviewedAnswer: data.reports_reviewed_answer,
+      confidenceAnswer: data.confidence_answer, confidenceRating: data.confidence_rating,
+      reportsReviewed: data.reports_reviewed, reportsReviewedAnswer: data.reports_reviewed_answer,
       notes: data.notes, flagged: data.flagged, swingPts: data.swing_pts, updatedAt: data.updated_at,
     };
   } catch { return null; } // table may not exist yet -> fail-soft

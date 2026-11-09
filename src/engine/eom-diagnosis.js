@@ -839,6 +839,14 @@ export function fobComponentDeltas(components, targets) {
   });
 }
 
+// Food-cost component levers worth an action (waste discipline / condiment portioning / stat-variance
+// review). Emp meals + unexplained are excluded — they're policy/reconciliation, not coaching levers.
+// Hoisted to module scope + exported (was local to formatDiagnosisReport) so spot-check-ruler.js's
+// "which FOB component has the most opportunity" question (owner-directed 2026-11-09) uses the
+// SAME driver set this report's own FOB-over-target analysis does, rather than a second copy that
+// can drift from it.
+export const DRIVER_KEYS = new Set(['raw', 'comp', 'cond', 'statv']);
+
 // `mode:'recap'` returns the super-abbreviated message (FOB line → count status → Top-5 → net → soft
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
@@ -847,9 +855,6 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // FOB-over-target driver analysis: which components exceed their own target (biggest gap first). Used
   // to explain an overage that item-level variance doesn't capture (raw waste, stat variance, condiments).
   const fobOver = !!(fob && fob.pct != null && fob.tgt != null && (fob.pct - fob.tgt) > 5e-5);
-  // Food-cost component levers worth an action (waste discipline / condiment portioning / stat-variance
-  // review). Emp meals + unexplained are excluded — they're policy/reconciliation, not coaching levers.
-  const DRIVER_KEYS = new Set(['raw', 'comp', 'cond', 'statv']);
   const overComps = (fob && Array.isArray(fob.components) ? fob.components : [])
     .filter(x => DRIVER_KEYS.has(x.key) && x.deltaPp != null && x.deltaPp > 0.005).sort((a, b) => b.deltaPp - a.deltaPp);
   const fobDriverStr = (n = 3) => overComps.slice(0, n).map(x => `${x.label} +${x.deltaPp.toFixed(2)}pp (${money(x.amt)})`).join(' · ') + (overComps.length > n ? ` _+${overComps.length - n} more_` : '');
