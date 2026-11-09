@@ -17,6 +17,36 @@ export default {version:'5.715', date:'2026-11-09', changes:[
   'yes, what did you find?" follow-up that only appears once answered Yes.\n\n'+
   '7 questions total (up from 5). New `confidence_rating`/`reports_reviewed` columns on '+
   '`spot_check_ruler_notes` (applied live this session).',
+  '**🎯 Bullseye tile — ring counts + 3 new metric tabs (owner-directed 2026-11-09).** '+
+  '"Add numbers to the bands to represent the different rings" — each ring label now shows a '+
+  'dynamic count ("BEATING (5)", "AT TARGET (2)", "BELOW TARGET (20)") of the CURRENT scope\'s own '+
+  'stores in that band (All vs a single state vs a single patch each show their own real '+
+  'distribution), using the exact same band classification the dots themselves already use.\n\n'+
+  '**3 new tabs**, reusing the same store.p/store.t shape (buildStore()/DEFAULT_TARGETS) the '+
+  'existing 4 already read, each confirmed against a real field before adding: R2P (`p.r2p`/'+
+  '`t.tR2p`), KVS Time (`p.kvst`/`t.tKvst`), Healthy Use of KVS/Side 2 (`p.kvsu`/`t.tKvsu`).',
+  '**🔧 Shift Scoreboard fixes (owner-reported 2026-11-09, four separate issues in one worksheet).**\n\n'+
+  '**Labor % was reading wildly low (0.70% / 0.47% against a ~19-21% target).** Root-caused live, '+
+  'not guessed: QSRSoft\'s `labor-summary` endpoint does not track an in-progress business day in '+
+  'real time — its `crew_labor_hours` leg sat at the SAME tiny value (e.g. 2.92hrs) across 10+ '+
+  'successive 15-min pulls while the DAR\'s `actual_punched_hours` climbed to 163+ for the same '+
+  'store/day, confirmed on a second store too (1.71hrs reported vs 50.18hrs actually punched, '+
+  'even on a freshly-pulled row). `metric-source.js`\'s `laborPct` derive now carries a staleness '+
+  'guard (new `actHrsGuard`/`crewHrsGuard` legs, both engineered to never block on missing data — '+
+  'only a POSITIVELY KNOWN stale reading nulls the value) — shows "—" rather than a number an '+
+  'order of magnitude too low. This is a shared metric-source.js fix, so every other "today" '+
+  'Labor % reading in the app benefits, not just this panel.\n\n'+
+  '**OEPE tile relabeled "OEPE W/O Parked"** — the value was already correct (the live sources '+
+  '`qsrActSummaryRows`/`glimpseRows` both already use the w/o-parked formula); only the label '+
+  'didn\'t match the rest of the app\'s own convention.\n\n'+
+  '**POS-Over $ / Cash O/S $ targets were showing the store\'s raw MONTHLY dollar figure '+
+  '(`tPosOverAmt`/`tCashOSAmt`) against a single day\'s actual** ("$641 in POS Overings is a bit '+
+  'steep" — owner). Both targets now scale by the store\'s own rate (`tPosOverPct`/`tCashOSPct`) '+
+  '× today\'s forecasted sales, the same day the actual reading covers.\n\n'+
+  '**Added an "As of [date] · [time] — today so far, running" stamp** for trustworthiness, and '+
+  'labeled every tile\'s basis explicitly as a running/cumulative read of today (not a multi-day '+
+  'average, not an isolated current-hour snapshot) — true hourly-slice tiles are a larger, '+
+  'separate build flagged for a follow-up, not guessed at here.',
   '**📆 FY Year rail card is live (owner-directed 2026-11-09: "Noticing on Projection Workspace '+
   'that FY Year are still greyed out as not yet available. Need to remedy this soon so i can '+
   'properly forecast next year").** The real work was never missing — the Yearly Targets panel '+

@@ -77,6 +77,37 @@ describe('computeShiftScoreboardTiles', () => {
     const tiles = computeShiftScoreboardTiles({}, LOC, today, ['oepe']);
     expect(tiles[0].value).toBeNull();
   });
+
+  it('OEPE label matches the official "W/O Parked" metric used for results tracking elsewhere', () => {
+    expect(SCOREBOARD_METRICS.find(m => m.id === 'oepe').label).toBe('OEPE W/O Parked');
+  });
+
+  // POS-Over $ / Cash O/S $ — tPosOverAmt/tCashOSAmt in DEFAULT_TARGETS are MONTHLY dollar
+  // figures (owner flag 2026-11-09: showing them unscaled against a single day's actual read
+  // as a wildly inflated target). The tile must rescale by TODAY's forecasted sales instead.
+  describe('POS-Over $ / Cash O/S $ target day-scaling', () => {
+    it('scales the target by today\'s forecasted sales, not the raw monthly DEFAULT_TARGETS $', () => {
+      // '3708': tPosOverPct 0.004088, tCashOSPct -0.0006 (constants.js) — monthly tPosOverAmt/
+      // tCashOSAmt (455.91 / -66.65) must NOT appear as today's target.
+      const ds = dsWithToday({ posOverAmt: 5, cashOSAmt: -2, projSales: 10000 });
+      const tiles = computeShiftScoreboardTiles(ds, LOC, today, ['posOverAmt', 'cashOSAmt']);
+      expect(tiles.find(t => t.id === 'posOverAmt').target).toBeCloseTo(0.004088 * 10000, 5);
+      expect(tiles.find(t => t.id === 'cashOSAmt').target).toBeCloseTo(-0.0006 * 10000, 5);
+    });
+
+    it('returns null target when today\'s projected sales is unavailable, never the stale monthly $', () => {
+      const ds = dsWithToday({ posOverAmt: 5 });
+      const tiles = computeShiftScoreboardTiles(ds, LOC, today, ['posOverAmt']);
+      expect(tiles[0].target).toBeNull();
+    });
+
+    it('never skips a ratePctKey metric\'s target resolution when other tiles are visible too', () => {
+      const ds = dsWithToday({ oepe: 100, posOverAmt: 5, projSales: 10000 });
+      const tiles = computeShiftScoreboardTiles(ds, LOC, today, ['oepe', 'posOverAmt']);
+      expect(tiles.find(t => t.id === 'oepe').target).toBe(140);
+      expect(tiles.find(t => t.id === 'posOverAmt').target).toBeCloseTo(0.004088 * 10000, 5);
+    });
+  });
 });
 
 describe('computeShiftPaceVsPlan', () => {
