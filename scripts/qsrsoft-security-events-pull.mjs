@@ -333,7 +333,7 @@ export async function runSecurityEvents(token, dates, tracker, { stores = STORE_
             console.log(`[secevents-pull] DEBUG response row shape (key names only): ${Object.keys(rows[0]).join(',')}`);
             loggedShapeThisRun = true;
           }
-          const parsed = parseSecurityEventRows(rows, { loc });
+          const parsed = parseSecurityEventRows(rows, { loc, eventToken });
           const dropped = rows.length - parsed.length;
           if (dropped) console.log(`[secevents-pull] ${unit}: ${dropped}/${rows.length} row(s) dropped (unkeyable)`);
           collected.push(...parsed);
