@@ -37,6 +37,11 @@ const logAppAccessMock = vi.fn().mockResolvedValue({ error: null });
 // expand-a-row test below keeps passing unchanged. Dedicated tests override these per-case.
 const loadSecurityFindingActionsForFindingsMock = vi.fn().mockResolvedValue([]);
 const saveSecurityFindingActionMock = vi.fn().mockResolvedValue({ id: 'action-1', findingId: null, action: 'noted', note: null, createdByRole: null, createdAt: '2026-11-09T00:00:00Z' });
+// dispatch 2026-11-10 follow-on -- drift/trajectory history, fetched once the Briefing view opens
+// (security-panel.js's own driftHistory effect). Defaults to empty so every EXISTING render test
+// (none of which switch to the Briefing view and assert on drift) keeps passing unchanged;
+// dedicated drift tests below override this per-case.
+const loadSecurityFindingsRecentHistoryForKeysMock = vi.fn().mockResolvedValue([]);
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -51,6 +56,7 @@ vi.mock('../lib/supabase.js', () => ({
   logAppAccess: (...args) => logAppAccessMock(...args),
   loadSecurityFindingActionsForFindings: (...args) => loadSecurityFindingActionsForFindingsMock(...args),
   saveSecurityFindingAction: (...args) => saveSecurityFindingActionMock(...args),
+  loadSecurityFindingsRecentHistoryForKeys: (...args) => loadSecurityFindingsRecentHistoryForKeysMock(...args),
 }));
 
 import {
@@ -2175,5 +2181,180 @@ describe('SecurityPanel — Briefing view: district health grid + narrative card
     await flush(container);
     expect([...container.querySelectorAll('button')].some(b => b.textContent === '✓ Mark investigated')).toBe(true);
     expect([...container.querySelectorAll('button')].some(b => b.textContent === '⬆ Escalate')).toBe(true);
+  });
+});
+
+// dispatch 2026-11-10 follow-on -- drift/trajectory detection (the deep-dive doc's own §4). Same
+// scaffolding as the Briefing-view describe block above (RULES/FINDINGS/mount/clickByText/flush),
+// extended with loadSecurityFindingsRecentHistoryForKeysMock -- the ONE new network call this
+// phase adds, fired only once the Briefing view is open. These tests render the REAL SecurityPanel
+// end to end (never the engine in isolation) per this repo's own "would this verification still
+// pass if reverted" rule -- a revert of the panel's wiring (not just security-drift.js itself)
+// must fail these.
+describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', () => {
+  let container, root;
+  const RULES = [
+    {
+      ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate',
+      description: 'How much cash is over or short at the drawer.', baselineType: 'personal',
+      logicType: 'z-score', windowDays: 28, severity: 3, active: true,
+      investigationAction: 'Pull the flagged employee\'s drawer-count photos.', falsePositives: [],
+    },
+    {
+      ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch edit',
+      description: 'A punch edited after the employee\'s own termination date.', baselineType: 'none',
+      logicType: 'threshold', windowDays: 28, severity: 5, active: true,
+      investigationAction: 'Pull the edit detail.', falsePositives: [],
+    },
+  ];
+  // Alice's CURRENT (latest) window -- flagged, z-score magnitude (510-10)/5 = 100. Deliberately
+  // large (matching the real scale v5.726's HEALTH_SCORE_SCALE=0.1 recalibration measured --
+  // real per-store raw contribution sums ran 45.00-1,480.40, not single-digit z-scores) so the
+  // raw score sits well under the 100 clamp at the REAL scale -- a fixture scaled for the old,
+  // superseded scale=8 world would either saturate the clamp or round to 0-1 at scale=0.1,
+  // either way making the "drift raises the score" test below meaningless regardless of whether
+  // the wiring is right.
+  const FINDINGS = [
+    {
+      id: 'find-cash-alice', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true,
+      value: 510, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28',
+      computedAt: '2026-07-29T10:00:00Z',
+      baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [], exonerationShare: null,
+    },
+    {
+      id: 'find-labor-bob', empToken: 'tok-bob', wrin: null, loc: '0000002', ruleId: 'LABOR-001', pass: true,
+      value: 2, thresholdUsed: 1, windowStart: '2026-07-01', windowEnd: '2026-07-28',
+      computedAt: '2026-07-29T10:00:00Z',
+      baselineContext: {}, explanation: [], exonerationShare: null,
+    },
+  ];
+  // Alice's REAL 4-window history (oldest -> newest), as only the base-table bulk fetch (never the
+  // latest view) would carry it -- z-score magnitude rises 25 -> 50 -> 75 -> 100, monotonically,
+  // a clean 4x relative rise well past DRIFT_MIN_RELATIVE_RISE=0.15 -- classifies 'worsening'.
+  // The LAST entry matches FINDINGS' own alice row exactly (same value/mean/stdev/windowEnd), so
+  // this is one real, continuous trajectory, not two disagreeing sources.
+  const ALICE_HISTORY = [
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: false, value: 135, thresholdUsed: 5, windowStart: '2026-06-01', windowEnd: '2026-06-28', computedAt: '2026-06-29T10:00:00Z', baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: false, value: 260, thresholdUsed: 5, windowStart: '2026-06-08', windowEnd: '2026-07-05', computedAt: '2026-07-06T10:00:00Z', baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: false, value: 385, thresholdUsed: 5, windowStart: '2026-06-15', windowEnd: '2026-07-12', computedAt: '2026-07-13T10:00:00Z', baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 510, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadSecurityFindingActionsForFindingsMock.mockReset().mockResolvedValue([]);
+    loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
+    logAppAccessMock.mockClear();
+    // Bob gets only his OWN single current row back (insufficient history for a drift call,
+    // same as a real subject the daily batch has only run once for) -- Alice gets her real
+    // 4-window rising trajectory. A real caller would scope this per rule_id; the mock just
+    // returns the union since the panel itself does the grouping-by-key, not this fetch.
+    loadSecurityFindingsRecentHistoryForKeysMock.mockReset().mockResolvedValue([...ALICE_HISTORY, FINDINGS[1]]);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  async function mountBriefing() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
+    act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+  }
+
+  it('fetches drift history only once the Briefing view is open, scoped to the real candidate set (both currently-flagged subjects, by loc/ruleId/token)', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Table view is the default -- no drift fetch yet.
+    expect(loadSecurityFindingsRecentHistoryForKeysMock).not.toHaveBeenCalled();
+    const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
+    act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFindingsRecentHistoryForKeysMock).toHaveBeenCalledTimes(1);
+    const candidates = loadSecurityFindingsRecentHistoryForKeysMock.mock.calls[0][0];
+    expect(candidates).toEqual(expect.arrayContaining([
+      { loc: '0000001', ruleId: 'CASH-001', empToken: 'tok-alice', wrin: null },
+      { loc: '0000002', ruleId: 'LABOR-001', empToken: 'tok-bob', wrin: null },
+    ]));
+  });
+
+  it('a narrative card for a subject rising across its real history shows the "Escalating" badge, not just the existing chronic/new trend line', async () => {
+    await mountBriefing();
+    const escalating = [...container.querySelectorAll('span')].find(s => s.textContent === 'Escalating');
+    expect(escalating, container.textContent).toBeTruthy();
+  });
+
+  it('a subject with only one real window on file (too little history for a trend either way) shows "First flag", never "Escalating"', async () => {
+    await mountBriefing();
+    // Bob's card is on the Labor domain tab, not the default Cash one.
+    const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
+    act(() => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const laborPill = [...container.querySelectorAll('span')].find(s => s.textContent === 'LABOR-001');
+    expect(laborPill, container.textContent).toBeTruthy();
+    const firstFlag = [...container.querySelectorAll('span')].find(s => s.textContent === 'First flag');
+    expect(firstFlag, container.textContent).toBeTruthy();
+    // Bob's own card must not ALSO carry Alice's badge -- a loose "some Escalating badge exists
+    // somewhere" assertion would pass even if the keying were wrong and every card showed the
+    // same badge, since this tab only shows Bob's card at all (domain-filtered).
+    expect(container.textContent).not.toMatch(/Escalating/);
+  });
+
+  it('the district grid shows a real ↑ worsening arrow on Alice\'s store once drift history resolves, never before', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
+    act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // Immediately after the click, React has not yet committed the resolved drift fetch --
+    // the grid must render Phase 1's own tiles with no arrow rather than a fabricated one.
+    expect(container.querySelector('[title^="Trend:"]')).toBeFalsy();
+    await flush(container);
+    const arrow = container.querySelector('[title="Trend: worsening"]');
+    expect(arrow, container.textContent).toBeTruthy();
+    expect(arrow.textContent).toBe('↑');
+  });
+
+  // Reads a health-grid tile's own score number precisely -- the tile's digits run together with
+  // no separator in plain textContent (loc "0000001" immediately followed by the score, e.g.
+  // "0000001" + "48" = "000000148"), so a naive /\d+/ match on the WHOLE tile grabs the loc, not
+  // the score. The score lives in its own dedicated child <div> (SecurityHealthGrid's own
+  // fontSize:19/fontWeight:800 element), which carries NOTHING but the number.
+  function tileScore(tile) {
+    // tile.children[0] is the store-name div ("0000001" -- itself all digits for this fixture's
+    // synthetic loc, so a plain "first pure-digit div" search would wrongly grab IT instead of
+    // the real score). The score lives in the first child of the SECOND top-level div (the
+    // flex wrapper SecurityHealthGrid wraps the score + optional drift arrow in).
+    const scoreDiv = tile.children[1]?.children[0];
+    expect(scoreDiv, tile.outerHTML).toBeTruthy();
+    return Number(scoreDiv.textContent.trim());
+  }
+
+  it('the drift term raises Alice\'s store score above what the static rule alone would produce', async () => {
+    // Same fixture, but with an EMPTY drift history -- isolates the Phase-1-only score.
+    loadSecurityFindingsRecentHistoryForKeysMock.mockReset().mockResolvedValue([]);
+    await mountBriefing();
+    const phase1Tile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000001/));
+    const phase1Score = tileScore(phase1Tile);
+    expect(phase1Score).toBe(30); // severity 3 × magnitude 100 × HEALTH_SCORE_SCALE 0.1 = 30, well under the 100 clamp
+
+    act(() => { root.unmount(); });
+    container.remove();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsRecentHistoryForKeysMock.mockReset().mockResolvedValue([...ALICE_HISTORY, FINDINGS[1]]);
+    await mountBriefing();
+    const driftTile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000001/));
+    const driftScore = tileScore(driftTile);
+    // + severity 3 × latest magnitude 100 × DRIFT_CONFIRMED_WEIGHT 0.5 = 150 raw -> ×0.1 = +15
+    expect(driftScore).toBe(45);
+    expect(driftScore).toBeGreaterThan(phase1Score);
   });
 });
