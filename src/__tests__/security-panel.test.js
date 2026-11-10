@@ -2045,3 +2045,135 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
     expect(escalateBtn).toBeFalsy();
   });
 });
+
+// dispatch 2026-11-10 -- Phase 1 of the owner's Security Health redesign: the district health
+// grid + narrative Briefing cards, rendered through the real SecurityPanel (not just
+// security-health.js's own engine tests) per this repo's "would this verification still pass if
+// reverted" standing rule -- a test that only imported computeStoreHealth couldn't tell "wired
+// into the panel" from "built but never rendered."
+describe('SecurityPanel — Briefing view: district health grid + narrative cards (dispatch 2026-11-10)', () => {
+  let container, root;
+  const RULES = [
+    {
+      ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate',
+      description: 'How much cash is over or short at the drawer.', baselineType: 'personal',
+      logicType: 'ratio', windowDays: 28, severity: 3, active: true,
+      investigationAction: 'Pull the flagged employee\'s drawer-count photos.',
+      falsePositives: ['register malfunction', 'new hire training week'],
+    },
+    {
+      ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch edit',
+      description: 'A punch edited after the employee\'s own termination date.', baselineType: 'none',
+      logicType: 'threshold', windowDays: 28, severity: 5, active: true,
+      investigationAction: 'Pull the edit detail and confirm the termination date is accurate.',
+      falsePositives: [],
+    },
+  ];
+  // Two stores, two subjects -- enough for the health grid to have something real to rank, and
+  // for a click-to-filter to have a second store to disappear FROM.
+  const FINDINGS = [
+    {
+      id: 'find-cash-alice', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true,
+      value: 50, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28',
+      computedAt: '2026-07-29T10:00:00Z',
+      baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [], exonerationShare: null,
+    },
+    {
+      id: 'find-labor-bob', empToken: 'tok-bob', wrin: null, loc: '0000002', ruleId: 'LABOR-001', pass: true,
+      value: 2, thresholdUsed: 1, windowStart: '2026-07-01', windowEnd: '2026-07-28',
+      computedAt: '2026-07-29T10:00:00Z',
+      baselineContext: {}, explanation: [], exonerationShare: null,
+    },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadSecurityFindingActionsForFindingsMock.mockReset().mockResolvedValue([]);
+    logAppAccessMock.mockClear();
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  async function mount() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+  }
+  function clickByText(tag, text) {
+    const el = [...container.querySelectorAll(tag)].find(b => b.textContent === text);
+    expect(el, `no <${tag}> with text "${text}"`).toBeTruthy();
+    act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    return el;
+  }
+
+  it('defaults to the Table view (existing sortable table present, no narrative cards) -- the new view is additive, not a silent replacement', async () => {
+    await mount();
+    expect(container.querySelector('table')).toBeTruthy();
+    // The sort-header vocabulary is Table-only.
+    expect(container.textContent).toMatch(/Signals/);
+  });
+
+  it('switching to Briefing renders a plain-English decision sentence per flagged signal, not the raw table', async () => {
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    // buildDecisionSentence's own real "mult" branch (fires because baselineContext.mean is set):
+    // value 50 is 5.0x baselineContext.mean 10 -> "runs about 5.0× the personal average — 50.00
+    // per $1,000 drawer sales against a typical 10.00 per $1,000 drawer sales. Next: ..."
+    expect(container.textContent).toMatch(/runs about 5\.0× the personal average/);
+    expect(container.textContent).toMatch(/Next: Pull the flagged employee's drawer-count photos\./);
+  });
+
+  it('the district health grid ranks both stores, worst first, and a tile click narrows scope to that store (the grid then disappears)', async () => {
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    expect(container.textContent).toMatch(/Store health, this scope/);
+    const store2Tile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000002/));
+    expect(store2Tile).toBeTruthy();
+    act(() => { store2Tile.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // Scope is now a single store -- the grid hides itself (nothing to rank against), per
+    // SecurityHealthGrid's own render-call-site gate (scope.level !== 'store').
+    expect(container.textContent).not.toMatch(/Store health, this scope/);
+  });
+
+  it('"Rule out first" and "Show the math" drawers toggle real rule/finding data, not placeholders', async () => {
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    clickByText('button', 'Rule out first');
+    expect(container.textContent).toMatch(/register malfunction/);
+    expect(container.textContent).toMatch(/new hire training week/);
+    clickByText('button', 'Show the math');
+    expect(container.textContent).toMatch(/value: 50.00 per \$1,000 drawer sales/);
+    expect(container.textContent).toMatch(/mean 10\.00, stdev 5\.00, n 8/);
+  });
+
+  it('a rule with no false_positives never offers a "Rule out first" drawer', async () => {
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    // Scope to the LABOR-001 store alone so only its card (no false_positives) is on screen.
+    const store2Tile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000002/));
+    act(() => { store2Tile.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    clickByText('button', '🕐 Labor');
+    await flush(container);
+    const ruleOutButtons = [...container.querySelectorAll('button')].filter(b => b.textContent === 'Rule out first');
+    expect(ruleOutButtons.length).toBe(0);
+  });
+
+  it('case tracking (Mark investigated / Escalate) is offered on a Briefing card too, same as Table', async () => {
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === '✓ Mark investigated')).toBe(true);
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === '⬆ Escalate')).toBe(true);
+  });
+});
