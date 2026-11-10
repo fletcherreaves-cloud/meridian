@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.728', date:'2026-11-10', changes:[
+export default {version:'5.729', date:'2026-11-10', changes:[
   '**🔐 Security Events — "General Drawer Open" wired in; manager-authorization field confirmed '+
   'already mapped (task #131).** A read-only probe added 2026-11-08 to find the real `event_token` '+
   'for the owner\'s KB-reported "General Drawer Open" category had never actually been run and '+
