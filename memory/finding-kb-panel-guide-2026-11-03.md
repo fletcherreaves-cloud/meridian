@@ -1388,3 +1388,57 @@ candidates (`revenue_intelligence`, `intelligence_brief`, `competitive_impact_gu
 `metric_lineage_guide`, `pay_rate_history_guide`, `count_cycle_guide`, `brief_guide`,
 `panel_index`) are candidates for the next batch — not yet re-checked against their real mount
 points this pass.
+
+## Batch 14 (2026-11-10)
+
+Re-verified all 16 candidates named above by grepping `articleKey:\s*'<key>'` across `src/` —
+0 matches for every one, confirming the gap was still real (not just this doc's own narrative
+being stale, which this backlog has been bitten by before). Wired 3, each matched to its real
+mount point by reading the component, not guessed from the key or title:
+
+- **`store_kb_guide`** → `StoreKBEditor` (`src/views/labor-tools.js`)'s own hand-rolled header.
+  Its real on-screen title is **"Restaurant Profiles"**, not "Store KB" — a display-name
+  divergence from the registry label/KB title, noted and left alone (same class of mismatch as
+  earlier batches' precedent, nothing here is actually wrong).
+- **`revenue_intelligence`** → `RevenueIntelligence` (`src/views/store-analytics.js`)'s
+  `ModalShell`.
+- **`lifelenz_bridge`** → `LifeLenzBridgePanel` (`src/features/lifelenz.js`)'s real-content
+  `ModalShell` (the `ds.loaded` branch — its separate "waiting on data" empty-state `ModalShell`
+  was left alone, same as `why_engine_guide`/`gm_letters`'s precedent of only wiring the branch
+  that actually has content to attach to, or both branches when both do).
+
+**A real pitfall, caught before any of this shipped, not after:** `ModalShell` (`src/components/
+ModalShell.js`) forwards its `title` prop straight into `ScreenshotShareButton`'s
+`slugify(title)` and the native Web Share API's `title`, both of which expect a plain string — a
+React node (an `InfoIcon`) placed in `title` degrades the screenshot filename and risks a runtime
+error at the share-sheet boundary. `subtitle` is never forwarded to `ScreenshotShareButton`,
+making it the only safe mount point for a node. Both `revenue_intelligence` and `lifelenz_bridge`
+wire their `InfoIcon` through `subtitle`, with an inline comment in both files so this isn't
+reintroduced by a future batch reaching for the more obvious `title` prop.
+
+**`file_import_guide` investigated and deliberately left unwired** — same judgment call this
+backlog has made before for a conceptual, cross-cutting "App Guide" article (it describes every
+upload file type/naming/load order across the whole app, not one panel's behavior). There is no
+single legitimate mount point: the actual "Load Files" control is a bare `<input type="file">`
+click handler, no header of its own. Reachable via the Knowledge Base panel's own browse/search
+index, same channel as `locked_projections`/`smart_targets`'s App-Guide siblings.
+
+Each of the 3 real wirings gets a render-level test in `dispatch-kb-panel-guide-batch14-
+2026-11-10.test.js` (3 tests) — mounts the real exported component, clicks the real "?" `InfoIcon`
+control, asserts the real KB article title renders. Fixed 4 pre-existing test files whose full
+(non-`importOriginal`) `vi.mock('../engine/forecast.js', …)` blocks broke when `lifelenz.js`
+picked up a new `InfoIcon` import: `dispatch-105-lifelenz-bridge-daterange.test.js`,
+`dispatch-106-forecast-reports.test.js`, `dispatch-117-lifelenz-accuracy-plausibility.test.js`,
+`lifelenz-accuracy-winner-badge.test.js` — each now stubs `InfoIcon: () => null` alongside their
+existing `forecastDay`/`getModelAssignment` stubs, since none of those tests are testing the KB
+wiring itself.
+
+**Measured running total: 73 of 117 `KB_ARTICLES` keys now wired** (70 before this batch + 3
+here). Full suite: 828/828 files, 7698/7698 tests passing. Build clean, eager payload entry
+425.37 KB gzip / 694.37 KB gzip eager total (budget 850 KB, 155.63 KB headroom). **Still open:**
+~44 unwired keys — the 13 remaining named candidates from the previous batch's list
+(`intelligence_brief`, `competitive_impact_guide`, `store_compare_guide`, `district_lens_guide`,
+`email_digests_guide`, `fcst_accuracy_guide`, `forms_print_guide`, `metric_lineage_guide`,
+`pay_rate_history_guide`, `count_cycle_guide`, `brief_guide`, `panel_index`), plus the same
+metric/engine-concept keys this backlog has consistently left cross-referenced rather than wired
+to any one panel, listed in full in the previous batch's entry above.

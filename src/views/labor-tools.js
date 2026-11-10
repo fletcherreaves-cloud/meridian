@@ -1410,7 +1410,8 @@ function StoreKBEditor({onClose, ds}) {
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
         span({style:{fontSize:'18px'}},'📍'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Restaurant Profiles'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},
+            'Restaurant Profiles',h(InfoIcon,{articleKey:'store_kb_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             'Operational context, structured profile, and data-derived intelligence per location.')
         ),

@@ -33,6 +33,7 @@ vi.mock('../engine/forecast.js', () => ({
     return { forecast: a + 50, isFuture: false, modelUsed: 'mock', lyAdj: a - 20 };
   },
   getModelAssignment: () => null,
+  InfoIcon: () => null, // LifeLenzBridgePanel's InfoIcon wiring (2026-11-10 KB rollout) isn't under test here
 }));
 
 const loadForecastSnapshotsMock = vi.fn(async () => []);

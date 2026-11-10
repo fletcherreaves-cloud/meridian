@@ -823,7 +823,12 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
 
   return h(ModalShell,{
     title:'💡 Revenue Intelligence Engine', onClose, maxWidth:1000, zIndex:Z.modal,
-    subtitle:'OEPE dollar value · Unrealized revenue · Daypart erosion · Competitive pressure signals · Multi-model projections',
+    // dispatch 2026-11-10 (KB rollout) -- InfoIcon lives in `subtitle`, never `title`: ModalShell
+    // passes `title` straight into ScreenshotShareButton's slugify(title)/native-share title,
+    // both of which expect a plain string -- a React node there degrades the screenshot filename
+    // and could throw at the Web Share API boundary. Same reason store_one_pager_guide etc. all
+    // wire InfoIcon through subtitle instead.
+    subtitle:h('span',null,'OEPE dollar value · Unrealized revenue · Daypart erosion · Competitive pressure signals · Multi-model projections',h(InfoIcon,{articleKey:'revenue_intelligence'})),
     headerExtra: btn({onClick:()=>window.print(),className:'btn btn-sm',style:{fontSize:'9px'},title:'Print / Save as PDF'},'🖨 Print / PDF'),
   },
 
