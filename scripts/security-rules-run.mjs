@@ -1146,6 +1146,23 @@ async function main() {
   }
 
   console.log(`[security-rules-run] done — ${totalFindings} finding(s) upserted across ${rules.length - skipped} rule(s) (${skipped} skipped), ${totalErrors} error(s)`);
+
+  // dispatch 2026-11-10 — security_findings_latest is now a materialized view (schema-security-
+  // findings-latest-materialized-2026-11-10.sql), not computed live on every Security panel page
+  // load, because the base table's daily growth (~9,000 rows/day, this loop's own upserts) had
+  // pushed the old live-computed view past the Postgres statement timeout on deep pages. Refresh
+  // it here, once per batch run, so the panel's "latest" read stays current without ever paying
+  // the live-computation cost itself. Non-fatal: a refresh failure (e.g. the migration hasn't
+  // been applied yet) logs loudly but does not fail the batch run or its findings — the panel
+  // falls back to whatever snapshot the view already has (or, pre-migration, the unchanged old
+  // plain view keeps working exactly as it does today).
+  const { error: refreshError } = await supabase.rpc('refresh_security_findings_latest');
+  if (refreshError) {
+    console.error('[security-rules-run] security_findings_latest refresh failed (non-fatal):', refreshError.message);
+  } else {
+    console.log('[security-rules-run] security_findings_latest refreshed');
+  }
+
   process.exit(totalErrors > 0 ? 1 : 0);
 }
 
