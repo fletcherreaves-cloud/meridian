@@ -137,9 +137,9 @@ describe('runSecurityEvents scoping override (dispatch #91 Case F)', () => {
       const p = runSecurityEvents('literal-test-token', ['2026-08-22'], tracker);
       await vi.runAllTimersAsync();
       await p;
-      // 28 stores (27 + 44689/Lindsay-standalone, added 2026-11-09) x 8 event tokens x 1 date,
-      // matching main()'s own unscoped call shape.
-      expect(calls.length).toBe(28 * 8);
+      // 28 stores (27 + 44689/Lindsay-standalone, added 2026-11-09) x 9 event tokens (8 original +
+      // drawer_open, task #131) x 1 date, matching main()'s own unscoped call shape.
+      expect(calls.length).toBe(28 * 9);
     } finally {
       vi.useRealTimers();
     }

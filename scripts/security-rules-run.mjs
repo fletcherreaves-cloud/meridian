@@ -712,6 +712,15 @@ export function supportsSecurityEventsMgr(rule) {
 
 // event_token -> the aggregated count column it contributes to. One line per token to add
 // coverage for a new event_token later -- never a per-rule special case.
+//
+// drawer_open (task #131, EVENT-004, 2026-11-10): added once a real backfill
+// (memory/finding-qsrsoft-security-events-drawer-open-2026-11-10.md) MEASURED, rather than
+// assumed, that the sessions-worked denominator actually works for this token -- every one of
+// 528 real (loc, date, crew) buckets with >=1 drawer_open event in the 7-day measurement also had
+// sessionCnt > 0 from that same crew member's OTHER flagged events that day (drawer_open rows
+// never carry a real session themselves -- see security-events.js's own sentinel-date comment --
+// but the bucket's sessionCnt comes from the whole day, not that one row). 0% hit an honest-null
+// floor. Not a theoretical fit, a measured one.
 export const EVENT_TOKEN_FIELD = {
   all_promo: 'allPromoCnt',
   t_red_before: 'tRedBeforeCnt',
@@ -721,6 +730,7 @@ export const EVENT_TOKEN_FIELD = {
   employee_meal: 'employeeMealCnt',
   manager_meal: 'managerMealCnt',
   pos_overring: 'posOverringCnt',
+  drawer_open: 'drawerOpenCnt',
 };
 
 export function mapSecurityEventRow(r) {
@@ -752,7 +762,7 @@ export function aggregateSecurityEventsBySubject(rawRows, subjectField) {
       buckets.set(key, {
         loc: r.loc, date: r.eventDt, emp: token, empToken: token,
         allPromoCnt: 0, tRedBeforeCnt: 0, tRedAfterCnt: 0, cashRefundCnt: 0, cashlessRefundCnt: 0,
-        employeeMealCnt: 0, managerMealCnt: 0, posOverringCnt: 0,
+        employeeMealCnt: 0, managerMealCnt: 0, posOverringCnt: 0, drawerOpenCnt: 0,
         _sessions: new Set(),
       });
     }

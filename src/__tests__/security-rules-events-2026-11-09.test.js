@@ -28,11 +28,14 @@ describe('mapSecurityEventRow() — snake_case qsr_security_events row -> camelC
   });
 });
 
-describe('EVENT_TOKEN_FIELD — every live EVENT_TOKENS value has a mapped column', () => {
-  it('covers all 8 enumerated tokens', () => {
+describe('EVENT_TOKEN_FIELD — every SCORED EVENT_TOKENS value has a mapped column', () => {
+  it('covers all 9 enumerated tokens (all_promo/t_red_before/t_red_after/cash_refund/cashless_refund '
+    + 'are deliberately NOT scored by any RULE -- see schema-security-rules-events-phase1.sql -- but '
+    + 'still need a count column so aggregateSecurityEventsBySubject can tally them if a future rule '
+    + 'wants to; drawer_open IS scored, by EVENT-004, task #131)', () => {
     const EVENT_TOKENS = [
       'all_promo', 't_red_before', 't_red_after', 'cash_refund', 'cashless_refund',
-      'employee_meal', 'manager_meal', 'pos_overring',
+      'employee_meal', 'manager_meal', 'pos_overring', 'drawer_open',
     ];
     for (const token of EVENT_TOKENS) expect(EVENT_TOKEN_FIELD[token]).toBeTypeOf('string');
   });
@@ -84,6 +87,23 @@ describe('aggregateSecurityEventsBySubject() — raw per-event rows -> one row p
     const out = aggregateSecurityEventsBySubject(raw, 'mgrToken');
     const day1 = out.find(r => r.empToken === 'mgr-X' && r.date === '2026-11-01');
     expect(day1).toMatchObject({ employeeMealCnt: 2, managerMealCnt: 1, posOverringCnt: 1, sessionCnt: 2 });
+  });
+  it('drawer_open (EVENT-004, task #131) increments drawerOpenCnt, and -- MEASURED, see '
+    + 'memory/finding-qsrsoft-security-events-drawer-open-2026-11-10.md -- its own row never '
+    + 'carries a session (pos_session_start_dt/_tm are the "0000-00-00"/"00:00:00" sentinel, '
+    + 'already nulled by security-events.js before this ever reaches the DB), so it must NOT add '
+    + 'to sessionCnt on its own; the session for this bucket comes only from the subject\'s OTHER '
+    + 'flagged events that same day', () => {
+    const withDrawer = [
+      ...raw,
+      { loc: '0013113', event_dt: '2026-11-01', event_token: 'drawer_open', crew_token: 'crew-A', mgr_token: 'mgr-X', pos_session_start_dt: null, pos_session_start_tm: null },
+      { loc: '0013113', event_dt: '2026-11-01', event_token: 'drawer_open', crew_token: 'crew-A', mgr_token: 'mgr-X', pos_session_start_dt: null, pos_session_start_tm: null },
+    ];
+    const out = aggregateSecurityEventsBySubject(withDrawer, 'crewToken');
+    const row = out.find(r => r.empToken === 'crew-A' && r.date === '2026-11-01');
+    // Still sessionCnt 2 (from employee_meal's 08:00 session + pos_overring's 14:00 session) --
+    // the two sessionless drawer_open rows add 0 sessions, only +2 to drawerOpenCnt.
+    expect(row).toMatchObject({ drawerOpenCnt: 2, employeeMealCnt: 2, posOverringCnt: 1, sessionCnt: 2 });
   });
   it('a row with no token for the requested subjectField is dropped, not crashed on', () => {
     const withNull = [...raw, { loc: 'A', event_dt: '2026-11-01', event_token: 'employee_meal', crew_token: null, mgr_token: null, pos_session_start_dt: '2026-11-01', pos_session_start_tm: '10:00:00' }];
@@ -156,5 +176,51 @@ describe('computeSecurityEventFindingsForRule() — EVENT-003-shaped manager sub
     expect(x.loc).toBe('S1');
     expect(x.value).toBeCloseTo(200, 5);
     expect(x.pass).toBe(true);
+  });
+});
+
+describe('computeSecurityEventFindingsForRule() — EVENT-004-shaped (drawer_open, task #131), z-score peer baseline', () => {
+  // EVENT-004's REAL shape, matching its live `security_rules` row
+  // (supabase/schema-security-rules-events-drawer-open-2026-11-10.sql) -- z-score, NOT a flat
+  // ratio threshold. ⚠️ Matches what EVENT-001/002/003 actually run as TODAY (confirmed via a
+  // live REST read, 2026-11-10): all three were upgraded from the flat-ratio shape their own
+  // phase1 SQL file still documents to z-score/threshold 2.5 sometime after that file was
+  // written, and EVENT-004 is built to match its siblings' CURRENT shape, not the stale
+  // phase1 file's. See memory/finding-qsrsoft-security-events-drawer-open-2026-11-10.md.
+  // Same peer-baseline convention as EVENT-001/002 (store colleagues, not EVENT-003's store-vs-
+  // store), min_denominator 5, scale 1000.
+  const rule = {
+    rule_id: 'EVENT-004', baseline_type: 'peer',
+    logic_type: 'z-score',
+    logic_expression: { numerator: { field: 'drawerOpenCnt', agg: 'sum' }, denominator: { field: 'sessionCnt', agg: 'sum' }, scale: 1000, comparator: 'gte', min_denominator: 5 },
+    threshold: { default: 2.5 },
+  };
+
+  // Store S1: crew-A (subject) rate 50/1,000 sessions. Peers crew-B..crew-F (5 peers, same store,
+  // same window): 8/9/11/12/10 per 1,000 -- same hand-computed peer stats as this repo's own
+  // LABOR-003/INV-004 z-score fixtures (mean=10, stdev=sqrt(2)~=1.4142). sessionCnt=1000 for
+  // every row so drawerOpenCnt IS the per-1,000 rate directly. z=(50-10)/1.4142~=28.3, far past
+  // threshold 2.5.
+  const rows = [
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-A', empToken: 'crew-A', drawerOpenCnt: 50, sessionCnt: 1000 },
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-B', empToken: 'crew-B', drawerOpenCnt: 8,  sessionCnt: 1000 },
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-C', empToken: 'crew-C', drawerOpenCnt: 9,  sessionCnt: 1000 },
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-D', empToken: 'crew-D', drawerOpenCnt: 11, sessionCnt: 1000 },
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-E', empToken: 'crew-E', drawerOpenCnt: 12, sessionCnt: 1000 },
+    { loc: 'S1', date: '2026-11-01', emp: 'crew-F', empToken: 'crew-F', drawerOpenCnt: 10, sessionCnt: 1000 },
+  ];
+
+  it('flags the outlier crew member, z-scored against the other 5 crew at the same store', () => {
+    const findings = computeSecurityEventFindingsForRule(rule, rows, { windowStart: '2026-11-01', windowEnd: '2026-11-09' });
+    const a = findings.find(f => f.empToken === 'crew-A');
+    expect(a.value).toBeCloseTo(50, 6);
+    expect(a.pass).toBe(true);
+    expect(a.baselineContext.mean).toBeCloseTo(10, 6);
+    expect(a.baselineContext.stdev).toBeCloseTo(Math.sqrt(2), 4);
+  });
+  it('an in-range peer stays clear (a real, decided pass:false, not a null)', () => {
+    const findings = computeSecurityEventFindingsForRule(rule, rows, { windowStart: '2026-11-01', windowEnd: '2026-11-09' });
+    const b = findings.find(f => f.empToken === 'crew-B');
+    expect(b.pass).toBe(false);
   });
 });
