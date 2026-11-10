@@ -113,6 +113,34 @@ describe('WeeklyCountStatusPanel', () => {
     expect(container.textContent).toMatch(/changed\?/);
   });
 
+  it('multi:true (sweep:panel-contract, 2026-11-10) -- picking 2 stores in the dropdown multi-select narrows the roster to exactly those, labeled "Custom (2 stores)"', async () => {
+    const curP = new Date().toISOString().slice(0, 7);
+    _onHandByPeriod[curP] = [
+      ...fullStoreRows('3708', { lastCounted: today }),
+      ...fullStoreRows('6178', { lastCounted: today }),
+      ...fullStoreRows('5183', { lastCounted: today }),
+    ];
+    await render();
+    expect(container.textContent).toContain('#3708');
+    expect(container.textContent).toContain('#6178');
+    expect(container.textContent).toContain('#5183');
+
+    const select = container.querySelector('select[multiple]');
+    expect(select, 'dropdown multi-select not found').toBeTruthy();
+    const opt3708 = [...select.options].find(o => o.value === '3708');
+    const opt6178 = [...select.options].find(o => o.value === '6178');
+    expect(opt3708 && opt6178, 'expected store options not found in the multi-select').toBeTruthy();
+    opt3708.selected = true;
+    opt6178.selected = true;
+    await act(async () => { select.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(container.textContent).toContain('Custom (2 stores)');
+    expect(container.textContent).toContain('#3708');
+    expect(container.textContent).toContain('#6178');
+    expect(container.textContent).not.toContain('#5183');
+  });
+
   it('Print and CSV buttons are present and do not throw', async () => {
     const curP = new Date().toISOString().slice(0, 7);
     _onHandByPeriod[curP] = fullStoreRows('3708', { lastCounted: today });

@@ -144,12 +144,18 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
     : locScope.level === 'store' ? locScope.id : 'all';
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const locs = useMemo(() => {
+    // multi (sweep:panel-contract, 2026-11-10 -- same pattern count-timing-report.js/
+    // missed-count-report.js already use): an explicit loc list straight off locScope,
+    // bypassing the scope-string translation entirely, since an arbitrary cross-state/
+    // cross-patch combination has no single token to encode it as.
+    if (locScope.level === 'multi') return (locScope.ids || []).map(l => unpad(l));
     if (String(scope).startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => unpad(l));
     return Object.keys(STORE_NAMES).filter(l =>
       scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
         : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
-  }, [scope, groups]);
-  const scopeLabel = scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
+  }, [scope, groups, locScope]);
+  const scopeLabel = locScope.level === 'multi' ? `Custom (${locs.length} store${locs.length === 1 ? '' : 's'})`
+    : scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
     : String(scope).startsWith('grp:') ? ('Patch ' + scope.slice(4)) : (sNameC(scope) || sName(scope));
 
   // Period selector — which month's on-hand snapshot to view (mirrors Inventory Control's
@@ -261,7 +267,7 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   const doCsv = () => downloadCsv(reportCSV(rows), `weekly-count-status-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-week-of-${dKey(weekStart)}.csv`);
 
   const headerRow = div({ style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown' }),
+    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown', multi: true }),
     h('input', {
       type: 'date', value: pickedDate, onChange: e => setPickedDate(e.target.value),
       title: 'Pick any day — the roster resolves to that day\'s whole calendar week',

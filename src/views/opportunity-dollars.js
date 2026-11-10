@@ -75,7 +75,11 @@ export function OpportunityDollars({ stores, ds, onClose, onSelectStore }) {
         onClick: () => setWindowMode(w.id),
       }, w.label))),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown' })),
+      // multi:true (sweep:panel-contract, 2026-11-10) -- locs already routes through
+      // locationSelectorLocs(scope, tree), which has handled the 'multi' level since 2026-11-02
+      // (see panel-contract.md); no other change needed, same as pricing-engine.js's own
+      // Cross-Store Compare conversion.
+      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, variant: 'dropdown', multi: true })),
     div({ 'data-testid': 'opportunity-headline', style: { padding: 14, borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' } },
       div(null,
         div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } },
