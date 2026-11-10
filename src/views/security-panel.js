@@ -45,6 +45,11 @@ import {
   selectDriftCandidates, computeDriftRollup, driftDirectionForStore, driftKeyFor,
   driftTrendBadge, TREND_BADGE_META, DRIFT_LOOKBACK_WINDOWS,
 } from '../engine/security-drift.js';
+// dispatch 2026-11-10 follow-on -- persistence (the deep-dive doc's own §3 `persistence_multiplier`
+// score term). Deliberately reuses the SAME multi-window `driftHistory` fetched above for drift --
+// see security-persistence.js's own header for why this is a separate concept/file from drift, and
+// why it needs no second bulk query.
+import { computePersistenceRollup } from '../engine/security-persistence.js';
 // dispatch #100 -- the date-range control reuses the shared DateRangeControl (issue #126 Spine 1)
 // rather than a bespoke date-input pair, matching this repo's "don't invent a new pattern"
 // standing rule.
@@ -1930,7 +1935,11 @@ export function SecurityPanel({ userRole, onClose }) {
   const [driftHistory, setDriftHistory] = React.useState(null); // null = not fetched yet; Map once resolved (possibly empty)
   const driftFetchAttempted = React.useRef(false);
   React.useEffect(() => {
-    if (view !== 'briefing' || dataState !== 'loaded' || driftFetchAttempted.current || !findings.length) return;
+    // dispatch 2026-11-10 follow-on -- widened to also fire for Command Center: that view's own
+    // store-health grid (reusing SecurityHealthGrid/healthList verbatim) and this same
+    // driftHistory now also feed persistence's score term, so Command Center needs this fetch too,
+    // not just Briefing.
+    if ((view !== 'briefing' && view !== 'command') || dataState !== 'loaded' || driftFetchAttempted.current || !findings.length) return;
     driftFetchAttempted.current = true;
     let cancelled = false;
     (async () => {
@@ -1973,6 +1982,14 @@ export function SecurityPanel({ userRole, onClose }) {
   const driftContributions = React.useMemo(() => (driftRollup
     ? [...driftRollup.byLoc.values()].filter(r => r.contribution > 0).map(r => ({ loc: r.loc, amount: r.contribution }))
     : null), [driftRollup]);
+  // dispatch 2026-11-10 follow-on -- persistence, computed from the SAME driftHistory fetch (see
+  // security-persistence.js's own header for why no second query is needed). null until that fetch
+  // resolves, exactly like driftContributions -- storeHealthList already treats either extra's
+  // absence as "render Phase 1's own numbers, no extras yet," so this needs no new empty-state.
+  const persistenceRollup = React.useMemo(() => (driftHistory ? computePersistenceRollup(driftHistory, rulesById) : null), [driftHistory, rulesById]);
+  const persistenceContributions = React.useMemo(() => (persistenceRollup
+    ? [...persistenceRollup.values()].filter(r => r.contribution > 0).map(r => ({ loc: r.loc, amount: r.contribution }))
+    : null), [persistenceRollup]);
   const driftDirectionByLoc = React.useMemo(() => {
     if (!driftRollup) return null;
     const out = {};
@@ -1986,8 +2003,8 @@ export function SecurityPanel({ userRole, onClose }) {
   // is currently selected for the briefing feed below it. Phase 2 follow-on: drift extras folded
   // in via the SAME optional, additive hook computeStoreHealth itself documents -- omitted
   // entirely (driftContributions/driftDirectionByLoc both null) until the fetch above resolves.
-  const healthList = React.useMemo(() => storeHealthList(findings, rulesById, { driftContributions, driftDirectionByLoc }),
-    [findings, rulesById, driftContributions, driftDirectionByLoc]);
+  const healthList = React.useMemo(() => storeHealthList(findings, rulesById, { driftContributions, driftDirectionByLoc, persistenceContributions }),
+    [findings, rulesById, driftContributions, driftDirectionByLoc, persistenceContributions]);
 
   // dispatch #56 Part C -- "list the name of the product." `${loc}|${wrin}|${period}` ->
   // {descr, cls} from qsr_variance_stat, so an inventory subject's heading can show the item name

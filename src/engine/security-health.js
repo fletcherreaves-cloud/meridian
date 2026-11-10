@@ -116,8 +116,62 @@ function tierOf(score) {
 // Collapsing those two would make every tile read as a confident "→ flat" before the drift fetch
 // has even resolved -- a fabricated certainty this file's own "honest, never invented" posture
 // (findingMagnitude's own header) exists to avoid.
+//
+// ── Convergence (dispatch 2026-11-10, Phase 2) ───────────────────────────────────────────────────
+// The owner's own §3 formula named `convergence_multiplier` as a score term, separate from the
+// "2+ Signal Convergence" TILE security-panel.js's SecuritySummaryBar already shows -- that tile
+// is a count, it never touched the score itself. Needs NO new fetch: convergence is "how many
+// DISTINCT rules currently flag the SAME subject," which is already fully answerable from the same
+// bulk `findings` array computeStoreHealth already receives (security-panel.js's own
+// groupFindingsBySubject proves this -- its flaggedCount is exactly this count, computed from the
+// identical bulk load). groupFlaggedRuleIdsBySubject below is a minimal, engine-local version of
+// that same subject_key grouping (loc + emp/wrin), not a reuse of groupFindingsBySubject itself --
+// that function lives in security-panel.js, a view file, and this engine layer must not import
+// from it (the dependency has to run view -> engine, never the other way).
+//
+// First-pass weight, same honest tier as HEALTH_SCORE_SCALE's own original guess and drift.js's
+// EARLY/CONFIRMED weights: not measured against real score OUTCOMES (none exist yet to measure
+// against -- the same limitation every score constant in this codebase starts from). Expressed as
+// a per-SUBJECT bonus, not a per-finding multiplier -- each additional corroborating rule beyond
+// the first adds CONVERGENCE_WEIGHT × that subject's own worst flagged severity, capped so one
+// subject converging across many domains can't dominate a store's score unboundedly.
+export const CONVERGENCE_WEIGHT = 1.5; // per extra independent rule flagging the same subject
+export const CONVERGENCE_BONUS_CAP = 30; // raw units (pre HEALTH_SCORE_SCALE), same scale findingContribution uses
+
+// Map<subjectKey, {loc, ruleIds: Set<ruleId>, maxSeverity}> from the bulk `findings` array --
+// CURRENTLY flagged (pass===true), non-hygiene rows only, same filter findingContribution itself
+// applies. Key shape mirrors groupFindingsBySubject's own (security-panel.js) closely enough to
+// group the same way, but is NOT that function -- see this section's own header for why.
+export function groupFlaggedRuleIdsBySubject(findings, rulesById) {
+  const bySubject = new Map();
+  for (const f of (findings || [])) {
+    if (!f?.loc || f.lifecycleCategory || f.pass !== true) continue;
+    const rule = rulesById?.[f.ruleId];
+    if (!rule) continue;
+    const subjectId = f.empToken || f.wrin;
+    if (!subjectId) continue;
+    const key = f.loc + '::' + (f.empToken ? 'emp:' : 'wrin:') + subjectId;
+    if (!bySubject.has(key)) bySubject.set(key, { loc: f.loc, ruleIds: new Set(), maxSeverity: 0 });
+    const row = bySubject.get(key);
+    row.ruleIds.add(f.ruleId);
+    row.maxSeverity = Math.max(row.maxSeverity, Number.isFinite(rule.severity) ? rule.severity : 1);
+  }
+  return bySubject;
+}
+
+// convergenceContribution(ruleCount, maxSeverity) -> a non-negative scalar, 0 for a single-rule
+// subject (N<=1 -- nothing to corroborate yet). See this section's header for the formula's intent.
+export function convergenceContribution(ruleCount, maxSeverity) {
+  if (!Number.isFinite(ruleCount) || ruleCount <= 1) return 0;
+  const raw = CONVERGENCE_WEIGHT * (ruleCount - 1) * (Number.isFinite(maxSeverity) ? maxSeverity : 1);
+  return Math.min(CONVERGENCE_BONUS_CAP, raw);
+}
+
 // Returns a Map keyed by loc -> { loc, score, tier, flaggedCount, criticalCount, insufficientCount, driftDirection }.
-export function computeStoreHealth(findings, rulesById, { driftContributions, driftDirectionByLoc } = {}) {
+// `persistenceContributions` is the SAME {loc, amount} shape driftContributions already uses --
+// see src/engine/security-persistence.js's own header for why it reuses the exact multi-window
+// history security-panel.js already fetches for drift, rather than a second bulk query.
+export function computeStoreHealth(findings, rulesById, { driftContributions, driftDirectionByLoc, persistenceContributions } = {}) {
   const byLoc = new Map();
   const touch = (loc) => {
     if (!byLoc.has(loc)) byLoc.set(loc, { loc, score: 0, flaggedCount: 0, criticalCount: 0, insufficientCount: 0, driftDirection: null });
@@ -135,6 +189,13 @@ export function computeStoreHealth(findings, rulesById, { driftContributions, dr
     row.flaggedCount += 1;
     if (rule.severity >= 4) row.criticalCount += 1;
   }
+  // Convergence's own additive term -- see this file's header section on it. A pure function of
+  // `findings`/`rulesById`, already in hand, so this always runs (never gated behind a fetch the
+  // way drift/persistence are).
+  for (const row of groupFlaggedRuleIdsBySubject(findings, rulesById).values()) {
+    const bonus = convergenceContribution(row.ruleIds.size, row.maxSeverity);
+    if (bonus > 0) touch(row.loc).score += bonus;
+  }
   // Drift's own additive term -- a worsening trend, pre-threshold or confirmed-and-still-rising,
   // nudges the SAME score the static rules already built, in the SAME severity×magnitude units
   // (security-drift.js's own header), never a second scale. This can touch() a loc the static
@@ -146,6 +207,15 @@ export function computeStoreHealth(findings, rulesById, { driftContributions, dr
     for (const d of driftContributions) {
       if (!d?.loc || !(d.amount > 0)) continue;
       touch(d.loc).score += d.amount;
+    }
+  }
+  // Persistence's own additive term -- same shape/caller pattern as drift immediately above
+  // (security-persistence.js's own computePersistenceRollup produces this), deliberately omitted
+  // (undefined) until that fetch resolves, same progressive-disclosure posture drift already has.
+  if (Array.isArray(persistenceContributions)) {
+    for (const p of persistenceContributions) {
+      if (!p?.loc || !(p.amount > 0)) continue;
+      touch(p.loc).score += p.amount;
     }
   }
   if (driftDirectionByLoc) {
