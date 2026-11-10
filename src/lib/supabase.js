@@ -5501,6 +5501,32 @@ export async function loadQsrInventorySummaryFreshness() {
   return [{ date: data[0].updated_at }];
 }
 
+// Same lightweight-probe pattern as loadQsrInventorySummaryFreshness() above, for the two
+// On-Hand/Variance streams named in stream-freshness.js's own header as deliberately excluded
+// from STREAMS ("qsr_onhand ... can't be freshness-checked from ds until that wiring lands").
+// Both tables are period-keyed, not daily-dated (same reason the full loaders below take
+// `{period}`, not a day window), and both update_at as a whole-batch upsert per pull run
+// (qsrsoft-onhand-pull.mjs / qsrsoft-variance-pull.mjs) — same shape already confirmed live for
+// qsr_inventory_summary above, not re-measured per-table here since the pull scripts use the
+// identical upsert pattern. One row, one column each — task #137 (On-Hand/Variance freshness
+// badges), closing the gap the header comment names instead of wiring the full per-row loaders
+// (loadQsrOnHand/loadQsrVarianceStat, both unwindowed ~district-wide reads) into eager startup
+// load just to get a date.
+export async function loadQsrOnHandFreshness() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('qsr_onhand')
+    .select('updated_at').order('updated_at', { ascending: false }).limit(1);
+  if (error || !data?.length || !data[0].updated_at) return [];
+  return [{ date: data[0].updated_at }];
+}
+export async function loadQsrVarianceStatFreshness() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('qsr_variance_stat')
+    .select('updated_at').order('updated_at', { ascending: false }).limit(1);
+  if (error || !data?.length || !data[0].updated_at) return [];
+  return [{ date: data[0].updated_at }];
+}
+
 // ── Per-store EOM status (dashboard + notification + comms verification) ───────
 export async function saveEomCountStatus(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

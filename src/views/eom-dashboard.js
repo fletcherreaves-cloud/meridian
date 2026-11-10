@@ -40,6 +40,7 @@ import {
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { metricSeries, metricSumRatio } from '../engine/metric-source.js';
+import { streamByKey, severityColor } from '../engine/stream-freshness.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
 import { CountTimingReportModal } from './count-timing-report.js';
 import { MissedCountReportModal } from './missed-count-report.js';
@@ -80,6 +81,23 @@ const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
+
+// On-Hand / Variance pull freshness badge (task #137) — same stale-dot visual language as
+// analytics.js's Data Manager staleDot / fob-eom.js's freshBadge, off stream-freshness.js's own
+// STREAMS/severityColor so this panel can never disagree with the Data Manager's own verdict
+// for the same stream. `null` (nothing rendered) until that stream's lightweight freshness
+// probe has resolved into ds.
+export function freshBadge(ds, key, label) {
+  const s = streamByKey(ds, key);
+  if (!s) return null;
+  const ageLbl = s.staleDays === Infinity ? 'no usable date' : s.staleDays === 0 ? 'today' : s.staleDays + 'd ago';
+  return span({
+    title: `${s.label} last updated ${ageLbl}`,
+    style: { display: 'inline-flex', alignItems: 'center', gap: 4 },
+  },
+    span({ style: { display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: severityColor(s.severity), flexShrink: 0 } }),
+    label + ': ' + ageLbl);
+}
 
 // Last `n` period keys up to and including `period` (oldest→newest) — the look-back window
 // for Action-Items provenance (per-item month-over-month variance history).
@@ -4596,7 +4614,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const stores = d ? d.stores : [];
       const takenLbl = mon?.takenAt ? new Date(mon.takenAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
       return h(ModalShell, {
-        title: `📸 EOM Change Monitor — ${scopeLabel()}`, onClose: () => setMonOpen(false), maxWidth: 1000, closeOnBackdrop: true,
+        title: `📸 EOM Change Monitor — ${scopeLabel()}`, subtitle: freshBadge(ds, 'variance', 'Variance Stat pull'),
+        onClose: () => setMonOpen(false), maxWidth: 1000, closeOnBackdrop: true,
       },
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
             monView === 'progression'

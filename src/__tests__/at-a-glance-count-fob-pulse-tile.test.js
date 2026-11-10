@@ -96,3 +96,41 @@ describe('Count & FOB Pulse tile (dispatch 2026-10-12)', () => {
     expect(container.textContent).toContain('1/2');
   });
 });
+
+// Task #137 — On-Hand pull freshness badge, surfaced on this always-on tile (not just the
+// EOM-window-gated EOMScoreboardTile) since this is the one an operator sees any day of the
+// month. Renders the real AtAGlance -> CountFobPulseTile call site per this file's own rule.
+describe('Count & FOB Pulse tile — On-Hand freshness badge (task #137)', () => {
+  let container, root;
+  beforeEach(() => {
+    vi.setSystemTime(today);
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); vi.useRealTimers(); });
+
+  const render = async (dsWithFreshness) => {
+    await act(async () => { root.render(h(AtAGlance, { ...baseProps, ds: dsWithFreshness })); await new Promise(r => setTimeout(r, 0)); });
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+  };
+
+  it('a fresh On-Hand probe renders a title naming the stream and "today"', async () => {
+    await render({ ...ds, qsrOnHandFreshnessRows: [{ date: todayStr }] });
+    const dot = [...container.querySelectorAll('[title*="On-Hand"]')].find(el => /today/.test(el.getAttribute('title') || ''));
+    expect(dot).toBeTruthy();
+  });
+
+  it('a stale On-Hand probe (6 days behind) surfaces its age in the title, not silently hidden', async () => {
+    await render({ ...ds, qsrOnHandFreshnessRows: [{ date: '2026-10-06' }] }); // 6 days before Oct 12
+    const dot = [...container.querySelectorAll('[title*="On-Hand"]')].find(el => /6d old/.test(el.getAttribute('title') || ''));
+    expect(dot).toBeTruthy();
+  });
+
+  it('no On-Hand freshness probe loaded this session renders no badge (not a false stale dot)', async () => {
+    await render(ds); // the base fixture has no qsrOnHandFreshnessRows at all
+    expect([...container.querySelectorAll('[title*="On-Hand"]')].length).toBe(0);
+  });
+});
