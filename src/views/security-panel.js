@@ -616,6 +616,14 @@ function SubjectHistory({ group }) {
 
 function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
+    // Owner feedback, 2026-11-10: subjectLabel was already threaded into this component (used
+    // inside each verdict's buildDecisionSentence), but never rendered on its own -- a name stated
+    // only once, mid-sentence, inside the first verdict block, is easy to miss, especially once the
+    // collapsed row's own Subject column has scrolled out of view above the expanded panel. A
+    // standalone header fixes that without duplicating subjectLabel's derivation (subjectLabelFor's
+    // single implementation, already the caller's job) or adding a second name source to drift
+    // against SubjectRow's own collapsed-row RevealName.
+    div({ style: { fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 6 } }, subjectLabel),
     h(SubjectHistory, { group }),
     group.verdicts.map((v, i) => {
       const rule = rulesById[v.ruleId] || {};
