@@ -561,7 +561,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
   it('admin: never calls loadGmIdentityRevealEnabled (not needed -- always allowed), and loads findings', async () => {
     loadSecurityFindingsMock.mockResolvedValue(CASH_FINDINGS);
     loadSecurityRulesMock.mockResolvedValue([{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash O/S', active: true }]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(loadGmIdentityRevealEnabledMock).not.toHaveBeenCalled();
     expect(loadSecurityFindingsMock).toHaveBeenCalled();
@@ -572,7 +572,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
 
   it('manager with the org flag OFF: renders "not permitted", and NEVER calls loadSecurityFindings -- an empty read must never stand in for a permission check', async () => {
     loadGmIdentityRevealEnabledMock.mockResolvedValue(false);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/not permitted/i);
     expect(container.textContent).not.toMatch(/no findings/i);
@@ -585,7 +585,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
     loadGmIdentityRevealEnabledMock.mockResolvedValue(true);
     loadSecurityFindingsMock.mockResolvedValue([]);
     loadSecurityRulesMock.mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(loadGmIdentityRevealEnabledMock).toHaveBeenCalled();
     expect(loadSecurityFindingsMock).toHaveBeenCalled();
@@ -593,7 +593,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
   });
 
   it('an ineligible role (e.g. office_staff) is denied immediately, without an org_config round-trip', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'office_staff', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'office_staff', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/not permitted/i);
     expect(loadGmIdentityRevealEnabledMock).not.toHaveBeenCalled();
@@ -603,7 +603,7 @@ describe('SecurityPanel — permission states are visually distinct, and a block
   it('permitted-but-genuinely-empty reads a DIFFERENT message than not-permitted', async () => {
     loadSecurityFindingsMock.mockResolvedValue([]);
     loadSecurityRulesMock.mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/no findings match/i);
     expect(container.textContent).not.toMatch(/not permitted/i);
@@ -641,7 +641,7 @@ describe('SecurityPanel — live decision-first summary bar (ports buildSecurity
     // Alice: CASH-001 + CASH-002 both pass:true -- 2 signals, converging. Bob: CASH-001 only --
     // 1 signal. Carol: pass:null on CASH-001 -- 0 signals, filtered out by the default minSignals:1.
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Subjects Flagged/);
     expect(container.textContent).toMatch(/Total Signals/);
@@ -656,7 +656,7 @@ describe('SecurityPanel — live decision-first summary bar (ports buildSecurity
       { empToken: 'tok-erin', wrin: null, loc: '0000002', ruleId: 'CASH-002', pass: true, value: 20, thresholdUsed: 15, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
     ];
     loadSecurityFindingsMock.mockReset().mockResolvedValue(singleSignalFindings);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/2 subjects flagged, one signal each — worth a look, nothing converging yet/);
     expect(container.textContent).not.toMatch(/strongest lead/);
@@ -664,7 +664,7 @@ describe('SecurityPanel — live decision-first summary bar (ports buildSecurity
 
   it('renders no summary bar when nothing is flagged -- the existing "no findings" message covers it alone', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/no findings match/i);
     expect(container.textContent).not.toMatch(/Subjects Flagged/);
@@ -695,7 +695,7 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
 
   it('the legend shows by default and defines Undetermined as distinct from Clear', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/What am I looking at\?/);
     expect(container.textContent).toMatch(/NOT the same as Clear/);
@@ -703,7 +703,7 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
 
   it('dismissing the legend hides it and is remembered (localStorage), then does not reappear on remount', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const dismissBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Got it, hide this');
     expect(dismissBtn).toBeTruthy();
@@ -713,14 +713,14 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
     act(() => { root.unmount(); });
     container.remove();
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).not.toMatch(/What am I looking at\?/);
   });
 
   it('expanding a subject renders units, the decision sentence, and the investigation action -- through the real panel, not the pure helper alone', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     // Click Alice's row to expand it (the store label is a span; its grandparent div is the
     // clickable row -- SubjectRow's onClick sits on the wrapper div, not the span itself).
@@ -774,7 +774,7 @@ describe('SecurityPanel — dispatch #56 Part A: the rule directory renders enti
   });
 
   async function openDirectory() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
     expect(toggle).toBeTruthy();
@@ -878,7 +878,7 @@ describe('SecurityPanel — dispatch #50 Part A: the scroll-fix minHeight:0 is w
   }
 
   it('on the Cash tab (default, 40 findings), both the root column and the scroll body carry minHeight:0', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const rootCol = findRootColumn();
     const scrollBody = findScrollBody();
@@ -894,7 +894,7 @@ describe('SecurityPanel — dispatch #50 Part A: the scroll-fix minHeight:0 is w
   });
 
   it('switching to the Inventory tab keeps both fixes in place -- the wiring is not tab-specific', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Inventory'));
     expect(invTabBtn).toBeTruthy();
@@ -910,7 +910,7 @@ describe('SecurityPanel — dispatch #50 Part A: the scroll-fix minHeight:0 is w
   });
 
   it('expanding a finding (accordion changes content height) does not remove either minHeight:0 -- the fix survives the exact interaction the dispatch calls out', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const someRow = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const clickable = someRow?.parentElement;
@@ -956,7 +956,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
   });
 
   it('admin: calls reveal_employee_identities_bulk once on mount with every distinct empToken and a synthetic reason, and names render without any click', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(rpcMock).toHaveBeenCalledTimes(1);
     const [name, args] = rpcMock.mock.calls[0];
@@ -972,7 +972,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
   });
 
   it('owner: same frictionless bulk-reveal as admin -- both are the "Developer/Admin/Owner" privileged tier dispatch #50 describes', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'owner', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'owner', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(rpcMock).toHaveBeenCalledTimes(1);
     await flush(container);
@@ -981,7 +981,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
   });
 
   it('area_supervisor: never calls the bulk RPC -- keeps the existing click-through path unchanged, dispatch #50\'s own explicit scope', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'area_supervisor', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'area_supervisor', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(rpcMock).not.toHaveBeenCalled();
     expect(container.textContent).toMatch(/🔒 reveal/);
@@ -989,7 +989,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
   });
 
   it('manager (GM), even with the org reveal flag on: never calls the bulk RPC -- only the admin tier gets the frictionless path', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(rpcMock).not.toHaveBeenCalled();
     expect(container.textContent).toMatch(/🔒 reveal/);
@@ -997,7 +997,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
 
   it('a failed bulk call leaves the click-through path intact for admin -- no crash, names stay behind "🔒 reveal"', async () => {
     rpcMock.mockReset().mockResolvedValue({ data: null, error: { message: 'network error' } });
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(rpcMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toMatch(/🔒 reveal/);
@@ -1010,7 +1010,7 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
   // already received subjectLabel as a prop (used inside buildDecisionSentence) before this fix;
   // what was missing was ever rendering it on its own.
   it('expanding a row shows the subject name as its own standalone header, not just inside the decision sentence', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const aliceRow = storeLabel?.parentElement;
@@ -1076,7 +1076,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
   it('inventory: clicking "Investigate further" fetches the drill-down on demand (not before), separate from dispatch #56 Part C\'s own lighter per-tab item-name preload, and renders all five measurements with a baseline beside each number', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(INV_FINDINGS);
     loadSecurityRulesMock.mockReset().mockResolvedValue(INV_RULES);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1118,7 +1118,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
       { loc: '0000001', period: '2026-08', wrin: 'LID', cls: 'paper', descr: 'Cold Cup Lid' },
       { loc: '0000002', period: '2026-08', wrin: 'BUN', cls: 'food', descr: 'Regular Bun' },
     ]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1135,7 +1135,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
   it('cash: renders the flag rate and rule-mix through the real panel for an employee subject', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_DRILLDOWN_FINDINGS);
     loadSecurityRulesMock.mockReset().mockResolvedValue(CASH_RULES);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const subjectRow = storeLabel?.parentElement;
@@ -1159,7 +1159,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     loadQsrSecurityEventsForSubjectMock.mockReset().mockResolvedValue([
       { id: 'evt-1', loc: '0000001', eventToken: 'all_promo', eventDt: '2026-08-14', eventTm: '23:44:07', regNum: 'POS0013', orderKey: 'POS0012:1', eventName: 'Mobile Promo', eventDisplay: 'Mobile Promo', eventAmt: 3.89, remainingAmt: 5.21, tenderType: 'Cash', daypartName: 'Dinner', crewToken: 'tok-alice', crewBadge: '91', mgrToken: null, mgrBadge: null, mgrCode: 'Unknown' },
     ]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const subjectRow = storeLabel?.parentElement;
@@ -1184,7 +1184,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_DRILLDOWN_FINDINGS);
     loadSecurityRulesMock.mockReset().mockResolvedValue(CASH_RULES);
     loadQsrSecurityEventsForSubjectMock.mockReset().mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const subjectRow = storeLabel?.parentElement;
@@ -1237,7 +1237,7 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
   });
 
   async function expandAliceRow() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const row = storeLabel?.parentElement;
@@ -1256,7 +1256,7 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
 
   it('a single-window subject gets a history line but no redundant per-window list (identical to the one verdict already shown)', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1319,7 +1319,7 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
         { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
       ];
       loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue(bobFullHistory);
-      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
       await flush(container);
       // SubjectDetail (where the trend line lives) only mounts once a row is expanded -- nothing
       // to assert on the collapsed state here, and the fetch itself is expand-triggered anyway
@@ -1337,7 +1337,7 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
     it('does not re-fetch a subject whose full history is already cached', async () => {
       loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
       loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
-      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
       await flush(container);
       const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
       const row = storeLabel.parentElement;
@@ -1353,7 +1353,7 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
     it('a subject whose lazy fetch resolves empty keeps rendering the bulk-loaded (single-window) history -- never blanks out', async () => {
       loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
       loadSecurityFindingsForSubjectMock.mockReset().mockResolvedValue([]);
-      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+      await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
       await flush(container);
       const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
       await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1399,7 +1399,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('before selecting any pill, all three real stores render unfiltered, and there is no flat ~30-pill Org/Store row any more (the mobile-usability bug this dispatch fixes)', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Store 13113/);
     expect(container.textContent).toMatch(/Store 5183/);
@@ -1417,7 +1417,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('picking the OK State pill filters to exactly the OK stores (13113, 5183), excluding the FL store (6178) -- same store set the old MCDOK Org pill reached', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('OK'));
     expect(container.textContent).toMatch(/Store 13113/);
@@ -1429,7 +1429,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('picking the FL State pill filters to exactly the FL store (6178), excluding both OK stores -- same store set the old Emerald Arches Org pill reached', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('FL'));
     expect(container.textContent).toMatch(/Store 6178/);
@@ -1438,7 +1438,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('the Patch tier is a genuinely finer scope than the old Org tier -- Robert Spencer isolates 13113 from 5183, though both are OK/mcdok', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('OK'));
     await click(btnByText('Robert Spencer'));
@@ -1450,7 +1450,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('the other Patch under the same state isolates the sibling store instead', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('OK'));
     await click(btnByText('Krystiana Langford'));
@@ -1460,7 +1460,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('a Store pill (reached via State -> Patch) filters to EXACTLY that store', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('OK'));
     await click(btnByText('Robert Spencer'));
@@ -1475,7 +1475,7 @@ describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -
   });
 
   it('"All Locations" resets back to unfiltered after a State/Patch/Store selection', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     await click(btnByText('OK'));
     await click(btnByText('Robert Spencer'));
@@ -1519,7 +1519,7 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
   });
 
   it('defaults to "All dates" -- both the recent and the distant subject render unfiltered', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Store 3708/);
     expect(container.textContent).toMatch(/Store 5183/);
@@ -1528,7 +1528,7 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
   });
 
   it('the 90D preset excludes the distant (400-day-old) subject and keeps the recent one', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
     expect(preset90).toBeTruthy();
@@ -1538,7 +1538,7 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
   });
 
   it('clicking "All dates" after a preset resets back to unbounded -- both subjects return', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
     await act(async () => { preset90.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1550,7 +1550,7 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
   });
 
   it('the control names its own filtering basis explicitly (windowEnd, not an ambiguous "date range")', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Findings with a window ending:/);
   });
@@ -1563,7 +1563,7 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
   // if `dateRange` were ever added to that effect's dependency array, each click below would add
   // another call.
   it('changing the date-range control (preset, then All dates) never re-triggers loadSecurityFindings -- it only re-filters already-loaded findings client-side', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(loadSecurityFindingsMock).toHaveBeenCalledTimes(1);
     const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
@@ -1608,7 +1608,7 @@ describe('SecurityPanel — dispatch #100 follow-up: rule pills carry a short de
   });
 
   it('every Cash rule pill shows both its ruleId and a short descriptor, and inactive CASH-003 still carries its ⏸ marker', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const pillText = id => [...container.querySelectorAll('button')].find(b => b.textContent.startsWith(id))?.textContent;
     expect(pillText('CASH-001')).toBe('CASH-001 · Cash drawer over/short');
@@ -1619,7 +1619,7 @@ describe('SecurityPanel — dispatch #100 follow-up: rule pills carry a short de
 
   it('every Inventory rule pill shows both its ruleId and a short descriptor', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1629,7 +1629,7 @@ describe('SecurityPanel — dispatch #100 follow-up: rule pills carry a short de
   });
 
   it('the fuller description line below still renders for the selected rule -- the tag is additive, not a replacement', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const ruleBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'CASH-001 · Cash drawer over/short');
     await act(async () => { ruleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1721,7 +1721,7 @@ describe('SecurityPanel — dispatch #120: findings render as a real, sortable <
     .filter(Boolean);
 
   it('renders real <table>/<thead>/<th>/<tbody> markup, not a hand-rolled flex list', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1733,7 +1733,7 @@ describe('SecurityPanel — dispatch #120: findings render as a real, sortable <
   });
 
   it('defaults to the pre-existing signal/worstValue order: ZULU, MIKE, ECHO', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1742,7 +1742,7 @@ describe('SecurityPanel — dispatch #120: findings render as a real, sortable <
   });
 
   it('clicking the Subject column header re-sorts ascending (ECHO, MIKE, ZULU) through the real UI', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1757,7 +1757,7 @@ describe('SecurityPanel — dispatch #120: findings render as a real, sortable <
   });
 
   it('expanding a flagged row shows the camera-footage reminder, naming the real store and window', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1809,7 +1809,7 @@ describe('SecurityPanel — dispatch #120: full 27-store dataset at a mobile vie
   });
 
   it('before any selection, the location scope shows only "All Locations" + the State tier -- zero individual store pills, regardless of viewport', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabelBtns = [...container.querySelectorAll('button')].filter(b => /^\d+ — /.test(b.textContent));
     expect(storeLabelBtns.length).toBe(0);
@@ -1818,7 +1818,7 @@ describe('SecurityPanel — dispatch #120: full 27-store dataset at a mobile vie
   });
 
   it('after drilling State -> Patch, the revealed Store tier is bounded to that one patch, never all 27 at once', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const okBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'OK');
     await act(async () => { okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1861,14 +1861,14 @@ describe('SecurityPanel — labor domain wiring (dispatch 2026-10-12): tab rende
   });
 
   it('a third "🕐 Labor" tab exists alongside Cash/Inventory', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const tabs = [...container.querySelectorAll('button')].map(b => b.textContent);
     expect(tabs).toContain('🕐 Labor');
   });
 
   it('switching to Labor shows the LABOR-001 subject (empToken-keyed, same grouping as Cash) and hides the Cash subject', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
     await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1882,7 +1882,7 @@ describe('SecurityPanel — labor domain wiring (dispatch 2026-10-12): tab rende
   });
 
   it('expanding the Labor subject does NOT offer "Investigate further" -- a stated scope decision (no assembleLaborDrilldown yet), not a silent gap', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
     await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1959,7 +1959,7 @@ describe('SecurityPanel — Labor defaults to Min Signals: All (dispatch 2026-10
   });
 
   it('clicking the Labor tab shows the real, clear subject immediately -- no extra "All" click needed (regression guard: confirmed this fails -- shows the empty state instead -- without DOMAIN_DEFAULT_MIN_SIGNALS wired into the tab click)', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
     await act(async () => { laborTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -1975,7 +1975,7 @@ describe('SecurityPanel — Labor defaults to Min Signals: All (dispatch 2026-10
   });
 
   it('Cash still defaults to 1+ (unchanged) -- only Labor\'s default moved, not every domain\'s', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     // Mounts on Cash by default; its one finding is pass:true (flagged), so it should already
     // show under the pre-existing 1+ default with no tab click needed.
@@ -1985,7 +1985,7 @@ describe('SecurityPanel — Labor defaults to Min Signals: All (dispatch 2026-10
   });
 
   it('switching Labor -> Cash -> Labor re-defaults to All each time, not just on the first visit', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const laborTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🕐 Labor');
     const cashTab = [...container.querySelectorAll('button')].find(b => b.textContent === '💵 Cash');
@@ -2037,7 +2037,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
   });
 
   it('a fourth "🧾 Events" tab exists alongside Cash/Inventory/Labor, and switching to it shows the EVENT-001 subject', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const tabs = [...container.querySelectorAll('button')].map(b => b.textContent);
     expect(tabs).toContain('🧾 Events');
@@ -2049,7 +2049,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
   });
 
   it('expanding the Events subject does NOT offer "Investigate further" -- same stated scope decision as Labor, no assembleEventsDrilldown yet', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const eventsTab = [...container.querySelectorAll('button')].find(b => b.textContent === '🧾 Events');
     await act(async () => { eventsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -2065,7 +2065,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
   });
 
   it('the Rule Directory renders the Playbook content for a rule that has a playbook entry (CASH-001 -> the "cash" family)', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
     expect(toggle).toBeTruthy();
@@ -2082,7 +2082,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
       { ruleId: 'ZZZ-999', domain: 'cash', method: 'Synthetic rule with no playbook family', description: 'desc', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'act' },
     ]);
     loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
     await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -2091,7 +2091,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
   });
 
   async function expandAliceRow() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
     const row = storeLabel?.parentElement;
@@ -2168,7 +2168,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
     loadSecurityFindingsMock.mockReset().mockResolvedValue([
       { id: 'find-undet-1', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: null, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
     ]);
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     // Undetermined, never flagged -- falls below Cash's own 1+ Min Signals default, so switch to
     // the "All" pill first (same mechanic as the Labor-defaults-to-All tests above) to even see the
@@ -2250,7 +2250,7 @@ describe('SecurityPanel — Briefing view: district health grid + narrative card
   });
 
   async function mount() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
   }
   function clickByText(tag, text) {
@@ -2260,11 +2260,25 @@ describe('SecurityPanel — Briefing view: district health grid + narrative card
     return el;
   }
 
-  it('defaults to the Table view (existing sortable table present, no narrative cards) -- the new view is additive, not a silent replacement', async () => {
-    await mount();
+  // Dispatch 2026-11-10, IA redesign -- this test used to assert the OPPOSITE (Table is the
+  // default), by design at the time (see this file's own `mount()` helper, which now forces
+  // `initialView: 'table'` for every OTHER test in this describe block so they can keep asserting
+  // Table's own content without re-proving the default on every one of them). This is the one test
+  // that owns verifying the real, unforced default -- mounted with NO initialView override, same
+  // as every actual caller (panel-registry.js passes no such prop).
+  it('defaults to the Command Center view (the dashboard), not Table -- Table is still one click away via the toggle, never removed', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Command Center content (its Employee Watchlist IS its own <table>, and its own KPI strip
+    // has a "Total Signals" tile, so "Signals" alone isn't a safe discriminator -- the real tell
+    // is the rule/signal-filter row, which only Table/Briefing render, never Command Center).
+    expect(container.textContent).toMatch(/Employee Watchlist/);
+    expect(container.textContent).not.toMatch(/Min signals:/);
+    // Table is reachable, unchanged -- clicking it still shows the real sortable table.
+    clickByText('button', '🗂 Table');
+    await flush(container);
     expect(container.querySelector('table')).toBeTruthy();
-    // The sort-header vocabulary is Table-only.
-    expect(container.textContent).toMatch(/Signals/);
+    expect(container.textContent).toMatch(/Min signals:/);
   });
 
   it('switching to Briefing renders a plain-English decision sentence per flagged signal, not the raw table', async () => {
@@ -2404,7 +2418,7 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
   });
 
   async function mountBriefing() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
     act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -2412,9 +2426,9 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
   }
 
   it('fetches drift history only once the Briefing view is open, scoped to the real candidate set (both currently-flagged subjects, by loc/ruleId/token)', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
-    // Table view is the default -- no drift fetch yet.
+    // Table view is forced here via initialView -- no drift fetch yet.
     expect(loadSecurityFindingsRecentHistoryForKeysMock).not.toHaveBeenCalled();
     const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
     act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -2450,7 +2464,7 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
   });
 
   it('the district grid shows a real ↑ worsening arrow on Alice\'s store once drift history resolves, never before', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const briefingBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🩺 Briefing');
     act(() => { briefingBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -2544,7 +2558,7 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
   });
 
   it('the Command Center view also triggers the drift/persistence history fetch, not just Briefing', async () => {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     expect(loadSecurityFindingsRecentHistoryForKeysMock).not.toHaveBeenCalled();
     const commandBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🖥 Command Center');
@@ -2599,7 +2613,7 @@ describe('SecurityPanel — Command Center (dispatch 2026-11-10)', () => {
   });
 
   async function mountCommand() {
-    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
     await flush(container);
     const btnEl = [...container.querySelectorAll('button')].find(b => b.textContent === '🖥 Command Center');
     expect(btnEl, 'no Command Center toggle button').toBeTruthy();
@@ -2641,13 +2655,27 @@ describe('SecurityPanel — Command Center (dispatch 2026-11-10)', () => {
     expect(container.textContent).not.toMatch(/Investigating/);
   });
 
-  it('"Review →" on Alice\'s row jumps into the real Table view, scoped to her store and expanded on her -- not a dead end', async () => {
+  // Dispatch 2026-11-10, IA redesign -- "Review →" now lands on the new Subject Brief view (Tier
+  // 2, between the dashboard and the raw table) instead of jumping straight into Table. Table is
+  // still reachable, unchanged, one click further via Brief's own gateway link -- never a dead end,
+  // just no longer the FIRST thing a reviewer sees.
+  it('"Review →" on Alice\'s row lands on her Subject Brief, scoped and ready -- Table is still one click further, never a dead end', async () => {
     await mountCommand();
     const reviewBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Review →');
     expect(reviewBtn).toBeTruthy();
     act(() => { reviewBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush(container);
-    // Table view is back (its own sort-header vocabulary), and Alice's detail is already expanded.
+    // Brief view: Alice's own name and real decision sentence, no domain tabs/rule chrome, no
+    // sibling subjects' rows.
+    expect(container.textContent).toMatch(/Alice Andrews/);
+    expect(container.textContent).toMatch(/2 independent rules agree/);
+    expect(container.textContent).not.toMatch(/Signals/); // Table's own sort-header vocabulary
+    // The gateway link into the full table is present and still works.
+    const openTableLink = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Open the full data engine') || b.textContent.includes('sort, filter, export'));
+    expect(openTableLink).toBeTruthy();
+    act(() => { openTableLink.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // Table view, scoped to Alice's store and expanded on her, exactly as before this redesign.
     expect(container.textContent).toMatch(/Signals/);
     expect(container.textContent).toMatch(/Alice Andrews/);
   });

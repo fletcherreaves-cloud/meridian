@@ -1177,6 +1177,7 @@ function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
 function CommandCenterView({
   commandGroups, domainBreakdown, topRules, healthList, caseQueue, findingActions,
   revealed, onReveal, rulesById, newestBatch, itemInfoFor, scope, onSelectStore, onReviewSubject,
+  onOpenTable,
 }) {
   const ruleList = Object.values(rulesById);
   const activeRules = ruleList.filter(r => r.active).length;
@@ -1246,6 +1247,14 @@ function CommandCenterView({
         h(CaseQueueBar, { caseQueue }),
       ),
     ),
+    // dispatch 2026-11-10, IA redesign -- the Tier-3 gateway. Everything the raw Table view offers
+    // (every subject regardless of convergence, domain tabs, rule pills, min-signals, date range,
+    // CSV/JSON export, print report) still exists, unchanged -- this is the one quiet, deliberate
+    // way into it from the dashboard, replacing a view toggle that gave it equal visual weight to
+    // the dashboard itself.
+    div({ style: { textAlign: 'center', padding: '0 14px 20px' } },
+      btn({ onClick: onOpenTable, style: { fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', borderBottom: '1px dotted var(--text3)', cursor: 'pointer', padding: 0 } },
+        '⚙ Need every subject, every rule, every filter, CSV/export? Open the full data table →')),
   );
 }
 
@@ -1352,6 +1361,54 @@ function CaseQueueBar({ caseQueue }) {
       segments.map(seg => span({ key: seg.key, style: { color: 'var(--text3)' } },
         span({ style: { display: 'inline-block', width: 8, height: 8, borderRadius: 2, marginRight: 5, background: seg.color, verticalAlign: '-1px' } }),
         `${seg.label} · ${seg.count}`))),
+  );
+}
+
+// dispatch 2026-11-10, IA redesign -- Tier 2 of the owner's requested funnel ("a secondary level
+// of sorts between the dashboard and the engine"), reached from Command Center's Employee
+// Watchlist "Review →". Deliberately reuses SecurityBriefingCard as-is for the per-finding content
+// (buildDecisionSentence's real plain-language sentence with the finding's REAL value/threshold/
+// baseline numbers, corroboration, trend+drift badges, the camera-footage reminder, case actions)
+// rather than inventing a second narrative renderer -- SecurityBriefingCard is already cross-
+// domain (no `domain` prop needed) and already honest about what data exists: cash's over/short
+// rules have no event-level register/timestamp detail (a computed variance, not a discrete event,
+// per SubjectEvents' own caveat), so this view does not fabricate a register number or a clock
+// time no query backs. Event-level detail (time, register, daypart, tender, $ amount) for subjects
+// where it genuinely exists is intentionally left to Table's own "🔎 Investigate further" drill-
+// down (SubjectDrilldown/SubjectEvents) rather than duplicated here -- the gateway link below is
+// how a reader gets there, scoped to this exact subject, not a second copy of that fetch.
+function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey, onBack, onOpenTable }) {
+  const linkStyle = { fontSize: 12, fontWeight: 600, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 };
+  if (!group) {
+    return div({ style: { padding: '40px 20px', textAlign: 'center' } },
+      btn({ onClick: onBack, style: linkStyle }, '← Dashboard'),
+      div({ style: { marginTop: 20, fontSize: 13, color: 'var(--text3)' } },
+        'This subject is no longer in view — it may have cleared, or the scope changed. Head back to the dashboard and pick it again.'),
+    );
+  }
+  const subjectLabel = subjectLabelFor(group, revealed, itemInfoFor);
+  const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
+  return div({ style: { maxWidth: 820, margin: '0 auto', padding: '16px 14px 30px' } },
+    btn({ onClick: onBack, style: linkStyle }, '← Dashboard'),
+    div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginTop: 14, marginBottom: 18 } },
+      div(null,
+        div({ style: { fontSize: 19, fontWeight: 800, color: 'var(--text)' } },
+          group.subjectType === 'emp' ? h(RevealName, { token: group.empToken, cache: revealed, onReveal }) : subjectLabel),
+        div({ style: { fontSize: 12, color: 'var(--text3)', marginTop: 3 } }, `${STORE_NAMES[group.loc] || `Store ${group.loc}`}`),
+      ),
+      group.flaggedCount >= 2 && span({
+        style: { fontSize: 11.5, fontWeight: 800, color: 'var(--crit,#ef4444)', border: '1px solid var(--crit,#ef4444)', borderRadius: 999, padding: '5px 12px', background: 'rgba(239,68,68,.1)' },
+      }, `⚠ ${group.flaggedCount} independent rules agree`),
+    ),
+    flaggedVerdicts.length === 0
+      ? emptyState('No currently-flagged findings for this subject — it may have cleared since the dashboard loaded.')
+      : h(SecurityBriefingCard, {
+          group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError,
+          onFindingAction, openDrawers, onToggleDrawer, driftPerKey,
+        }),
+    div({ style: { textAlign: 'center', paddingTop: 10 } },
+      btn({ onClick: onOpenTable, style: { fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', borderBottom: '1px dotted var(--text3)', cursor: 'pointer', padding: 0 } },
+        '⚙ See this subject alongside every other one — sort, filter, export →')),
   );
 }
 
@@ -1641,7 +1698,11 @@ function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoF
 // its own on-demand loads, per dispatch #43's "on-demand, not eager at startup" requirement --
 // auditRows was deliberately pulled OUT of the eager startup batch under #191, and this must not
 // reintroduce that cost). userRole/gmRevealEnabled drive the permission state machine below.
-export function SecurityPanel({ userRole, onClose }) {
+// `initialView` is a test-only seam (never passed by any real caller -- panel-registry.js's own
+// entry takes no props beyond userRole/onClose) letting the existing Table-view test suite keep
+// asserting Table's own content/wiring without first clicking the toggle on every one of its ~70
+// render call sites; the real default below ('command') is untouched for every actual user.
+export function SecurityPanel({ userRole, onClose, initialView }) {
   const [permState, setPermState] = React.useState('checking'); // checking | denied | allowed
   const [dataState, setDataState] = React.useState('idle');     // idle | loading | loaded | error
   const [findings, setFindings] = React.useState([]);
@@ -1654,6 +1715,11 @@ export function SecurityPanel({ userRole, onClose }) {
   // null = unbounded (the pre-#100 behavior, unchanged) -- {s,e} is DateRangeControl's own shape.
   const [dateRange, setDateRange] = React.useState(null);
   const [expanded, setExpanded] = React.useState(null);
+  // dispatch 2026-11-10, IA redesign -- which subject (by groupFindingsBySubject key) the new
+  // 'brief' view shows. Set only by onReviewSubject, below; cleared implicitly by navigating away
+  // (no explicit reset needed -- a stale key just means briefGroup's memo returns null, handled by
+  // its own empty state).
+  const [briefKey, setBriefKey] = React.useState(null);
   // This dispatch -- the bulk `findings` load may now be reading security_findings_latest (one
   // window per rule, see loadSecurityFindings' own header), which is all the closed/list view ever
   // needed (verdicts already dedupe to "latest window per rule" regardless). Chronic/trend
@@ -1671,19 +1737,17 @@ export function SecurityPanel({ userRole, onClose }) {
     if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir(key === 'subject' || key === 'rule' ? 'asc' : 'desc'); }
   };
-  // dispatch 2026-11-10 -- 'briefing' (the new narrative-card + health-grid view) vs 'table' (the
-  // pre-existing sortable table, unchanged below, and the default). Defaulting to 'table' rather
-  // than the new view is a deliberate choice, not an oversight or a hedge: this panel's existing
-  // test suite (119 tests at the time of this dispatch) exercises real, still-correct Table-view
-  // behavior -- VerdictChip clicks, SubjectRow expand/collapse, sort headers, case tracking inside
-  // SubjectDetail -- through DOM queries that assume table markup is present on mount. Flipping
-  // the default would have meant either rewriting ~40 of those tests to click into Table first
-  // (expanding this dispatch's blast radius well past "add a view") or shipping with real existing
-  // coverage silently broken, and this repo's own standing rule is "never break working features."
-  // Briefing is one click away via the toggle right below, not buried -- the next phase (once
-  // persistence/convergence scoring lands and Briefing has had real eyes on it) is the point to
-  // revisit making it the default, informed by actual use rather than this dispatch's own guess.
-  const [view, setView] = React.useState('table');
+  // dispatch 2026-11-10 (IA redesign, owner request) -- 'command' (the cross-domain dashboard) is
+  // now the DEFAULT landing view, not 'table'. This reverses the posture this comment used to
+  // document ("Flipping the default would mean rewriting ~40 tests... revisit once Briefing has
+  // had real eyes on it") now that the actual blocker is gone: persistence/convergence scoring has
+  // landed, Command Center has had real eyes on it, and a new 'brief' view (SubjectBriefView,
+  // below) now gives a one-click path from the dashboard into a single subject's real narrative —
+  // closing the owner's own "less to click, lead with the dashboard, keep the engine reachable but
+  // not the default" ask. Table is UNCHANGED and fully intact; it is reached via the explicit
+  // "⚙ Open the full data engine" link CommandCenterView renders, or the view toggle below, never
+  // removed, never degraded — only demoted from "the first thing you see" to "one click away."
+  const [view, setView] = React.useState(initialView || 'command');
   // Drawer open/closed state for the briefing cards' own "Rule out first"/"Show the math"
   // toggles, keyed by a string built in SecurityBriefingCard -- a plain Set, same shape
   // mathOpen/ruleOutOpen used in the original Loss Prevention Briefing mockup this is built from.
@@ -1797,6 +1861,17 @@ export function SecurityPanel({ userRole, onClose }) {
   const domainBreakdown = React.useMemo(() => buildDomainBreakdown(findings, rulesById, rules, scope),
     [findings, rulesById, rules, scope]);
   const topRules = React.useMemo(() => buildTopContributingRules(findings, rulesById, scope), [findings, rulesById, scope]);
+  // dispatch 2026-11-10, IA redesign -- the one subject the 'brief' view renders, found cross-
+  // domain (commandGroups, not the domain-scoped Table `groups` below) since a real subject's
+  // convergence can span more than one domain and Brief's whole point is showing all of it at
+  // once. Merges in the lazily-fetched full history exactly like Table/Briefing's own groups do,
+  // so trend/drift classification in SecurityBriefingCard has real multi-window data once it
+  // resolves, not just the single latest-window verdict the bulk load always carries.
+  const briefGroup = React.useMemo(() => {
+    const g = commandGroups.find(x => x.key === briefKey);
+    if (!g) return null;
+    return subjectHistory[g.key] ? { ...g, historyByRule: subjectHistory[g.key] } : g;
+  }, [commandGroups, briefKey, subjectHistory]);
 
   const groups = React.useMemo(() => {
     // 'labor' subjects are empToken-based too (an employee for LABOR-001/002, a manager --
@@ -1919,19 +1994,22 @@ export function SecurityPanel({ userRole, onClose }) {
     }
   }, [userRole]);
 
-  // dispatch 2026-11-10 -- Command Center's "Review →" action. Deliberately does NOT duplicate
-  // SubjectDetail/FindingActions -- it jumps straight into the existing Table view, already
-  // scoped/expanded to this subject, so the real drill-down (case actions, exoneration,
-  // corroboration, the drilldown fetch) is the one that already exists, not a second copy of it.
-  // `leadDomain` picks which of this subject's (possibly several) flagged domains to land on --
-  // EmployeeWatchlistRow passes its own highest-severity verdict's domain.
+  // dispatch 2026-11-10, IA redesign -- Command Center's "Review →" action now lands on the new
+  // 'brief' view (SubjectBriefView, below) instead of jumping straight into Table. Still sets
+  // domain/scope/minSignals/expanded exactly as before -- not for Brief itself (which reads
+  // `commandGroups`, cross-domain, independent of these), but so that if the reader clicks
+  // Brief's own "Open in full table" gateway, Table is already scoped/expanded to this exact
+  // subject, same as this action always promised. `leadDomain` picks which of this subject's
+  // (possibly several) flagged domains that gateway lands on -- EmployeeWatchlistRow passes its
+  // own highest-severity verdict's domain.
   const onReviewSubject = React.useCallback((group, leadDomain) => {
     setDomain(leadDomain);
     setRuleFilter(null);
     setMinSignals(DOMAIN_DEFAULT_MIN_SIGNALS[leadDomain] ?? 1);
     setScope({ level: 'store', value: group.loc });
-    setView('table');
     setExpanded(group.key);
+    setBriefKey(group.key);
+    setView('brief');
   }, []);
 
   const newestBatch = React.useMemo(() =>
@@ -2095,8 +2173,11 @@ export function SecurityPanel({ userRole, onClose }) {
   // automatic-minimum-size support for that exception has a real inconsistency history, so an
   // explicit minHeight:0 there too costs nothing and removes the reliance on it).
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
-    // ── Domain tabs + Legend ──
-    div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
+    // ── Domain tabs + Legend ── entirely hidden in 'brief' (dispatch 2026-11-10, IA redesign):
+    // SubjectBriefView is reached by clicking a specific subject, not by filtering a list, and
+    // renders its own "← Dashboard" link -- this whole chrome bar (domain tabs, Legend toggle,
+    // view switcher, export) describes operations on a LIST of subjects that Brief doesn't show.
+    view !== 'brief' && div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
       // dispatch 2026-11-10 -- hidden in Command Center: that view is deliberately cross-domain
       // ("every open rule, every domain, one screen"), so a single-domain filter here would look
       // like it applies and silently not, which is worse than not offering it at all.
@@ -2148,16 +2229,18 @@ export function SecurityPanel({ userRole, onClose }) {
     // its Patches, picking a Patch reveals its Stores -- so the pill count per screen stays small.
     // scope keeps this panel's own {level,value} shape (panel-contract.md §3); translated at this
     // boundary only via scopeToSelectorValue/selectorValueToScope.
-    div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
+    // dispatch 2026-11-10, IA redesign -- hidden in 'brief' too: a scope selector for filtering a
+    // LIST of subjects makes no sense once the reader is already looking at one specific subject.
+    view !== 'brief' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
       h(LocationSelector, {
         stores: _stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'progressive',
         value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
       }),
     ),
     // dispatch #46 §A point 2 -- a legend defining the vocabulary, dismissible and remembered.
-    showLegend && h(Legend, { onDismiss: dismissLegend, rules }),
-    // ── Rule + signal filters ── hidden in Command Center, same reasoning as the domain tabs above.
-    view !== 'command' && dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
+    view !== 'brief' && showLegend && h(Legend, { onDismiss: dismissLegend, rules }),
+    // ── Rule + signal filters ── hidden in Command Center and Brief, same reasoning as the domain tabs above.
+    view !== 'command' && view !== 'brief' && dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
       div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
         span({ style: { color: 'var(--text3)' } }, 'Rule:'),
         pill('All', !ruleFilter, () => setRuleFilter(null)),
@@ -2205,13 +2288,14 @@ export function SecurityPanel({ userRole, onClose }) {
       permState === 'denied' && emptyState('Not permitted — this view requires admin, supervisor, or a manager role with identity-reveal enabled for this org. This is a permission gate, not an empty result — do not read it as "nothing to see here."', true),
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
       permState === 'allowed' && dataState === 'error' && emptyState('Could not load findings — try again.', true),
-      view !== 'command' && permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
+      view !== 'command' && view !== 'brief' && permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
       // Live-screen hero bar -- see SecuritySummaryBar's own header for why this exists and why
       // it's fed `groups`, not `sortedGroups`. Only rendered once there's something to summarize;
       // the empty-state message just above already covers the zero-groups case. Command Center
       // renders its OWN SecuritySummaryBar inside CommandCenterView, fed `commandGroups` (cross-
       // domain) instead of this domain-scoped `groups` -- excluded here so it isn't shown twice.
-      view !== 'command' && permState === 'allowed' && dataState === 'loaded' && groups.length > 0
+      // Brief has no summary bar at all -- it's one subject, not a list to summarize.
+      view !== 'command' && view !== 'brief' && permState === 'allowed' && dataState === 'loaded' && groups.length > 0
         && h(SecuritySummaryBar, { groups, newestBatch, revealed, itemInfoFor }),
       // dispatch 2026-11-10 -- Briefing view: district health grid (hidden once scope is already
       // narrowed to a single store — nothing to rank against) + one narrative card per flagged
@@ -2289,6 +2373,17 @@ export function SecurityPanel({ userRole, onClose }) {
           revealed, onReveal, rulesById, newestBatch, itemInfoFor, scope,
           onSelectStore: loc => setScope({ level: 'store', value: loc }),
           onReviewSubject,
+          onOpenTable: () => setView('table'),
+        }),
+      // dispatch 2026-11-10, IA redesign -- Tier 2. See SubjectBriefView's own header for what it
+      // reuses (SecurityBriefingCard) vs. deliberately leaves to Table (event-level drill-down).
+      view === 'brief' && permState === 'allowed' && dataState === 'loaded'
+        && h(SubjectBriefView, {
+          group: briefGroup, rulesById, revealed, onReveal, itemInfoFor,
+          findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
+          openDrawers, onToggleDrawer: toggleDrawer, driftPerKey: driftRollup?.perKey,
+          onBack: () => setView('command'),
+          onOpenTable: () => setView('table'),
         }),
     ),
   );
