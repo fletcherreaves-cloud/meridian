@@ -227,6 +227,106 @@ export function classifySubjectTrend(history) {
   return priorFlagged ? 'improving' : 'clear';
 }
 
+// ── Command Center — cross-domain rollups (dispatch 2026-11-10) ─────────────────────────────────
+// Every other view in this panel (Table, Briefing) is scoped to ONE domain at a time (`domain`
+// state) by design -- that's the right default for investigating a specific policy, but it means
+// nothing here has ever answered "which employees are flagged across MORE than one domain" or
+// "what does the whole network look like right now." These five pure functions are that layer,
+// built entirely on primitives that already exist (groupFindingsBySubject, scopeMatches,
+// security_rules' own domain/severity fields) -- no new query, no new math, just a cross-domain
+// view of data the panel already loads in full (`findings` is never domain-filtered at the fetch
+// layer; only the existing `groups` memo narrows it for Table/Briefing).
+export const SECURITY_DOMAINS = ['cash', 'inventory', 'labor', 'events'];
+
+// Cross-domain subject grouping for the Employee Watchlist. Deliberately `emp`-subjects only --
+// INV-001/002/003/005 key on `wrin` (an ITEM, not a person; schema-security-findings.sql's
+// subject_key is `emp_token::text || '::' || wrin`, empty on whichever side doesn't apply), so an
+// item-level inventory finding has no employee to attribute to a row here. INV-004 (closing
+// manager, keyed on emp_token) DOES show up, same as every CASH/LABOR/EVENT rule. flaggedCount on
+// each returned group is already true cross-domain convergence (groupFindingsBySubject's own
+// sort), the single strongest signal this panel can show.
+export function buildCommandGroups(findings, scope) {
+  return groupFindingsBySubject((findings || []).filter(f => f.empToken))
+    .filter(g => scopeMatches(g.loc, scope));
+}
+
+// Per-domain rollup for the "By Security Domain" cards -- every CURRENTLY FLAGGED, non-hygiene
+// finding in scope, bucketed by the rule's own domain/severity (security_rules' real fields, never
+// re-derived or guessed). `rules` (the full registry, active+inactive) supplies each domain's rule
+// COUNT even when a domain has zero open findings right now.
+export function buildDomainBreakdown(findings, rulesById, rules, scope) {
+  const byDomain = {};
+  for (const f of (findings || [])) {
+    if (f.pass !== true || f.lifecycleCategory || !scopeMatches(f.loc, scope)) continue;
+    const rule = rulesById?.[f.ruleId];
+    if (!rule) continue; // defensive -- a finding for a rule no longer in the registry read
+    const d = rule.domain;
+    if (!byDomain[d]) byDomain[d] = { domain: d, findings: 0, low: 0, med: 0, high: 0, ruleCounts: {} };
+    const row = byDomain[d];
+    row.findings += 1;
+    row[rule.severity >= 4 ? 'high' : rule.severity === 3 ? 'med' : 'low'] += 1;
+    row.ruleCounts[f.ruleId] = (row.ruleCounts[f.ruleId] || 0) + 1;
+  }
+  return SECURITY_DOMAINS.map(d => {
+    const row = byDomain[d] || { domain: d, findings: 0, low: 0, med: 0, high: 0, ruleCounts: {} };
+    const ruleCount = (rules || []).filter(r => r.domain === d).length;
+    const topEntry = Object.entries(row.ruleCounts).sort((a, b) => b[1] - a[1])[0];
+    return { ...row, ruleCount, topRule: topEntry ? rulesById[topEntry[0]] : null, topRuleCount: topEntry ? topEntry[1] : 0 };
+  });
+}
+
+// Top-contributing-rules Pareto for the Command Center -- same currently-flagged/non-hygiene/
+// in-scope filter as buildDomainBreakdown, grouped by rule instead of domain, worst first.
+export function buildTopContributingRules(findings, rulesById, scope, limit = 6) {
+  const counts = {};
+  for (const f of (findings || [])) {
+    if (f.pass !== true || f.lifecycleCategory || !scopeMatches(f.loc, scope)) continue;
+    if (!rulesById?.[f.ruleId]) continue;
+    counts[f.ruleId] = (counts[f.ruleId] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([ruleId, count]) => ({ ruleId, count, rule: rulesById[ruleId] }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+// Case-status vocabulary matches security_finding_actions' real check constraint (schema-
+// security-finding-actions.sql) exactly -- 'investigated_cleared'/'escalated'/'noted' are the only
+// real action rows; a finding with no row yet is 'open'. There is no 'investigating' status in
+// this data model and this file must never invent one.
+export const CASE_STATUS_LABEL = {
+  open: { label: 'Flagged — no action yet', color: 'var(--text3)' },
+  noted: { label: 'Note added', color: 'var(--text3)' },
+  escalated: { label: 'Escalated', color: 'var(--crit,#ef4444)' },
+  investigated_cleared: { label: 'Investigated — cleared', color: 'var(--ok,#10b981)' },
+};
+
+// The latest logged action for one finding id, 'open' when none has ever been logged.
+// `findingActions` is the panel's own findingId -> action[] cache, ascending by created_at (same
+// shape loadSecurityFindingActionsForFindings/the existing FindingActions component already use).
+export function latestCaseStatus(findingId, findingActions) {
+  const list = findingActions?.[findingId];
+  if (!list || !list.length) return 'open';
+  return list[list.length - 1].action;
+}
+
+// Cross-domain case-queue tally -- one bucket per CURRENTLY FLAGGED, non-hygiene finding across
+// every subject group passed in (buildCommandGroups' own output, or any groupFindingsBySubject
+// result). Counts findings, not subjects -- a subject with two open findings in two different
+// states (one escalated, one untouched) contributes to both buckets, which is the honest picture:
+// the queue tracks CASES, and each finding is its own case per security_finding_actions' own
+// `finding_id` foreign key.
+export function tallyCaseQueue(groups, findingActions) {
+  const counts = { open: 0, noted: 0, escalated: 0, investigated_cleared: 0 };
+  for (const g of (groups || [])) {
+    for (const v of (g.verdicts || [])) {
+      if (v.pass !== true || v.lifecycleCategory || !v.id) continue;
+      counts[latestCaseStatus(v.id, findingActions)] += 1;
+    }
+  }
+  return counts;
+}
+
 // Store scope hierarchy (feedback-selector-ui-standard.md, updated by dispatch #120): All ->
 // State -> Patch -> Store. The 'org' level (FL/OK mapped to emerald/mcdok) is REMOVED here --
 // dispatch #120's investigation confirmed it was 1:1 redundant with 'state' for this business
@@ -1037,6 +1137,205 @@ function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
   );
 }
 
+// ── Command Center — the network-wide, cross-domain view (dispatch 2026-11-10) ───────────────────
+// Reuses SecuritySummaryBar (fed `commandGroups` instead of the Table/Briefing views' own domain-
+// scoped `groups` -- same component, a different, cross-domain input) and SecurityHealthGrid (fed
+// the SAME `healthList` the Briefing view's district grid already renders -- storeHealthList is
+// already cross-domain by its own design, see security-health.js's own header) rather than
+// building either a second time. The only genuinely new surface here is the domain-breakdown
+// cards, the Employee Watchlist table, and the Top Contributing Rules / Case Queue panels -- none
+// of which existed anywhere in this panel before.
+//
+// Deliberately does NOT attempt the persistence_multiplier/convergence_multiplier terms the
+// owner's own 2026-10-28 "Security Health Dashboard" design doc scoped for the health SCORE
+// itself (https://claude.ai/artifact/9gMaF97gAD2VH8KoJ4rphv), nor that doc's Mockup B
+// "Theories, ranked" corrective-action layer (concentration-pattern detection -- person/register/
+// daypart/store/fleet -- generalizing crossStoreRecountConsistency). Both are real, already-scoped
+// pieces of that doc that are still NOT BUILT anywhere in this codebase (checked directly:
+// classifySubjectShape only classifies a flag's TEMPORAL shape, new/chronic/trend -- it is not the
+// concentration-pattern classifier that doc describes) -- not something to invent weights or a new
+// query for inside this dispatch. Both remain open follow-on work, not silently dropped.
+function CommandCenterView({
+  commandGroups, domainBreakdown, topRules, healthList, caseQueue, findingActions,
+  revealed, onReveal, rulesById, newestBatch, itemInfoFor, scope, onSelectStore, onReviewSubject,
+}) {
+  const ruleList = Object.values(rulesById);
+  const activeRules = ruleList.filter(r => r.active).length;
+  const storesNeedingReview = healthList.filter(s => s.tier !== 'clean').length;
+
+  return div(null,
+    h(SecuritySummaryBar, { groups: commandGroups, newestBatch, revealed, itemInfoFor }),
+    // A second, network-specific KPI row alongside SecuritySummaryBar's own tiles (Subjects
+    // Flagged/Total Signals/2+ Signal Convergence/Latest Batch) -- additive, not a replacement.
+    div({ style: { display: 'flex', gap: 8, padding: '0 14px 10px', flexWrap: 'wrap' } },
+      commandTile('Stores Needing Review', `${storesNeedingReview} / ${healthList.length}`, storesNeedingReview > 0 ? 'var(--crit,#ef4444)' : undefined),
+      commandTile('Rules Live', `${activeRules} / ${ruleList.length}`, undefined,
+        ruleList.length - activeRules > 0 ? `${ruleList.length - activeRules} pending activation review` : 'all rules active'),
+    ),
+    healthList.length > 0 && h(SecurityHealthGrid, { list: healthList, scope, onSelectStore }),
+    // ── By Security Domain ──
+    div({ style: { padding: '10px 14px' } },
+      div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 8 } },
+        'By Security Domain'),
+      div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 } },
+        domainBreakdown.map(d => h(DomainBreakdownCard, { key: d.domain, d })),
+      ),
+    ),
+    // ── Employee Watchlist ──
+    div({ style: { padding: '10px 14px' } },
+      div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 8 } },
+        div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em' } },
+          'Employee Watchlist — flagged across any domain'),
+        span({ style: { fontSize: 10.5, color: 'var(--text3)' } },
+          `${commandGroups.length} subject${commandGroups.length === 1 ? '' : 's'} flagged this scope`),
+      ),
+      commandGroups.length === 0
+        ? emptyState('No employees currently flagged in this scope.')
+        : div({ style: { overflowX: 'auto' } },
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 } },
+              h('thead', null, h('tr', null,
+                h('th', { style: thStyle(false) }, 'Subject'),
+                h('th', { style: thStyle(false) }, 'Store'),
+                h('th', { style: thStyle(false) }, 'Domains'),
+                h('th', { style: thStyle(false) }, 'Rule(s) fired'),
+                h('th', { style: thStyle(false) }, 'Convergence'),
+                h('th', { style: thStyle(false) }, 'Status'),
+                h('th', { style: thStyle(false) }, ''),
+              )),
+              h('tbody', null, commandGroups.slice(0, 25).map(g =>
+                h(EmployeeWatchlistRow, { key: g.key, group: g, rulesById, revealed, onReveal, findingActions, onReviewSubject }),
+              )),
+            ),
+          ),
+      commandGroups.length > 25 && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 6 } },
+        `Showing the top 25 of ${commandGroups.length}, ranked by convergence then severity — same order as the rest of this panel.`),
+    ),
+    // ── Top Contributing Rules + Case Queue ──
+    div({ style: { display: 'flex', flexWrap: 'wrap', gap: 10, padding: '10px 14px 20px' } },
+      div({ style: { flex: '1 1 320px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '12px 14px' } },
+        div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 10 } },
+          '🔎 Top Contributing Rules'),
+        topRules.length === 0
+          ? span({ style: { fontSize: 11.5, color: 'var(--text3)' } }, 'Nothing flagged in this scope.')
+          : div({ style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+              topRules.map(r => h(ParetoRow, { key: r.ruleId, r, max: topRules[0]?.count || 1 })),
+            ),
+      ),
+      div({ style: { flex: '1 1 320px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '12px 14px' } },
+        div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 10 } },
+          `Case Queue — ${caseQueue.open + caseQueue.noted + caseQueue.escalated + caseQueue.investigated_cleared} open findings`),
+        h(CaseQueueBar, { caseQueue }),
+      ),
+    ),
+  );
+}
+
+function commandTile(label, val, tone, caption) {
+  return div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', minWidth: 140, flex: '1 1 140px' } },
+    div({ style: { fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 } }, label),
+    div({ style: { fontSize: 20, fontWeight: 800, color: tone || 'var(--text)' } }, val),
+    caption && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 2 } }, caption),
+  );
+}
+
+function DomainBreakdownCard({ d }) {
+  return div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 } },
+    div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
+      span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text)' } }, DOMAIN_TAB_LABEL[d.domain] || d.domain),
+      span({ style: { fontSize: 10.5, color: 'var(--text3)' } }, `${d.ruleCount} rule${d.ruleCount === 1 ? '' : 's'}`),
+    ),
+    div({ style: { display: 'flex', height: 6, borderRadius: 999, overflow: 'hidden', background: 'var(--bdr)' } },
+      div({ style: { flex: `${d.low} 1 0%`, background: 'var(--text3)' } }),
+      div({ style: { flex: `${d.med} 1 0%`, background: 'var(--amber,#f59e0b)' } }),
+      div({ style: { flex: `${d.high} 1 0%`, background: 'var(--crit,#ef4444)' } }),
+    ),
+    div({ style: { fontSize: 20, fontWeight: 800, color: d.findings > 0 ? 'var(--crit,#ef4444)' : 'var(--text)' } }, d.findings),
+    d.topRule
+      ? div({ style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.4 } },
+          `${d.topRule.ruleId} · ${ruleShortTag(d.topRule) || d.topRule.method} (${d.topRuleCount})`)
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Nothing flagged in this scope.'),
+  );
+}
+
+function domainChipStyle(domain) {
+  const colors = { cash: '#FFBC0D', inventory: '#38bdf8', labor: '#f97316', events: '#a78bfa' };
+  const c = colors[domain] || '#526880';
+  return { display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '.03em', color: c, background: `${c}22`, borderRadius: 5, padding: '2px 6px', whiteSpace: 'nowrap' };
+}
+
+// One row per cross-domain subject, ranked by convergence then severity (commandGroups' own sort,
+// unchanged here). The "lead" finding -- highest severity, most recent window as the tiebreaker --
+// drives the Status cell and where "Review →" jumps into the existing Table view; the Domains/
+// Rule(s) columns still list every currently-flagged signal, not just the lead one.
+function EmployeeWatchlistRow({ group, rulesById, revealed, onReveal, findingActions, onReviewSubject }) {
+  const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
+  const domains = [...new Set(flaggedVerdicts.map(v => rulesById[v.ruleId]?.domain).filter(Boolean))];
+  const lead = flaggedVerdicts.slice().sort((a, b) =>
+    (rulesById[b.ruleId]?.severity || 0) - (rulesById[a.ruleId]?.severity || 0) || (b.windowEnd || '').localeCompare(a.windowEnd || ''),
+  )[0];
+  const leadRule = lead ? rulesById[lead.ruleId] : null;
+  const status = lead ? latestCaseStatus(lead.id, findingActions) : 'open';
+  const statusMeta = CASE_STATUS_LABEL[status] || CASE_STATUS_LABEL.open;
+  const td = (p, ...c) => h('td', p, ...c);
+  return h('tr', { style: { borderTop: '1px solid var(--bdr)' } },
+    td({ style: { padding: '8px 10px', verticalAlign: 'top' } },
+      div({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, h(RevealName, { token: group.empToken, cache: revealed, onReveal }))),
+    td({ style: { padding: '8px 10px', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', verticalAlign: 'top' } },
+      STORE_NAMES[group.loc] || group.loc),
+    td({ style: { padding: '8px 10px', verticalAlign: 'top' } },
+      div({ style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+        domains.map(d => span({ key: d, style: domainChipStyle(d) }, (DOMAIN_TAB_LABEL[d] || d).replace(/^\S+\s/, '').toUpperCase())))),
+    td({ style: { padding: '8px 10px', verticalAlign: 'top' } },
+      div({ style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+        flaggedVerdicts.map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v })))),
+    td({ style: { padding: '8px 10px', verticalAlign: 'top', whiteSpace: 'nowrap' } },
+      group.flaggedCount >= 2
+        ? span({ style: { fontSize: 11, fontWeight: 800, color: 'var(--crit,#ef4444)' } }, `🔗 ${group.flaggedCount} signals`)
+        : span({ style: { fontSize: 11, color: 'var(--text3)' } }, '—')),
+    td({ style: { padding: '8px 10px', verticalAlign: 'top', whiteSpace: 'nowrap' } },
+      span({ style: { fontSize: 11, fontWeight: 700, color: statusMeta.color } }, statusMeta.label)),
+    td({ style: { padding: '8px 10px', verticalAlign: 'top', whiteSpace: 'nowrap' } },
+      leadRule && btn({
+        onClick: () => onReviewSubject(group, leadRule.domain),
+        style: { fontSize: 10.5, fontWeight: 700, color: 'var(--accent,#f5bc00)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
+      }, 'Review →')),
+  );
+}
+
+function ParetoRow({ r, max }) {
+  const severity = r.rule?.severity ?? 1;
+  const color = severity >= 4 ? 'var(--crit,#ef4444)' : severity === 3 ? 'var(--amber,#f59e0b)' : 'var(--text3)';
+  const pct = max > 0 ? Math.round((r.count / max) * 100) : 0;
+  return div(null,
+    div({ style: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, marginBottom: 3 } },
+      span({ style: { color: 'var(--text)', fontWeight: 600 } }, `${r.ruleId} · ${ruleShortTag(r.rule) || r.rule?.method || ''}`),
+      span({ style: { color: 'var(--text3)', fontFamily: 'monospace', flexShrink: 0 } }, r.count),
+    ),
+    div({ style: { height: 5, borderRadius: 999, background: 'var(--bdr)', overflow: 'hidden' } },
+      div({ style: { width: `${pct}%`, height: '100%', background: color } }),
+    ),
+  );
+}
+
+function CaseQueueBar({ caseQueue }) {
+  const segments = [
+    { key: 'open', label: 'Flagged', count: caseQueue.open, color: 'var(--text3)' },
+    { key: 'noted', label: 'Noted', count: caseQueue.noted, color: 'var(--text2)' },
+    { key: 'escalated', label: 'Escalated', count: caseQueue.escalated, color: 'var(--crit,#ef4444)' },
+    { key: 'investigated_cleared', label: 'Cleared', count: caseQueue.investigated_cleared, color: 'var(--ok,#10b981)' },
+  ];
+  const total = segments.reduce((s, seg) => s + seg.count, 0);
+  if (!total) return span({ style: { fontSize: 11.5, color: 'var(--text3)' } }, 'Nothing flagged in this scope.');
+  return div(null,
+    div({ style: { display: 'flex', height: 10, borderRadius: 999, overflow: 'hidden', background: 'var(--bdr)' } },
+      segments.map(seg => seg.count > 0 && div({ key: seg.key, style: { flex: `${seg.count} 1 0%`, background: seg.color } }))),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: 10.5 } },
+      segments.map(seg => span({ key: seg.key, style: { color: 'var(--text3)' } },
+        span({ style: { display: 'inline-block', width: 8, height: 8, borderRadius: 2, marginRight: 5, background: seg.color, verticalAlign: '-1px' } }),
+        `${seg.label} · ${seg.count}`))),
+  );
+}
+
 // ── District Health Grid + Narrative Briefing cards (dispatch 2026-11-10, Phase 1) ─────────────
 // The owner's own two design concepts (links in the dispatch commit) for this panel: "The Loss
 // Prevention Briefing" (severity-striped narrative cards, headline-first) and "Security Health
@@ -1468,6 +1767,16 @@ export function SecurityPanel({ userRole, onClose }) {
   const domainRuleIds = React.useMemo(() =>
     new Set(rules.filter(r => r.domain === domain).map(r => r.ruleId)), [rules, domain]);
 
+  // dispatch 2026-11-10 -- Command Center's own cross-domain data, independent of the `domain`/
+  // `ruleFilter`/`minSignals`/`dateRange` state the Table/Briefing views' `groups` memo below is
+  // scoped to. Deliberately unfiltered by those -- the whole point of this view is "every open
+  // rule, every domain, one screen," not one policy at a time. Still respects `scope` (the shared
+  // LocationSelector), same as every other view in this panel.
+  const commandGroups = React.useMemo(() => buildCommandGroups(findings, scope), [findings, scope]);
+  const domainBreakdown = React.useMemo(() => buildDomainBreakdown(findings, rulesById, rules, scope),
+    [findings, rulesById, rules, scope]);
+  const topRules = React.useMemo(() => buildTopContributingRules(findings, rulesById, scope), [findings, rulesById, scope]);
+
   const groups = React.useMemo(() => {
     // 'labor' subjects are empToken-based too (an employee for LABOR-001/002, a manager --
     // resolved into the same emp_token column -- for LABOR-003), same identity shape as 'cash'.
@@ -1540,6 +1849,37 @@ export function SecurityPanel({ userRole, onClose }) {
     return () => { cancelled = true; };
   }, [expanded, groups]);
 
+  // dispatch 2026-11-10 -- Command Center's Case Queue + each Employee Watchlist row's Status
+  // cell both need the latest action on every CURRENTLY FLAGGED finding across the whole scope,
+  // not just whichever one subject a reader has expanded. Reuses the EXACT SAME findingActions
+  // cache / findingActionsAttempted ref the per-expanded-subject effect above already maintains
+  // (one shared cache, no duplicate fetch for an id either path has already attempted) -- this is
+  // additive, not a second mechanism.
+  React.useEffect(() => {
+    if (view !== 'command') return;
+    const toFetch = [];
+    for (const g of commandGroups) {
+      for (const v of g.verdicts) {
+        if (v.pass === true && !v.lifecycleCategory && v.id && !findingActionsAttempted.current.has(v.id)) toFetch.push(v.id);
+      }
+    }
+    if (!toFetch.length) return;
+    toFetch.forEach(id => findingActionsAttempted.current.add(id));
+    let cancelled = false;
+    (async () => {
+      const rows = await loadSecurityFindingActionsForFindings(toFetch);
+      if (cancelled || !rows.length) return;
+      setFindingActions(prev => {
+        const next = { ...prev };
+        for (const r of rows) next[r.findingId] = [...(next[r.findingId] || []), r];
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [view, commandGroups]);
+
+  const caseQueue = React.useMemo(() => tallyCaseQueue(commandGroups, findingActions), [commandGroups, findingActions]);
+
   const handleFindingAction = React.useCallback(async (findingId, action, note) => {
     setActionBusy(findingId);
     setActionError(prev => { const { [findingId]: _drop, ...rest } = prev; return rest; });
@@ -1557,6 +1897,21 @@ export function SecurityPanel({ userRole, onClose }) {
       setActionBusy(null);
     }
   }, [userRole]);
+
+  // dispatch 2026-11-10 -- Command Center's "Review →" action. Deliberately does NOT duplicate
+  // SubjectDetail/FindingActions -- it jumps straight into the existing Table view, already
+  // scoped/expanded to this subject, so the real drill-down (case actions, exoneration,
+  // corroboration, the drilldown fetch) is the one that already exists, not a second copy of it.
+  // `leadDomain` picks which of this subject's (possibly several) flagged domains to land on --
+  // EmployeeWatchlistRow passes its own highest-severity verdict's domain.
+  const onReviewSubject = React.useCallback((group, leadDomain) => {
+    setDomain(leadDomain);
+    setRuleFilter(null);
+    setMinSignals(DOMAIN_DEFAULT_MIN_SIGNALS[leadDomain] ?? 1);
+    setScope({ level: 'store', value: group.loc });
+    setView('table');
+    setExpanded(group.key);
+  }, []);
 
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
@@ -1709,7 +2064,10 @@ export function SecurityPanel({ userRole, onClose }) {
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     // ── Domain tabs + Legend ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
-      ['cash', 'inventory', 'labor', 'events'].map(d => btn({
+      // dispatch 2026-11-10 -- hidden in Command Center: that view is deliberately cross-domain
+      // ("every open rule, every domain, one screen"), so a single-domain filter here would look
+      // like it applies and silently not, which is worse than not offering it at all.
+      view !== 'command' && ['cash', 'inventory', 'labor', 'events'].map(d => btn({
         key: d, onClick: () => { setDomain(d); setRuleFilter(null); setMinSignals(DOMAIN_DEFAULT_MIN_SIGNALS[d] ?? 1); },
         style: {
           padding: '5px 12px', borderRadius: 'var(--r)', border: '1px solid ' + (domain === d ? 'var(--accent)' : 'var(--bdr)'),
@@ -1720,16 +2078,17 @@ export function SecurityPanel({ userRole, onClose }) {
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
       }, '❓ Legend'),
-      // dispatch 2026-11-10 -- Briefing (the new narrative-card default) vs Table (unchanged,
-      // the pre-existing sortable view). A view choice, not a filter -- doesn't touch `groups`.
+      // dispatch 2026-11-10 -- Briefing/Table (unchanged) vs Command Center (new, cross-domain --
+      // see CommandCenterView's own header for what it reuses vs. adds). A view choice, not a
+      // filter -- doesn't touch `groups`.
       div({ style: { display: 'flex', gap: 2, border: '1px solid var(--bdr)', borderRadius: 999, padding: 2 } },
-        ['briefing', 'table'].map(v => btn({
+        ['briefing', 'table', 'command'].map(v => btn({
           key: v, onClick: () => setView(v),
           style: {
             fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
             background: view === v ? 'var(--accent,#f5bc00)' : 'transparent', color: view === v ? '#000' : 'var(--text3)',
           },
-        }, v === 'briefing' ? '🩺 Briefing' : '🗂 Table')),
+        }, v === 'briefing' ? '🩺 Briefing' : v === 'table' ? '🗂 Table' : '🖥 Command Center')),
       ),
       // Dispatch #143 -- CSV/JSON export + full print report, both scoped to the currently
       // filtered/sorted findings table (sortedGroups) via exportSpec/handlePrintReport above.
@@ -1764,8 +2123,8 @@ export function SecurityPanel({ userRole, onClose }) {
     ),
     // dispatch #46 §A point 2 -- a legend defining the vocabulary, dismissible and remembered.
     showLegend && h(Legend, { onDismiss: dismissLegend, rules }),
-    // ── Rule + signal filters ──
-    dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
+    // ── Rule + signal filters ── hidden in Command Center, same reasoning as the domain tabs above.
+    view !== 'command' && dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
       div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
         span({ style: { color: 'var(--text3)' } }, 'Rule:'),
         pill('All', !ruleFilter, () => setRuleFilter(null)),
@@ -1813,11 +2172,13 @@ export function SecurityPanel({ userRole, onClose }) {
       permState === 'denied' && emptyState('Not permitted — this view requires admin, supervisor, or a manager role with identity-reveal enabled for this org. This is a permission gate, not an empty result — do not read it as "nothing to see here."', true),
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
       permState === 'allowed' && dataState === 'error' && emptyState('Could not load findings — try again.', true),
-      permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
+      view !== 'command' && permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
       // Live-screen hero bar -- see SecuritySummaryBar's own header for why this exists and why
       // it's fed `groups`, not `sortedGroups`. Only rendered once there's something to summarize;
-      // the empty-state message just above already covers the zero-groups case.
-      permState === 'allowed' && dataState === 'loaded' && groups.length > 0
+      // the empty-state message just above already covers the zero-groups case. Command Center
+      // renders its OWN SecuritySummaryBar inside CommandCenterView, fed `commandGroups` (cross-
+      // domain) instead of this domain-scoped `groups` -- excluded here so it isn't shown twice.
+      view !== 'command' && permState === 'allowed' && dataState === 'loaded' && groups.length > 0
         && h(SecuritySummaryBar, { groups, newestBatch, revealed, itemInfoFor }),
       // dispatch 2026-11-10 -- Briefing view: district health grid (hidden once scope is already
       // narrowed to a single store — nothing to rank against) + one narrative card per flagged
@@ -1885,6 +2246,17 @@ export function SecurityPanel({ userRole, onClose }) {
           })),
         ),
       ),
+      // dispatch 2026-11-10 -- Command Center: cross-domain rollups + Employee Watchlist, built
+      // entirely from `findings`/`rulesById`/`healthList` the panel already loaded -- no new query.
+      // See CommandCenterView's own header for exactly what it reuses (SecuritySummaryBar,
+      // SecurityHealthGrid) vs. what's genuinely new here (domain cards, watchlist, pareto, queue).
+      view === 'command' && permState === 'allowed' && dataState === 'loaded'
+        && h(CommandCenterView, {
+          commandGroups, domainBreakdown, topRules, healthList, caseQueue, findingActions,
+          revealed, onReveal, rulesById, newestBatch, itemInfoFor, scope,
+          onSelectStore: loc => setScope({ level: 'store', value: loc }),
+          onReviewSubject,
+        }),
     ),
   );
 }
