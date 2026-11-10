@@ -891,6 +891,24 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
     expect(container.textContent).toMatch(/🔒 reveal/);
     expect(container.textContent).not.toMatch(/Alice Andrews/);
   });
+
+  // Owner feedback, 2026-11-10: expanding a row to read its finding(s) is a different scroll
+  // position than the collapsed row's own Subject column -- a subject name stated only once,
+  // mid-sentence, inside the first verdict's decision sentence, was easy to miss. SubjectDetail
+  // already received subjectLabel as a prop (used inside buildDecisionSentence) before this fix;
+  // what was missing was ever rendering it on its own.
+  it('expanding a row shows the subject name as its own standalone header, not just inside the decision sentence', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const aliceRow = storeLabel?.parentElement;
+    expect(aliceRow).toBeTruthy();
+    await act(async () => { aliceRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const header = [...container.querySelectorAll('div')].find(d => d.textContent === 'Alice Andrews' && d.children.length === 0);
+    expect(header).toBeTruthy();
+    expect(header.style.fontWeight).toBe('700');
+  });
 });
 
 // dispatch #52 -- the drill-down, scoped from the store 0013113 investigation
