@@ -22,6 +22,7 @@ import {
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
   loadQsrSecurityEventsForSubject, loadSecurityFindingsForSubject,
   loadSecurityFindingActionsForFindings, saveSecurityFindingAction,
+  loadSecurityFindingsRecentHistoryForKeys,
 } from '../lib/supabase.js';
 import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
 import { RevealName } from './store-analytics.js';
@@ -36,6 +37,14 @@ import { playbookForRule } from '../engine/security-playbook.js';
 // the narrative-card/district-grid view built on it. See security-health.js's own header for
 // exactly what this phase does and deliberately does not compute.
 import { storeHealthList } from '../engine/security-health.js';
+// dispatch 2026-11-10 follow-on -- drift/trajectory detection (the deep-dive doc's own §4, "Red
+// flags on drift, not just a threshold breach"), additive to the Phase 1 score above. See
+// security-drift.js's own header for why this is a separate file (one-directional import, never
+// circular with security-health.js) and exactly what population it is bounded to.
+import {
+  selectDriftCandidates, computeDriftRollup, driftDirectionForStore, driftKeyFor,
+  driftTrendBadge, TREND_BADGE_META, DRIFT_LOOKBACK_WINDOWS,
+} from '../engine/security-drift.js';
 // dispatch #100 -- the date-range control reuses the shared DateRangeControl (issue #126 Spine 1)
 // rather than a bespoke date-input pair, matching this repo's "don't invent a new pattern"
 // standing rule.
@@ -1032,6 +1041,16 @@ const HEALTH_TIER_META = {
   clean:              { label: 'Clean', color: 'var(--ok,#10b981)' },
 };
 
+// dispatch 2026-11-10 follow-on -- the deep-dive doc's own district-grid mockup drives each tile's
+// arrow from DRIFT, not color (§4's own words: "not just its color"). `null` (drift not computed
+// for this store yet -- see computeStoreHealth's own header) renders NOTHING, never a fabricated
+// "→ flat" guess.
+const DRIFT_ARROW_META = {
+  worsening: { arrow: '↑', label: 'worsening', color: 'var(--crit,#ef4444)' },
+  improving: { arrow: '↓', label: 'improving', color: 'var(--ok,#10b981)' },
+  flat:      { arrow: '→', label: 'flat', color: 'var(--text3)' },
+};
+
 // `onSelectStore(loc)` narrows the panel's existing `scope` state to that one store -- the SAME
 // mechanism LocationSelector already drives, so picking a tile behaves exactly like picking that
 // store in the location picker above it (every other filter -- domain, rule, min signals, date
@@ -1056,7 +1075,13 @@ function SecurityHealthGrid({ list, scope, onSelectStore }) {
         },
           div({ style: { fontSize: 11.5, fontWeight: 700, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
             STORE_NAMES[row.loc] || row.loc),
-          div({ style: { fontSize: 19, fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums' } }, row.score),
+          div({ style: { display: 'flex', alignItems: 'baseline', gap: 6 } },
+            div({ style: { fontSize: 19, fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums' } }, row.score),
+            row.driftDirection && (() => {
+              const d = DRIFT_ARROW_META[row.driftDirection];
+              return span({ title: `Trend: ${d.label}`, style: { fontSize: 13, fontWeight: 800, color: d.color } }, d.arrow);
+            })(),
+          ),
           div({ style: { fontSize: 10, color: 'var(--text3)' } },
             `${meta.label} · ${row.flaggedCount} signal${row.flaggedCount === 1 ? '' : 's'}${row.criticalCount ? ` · ${row.criticalCount} critical` : ''}`),
           row.insufficientCount > 0 && div({ style: { fontSize: 9.5, color: 'var(--text3)', fontStyle: 'italic', marginTop: 2 } },
@@ -1065,7 +1090,7 @@ function SecurityHealthGrid({ list, scope, onSelectStore }) {
       }),
     ),
     div({ style: { fontSize: 10, color: 'var(--text3)', marginTop: 8, fontStyle: 'italic' } },
-      'Score = severity × how unusual, summed across every flagged signal at the store, this phase (no persistence/convergence weighting yet — a chronic 21-day flag and a first-time one still count once each). Not a dollar figure — see security-health.js if exactness here matters to you.'),
+      'Score = severity × how unusual, summed across every flagged signal at the store, plus a smaller drift nudge for a trajectory that’s worsening across its last 3-4 windows (persistence/convergence weighting is still a later phase). Not a dollar figure — see security-health.js if exactness here matters to you. ↑/↓/→ next to a score is that same drift signal, not color — it only appears once trend data has finished loading for this scope.'),
   );
 }
 
@@ -1074,7 +1099,7 @@ function SecurityHealthGrid({ list, scope, onSelectStore }) {
 // and independently case-tracked, rather than one card hiding two of three findings behind a
 // click. `clear`/`undetermined`/`hygiene` verdicts never get a card here (nothing to action) --
 // they still render in the Table view's full per-subject detail.
-function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer }) {
+function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey }) {
   const subjectLabel = subjectLabelFor(group, revealed, itemInfoFor);
   const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
   if (!flaggedVerdicts.length) return null;
@@ -1084,6 +1109,15 @@ function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFo
     const stripeColor = severity >= 4 ? 'var(--crit,#ef4444)' : severity === 3 ? 'var(--amber,#f59e0b)' : 'var(--text3)';
     const trend = classifySubjectTrend(group.historyByRule?.[v.ruleId] || [v]);
     const trendMeta = TREND_META[trend];
+    // dispatch 2026-11-10 follow-on -- "Escalating"/"Recurring"/"First flag", the "Loss
+    // Prevention Briefing" mockup's own trend-badge treatment. `driftPerKey` is only populated
+    // once the Briefing view's drift fetch (security-panel.js's own driftHistory effect) has
+    // resolved for THIS finding's own candidate key -- a key absent from the map (not a
+    // candidate, or still loading) renders no badge at all rather than guessing "First flag".
+    const driftKey = driftKeyFor({ loc: group.loc, ruleId: v.ruleId, empToken: group.empToken, wrin: group.wrin });
+    const driftResult = driftPerKey?.get(driftKey);
+    const trendBadgeKey = driftResult ? driftTrendBadge(driftResult.direction, trend) : null;
+    const trendBadgeMeta = trendBadgeKey && TREND_BADGE_META[trendBadgeKey];
     const bc = v.baselineContext || {};
     const corrob = corroboratingFlags(v, rule, group.verdicts);
     const falsePositives = rule.falsePositives || [];
@@ -1110,7 +1144,18 @@ function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFo
         ),
         corrob.length > 0 && div({ style: { fontSize: 11, color: 'var(--crit,#ef4444)' } }, `🔗 Corroborated by ${corrob.join(', ')} — also flagged for this subject.`),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 } },
-          div({ style: { fontSize: 10.5, color: trendMeta.color, fontWeight: 600 } }, trendMeta.label),
+          div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+            div({ style: { fontSize: 10.5, color: trendMeta.color, fontWeight: 600 } }, trendMeta.label),
+            trendBadgeMeta && span({
+              title: driftResult?.direction === 'worsening'
+                ? `Rising across its last ${driftResult.windowsUsed} windows — still worth catching before it fully crosses the rule's own threshold.`
+                : undefined,
+              style: {
+                fontSize: 10, fontWeight: 700, color: trendBadgeMeta.color,
+                border: `1px solid ${trendBadgeMeta.color}`, borderRadius: 999, padding: '2px 8px',
+              },
+            }, trendBadgeMeta.label),
+          ),
           div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
             falsePositives.length > 0 && btn({ onClick: () => onToggleDrawer(ruleOutKey), style: drawerBtn }, ruleOutOpen ? 'Hide rule-outs' : 'Rule out first'),
             btn({ onClick: () => onToggleDrawer(mathKey), style: drawerBtn }, mathOpen ? 'Hide the math' : 'Show the math'),
@@ -1508,11 +1553,78 @@ export function SecurityPanel({ userRole, onClose }) {
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
 
+  // dispatch 2026-11-10 follow-on -- drift/trajectory history. Fetched ONCE, only once the
+  // Briefing view is actually open (never for Table-view-only use -- matching this panel's own
+  // "lazy by default, on-demand not eager at startup" discipline the whole file follows), and
+  // bounded to the real candidate set selectDriftCandidates() resolves from the ALREADY-loaded
+  // bulk `findings` -- never a full-district multi-window pull. See
+  // loadSecurityFindingsRecentHistoryForKeys' own header (src/lib/supabase.js) for the real
+  // row-count measurements (242,074-row base table; a flat recent-days filter costs 43-65k rows
+  // AND still misses a rule family whose own cron history is stale; targeting by candidate
+  // instead costs a bounded, real 1,877-subject fetch) that ruled out an eager full pull.
+  // ref-guarded so it fires at most once per panel session, same shape as subjectHistoryAttempted
+  // above -- `findings` only changes on a fresh load, which already remounts this whole tree.
+  const [driftHistory, setDriftHistory] = React.useState(null); // null = not fetched yet; Map once resolved (possibly empty)
+  const driftFetchAttempted = React.useRef(false);
+  React.useEffect(() => {
+    if (view !== 'briefing' || dataState !== 'loaded' || driftFetchAttempted.current || !findings.length) return;
+    driftFetchAttempted.current = true;
+    let cancelled = false;
+    (async () => {
+      const candidates = selectDriftCandidates(findings, rulesById);
+      if (!candidates.length) { if (!cancelled) setDriftHistory(new Map()); return; }
+      const rows = await loadSecurityFindingsRecentHistoryForKeys(candidates, { lookbackWindows: DRIFT_LOOKBACK_WINDOWS + 2 });
+      if (cancelled) return;
+      const byKey = new Map();
+      for (const r of rows) {
+        const key = driftKeyFor(r);
+        if (!byKey.has(key)) byKey.set(key, { loc: r.loc, ruleId: r.ruleId, history: [] });
+        byKey.get(key).history.push(r);
+      }
+      // Oldest-to-newest, the same ordering convention buildHistoryByRule already establishes --
+      // classifySubjectDrift's own slice(-lookback) depends on it.
+      for (const rec of byKey.values()) {
+        rec.history.sort((a, b) => (a.windowEnd || '').localeCompare(b.windowEnd || '') || (a.computedAt || '').localeCompare(b.computedAt || ''));
+      }
+      setDriftHistory(byKey);
+    })().catch(() => {
+      // A hard failure (not the per-chunk try/catch loadSecurityFindingsRecentHistoryForKeys
+      // already has, but e.g. a thrown network exception before any chunk resolves) must not
+      // leave driftHistory stuck at null forever -- driftFetchAttempted is already true, so
+      // nothing would ever retry. Degrading to "fetched, found nothing" is the same honest
+      // fallback an empty candidate set already gets a few lines up: the grid/cards render
+      // Phase 1's own numbers with no drift extras, never a silent hang.
+      if (!cancelled) setDriftHistory(new Map());
+    });
+    return () => { cancelled = true; };
+  }, [view, dataState, findings, rulesById]);
+
+  // One pass over driftHistory -> both the health-score's own extra term AND the district grid's
+  // per-store arrow (computeDriftRollup's own header -- a single pass so the two views can never
+  // disagree about what the same history classified as). null (not yet fetched) is a real,
+  // distinct state from "fetched and found nothing" -- storeHealthList below treats either the
+  // same way (both omit the drift extras), so the grid/score render Phase 1's exact numbers while
+  // this is in flight, then update once it resolves -- the same progressive-disclosure shape
+  // SubjectDrilldown's "Investigate further" already established in this file.
+  const driftRollup = React.useMemo(() => (driftHistory ? computeDriftRollup(driftHistory, rulesById) : null), [driftHistory, rulesById]);
+  const driftContributions = React.useMemo(() => (driftRollup
+    ? [...driftRollup.byLoc.values()].filter(r => r.contribution > 0).map(r => ({ loc: r.loc, amount: r.contribution }))
+    : null), [driftRollup]);
+  const driftDirectionByLoc = React.useMemo(() => {
+    if (!driftRollup) return null;
+    const out = {};
+    for (const [loc, row] of driftRollup.byLoc) out[loc] = driftDirectionForStore(row);
+    return out;
+  }, [driftRollup]);
+
   // dispatch 2026-11-10 -- the district health grid's own data, computed across EVERY domain/
   // rule at once (see security-health.js's own header for why) -- from the bulk `findings` +
   // `rulesById` this panel already loaded, independent of whatever domain tab/scope/rule filter
-  // is currently selected for the briefing feed below it.
-  const healthList = React.useMemo(() => storeHealthList(findings, rulesById), [findings, rulesById]);
+  // is currently selected for the briefing feed below it. Phase 2 follow-on: drift extras folded
+  // in via the SAME optional, additive hook computeStoreHealth itself documents -- omitted
+  // entirely (driftContributions/driftDirectionByLoc both null) until the fetch above resolves.
+  const healthList = React.useMemo(() => storeHealthList(findings, rulesById, { driftContributions, driftDirectionByLoc }),
+    [findings, rulesById, driftContributions, driftDirectionByLoc]);
 
   // dispatch #56 Part C -- "list the name of the product." `${loc}|${wrin}|${period}` ->
   // {descr, cls} from qsr_variance_stat, so an inventory subject's heading can show the item name
@@ -1713,7 +1825,7 @@ export function SecurityPanel({ userRole, onClose }) {
             return h(SecurityBriefingCard, {
               key: g.key, group, rulesById, revealed, onReveal, itemInfoFor,
               findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
-              openDrawers, onToggleDrawer: toggleDrawer,
+              openDrawers, onToggleDrawer: toggleDrawer, driftPerKey: driftRollup?.perKey,
             });
           }),
         ),
