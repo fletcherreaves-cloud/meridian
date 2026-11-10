@@ -245,6 +245,14 @@ export function YoyTrendsPanel({ ds, onClose }) {
       h(LocationSelector, { stores: ALL_STORES, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scopeValue, onChange: setScopeValue, variant: 'dropdown', multi: true }),
       div({ style: { display: 'flex', gap: 4 } },
         ...YEARS_BACK_OPTIONS.map(o => btn({ key: o.yearsBack, style: _pillStyle(yearsBack === o.yearsBack), onClick: () => setYearsBack(o.yearsBack) }, o.label))),
+      // Task #99 (onboarding backfill guidance) -- 4 years is the picker's ceiling, not this
+      // app's real ceiling. Visible by default (voice-by-role standing rule: the decision stays
+      // next to the control, never behind a click-only affordance), with the fuller "why" one
+      // hover away in `title`, same depth-reachable pattern InfoIcon's own icon uses.
+      span({
+        style: { fontSize: 10, color: 'var(--text3)' },
+        title: 'Most tables\' earliest row just marks when the pull first ran, not a real data floor -- see the "Data Collection Bounds" guide (Help) for the short list of genuine exceptions.',
+      }, 'Need more than 4 yrs? Ask — it’s a backfill, not a limit.'),
       h(ExportDropdown, { rows, columns, title: `YoY Trends — ${metric.label} (${scopeLabel})`, filename: `yoy-trends-${metric.key}-${new Date().toISOString().slice(0, 10)}` }),
     ),
   },
