@@ -541,6 +541,15 @@ export const PANELS = [
   // its real eventual section:'analytics' set from day one, per the standing promotion rule
   // (dispatch #61) -- cross-store rollup, same perm tier as Top/Bottom Performers.
   { id:'trend-report', label:'Performance Trends', icon:'📊', perm:'analytics.district', kind:'test-kitchen', section:'analytics', route:true, tkOrder:15 },
+  // YoY Trends (task #90, design doc memory/plan-yoy-trend-dashboard-2026-11-05.md) -- a
+  // monthly-bucketed, calendar-accurate current-year vs N-prior-years line for any
+  // PERFORMER_METRICS key, rolled up across any LocationSelector scope. Distinct from Performance
+  // Trends (sequential period-over-period) and Trend Explorer (single-store, exploratory,
+  // single-metric-any-window) -- confirmed a genuine gap by auditing both before building.
+  // kind:'test-kitchen' with its real eventual section:'analytics' set from day one, per the
+  // standing promotion rule (dispatch #61) -- same perm tier as Performance Trends (a cross-store
+  // rollup panel).
+  { id:'yoy-trends', label:'YoY Trends', icon:'📅', perm:'analytics.district', kind:'test-kitchen', section:'analytics', route:true, tkOrder:19 },
   // Trend Explorer (owner-requested 2026-09-05, memory/project-trends-panel.md) -- pick any
   // registry metric + store, a date range and a daily/weekly/monthly/yearly frequency, see the
   // series as a sparkline + table, and get a day-of-week diagnostic read plus what else moves

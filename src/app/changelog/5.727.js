@@ -1,20 +1,26 @@
 // @ts-nocheck
 export default {version:'5.727', date:'2026-11-10', changes:[
-  '**🔐 Security Events — "General Drawer Open" wired in; manager-authorization field confirmed '+
-  'already mapped (task #131).** A read-only probe added 2026-11-08 to find the real `event_token` '+
-  'for the owner\'s KB-reported "General Drawer Open" category had never actually been run and '+
-  'its results captured. Re-ran it for real: the token is `drawer_open` (the live API calls these '+
-  'rows "Unauthorized Drawer Open") — confirmed frequent across every store/date sampled. Found '+
-  'and fixed a real bug this would have shipped: drawer_open rows carry a literal '+
-  '`"0000-00-00"`/`"00:00:00"` sentinel for their POS-session fields (not an absent value), which '+
-  'a Postgres `date` column rejects outright — nulled before it ever reaches the DB. Confirmed '+
-  'the "Manager Authorization Type" field the owner also flagged is `mgr_code`, already mapped '+
-  'since the original build — not a gap, though a third real raw value (`"false"`) turned up that '+
-  'the original capture never saw.',
-  '**New EVENT-004 security rule — drawer-open rate, z-scored against store peers.** A 7-day/28-'+
-  'store real backfill (57,641 rows saved, zero errors) measured that the sessions-worked '+
-  'denominator genuinely works for this event (every crew member with a flagged drawer-open also '+
-  'had other same-day activity to compute a rate from) and that the raw event is common enough '+
-  '(45% of shifts) that only a peer-relative outlier, not a flat occurrence count, makes sense — '+
-  'matching EVENT-001/002/003\'s real live shape. Shipped inactive pending review.',
+  '**📅 New panel: YoY Trends (task #90).** A real year-over-year TREND — this year\'s monthly '+
+  'trajectory overlaid against 2-4 prior years, calendar-month matched (September vs. last '+
+  'September, never a 364-day/weekday-shifted comparison) — for any `PERFORMER_METRICS` key '+
+  'across any All/State/Patch/Store scope. Confirmed a genuine gap first: audited Performance '+
+  'Trends (sequential period-over-period), Trend Explorer (single-store exploratory) and '+
+  'vs-ly.js (one aggregate number) — none of them plot a multi-period year-over-year line. '+
+  'New engine `src/engine/yoy-trend.js` (calendar-accurate monthly buckets, Σnum/Σden rollup for '+
+  'ratio metrics read straight off metric-source.js so it can\'t disagree with it, and a '+
+  'young-store honeymoon-ramp exclusion generalized from vs-ly.js\'s own lyQuality). Chart.js '+
+  'line overlay + month-by-month actual/LY/Δ% table, exportable via the house ExportDropdown. '+
+  'Cross-linked info icons on all three trend panels (Performance Trends gets its first-ever '+
+  'InfoIcon in this same pass) so a user lands on the right one regardless of which they open '+
+  'first. `kind:\'test-kitchen\'`, real `section:\'analytics\'` from day one, `route:true`.',
+  '**Caught and fixed before shipping:** fetching exactly the display window\'s depth of history '+
+  'made every store look like it opened on day one of that window, flooding the honeymoon-ramp '+
+  'guard with false positives — `yoyFetchDaysBack()` fetches enough buffer ahead of the oldest '+
+  'displayed year to tell a genuinely young store (verified against the real, documented '+
+  'Tishomingo case) from a long-established one (verified against a real store with 6+ years of '+
+  'history). Both the calendar-month math and this fix were verified against live production '+
+  'data (service-role, qsr_daily_activity_rollup) before shipping, not reasoned about.',
+  '**3 open questions, defaulted per the design doc\'s own lean (owner traveling, easily '+
+  'reconfigured):** metric registry = `PERFORMER_METRICS`; default trailing window = 3 years '+
+  '(current + 2 prior); default metric = Sales.',
 ]};

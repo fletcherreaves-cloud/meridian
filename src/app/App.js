@@ -341,6 +341,7 @@ const CustomerComplaintsPanel = lazyPanel(() => import('../views/customer-compla
 const StoreAssessmentsPanel = lazyPanel(() => import('../views/store-assessments.js').then(m => ({ default: m.StoreAssessmentsPanel })), 'store-assessments');
 const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })), 'trend-explorer-panel');
 const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then(m => ({ default: m.TrendReportPanel })), 'trend-report');
+const YoyTrendsPanel = lazyPanel(() => import('../views/yoy-trends.js').then(m => ({ default: m.YoyTrendsPanel })), 'yoy-trends');
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })), 'forms-completion');
 const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })), 'forms-reviews');
 const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })), 'quick-capture');
@@ -3958,6 +3959,7 @@ function App() {
         if(modal==='store-assessments') perm('analytics.store')&&goRoute('store-assessments');
         if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
         if(modal==='trend-report')   perm('analytics.district')&&goRoute('trend-report');
+        if(modal==='yoy-trends')     perm('analytics.district')&&goRoute('yoy-trends');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         if(modal==='access-log')     perm('security.auditLog')&&goRoute('access-log');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
@@ -4408,6 +4410,7 @@ function App() {
       routePanel==='store-assessments'&&h(StoreAssessmentsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='yoy-trends'&&h(YoyTrendsPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/
