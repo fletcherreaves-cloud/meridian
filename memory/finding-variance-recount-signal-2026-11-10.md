@@ -1,6 +1,6 @@
 ---
 name: finding-variance-recount-signal-2026-11-10
-description: Research result (task #130, follow-on from plan-count-cycle-surfaces-and-spotcheck-ruler-2026-11-08.md's open question #3/#4) — does an item's own variance shape predict a recount? Measured against real qsr_variance_stat/inv_count_sessions data. Finding: no usable signal, and not enough sample to responsibly calibrate one either way. Do not build a variance-based recount/anomaly detector on this basis.
+description: Research result (task #130, follow-on from plan-count-cycle-surfaces-and-spotcheck-ruler-2026-11-08.md's open question #3/#4) — does an item's own variance shape predict a recount? Measured against real qsr_variance_stat/inv_count_sessions data. Finding: no usable signal, and not enough sample to responsibly calibrate one either way. Do not build a variance-based recount/anomaly detector on this basis. ✅ UPDATE, same day — the data-model gap this file's own Recommendation section named as the real blocker is now CLOSED (schema-qsr-onhand-item-history-2026-11-10.sql + deriveItemHistoryRows() in scripts/qsrsoft-onhand-pull.mjs) — see the note at the end. The research verdict above is unchanged; what changes is that re-running this same analysis in a few months, once real item-level history has accumulated, is now possible and will have much better statistical power than the 12-sample ceiling this pass hit.
 metadata:
   type: finding
 ---
@@ -95,6 +95,42 @@ variance snapshot — not just the monthly rollup `qsr_variance_stat` already is
 actual enabling change, and that's a schema + pull-script change (new table, or an append-only
 variant of the existing on-hand pull), a separate, concretely scoped follow-on from this research
 pass, not something to attempt blind from today's data.
+
+## ✅ Update, same day — the data-model gap is now closed
+
+Owner, on reading this file's Recommendation section: *"I thought we solved this by logging all
+count results to Supabase. Please verify. If we didn't, that should be the solution. Log them,
+not overwrite…so we can historically recall the state at time of count."* Verified directly
+against the real schema files before responding — `inv_count_sessions` (the thing the owner was
+remembering) genuinely is append-only, but only at the **session** grain (how many items, was
+coverage met); `qsr_onhand`/`qsr_variance_stat` are both still `(loc, period, wrin)` rolling-latest
+at the **item** grain, confirmed from their own `create table` statements. Two different gaps —
+only the session one had been closed.
+
+Built the item-level counterpart the same day, same pattern as `inv_count_sessions`:
+- `supabase/schema-qsr-onhand-item-history-2026-11-10.sql` — new append-only table
+  `qsr_onhand_item_history`, one row per `(loc, count_date, wrin)`, same RLS/tenant pattern as
+  every other operational table. **⚠️ Needs the owner to run this SQL file in the Supabase editor
+  before it writes real data** — same handoff as every other new-table migration in this repo.
+- `scripts/qsrsoft-onhand-pull.mjs`'s new `deriveItemHistoryRows()`, wired in right alongside the
+  existing `deriveSessionRows()` call (same `deduped` rows, same point in the daily pull) — snapshots
+  each item's on-hand qty/price/$ at its own real `last_counted` date before the next recount would
+  otherwise overwrite it in `qsr_onhand`. Idempotent on `(loc, count_date, wrin)`, so growth tracks
+  real counting activity, not pull frequency. Unit-tested (`src/__tests__/qsrsoft-onhand-pull-item-
+  history-2026-11-10.test.js`) against recount, skip-when-uncounted, and zero-value-preservation cases.
+- `src/lib/supabase.js`'s new `loadQsrOnHandItemHistory({loc, wrin})`, mirroring the existing
+  `loadQsrVarianceHistory` loader so the data is actually readable once it exists.
+
+**This does not retroactively fix the n=12 sample problem above** — history only accumulates from
+whenever the owner runs the schema file forward. It does mean this exact research is re-runnable
+later with real item-level ground truth instead of the class-level proxy this pass had to use, and
+it's the real, concrete form of "the blocker is a data-model gap, not more analysis" this file's
+own Recommendation section called for.
+
+**Still not solved, and not claimed to be:** the true WITHIN-session case (same day, re-keyed
+before submit, no separate `count_date`) — this only captures one snapshot per calendar day (the
+daily pull's own cadence), so a same-day correction still leaves no trace. That remains the one
+part of the original owner ask with no buildable answer today.
 
 ## Reproducing this
 

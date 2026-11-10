@@ -832,6 +832,7 @@ async function main() {
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
+  const itemHistoryRows = []; // append-only ITEM-level count history (one row / store / count date / wrin)
   const notificationRows = []; // dispatch #209 — fired count-completion notifications this run
   // #263: a store with zero on-hand items could be legitimately between count
   // cycles (nothing to report) or could be a fetch that errored on every type and
@@ -910,6 +911,11 @@ async function main() {
       // answered. Idempotent: the same session seen on consecutive days upserts the
       // same (loc, count_date, cls) row rather than duplicating.
       sessionRows.push(...deriveSessionRows(loc, period, deduped));
+      // Owner request 2026-11-10, following memory/finding-variance-recount-signal-2026-11-10.md
+      // (measured: qsr_onhand/qsr_variance_stat are both rolling-latest per (loc,period,wrin) --
+      // there was no way to recover what an item's on-hand/variance actually was at a PAST count
+      // date once it's been recounted). Same append-only fix as sessionRows above, at item grain.
+      itemHistoryRows.push(...deriveItemHistoryRows(loc, period, deduped));
     }
     if (DEBUG) console.log(`  ${nsn}: ${deduped.length} items`);
   }
@@ -940,6 +946,19 @@ async function main() {
       else saved += Math.min(CH, sessionRows.length - i);
     }
     if (!failed) console.log(`[onhand-pull] count-sessions: ${saved} rows`);
+  }
+
+  // Append the item-level count history (supabase/schema-qsr-onhand-item-history-2026-11-10.sql).
+  if (itemHistoryRows.length) {
+    const CH = 500;
+    let saved = 0, failed = 0;
+    for (let i = 0; i < itemHistoryRows.length; i += CH) {
+      const { error } = await supabase.from('qsr_onhand_item_history')
+        .upsert(itemHistoryRows.slice(i, i + CH), { onConflict: 'loc,count_date,wrin' });
+      if (error) { failed++; console.warn('[qsr_onhand_item_history] upsert error (table may not exist yet):', error.message); }
+      else saved += Math.min(CH, itemHistoryRows.length - i);
+    }
+    if (!failed) console.log(`[onhand-pull] item-history: ${saved} rows`);
   }
 
   // Insert fired count-completion notifications (dispatch #209, supabase/schema-eom-count-
@@ -981,7 +1000,7 @@ async function main() {
 // scripts/qsrsoft-register-audit-pull.mjs uses. Exported for both dispatch #209's and #210's
 // own test suites, which import this module directly for its pure/network-mockable functions
 // without also firing off a live run.
-export { runMode, triggerFobPullIfPossible, recentPeriodKeys, storesCountingToday };
+export { runMode, triggerFobPullIfPossible, recentPeriodKeys, storesCountingToday, deriveItemHistoryRows };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
 }
@@ -1046,6 +1065,33 @@ function deriveSessionRows(loc, period, rows) {
         updated_at: new Date().toISOString(),
       });
     }
+  }
+  return out;
+}
+
+// ── Item-level count history (owner request 2026-11-10) ─────────────────────────────────────────
+// qsr_onhand and qsr_variance_stat both key on (loc, period, wrin) -- rolling latest, so a recount
+// permanently overwrites the previous count's own values. deriveSessionRows() above already fixed
+// this at the SESSION level (how many items, was coverage met) but not at the ITEM level (what
+// was this specific item's on-hand qty/price/$ at that past count). memory/finding-variance-
+// recount-signal-2026-11-10.md's research hit exactly this ceiling: there was no way to measure
+// whether an item's variance SHAPE around a recount carries a signal, because there was nowhere
+// to read what it looked like before the recount. This closes that gap the same way
+// deriveSessionRows() closed its own: one row per (loc, count_date, wrin), appended, never
+// overwritten. Idempotent on (loc, count_date, wrin) -- the same count_date seen across
+// consecutive daily pull runs upserts the same row; only a genuine recount (last_counted moving
+// to a NEW date) creates a new one, so growth tracks real counting activity, not pull frequency.
+function deriveItemHistoryRows(loc, period, rows) {
+  const out = [];
+  for (const r of rows) {
+    if (!r.last_counted) continue; // never counted yet -- nothing to snapshot
+    out.push({
+      loc, count_date: r.last_counted, wrin: r.wrin, period,
+      descr: r.descr || null, cls: r.cls || null,
+      cases: r.cases, packs: r.packs, loose: r.loose,
+      total_units: r.total_units, unit_price: r.unit_price, on_hand_amt: r.on_hand_amt,
+      updated_at: new Date().toISOString(),
+    });
   }
   return out;
 }

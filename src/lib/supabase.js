@@ -5234,6 +5234,23 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
   }));
 }
 
+// Item-level count history (schema-qsr-onhand-item-history-2026-11-10.sql, scripts/qsrsoft-
+// onhand-pull.mjs's deriveItemHistoryRows) — one row per (loc, count_date, wrin), the item-level
+// counterpart to loadQsrVarianceHistory above. Scoped to one store + wrin (an item's own history
+// at that store) so egress stays bounded on-demand, same discipline as the variance-history loader.
+export async function loadQsrOnHandItemHistory({ loc, wrin } = {}) {
+  if (!supabase || !loc || !wrin) return [];
+  const data = await fetchAll((from, to) =>
+    supabase.from('qsr_onhand_item_history').select('*')
+      .eq('loc', String(loc).padStart(7, '0')).eq('wrin', wrin)
+      .order('count_date', { ascending: true }).range(from, to), 1000, 'qsr_onhand_item_history');
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), countDate: r.count_date, wrin: r.wrin, period: r.period,
+    descr: r.descr, cls: r.cls, cases: r.cases, packs: r.packs, loose: r.loose,
+    totalUnits: r.total_units, unitPrice: r.unit_price, onHandAmt: r.on_hand_amt,
+  }));
+}
+
 // ── QSRSoft Forms completion — Forms dashboard Slice 2 ───────────────────────────────────────────
 // Reads qsr_forms_completion (schema-qsr-forms-completion.sql, Slice 1). Empty until Slice 3's
 // pull script ships -- the panel renders an honest "no data yet" state against a real empty read,
