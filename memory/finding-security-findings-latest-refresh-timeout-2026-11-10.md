@@ -1,6 +1,6 @@
 ---
 name: finding-security-findings-latest-refresh-timeout-2026-11-10
-description: The daily security-rules-run.mjs batch's materialized-view refresh (security_findings_latest_mv, introduced #1804) has been silently failing every run with a Postgres statement_timeout — root-caused to the authenticator role's hard-coded 8s statement_timeout, which a SECURITY DEFINER function's own SET LOCAL cannot override through the PostgREST/pooler path. Manually refreshed via the Supabase Management API (different connection path, no 8s cap) to unblock EVENT-004 review; the underlying automation is still broken until one of the options below is chosen. Read before re-diagnosing "why doesn't the Security panel show new findings."
+description: The daily security-rules-run.mjs batch's materialized-view refresh (security_findings_latest_mv, introduced #1804) was silently failing every run with a Postgres statement_timeout — root-caused to the authenticator role's hard-coded 8s statement_timeout, which a SECURITY DEFINER function's own SET LOCAL cannot override through the PostgREST/pooler path. RESOLVED (same day, owner chose pg_cron): the refresh now runs as a pg_cron job (schema-security-findings-latest-pgcron-refresh-2026-11-10.sql), fully outside PostgREST, verified live. The script's own RPC call was removed. Read before re-diagnosing "why doesn't the Security panel show new findings" or re-proposing a fix for this.
 sensitivity: open
 metadata:
   node_type: memory
@@ -78,7 +78,26 @@ scheduled run will hit this same wall** until one of these lands:
    powerful than the `SUPABASE_SERVICE_ROLE_KEY` already in CI — a real security-posture increase
    for a CI secret, worth the owner's explicit sign-off before adding it.
 
-**Until one of these ships, `security_findings_latest` will go stale again after every future daily
-batch run** (the underlying `security_findings` table itself keeps writing correctly — only the
-app-facing view falls behind). A workaround in the meantime: manually re-run the Management-API
-refresh (option used today) whenever fresh findings need to be visible.
+## Resolution (same day — owner chose option 1)
+
+Shipped `supabase/schema-security-findings-latest-pgcron-refresh-2026-11-10.sql`: enabled
+`pg_cron`, scheduled `refresh-security-findings-latest-daily` at `20 11 * * *` UTC (20 minutes
+after `security-rules-run.yml`'s own 11:00 UTC run, which itself takes ~2 minutes end-to-end per
+its job log — safe buffer). pg_cron executes as a plain Postgres background worker under the
+scheduling role, entirely outside PostgREST/`authenticator` — the function's own `set local
+statement_timeout = '5min'` (already in its body, unchanged) applies normally in this context.
+
+**Verified live, not assumed:** scheduled a temporary every-minute test job first
+(`refresh-security-findings-latest-test`), watched `cron.job_run_details` for a real run, confirmed
+`status: 'succeeded'` in 19.6s (14:18:00.155 → 14:18:19.746 UTC) — comfortably inside the 5min
+budget and nowhere near the 8s wall that broke the PostgREST path. Unscheduled the test job,
+scheduled the real daily one in its place.
+
+`scripts/security-rules-run.mjs`'s own `supabase.rpc('refresh_security_findings_latest')` call —
+which would keep failing the same way forever — was removed, with a comment pointing here and at
+the new SQL file so a future session doesn't re-add it or re-diagnose this from scratch.
+
+**Not done, deliberately:** raising `authenticator`'s global `statement_timeout`, or routing the
+call through a Management-API token in CI — both real options, both carry a trade-off (global
+timeout ceiling increase for all live traffic; a project-admin-level secret landing in CI) that
+pg_cron avoids entirely, which is why it was the recommendation and the owner's pick.
