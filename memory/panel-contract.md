@@ -363,3 +363,34 @@ Full suite re-run after this addition: 691 test files / 6420 tests passed. Build
 gzipped eager payload (+0.5 KB over the 9-panel-conversion commit's 582.33 KB, well within the
 850 KB budget — the new multi-select branch lives inside `PanelControls.js`, already in every
 touched panel's existing bundle).
+
+### 2026-11-10 — `[sweep:panel-contract]` closes 3 of the 4 "not wired today" `multi:true` candidates
+
+Re-measured rather than trusted: of the backlog this file named above (`weekly-count-status-
+report.js`, `opportunity-dollars.js`, `trends.js`, `trend-report.js`, "same `locValue`/`scope`
+pattern likely recurs"), **3 converted, 1 correctly is NOT a candidate**:
+
+- **`trend-report.js`** and **`opportunity-dollars.js`** — both already route their loc filtering
+  through `locationSelectorLocs(scope, tree)` directly, the exact same shape as
+  `pricing-engine.js`'s own conversion. Pure one-line `multi: true` add to the existing
+  `LocationSelector` call, zero other code change (`locationSelectorLocs`'s `'multi'` branch has
+  carried its own 16-test coverage since 2026-11-02).
+- **`weekly-count-status-report.js`** — same `locValue`→scope-string→`locs` translation shape as
+  `count-timing-report.js`/`missed-count-report.js`, so it needed that same small addition, not a
+  pure one-liner: a `locScope.level === 'multi'` bypass branch ahead of the scope-string
+  translation (an arbitrary cross-state/cross-patch combination has no single token to encode),
+  plus a `scopeLabel` case (`"Custom (N stores)"`). Verified through the real rendered dropdown
+  multi-select (`select[multiple]`, selecting two option values and dispatching `change`), not
+  just by reading the code — `src/__tests__/weekly-count-status-report.test.js`'s new test.
+- **`trends.js`** — measured and found NOT a real candidate, correcting this backlog's own
+  "likely recurs" guess for it specifically. It's a single-store trend viewer (`storeLoc`, a
+  single nullable string, `mode:'store'`) that explicitly tells the reader "district-wide rollups
+  aren't built yet" — there is no multi-store data path to bypass into at all. Converting would
+  need a real feature build (aggregating a metric across an arbitrary store set), not a mechanical
+  flip. Left alone, same category as `scheduling.js`'s Operator taxonomy and `StoreKBEditor`'s own
+  documented exceptions above.
+
+Full suite re-run after these 3 conversions: 822 test files / 7572 tests passed (821/7547 →
++1 file / +25 tests — 24 pre-existing unaffected plus the 1 new multi-select interaction test).
+Build clean, payload budget unaffected (no new static import; `LocationSelector`/
+`PanelControls.js` was already in each touched panel's existing bundle).
