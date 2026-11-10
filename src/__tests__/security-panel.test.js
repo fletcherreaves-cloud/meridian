@@ -63,6 +63,7 @@ import {
   securityPanelAccess, verdictState, groupFindingsBySubject, buildHistoryByRule, scopeMatches, SecurityPanel,
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
   scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay, minSignalsLabel,
+  buildCommandGroups, buildDomainBreakdown, buildTopContributingRules, latestCaseStatus, tallyCaseQueue,
 } from '../views/security-panel.js';
 // dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
 // anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
@@ -245,6 +246,104 @@ describe('classifySubjectTrend() — chronic vs. new vs. not enough history yet 
   });
   it('clear now, never flagged -> clear', () => {
     expect(classifySubjectTrend([{ pass: false }, { pass: false }])).toBe('clear');
+  });
+});
+
+// dispatch 2026-11-10 -- Command Center's own cross-domain pure functions. Table/Briefing's
+// `groups` memo is scoped to one `domain` at a time (see security-panel.js's own header on it);
+// these are the cross-domain layer, built on the same groupFindingsBySubject/scopeMatches
+// primitives, never a second grouping algorithm.
+describe('buildCommandGroups() — cross-domain, emp-subjects only (person-attributable rules, never a wrin/item finding)', () => {
+  const FINDINGS = [
+    { id: 'f1', empToken: 'tok-a', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, windowEnd: '2026-10-01', computedAt: '2026-10-02T00:00:00Z' },
+    { id: 'f2', empToken: 'tok-a', wrin: null, loc: '0000001', ruleId: 'LABOR-001', pass: true, windowEnd: '2026-10-01', computedAt: '2026-10-02T00:00:00Z' },
+    { id: 'f3', empToken: null, wrin: 'WRIN-1', loc: '0000001', ruleId: 'INV-001', pass: true, windowEnd: '2026-10-01', computedAt: '2026-10-02T00:00:00Z' },
+    { id: 'f4', empToken: 'tok-b', wrin: null, loc: '0000002', ruleId: 'CASH-001', pass: true, windowEnd: '2026-10-01', computedAt: '2026-10-02T00:00:00Z' },
+  ];
+  it('excludes item/wrin findings entirely -- an inventory variance finding has no employee to attribute to a row', () => {
+    const out = buildCommandGroups(FINDINGS, { level: 'all' });
+    expect(out.every(g => g.subjectType === 'emp')).toBe(true);
+    expect(out.some(g => g.wrin === 'WRIN-1')).toBe(false);
+  });
+  it('a subject flagged under two different domains converges into ONE group with flaggedCount 2, ranked first', () => {
+    const out = buildCommandGroups(FINDINGS, { level: 'all' });
+    expect(out[0].empToken).toBe('tok-a');
+    expect(out[0].flaggedCount).toBe(2);
+  });
+  it('respects scope the same way every other view in this panel does', () => {
+    const out = buildCommandGroups(FINDINGS, { level: 'store', value: '0000002' });
+    expect(out.map(g => g.empToken)).toEqual(['tok-b']);
+  });
+});
+
+describe('buildDomainBreakdown() — per-domain rollup for the Command Center cards', () => {
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', severity: 3, active: true },
+    { ruleId: 'CASH-002', domain: 'cash', method: 'POS over-ring rate', severity: 2, active: false },
+    { ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch edit', severity: 5, active: true },
+  ];
+  const rulesById = Object.fromEntries(RULES.map(r => [r.ruleId, r]));
+  const FINDINGS = [
+    { empToken: 'tok-a', loc: '0000001', ruleId: 'CASH-001', pass: true },
+    { empToken: 'tok-b', loc: '0000001', ruleId: 'CASH-001', pass: true },
+    { empToken: 'tok-c', loc: '0000001', ruleId: 'LABOR-001', pass: true },
+    { empToken: 'tok-d', loc: '0000001', ruleId: 'CASH-001', pass: false }, // not flagged -- excluded
+    { empToken: 'tok-e', loc: '0000001', ruleId: 'CASH-001', pass: true, lifecycleCategory: 'hygiene' }, // hygiene-routed -- excluded
+  ];
+  it('counts every domain, even one with zero open findings right now (rule count still real)', () => {
+    const out = buildDomainBreakdown(FINDINGS, rulesById, RULES, { level: 'all' });
+    const domains = Object.fromEntries(out.map(d => [d.domain, d]));
+    expect(domains.cash.findings).toBe(2);
+    expect(domains.cash.ruleCount).toBe(2);
+    expect(domains.labor.findings).toBe(1);
+    expect(domains.inventory.findings).toBe(0);
+    expect(domains.inventory.ruleCount).toBe(0);
+  });
+  it('severity buckets low/med/high correctly, and names the top-firing rule', () => {
+    const out = buildDomainBreakdown(FINDINGS, rulesById, RULES, { level: 'all' });
+    const cash = out.find(d => d.domain === 'cash');
+    expect(cash.med).toBe(2); // CASH-001 is severity 3
+    expect(cash.high).toBe(0);
+    expect(cash.topRule.ruleId).toBe('CASH-001');
+    expect(cash.topRuleCount).toBe(2);
+    const labor = out.find(d => d.domain === 'labor');
+    expect(labor.high).toBe(1); // LABOR-001 is severity 5
+  });
+});
+
+describe('buildTopContributingRules() — Pareto ranking, same filter as buildDomainBreakdown', () => {
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', severity: 3 },
+    { ruleId: 'LABOR-001', domain: 'labor', severity: 5 },
+  ];
+  const rulesById = Object.fromEntries(RULES.map(r => [r.ruleId, r]));
+  it('ranks worst-first by flagged count and respects the limit', () => {
+    const findings = [
+      { loc: '1', ruleId: 'CASH-001', pass: true }, { loc: '1', ruleId: 'CASH-001', pass: true },
+      { loc: '1', ruleId: 'LABOR-001', pass: true },
+    ];
+    const out = buildTopContributingRules(findings, rulesById, { level: 'all' }, 1);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ ruleId: 'CASH-001', count: 2 });
+  });
+});
+
+describe('latestCaseStatus() / tallyCaseQueue() — matches security_finding_actions\' real check constraint, never a fabricated "Investigating" status', () => {
+  it('no logged action at all -> "open", not a crash', () => {
+    expect(latestCaseStatus('f1', {})).toBe('open');
+    expect(latestCaseStatus('f1', undefined)).toBe('open');
+  });
+  it('the LAST row (ascending by created_at, same order loadSecurityFindingActionsForFindings returns) is the current status', () => {
+    const actions = { f1: [{ action: 'noted' }, { action: 'escalated' }] };
+    expect(latestCaseStatus('f1', actions)).toBe('escalated');
+  });
+  it('tallies every currently-flagged, non-hygiene finding across every group into its real bucket', () => {
+    const groups = [
+      { verdicts: [{ id: 'f1', pass: true }, { id: 'f2', pass: true }] },
+      { verdicts: [{ id: 'f3', pass: true, lifecycleCategory: 'hygiene' }, { id: 'f4', pass: false }] }, // both excluded
+    ];
+    const actions = { f1: [{ action: 'escalated' }] };
+    expect(tallyCaseQueue(groups, actions)).toEqual({ open: 1, noted: 0, escalated: 1, investigated_cleared: 0 });
   });
 });
 
@@ -2374,5 +2473,104 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
     // + severity 3 × latest magnitude 100 × DRIFT_CONFIRMED_WEIGHT 0.5 = 150 raw -> ×0.1 = +15
     expect(driftScore).toBe(45);
     expect(driftScore).toBeGreaterThan(phase1Score);
+  });
+});
+
+// dispatch 2026-11-10 -- Command Center: the cross-domain view, rendered through the REAL panel
+// end to end (never the pure functions in isolation) per this repo's own "would this verification
+// still pass if reverted" rule -- a revert of the panel's wiring (the view toggle, the render
+// block, the bulk case-action fetch) must fail these even though the pure functions above would
+// still pass unchanged.
+describe('SecurityPanel — Command Center (dispatch 2026-11-10)', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', windowDays: 28, severity: 3, active: true, investigationAction: 'act' },
+    { ruleId: 'LABOR-001', domain: 'labor', method: 'Post-termination punch edit', description: 'desc', baselineType: 'none', logicType: 'threshold', windowDays: 28, severity: 5, active: true, investigationAction: 'act' },
+    { ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate', description: 'desc', baselineType: 'store', logicType: 'ratio', windowDays: 90, severity: 3, active: false, investigationAction: 'act' },
+  ];
+  // Alice converges on two domains (the strongest signal) at store 1; Bob is a single signal at
+  // store 2; the WRIN finding is item-level (no empToken) and must never appear as a "person" row.
+  const FINDINGS = [
+    { id: 'find-cash-alice', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 50, thresholdUsed: 5, windowStart: '2026-10-01', windowEnd: '2026-10-28', computedAt: '2026-10-29T00:00:00Z', baselineContext: {}, explanation: [], exonerationShare: null },
+    { id: 'find-labor-alice', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'LABOR-001', pass: true, value: 1, thresholdUsed: 1, windowStart: '2026-10-01', windowEnd: '2026-10-28', computedAt: '2026-10-29T00:00:00Z', baselineContext: {}, explanation: [], exonerationShare: null },
+    { id: 'find-cash-bob', empToken: 'tok-bob', wrin: null, loc: '0000002', ruleId: 'CASH-001', pass: true, value: 20, thresholdUsed: 5, windowStart: '2026-10-01', windowEnd: '2026-10-28', computedAt: '2026-10-29T00:00:00Z', baselineContext: {}, explanation: [], exonerationShare: null },
+    { id: 'find-inv-item', empToken: null, wrin: 'WRIN-1', loc: '0000001', ruleId: 'INV-001', pass: true, value: 30, thresholdUsed: 20, windowStart: '2026-10-01', windowEnd: '2026-10-28', computedAt: '2026-10-29T00:00:00Z', baselineContext: {}, explanation: [], exonerationShare: null },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadSecurityFindingActionsForFindingsMock.mockReset().mockResolvedValue([
+      { id: 'act-1', findingId: 'find-cash-alice', action: 'escalated', note: null, createdByRole: 'admin', createdAt: '2026-10-30T00:00:00Z' },
+    ]);
+    rpcMock.mockReset().mockResolvedValue({
+      data: [
+        { token: 'tok-alice', employee_name: 'Alice Andrews' },
+        { token: 'tok-bob', employee_name: 'Bob Baker' },
+      ],
+      error: null,
+    });
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  async function mountCommand() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const btnEl = [...container.querySelectorAll('button')].find(b => b.textContent === '🖥 Command Center');
+    expect(btnEl, 'no Command Center toggle button').toBeTruthy();
+    act(() => { btnEl.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+  }
+
+  it('hides the single-domain tabs and rule/signal filters -- this view is cross-domain by design', async () => {
+    await mountCommand();
+    // The domain tab BUTTON (exact text, no finding count) is gone; the domain breakdown CARD
+    // legitimately reuses the same DOMAIN_TAB_LABEL text for its own heading, so this checks the
+    // tab specifically rather than the substring anywhere on screen.
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === '💵 Cash')).toBe(false);
+    expect(container.textContent).not.toMatch(/Min signals:/);
+  });
+
+  it('renders a domain card per domain with REAL rule/finding counts, even for inventory (item-level, zero watchlist rows)', async () => {
+    await mountCommand();
+    expect(container.textContent).toMatch(/By Security Domain/);
+    expect(container.textContent).toMatch(/CASH-001/);
+    // Inventory has one open finding (the WRIN one) even though it contributes no watchlist row.
+    const inventoryCardText = container.textContent;
+    expect(inventoryCardText).toMatch(/📦 Inventory/);
+  });
+
+  it('Employee Watchlist: Alice converges across two domains (flaggedCount 2), Bob is a single signal, the WRIN item never appears as a person', async () => {
+    await mountCommand();
+    expect(container.textContent).toMatch(/Alice Andrews/);
+    expect(container.textContent).toMatch(/Bob Baker/);
+    expect(container.textContent).toMatch(/🔗 2 signals/);
+    expect(container.textContent).not.toMatch(/WRIN-1/);
+  });
+
+  it('Case Queue tallies the one logged action correctly: 1 escalated, 2 still open, no fabricated "Investigating" bucket', async () => {
+    await mountCommand();
+    expect(container.textContent).toMatch(/Case Queue — 3 open findings/);
+    expect(container.textContent).toMatch(/Escalated · 1/);
+    expect(container.textContent).toMatch(/Flagged · 2/);
+    expect(container.textContent).not.toMatch(/Investigating/);
+  });
+
+  it('"Review →" on Alice\'s row jumps into the real Table view, scoped to her store and expanded on her -- not a dead end', async () => {
+    await mountCommand();
+    const reviewBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Review →');
+    expect(reviewBtn).toBeTruthy();
+    act(() => { reviewBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // Table view is back (its own sort-header vocabulary), and Alice's detail is already expanded.
+    expect(container.textContent).toMatch(/Signals/);
+    expect(container.textContent).toMatch(/Alice Andrews/);
   });
 });
