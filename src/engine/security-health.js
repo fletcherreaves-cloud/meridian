@@ -103,11 +103,24 @@ function tierOf(score) {
 // so no re-grouping/deduping is needed here; a caller passing full multi-window history per
 // subject (e.g. loadSecurityFindingsForSubject's output) would double-count and is NOT what this
 // function expects.
-// Returns a Map keyed by loc -> { loc, score, tier, flaggedCount, criticalCount, insufficientCount }.
-export function computeStoreHealth(findings, rulesById) {
+//
+// `driftContributions`/`driftDirectionByLoc` (dispatch 2026-11-10 follow-on, src/engine/
+// security-drift.js) are optional, late-bound extras -- deliberately plain data ({loc, amount}
+// pairs; a loc->direction map), not drift-aware types, so THIS file never imports security-
+// drift.js (which itself imports findingMagnitude from here) and the two stay a one-directional
+// dependency, never circular. Omitting either argument reproduces Phase 1's exact behavior --
+// pure addition, nothing here changes unless a caller opts in by supplying them. `driftDirection`
+// defaults to `null` -- NOT 'flat' -- on every row: null means "drift not computed for this store
+// yet" (no candidate there, or the caller hasn't fetched drift history at all), which a renderer
+// must show differently from a real, computed 'flat' (genuinely tracked, genuinely not moving).
+// Collapsing those two would make every tile read as a confident "→ flat" before the drift fetch
+// has even resolved -- a fabricated certainty this file's own "honest, never invented" posture
+// (findingMagnitude's own header) exists to avoid.
+// Returns a Map keyed by loc -> { loc, score, tier, flaggedCount, criticalCount, insufficientCount, driftDirection }.
+export function computeStoreHealth(findings, rulesById, { driftContributions, driftDirectionByLoc } = {}) {
   const byLoc = new Map();
   const touch = (loc) => {
-    if (!byLoc.has(loc)) byLoc.set(loc, { loc, score: 0, flaggedCount: 0, criticalCount: 0, insufficientCount: 0 });
+    if (!byLoc.has(loc)) byLoc.set(loc, { loc, score: 0, flaggedCount: 0, criticalCount: 0, insufficientCount: 0, driftDirection: null });
     return byLoc.get(loc);
   };
   for (const f of (findings || [])) {
@@ -122,6 +135,26 @@ export function computeStoreHealth(findings, rulesById) {
     row.flaggedCount += 1;
     if (rule.severity >= 4) row.criticalCount += 1;
   }
+  // Drift's own additive term -- a worsening trend, pre-threshold or confirmed-and-still-rising,
+  // nudges the SAME score the static rules already built, in the SAME severity×magnitude units
+  // (security-drift.js's own header), never a second scale. This can touch() a loc the static
+  // loop above never did (a subject with no CURRENT flag at all can still carry a real worsening
+  // or improving trend -- the deep-dive doc's own "before it crosses" case) -- an intentional,
+  // bounded widening: only a loc with at least one real drift candidate (selectDriftCandidates'
+  // own near-miss/already-flagged gate) ever appears here, never every store by default.
+  if (Array.isArray(driftContributions)) {
+    for (const d of driftContributions) {
+      if (!d?.loc || !(d.amount > 0)) continue;
+      touch(d.loc).score += d.amount;
+    }
+  }
+  if (driftDirectionByLoc) {
+    const entries = driftDirectionByLoc instanceof Map ? driftDirectionByLoc : Object.entries(driftDirectionByLoc);
+    for (const [loc, dir] of entries) {
+      if (!loc || !dir) continue;
+      touch(loc).driftDirection = dir;
+    }
+  }
   for (const row of byLoc.values()) {
     row.score = Math.min(100, Math.round(row.score * HEALTH_SCORE_SCALE));
     row.tier = tierOf(row.score);
@@ -130,7 +163,8 @@ export function computeStoreHealth(findings, rulesById) {
 }
 
 // Convenience array form, sorted worst-first (score desc) -- the shape a district grid renders
-// directly without each caller re-deriving the same sort.
-export function storeHealthList(findings, rulesById) {
-  return [...computeStoreHealth(findings, rulesById).values()].sort((a, b) => b.score - a.score);
+// directly without each caller re-deriving the same sort. `opts` passes straight through to
+// computeStoreHealth (see that function's own header for the optional drift extras).
+export function storeHealthList(findings, rulesById, opts) {
+  return [...computeStoreHealth(findings, rulesById, opts).values()].sort((a, b) => b.score - a.score);
 }

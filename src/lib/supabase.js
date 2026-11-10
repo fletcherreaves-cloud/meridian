@@ -6804,6 +6804,76 @@ export async function loadSecurityFindingsForSubject({ loc, empToken = null, wri
   return (data || []).map(_mapSecurityFindingRow);
 }
 
+// Bulk, bounded multi-window history for a NAMED set of (ruleId, subject) candidates --
+// dispatch 2026-11-10 follow-on, feeds src/engine/security-drift.js's computeDriftRollup(). This
+// is deliberately NOT "every subject's full history" (loadSecurityFindingsForSubject above is
+// the right tool for ONE subject, lazily, on expand) and NOT "the last N days for everyone" --
+// both were measured live against this exact table before picking this shape:
+//   - The table has grown to 242,074 rows (2026-11-09 measurement, same growth this same dispatch
+//     day's security_findings_latest_mv migration was written to fix) at roughly one fresh row
+//     per subject+rule per daily batch run -- a flat recent-calendar-days filter across EVERY
+//     subject costs 42,911-65,149 rows for a 10-30 day window (measured directly), and still
+//     MISSES a rule family whose own last run is older than the window (CASH-001/002 last ran
+//     2026-10-17, 24 days before this measurement -- a rule can go stale independent of how
+//     recently OTHER rules ran, since each rule's own cron history is its own thing).
+//   - Targeting by (ruleId, subject) instead of by calendar date sidesteps that entirely: a
+//     candidate's OWN history is pulled regardless of when it last ran, and the candidate set
+//     itself (selectDriftCandidates' own job, security-drift.js) is already bounded to subjects
+//     that are either currently flagged or a near-miss on their own threshold -- 1,877 real
+//     candidates district-wide as of this measurement, not ~20,800.
+// One or more queries PER rule_id, chunked at CHUNK_SIZE subjects each (there are ~7 active
+// rule_ids today, each with at most a few hundred real candidates measured -- so a handful of
+// chunks per rule, all fired in parallel). Two defensive fixes over this function's first draft,
+// both found by an adversarial self-review before this shipped, not assumed fine:
+//   1. CHUNKING bounds the crowd-out risk a single `ORDER BY window_end DESC, computed_at DESC
+//      LIMIT cap` has when it is shared across hundreds of subjects at once -- a subject whose
+//      own real windows happen to be older than its siblings' could be pushed entirely out of
+//      the cap even though full history exists for it (degrading, honestly, to
+//      'insufficient-history' -- never a WRONG signal, but a real coverage gap worth shrinking).
+//      Splitting subjects into CHUNK_SIZE-sized groups, each with its OWN query/cap, means a
+//      subject only ever competes against ~150 siblings, not an entire rule's candidate set.
+//   2. Two separate `.in()` queries (emp_token-keyed, wrin-keyed) instead of one query with an
+//      `.or()` string built by hand-interpolating raw token/wrin values -- that interpolation had
+//      no escaping at all, a real injection/malformed-filter risk if a value ever contained a
+//      comma or parenthesis. `.in()` is parameterized correctly by the client; string-building a
+//      filter clause is not, and there was no need to -- a rule's subjects are ALWAYS one type in
+//      practice (groupFindingsBySubject's own comment, security-panel.js), so two independent
+//      queries cost nothing extra on the expected path and remove the risk on the unexpected one.
+const RECENT_HISTORY_CHUNK_SIZE = 150;
+function _chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+export async function loadSecurityFindingsRecentHistoryForKeys(candidates, { lookbackWindows = 6 } = {}) {
+  if (!supabase || !candidates?.length) return [];
+  const byRule = new Map(); // ruleId -> {empTokens: Set, wrins: Set}
+  for (const c of candidates) {
+    if (!c?.ruleId || (!c.empToken && !c.wrin)) continue;
+    if (!byRule.has(c.ruleId)) byRule.set(c.ruleId, { empTokens: new Set(), wrins: new Set() });
+    const bucket = byRule.get(c.ruleId);
+    if (c.empToken) bucket.empTokens.add(c.empToken);
+    if (c.wrin) bucket.wrins.add(c.wrin);
+  }
+  const queries = [];
+  for (const [ruleId, bucket] of byRule) {
+    for (const group of _chunk([...bucket.empTokens], RECENT_HISTORY_CHUNK_SIZE)) queries.push({ ruleId, field: 'emp_token', values: group });
+    for (const group of _chunk([...bucket.wrins], RECENT_HISTORY_CHUNK_SIZE)) queries.push({ ruleId, field: 'wrin', values: group });
+  }
+  const results = await Promise.all(queries.map(async ({ ruleId, field, values }) => {
+    // cap bounds each CHUNK's own worst case (generous: lookbackWindows×2 per subject, so a
+    // typical candidate's own real last-N windows all fit comfortably within its chunk's cap).
+    const cap = Math.min(4000, Math.max(300, values.length * lookbackWindows * 2));
+    const { data, error } = await supabase.from('security_findings').select(SECURITY_FINDINGS_COLS)
+      .eq('rule_id', ruleId).in(field, values)
+      .order('window_end', { ascending: false }).order('computed_at', { ascending: false })
+      .limit(cap);
+    if (error) { console.warn('[loadSecurityFindingsRecentHistoryForKeys]', ruleId, field, error.message); return []; }
+    return data || [];
+  }));
+  return results.flat().map(_mapSecurityFindingRow);
+}
+
 // security_rules metadata (method/description/active/baseline_type/severity/window_days) --
 // dispatch #43's "calibration honesty" requirement: the panel must show a rule's active state and
 // never present an inactive rule's stale findings as current truth. security_rules has a looser
