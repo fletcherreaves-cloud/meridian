@@ -10,6 +10,7 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { escapeHtml } from '../utils/fmt.js';
+import { InfoIcon } from '../engine/forecast.js';
 import { loadQsrActSummary, loadOpsLaborSummary, loadQsrFob, loadOpsCashSheet } from '../lib/supabase.js';
 import {
   TREND_REPORT_METRICS, findTrendMetric, fmtTrendValue, trendReportPeriods,
@@ -320,9 +321,11 @@ export function TrendReportPanel({ ds, onClose }) {
   return h(RoutePanelShell, {
     icon: '📈',
     title: 'Performance Trends',
-    subtitle: viewMode === 'summary'
-      ? 'Email Summary — 3 trailing complete months + current MTD, Combined/OK/FL'
-      : 'Current MTD, last complete month, two months back — one table for all locations plus OK/FL breakouts',
+    subtitle: div({ style: { display: 'flex', alignItems: 'center' } },
+      span(null, viewMode === 'summary'
+        ? 'Email Summary — 3 trailing complete months + current MTD, Combined/OK/FL'
+        : 'Current MTD, last complete month, two months back — one table for all locations plus OK/FL breakouts'),
+      h(InfoIcon, { articleKey: 'trend_report_guide' })),
     onBack: onClose,
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
       div({ style: { display: 'flex', gap: 4 } },
