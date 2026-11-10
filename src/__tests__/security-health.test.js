@@ -152,3 +152,67 @@ describe('storeHealthList() — sorted worst-first for a district grid', () => {
     expect(storeHealthList([], RULES_BY_ID)).toEqual([]);
   });
 });
+
+// dispatch 2026-11-10 follow-on -- convergence (the deep-dive doc's own §3 `convergence_multiplier`
+// score term). Needs no new fetch: a pure function of the same bulk findings/rulesById every other
+// test in this file already uses.
+import { groupFlaggedRuleIdsBySubject, convergenceContribution, CONVERGENCE_WEIGHT, CONVERGENCE_BONUS_CAP } from '../engine/security-health.js';
+
+describe('groupFlaggedRuleIdsBySubject() — the engine-local subject grouping convergence is built on', () => {
+  it('groups by empToken across different rules at the same store, tracking the worst severity seen', () => {
+    const findings = [
+      { loc: '0001111', empToken: 'tok-a', ruleId: 'LABOR-001', pass: true },
+      { loc: '0001111', empToken: 'tok-a', ruleId: 'INV-003', pass: true },
+    ];
+    const rulesById = { 'LABOR-001': { severity: 5 }, 'INV-003': { severity: 3 } };
+    const out = groupFlaggedRuleIdsBySubject(findings, rulesById);
+    expect(out.size).toBe(1);
+    const row = [...out.values()][0];
+    expect(row.ruleIds.size).toBe(2);
+    expect(row.maxSeverity).toBe(5);
+  });
+  it('never groups an emp subject with a wrin subject, even at the same loc', () => {
+    const findings = [
+      { loc: '0001111', empToken: 'tok-a', ruleId: 'LABOR-001', pass: true },
+      { loc: '0001111', wrin: 'WRIN-1', ruleId: 'INV-003', pass: true },
+    ];
+    const rulesById = { 'LABOR-001': { severity: 5 }, 'INV-003': { severity: 3 } };
+    expect(groupFlaggedRuleIdsBySubject(findings, rulesById).size).toBe(2);
+  });
+  it('ignores non-flagged, hygiene, and subjectless rows, same posture as computeStoreHealth itself', () => {
+    const findings = [
+      { loc: '0001111', empToken: 'tok-a', ruleId: 'LABOR-001', pass: false },
+      { loc: '0001111', empToken: 'tok-b', ruleId: 'LABOR-001', pass: true, lifecycleCategory: 'obsolete' },
+      { loc: '0001111', ruleId: 'LABOR-001', pass: true },
+    ];
+    expect(groupFlaggedRuleIdsBySubject(findings, { 'LABOR-001': { severity: 5 } }).size).toBe(0);
+  });
+});
+
+describe('convergenceContribution() — rewards corroborating independent rules, never a single one', () => {
+  it('a single flagged rule earns no bonus -- nothing to corroborate yet', () => {
+    expect(convergenceContribution(1, 5)).toBe(0);
+    expect(convergenceContribution(0, 5)).toBe(0);
+  });
+  it('matches CONVERGENCE_WEIGHT × (ruleCount-1) × maxSeverity below the cap', () => {
+    expect(convergenceContribution(2, 3)).toBe(CONVERGENCE_WEIGHT * 1 * 3);
+    expect(convergenceContribution(3, 3)).toBe(CONVERGENCE_WEIGHT * 2 * 3);
+  });
+  it('never exceeds CONVERGENCE_BONUS_CAP, however many rules converge', () => {
+    expect(convergenceContribution(10, 5)).toBe(CONVERGENCE_BONUS_CAP);
+  });
+});
+
+describe('computeStoreHealth() — convergence folds into the score automatically, no opt-in needed', () => {
+  it('two different rules flagging the SAME subject score HIGHER than the identical findings would at two different subjects', () => {
+    const sameSubject = [
+      { id: 'a', loc: '0001111', empToken: 'tok-a', ruleId: 'LABOR-001', pass: true, value: 2, thresholdUsed: 1, baselineContext: {} },
+      { id: 'b', loc: '0001111', empToken: 'tok-a', ruleId: 'INV-003', pass: true, value: 50, thresholdUsed: 2.5, baselineContext: { mean: 10, stdev: 5, n: 10 } },
+    ];
+    const differentSubjects = sameSubject.map(f => ({ ...f, empToken: f.id === 'a' ? 'tok-a' : 'tok-b' }));
+    const rulesById = { 'LABOR-001': { severity: 5 }, 'INV-003': { severity: 3 } };
+    const sameScore = computeStoreHealth(sameSubject, rulesById).get('0001111').score;
+    const diffScore = computeStoreHealth(differentSubjects, rulesById).get('0001111').score;
+    expect(sameScore).toBeGreaterThan(diffScore);
+  });
+});

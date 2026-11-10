@@ -2474,6 +2474,59 @@ describe('SecurityPanel — drift/trajectory (dispatch 2026-11-10 follow-on)', (
     expect(driftScore).toBe(45);
     expect(driftScore).toBeGreaterThan(phase1Score);
   });
+
+  // dispatch 2026-11-10 follow-on -- persistence, reusing the SAME driftHistory fetch (see
+  // security-persistence.js's own header). Carol's history is deliberately FLAT (same magnitude
+  // every window, not rising) so drift classifies 'flat' and contributes 0 -- isolating
+  // persistence's own additive term the same way the drift test above isolates drift's.
+  it('the persistence term raises a chronic subject\'s store score, reusing the drift fetch rather than a second query', async () => {
+    const CAROL_FINDING = {
+      id: 'find-cash-carol', empToken: 'tok-carol', wrin: null, loc: '0000003', ruleId: 'CASH-001', pass: true,
+      value: 60, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28',
+      computedAt: '2026-07-29T10:00:00Z', baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [], exonerationShare: null,
+    };
+    // 7 consecutive flagged windows, magnitude flat at (60-10)/5=10 throughout -- extra beyond
+    // PERSISTENCE_MIN_WINDOWS(3) is 4; 3×10×0.25×4=30 raw, capped at PERSISTENCE_BONUS_CAP(20).
+    const CAROL_WINDOW_ENDS = ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06', '2026-07-13', '2026-07-28'];
+    const CAROL_CHRONIC_HISTORY = CAROL_WINDOW_ENDS.map(windowEnd => ({
+      empToken: 'tok-carol', wrin: null, loc: '0000003', ruleId: 'CASH-001', pass: true,
+      value: 60, thresholdUsed: 5, windowStart: windowEnd, windowEnd, computedAt: windowEnd + 'T10:00:00Z',
+      baselineContext: { mean: 10, stdev: 5, n: 8 }, explanation: [],
+    }));
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([...FINDINGS, CAROL_FINDING]);
+    // Same fixture, but with an EMPTY drift/persistence history -- isolates the Phase-1-only score
+    // (same two-mount isolation strategy the drift test above uses).
+    loadSecurityFindingsRecentHistoryForKeysMock.mockReset().mockResolvedValue([]);
+    await mountBriefing();
+    const phase1Tile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000003/));
+    const phase1Score = tileScore(phase1Tile);
+    expect(phase1Score).toBe(3); // severity 3 × magnitude 10 × 0.1 = 3
+
+    act(() => { root.unmount(); });
+    container.remove();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsRecentHistoryForKeysMock.mockReset().mockResolvedValue(CAROL_CHRONIC_HISTORY);
+    await mountBriefing();
+    const chronicTile = [...container.querySelectorAll('button')].find(b => b.textContent.match(/0000003/));
+    const chronicScore = tileScore(chronicTile);
+    expect(chronicScore).toBe(5); // + capped persistence bonus 20 raw -> (30+20)×0.1 = 5
+    expect(chronicScore).toBeGreaterThan(phase1Score);
+    // One fetch covers BOTH drift and persistence -- never a second network round-trip for the
+    // same candidate set.
+    expect(loadSecurityFindingsRecentHistoryForKeysMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the Command Center view also triggers the drift/persistence history fetch, not just Briefing', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(loadSecurityFindingsRecentHistoryForKeysMock).not.toHaveBeenCalled();
+    const commandBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🖥 Command Center');
+    act(() => { commandBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFindingsRecentHistoryForKeysMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 // dispatch 2026-11-10 -- Command Center: the cross-domain view, rendered through the REAL panel
