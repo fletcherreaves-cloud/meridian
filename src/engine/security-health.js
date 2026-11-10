@@ -31,11 +31,25 @@
 // built on the real field that actually exists, not the min_denominator one the doc assumed.
 import { MIN_BASELINE_N } from './security-rules.js';
 
-// First-pass, documented, tunable constants -- same "stated, conservative floor... not measured
-// from live data" tier as security-rules.js's own MIN_BASELINE_N comment. Once persistence/
-// convergence (phase 2) land and a real score distribution exists across enough windows, these
-// are the numbers to recalibrate against real outcomes -- not invented to look precise now.
-export const HEALTH_SCORE_SCALE = 8; // contribution-sum -> 0-100-ish display scale
+// HEALTH_SCORE_SCALE: measured, not guessed, as of 2026-11-10 (dispatch, owner-reported from
+// phone: the district grid showed literally every store at 100/"Needs attention" -- no
+// differentiation at all). Root cause: this constant shipped at 8, a placeholder picked before
+// the Security Events pull was live and before security_findings_latest's own pagination bug
+// (fixed the same dispatch -- see schema-security-findings-latest-materialized-2026-11-10.sql)
+// let real bulk findings reach this engine at all. Once real data could flow, 8 was wildly too
+// aggressive: measured live against the full real dataset (884 deduped latest findings across
+// all 27 stores with at least one flag, pass=true, non-hygiene-routed, window_end >= 2026-10-01)
+// -- raw per-store contribution sums ranged 45.00 to 1,480.40 (median 249.12, mean 341.45).
+// At scale=8 every single one of the 27 stores saturates at the 100 clamp (score*8 >= 2,000 for
+// all of them) -- exactly the "all red, no ranking" bug reported. Re-solved for a scale that
+// gives real tier separation against that live distribution: 0.1 leaves only the one genuine
+// outlier (raw 1480.40, nearly double the next-highest) at the clamp, and splits the rest
+// 3 needs-attention / 17 watch / 6 clean -- a district grid that actually ranks stores instead of
+// painting the whole fleet the same color. Still a single linear scale, not the full
+// persistence/convergence model the deep-dive doc scoped (phase 2, unchanged) -- but now anchored
+// to a real measurement instead of an unmeasured guess, which is what this comment originally
+// flagged as the thing to do "once a real score distribution exists."
+export const HEALTH_SCORE_SCALE = 0.1; // contribution-sum -> 0-100-ish display scale
 export const HEALTH_TIER_THRESHOLDS = { needsAttention: 50, watch: 15 }; // score >= these cutoffs
 
 // One flagged finding's "how unusual" magnitude, honest about its basis. Returns
