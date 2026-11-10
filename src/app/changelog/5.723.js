@@ -1,22 +1,32 @@
 // @ts-nocheck
 export default {version:'5.723', date:'2026-11-10', changes:[
-  '**🐛 Fix: Security panel showing "DATA INCOMPLETE — 10 page(s) failed to load" / no findings '+
-  'at all.** Root-caused live (owner-reported from phone): `security_findings` has grown from '+
-  '20,793 rows (the table size the panel\'s existing load fix was tuned against, 2026-10-14) to '+
-  '**242,074 rows today** — ~9,000 rows/day from the daily rules batch, with no ceiling as long '+
-  'as that batch keeps running. Measured directly against the live table: the `security_findings_'+
-  'latest` view\'s deepest page now costs 7.78s (right at the edge of the ~8s statement timeout), '+
-  'and a simple filtered base-table query timed out outright at 8.27s — both new failure points '+
-  'since the table\'s 11.6x growth. What the panel showed as "no findings match" was a casualty '+
-  'of failed page loads, not a real empty result.\n\n'+
-  '`security_findings_latest` is now a real **materialized view**, refreshed once per daily '+
-  'batch run instead of being recomputed live (under RLS) on every single page request — read '+
-  'cost now scales with the ~23,000-row *output*, not the ever-growing base table. Since '+
-  'materialized views can\'t carry RLS policies directly, a thin wrapper view (same name, zero '+
-  'app-code change) re-applies the exact same gated-read predicate `security_findings` itself '+
-  'enforces.\n\n'+
-  '⚠️ **NOT YET LIVE** — this needs the migration (`supabase/schema-security-findings-latest-'+
-  'materialized-2026-11-10.sql`) applied by hand in the Supabase SQL editor; this environment has '+
-  'no DDL-execution path. Until then the panel keeps behaving exactly as it does today (same '+
-  'plain view, same intermittent failures on deep pages) — this ships nothing broken either way.',
+  '**🛡 Security panel: Phase 1 of the Health/Briefing redesign — a real score, a district '+
+  'grid, and narrative incident cards, built on the data that went live this week '+
+  '(`qsr_security_events`, EVENT-001/002/003, case tracking).** Two design concepts the owner '+
+  'commissioned ("The Loss Prevention Briefing," "Security Health Dashboard") finally get a '+
+  'real, working first slice rather than staying mockups: a new 🩺 Briefing view (toggle next '+
+  'to the existing 🗂 Table, which stays the default — see below for why) adds a district '+
+  'health-score grid (tap a store to focus) and severity-striped, headline-first cards per '+
+  'flagged signal — plain-English decision sentence, a who/what/where/window fact strip, a '+
+  '"Rule out first" drawer pulling the rule\'s own real `false_positives`, a "Show the math" '+
+  'drawer with the real value/threshold/baseline numbers, and the same case-tracking buttons '+
+  '(Mark investigated / Escalate) the Table view already has.',
+  '**The score itself (`src/engine/security-health.js`) is deliberately the minimal half of the '+
+  'owner\'s own two-phase scoring model** — `severity × magnitude`, summed per store, with '+
+  '"dollar exposure" honestly swapped for a real z-score/ratio magnitude (no dollar-weighting '+
+  'convention exists anywhere in this codebase — checked, not assumed) and '+
+  '`persistence`/`convergence` multipliers left for a later phase, since those need multi-window '+
+  'trend history this slice doesn\'t touch. A real data-quality guard routes any finding whose '+
+  'baseline population is too thin (below the same `MIN_BASELINE_N` floor the rules engine '+
+  'itself z-scores against) to a separate "insufficient data" count, never blended into the '+
+  'score. Verified against real rows pulled live from this project\'s own Supabase (a real '+
+  'INV-003/LABOR-001 finding, not a synthetic fixture) before any test was written.',
+  '18 new engine tests (`security-health.test.js`) + 6 new panel-level tests rendering the real '+
+  '`SecurityPanel` component (district grid ranking + click-to-filter, decision-sentence '+
+  'rendering, both drawers, case tracking) — the "would this verification still pass if '+
+  'reverted" bar, not just the engine in isolation. Briefing defaults OFF (Table stays the '+
+  'landing view) specifically so this panel\'s existing 128-test Table-view coverage — real, '+
+  'still-correct behavior — needed zero rewrites; flipping the default is next phase\'s call, '+
+  'informed by actual use. Full suite + build both pass clean; this panel is already lazy-'+
+  'loaded, so its growth doesn\'t touch the eager-payload budget at all.',
 ]};

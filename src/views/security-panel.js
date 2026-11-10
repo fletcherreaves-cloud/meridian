@@ -31,6 +31,11 @@ import {
   classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
 } from '../engine/security-drilldown.js';
 import { playbookForRule } from '../engine/security-playbook.js';
+// dispatch 2026-11-10 -- Phase 1 of the owner's Security Health redesign (the "Loss Prevention
+// Briefing" + "Security Health Dashboard" design concepts): a minimal per-store health score and
+// the narrative-card/district-grid view built on it. See security-health.js's own header for
+// exactly what this phase does and deliberately does not compute.
+import { storeHealthList } from '../engine/security-health.js';
 // dispatch #100 -- the date-range control reuses the shared DateRangeControl (issue #126 Spine 1)
 // rather than a bespoke date-input pair, matching this repo's "don't invent a new pattern"
 // standing rule.
@@ -1015,6 +1020,126 @@ function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
   );
 }
 
+// ── District Health Grid + Narrative Briefing cards (dispatch 2026-11-10, Phase 1) ─────────────
+// The owner's own two design concepts (links in the dispatch commit) for this panel: "The Loss
+// Prevention Briefing" (severity-striped narrative cards, headline-first) and "Security Health
+// Dashboard" (a per-store score grid + drill-down). Built on this app's own existing tokens/
+// helpers (subjectLabelFor, buildDecisionSentence, FindingActions, VERDICT_META/TREND_META) --
+// the two mockups were read for LAYOUT and COPY TONE only, never for their own bespoke CSS.
+const HEALTH_TIER_META = {
+  'needs-attention': { label: 'Needs attention', color: 'var(--crit,#ef4444)' },
+  watch:              { label: 'Watch', color: 'var(--amber,#f59e0b)' },
+  clean:              { label: 'Clean', color: 'var(--ok,#10b981)' },
+};
+
+// `onSelectStore(loc)` narrows the panel's existing `scope` state to that one store -- the SAME
+// mechanism LocationSelector already drives, so picking a tile behaves exactly like picking that
+// store in the location picker above it (every other filter -- domain, rule, min signals, date
+// range -- stays exactly as set). Hidden entirely once scope is already narrowed to one store
+// (see the render call site) -- a 1-tile "grid" of the store you're already looking at is noise.
+function SecurityHealthGrid({ list, scope, onSelectStore }) {
+  if (!list.length) return null;
+  return div({ style: { padding: '10px 14px', borderBottom: '1px solid var(--bdr)' } },
+    div({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 8 } },
+      'Store health, this scope — tap a store to focus the briefing below'),
+    div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8, overflowX: 'auto' } },
+      list.map(row => {
+        const meta = HEALTH_TIER_META[row.tier];
+        const active = scope.level === 'store' && scope.value === row.loc;
+        return btn({
+          key: row.loc, onClick: () => onSelectStore(row.loc),
+          style: {
+            textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--r)', cursor: 'pointer',
+            border: `1.5px solid ${active ? 'var(--accent)' : meta.color}`,
+            background: `${meta.color}14`, color: 'var(--text)',
+          },
+        },
+          div({ style: { fontSize: 11.5, fontWeight: 700, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+            STORE_NAMES[row.loc] || row.loc),
+          div({ style: { fontSize: 19, fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums' } }, row.score),
+          div({ style: { fontSize: 10, color: 'var(--text3)' } },
+            `${meta.label} · ${row.flaggedCount} signal${row.flaggedCount === 1 ? '' : 's'}${row.criticalCount ? ` · ${row.criticalCount} critical` : ''}`),
+          row.insufficientCount > 0 && div({ style: { fontSize: 9.5, color: 'var(--text3)', fontStyle: 'italic', marginTop: 2 } },
+            `+${row.insufficientCount} too thin on data to score`),
+        );
+      }),
+    ),
+    div({ style: { fontSize: 10, color: 'var(--text3)', marginTop: 8, fontStyle: 'italic' } },
+      'Score = severity × how unusual, summed across every flagged signal at the store, this phase (no persistence/convergence weighting yet — a chronic 21-day flag and a first-time one still count once each). Not a dollar figure — see security-health.js if exactness here matters to you.'),
+  );
+}
+
+// One severity-striped, headline-first card per FLAGGED, non-hygiene verdict -- a subject
+// converging on 3 signals renders as 3 cards (one per signal), each independently investigable
+// and independently case-tracked, rather than one card hiding two of three findings behind a
+// click. `clear`/`undetermined`/`hygiene` verdicts never get a card here (nothing to action) --
+// they still render in the Table view's full per-subject detail.
+function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer }) {
+  const subjectLabel = subjectLabelFor(group, revealed, itemInfoFor);
+  const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
+  if (!flaggedVerdicts.length) return null;
+  return h(React.Fragment, null, flaggedVerdicts.map(v => {
+    const rule = rulesById[v.ruleId] || {};
+    const severity = Number.isFinite(rule.severity) ? rule.severity : 1;
+    const stripeColor = severity >= 4 ? 'var(--crit,#ef4444)' : severity === 3 ? 'var(--amber,#f59e0b)' : 'var(--text3)';
+    const trend = classifySubjectTrend(group.historyByRule?.[v.ruleId] || [v]);
+    const trendMeta = TREND_META[trend];
+    const bc = v.baselineContext || {};
+    const corrob = corroboratingFlags(v, rule, group.verdicts);
+    const falsePositives = rule.falsePositives || [];
+    const mathKey = 'math:' + (v.id || v.ruleId + group.key);
+    const ruleOutKey = 'ruleout:' + (v.id || v.ruleId + group.key);
+    const mathOpen = openDrawers.has(mathKey);
+    const ruleOutOpen = openDrawers.has(ruleOutKey);
+    const drawerBtn = { fontSize: 10.5, fontWeight: 600, color: 'var(--accent-ink,var(--text))', background: 'rgba(245,188,0,.14)', border: 'none', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' };
+    return div({ key: v.id || v.ruleId + group.key, style: { display: 'flex', border: '1px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden', marginBottom: 10 } },
+      div({ style: { width: 5, flex: '0 0 5px', background: stripeColor } }),
+      div({ style: { flex: 1, minWidth: 0, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 } },
+        div({ style: { display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' } },
+          div({ style: { minWidth: 0 } },
+            div({ style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, rule.domain || v.ruleId),
+            div({ style: { fontSize: 13.5, lineHeight: 1.45, color: 'var(--text)', marginTop: 2 } }, buildDecisionSentence(rule, v, subjectLabel)),
+          ),
+          span({ style: { flex: '0 0 auto', fontSize: 10, fontWeight: 700, color: stripeColor, border: `1px solid ${stripeColor}`, borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap' } }, v.ruleId),
+        ),
+        div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '6px 16px', borderTop: '1px dashed var(--bdr)', borderBottom: '1px dashed var(--bdr)', padding: '8px 0' } },
+          fact('Who', group.subjectType === 'emp' ? h(RevealName, { token: group.empToken, cache: revealed, onReveal }) : subjectLabel),
+          fact('What', rule.method || v.ruleId),
+          fact('Where', STORE_NAMES[group.loc] || `Store ${group.loc}`),
+          fact('Window', `${v.windowStart} → ${v.windowEnd}`),
+        ),
+        corrob.length > 0 && div({ style: { fontSize: 11, color: 'var(--crit,#ef4444)' } }, `🔗 Corroborated by ${corrob.join(', ')} — also flagged for this subject.`),
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 } },
+          div({ style: { fontSize: 10.5, color: trendMeta.color, fontWeight: 600 } }, trendMeta.label),
+          div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+            falsePositives.length > 0 && btn({ onClick: () => onToggleDrawer(ruleOutKey), style: drawerBtn }, ruleOutOpen ? 'Hide rule-outs' : 'Rule out first'),
+            btn({ onClick: () => onToggleDrawer(mathKey), style: drawerBtn }, mathOpen ? 'Hide the math' : 'Show the math'),
+          ),
+        ),
+        ruleOutOpen && div({ style: { background: 'var(--surf2)', borderRadius: 8, padding: '8px 10px', fontSize: 11.5 } },
+          div({ style: { fontWeight: 700, color: 'var(--ok,#10b981)', marginBottom: 4 } }, 'Before escalating, rule out:'),
+          h('ul', { style: { margin: 0, paddingLeft: 18, color: 'var(--text2)' } }, falsePositives.map((fp, i) => h('li', { key: i }, fp))),
+        ),
+        mathOpen && div({ style: { background: 'var(--surf2)', borderRadius: 8, padding: '8px 10px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 3 } },
+          div(null, `value: ${fmtValue(v.ruleId, v.value)}`),
+          div(null, `threshold: ${fmtThreshold(rule.logicType, v.thresholdUsed)}`),
+          bc.mean != null && div(null, `${rule.baselineType || 'baseline'}: mean ${fNum(bc.mean)}, stdev ${fNum(bc.stdev)}, n ${bc.n ?? '—'}`),
+          v.exonerationShare != null && div(null, `exoneration share: ${fPct(v.exonerationShare)}`),
+        ),
+        v.id && h(FindingActions, {
+          findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
+          error: actionError?.[v.id], onSubmit: onFindingAction,
+        }),
+      ),
+    );
+  }));
+}
+function fact(k, v) {
+  return div({ style: { minWidth: 0 } },
+    div({ style: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 } }, k),
+    div({ style: { fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, v));
+}
+
 // One row per subject (matches the on-screen grouping) -- the Rules column flattens every verdict
 // chip into "RULE: Verdict" pairs, semicolon-joined, so the CSV still carries which rule(s) said
 // what without exploding into one row per verdict.
@@ -1173,6 +1298,26 @@ export function SecurityPanel({ userRole, onClose }) {
     if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir(key === 'subject' || key === 'rule' ? 'asc' : 'desc'); }
   };
+  // dispatch 2026-11-10 -- 'briefing' (the new narrative-card + health-grid view) vs 'table' (the
+  // pre-existing sortable table, unchanged below, and the default). Defaulting to 'table' rather
+  // than the new view is a deliberate choice, not an oversight or a hedge: this panel's existing
+  // test suite (119 tests at the time of this dispatch) exercises real, still-correct Table-view
+  // behavior -- VerdictChip clicks, SubjectRow expand/collapse, sort headers, case tracking inside
+  // SubjectDetail -- through DOM queries that assume table markup is present on mount. Flipping
+  // the default would have meant either rewriting ~40 of those tests to click into Table first
+  // (expanding this dispatch's blast radius well past "add a view") or shipping with real existing
+  // coverage silently broken, and this repo's own standing rule is "never break working features."
+  // Briefing is one click away via the toggle right below, not buried -- the next phase (once
+  // persistence/convergence scoring lands and Briefing has had real eyes on it) is the point to
+  // revisit making it the default, informed by actual use rather than this dispatch's own guess.
+  const [view, setView] = React.useState('table');
+  // Drawer open/closed state for the briefing cards' own "Rule out first"/"Show the math"
+  // toggles, keyed by a string built in SecurityBriefingCard -- a plain Set, same shape
+  // mathOpen/ruleOutOpen used in the original Loss Prevention Briefing mockup this is built from.
+  const [openDrawers, setOpenDrawers] = React.useState(() => new Set());
+  const toggleDrawer = React.useCallback((key) => {
+    setOpenDrawers(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });
+  }, []);
   const [revealed, setRevealed] = React.useState({});
   const [showLegend, setShowLegend] = React.useState(() => {
     try { return localStorage.getItem(LEGEND_DISMISSED_KEY) !== '1'; } catch { return true; }
@@ -1363,6 +1508,12 @@ export function SecurityPanel({ userRole, onClose }) {
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
 
+  // dispatch 2026-11-10 -- the district health grid's own data, computed across EVERY domain/
+  // rule at once (see security-health.js's own header for why) -- from the bulk `findings` +
+  // `rulesById` this panel already loaded, independent of whatever domain tab/scope/rule filter
+  // is currently selected for the briefing feed below it.
+  const healthList = React.useMemo(() => storeHealthList(findings, rulesById), [findings, rulesById]);
+
   // dispatch #56 Part C -- "list the name of the product." `${loc}|${wrin}|${period}` ->
   // {descr, cls} from qsr_variance_stat, so an inventory subject's heading can show the item name
   // instead of a bare WRIN. On-demand, matching dispatch #43's discipline: fires only while
@@ -1449,6 +1600,17 @@ export function SecurityPanel({ userRole, onClose }) {
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
       }, '❓ Legend'),
+      // dispatch 2026-11-10 -- Briefing (the new narrative-card default) vs Table (unchanged,
+      // the pre-existing sortable view). A view choice, not a filter -- doesn't touch `groups`.
+      div({ style: { display: 'flex', gap: 2, border: '1px solid var(--bdr)', borderRadius: 999, padding: 2 } },
+        ['briefing', 'table'].map(v => btn({
+          key: v, onClick: () => setView(v),
+          style: {
+            fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
+            background: view === v ? 'var(--accent,#f5bc00)' : 'transparent', color: view === v ? '#000' : 'var(--text3)',
+          },
+        }, v === 'briefing' ? '🩺 Briefing' : '🗂 Table')),
+      ),
       // Dispatch #143 -- CSV/JSON export + full print report, both scoped to the currently
       // filtered/sorted findings table (sortedGroups) via exportSpec/handlePrintReport above.
       // Hidden until there's something to export, matching every other panel's convention.
@@ -1537,11 +1699,29 @@ export function SecurityPanel({ userRole, onClose }) {
       // the empty-state message just above already covers the zero-groups case.
       permState === 'allowed' && dataState === 'loaded' && groups.length > 0
         && h(SecuritySummaryBar, { groups, newestBatch, revealed, itemInfoFor }),
+      // dispatch 2026-11-10 -- Briefing view: district health grid (hidden once scope is already
+      // narrowed to a single store — nothing to rank against) + one narrative card per flagged
+      // signal, built from `sortedGroups` so it respects the exact same domain/rule/min-signals/
+      // date-range filters the Table view does. See SecurityHealthGrid/SecurityBriefingCard's own
+      // headers for what this phase does and doesn't compute.
+      view === 'briefing' && permState === 'allowed' && dataState === 'loaded' && scope.level !== 'store'
+        && h(SecurityHealthGrid, { list: healthList, scope, onSelectStore: loc => setScope({ level: 'store', value: loc }) }),
+      view === 'briefing' && permState === 'allowed' && dataState === 'loaded' && groups.length > 0
+        && div({ style: { padding: '10px 14px' } },
+          sortedGroups.map(g => {
+            const group = subjectHistory[g.key] ? { ...g, historyByRule: subjectHistory[g.key] } : g;
+            return h(SecurityBriefingCard, {
+              key: g.key, group, rulesById, revealed, onReveal, itemInfoFor,
+              findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
+              openDrawers, onToggleDrawer: toggleDrawer,
+            });
+          }),
+        ),
       // dispatch #120 -- real <table>/<th> markup, sortable by Signals/Subject/Rule/Window (see
       // sortFindingsForDisplay's own header comment for why this was chosen over a click-through
       // to an "actual event" view). Wrapped in its own overflowX:'auto' scroller per panel-
       // contract.md's mobile-scroll rule, though this table's column count stays modest.
-      permState === 'allowed' && dataState === 'loaded' && groups.length > 0 && div({ style: { overflowX: 'auto' } },
+      view === 'table' && permState === 'allowed' && dataState === 'loaded' && groups.length > 0 && div({ style: { overflowX: 'auto' } },
         // width:'max-content' + minWidth:'100%' (not width:'100%' alone) -- the #192 rule
         // (scroll-table-width.test.js): a table locked to its wrapper's width has nothing to
         // scroll TO, so the browser silently crushes columns instead of the overflowX:'auto'
