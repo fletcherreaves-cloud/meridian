@@ -212,7 +212,12 @@ function renderNavTexts(permFn) {
 // hub tab, confirmed via App.js's own modal router, never rendered under People) to
 // section:'scheduling' -- no visible effect here, since kind:'hub-tab' already rendered nowhere
 // in this snapshot either way.
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','🧭','Curated Home','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','🚀','Launch Planner','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People & HR','🗓','Crew Schedule','💰','Pay Rate History','📋','Performance Reviews','🔒','Security','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','‼','Log Something','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forecasting and Labor Projections','◎','DI Calibration','▦','Projections','◑','Proj vs Actuals','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','🎯','Forecast Models','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','🗺️','Layout Planner','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+// 2026-11-10 (task #90): 'YoY Trends' (new kind:'test-kitchen', perm:'analytics.district',
+// tkOrder:19) lands LAST in the Test Kitchen list, right after 'Layout Planner' (tkOrder:18).
+// Its calendar icon already has another owner (the perm:null 'Date-Range Report' entry, which
+// renders regardless of any permission denial) -- see HIDDEN_WHEN_DENIED's 'analytics.district'
+// entry below, which only gains the new label, not the icon.
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','🧭','Curated Home','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','🚀','Launch Planner','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People & HR','🗓','Crew Schedule','💰','Pay Rate History','📋','Performance Reviews','🔒','Security','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','‼','Log Something','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forecasting and Labor Projections','◎','DI Calibration','▦','Projections','◑','Proj vs Actuals','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','🎯','Forecast Models','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','🗺️','Layout Planner','📅','YoY Trends','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -309,7 +314,10 @@ const HIDDEN_WHEN_DENIED = {
   // analytics.district alone no longer removes every 💰 text node (Opportunity $ keeps
   // rendering as its own separate denial, but the icon itself has a second owner now), same
   // "icon has another owner" shape as 📦/🏆 elsewhere in this map.
-  'analytics.district': ['Above-Store One-Pager', 'District View', 'Opportunity $', 'Org Summary', 'Performance Trends', '⊞'],
+  // 2026-11-10: 'YoY Trends' (task #90) joins this list -- same perm:'analytics.district' tier
+  // as 'Performance Trends'. Its calendar icon does NOT join: 'Date-Range Report' (perm:null)
+  // already owns it and renders regardless of any permission denial.
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'Opportunity $', 'Org Summary', 'Performance Trends', 'YoY Trends', '⊞'],
   // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
   // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
   // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
@@ -550,8 +558,10 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // promoted 'proj' (Projections), 'pvsa' (Proj vs Actuals), and 'dialedin' (DI Calibration)
     // OUT of Test Kitchen (owner: "I agree they need to come out of the test kitchen" -- all
     // three were load-bearing weekly-workflow panels per CLAUDE.md's own Workflow Guide, not
-    // experiments) -- 16 - 3 = 13, a deliberate shrink, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (proj/pvsa/dialedin promoted 2026-11-07), the CENSUS must not drift silently').toBe(13);
+    // experiments) -- 16 - 3 = 13, a deliberate shrink, not drift. 2026-11-10 added 'yoy-trends'
+    // (YoY Trends, task #90) as a new kind:'test-kitchen' panel, per the standing rule that
+    // every new panel starts there -- 13 + 1 = 14, a deliberate growth, not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (proj/pvsa/dialedin promoted 2026-11-07; yoy-trends added 2026-11-10), the CENSUS must not drift silently').toBe(14);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -587,7 +597,7 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all fifteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+  it('covers all fourteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
     // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
     // 12 -> 11: dispatch #203 promoted 'top-bottom' OUT of Test Kitchen (kind:'test-kitchen' ->
@@ -604,7 +614,8 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
     // 15 -> 16: 2026-10-21 added 'equipment-layout' (Layout Planner).
     // 16 -> 13: 2026-11-07 promoted 'proj'/'pvsa'/'dialedin' OUT of Test Kitchen (owner-approved
     // -- see the identical note on the ratchet above).
-    expect(testKitchenPanels.length).toBe(13);
+    // 13 -> 14: 2026-11-10 added 'yoy-trends' (YoY Trends, task #90).
+    expect(testKitchenPanels.length).toBe(14);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {
