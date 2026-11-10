@@ -476,7 +476,14 @@ export function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initi
   // Dispatch #207: same "hand-rolled backdrop -> RoutePanelShell, tab-strip pulled into a local
   // tabBar var" treatment SchedulingHubPanel below got under #55 Part B -- that conversion is
   // this one's literal template, in the same file, zero extraction needed either time.
-  const tabBar = div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap' } },
+  // Scrolls horizontally instead of wrapping onto a second line (owner report 2026-11-10,
+  // same fix as the Scheduling hub's own tabBar below) -- a wrapped row grows as tall as it
+  // needs to fit every tab, which in a flex row with the title div next to it (RoutePanelShell's
+  // header, flex:1/minWidth:0) squeezes the title down to a sliver instead of pushing the tabs
+  // to a second line, same root cause the Inventory Control pilot (PanelChrome.js) fixed for its
+  // own band 3 -- minWidth:0 lets this item shrink below its own content width so overflowX:auto
+  // actually does something, per that fix's own comment.
+  const tabBar = div({ style: { display: 'flex', gap: 4, minWidth: 0, overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' } },
     ...PLANNING_TABS.map(t => btn({ key: t.id, onClick: () => setTab(t.id),
       title: t.label,
       style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
@@ -547,7 +554,13 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
                           h(SkillsMatrixPanel, common);
   // Dispatch #55 Part B: same tab-pill-bar markup that used to sit inline in this hub's own
   // hand-rolled header, now relocated (unchanged) into RoutePanelShell's headerExtra slot.
-  const tabBar = div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap' } },
+  // Scrolls horizontally instead of wrapping (owner report 2026-11-10): 12 tabs wrapped onto two
+  // rows, and in RoutePanelShell's header flex row that squeezed the title div (flex:1/
+  // minWidth:0) down to a near-unreadable sliver instead of pushing tabs to a second line.
+  // Same fix the Inventory Control pilot (PanelChrome.js) established for its own band 3 --
+  // minWidth:0 lets this item shrink below its content width so overflowX:auto actually scrolls
+  // instead of being a no-op, per that fix's own comment.
+  const tabBar = div({ style: { display: 'flex', gap: 4, minWidth: 0, overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' } },
     ...allowed.map(t => btn({ key: t.id, onClick: () => setTab(t.id), title: t.label,
       style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
         border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
