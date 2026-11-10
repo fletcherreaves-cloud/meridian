@@ -1157,21 +1157,18 @@ async function main() {
 
   console.log(`[security-rules-run] done — ${totalFindings} finding(s) upserted across ${rules.length - skipped} rule(s) (${skipped} skipped), ${totalErrors} error(s)`);
 
-  // dispatch 2026-11-10 — security_findings_latest is now a materialized view (schema-security-
-  // findings-latest-materialized-2026-11-10.sql), not computed live on every Security panel page
-  // load, because the base table's daily growth (~9,000 rows/day, this loop's own upserts) had
-  // pushed the old live-computed view past the Postgres statement timeout on deep pages. Refresh
-  // it here, once per batch run, so the panel's "latest" read stays current without ever paying
-  // the live-computation cost itself. Non-fatal: a refresh failure (e.g. the migration hasn't
-  // been applied yet) logs loudly but does not fail the batch run or its findings — the panel
-  // falls back to whatever snapshot the view already has (or, pre-migration, the unchanged old
-  // plain view keeps working exactly as it does today).
-  const { error: refreshError } = await supabase.rpc('refresh_security_findings_latest');
-  if (refreshError) {
-    console.error('[security-rules-run] security_findings_latest refresh failed (non-fatal):', refreshError.message);
-  } else {
-    console.log('[security-rules-run] security_findings_latest refreshed');
-  }
+  // dispatch 2026-11-10 — security_findings_latest is a materialized view (schema-security-
+  // findings-latest-materialized-2026-11-10.sql), refreshed once daily, NOT from here. This script
+  // used to call supabase.rpc('refresh_security_findings_latest') at this point, but that goes
+  // through PostgREST's `authenticator` role, which carries a hard-coded 8s statement_timeout
+  // (measured via pg_roles) — REFRESH MATERIALIZED VIEW CONCURRENTLY over this table's real size
+  // (242,074+ rows and growing) takes well over that, so the call failed (non-fatally logged) on
+  // every single run since the materialized view shipped, silently leaving the panel's view stale.
+  // Fixed by moving the refresh to a pg_cron job (schema-security-findings-latest-pgcron-refresh-
+  // 2026-11-10.sql, scheduled 11:20 UTC daily, 20min after this workflow's own 11:00 UTC run) that
+  // runs as a plain Postgres background worker with no PostgREST/authenticator involvement — full
+  // measurement in memory/finding-security-findings-latest-refresh-timeout-2026-11-10.md. Do not
+  // re-add a refresh call here; it would just fail the same way every time.
 
   process.exit(totalErrors > 0 ? 1 : 0);
 }
