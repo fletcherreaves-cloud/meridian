@@ -14,9 +14,23 @@
 // results constrain what this endpoint can ever deliver: cash over/short has NO drill-down (a
 // computed variance, not a discrete event) and discount is not on this report at all. Both are
 // documented, not silently missing -- see the panel's own explicit caveat text.
+//
+// 9th token added task #131 (2026-11-10), MEASURED, not guessed: the owner's KB screenshot named
+// a new category "General Drawer Open" (a drawer open with no other POS event attached) but gave
+// no event_token string. `scripts/qsrsoft-security-events-new-fields-probe-2026-11-08.mjs`'s own
+// guess list didn't include the real one either -- the real token was found by brute-force probe
+// against the live endpoint: `event_token: 'drawer_open'` returns real rows, every day, every
+// store tried (4 stores x 9 dates, 2026-11-01..09 -- 3-21 rows/store/day, far more frequent than
+// any of the other 8 tokens). ⚠️ The API's own `event_name` on these rows is **"Unauthorized
+// Drawer Open"**, not literally "General Drawer Open" -- the owner's KB screenshot names the QSRSoft
+// UI's report CATEGORY, the API calls the discrete event something else; both describe the same
+// thing (a drawer opened with no attached order -- `order_key` is the literal sentinel `":0"`,
+// `event_amt` is `0`, `tender_type` is `"other"`). Do not "correct" `event_name` to match the KB
+// label -- it is passed through verbatim like every other token, and QSRSoft's own two names for
+// one category are a fact about their product, not a bug in this parser.
 export const EVENT_TOKENS = Object.freeze([
   'all_promo', 't_red_before', 't_red_after', 'cash_refund', 'cashless_refund',
-  'employee_meal', 'manager_meal', 'pos_overring',
+  'employee_meal', 'manager_meal', 'pos_overring', 'drawer_open',
 ]);
 
 /** The path/body storeRef this API expects -- the unpadded NSN, same conversion the DAR pull
@@ -54,6 +68,24 @@ function isUsableRow(raw) {
   return !!(raw && raw.event_dt && raw.event_tm);
 }
 
+// `drawer_open` rows (task #131) carry a literal `"0000-00-00"`/`"00:00:00"` SENTINEL for
+// pos_session_start_dt/_tm, not an absent field -- MEASURED across every drawer_open row sampled
+// (4 stores x 9 dates, 2026-11-10 probe): a drawer-open-with-no-POS-event by definition has no
+// POS session to report, and QSRSoft encodes that absence as an invalid zero-date rather than
+// `null`. `"0000-00-00"` is truthy, so the old `raw.pos_session_start_dt || null` pattern passed
+// it straight through -- and `qsr_security_events.pos_session_start_dt` is a Postgres `date`
+// column, which REJECTS `'0000-00-00'::date` outright. Left unguarded, wiring drawer_open into
+// the real pull would have broken every save, not just left a cosmetic value. Nulled here, keyed
+// off the date sentinel (not the time field alone -- `00:00:00` is itself a value a REAL
+// midnight session could carry, however unlikely given the 4am ABC boundary; the date sentinel is
+// the unambiguous signal).
+const NULL_DATE_SENTINEL = '0000-00-00';
+function parseSessionStart(raw) {
+  const dt = raw?.pos_session_start_dt;
+  if (!dt || dt === NULL_DATE_SENTINEL) return { posSessionStartDt: null, posSessionStartTm: null };
+  return { posSessionStartDt: dt, posSessionStartTm: raw.pos_session_start_tm || null };
+}
+
 /**
  * Parses one raw `event_details` row into the intermediate shape the pull script tokenizes and
  * writes. `crewName`/`mgrName` are PLAINTEXT here -- this function is the one place they exist in
@@ -73,6 +105,7 @@ export function parseSecurityEventRow(raw, { loc, eventToken } = {}) {
   if (!isUsableRow(raw) || loc == null || eventToken == null) return null;
   const crew = parseNameBadge(raw.crew);
   const mgr = parseNameBadge(raw.mgr);
+  const session = parseSessionStart(raw || {});
   return {
     loc: String(loc),
     eventToken,
@@ -93,9 +126,21 @@ export function parseSecurityEventRow(raw, { loc, eventToken } = {}) {
     crewBadge: crew.badge,
     mgrName: mgr.name,     // PLAINTEXT -- same rule
     mgrBadge: mgr.badge,
+    // ⚠️ task #131 (2026-11-10): this IS the field the owner's "Manager Authorization Type"
+    // (manager code / biometrics / unknown) KB screenshot describes -- it has been captured and
+    // mapped here since the ORIGINAL dispatch #58 build (commit 3dddb652), predating task #131,
+    // not a gap this dispatch opened. What's new: a live re-probe (164 real pos_overring rows,
+    // 4 stores x 9 dates) found a THIRD raw value, `"false"`, that the original 2026-08-21
+    // capture (38 rows) never saw -- that capture only documented `"true"`/`"Unknown"`. No row in
+    // either sample carried any OTHER raw key (e.g. a literal `mgr_auth_type`), so the 3-way KB
+    // label is almost certainly QSRSoft's own display translation of this same raw value, not a
+    // separate field this parser is missing. **Not confirmed which raw value maps to
+    // "Biometrics"** -- no row in 164 samples exhibited it, so there is nothing to measure that
+    // mapping against yet. Stored verbatim, as before; do not invent a true/false/Unknown ->
+    // manager-code/biometrics/unknown translation without a captured example of each.
     mgrCode: raw.mgr_code != null ? String(raw.mgr_code) : null,
-    posSessionStartDt: raw.pos_session_start_dt || null,
-    posSessionStartTm: raw.pos_session_start_tm || null,
+    posSessionStartDt: session.posSessionStartDt,
+    posSessionStartTm: session.posSessionStartTm,
   };
 }
 

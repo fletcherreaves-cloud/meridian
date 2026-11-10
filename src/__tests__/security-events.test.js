@@ -27,10 +27,10 @@ const BASE_ROW = {
 };
 
 describe('EVENT_TOKENS', () => {
-  it('is exactly the 8 enumerated tokens across 5 families', () => {
+  it('is exactly the 9 enumerated tokens (8 original families + drawer_open, task #131)', () => {
     expect(EVENT_TOKENS).toEqual([
       'all_promo', 't_red_before', 't_red_after', 'cash_refund', 'cashless_refund',
-      'employee_meal', 'manager_meal', 'pos_overring',
+      'employee_meal', 'manager_meal', 'pos_overring', 'drawer_open',
     ]);
   });
 });
@@ -55,7 +55,7 @@ describe('parseSecurityEventRow — the fields the owner actually asked for', ()
     expect(r.loc).toBe('0029760');
   });
 
-  it('all 8 event tokens round-trip through the parser unchanged, from the caller-supplied option', () => {
+  it('all 9 event tokens round-trip through the parser unchanged, from the caller-supplied option', () => {
     for (const token of EVENT_TOKENS) {
       const r = parseSecurityEventRow(BASE_ROW, { loc: '0006178', eventToken: token });
       expect(r.eventToken).toBe(token);
@@ -148,6 +148,60 @@ describe('parseSecurityEventRow — the honest-null / dropped-row cases', () => 
     expect(r.posSessionStartDt).toBe(null);
     expect(r.crewName).toBe(null);
     expect(r.mgrName).toBe(null);
+  });
+});
+
+describe('parseSecurityEventRow — drawer_open (task #131): "0000-00-00"/"00:00:00" session sentinel', () => {
+  // Real shape measured live 2026-11-10 (synthetic crew/mgr names, per this file's own PII
+  // constraint): a drawer-open-with-no-POS-event carries no real POS session, encoded as this
+  // exact zero-date/zero-time sentinel rather than an absent field.
+  const DRAWER_OPEN_ROW = {
+    event_dt: '2026-11-03', event_tm: '23:47:09',
+    reg_num: 'POS0013', order_key: ':0',
+    event_name: 'Unauthorized Drawer Open', event_display: 'Unauthorized Drawer Open', event_amt: 0,
+    tender_type: 'other', daypart_name: 'Evening', store_busn_dt: '2026-11-03',
+    crew: 'Fixture Crew - 25', mgr: 'Unavailable - 000', mgr_code: 'Unknown',
+    pos_session_start_dt: '0000-00-00', pos_session_start_tm: '00:00:00',
+  };
+
+  it('nulls both pos_session_start_dt and pos_session_start_tm on the zero-date sentinel', () => {
+    const r = parseSecurityEventRow(DRAWER_OPEN_ROW, { loc: '0029760', eventToken: 'drawer_open' });
+    expect(r.posSessionStartDt).toBe(null);
+    expect(r.posSessionStartTm).toBe(null);
+  });
+
+  it('does not throw, and parses the rest of the row normally (regression guard: this used to pass '
+    + '"0000-00-00" straight through, which a Postgres date column rejects outright)', () => {
+    const r = parseSecurityEventRow(DRAWER_OPEN_ROW, { loc: '0029760', eventToken: 'drawer_open' });
+    expect(r.eventToken).toBe('drawer_open');
+    expect(r.orderKey).toBe(':0');
+    expect(r.eventAmt).toBe(0);
+    // "Unavailable - 000" (the real captured shape, badge included) is NOT the bare "Unavailable"
+    // sentinel -- it matches the "Name - NN" pattern instead, same as every other token's crew/mgr
+    // field, so the literal word survives as the name with badge "000". Only an EXACT "Unavailable"
+    // (no trailing " - NN") nulls out -- see parseNameBadge's own sentinel check.
+    expect(r.mgrName).toBe('Unavailable');
+    expect(r.mgrBadge).toBe('000');
+  });
+
+  it('a REAL (non-sentinel) session start on a drawer_open row still passes through unchanged', () => {
+    const r = parseSecurityEventRow({ ...DRAWER_OPEN_ROW, pos_session_start_dt: '2026-11-03', pos_session_start_tm: '22:10:00' }, { loc: '0029760', eventToken: 'drawer_open' });
+    expect(r.posSessionStartDt).toBe('2026-11-03');
+    expect(r.posSessionStartTm).toBe('22:10:00');
+  });
+
+  it('a missing pos_session_start_dt (not the sentinel, just absent) is still an honest null', () => {
+    const r = parseSecurityEventRow({ ...DRAWER_OPEN_ROW, pos_session_start_dt: undefined, pos_session_start_tm: undefined }, { loc: '0029760', eventToken: 'drawer_open' });
+    expect(r.posSessionStartDt).toBe(null);
+    expect(r.posSessionStartTm).toBe(null);
+  });
+});
+
+describe('parseSecurityEventRow — mgr_code (task #131): a third real value, "false", exists', () => {
+  it('a "false" mgr_code (measured live 2026-11-10, not in the original 2026-08-21 capture) is '
+    + 'stored verbatim like "true"/"Unknown", not coerced or dropped', () => {
+    const r = parseSecurityEventRow({ ...BASE_ROW, mgr_code: 'false' }, { loc: '0006178', eventToken: 'pos_overring' });
+    expect(r.mgrCode).toBe('false');
   });
 });
 
