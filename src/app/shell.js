@@ -1133,7 +1133,19 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
     ),
 
     // Right: actions
-    div({style:{display:'flex',alignItems:'center',gap:2,flexShrink:0}},
+    // Owner-reported 2026-11-10 (portrait phone): couldn't reach the rightmost icon (ProfileMenu).
+    // flexShrink:0 told this whole group to never give up width, and the outer bar (line ~1091)
+    // has no overflowX of its own -- so on a narrow viewport the combined width of Search/SAGE/
+    // Log/scope pills/DatePicker/bell/settings/profile simply ran past the right edge with
+    // nothing to scroll it into view. Same root cause and same established fix as the hub tab
+    // bars (PanelChrome.js's Inventory Control pilot): minWidth:0 lets this item shrink below its
+    // content width instead of refusing to, and overflowX:'auto' makes the excess scrollable
+    // instead of clipped. overflowY:'visible' is pinned explicitly -- NotificationBell's and
+    // ProfileMenu's own dropdowns are descendants of this div and render via position:'absolute',
+    // and setting only overflowX without it would silently compute the Y axis as 'auto' too (the
+    // same regression #1596 fixed for PanelChrome's band 3), clipping those dropdowns into a tiny
+    // box instead of letting them overlay the page below the bar.
+    div({style:{display:'flex',alignItems:'center',gap:2,minWidth:0,overflowX:'auto',overflowY:'visible',WebkitOverflowScrolling:'touch'}},
       // Command palette (2026-10-07) — reaches the SAME search the sidebar already has, from
       // anywhere, including mobile where the sidebar (and its inline search box) start closed.
       // Dispatches mf:openPalette rather than holding palette state here, same decoupling
