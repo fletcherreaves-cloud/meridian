@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { addD, dKey, sodOf, weekStartOf, lastClosedBusinessDay } from '../utils/date.js';
 import { STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
-import { forecastDay, getModelAssignment } from '../engine/forecast.js';
+import { forecastDay, getModelAssignment, InfoIcon } from '../engine/forecast.js';
 import { runWhyEngineScan, runWhyEngineDistrict, diagnoseMiss } from '../engine/why.js';
 import { grade } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -811,7 +811,11 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
 
   return h(ModalShell,{
     title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:960,zIndex:Z.nested,
-    subtitle:'A number to type into LifeLenz before the schedule locks, plus a Wednesday-start weekly reconciliation of Meridian vs LifeLenz’s own forecast',
+    // InfoIcon lives in subtitle, never title -- ModalShell passes title straight into
+    // ScreenshotShareButton's slugify(title)/native-share title, both of which expect a plain
+    // string (same reasoning as store-analytics.js's Revenue Intelligence modal, dispatch
+    // 2026-11-10 KB rollout).
+    subtitle:h('span',null,'A number to type into LifeLenz before the schedule locks, plus a Wednesday-start weekly reconciliation of Meridian vs LifeLenz’s own forecast',h(InfoIcon,{articleKey:'lifelenz_bridge'})),
     headerExtra: div({style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}},
       headerTabs||null,
       div({style:{display:'flex',gap:3}},

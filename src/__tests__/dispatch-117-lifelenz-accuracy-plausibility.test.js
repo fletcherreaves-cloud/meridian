@@ -31,6 +31,7 @@ const LOC = '33704'; // Tecumseh -- a real STORE_NAMES key
 vi.mock('../engine/forecast.js', () => ({
   forecastDay: () => ({ forecast: 10000, isFuture: false, modelUsed: 'mock' }),
   getModelAssignment: () => null,
+  InfoIcon: () => null, // LifeLenzBridgePanel's InfoIcon wiring (2026-11-10 KB rollout) isn't under test here
 }));
 
 const loadForecastSnapshotsMock = vi.fn(async () => []);
