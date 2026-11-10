@@ -144,8 +144,10 @@ const IMPLEMENTED_TYPES = { threshold: evalThreshold, ratio: evalRatio };
 // signal" (dispatch #42 §3). A stated, conservative floor in the same "first guess, tune later"
 // tier as every threshold in this build, not measured from live data (that's storeBaseline's own
 // *n* at call time, which varies per item/window -- a property of the call, not something this
-// file could query).
-const MIN_BASELINE_N = 5;
+// file could query). Exported (dispatch 2026-11-10, security-health.js) so the health-score
+// engine's own "insufficient population" guard uses the SAME number this file's z-score gate
+// does, rather than a second constant that can silently drift from it.
+export const MIN_BASELINE_N = 5;
 
 // dispatch #42 §3 -- z-score compares THIS subject's rate against a peer/store baseline's
 // mean/stdev instead of a fixed constant, so a systematic bias shared by every peer (e.g. a
