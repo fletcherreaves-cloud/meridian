@@ -64,6 +64,7 @@ import {
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
   scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay, minSignalsLabel,
   buildCommandGroups, buildDomainBreakdown, buildTopContributingRules, latestCaseStatus, tallyCaseQueue,
+  cameraReviewHint,
 } from '../views/security-panel.js';
 // dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
 // anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
@@ -253,6 +254,18 @@ describe('classifySubjectTrend() — chronic vs. new vs. not enough history yet 
 // `groups` memo is scoped to one `domain` at a time (see security-panel.js's own header on it);
 // these are the cross-domain layer, built on the same groupFindingsBySubject/scopeMatches
 // primitives, never a second grouping algorithm.
+describe('cameraReviewHint() — the owner-requested camera-footage reminder (2026-11-10)', () => {
+  it('names the store and the real window range', () => {
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28')).toBe(
+      '📹 Before deciding: pull camera footage for Store 0000001, 2026-10-01 – 2026-10-28, to verify what actually happened.');
+  });
+  it('falls back gracefully when only one side of the window is known, never crashes on neither', () => {
+    expect(cameraReviewHint('0000001', null, '2026-10-28')).toContain('2026-10-28');
+    expect(cameraReviewHint('0000001', null, null)).toContain('this window');
+    expect(cameraReviewHint(null, null, null)).toContain('Store —');
+  });
+});
+
 describe('buildCommandGroups() — cross-domain, emp-subjects only (person-attributable rules, never a wrin/item finding)', () => {
   const FINDINGS = [
     { id: 'f1', empToken: 'tok-a', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, windowEnd: '2026-10-01', computedAt: '2026-10-02T00:00:00Z' },
@@ -1741,6 +1754,18 @@ describe('SecurityPanel — dispatch #120: findings render as a real, sortable <
     // Clicking the SAME header again flips direction back to descending.
     await act(async () => { subjectTh.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(rowOrder(container)).toEqual(['ZULU-001', 'MIKE-002', 'ECHO-003']);
+  });
+
+  it('expanding a flagged row shows the camera-footage reminder, naming the real store and window', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const firstRow = container.querySelector('tbody tr');
+    await act(async () => { firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/📹 Before deciding: pull camera footage for Store 0000001, 2026-08-01 – 2026-08-28/);
   });
 });
 

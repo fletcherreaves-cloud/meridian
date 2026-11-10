@@ -775,6 +775,8 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
         // dispatch 2026-11-09 -- case tracking, only offered on a real finding row (v.id) with an
         // actual verdict to act on (never for undetermined/hygiene, which have nothing to
         // investigate yet).
+        v.pass === true && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 4, fontStyle: 'italic' } },
+          cameraReviewHint(group.loc, v.windowStart, v.windowEnd)),
         v.id && v.pass != null && !v.lifecycleCategory && h(FindingActions, {
           findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
           error: actionError?.[v.id], onSubmit: onFindingAction,
@@ -810,6 +812,18 @@ const ACTION_LABEL = {
   escalated: { label: 'Escalated', color: 'var(--crit,#ef4444)' },
   noted: { label: 'Note added', color: 'var(--text3)' },
 };
+
+// Owner request 2026-11-10 -- a plain nudge to pull camera footage before acting on a flag, shown
+// alongside every genuinely flagged finding's case-tracking actions. Deliberately code-only, not a
+// per-rule security_rules.investigation_action edit -- that field is DATA (a DB row per rule, 16 of
+// them), and this reminder applies identically to every domain/rule, so one line in the renderer
+// is the honest fix, not a 16-row migration repeating the same sentence. No camera/DVR integration
+// exists anywhere in this codebase (checked before writing this) -- this is a reminder to go check
+// whatever system the store already has, nothing more.
+export function cameraReviewHint(loc, windowStart, windowEnd) {
+  const range = windowStart && windowEnd ? `${windowStart} – ${windowEnd}` : (windowEnd || windowStart || 'this window');
+  return `📹 Before deciding: pull camera footage for Store ${loc || '—'}, ${range}, to verify what actually happened.`;
+}
 
 function FindingActions({ findingId, actions, busy, error, onSubmit }) {
   const [draft, setDraft] = React.useState(null); // null | 'investigated_cleared' | 'escalated' | 'noted'
@@ -1483,6 +1497,8 @@ function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFo
           bc.mean != null && div(null, `${rule.baselineType || 'baseline'}: mean ${fNum(bc.mean)}, stdev ${fNum(bc.stdev)}, n ${bc.n ?? '—'}`),
           v.exonerationShare != null && div(null, `exoneration share: ${fPct(v.exonerationShare)}`),
         ),
+        v.pass === true && div({ style: { fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' } },
+          cameraReviewHint(group.loc, v.windowStart, v.windowEnd)),
         v.id && h(FindingActions, {
           findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
           error: actionError?.[v.id], onSubmit: onFindingAction,
