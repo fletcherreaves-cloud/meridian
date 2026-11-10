@@ -1128,10 +1128,20 @@ function subjectLabelFor(group, revealed, itemInfoFor) {
 function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
   const flaggedTotal = groups.reduce((a, g) => a + g.flaggedCount, 0);
   const multiSignal = groups.filter(g => g.flaggedCount >= 2).length;
+  // dispatch 2026-11-10 follow-on (owner-caught: "I thought we landed on a more robust look") --
+  // these tiles were still the plain, small stat-box styling from before the dashboard-first
+  // redesign, never bumped to match the bolder KPI-strip treatment the approved mockup actually
+  // showed. Same data, same props, purely a visual pass: bigger numbers (34px, matching the
+  // mockup), more breathing room, and a colored top accent on any tile carrying a `tone` (i.e.
+  // something worth noticing) instead of a uniform flat border on every tile regardless of
+  // severity.
   const tile = (label, val, tone) => div({
-    style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px' } },
-    div({ style: { fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 } }, label),
-    div({ style: { fontSize: 20, fontWeight: 800, color: tone || 'var(--text)' } }, val),
+    style: {
+      background: 'var(--surf2)', border: '1px solid var(--bdr)', borderTop: `3px solid ${tone || 'var(--bdr)'}`,
+      borderRadius: 14, padding: '16px 18px',
+    } },
+    div({ style: { fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 6 } }, label),
+    div({ style: { fontSize: 34, fontWeight: 800, lineHeight: 1, color: tone || 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, val),
   );
   let decision;
   if (!groups.length) {
@@ -1143,7 +1153,7 @@ function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
     decision = `${subjectLabelFor(top, revealed, itemInfoFor)} is converging on ${top.flaggedCount} independent signals — the strongest lead in this scope right now.`;
   }
   return div({ style: { padding: '10px 14px', borderBottom: '1px solid var(--bdr)' } },
-    div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 10 } },
+    div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 } },
       tile('Subjects Flagged', groups.length),
       tile('Total Signals', flaggedTotal, flaggedTotal > 0 ? 'var(--crit,#ef4444)' : undefined),
       tile('2+ Signal Convergence', multiSignal, multiSignal > 0 ? 'var(--crit,#ef4444)' : undefined),
@@ -1187,7 +1197,7 @@ function CommandCenterView({
     h(SecuritySummaryBar, { groups: commandGroups, newestBatch, revealed, itemInfoFor }),
     // A second, network-specific KPI row alongside SecuritySummaryBar's own tiles (Subjects
     // Flagged/Total Signals/2+ Signal Convergence/Latest Batch) -- additive, not a replacement.
-    div({ style: { display: 'flex', gap: 8, padding: '0 14px 10px', flexWrap: 'wrap' } },
+    div({ style: { display: 'flex', gap: 10, padding: '0 14px 10px', flexWrap: 'wrap' } },
       commandTile('Stores Needing Review', `${storesNeedingReview} / ${healthList.length}`, storesNeedingReview > 0 ? 'var(--crit,#ef4444)' : undefined),
       commandTile('Rules Live', `${activeRules} / ${ruleList.length}`, undefined,
         ruleList.length - activeRules > 0 ? `${ruleList.length - activeRules} pending activation review` : 'all rules active'),
@@ -1259,10 +1269,14 @@ function CommandCenterView({
 }
 
 function commandTile(label, val, tone, caption) {
-  return div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', minWidth: 140, flex: '1 1 140px' } },
-    div({ style: { fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 } }, label),
-    div({ style: { fontSize: 20, fontWeight: 800, color: tone || 'var(--text)' } }, val),
-    caption && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 2 } }, caption),
+  return div({
+    style: {
+      background: 'var(--surf2)', border: '1px solid var(--bdr)', borderTop: `3px solid ${tone || 'var(--bdr)'}`,
+      borderRadius: 14, padding: '16px 18px', minWidth: 160, flex: '1 1 160px',
+    } },
+    div({ style: { fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 6 } }, label),
+    div({ style: { fontSize: 34, fontWeight: 800, lineHeight: 1, color: tone || 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, val),
+    caption && div({ style: { fontSize: 11, color: 'var(--text3)', marginTop: 6 } }, caption),
   );
 }
 
