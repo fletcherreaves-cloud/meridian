@@ -12,7 +12,7 @@
 // supabase/schema-app-notifications.sql): the bell now merges the pre-existing EOM-specific source
 // (unchanged rendering) with a new, type-agnostic `app_notifications` source, plus a delete button
 // on both. Same "render the real component" rule applies to the new behavior too.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -98,6 +98,18 @@ beforeEach(() => {
   root = createRoot(container);
 });
 
+// Dispatch 2026-11-10 -- without this, a previous test's root (and the dropdown it portaled
+// straight to document.body) stayed mounted and attached indefinitely, since nothing here ever
+// unmounted it. That was invisible before the portal fix (queries were scoped to each test's own
+// `container`), but once the dropdown's content lives directly under document.body, a leftover
+// open panel from an earlier test can satisfy `document.querySelector('[data-notif-row="n1"]')`
+// before the current test's own row does -- same row id reused across fixtures, so the mismatch
+// is silent until the click lands on the wrong (stale) element's handlers.
+afterEach(() => {
+  act(() => { root.unmount(); });
+  container.remove();
+});
+
 async function mount(props) {
   await act(async () => { root.render(React.createElement(NotificationBell, props)); });
 }
@@ -106,6 +118,11 @@ async function openBell() {
   await act(async () => { container.querySelector('button').click(); });
   await flush();
 }
+// Dispatch 2026-11-10 -- the open dropdown now portals to document.body (same fix, same reason
+// as task #119's ActionMenu portal: it can no longer get clipped by an overflow:'auto' ancestor
+// on any engine), so its contents are no longer DOM descendants of `container`. Anything read
+// here AFTER openBell() must query `document`, not `container` -- the toggle button itself stays
+// a real descendant of `container` and is unaffected.
 
 describe('NotificationBell — bell + unread badge', () => {
   it('renders the bell and polls BOTH sources\' unread counts, summed, on mount', async () => {
@@ -132,40 +149,40 @@ describe('NotificationBell — dropdown', () => {
     await openBell();
     expect(loadEomCountNotifications).toHaveBeenCalled();
     expect(loadAppNotifications).toHaveBeenCalled();
-    expect(container.textContent).toContain('Notifications');
-    expect(container.textContent).not.toContain('EOM Count Notifications'); // header is generic now
+    expect(document.body.textContent).toContain('Notifications');
+    expect(document.body.textContent).not.toContain('EOM Count Notifications'); // header is generic now
     // Store names resolved via sNameC (real Meridian store names for 3708/5183), not blank.
-    expect(container.querySelector('[data-notif-row="n1"]').textContent).not.toContain('3708');
-    expect(container.textContent).toContain('Food + Condiment complete');
-    expect(container.textContent).toContain('Paper complete');
+    expect(document.querySelector('[data-notif-row="n1"]').textContent).not.toContain('3708');
+    expect(document.body.textContent).toContain('Food + Condiment complete');
+    expect(document.body.textContent).toContain('Paper complete');
     // The generic, non-EOM row renders too, with its own title/detail.
-    expect(container.textContent).toContain('LifeLenz pull failing');
-    expect(container.textContent).toContain('3 days stale — token likely expired');
+    expect(document.body.textContent).toContain('LifeLenz pull failing');
+    expect(document.body.textContent).toContain('3 days stale — token likely expired');
   });
 
   it('rule 3: a not_started class and an in_progress class on the SAME row render distinctly', async () => {
     await mount({ onOpenModal: vi.fn(), perm: () => true });
     await flush();
     await openBell();
-    expect(container.textContent).toContain('Food: Not started');
-    expect(container.textContent).toContain('Condiment: In progress (40%)');
-    expect(container.textContent).toContain('Paper: Complete');
+    expect(document.body.textContent).toContain('Food: Not started');
+    expect(document.body.textContent).toContain('Condiment: In progress (40%)');
+    expect(document.body.textContent).toContain('Paper: Complete');
     // not_applicable must never render (rule 3 -- no fake reading for a class with zero items).
-    expect(container.textContent).not.toContain('N/A');
+    expect(document.body.textContent).not.toContain('N/A');
   });
 
   it('shows uncounted-item count + $ at risk, collapsed (not the full item list inline)', async () => {
     await mount({ onOpenModal: vi.fn(), perm: () => true });
     await flush();
     await openBell();
-    expect(container.textContent).toContain('2 uncounted items (~$340 at risk)');
+    expect(document.body.textContent).toContain('2 uncounted items (~$340 at risk)');
   });
 
   it('shows the real KB link title/url, not a placeholder', async () => {
     await mount({ onOpenModal: vi.fn(), perm: () => true });
     await flush();
     await openBell();
-    const link = container.querySelector('a[href^="https://support.qsrsoft.com/"]');
+    const link = document.querySelector('a[href^="https://support.qsrsoft.com/"]');
     expect(link).not.toBeNull();
     expect(link.textContent).toContain('Best Counting Practices');
   });
@@ -175,7 +192,7 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal, perm: () => true });
     await flush();
     await openBell();
-    const unreadRowEl = container.querySelector('[data-notif-row="n1"]');
+    const unreadRowEl = document.querySelector('[data-notif-row="n1"]');
     expect(unreadRowEl).toBeTruthy();
     await act(async () => { unreadRowEl.click(); });
     expect(markEomCountNotificationRead).toHaveBeenCalledWith('n1');
@@ -187,7 +204,7 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal, perm: () => true });
     await flush();
     await openBell();
-    const readRowEl = container.querySelector('[data-notif-row="n2"]');
+    const readRowEl = document.querySelector('[data-notif-row="n2"]');
     expect(readRowEl).toBeTruthy();
     await act(async () => { readRowEl.click(); });
     expect(markEomCountNotificationRead).not.toHaveBeenCalled();
@@ -199,7 +216,7 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal, perm: () => true });
     await flush();
     await openBell();
-    const rowEl = container.querySelector('[data-notif-row="g1"]');
+    const rowEl = document.querySelector('[data-notif-row="g1"]');
     expect(rowEl).toBeTruthy();
     await act(async () => { rowEl.click(); });
     expect(markAppNotificationRead).toHaveBeenCalledWith('g1');
@@ -211,14 +228,15 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal: vi.fn(), perm: () => true });
     await flush();
     await openBell();
-    const rowEl = container.querySelector('[data-notif-row="n1"]');
+    const rowEl = document.querySelector('[data-notif-row="n1"]');
     const dismissBtn = rowEl.querySelector('button[title="Delete this notification"]');
     expect(dismissBtn).toBeTruthy();
     await act(async () => { dismissBtn.click(); });
     expect(dismissEomCountNotification).toHaveBeenCalledWith('n1');
     expect(dismissAppNotification).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-notif-row="n1"]')).toBeNull();
+    expect(document.querySelector('[data-notif-row="n1"]')).toBeNull();
     // n1 was unread (badge was 2 from the beforeEach mocks) -- deleting it drops the badge by 1.
+    // The badge itself lives on the toggle button, which is NOT portaled.
     expect(container.textContent).toContain('1');
   });
 
@@ -227,12 +245,12 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal, perm: () => true });
     await flush();
     await openBell();
-    const rowEl = container.querySelector('[data-notif-row="g1"]');
+    const rowEl = document.querySelector('[data-notif-row="g1"]');
     const dismissBtn = rowEl.querySelector('button[title="Delete this notification"]');
     await act(async () => { dismissBtn.click(); });
     expect(dismissAppNotification).toHaveBeenCalledWith('g1');
     expect(dismissEomCountNotification).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-notif-row="g1"]')).toBeNull();
+    expect(document.querySelector('[data-notif-row="g1"]')).toBeNull();
     expect(onOpenModal).not.toHaveBeenCalled(); // delete must never also navigate
   });
 
@@ -241,7 +259,7 @@ describe('NotificationBell — dropdown', () => {
     await mount({ onOpenModal, perm: () => true });
     await flush();
     await openBell();
-    const rowEl = container.querySelector('[data-notif-row="n2"]'); // already-read row
+    const rowEl = document.querySelector('[data-notif-row="n2"]'); // already-read row
     const dismissBtn = rowEl.querySelector('button[title="Delete this notification"]');
     await act(async () => { dismissBtn.click(); });
     expect(onOpenModal).not.toHaveBeenCalled();

@@ -62,15 +62,17 @@ describe('Role-view sandbox (task #97) — perm()/panelEnabled() interception', 
     expect(container.textContent).not.toContain('VIEWING AS');
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).not.toContain('View as role');
+    // ProfileMenu's open dropdown now portals to document.body (dispatch 2026-11-10, same fix
+    // as task #119's ActionMenu portal) -- no longer a descendant of `container`.
+    expect(document.body.textContent).not.toContain('View as role');
   });
 
   it('a level-1 user sees the "View as role" selector in the account menu, and selecting a role calls back', () => {
     const { onChangeViewAsRole } = mount();
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).toContain('View as role');
-    const select = container.querySelector('select');
+    expect(document.body.textContent).toContain('View as role');
+    const select = document.querySelector('select');
     expect(select).toBeTruthy();
     act(() => {
       select.value = 'gm';
@@ -93,8 +95,8 @@ describe('Role-view sandbox (task #97) — perm()/panelEnabled() interception', 
     mount({ viewAsRole: 'gm', userRole: 'gm', realUserRole: 'owner' });
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).toContain('Gm');
-    expect(container.textContent).toContain('viewing as');
-    expect(container.textContent).toContain('Owner');
+    expect(document.body.textContent).toContain('Gm');
+    expect(document.body.textContent).toContain('viewing as');
+    expect(document.body.textContent).toContain('Owner');
   });
 });
