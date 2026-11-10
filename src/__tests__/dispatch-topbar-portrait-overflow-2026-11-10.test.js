@@ -60,3 +60,38 @@ describe('AppTopbar right-actions group scrolls instead of overflowing (dispatch
     expect(group.contains(accountBtn), 'Account button is not inside the scrollable right-actions group').toBe(true);
   });
 });
+
+// Follow-up, same day (owner-reported): "our menu fix at top of app did same thing it did in
+// inventory control. Cannot see the dropdowns now." overflowY:'visible' on the right-actions
+// group above does NOT reliably survive the CSS Overflow spec's cross-axis coercion on every
+// engine (the exact thing task #119 diagnosed for ActionMenu/PanelChrome) -- NotificationBell's
+// and ProfileMenu's dropdowns were still position:'absolute' descendants of that scrollable
+// group, so they could still get clipped into its own tiny box. Fixed the same way #119 was:
+// portal the open panel to document.body, position:'fixed' from the toggle's own screen coords.
+describe('NotificationBell / ProfileMenu dropdowns escape the scrollable right-actions group (dispatch 2026-11-10)', () => {
+  it('NotificationBell renders its open panel outside the scrollable group, position:fixed, not absolute', async () => {
+    mount();
+    const bellBtn = container.querySelector('button[title="Notifications"]');
+    expect(bellBtn, 'Notifications bell button not found').toBeTruthy();
+    await act(async () => { bellBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const heading = [...document.querySelectorAll('div')].find(d => d.textContent === 'Notifications' && d.parentElement);
+    expect(heading, 'open notifications panel not found in document').toBeTruthy();
+    const panel = heading.parentElement;
+    expect(container.contains(panel), 'notifications panel must not be a descendant of the scrollable top bar').toBe(false);
+    expect(panel.style.position).toBe('fixed');
+  });
+
+  it('ProfileMenu renders its open panel outside the scrollable group, position:fixed, not absolute', async () => {
+    mount();
+    const accountBtn = container.querySelector('button[title="Account"]');
+    expect(accountBtn, 'Account button not found').toBeTruthy();
+    await act(async () => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const signOut = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign'));
+    expect(signOut, 'open profile panel (Sign out item) not found in document').toBeTruthy();
+    // Walk up to the panel itself (the bordered dropdown box, not the backdrop) to check position.
+    let panel = signOut;
+    while (panel && panel.style.position !== 'fixed') panel = panel.parentElement;
+    expect(panel, 'profile panel with position:fixed not found').toBeTruthy();
+    expect(container.contains(panel), 'profile panel must not be a descendant of the scrollable top bar').toBe(false);
+  });
+});

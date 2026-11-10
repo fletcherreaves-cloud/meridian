@@ -58,7 +58,9 @@ describe('View As Role sandbox — scope picker + "@" tag (owner request 2026-11
     const { onChangeViewAsScope } = mount({ viewAsRole: 'gm', userRole: 'gm', viewAsScopeOptions: STORE_SCOPE_OPTIONS, viewAsScopeLabel: 'Store' });
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const selects = container.querySelectorAll('select');
+    // ProfileMenu's open dropdown now portals to document.body (dispatch 2026-11-10, same fix
+    // as task #119's ActionMenu portal) -- no longer a descendant of `container`.
+    const selects = document.querySelectorAll('select');
     expect(selects.length).toBe(2); // role select + scope select
     const scopeSelect = selects[1];
     expect(scopeSelect.textContent).toContain('Ardmore-Broadway');
@@ -70,15 +72,15 @@ describe('View As Role sandbox — scope picker + "@" tag (owner request 2026-11
     mount({ viewAsRole: 'do', userRole: 'do', viewAsScopeOptions: PATCH_SCOPE_OPTIONS, viewAsScopeLabel: 'Patch' });
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).toContain('Krystiana Langford');
-    expect(container.textContent).toContain('which patch');
+    expect(document.body.textContent).toContain('Krystiana Langford');
+    expect(document.body.textContent).toContain('which patch');
   });
 
   it('no scope options (e.g. a district-altitude role) means no second select at all', () => {
     mount({ viewAsRole: 'owner', userRole: 'owner', viewAsScopeOptions: [], viewAsScopeLabel: null });
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.querySelectorAll('select').length).toBe(1); // role select only
+    expect(document.querySelectorAll('select').length).toBe(1); // role select only
   });
 
   it('with a scope picked, the always-on banner tags it with "@<name>"', () => {

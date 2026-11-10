@@ -46,15 +46,17 @@ describe('AppTopbar/ProfileMenu -- Restore Session relocated from the sidebar ta
     const accountBtn = container.querySelector('button[title="Account"]');
     expect(accountBtn).toBeTruthy();
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container.textContent).toContain('Save session to file');
-    expect(container.textContent).toContain('Restore session from file');
+    // ProfileMenu's open dropdown now portals to document.body (dispatch 2026-11-10, same fix
+    // as task #119's ActionMenu portal) -- no longer a descendant of `container`.
+    expect(document.body.textContent).toContain('Save session to file');
+    expect(document.body.textContent).toContain('Restore session from file');
   });
 
   it('clicking Restore session from file invokes the real onRestoreSession handler', () => {
     const { onRestoreSession } = mount();
     const accountBtn = container.querySelector('button[title="Account"]');
     act(() => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const restoreBtn = [...container.querySelectorAll('button')]
+    const restoreBtn = [...document.querySelectorAll('button')]
       .find(b => b.textContent.includes('Restore session from file'));
     expect(restoreBtn).toBeTruthy();
     act(() => { restoreBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });

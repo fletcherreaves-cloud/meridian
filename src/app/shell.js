@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
@@ -793,6 +794,17 @@ function NotificationBell({ onOpenModal, perm }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  // Dispatch 2026-11-10 (owner-reported, "same thing it did in Inventory Control") -- this
+  // dropdown is an absolutely-positioned descendant of the toggle button, which v5.722 moved
+  // into the top bar's right-actions row once that row gained overflowX:'auto' (portrait-mode
+  // fix, #1802). That's the exact clipping mechanism task #119 diagnosed and fixed in ActionMenu
+  // (PanelControls.js): v5.722's overflowY:'visible' pin does not reliably survive the CSS
+  // Overflow spec's cross-axis coercion on every engine, so the panel can get clipped into the
+  // row's own tiny scroll box instead of overlaying the page. Same fix here: portal the open
+  // panel to document.body, positioned from the toggle's own screen coordinates, so it's a
+  // sibling of every scrollable ancestor rather than a descendant.
+  const toggleRef = useRef(null);
+  const [coords, setCoords] = useState(null);
 
   // Simple periodic poll for the unread count while the app is open (dispatch's own bar: "not a
   // real-time push system, just needs to feel current within a minute during an active count
@@ -863,8 +875,16 @@ function NotificationBell({ onOpenModal, perm }) {
   // This is exactly the manager/gm/sm_am_dm use case: a GM's own store's EOM count notification.
   if (perm && !perm('analytics.store')) return null;
 
+  const toggle = () => {
+    if (!open && toggleRef.current) {
+      const r = toggleRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    }
+    setOpen(o => !o);
+  };
+
   return div({ style: { position: 'relative', flexShrink: 0 }, 'data-tour': 'bell' },
-    btn({ onClick: () => setOpen(o => !o), title: 'Notifications',
+    btn({ ref: toggleRef, onClick: toggle, title: 'Notifications',
       style: { position: 'relative', width: 26, height: 26, borderRadius: '50%',
         border: '.5px solid var(--bdr)', background: 'var(--surf2)', color: 'var(--text2)',
         fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
@@ -873,18 +893,21 @@ function NotificationBell({ onOpenModal, perm }) {
         borderRadius: 10, fontSize: 8, fontWeight: 700, padding: '1px 4px', minWidth: 14, textAlign: 'center',
         lineHeight: '12px', border: '1px solid var(--surf)' } }, unread > 99 ? '99+' : unread)
     ),
-    open && div(null,
-      div({ onClick: () => setOpen(false), style: { position: 'fixed', inset: 0, zIndex: 80 } }),
-      div({ style: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 81, width: 320, maxHeight: 440,
-        overflowY: 'auto', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8,
-        boxShadow: '0 8px 32px rgba(0,0,0,.4)' } },
-        div({ style: { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', fontWeight: 700,
-          color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'Notifications'),
-        h(DeviceAlertsToggle, null),
-        loading && !loadedOnce && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'Loading…'),
-        !loading && !items.length && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'No notifications yet'),
-        items.map(row => h(row._source === 'eom' ? NotificationRow : GenericNotificationRow, { key: row.id, row, onClick: onRowClick, onDismiss }))
-      )
+    open && coords && createPortal(
+      div(null,
+        div({ onClick: () => setOpen(false), style: { position: 'fixed', inset: 0, zIndex: 80 } }),
+        div({ style: { position: 'fixed', top: coords.top, right: coords.right, zIndex: 81, width: 320, maxHeight: 440,
+          overflowY: 'auto', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8,
+          boxShadow: '0 8px 32px rgba(0,0,0,.4)' } },
+          div({ style: { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', fontWeight: 700,
+            color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'Notifications'),
+          h(DeviceAlertsToggle, null),
+          loading && !loadedOnce && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'Loading…'),
+          !loading && !items.length && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'No notifications yet'),
+          items.map(row => h(row._source === 'eom' ? NotificationRow : GenericNotificationRow, { key: row.id, row, onClick: onRowClick, onDismiss }))
+        )
+      ),
+      document.body,
     )
   );
 }
@@ -898,6 +921,12 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestore
                        viewAsScope, onChangeViewAsScope, viewAsScopeOptions, viewAsScopeLabel }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
+  // Dispatch 2026-11-10 -- same root cause and same fix as NotificationBell's own comment just
+  // above: this dropdown's position:'absolute' panel gets clipped by the top bar's right-actions
+  // row (overflowX:'auto' since v5.722), the exact mechanism task #119 already fixed in
+  // ActionMenu. Portal to document.body, positioned from the toggle's own screen coordinates.
+  const toggleRef = useRef(null);
+  const [coords, setCoords] = useState(null);
   useEffect(() => {
     let live = true;
     try { supabase?.auth?.getUser?.().then(({ data }) => { if (live) setEmail(data?.user?.email || ''); }); } catch { /* no auth */ }
@@ -914,15 +943,23 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestore
     onMouseLeave:e=>e.currentTarget.style.background='transparent',
   }, span({ style:{ width:15, textAlign:'center', flexShrink:0 } }, icon), label);
 
+  const toggle = () => {
+    if (!open && toggleRef.current) {
+      const r = toggleRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    }
+    setOpen(o => !o);
+  };
+
   return div({ style:{ position:'relative', flexShrink:0 } },
-    btn({ onClick:()=>setOpen(o=>!o), title:'Account',
+    btn({ ref: toggleRef, onClick: toggle, title:'Account',
       style:{ width:26, height:26, borderRadius:'50%', border:'.5px solid var(--bdr)',
         background:'var(--surf2)', color:'var(--amber)', fontSize:'11px', fontWeight:800,
         cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } },
       initial),
-    open && div(null,
+    open && coords && createPortal(div(null,
       div({ onClick:()=>setOpen(false), style:{ position:'fixed', inset:0, zIndex:80 } }),
-      div({ style:{ position:'absolute', top:'calc(100% + 6px)', right:0, zIndex:81, minWidth:212,
+      div({ style:{ position:'fixed', top:coords.top, right:coords.right, zIndex:81, minWidth:212,
         background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:8,
         boxShadow:'0 8px 32px rgba(0,0,0,.4)', overflow:'hidden', padding:'4px 0' } },
         div({ style:{ padding:'10px 12px', borderBottom:'.5px solid var(--bdr)' } },
@@ -982,7 +1019,7 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onRestore
         div({ style:{ padding:'2px 8px' } }, h(ChangePasswordBtn, { style:{ width:'100%', justifyContent:'flex-start', fontSize:'10px', padding:'6px 6px' } })),
         div({ style:{ padding:'2px 8px 6px' } }, h(SignOutBtn, { style:{ width:'100%', justifyContent:'flex-start', fontSize:'10px', padding:'6px 6px' } }))
       )
-    )
+    ), document.body)
   );
 }
 
