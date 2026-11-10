@@ -42,6 +42,13 @@ export const PULL_REGISTRY = {
   // it moves forward with each day's pull, so `order by updated_at desc limit 1` works
   // identically to every dateCol entry above.
   inventorySummary: { table: 'qsr_inventory_summary', dateCol: 'updated_at', workflowFile: 'qsrsoft-inventory-summary-pull.yml' },
+  // Added 2026-11-10 (task #137, On-Hand/Variance freshness badges) -- same reasoning as
+  // inventorySummary just above: qsr_onhand/qsr_variance_stat are period-keyed, not daily-dated,
+  // so dateCol is the updated_at timestamptz both tables' pull scripts set on every batch upsert
+  // (same signal the app-side lightweight freshness probes read, src/lib/supabase.js's
+  // loadQsrOnHandFreshness/loadQsrVarianceStatFreshness).
+  onHand:   { table: 'qsr_onhand',       dateCol: 'updated_at', workflowFile: 'qsrsoft-onhand-pull.yml' },
+  variance: { table: 'qsr_variance_stat', dateCol: 'updated_at', workflowFile: 'qsrsoft-variance-pull.yml' },
   // Added 2026-09-16 (coverage audit) -- see stream-freshness.js's own comment on these same 8
   // keys for why the 6 monthly ones use period_month as dateCol, not a daily date column.
   ebos:              { table: 'qsr_ebos_daily',       dateCol: 'date',         workflowFile: 'qsrsoft-ebos-pull.yml' },

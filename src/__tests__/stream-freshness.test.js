@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { streamFreshness, worstStream, STREAMS, WARN_GRACE_DAYS, CRIT_GRACE_DAYS } from '../engine/stream-freshness.js';
+import { streamFreshness, worstStream, STREAMS, WARN_GRACE_DAYS, CRIT_GRACE_DAYS, severityColor, streamByKey } from '../engine/stream-freshness.js';
 
 const day = n => new Date(2026, 7, n, 12); // Aug n 2026, noon local
 const rowsAt = date => [{ loc: '1', date }];
@@ -144,6 +144,60 @@ describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a document
     const s = res.find(r => r.key === 'inventorySummary');
     expect(s.staleDays).toBe(Infinity);
     expect(s.severity).toBe('crit');
+  });
+});
+
+describe('On-Hand / Variance Stat freshness (task #137 -- previously a documented gap in this file\'s own header comment)', () => {
+  it('both are present in STREAMS, checked via their own lightweight {date}-row probes', () => {
+    const onHand = STREAMS.find(x => x.key === 'onHand');
+    const variance = STREAMS.find(x => x.key === 'variance');
+    expect(onHand).toMatchObject({ dsField: 'qsrOnHandFreshnessRows', cadenceDays: 1 });
+    expect(variance).toMatchObject({ dsField: 'qsrVarianceFreshnessRows', cadenceDays: 1 });
+  });
+
+  it('names On-Hand specifically when its probe is stale while siblings are current', () => {
+    const ds = freshDs(day(16));
+    ds.qsrOnHandFreshnessRows = rowsAt(day(10)); // the pull went silent 6 days
+    const w = worstStream(ds, day(16));
+    expect(w).toBeTruthy();
+    expect(w.key).toBe('onHand');
+    expect(w.staleDays).toBe(6);
+  });
+
+  it('names Variance Stat specifically when its probe is stale while siblings are current', () => {
+    const ds = freshDs(day(16));
+    ds.qsrVarianceFreshnessRows = rowsAt(day(10));
+    const w = worstStream(ds, day(16));
+    expect(w).toBeTruthy();
+    expect(w.key).toBe('variance');
+    expect(w.staleDays).toBe(6);
+  });
+
+  it('a probe field never populated in ds (App.js load failed/still pending) is skipped, not reported as an incident', () => {
+    const res = streamFreshness({}, day(16));
+    expect(res.find(r => r.key === 'onHand')).toBeUndefined();
+    expect(res.find(r => r.key === 'variance')).toBeUndefined();
+  });
+
+  it('an empty-but-loaded probe reads as critically stale, not silently skipped', () => {
+    const res = streamFreshness({ qsrOnHandFreshnessRows: [], qsrVarianceFreshnessRows: [] }, day(16));
+    expect(res.find(r => r.key === 'onHand')).toMatchObject({ staleDays: Infinity, severity: 'crit' });
+    expect(res.find(r => r.key === 'variance')).toMatchObject({ staleDays: Infinity, severity: 'crit' });
+  });
+});
+
+describe('severityColor() / streamByKey() -- shared primitives for per-panel freshness badges (task #137)', () => {
+  it('maps every severity to the same three colors every existing stale-dot badge uses', () => {
+    expect(severityColor('ok')).toBe('#10b981');
+    expect(severityColor('warn')).toBe('#f59e0b');
+    expect(severityColor('crit')).toBe('#ef4444');
+  });
+
+  it('streamByKey returns the one named entry, or null when not loaded this session', () => {
+    const ds = { qsrOnHandFreshnessRows: rowsAt(day(16)) };
+    expect(streamByKey(ds, 'onHand', day(16))).toMatchObject({ key: 'onHand', severity: 'ok' });
+    expect(streamByKey(ds, 'variance', day(16))).toBeNull();
+    expect(streamByKey({}, 'onHand', day(16))).toBeNull();
   });
 });
 

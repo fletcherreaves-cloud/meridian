@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { printHtml } from '../utils/print-html.js';
 import { loadQsrVarianceStat, loadQsrOnHand, loadQsrFob, loadQsrInventorySummary } from '../lib/supabase.js';
+import { streamByKey, severityColor } from '../engine/stream-freshness.js';
 import { periodKey, daysInPeriod, pLFoodCostFromRow, pLPaperCostFromRow } from '../engine/eom-inventory.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { INV_ORG_COORDS, STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
@@ -965,6 +966,22 @@ export { analyzeData };
 // RoutePanelShell already owns both), just a slim toolbar carrying the two actions that
 // only make sense here (Print, FOB Tolerances) plus the same body every mode below already
 // had. onClose is unused in embedded mode -- Food Cost's own close button covers it.
+// On-Hand / Variance pull freshness badge (task #137) — same stale-dot visual language as
+// analytics.js's Data Manager staleDot, off stream-freshness.js's own STREAMS/severityColor so
+// this panel can never disagree with the Data Manager's own verdict for the same stream. `null`
+// (nothing rendered) until that stream's lightweight freshness probe has resolved into ds.
+function freshBadge(ds, key, label) {
+  const s = streamByKey(ds, key);
+  if (!s) return null;
+  const ageLbl = s.staleDays === Infinity ? 'no usable date' : s.staleDays === 0 ? 'today' : s.staleDays + 'd ago';
+  return span({
+    title: `${s.label} last updated ${ageLbl}`,
+    style: { fontSize: '8px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text3)' },
+  },
+    span({ style: { display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: severityColor(s.severity), flexShrink: 0 } }),
+    label + ': ' + ageLbl);
+}
+
 export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
   // storeData: { [storeNum]: { contributors, onhand, summary, variance, pl, history } } --
   // MANUAL uploads only, unchanged from before task #136. Automated cloud data lives
@@ -1212,6 +1229,8 @@ export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
       autoErr&&span({title:autoErr,
         style:{fontSize:'9px',fontWeight:700,padding:'3px 8px',borderRadius:5,background:'rgba(244,63,94,.14)',color:'var(--crit)',border:'.5px solid rgba(244,63,94,.45)',cursor:'help'}},
         '⚠ Partial auto load'),
+      freshBadge(ds,'onHand','On-Hand'),
+      freshBadge(ds,'variance','Variance'),
     ),
 
     // Tolerance settings editor (collapsible)

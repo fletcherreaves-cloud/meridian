@@ -16,9 +16,17 @@
 // Streams enumerated from the LOADERS (App.js's setDs call sites), not from #171's own
 // table — that table is stale by its own admission. As of this writing App.js has ALSO
 // gained opsSalesMixRows/opsCashRows/opsLaborRows/opsServiceRows since #171 was filed.
-// qsr_onhand (loadQsrOnHand) is pulled daily too but still has zero call sites in App.js —
-// it can't be freshness-checked from ds until that wiring lands, so it stays out of STREAMS
-// below rather than being silently assumed fresh. qsr_product_mix (loadPmixRows) IS now
+// ✅ qsr_onhand / qsr_variance_stat CLOSED (task #137, 2026-11-10) — both now have a lightweight
+// freshness probe (App.js's _stOnHandFreshness/_stVarianceFreshness, supabase.js's
+// loadQsrOnHandFreshness/loadQsrVarianceStatFreshness — same single-{date}-row pattern as
+// qsrInventorySummaryRows below) and real STREAMS entries ('onHand'/'variance'). This paragraph
+// used to say qsr_onhand "stays out of STREAMS... rather than being silently assumed fresh" —
+// that was true until this task; do not re-raise it. The full per-row loaders
+// (loadQsrOnHand/loadQsrVarianceStat) are still deliberately NOT eager-loaded into ds district-
+// wide at startup (unwindowed, period-keyed, no day-window param) — FOBEOMPanel and
+// at-a-glance.js's CountFobPulseTile/EOMScoreboardTile still fetch their own panel-local copy
+// on demand for the actual On-Hand/Variance numbers; only the freshness DATE is eager-loaded.
+// qsr_product_mix (loadPmixRows) IS now
 // wired into ds (dispatch17/#292), but as a LAZY_FILL_SOURCES entry (metric-source.js) —
 // ds.pmixRows stays absent until a consumer calls ensureLazyFill('pmixRows'), same as
 // auditRows/wasteRows above. That's why it's not in STREAMS either: this function already
@@ -65,6 +73,13 @@ export const CRIT_GRACE_DAYS = 3;
 export const STREAMS = [
   { key: 'dar',         label: 'DAR (QSRSoft daily activity)', dsField: 'qsrActSummaryRows', cadenceDays: 1, group: 'sales' },
   { key: 'fob',          label: 'FOB',                          dsField: 'qsrFobRows',        cadenceDays: 1, group: 'foodcost' },
+  // Task #137 — lightweight {date}-only probes (see this file's header comment above), the
+  // same pattern as 'inventorySummary' below. On-Hand pulls hourly during the count window
+  // (qsrsoft-onhand-pull.yml, gated to ~8a-10p CT) and at least once daily outside it; Variance
+  // pulls on a daily 10:30 UTC slot (qsrsoft-variance-pull.yml) — both genuinely daily-cadence,
+  // same cadenceDays:1 as every other daily stream here.
+  { key: 'onHand',       label: 'QSRSoft On-Hand (EOM count progress)', dsField: 'qsrOnHandFreshnessRows', cadenceDays: 1, group: 'foodcost' },
+  { key: 'variance',     label: 'QSRSoft Variance Stat (EOM diagnosis)', dsField: 'qsrVarianceFreshnessRows', cadenceDays: 1, group: 'foodcost' },
   { key: 'glimpse',      label: 'Daily Glimpse (email)',        dsField: 'glimpseRows',       cadenceDays: 1, group: 'service' },
   { key: 'cashSheet',    label: 'Cash Sheet (email)',           dsField: 'cashRows',          cadenceDays: 1, group: 'controls' },
   { key: 'salesLedger',  label: 'Sales Ledger (email)',         dsField: 'salesLedgerRows',   cadenceDays: 1, group: 'sales' },
@@ -217,6 +232,15 @@ export function streamFreshness(ds, asOf = new Date()) {
   return out;
 }
 
+// Canonical severity→color, shared by every stale-dot badge in the app (Data Manager's
+// staleDot in analytics.js, At-A-Glance's "Loaded Data" strip, and task #137's new per-panel
+// On-Hand/Variance badges) so a new badge never invents its own color scale. Same three hex
+// values analytics.js's staleDays-based stalenessColor() already used (≤3d/≤10d/>10d) — this
+// just makes the mapping reusable off a STREAMS severity instead of a raw day count.
+export function severityColor(severity) {
+  return severity === 'crit' ? '#ef4444' : severity === 'warn' ? '#f59e0b' : '#10b981';
+}
+
 const _SEV_RANK = { crit: 2, warn: 1, ok: 0 };
 
 /**
@@ -224,6 +248,17 @@ const _SEV_RANK = { crit: 2, warn: 1, ok: 0 };
  * yet — same as the old code's "no data" being a separate, already-handled case).
  * Ties broken by staleDays (most stale first), then by STREAMS order.
  */
+/**
+ * One named stream's own freshness entry, for a panel badge that only cares about a stream
+ * or two (task #137's On-Hand/Variance badges) rather than the whole checklist. Returns null
+ * when that stream isn't loaded into ds this session — same "no verdict yet" contract as
+ * streamFreshness() itself, so a badge can render nothing instead of a false stale dot before
+ * the probe resolves.
+ */
+export function streamByKey(ds, key, asOf = new Date()) {
+  return streamFreshness(ds, asOf).find(s => s.key === key) || null;
+}
+
 export function worstStream(ds, asOf = new Date()) {
   const all = streamFreshness(ds, asOf);
   let worst = null;

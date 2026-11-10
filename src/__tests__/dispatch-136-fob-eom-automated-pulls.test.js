@@ -200,6 +200,49 @@ describe('FOBEOMPanel automated pulls (task #136)', () => {
   });
 });
 
+// Task #137 — On-Hand / Variance Stat freshness badges. FOBEOMPanel already receives `ds` as
+// a prop and already fetches both streams' full rows on-demand for this period (above); this
+// just adds a small stale-dot badge off the SEPARATE lightweight ds.qsrOnHandFreshnessRows /
+// ds.qsrVarianceFreshnessRows probes (stream-freshness.js STREAMS), so a revert of that wiring
+// (badge added but never reading the probe, or reading the wrong ds field) fails this.
+describe('FOBEOMPanel On-Hand / Variance freshness badges (task #137)', () => {
+  let container, root;
+  beforeEach(() => { resetFixtures(); });
+  afterEach(() => { if (root) act(() => root.unmount()); if (container) container.remove(); });
+
+  async function renderWithDs(ds) {
+    container = document.createElement('div'); document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(React.createElement(FOBEOMPanel, {
+        stores: [{ loc: STORE }], ds, settings: {}, onClose: () => {}, embedded: true,
+      }));
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  }
+
+  it('a fresh On-Hand and Variance probe both render a badge naming the stream', async () => {
+    await renderWithDs({ loaded: true, allMonthlyTargets: {},
+      qsrOnHandFreshnessRows: [{ date: new Date().toISOString() }],
+      qsrVarianceFreshnessRows: [{ date: new Date().toISOString() }] });
+    expect(container.textContent).toMatch(/On-Hand: today/);
+    expect(container.textContent).toMatch(/Variance: today/);
+  });
+
+  it('a stale probe (10 days behind) surfaces its real age, not a false-fresh badge', async () => {
+    const stale = new Date(); stale.setDate(stale.getDate() - 10);
+    await renderWithDs({ loaded: true, allMonthlyTargets: {},
+      qsrOnHandFreshnessRows: [{ date: stale.toISOString() }] });
+    expect(container.textContent).toMatch(/On-Hand: 10d ago/);
+  });
+
+  it('no probe loaded this session renders neither badge (not a false stale dot) -- distinct from the unrelated "On-Hand Inventory" auto-source tooltip, which always renders', async () => {
+    await renderWithDs(freshDs());
+    expect(container.textContent).not.toMatch(/On-Hand: /);
+    expect(container.textContent).not.toMatch(/Variance: /);
+  });
+});
+
 describe('contributorsFromFobRows / totalPLFromFobRows (pure, task #136)', () => {
   it('returns null with no sales (never a divide-by-zero)', () => {
     expect(contributorsFromFobRows([{ prodSalesAmt: 0 }], {})).toBeNull();

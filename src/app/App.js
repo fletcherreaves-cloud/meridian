@@ -348,7 +348,7 @@ const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -2464,6 +2464,28 @@ function App() {
           console.log(`[Meridian] ✓ Inventory Summary freshness probe — latest ${qsrInventorySummaryRows[0].date}`);
         }
       }catch(e){console.warn('[Meridian] Inventory Summary freshness probe failed:',e);} };
+      // On-Hand / Variance Stat freshness probes ONLY (task #137) — same single-{date}-row
+      // pattern as _stInventorySummaryFreshness just above, for the two EOM count-progress/
+      // diagnosis streams stream-freshness.js's own header previously documented as
+      // deliberately excluded from STREAMS pending exactly this wiring. FOBEOMPanel/
+      // at-a-glance.js's CountFobPulseTile still fetch their own full per-row, per-period copy
+      // on demand for actual data — this only gives STREAMS a date to check.
+      const _stOnHandFreshness = async () => {
+      try{
+        const qsrOnHandFreshnessRows=await loadQsrOnHandFreshness();
+        if(qsrOnHandFreshnessRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,qsrOnHandFreshnessRows};});
+          console.log(`[Meridian] ✓ On-Hand freshness probe — latest ${qsrOnHandFreshnessRows[0].date}`);
+        }
+      }catch(e){console.warn('[Meridian] On-Hand freshness probe failed:',e);} };
+      const _stVarianceFreshness = async () => {
+      try{
+        const qsrVarianceFreshnessRows=await loadQsrVarianceStatFreshness();
+        if(qsrVarianceFreshnessRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,qsrVarianceFreshnessRows};});
+          console.log(`[Meridian] ✓ Variance Stat freshness probe — latest ${qsrVarianceFreshnessRows[0].date}`);
+        }
+      }catch(e){console.warn('[Meridian] Variance Stat freshness probe failed:',e);} };
       // Precomputed weekly forecast (dispatch22, Workstream A) — written daily by
       // scripts/forecast-week-precompute.mjs. at-a-glance.js's weekProjections reads this
       // and only falls back to live forecastDay() calls for a store when the cache is
@@ -2780,6 +2802,8 @@ function App() {
         _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
         _timedStage('T2 ebosOpSupplies', _stEbosOpSupplies, _t2Start),
         _timedStage('T2 inventorySummaryFreshness', _stInventorySummaryFreshness, _t2Start),
+        _timedStage('T2 onHandFreshness', _stOnHandFreshness, _t2Start),
+        _timedStage('T2 varianceFreshness', _stVarianceFreshness, _t2Start),
         _timedStage('T2 forecastWeekCache', _stForecastWeekCache, _t2Start),
         _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
         _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),

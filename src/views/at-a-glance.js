@@ -29,7 +29,7 @@ import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js'
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { worstStream, groupFreshness } from '../engine/stream-freshness.js';
+import { worstStream, groupFreshness, streamByKey, severityColor } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
 import { printHtml } from '../utils/print-html.js';
@@ -537,7 +537,7 @@ function OpportunityTile({ ds, stores, onOpenModal }) {
 // EOM Count-progress tile — surfaces the EOM Scoreboard front-and-center during the last 3
 // days of the month (Notes 34). Computes the same buckets as the dashboard scoreboard from
 // eom_count_status alone (no on-hand load); click opens the EOM Dashboard (Scoreboard tab).
-function EOMScoreboardTile({ onOpenModal }) {
+function EOMScoreboardTile({ ds, onOpenModal }) {
   const now = new Date();
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const inWindow = now.getDate() >= lastDay - 2;   // last 3 days of the month
@@ -572,7 +572,8 @@ function EOMScoreboardTile({ onOpenModal }) {
     h('span', { style: { fontSize: 15 } }, '📦'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'EOM Count Progress'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Last 3 days · ' + (freshLbl ? 'imported ' + freshLbl : 'tap to open the scoreboard'))),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', display: 'flex', alignItems: 'center', gap: 4 } },
+        freshnessDot(ds, 'onHand'), 'Last 3 days · ' + (freshLbl ? 'imported ' + freshLbl : 'tap to open the scoreboard'))),
     readyN > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: '#111', background: '#f5bc00', borderRadius: 10, padding: '2px 8px' } }, readyN + ' ready') : null);
   if (rows === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (!rows.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Counts populate as stores work through the last-3-day window (the On-Hand pull runs ~8a/10a/2p CT).'));
@@ -602,6 +603,18 @@ function _lastPeriods(period, n = 2) {
   for (let i = 0; i < n; i++) { const d = new Date(y, mo - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
   return out.reverse();
 }
+// Small stale-dot badge for one named stream-freshness.js STREAMS entry — task #137
+// (On-Hand/Variance freshness badges), reusing the exact dot-with-title pattern analytics.js's
+// LaborAnalyticsPanel staleDot already renders for the Data Manager table, off the SAME
+// canonical severity (not a second hand-rolled day-count color scale). Returns null (renders
+// nothing) until that stream's probe has resolved into ds this session.
+function freshnessDot(ds, key) {
+  const s = streamByKey(ds, key);
+  if (!s) return null;
+  const ageLbl = s.staleDays === Infinity ? 'no usable date' : s.staleDays === 0 ? 'today' : s.staleDays + 'd old';
+  return h('span', { title: `${s.label}: ${ageLbl}`, style: { display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: severityColor(s.severity), flexShrink: 0 } });
+}
+
 function CountFobPulseTile({ ds, onOpenModal }) {
   const [gran, setGran] = React.useState('weekly');
   const [onHand, setOnHand] = React.useState(null);     // null = loading
@@ -673,7 +686,8 @@ function CountFobPulseTile({ ds, onOpenModal }) {
     h('span', { style: { fontSize: 15 } }, '📈'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Count & FOB Pulse'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, gran === 'daily' ? 'Today' : 'This week')),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', display: 'flex', alignItems: 'center', gap: 4 } },
+        freshnessDot(ds, 'onHand'), gran === 'daily' ? 'Today' : 'This week')),
     toggle);
   if (onHand === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   const fobLbl = fobPct == null ? '—' : (fobPct * 100).toFixed(1) + '%';
@@ -2530,7 +2544,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
         secs.find(s=>s.id==='coaching-loop'&&s.on)&&h(CoachingLoopTile,{key:'coaching-loop',ds,onNav}),
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
-        h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
+        h(EOMScoreboardTile,{key:'eom-sb',ds,onOpenModal}),
         h(OpportunityTile,{key:'opportunity',ds,stores,onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
         h(CountFobPulseTile,{key:'count-fob-pulse',ds,onOpenModal}),
