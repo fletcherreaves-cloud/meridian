@@ -86,10 +86,18 @@ describe('NotificationBell / ProfileMenu dropdowns escape the scrollable right-a
     const accountBtn = container.querySelector('button[title="Account"]');
     expect(accountBtn, 'Account button not found').toBeTruthy();
     await act(async () => { accountBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const signOut = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign'));
-    expect(signOut, 'open profile panel (Sign out item) not found in document').toBeTruthy();
+    // dispatch 2026-11-10 follow-on -- was anchored on the "Sign out" item (ChangePasswordBtn/
+    // SignOutBtn, src/components/AuthGate.js), which renders `null` whenever `supabase` is falsy
+    // (no VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY). This sandbox has those env vars set, so it
+    // passed here every time; GitHub Actions' `verify` job does not, so the real content this test
+    // anchored on never existed there -- a deterministic CI failure measured directly against
+    // main's own HEAD check-runs, not a flake. The "Dark mode"/"Light mode" toggle item renders
+    // unconditionally regardless of auth config, and is just as valid an anchor for what this test
+    // actually verifies (the panel's own portal/position:fixed mechanics, not sign-out specifically).
+    const modeToggle = [...document.querySelectorAll('button')].find(b => b.textContent.includes('mode'));
+    expect(modeToggle, 'open profile panel (Dark/Light mode item) not found in document').toBeTruthy();
     // Walk up to the panel itself (the bordered dropdown box, not the backdrop) to check position.
-    let panel = signOut;
+    let panel = modeToggle;
     while (panel && panel.style.position !== 'fixed') panel = panel.parentElement;
     expect(panel, 'profile panel with position:fixed not found').toBeTruthy();
     expect(container.contains(panel), 'profile panel must not be a descendant of the scrollable top bar').toBe(false);
