@@ -2668,7 +2668,11 @@ describe('SecurityPanel — Command Center (dispatch 2026-11-10)', () => {
     // Brief view: Alice's own name and real decision sentence, no domain tabs/rule chrome, no
     // sibling subjects' rows.
     expect(container.textContent).toMatch(/Alice Andrews/);
-    expect(container.textContent).toMatch(/2 independent rules agree/);
+    // dispatch 2026-11-10 follow-on -- the plain "N independent rules agree" count badge was
+    // replaced by a severity/persistence tier badge (subjectTierMeta) matching the approved
+    // mockup's "High — chronic, multi-rule" wording; the underlying "2+ rules" fact still shows,
+    // just as "multi-rule" in the descriptor list rather than its own sentence.
+    expect(container.textContent).toMatch(/High.*multi-rule/);
     expect(container.textContent).not.toMatch(/Signals/); // Table's own sort-header vocabulary
     // The gateway link into the full table is present and still works.
     const openTableLink = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Open the full data engine') || b.textContent.includes('sort, filter, export'));

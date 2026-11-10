@@ -489,6 +489,12 @@ function fmtValue(ruleId, v) {
   const unit = RULE_UNITS[ruleId];
   return unit ? `${fNum(v)} ${unit}` : fNum(v);
 }
+// Factored out of buildDecisionSentence so the Brief view's cross-finding synthesis (below) can
+// state the same "Nx the peer average" magnitude without recomputing it a second way.
+function multipleOfBaseline(verdict) {
+  const bc = verdict.baselineContext || {};
+  return (bc.mean && bc.mean > 0 && verdict.value != null) ? verdict.value / bc.mean : null;
+}
 // dispatch #46 §A point 3 -- "threshold vs. sigma... two rules on screen use the same word for
 // different units." A z-score rule's threshold is ALWAYS sigma (standard deviations vs. the peer/
 // store baseline), never the rule's own rate unit -- this is the one place that distinction renders.
@@ -514,7 +520,7 @@ export function buildDecisionSentence(rule, verdict, subjectLabel) {
   }
   const bc = verdict.baselineContext || {};
   const unit = RULE_UNITS[rule.ruleId] || '';
-  const mult = (bc.mean && bc.mean > 0 && verdict.value != null) ? verdict.value / bc.mean : null;
+  const mult = multipleOfBaseline(verdict);
   const magnitude = (mult != null && Number.isFinite(mult))
     ? `about ${mult < 10 ? mult.toFixed(1) : Math.round(mult)}× the ${rule.baselineType || 'peer'} average — ${fmtValue(rule.ruleId, verdict.value)} against a typical ${fNum(bc.mean)}${unit ? ' ' + unit : ''}`
     : `${fmtValue(rule.ruleId, verdict.value)} against a threshold of ${fNum(verdict.thresholdUsed)}${unit ? ' ' + unit : ''}`;
@@ -825,6 +831,159 @@ export function cameraReviewHint(loc, windowStart, windowEnd) {
   return `📹 Before deciding: pull camera footage for Store ${loc || '—'}, ${range}, to verify what actually happened.`;
 }
 
+// dispatch 2026-11-10 follow-on (owner: "I thought we landed on a more robust look," comparing
+// against the approved Brief mockup) -- promotes cameraReviewHint from per-card italic text (still
+// rendered that way inside SecurityBriefingCard, unchanged) into the mockup's standalone dashed
+// callout at the top of the Brief view. Deduped by distinct (windowStart, windowEnd) across every
+// currently-flagged verdict for this subject -- most subjects flag on the same or overlapping
+// window, so this is usually one line, not N copies of the same reminder.
+function SubjectCameraReminder({ group, flaggedVerdicts }) {
+  if (!flaggedVerdicts.length) return null;
+  const seen = new Set();
+  const lines = [];
+  flaggedVerdicts.forEach(v => {
+    const key = `${v.windowStart}|${v.windowEnd}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lines.push(cameraReviewHint(group.loc, v.windowStart, v.windowEnd));
+  });
+  return div({
+    style: {
+      display: 'flex', gap: 10, alignItems: 'flex-start', background: 'rgba(245,188,0,.08)',
+      border: '1px dashed var(--bdr)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12.5, color: 'var(--text)',
+    } },
+    lines.length === 1
+      ? span(null, lines[0])
+      : div(null, lines.map((l, i) => div({ key: i, style: { marginTop: i ? 4 : 0 } }, l))),
+  );
+}
+
+// dispatch 2026-11-10 follow-on -- a single severity/persistence read for the Brief header badge,
+// matching the approved mockup's "High — chronic, multi-rule" wording instead of the plain "N
+// independent rules agree" count. Built entirely from fields already computed elsewhere in this
+// file (rule.severity, classifySubjectTrend's existing chronic/new classification, the group's own
+// flaggedCount) -- no new data source, no invented scoring.
+function subjectTierMeta(group, flaggedVerdicts, rulesById) {
+  if (!flaggedVerdicts.length) return null;
+  const maxSeverity = flaggedVerdicts.reduce((m, v) => Math.max(m, rulesById[v.ruleId]?.severity ?? 1), 1);
+  const tier = maxSeverity >= 4 ? 'High' : maxSeverity === 3 ? 'Medium' : 'Low';
+  const color = maxSeverity >= 4 ? 'var(--crit,#ef4444)' : maxSeverity === 3 ? 'var(--amber,#f59e0b)' : 'var(--text3)';
+  const descriptors = [];
+  if (flaggedVerdicts.some(v => classifySubjectTrend(group.historyByRule?.[v.ruleId] || [v]) === 'chronic')) descriptors.push('chronic');
+  if (group.flaggedCount >= 2) descriptors.push('multi-rule');
+  return { tier, color, descriptors };
+}
+
+function strong(text, key) { return h('strong', { key, style: { fontWeight: 800, color: 'var(--text)' } }, text); }
+
+// dispatch 2026-11-10 follow-on -- the approved mockup's "3 stat tiles above the fold" treatment.
+// One tile per currently-flagged verdict (capped at 4 -- a 5th+ signal is vanishingly rare and
+// still fully covered in the detail cards below), each showing that rule's own real reported
+// value -- nothing computed or invented here that SecurityBriefingCard doesn't already show
+// per-card; this is purely a faster-to-scan restatement up top.
+function SubjectStatTiles({ flaggedVerdicts, rulesById }) {
+  if (!flaggedVerdicts.length) return null;
+  return div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 16 } },
+    flaggedVerdicts.slice(0, 4).map(v => {
+      const rule = rulesById[v.ruleId] || {};
+      return div({ key: v.ruleId, style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 12, padding: '14px 16px' } },
+        div({ style: { fontSize: 20, fontWeight: 800, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, fmtValue(v.ruleId, v.value)),
+        div({ style: { fontSize: 11, color: 'var(--text3)', marginTop: 4, lineHeight: 1.35 } }, rule.method || v.ruleId),
+      );
+    }),
+  );
+}
+
+// dispatch 2026-11-10 follow-on -- the approved mockup's "WHAT THIS MEANS" synthesis box. Built
+// entirely from data already loaded for the detail cards below (buildDecisionSentence's own
+// magnitude math via multipleOfBaseline, classifySubjectShape's real consecutive-window count) --
+// never a second query, never a fabricated register/time the data model doesn't carry (that
+// boundary is the whole reason this view exists the way it does -- see SubjectBriefView's own
+// header comment). For a single-finding subject this mostly restates that one card's own sentence,
+// deliberately -- a fast headline before the full card below, not a replacement for it.
+function buildSubjectSynthesisNodes(group, flaggedVerdicts, rulesById, subjectLabel) {
+  if (!flaggedVerdicts.length) return null;
+  const clauses = flaggedVerdicts.map((v, i) => {
+    const rule = rulesById[v.ruleId] || {};
+    const mult = multipleOfBaseline(v);
+    const tail = (mult != null && Number.isFinite(mult))
+      ? ` (about ${mult < 10 ? mult.toFixed(1) : Math.round(mult)}× the ${rule.baselineType || 'peer'} average)`
+      : '';
+    return [strong(fmtValue(v.ruleId, v.value), `v${i}`), ` in ${rule.method || v.ruleId}${tail}`];
+  });
+  const nodes = [];
+  if (flaggedVerdicts.length >= 2) {
+    nodes.push(`${subjectLabel} has been flagged by `, strong(`${flaggedVerdicts.length} independent rules`, 'hdr'), ' at once: ');
+  } else {
+    nodes.push(`${subjectLabel} has been flagged on `);
+  }
+  clauses.forEach((c, i) => {
+    if (i > 0) nodes.push(i === clauses.length - 1 ? ', and ' : ', ');
+    nodes.push(...c);
+  });
+  nodes.push('.');
+  // Real consecutive-run claim, only when classifySubjectShape actually calls it a trend -- never
+  // guessed from flaggedCount alone.
+  const runningRule = flaggedVerdicts
+    .map(v => ({ v, shape: classifySubjectShape(group.historyByRule?.[v.ruleId] || [v]) }))
+    .find(({ shape }) => shape.shape === 'trend' && shape.flaggedCount >= 3);
+  if (runningRule) {
+    nodes.push(' The same rule, ', strong(runningRule.v.ruleId, 'rule-id'), ', has now flagged ',
+      strong(`${runningRule.shape.flaggedCount} consecutive windows running`, 'run-count'), '.');
+  }
+  if (flaggedVerdicts.length >= 2) {
+    nodes.push(' Corroborating signals agreeing', runningRule ? ', on top of one that won’t go away,' : '',
+      ' is the strongest pattern this panel produces.');
+  }
+  return nodes;
+}
+
+function SubjectSynthesisBox({ group, flaggedVerdicts, rulesById, subjectLabel }) {
+  const nodes = buildSubjectSynthesisNodes(group, flaggedVerdicts, rulesById, subjectLabel);
+  if (!nodes) return null;
+  return div({ style: { background: 'rgba(245,188,0,.1)', border: '1px solid var(--bdr)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 } },
+    div({ style: { fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, 'What this means'),
+    div({ style: { fontSize: 13, color: 'var(--text)', lineHeight: 1.55 } }, nodes),
+  );
+}
+
+// dispatch 2026-11-10 follow-on -- the approved mockup's "What to look for, prevent, and verify"
+// section. Reuses SECURITY_PLAYBOOK as-is (real, already-shipped, owner-authored loss-prevention
+// content -- see security-playbook.js's own header; today only rendered as RulePlaybook's small
+// inline text in the Table view's Rule Directory) restyled as a prominent card, deduped so two
+// flagged rules in the same family (e.g. both mapping to 'cash') render one card, not two copies
+// of the same guidance. "How to verify" is deliberately NOT a third invented column here -- the
+// camera-footage box directly above this section already IS the real verify step; duplicating it
+// as a card column would just restate it with different words.
+function SubjectPlaybookSection({ flaggedVerdicts }) {
+  const seen = new Set();
+  const entries = [];
+  flaggedVerdicts.forEach(v => {
+    const p = playbookForRule(v.ruleId);
+    if (p && !seen.has(p.key)) { seen.add(p.key); entries.push(p); }
+  });
+  if (!entries.length) return null;
+  return div({ style: { marginTop: 18 } },
+    div({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 10 } },
+      'What to look for, and how to prevent it'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+      entries.map(p => div({ key: p.key, style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 12, padding: '14px 16px' } },
+        div({ style: { fontWeight: 800, fontSize: 13, color: 'var(--text)', marginBottom: 8 } }, p.title),
+        div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 } },
+          div(null,
+            div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, 'What to look for'),
+            div({ style: { fontSize: 12, color: 'var(--text2)', lineHeight: 1.45 } }, p.tell),
+          ),
+          div(null,
+            div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, 'How to prevent'),
+            div({ style: { fontSize: 12, color: 'var(--text2)', lineHeight: 1.45 } }, p.floor),
+          ),
+        ),
+      )),
+    ),
+  );
+}
+
 function FindingActions({ findingId, actions, busy, error, onSubmit }) {
   const [draft, setDraft] = React.useState(null); // null | 'investigated_cleared' | 'escalated' | 'noted'
   const [note, setNote] = React.useState('');
@@ -1125,7 +1284,18 @@ function subjectLabelFor(group, revealed, itemInfoFor) {
 // time, on row-expand) -- naming a false "top pick" from data this bar doesn't actually have would
 // be worse than staying quiet on it. A composite score across both axes is tracked separately, not
 // attempted here.
-function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
+// dispatch 2026-11-10 follow-on -- the approved mockup's "Good morning — here's what needs eyes"
+// headline. A time-of-day greeting only (no data claim) -- real-time-of-day is the one honest
+// input available for it; the actual substance stays in the decision sentence right below it,
+// unchanged. Passed only from CommandCenterView (`showGreeting`, below) -- Table/Briefing already
+// have their own page title + toggle row immediately above this bar, so a second greeting there
+// would be redundant, not a second copy of this component.
+function dayGreeting() {
+  const hr = new Date().getHours();
+  return hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+}
+
+function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor, showGreeting }) {
   const flaggedTotal = groups.reduce((a, g) => a + g.flaggedCount, 0);
   const multiSignal = groups.filter(g => g.flaggedCount >= 2).length;
   // dispatch 2026-11-10 follow-on (owner-caught: "I thought we landed on a more robust look") --
@@ -1153,6 +1323,10 @@ function SecuritySummaryBar({ groups, newestBatch, revealed, itemInfoFor }) {
     decision = `${subjectLabelFor(top, revealed, itemInfoFor)} is converging on ${top.flaggedCount} independent signals — the strongest lead in this scope right now.`;
   }
   return div({ style: { padding: '10px 14px', borderBottom: '1px solid var(--bdr)' } },
+    showGreeting && div({ style: { marginBottom: 14 } },
+      div({ style: { fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 } }, 'Security'),
+      div({ style: { fontSize: 22, fontWeight: 800, color: 'var(--text)' } }, `${dayGreeting()} — here's what needs eyes`),
+    ),
     div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 } },
       tile('Subjects Flagged', groups.length),
       tile('Total Signals', flaggedTotal, flaggedTotal > 0 ? 'var(--crit,#ef4444)' : undefined),
@@ -1194,7 +1368,7 @@ function CommandCenterView({
   const storesNeedingReview = healthList.filter(s => s.tier !== 'clean').length;
 
   return div(null,
-    h(SecuritySummaryBar, { groups: commandGroups, newestBatch, revealed, itemInfoFor }),
+    h(SecuritySummaryBar, { groups: commandGroups, newestBatch, revealed, itemInfoFor, showGreeting: true }),
     // A second, network-specific KPI row alongside SecuritySummaryBar's own tiles (Subjects
     // Flagged/Total Signals/2+ Signal Convergence/Latest Batch) -- additive, not a replacement.
     div({ style: { display: 'flex', gap: 10, padding: '0 14px 10px', flexWrap: 'wrap' } },
@@ -1402,6 +1576,7 @@ function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, f
   }
   const subjectLabel = subjectLabelFor(group, revealed, itemInfoFor);
   const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
+  const tier = subjectTierMeta(group, flaggedVerdicts, rulesById);
   return div({ style: { maxWidth: 820, margin: '0 auto', padding: '16px 14px 30px' } },
     btn({ onClick: onBack, style: linkStyle }, '← Dashboard'),
     div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginTop: 14, marginBottom: 18 } },
@@ -1410,16 +1585,22 @@ function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, f
           group.subjectType === 'emp' ? h(RevealName, { token: group.empToken, cache: revealed, onReveal }) : subjectLabel),
         div({ style: { fontSize: 12, color: 'var(--text3)', marginTop: 3 } }, `${STORE_NAMES[group.loc] || `Store ${group.loc}`}`),
       ),
-      group.flaggedCount >= 2 && span({
-        style: { fontSize: 11.5, fontWeight: 800, color: 'var(--crit,#ef4444)', border: '1px solid var(--crit,#ef4444)', borderRadius: 999, padding: '5px 12px', background: 'rgba(239,68,68,.1)' },
-      }, `⚠ ${group.flaggedCount} independent rules agree`),
+      tier && span({
+        style: { fontSize: 11.5, fontWeight: 800, color: tier.color, border: `1px solid ${tier.color}`, borderRadius: 999, padding: '5px 12px', background: `${tier.color}1a` },
+      }, `⚠ ${tier.tier}${tier.descriptors.length ? ` — ${tier.descriptors.join(', ')}` : ''}`),
     ),
     flaggedVerdicts.length === 0
       ? emptyState('No currently-flagged findings for this subject — it may have cleared since the dashboard loaded.')
-      : h(SecurityBriefingCard, {
-          group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError,
-          onFindingAction, openDrawers, onToggleDrawer, driftPerKey,
-        }),
+      : h(React.Fragment, null,
+          h(SubjectStatTiles, { flaggedVerdicts, rulesById }),
+          h(SubjectSynthesisBox, { group, flaggedVerdicts, rulesById, subjectLabel }),
+          h(SubjectCameraReminder, { group, flaggedVerdicts }),
+          h(SecurityBriefingCard, {
+            group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError,
+            onFindingAction, openDrawers, onToggleDrawer, driftPerKey,
+          }),
+          h(SubjectPlaybookSection, { flaggedVerdicts }),
+        ),
     div({ style: { textAlign: 'center', paddingTop: 10 } },
       btn({ onClick: onOpenTable, style: { fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', borderBottom: '1px dotted var(--text3)', cursor: 'pointer', padding: 0 } },
         '⚙ See this subject alongside every other one — sort, filter, export →')),
