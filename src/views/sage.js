@@ -10,6 +10,7 @@ import { printHtml } from '../utils/print-html.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { InfoIcon } from '../engine/forecast.js';
+import { altitudeForRole } from '../engine/curated-home.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifelenz-labor-agg.js';
 // Cross-device cloud persistence (dispatch #187): reuse the SAME generic {data,savedAt}
@@ -458,8 +459,32 @@ function buildFieldDefsSection(qsrFieldDefs) {
     : '';
 }
 
+// Role-voice addendum (task #132 Phase 1, memory/plan-role-based-depth-tuning-2026-11-08.md
+// recommendation #1) -- reuses curated-home.js's altitudeForRole (the same store/patch/district
+// collapse of the 9-rung ladder already proven in Curated Home + the Huddle) rather than
+// inventing a 4th role-voicing scheme. Worded for an interactive Q&A answer, not a once-daily
+// note, since that's the ALTITUDE_VOICE text's own framing in huddle-narrative.js and doesn't
+// fit SAGE's turn-by-turn format directly.
+const ROLE_VOICE = {
+  store: 'The person asking is a GM, AM, DM, or SM running one store day to day. Answer '+
+    'tactically, in plain restaurant language: lead with the decision, not the methodology. '+
+    'Skip district-wide comparisons unless they directly change what this store should do today.',
+  // Matches curated-home.js's own ALTITUDE_BY_ROLE exactly -- DO collapses to 'patch' there
+  // (district-ops but still closer to the patch/supervisor altitude than VP/Owner/Admin), not
+  // 'district'. Keep this wording in sync with that mapping rather than re-deriving a grouping.
+  patch: 'The person asking is an Area Supervisor, Ops Manager, or District Ops lead covering a '+
+    'patch of stores. Answer practically, but add patch-level comparison when it is informative '+
+    '(e.g. how this store\'s number compares to others in their patch) -- they are coaching '+
+    'multiple GMs, not just running one store.',
+  district: 'The person asking is a VP, Owner, or Admin thinking district-wide. Add '+
+    'district-comparison framing to any single-store answer (e.g. its rank or how it compares '+
+    'to the district average) and frame recommendations around leading through supervisors, not '+
+    'just a single-store fix list.',
+};
+
 // ── System prompt builder ─────────────────────────────────────────────────────
-export function buildSystemPrompt(ds, signals, customSignalDefs, activeContext) {
+export function buildSystemPrompt(ds, signals, customSignalDefs, activeContext, userRole) {
+  const roleVoice = ROLE_VOICE[altitudeForRole(userRole)];
   // CLAUDE.md standing rule: the business day runs 4:00am -> 4:00am, not midnight -> midnight —
   // the 00:00-04:00 block belongs to the PREVIOUS business day (overnight close/clean-up/late-
   // night volume land there). Previously this used calendar-day new Date().toISOString(), so
@@ -667,6 +692,8 @@ Be specific: "OEPE is 23s over target" not "OEPE is high."
 For simple factual questions, answer directly first, then add relevant context from the data above.
 If you don't have data on something, say so clearly — do not speculate.
 ─────────────────────────────────────────────────────────────────────────
+
+WHO YOU ARE ANSWERING: ${roleVoice}
 
 TERMINOLOGY: OEPE, TPPH, Labor%, FOB, Base Food%, OSAT, DT%, B2B, MOP, Kiosk, 3PO, KVS, Park, VLH.
 This is a private tool for one operator. Be candid, specific, and direct.${buildFieldDefsSection(ds?.qsrFieldDefs)}`;
@@ -1422,7 +1449,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    const systemPrompt = buildSystemPrompt(ds, signals, customSignalDefs, activeContext);
+    const systemPrompt = buildSystemPrompt(ds, signals, customSignalDefs, activeContext, userRole);
     let full = '';
 
     try {
