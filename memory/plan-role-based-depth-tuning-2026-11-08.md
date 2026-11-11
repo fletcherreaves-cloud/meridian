@@ -140,6 +140,23 @@ closes a real doc/code mismatch: CLAUDE.md currently describes this as already s
 ("role tunes the advice") when it measurably is not.
 
 ### 2. District Priority Brief — apply the Curated-Home altitude gradient to its own already-multi-store audience
+✅ **DONE 2026-11-11.** Built per `altitudeForRole`'s REAL mapping, not this section's original
+draft wording — the draft (written 2026-11-08, before dispatch-sage-role-voice-2026-11-11 measured
+`curated-home.js`'s actual `ALTITUDE_BY_ROLE`) assumed DO collapsed to 'district' alongside VP/
+Owner; the real map groups `do` with `area_supervisor`/`om` at **'patch'**. So the shipped split is:
+'patch'-altitude roles (AS/OM/DO) keep today's unmodified flat per-store tiered list as the
+default; 'district'-altitude roles (VP/Owner/Admin) default to the same stores pre-rolled by
+supervisor patch (`byPatch`, grouped via the existing `supervisorOf` helper — zero new data,
+reuses the already-computed `tiered` array) as the headline, one click (or toggle) from the full
+per-store table. A manual "📍 By Patch / 🏪 By Store" toggle stays reachable for every role
+whenever there's more than one patch in view, so depth is reordered, never removed. Clicking a
+patch card sets the panel's existing `orgFilter` to that patch name — reuses the exact filter the
+LocationSelector already drives, no new filtering mechanism. `effectiveRole` (already computed in
+App.js for the "view as" sandbox, task #97) is the prop threaded in, not a separate `userRole`
+read. Covered by
+`src/__tests__/dispatch-district-priority-brief-altitude-2026-11-11.test.js` (5 tests, rendering
+the real exported `DistrictPriorityBrief` component end to end).
+
 **Effort: small-medium.** Every role that can open this panel (OM, DO, VP, Owner/Admin — all pass
 `analytics.district`) sees the identical per-store red/amber/green tiered table today. Apply
 `altitudeForRole`-style grouping *within* that audience, reusing the real distinction the ladder
