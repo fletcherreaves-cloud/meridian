@@ -51,6 +51,7 @@ import { dKey } from '../utils/date.js';
 import { callSageOnce } from '../lib/sage-client.js';
 import { huddleScopeKey, huddleStorageKey, buildHuddleFacts, huddleSystemPrompt, huddleUserMessage } from '../engine/huddle-narrative.js';
 import { GamePlanFormat } from './game-plan-view.js';
+import { RULE_PANEL, RULE_PANEL_LABEL } from '../engine/game-plan.js';
 import { ShiftScoreboardFormat } from './shift-scoreboard-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
 import { OperatorLedgerFormat } from './operator-ledger-view.js';
@@ -115,17 +116,10 @@ const SEV_DOT   = { RED: '!', AMBER: '~', GREEN: '✓' };
 // ruleId -> real panel-registry id (src/app/panel-registry.js). Every one of MORNING_RULES' 12
 // rule ids (src/features/morning-brief.js) is covered -- checked against the real registry, not
 // guessed; see the Phase 2 header comment above for the per-rule reasoning.
-const RULE_PANEL = {
-  DRAWER_OPENS: 'security', REFUND_OVERRING: 'security', TRED_SPIKE: 'security',
-  GC_SALES_DIVERGE: 'security', CASH_OS: 'security',
-  FOOD_COST_HIGH: 'fob-analysis',
-  STAFFED_SLOW: 'dt-sos', STAFFED_NO_PARK: 'dt-sos', TIMER_GAMING: 'dt-sos',
-  KVS_USAGE_LOW: 'dt-sos', DAYPART_OEPE: 'dt-sos',
-  SMG_OSAT_LOW: 'smg-voice',
-};
-const RULE_PANEL_LABEL = {
-  security: 'Security', 'fob-analysis': 'Food Cost', 'dt-sos': 'DT Speed of Service', 'smg-voice': 'Guest Voice',
-};
+// RULE_PANEL/RULE_PANEL_LABEL now live in engine/game-plan.js (owner feedback, 2026-11-11) so
+// game-plan-view.js's ActionsCard can reuse the exact same rule->panel mapping for its own
+// drill-through links without a circular import (this file already imports GamePlanFormat from
+// game-plan-view.js).
 
 // ── Phase 2 shared pieces: summary header + item tile ───────────────────────────────────────
 
@@ -543,6 +537,16 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     saveUserSetting(FORMAT_KEY, 'dataview').catch(() => {});
   };
 
+  // Owner bug report (2026-11-11, live): switching View As Role from a store-altitude role to
+  // Area Supervisor kept rendering Game Plan (with no loc, since myStore is store-altitude-only)
+  // -- "Your Week So Far" then permanently read "not enough closed days", which the owner first
+  // (reasonably) suspected was a day-of-week artifact. It wasn't: `format` is state that survives
+  // a View As Role altitude change without remounting (no mount-time recompute), and the loader
+  // effect above only OVERWRITES it with a freshly-loaded preference that fits the new altitude --
+  // it never resets a stale one that doesn't. `effectiveFormat` re-derives the right answer on
+  // every render instead of trusting stale state, so an altitude change self-corrects immediately
+  // without waiting on (or depending on) that network round trip.
+  const effectiveFormat = formatFitsAltitude(format) ? format : defaultFormat;
   const visibleFormats = FORMATS.filter(f => formatFitsAltitude(f.id));
   const formatPicker = div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px' } },
     ...visibleFormats.map(f => h('button', {
@@ -550,8 +554,8 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       style: {
         padding: '5px 10px', borderRadius: 999, border: 'none', fontSize: 11, fontWeight: 700,
         cursor: 'pointer',
-        background: format === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
-        color: format === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
+        background: effectiveFormat === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
+        color: effectiveFormat === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
       },
     }, f.id === 'dataview' ? DATA_VIEW_LABELS[dataViewStyle] : f.label)),
   );
@@ -683,7 +687,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // things the owner asked to make "the front facing version," not a peer inside the old one.
   // The format picker stays visible (small, top-right) so switching back to Checklist/Bullets/
   // Narrative is always one click, per "keep the other intact and make it optional for users."
-  if (format === 'gameplan') {
+  if (effectiveFormat === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -694,7 +698,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       }),
     );
   }
-  if (format === 'scoreboard') {
+  if (effectiveFormat === 'scoreboard') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -702,7 +706,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       h(ShiftScoreboardFormat, { ds, loc: myStore?.loc, storeName: myStore?.name }),
     );
   }
-  if (format === 'patch') {
+  if (effectiveFormat === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -710,7 +714,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       h(PatchPlanFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, onNav }),
     );
   }
-  if (format === 'ledger') {
+  if (effectiveFormat === 'ledger') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,

@@ -10,7 +10,8 @@
 // or negative week gets no celebration, a day with no plan data gets no fabricated percentage.
 import * as React from 'react';
 import { withAlpha } from '../utils/fmt.js';
-import { computeGamePlanWeek, gamePlanActions } from '../engine/game-plan.js';
+import { dKey } from '../utils/date.js';
+import { computeGamePlanWeek, gamePlanActions, RULE_PANEL, RULE_PANEL_LABEL } from '../engine/game-plan.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -61,35 +62,126 @@ function PriorityCard({ item, weekData }) {
   );
 }
 
+// Owner feedback (2026-11-11): "Your Week So Far" was color-only (a GM seeing olive-vs-green
+// squares with no key has no idea what the colors mean, and the %-of-plan number only ever
+// existed in a hover title, invisible on a touch device). Three additions, all derived straight
+// from weekData.bars -- no new data source, no fabricated commentary:
+//   1. weekStory() -- a one-line, honest rollup ("4 of 6 days at/above plan"), never invented
+//      when there's nothing real to say (a single-day week, or no plan data, says nothing extra).
+//   2. The %-of-plan number rendered directly under each bar, not just on hover.
+//   3. A 3-swatch legend naming what the colors mean, once, above the bars.
+const BAR_COLOR = pct => pct == null ? 'var(--bdr2,#4d4435)' : pct >= 100 ? 'var(--good,#10b981)' : pct >= 90 ? 'var(--amber,#f59e0b)' : 'var(--crit,#f43f5e)';
+
+function weekStory(bars) {
+  const real = bars.filter(b => b.pct != null);
+  if (real.length < 2) return null; // one data point isn't a "story" yet
+  const onPlan = real.filter(b => b.pct >= 100).length;
+  const worst = real.reduce((a, b) => (b.pct < a.pct ? b : a));
+  let line = `${onPlan} of ${real.length} day${real.length === 1 ? '' : 's'} at or above plan`;
+  if (worst.pct < 90) line += `, worst was ${worst.label} at ${Math.round(worst.pct)}% of plan`;
+  return line;
+}
+
+function WeekLegend() {
+  const items = [['var(--good,#10b981)', 'At/above plan'], ['var(--amber,#f59e0b)', 'Close (90–99%)'], ['var(--crit,#f43f5e)', 'Behind plan']];
+  return div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10 } },
+    items.map(([color, label]) => span({ key: label, style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3,#958975)' } },
+      span({ style: { width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 } }), label)));
+}
+
 function WeekBars({ weekData }) {
   if (!weekData.bars.length) {
     return div({ style: { fontSize: 12.5, color: 'var(--text3,#958975)', padding: '10px 0' } },
-      'Not enough closed days with real data yet this week.');
+      'Nothing to show yet — check back after a day or two of sales.');
   }
-  const barColor = pct => pct == null ? 'var(--bdr2,#4d4435)' : pct >= 100 ? 'var(--good,#10b981)' : pct >= 90 ? 'var(--amber,#f59e0b)' : 'var(--crit,#f43f5e)';
+  const story = weekStory(weekData.bars);
   return div(null,
+    h(WeekLegend),
     div({ style: { display: 'flex', alignItems: 'flex-end', gap: 7, height: 64 } },
       weekData.bars.map(b => div({ key: b.dk, style: { flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' } },
         div({ title: b.pct != null ? Math.round(b.pct) + '% of plan' : 'No plan data',
-          style: { background: barColor(b.pct), borderRadius: '5px 5px 0 0',
+          style: { background: BAR_COLOR(b.pct), borderRadius: '5px 5px 0 0',
             height: (b.pct == null ? 4 : Math.max(6, Math.min(100, b.pct * 0.72))) + '%' } })))),
     div({ style: { display: 'flex', gap: 7, marginTop: 6 } },
+      weekData.bars.map(b => span({ key: b.dk, style: { flex: 1, textAlign: 'center', fontSize: 10.5, fontWeight: 800, color: BAR_COLOR(b.pct) } },
+        b.pct != null ? Math.round(b.pct) + '%' : '—'))),
+    div({ style: { display: 'flex', gap: 7, marginTop: 2 } },
       weekData.bars.map(b => span({ key: b.dk, style: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text3,#958975)' } }, b.label))),
+    story && div({ style: { fontSize: 11.5, color: 'var(--text3,#958975)', marginTop: 10 } }, story),
   );
 }
 
+// Owner feedback (2026-11-11): these items had no drill-through at all (just text), and the
+// square markers were purely decorative. Two real additions, same underlying `items` (no new
+// data): (1) a "Go to X ->" link reusing RULE_PANEL -- the exact mapping ItemCard's own DrillLink
+// already uses elsewhere in Curated Home, not a second one; (2) the square becomes a real,
+// clickable "reviewed" checkbox. Persisted to localStorage, keyed by item id + TODAY's date (dKey)
+// so it reflects this run of the list, not a stale check from a prior day the same rule also
+// fired on -- these items' own `id` (loc+ruleId) is not date-scoped, so a bare per-id key would
+// wrongly show as already-reviewed the next time the same rule flags. Clicking the checkbox
+// toggles it directly; clicking through to the real panel also marks it reviewed (drilling in
+// counts as reviewing), matching the owner's own "viewed or drilled into" framing.
+const VIEWED_LS_PREFIX = 'mf_gameplan_viewed_';
+function loadViewed(dayKey) {
+  try { return JSON.parse(localStorage.getItem(VIEWED_LS_PREFIX + dayKey) || '{}'); } catch { return {}; }
+}
+function saveViewed(dayKey, obj) {
+  try { localStorage.setItem(VIEWED_LS_PREFIX + dayKey, JSON.stringify(obj)); } catch {}
+}
+
 function ActionsCard({ actions, onNav }) {
+  const dayKey = dKey(new Date());
+  const [viewed, setViewed] = React.useState(() => loadViewed(dayKey));
   if (!actions.length) return null;
+  const toggleViewed = (id) => {
+    const next = { ...viewed, [id]: !viewed[id] };
+    setViewed(next);
+    saveViewed(dayKey, next);
+  };
+  const markViewed = (id) => {
+    if (viewed[id]) return;
+    const next = { ...viewed, [id]: true };
+    setViewed(next);
+    saveViewed(dayKey, next);
+  };
   return div({ style: { background: 'var(--surf,#171b24)', border: '1px solid var(--bdr,#2a303d)',
     borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 } },
     span({ style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#958975)' } },
       actions.length === 1 ? 'The one thing to act on' : actions.length + ' things worth a few minutes'),
-    ...actions.map((it, i) => div({ key: it.id, style: { display: 'flex', gap: 10, alignItems: 'flex-start' } },
-      span({ style: { flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + (SEV_COLOR[it.severity] || 'var(--amber)'), marginTop: 1 } }),
-      div({ style: { fontSize: 13, lineHeight: 1.55, color: 'var(--text2,#c9bfa8)' } },
-        h('b', { style: { color: 'var(--text,#fff)' } }, it.headline + '. '),
-        it.action || ''),
-    )),
+    ...actions.map((it, i) => {
+      const color = SEV_COLOR[it.severity] || 'var(--amber)';
+      const isViewed = !!viewed[it.id];
+      const panelId = RULE_PANEL[it.ruleId];
+      return div({ key: it.id, style: { display: 'flex', gap: 10, alignItems: 'flex-start' } },
+        h('button', {
+          type: 'button', onClick: () => toggleViewed(it.id),
+          'aria-label': isViewed ? 'Mark as not reviewed' : 'Mark as reviewed',
+          title: isViewed ? 'Reviewed -- click to unmark' : 'Mark as reviewed',
+          style: {
+            flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: '1.5px solid ' + color,
+            marginTop: 1, padding: 0, cursor: 'pointer', background: isViewed ? color : 'transparent',
+            color: '#0b0f16', fontSize: 13, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
+          },
+        }, isViewed ? '✓' : ''),
+        div({ style: { flex: 1, minWidth: 0 } },
+          div({ style: { fontSize: 13, lineHeight: 1.55, color: 'var(--text2,#c9bfa8)' } },
+            h('b', { style: { color: 'var(--text,#fff)' } }, it.headline + '. '),
+            it.action || ''),
+          it.storesAffected?.length > 0 && div({ style: { display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 } },
+            it.storesAffected.map(s => span({ key: s, style: {
+              fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+              background: withAlpha(color, '16'), color: 'var(--text2,#c9bfa8)',
+            } }, s))),
+          panelId && h('button', {
+            type: 'button', onClick: () => { markViewed(it.id); onNav && onNav(panelId); },
+            style: {
+              marginTop: 6, padding: '3px 10px', borderRadius: 999, border: '1px solid ' + withAlpha(color, '45'),
+              background: withAlpha(color, '14'), color, fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+            },
+          }, 'Go to ' + RULE_PANEL_LABEL[panelId] + ' →'),
+        ),
+      );
+    }),
   );
 }
 

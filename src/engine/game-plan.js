@@ -19,6 +19,24 @@ import { autoFirstDaily } from './vs-ly.js';
 
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// ruleId -> real panel-registry id (src/app/panel-registry.js). Every one of MORNING_RULES' 12
+// rule ids (src/features/morning-brief.js) is covered -- checked against the real registry, not
+// guessed. Lives here (not in curated-home.js or game-plan-view.js) so BOTH of those view files
+// can import it without a circular dependency (curated-home.js already imports GamePlanFormat
+// from game-plan-view.js; game-plan-view.js needing the same map back from curated-home.js would
+// create one).
+export const RULE_PANEL = {
+  DRAWER_OPENS: 'security', REFUND_OVERRING: 'security', TRED_SPIKE: 'security',
+  GC_SALES_DIVERGE: 'security', CASH_OS: 'security',
+  FOOD_COST_HIGH: 'fob-analysis',
+  STAFFED_SLOW: 'dt-sos', STAFFED_NO_PARK: 'dt-sos', TIMER_GAMING: 'dt-sos',
+  KVS_USAGE_LOW: 'dt-sos', DAYPART_OEPE: 'dt-sos',
+  SMG_OSAT_LOW: 'smg-voice',
+};
+export const RULE_PANEL_LABEL = {
+  security: 'Security', 'fob-analysis': 'Food Cost', 'dt-sos': 'DT Speed of Service', 'smg-voice': 'Guest Voice',
+};
+
 // A "win" is reported only when the trailing-week vs-LY comparison is real (both sides have
 // data) AND clearly positive -- never a forced celebration over a flat or negative week. The
 // +3% floor matches this app's own existing "clearly ahead" framing elsewhere (e.g. AAG movers).
