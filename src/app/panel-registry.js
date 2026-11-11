@@ -142,8 +142,10 @@ export const PANELS = [
   // Pay Rate History (owner request 2026-10-15) -- deliberately a NARROWER permission than
   // every sibling 'people' panel above (payroll.view, not analytics.store/analytics.labor):
   // wage data is a different sensitivity tier. The real enforcement boundary is Supabase RLS
-  // (get_my_role() in ('admin','owner','do') on the underlying tables) -- this key only gates
-  // the nav entry, same relationship every permission key here has to its own RLS.
+  // (get_my_role() in ('admin','owner','vp','do') on the underlying tables -- 'vp' added
+  // 2026-11-11, fresh-eyes role audit, raising VP to DO's level after an owner-flagged
+  // inconsistency; see supabase/schema-payroll-view-add-vp-2026-11-11.sql) -- this key only
+  // gates the nav entry, same relationship every permission key here has to its own RLS.
   { id:'pay-rate-history', label:'Pay Rate History', icon:'💰', perm:'payroll.view', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },

@@ -76,12 +76,25 @@ describe('buildCuratedHomeItems — patch/district altitude', () => {
   });
 
   it('regenerates the headline at pattern altitude instead of reusing one store\'s own number', () => {
-    const { items } = buildCuratedHomeItems(twoOfThree, 'do');
+    const { items } = buildCuratedHomeItems(twoOfThree, 'area_supervisor');
     expect(items[0].headline).toContain('2 of 3');
     expect(items[0].headline).toContain('patch');
     // Never a verbatim copy of either store's own live-number headline:
     expect(items[0].headline).not.toBe('A headline');
     expect(items[0].headline).not.toBe('Different headline');
+  });
+
+  // Owner-corrected 2026-11-11 (fresh-eyes role audit) -- `do` groups at 'patch' ALTITUDE
+  // (unchanged, same aggregation as area_supervisor/om, re-asserted in the 'altitudeForRole'
+  // describe block above), but CLAUDE.md documents DO as "District-level" scope, and the old
+  // code derived the narration WORD straight from altitude, so a DO's own home screen literally
+  // called their district a "patch" -- a mismatch the person being addressed would notice. Only
+  // the word changed; this test's sibling two rows up (role 'area_supervisor') still gets "patch".
+  it('says "district" (not "patch") for a DO, even though DO still groups at patch altitude', () => {
+    const { altitude, items } = buildCuratedHomeItems(twoOfThree, 'do');
+    expect(altitude).toBe('patch'); // grouping/aggregation unchanged
+    expect(items[0].headline).toContain('district'); // narration word corrected
+    expect(items[0].headline).not.toContain('patch');
   });
 
   it('reuses detail/action verbatim from a representative flag (those fields are generic per severity tier, not number-specific)', () => {

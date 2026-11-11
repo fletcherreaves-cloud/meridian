@@ -193,7 +193,13 @@ const VP_PERMS = {
   'users.manage.all':       false,
   'users.manage.lower':     true,
   'security.view':          true,
-  'payroll.view':           false, // overridden true in DO_PERMS just below
+  // Owner-corrected 2026-11-11 (fresh-eyes role audit) -- was `false` here with DO_PERMS
+  // overriding it to `true`, so a VP (level 2, outranks DO's level 3) saw LESS than the role
+  // reporting to them. Owner: "They should be equal in settings > Role up to DO level" -- raised
+  // VP to match DO rather than lowering DO. `security.auditLog` was NOT part of this fix -- it
+  // was already `false` for both VP and DO (a wrong claim in the audit doc corrected before this
+  // edit, not carried into the fix).
+  'payroll.view':           true,
   'security.auditLog':      false, // stays false in DO_PERMS too -- see that key's own comment
   // DO/VP and above (owner-stated 2026-11-07) -- true here, inherited by DO_PERMS' spread below.
   'projections.own':        true,
@@ -202,7 +208,10 @@ const VP_PERMS = {
 const DO_PERMS = {
   ...VP_PERMS,
   'analytics.integrity':    false,
-  'payroll.view':           true,
+  // payroll.view no longer needs an override here -- VP_PERMS now already carries `true` (see
+  // that key's own comment above, 2026-11-11) and this line would just reassert the same value.
+  // Left out deliberately rather than kept as a no-op override, so a future VP_PERMS change can't
+  // silently be undone by this spread.
 };
 
 const OM_PERMS = {
