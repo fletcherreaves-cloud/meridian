@@ -4393,7 +4393,7 @@ function App() {
         subtitle:h(InfoIcon,{articleKey:'security_panel_guide'}),
         onBack:()=>goRoute(null),
         bodyStyle:{display:'flex',flexDirection:'column'},
-      }, h(SecurityPanel,{userRole:effectiveRole,onClose:()=>goRoute(null)})),
+      }, h(SecurityPanel,{userRole:effectiveRole,viewAsScope,onClose:()=>goRoute(null)})),
       routePanel==='access-log'&&h(RoutePanelShell,{
         title:'🪪 Access Log',
         onBack:()=>goRoute(null),

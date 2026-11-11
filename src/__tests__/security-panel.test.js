@@ -2684,3 +2684,74 @@ describe('SecurityPanel — Command Center (dispatch 2026-11-10)', () => {
     expect(container.textContent).toMatch(/Alice Andrews/);
   });
 });
+
+// Owner bug report 2026-11-11 (screenshot): Command Center showed all 27 stores' findings
+// ("Subjects Flagged 1569", a district-wide Store Health grid) while View As Role simulated a GM
+// at Madill-Hwy 70. Unlike At A Glance (which reads App.js's shared `ds`/`stores`, already
+// narrowed there), this panel does its own independent load (loadSecurityFindings) -- it needed
+// its own application of the same viewAsAllowedLocs primitive. Renders the real SecurityPanel,
+// not a helper in isolation, per the standing "verification must touch the call site" rule --
+// the bug was in the wiring (no viewAsScope prop existed at all before this fix), not in any
+// already-correct helper.
+describe('SecurityPanel — View As Role scoping (owner bug report 2026-11-11)', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'd', baselineType: 'personal', logicType: 'ratio', active: true },
+  ];
+  // Store A ('0000001'): Alice, 2 signals -- same shape the earlier CASH_FINDINGS fixture uses.
+  // Store B ('0000002'): Dave, 1 signal -- the OTHER store, must never show while scoped to A.
+  const STORE_A_AND_B_FINDINGS = [
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-dave', wrin: null, loc: '0000002', ruleId: 'CASH-001', pass: true, value: 20, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(STORE_A_AND_B_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('BEFORE this fix, store B\'s loc would render in the Command Center health grid even when scoped to store A -- confirm it is excluded', async () => {
+    await act(async () => {
+      root.render(React.createElement(SecurityPanel, {
+        userRole: 'gm', viewAsScope: '0000001', onClose: vi.fn(), initialView: 'command',
+      }));
+    });
+    await flush(container);
+    expect(loadSecurityFindingsMock).toHaveBeenCalled();
+    // Store A's own (unmapped, so rendered as the raw loc) tile shows; store B's never does.
+    expect(container.textContent).toContain('0000001');
+    expect(container.textContent).not.toContain('0000002');
+    // "Stores Needing Review" denominator (healthList.length) must read 1, not 2 -- the literal
+    // "Subjects Flagged 1569" / "20 / 27" leak the screenshot showed.
+    expect(container.textContent).toMatch(/1 \/ 1|0 \/ 1/);
+  });
+
+  it('with no View As Role simulation (viewAsScope absent), both stores\' data renders -- never changes behavior for a real, unscoped login', async () => {
+    await act(async () => {
+      root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'command' }));
+    });
+    await flush(container);
+    expect(container.textContent).toContain('0000001');
+    expect(container.textContent).toContain('0000002');
+  });
+
+  it('a real (non-simulated) GM is unaffected: altitudeForRole(\'gm\') is \'store\', but with no viewAsScope the allowedLocs guard is a no-op and whatever RLS already returned renders unfiltered', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(
+      STORE_A_AND_B_FINDINGS.filter(f => f.loc === '0000001') // a real GM's RLS-scoped read never includes store B at all
+    );
+    await act(async () => {
+      root.render(React.createElement(SecurityPanel, { userRole: 'gm', onClose: vi.fn(), initialView: 'command' }));
+    });
+    await flush(container);
+    expect(container.textContent).toContain('0000001');
+    expect(container.textContent).not.toContain('0000002');
+  });
+});

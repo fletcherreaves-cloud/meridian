@@ -24,7 +24,8 @@ import {
   loadSecurityFindingActionsForFindings, saveSecurityFindingAction,
   loadSecurityFindingsRecentHistoryForKeys,
 } from '../lib/supabase.js';
-import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
+import { INV_ORG_COORDS, STORE_NAMES, supervisorOf, unpadLoc } from '../constants.js';
+import { altitudeForRole, viewAsAllowedLocs } from '../engine/curated-home.js';
 import { RevealName } from './store-analytics.js';
 import { addD, fmtDI } from '../utils/date.js';
 import {
@@ -1897,10 +1898,30 @@ function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoF
 // entry takes no props beyond userRole/onClose) letting the existing Table-view test suite keep
 // asserting Table's own content/wiring without first clicking the toggle on every one of its ~70
 // render call sites; the real default below ('command') is untouched for every actual user.
-export function SecurityPanel({ userRole, onClose, initialView }) {
+export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
   const [permState, setPermState] = React.useState('checking'); // checking | denied | allowed
   const [dataState, setDataState] = React.useState('idle');     // idle | loading | loaded | error
-  const [findings, setFindings] = React.useState([]);
+  const [rawFindings, setRawFindings] = React.useState([]);
+  // View As Role scoping (owner bug report 2026-11-11, screenshot: Security's Command Center
+  // showed all 27 stores -- "Subjects Flagged 1569", the full district Store Health grid, etc. --
+  // while simulating a GM at Madill-Hwy 70). This panel does its own independent data load
+  // (loadSecurityFindings/loadSecurityRules below), bypassing the shared `ds`/`stores` App.js
+  // already narrows for other panels (src/engine/curated-home.js's viewAsAllowedLocs, the same
+  // primitive AAG/SwingAlarm/Curated Home share) -- so it needed its own application of the same
+  // primitive. `userRole` is already `effectiveRole` from App.js's one call site, so this reads
+  // correctly for a real, non-simulated login too (altitudeForRole('owner') etc. -> null
+  // allowedLocs -> everything below is an exact no-op).
+  const altitude = altitudeForRole(userRole);
+  const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope);
+  // Every consumer below (commandGroups/domainBreakdown/topRules/groups/healthList/drift
+  // candidates/the reveal-name token list/newestBatch) reads `findings` -- narrowing it ONCE
+  // here, by shadowing the name, means every one of them inherits the restriction automatically,
+  // the same "narrow the input, every view falls out correctly" pattern ToleranceRollupTile/
+  // TrackingToPlanTile/the At A Glance fix already use, rather than re-deriving scoping in each.
+  const findings = React.useMemo(
+    () => (allowedLocs ? rawFindings.filter(f => allowedLocs.has(unpadLoc(f.loc))) : rawFindings),
+    [rawFindings, allowedLocs]
+  );
   const [rules, setRules] = React.useState([]);
   const [domain, setDomain] = React.useState('cash'); // 'cash' | 'inventory' | 'labor' | 'events'
   const [scope, setScope] = React.useState({ level: 'all' });
@@ -1999,7 +2020,7 @@ export function SecurityPanel({ userRole, onClose, initialView }) {
     (async () => {
       const [f, r] = await Promise.all([loadSecurityFindings(), loadSecurityRules()]);
       if (cancelled) return;
-      setFindings(f); setRules(r); setDataState('loaded');
+      setRawFindings(f); setRules(r); setDataState('loaded');
     })().catch(() => { if (!cancelled) setDataState('error'); });
     return () => { cancelled = true; };
   }, [permState]);
@@ -2331,7 +2352,10 @@ export function SecurityPanel({ userRole, onClose, initialView }) {
   // dispatch #120 -- {loc} shape only, matching report-subscriptions.js's own LocationSelector
   // wiring: it derives state/patch/store tiers itself from INV_ORG_COORDS. Every loc
   // INV_ORG_COORDS knows about, same store universe the old hand-rolled storeLocs pill row used.
-  const _stores = React.useMemo(() => Object.keys(INV_ORG_COORDS).map(loc => ({ loc })), []);
+  const _stores = React.useMemo(() => {
+    const all = Object.keys(INV_ORG_COORDS).map(loc => ({ loc }));
+    return allowedLocs ? all.filter(s => allowedLocs.has(unpadLoc(s.loc))) : all;
+  }, [allowedLocs]);
 
   // Dispatch #143 -- CSV/JSON export (ExportDropdown) + full print report, both built from
   // `sortedGroups` -- the exact filtered/sorted rows the table below renders -- so print/export
