@@ -106,3 +106,38 @@ describe('useAttentionFeed -- csatOpportunityAlerts respects the caller\'s actua
     expect(container.textContent).toContain('"csat-' + BAD + '"');
   });
 });
+
+// Third leak in this same audit pass (identified but not yet fixed when the two above shipped):
+// dueForReview() (engine/coaching-loop.js) has no loc filter of its own, and each cycle row
+// carries a `.loc` (toAttentionItem's id is `coaching-review-${cycle.loc}-...`), so ds.coachingCycles
+// was the same "raw ds.* array, no built-in scoping" shape as smgRows above.
+describe('useAttentionFeed -- coaching-review-due items respect the caller\'s actual store scope', () => {
+  let container, root;
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); });
+  const todayKey = new Date().toISOString().slice(0, 10);
+  function dueCycle(loc) {
+    return { id: 'cyc-' + loc, loc, metric: 'labor_pct', result: null, reviewAt: todayKey, coachedAt: todayKey, note: 'test note' };
+  }
+
+  it('a second store\'s due coaching review never leaks in when scoped to just one store', () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const ds = { loaded: true, coachingCycles: [dueCycle(GOOD), dueCycle(BAD)] };
+    const dateRange = { s: recent(10), e: recent(1) };
+    act(() => { root.render(React.createElement(Host, { ds, stores: [{ loc: GOOD }], dateRange })); });
+    expect(container.textContent).not.toContain('coaching-review-' + BAD);
+    expect(container.textContent).toContain('coaching-review-' + GOOD);
+  });
+
+  it('with no scoping, both stores\' due coaching reviews still surface -- never changes behavior for a real, unscoped login', () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const ds = { loaded: true, coachingCycles: [dueCycle(GOOD), dueCycle(BAD)] };
+    const dateRange = { s: recent(10), e: recent(1) };
+    act(() => { root.render(React.createElement(Host, { ds, stores: [{ loc: GOOD }, { loc: BAD }], dateRange })); });
+    expect(container.textContent).toContain('coaching-review-' + GOOD);
+    expect(container.textContent).toContain('coaching-review-' + BAD);
+  });
+});

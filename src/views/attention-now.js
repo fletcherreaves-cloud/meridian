@@ -62,6 +62,10 @@ export function fobByStoreLatest(rows) {
 // silently at either call site, not a magic number picked here.
 export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  // View As Role scoping (owner bug report 2026-11-11) -- shared loc-membership set for every
+  // detector below that needs to filter a raw ds.* array which carries no loc scoping of its
+  // own (coachingCycles, smgRows), same allLocs this hook's other detectors already loop over.
+  const allowedLocSet = useMemo(() => new Set(allLocs.map(unpadLoc)), [allLocs]);
 
   // Phase-2 inputs load async (graded visits → readiness; saved correlations → decay; EOM exceptions).
   const [gradedVisits, setGradedVisits] = useState(ds?.gradedVisits || null);
@@ -200,7 +204,15 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // #208 — coaching-cycle reviews due. dueForReview()+toAttentionItem() (engine/
     // coaching-loop.js) do all the real work; this hook just supplies ds.coachingCycles and
     // the store-name lookup, matching every other detector input on this line.
-    const coachingItems = dueForReview(ds?.coachingCycles || []).map(c => toAttentionItem(c, nm));
+    // View As Role scoping (owner bug report 2026-11-11) -- dueForReview() has no loc filter of
+    // its own and each cycle row carries a `.loc` (toAttentionItem's id is `coaching-review-
+    // ${cycle.loc}-...`), so ds.coachingCycles must be narrowed to allLocs here first, same as
+    // every other detector in this hook -- otherwise a simulated lower role could see another
+    // store's coaching-review-due item in their Attention feed.
+    const coachingCyclesScoped = allLocs.length
+      ? (ds?.coachingCycles || []).filter(c => allowedLocSet.has(unpadLoc(c.loc)))
+      : (ds?.coachingCycles || []);
+    const coachingItems = dueForReview(coachingCyclesScoped).map(c => toAttentionItem(c, nm));
     // Opportunity $ (memory/design-opportunity-dollars.md) — MTD Labor+Food+GC $ vs each
     // store's own target, combined into ONE cross-domain figure per store (opportunityAlerts
     // below is deliberately separate from fobOutliers/fobOverTarget above, not a duplicate of
@@ -223,7 +235,6 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // View As Role scoping (owner bug report 2026-11-11) -- rankCommentOpportunities takes
     // whatever rows it's given with no loc filter of its own, so the input must already be
     // narrowed to allLocs here, same as every other detector in this hook.
-    const allowedLocSet = new Set(allLocs.map(unpadLoc));
     const smgRowsScoped = allLocs.length ? (ds?.smgRows || []).filter(r => allowedLocSet.has(unpadLoc(r.loc))) : (ds?.smgRows || []);
     const csatOpportunities = rankCommentOpportunities(smgRowsScoped, { storeName: nm });
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
