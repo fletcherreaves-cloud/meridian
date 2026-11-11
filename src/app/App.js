@@ -4591,7 +4591,7 @@ function App() {
     }]:[]}),
     // showTaskQueue — Dispatch #206: moved to the routePanel gate in the main content area
     // (TaskQueuePanel carries RoutePanelShell internally; see routePanel==='task-queue').
-    showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
+    showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,effectiveRole,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     // showOperatorSummary — Dispatch #205: moved to the routePanel gate in the main content area
     // (OperatorSummaryPanel carries RoutePanelShell internally; see routePanel==='operator-summary').
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),

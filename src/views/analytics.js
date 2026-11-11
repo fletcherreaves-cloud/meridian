@@ -16,7 +16,7 @@ import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighte
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal, generateReviewPack } from '../features/calendar.js';
-import { TH, f$, escapeHtml as esc } from '../utils/fmt.js';
+import { TH, f$, escapeHtml as esc, withAlpha } from '../utils/fmt.js';
 import { printHtml } from '../utils/print-html.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, opfsClear } from '../db/index.js';
@@ -38,6 +38,7 @@ import { CoachingModal } from './coaching-modal.js';
 import { callSageOnce } from '../lib/sage-client.js';
 import { computeOwnerSalesForecast } from '../engine/owner-sales-forecast.js';
 import { computeLaborTpphForecast } from '../engine/owner-labor-tpph-forecast.js';
+import { altitudeForRole } from '../engine/curated-home.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -2202,7 +2203,7 @@ export const ISSUE_RULE_MAP = {
   floorCrit: 'scheduling', floorWatch: 'scheduling',
 };
 
-function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose}) {
+function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose, effectiveRole}) {
   const {useState:uSt, useMemo:uM} = React;
   const [orgFilter, setOrgFilter] = uSt('all');
   const [expanded,  setExpanded]  = uSt({});
@@ -2210,6 +2211,19 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
   const [narrativeLoading, setNarrativeLoading] = uSt(false);
   const [showNarrative, setShowNarrative] = uSt(false);
   const toggleExp = (loc) => setExpanded(p=>({...p,[loc]:!p[loc]}));
+
+  // Task #132 Phase 1, recommendation #2 (owner request 2026-11-08, "small focused vs big
+  // picture"): every role that can open this panel (area_supervisor/om/do/vp/owner/admin, all
+  // pass analytics.district) sees the identical flat per-store list today. altitudeForRole's
+  // REAL mapping groups do with area_supervisor/om at 'patch' (not with vp/owner/admin at
+  // 'district' -- a draft of this recommendation assumed otherwise before dispatch-sage-role-
+  // voice-2026-11-11 corrected the mapping), so 'patch'-altitude roles (AS/OM/DO -- already the
+  // most hands-on of the bunch) default to today's unchanged per-store tiered list; 'district'-
+  // altitude roles (VP/Owner/Admin -- multi-district) default to the same stores pre-rolled by
+  // supervisor patch as the headline, one click from the full per-store table. Toggle stays
+  // reachable either way -- this reorders which view renders first, it never removes one.
+  const altitude = altitudeForRole(effectiveRole);
+  const [viewMode, setViewMode] = uSt(altitude === 'district' ? 'patch' : 'store');
 
   // ── Tier classification ────────────────────────────────────────────────────
   const tiered = uM(()=>{
@@ -2286,7 +2300,26 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
     return{totS,vsLY,focus,redN:red.length,amberN:amber.length,greenN:green.length,n:tiered.length};
   },[tiered,red,amber,green]);
 
-
+  // ── Supervisor-patch rollup (task #132 rec #2) ─────────────────────────────
+  // Groups the SAME tiered stores by supervisorOf — zero new data, reuses the live-first lookup
+  // every other patch filter/grouping in this app already resolves through (CLAUDE.md Dev Rules:
+  // "check whether a helper exists before writing one"). Only meaningful as a headline when
+  // there's more than one patch in view; when orgFilter has already narrowed to one patch/store
+  // the flat per-store sections below are shown regardless of viewMode (nothing left to roll up).
+  const byPatch = uM(()=>{
+    const groups = {};
+    tiered.forEach(s=>{
+      const patch = supervisorOf(s.loc, s.sup) || 'Unassigned';
+      if(!groups[patch]) groups[patch] = {patch, stores:[], red:0, amber:0, green:0, sales:0, ly:0};
+      const g = groups[patch];
+      g.stores.push(s); g[s.tier]++; g.sales += s.pSales||0; g.ly += s.pLY||0;
+    });
+    return Object.values(groups)
+      .map(g=>({...g, vsLY: g.ly>0 ? (g.sales-g.ly)/g.ly : null}))
+      .sort((a,b)=>b.red-a.red || b.amber-a.amber || a.patch.localeCompare(b.patch));
+  },[tiered]);
+  const showPatchRollup = viewMode==='patch' && orgFilter==='all' && byPatch.length>1;
+  const isPatchFilter = orgFilter!=='all' && orgFilter!=='ok' && orgFilter!=='fl' && !String(orgFilter).startsWith('store:');
 
   // ── Finding formatter ──────────────────────────────────────────────────────
   // Strip the "CRITICAL — " / "WATCH — " / "STRENGTH — " / "INTEGRITY ALERT — " prefix
@@ -2448,6 +2481,37 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       )
     );
   };
+
+  // ── Patch card component (district-altitude headline, task #132 rec #2) ──────────────────
+  const PatchCard = ({g}) => {
+    const tierCol = g.red>0?'#ef4444':g.amber>0?'#f59e0b':'#10b981';
+    const tierIcon = g.red>0?'🚨':g.amber>0?'⚠️':'✅';
+    return div({
+      style:{borderRadius:'var(--r)',border:'.5px solid '+withAlpha(tierCol,'4d'),background:'var(--surf2)',
+        padding:'10px 12px',cursor:'pointer',display:'flex',flexDirection:'column',gap:7},
+      onClick:()=>setOrgFilter(g.patch)
+    },
+      div({style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:6}},
+        div(null,
+          div({style:{fontSize:'12px',fontWeight:800,color:'var(--text)'}},tierIcon+' '+g.patch),
+          div({style:{fontSize:'8.5px',color:'var(--text3)',marginTop:2}},
+            g.stores.length+' store'+(g.stores.length>1?'s':''))
+        ),
+        span({style:{fontSize:'8px',color:'var(--text3)',flexShrink:0}},'View →')
+      ),
+      div({style:{display:'flex',gap:10,fontSize:'10px',fontWeight:700}},
+        g.red>0&&span({style:{color:'#ef4444'}},g.red+' action'),
+        g.amber>0&&span({style:{color:'#f59e0b'}},g.amber+' watch'),
+        g.green>0&&span({style:{color:'#10b981'}},g.green+' well')
+      ),
+      div({style:{fontSize:'9px',color:'var(--text3)'}},
+        'Sales '+f$(g.sales),
+        g.vsLY!=null&&span({style:{marginLeft:6,fontWeight:700,color:g.vsLY>=0?'#10b981':'var(--crit)'}},
+          (g.vsLY>=0?'+':'')+((g.vsLY*100).toFixed(2))+'% vs LY')
+      )
+    );
+  };
+
   if(!stores||!stores.length||!stores.some(s=>s.findings))
     return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:451,display:'flex',alignItems:'center',justifyContent:'center'}},
       div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
@@ -2473,6 +2537,16 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             (ds&&ds.loaded?' · '+((stores||[]).filter(s=>s.findings).length)+' stores with data':' · Load data to generate'))
         ),
         div({style:{display:'flex',gap:3,flexWrap:'wrap',alignItems:'center'}},
+          byPatch.length>1&&div({style:{display:'flex',borderRadius:'var(--r)',border:'.5px solid var(--bdr)',overflow:'hidden'}},
+            btn({style:{fontSize:'8.5px',padding:'3px 8px',border:'none',cursor:'pointer',
+                background:viewMode==='patch'?'rgba(245,158,11,.15)':'transparent',
+                color:viewMode==='patch'?'var(--amber)':'var(--text3)',fontWeight:viewMode==='patch'?700:400},
+              onClick:()=>setViewMode('patch')},'📍 By Patch'),
+            btn({style:{fontSize:'8.5px',padding:'3px 8px',border:'none',cursor:'pointer',
+                background:viewMode==='store'?'rgba(245,158,11,.15)':'transparent',
+                color:viewMode==='store'?'var(--amber)':'var(--text3)',fontWeight:viewMode==='store'?700:400},
+              onClick:()=>setViewMode('store')},'🏪 By Store')
+          ),
           h(LocationSelector,{
             stores, invOrgCoords:INV_ORG_COORDS, storeNames:STORE_NAMES, mode:'progressive',
             value:orgFilterToSelectorValue(orgFilter),
@@ -2558,42 +2632,58 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       // ── Scrollable content ───────────────────────────────────────────────────
       div({style:{flex:1,overflowY:'auto',padding:'0 16px 32px'}},
 
-        // ── Action Required ────────────────────────────────────────────────────
-        red.length>0&&div(null,
-          div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
-            padding:'5px 0',borderBottom:'.5px solid rgba(239,68,68,.25)'}},
-            span({style:{width:10,height:10,borderRadius:'50%',background:'#ef4444',display:'inline-block'}}),
-            div({style:{fontSize:'10px',fontWeight:700,color:'#ef4444',textTransform:'uppercase',letterSpacing:'.5px'}},'Action Required'),
-            span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},red.length+' store'+(red.length>1?'s':''))
+        showPatchRollup ? div(null,
+          div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px'}},
+            div({style:{fontSize:'10px',fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.5px'}},'By Supervisor Patch'),
+            span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},byPatch.length+' patches')
           ),
-          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
-            ...red.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#ef4444',tierIcon:'🚨'}))
+          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8,paddingBottom:4}},
+            ...byPatch.map(g=>h(PatchCard,{key:g.patch,g}))
           )
-        ),
+        ) : div(null,
 
-        // ── Watch Closely ─────────────────────────────────────────────────────
-        amber.length>0&&div(null,
-          div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
-            padding:'5px 0',borderBottom:'.5px solid rgba(245,158,11,.25)'}},
-            span({style:{width:10,height:10,borderRadius:'50%',background:'#f59e0b',display:'inline-block'}}),
-            div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',textTransform:'uppercase',letterSpacing:'.5px'}},'Watch Closely'),
-            span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},amber.length+' store'+(amber.length>1?'s':''))
-          ),
-          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
-            ...amber.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#f59e0b',tierIcon:'⚠️'}))
-          )
-        ),
+          viewMode==='patch'&&isPatchFilter&&btn({
+            style:{fontSize:'8.5px',padding:'3px 8px',marginTop:14,marginBottom:4,background:'transparent',
+              border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text3)',cursor:'pointer'},
+            onClick:()=>setOrgFilter('all')},'← All Patches'),
 
-        // ── Running Well ──────────────────────────────────────────────────────
-        green.length>0&&div(null,
-          div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
-            padding:'5px 0',borderBottom:'.5px solid rgba(16,185,129,.2)'}},
-            span({style:{width:10,height:10,borderRadius:'50%',background:'#10b981',display:'inline-block'}}),
-            div({style:{fontSize:'10px',fontWeight:700,color:'#10b981',textTransform:'uppercase',letterSpacing:'.5px'}},'Running Well'),
-            span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},green.length+' store'+(green.length>1?'s':''))
+          // ── Action Required ────────────────────────────────────────────────────
+          red.length>0&&div(null,
+            div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
+              padding:'5px 0',borderBottom:'.5px solid rgba(239,68,68,.25)'}},
+              span({style:{width:10,height:10,borderRadius:'50%',background:'#ef4444',display:'inline-block'}}),
+              div({style:{fontSize:'10px',fontWeight:700,color:'#ef4444',textTransform:'uppercase',letterSpacing:'.5px'}},'Action Required'),
+              span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},red.length+' store'+(red.length>1?'s':''))
+            ),
+            div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+              ...red.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#ef4444',tierIcon:'🚨'}))
+            )
           ),
-          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
-            ...green.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#10b981',tierIcon:'✅'}))
+
+          // ── Watch Closely ─────────────────────────────────────────────────────
+          amber.length>0&&div(null,
+            div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
+              padding:'5px 0',borderBottom:'.5px solid rgba(245,158,11,.25)'}},
+              span({style:{width:10,height:10,borderRadius:'50%',background:'#f59e0b',display:'inline-block'}}),
+              div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',textTransform:'uppercase',letterSpacing:'.5px'}},'Watch Closely'),
+              span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},amber.length+' store'+(amber.length>1?'s':''))
+            ),
+            div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+              ...amber.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#f59e0b',tierIcon:'⚠️'}))
+            )
+          ),
+
+          // ── Running Well ──────────────────────────────────────────────────────
+          green.length>0&&div(null,
+            div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
+              padding:'5px 0',borderBottom:'.5px solid rgba(16,185,129,.2)'}},
+              span({style:{width:10,height:10,borderRadius:'50%',background:'#10b981',display:'inline-block'}}),
+              div({style:{fontSize:'10px',fontWeight:700,color:'#10b981',textTransform:'uppercase',letterSpacing:'.5px'}},'Running Well'),
+              span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},green.length+' store'+(green.length>1?'s':''))
+            ),
+            div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+              ...green.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#10b981',tierIcon:'✅'}))
+            )
           )
         )
       )
