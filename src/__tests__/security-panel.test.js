@@ -64,7 +64,7 @@ import {
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
   scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay, minSignalsLabel,
   buildCommandGroups, buildDomainBreakdown, buildTopContributingRules, latestCaseStatus, tallyCaseQueue,
-  cameraReviewHint,
+  cameraReviewHint, mathGlossLines,
 } from '../views/security-panel.js';
 // dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
 // anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
@@ -120,6 +120,39 @@ const CASH_FINDINGS = [
   { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 6, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
   { empToken: 'tok-carol', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: null, value: null, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [{ label: 'no exposure in window', value: null }] },
 ];
+
+// Owner feedback 2026-11-11 (screenshot: Cherry W's card, "personal: mean 17.52, stdev 0.00, n
+// 1"): "Show the math" is genuinely technical jargon -- value/threshold/mean/stdev/n read as an
+// unlabeled wall of numbers to anyone without a stats background. Raw stats stay exact and
+// reachable (CLAUDE.md's standing "Voice by role" rule); this is the plain-English gloss added
+// alongside each one, never a replacement.
+describe('mathGlossLines() — plain-English gloss for the "Show the math" drawer\'s raw stats', () => {
+  it('names personal vs. peer baselines in plain words', () => {
+    const personal = mathGlossLines({ baselineType: 'personal' }, { mean: 10, stdev: 5, n: 8 });
+    expect(personal.baseline).toMatch(/this person's own past windows/);
+    const peer = mathGlossLines({ baselineType: 'peer' }, { mean: 10, stdev: 5, n: 8 });
+    expect(peer.baseline).toMatch(/everyone else in this same role/);
+  });
+  it('flags a thin baseline (n<=1, the exact Cherry W case) as provisional, not a real pattern yet', () => {
+    const thin = mathGlossLines({ baselineType: 'personal' }, { mean: 17.52, stdev: 0, n: 1 });
+    expect(thin.baseline).toMatch(/only 1 prior window is on file/);
+    expect(thin.baseline).toMatch(/provisional/);
+  });
+  it('a real (n>1) baseline gets the normal mean/stdev/n explainer, never the provisional caveat', () => {
+    const real = mathGlossLines({ baselineType: 'personal' }, { mean: 10, stdev: 5, n: 8 });
+    expect(real.baseline).toMatch(/typical rate/);
+    expect(real.baseline).not.toMatch(/provisional/);
+  });
+  it('returns null for baseline when there is no baselineContext at all (e.g. LABOR-001\'s baselineType: \'none\')', () => {
+    const none = mathGlossLines({ baselineType: 'none' }, {});
+    expect(none.baseline).toBeNull();
+  });
+  it('value/threshold glosses are always present, independent of baseline', () => {
+    const g = mathGlossLines({ baselineType: 'none' }, {});
+    expect(g.value).toMatch(/What was actually measured/);
+    expect(g.threshold).toMatch(/cutoff/);
+  });
+});
 
 describe('groupFindingsBySubject() — the central design call: subject-major, sorted by convergence', () => {
   it('produces one group per (loc, subject), never one row per finding', () => {
@@ -2074,7 +2107,7 @@ describe('SecurityPanel — dispatch 2026-11-09: Events domain tab, Rule Playboo
     expect(container.textContent).toMatch(/What it is:/);
     expect(container.textContent).toMatch(/The real tell:/);
     expect(container.textContent).toMatch(/Floor technique:/);
-    expect(container.textContent).toMatch(/Never let one person count their own drawer and verify it\./);
+    expect(container.textContent).toMatch(/Never let multiple people work on the same drawer\./);
   });
 
   it('a rule with no playbook entry renders no Playbook block at all (playbookForRule\'s honest-null contract, not an empty box)', async () => {
@@ -2316,6 +2349,28 @@ describe('SecurityPanel — Briefing view: district health grid + narrative card
     clickByText('button', 'Show the math');
     expect(container.textContent).toMatch(/value: 50.00 per \$1,000 drawer sales/);
     expect(container.textContent).toMatch(/mean 10\.00, stdev 5\.00, n 8/);
+    // Owner feedback 2026-11-11: raw stats stay, but each now carries a plain-English gloss --
+    // n:8 is NOT thin, so this gets the real "mean/stdev/n" explainer, not the provisional caveat.
+    expect(container.textContent).toMatch(/What was actually measured/);
+    expect(container.textContent).toMatch(/cutoff this rule checks against/);
+    expect(container.textContent).toMatch(/this person's own past windows/);
+    expect(container.textContent).not.toMatch(/isn't a real pattern here yet/);
+  });
+
+  it('a thin baseline (n<=1) gets the "provisional" caveat instead of the normal mean/stdev/n explainer', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([{
+      id: 'find-cash-thin', empToken: 'tok-cherry', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true,
+      value: 17.52, thresholdUsed: 5, windowStart: '2026-09-19', windowEnd: '2026-10-17',
+      computedAt: '2026-10-18T10:00:00Z',
+      baselineContext: { mean: 17.52, stdev: 0, n: 1 }, explanation: [], exonerationShare: null,
+    }]);
+    await mount();
+    clickByText('button', '🩺 Briefing');
+    await flush(container);
+    clickByText('button', 'Show the math');
+    expect(container.textContent).toMatch(/mean 17\.52, stdev 0\.00, n 1/);
+    expect(container.textContent).toMatch(/only 1 prior window is on file/);
+    expect(container.textContent).toMatch(/isn't a real pattern here yet/);
   });
 
   it('a rule with no false_positives never offers a "Rule out first" drawer', async () => {

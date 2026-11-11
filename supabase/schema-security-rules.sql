@@ -84,7 +84,7 @@ insert into public.security_rules (
   '{"numerator": {"field": "cashOSDollar", "agg": "sum", "abs": true}, "denominator": {"field": "drawerSales", "agg": "sum"}, "scale": 1000, "comparator": "gte"}',
   28, 'personal', '{"default": 5}', 3, 1, 'medium', false,
   '{}', '{}', '["register malfunction", "new hire training week", "manager-verified bank error"]',
-  'Pull the flagged employee''s drawer-count photos for the window and compare against the POS z-report.',
+  'Pull the flagged employee''s drawer-count photos for the window and compare against the POS report.',
   'ChatGPT Security_Analytics_Session.md', 1, false
 )
 on conflict (tenant_id, rule_id) do nothing;
