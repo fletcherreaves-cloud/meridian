@@ -4396,7 +4396,7 @@ function App() {
         title:'Morning Intelligence Brief',
         subtitle:h('span',null,'Correlation engine · 12 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',h(InfoIcon,{articleKey:'morning_brief_guide'})),
         onBack:()=>goRoute(null),
-      }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})),
+      }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar,effectiveRole})),
       // Curated Home Phase 1 (memory/plan-overnight-notes-72-2026-11-06.md §2, task #92) -- same
       // engine as Daily Brief above, role-cascaded voice + a user-chosen format.
       routePanel==='curated-home'&&h(RoutePanelShell,{
