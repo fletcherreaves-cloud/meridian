@@ -1565,3 +1565,35 @@ here). Full suite: 831/831 files, 7706/7706 tests passing. Build clean, eager pa
 ~35 unwired keys — `fcst_accuracy_guide`, `count_cycle_guide`, `panel_index` (deliberately
 unwired), plus the same metric/engine-concept keys this backlog has consistently left
 cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).
+
+## Batch 18 (2026-11-11)
+
+Resolves the last real candidate from batch 17's deferred pair:
+
+- **`fcst_accuracy_guide`** → `ForecastAccuracyPanel` (`src/views/analytics.js`), hosted by
+  `ForecastReportsPanel` (`src/features/forecast-reports.js`)'s "🎯 Forecast Accuracy" tab — the
+  other tab of the same hub `lifelenz_bridge` was wired into back in batch 14.
+  `ForecastAccuracyPanel` builds its own hand-rolled title bar (not `ModalShell`/
+  `RoutePanelShell`), so the `title`/`subtitle` string-forwarding hazard doesn't apply here — the
+  `InfoIcon` is appended directly to the "🎯 Forecast Accuracy Report" title div, same pattern as
+  `district_lens_guide` (batch 16).
+
+One render-level test in `dispatch-kb-panel-guide-batch18-2026-11-11.test.js` — mounts
+`ForecastAccuracyPanel` directly (it's independently exported from `analytics.js`, confirmed via
+its own export list, so no need to go through the `ForecastReportsPanel` shell), clicks the real
+"?" `InfoIcon`, asserts the real KB article title renders. Deliberately does NOT mock
+`forecast.js` (unlike the existing `dispatch-106-forecast-reports.test.js`, which mocks it
+including `InfoIcon: () => null` since it's testing backtest behavior, not KB wiring) — this test
+needs the real `InfoIcon` to render.
+
+`count_cycle_guide` remains genuinely unresolved — still no dedicated per-tab header inside its
+tabbed hub to anchor an icon to, confirmed again across batches 16-18. Of the original 16
+candidates named in batch 14's opening list, `count_cycle_guide` and `panel_index` (the latter
+deliberately left as an App-Guide exception) are now the only two still open.
+
+**Measured running total: 83 of 117 `KB_ARTICLES` keys now wired** (82 before this batch + 1
+here). Full suite: 832/832 files, 7707/7707 tests passing. Build clean, eager payload entry
+425.39 KB gzip / 694.39 KB gzip eager total (budget 850 KB, 155.61 KB headroom). **Still open:**
+~34 unwired keys — `count_cycle_guide`, `panel_index` (deliberately unwired), plus the same
+metric/engine-concept keys this backlog has consistently left cross-referenced rather than wired
+to any one panel (listed in full in the batch-13 entry above).
