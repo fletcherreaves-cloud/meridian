@@ -8,7 +8,7 @@
 // content is fully absorbed into AttentionPanel (src/views/analytics.js), which
 // this hook now feeds exclusively.
 import * as React from 'react';
-import { STORE_NAMES, DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS } from '../constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, unpadLoc } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg, metricRate } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
@@ -93,8 +93,18 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // v4.552: the try/catch returned [] whenever the call THREW for want of graded-visit
     // data, which masked it. It only surfaced once the data was complete enough to
     // succeed — a crash that appears when the data gets better.
-    try { return computeVisitReadiness({ ...ds, gradedVisits })?.stores || []; } catch { return []; }
-  }, [ds, gradedVisits]);
+    // View As Role scoping (owner bug report 2026-11-11, the same leak found in At A Glance's
+    // own VisitReadinessTile) -- computeVisitReadiness always scores the FULL ds regardless of
+    // caller scope, so its result must be narrowed to allLocs (this hook's own already-scoped
+    // store list) before it reaches buildAttentionFeed's visitRisk(), the same "narrow the
+    // input" pattern this file's other detectors already use via allLocs.map(...).
+    try {
+      const all = computeVisitReadiness({ ...ds, gradedVisits })?.stores || [];
+      if (!allLocs.length) return all;
+      const allowed = new Set(allLocs.map(unpadLoc));
+      return all.filter(s => allowed.has(unpadLoc(s.loc)));
+    } catch { return []; }
+  }, [ds, gradedVisits, allLocs]);
 
   return useMemo(() => {
     // Freshest business date across the auto streams → data age in days.
@@ -210,7 +220,12 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // Opportunities tab, but nothing fed it into this cross-domain feed — csatOpportunityAlerts
     // below is a pure function over this already-computed result, matching every other
     // detector's "already-computed inputs" convention.
-    const csatOpportunities = rankCommentOpportunities(ds?.smgRows || [], { storeName: nm });
+    // View As Role scoping (owner bug report 2026-11-11) -- rankCommentOpportunities takes
+    // whatever rows it's given with no loc filter of its own, so the input must already be
+    // narrowed to allLocs here, same as every other detector in this hook.
+    const allowedLocSet = new Set(allLocs.map(unpadLoc));
+    const smgRowsScoped = allLocs.length ? (ds?.smgRows || []).filter(r => allowedLocSet.has(unpadLoc(r.loc))) : (ds?.smgRows || []);
+    const csatOpportunities = rankCommentOpportunities(smgRowsScoped, { storeName: nm });
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.

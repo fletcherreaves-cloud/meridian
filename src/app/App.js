@@ -3113,6 +3113,15 @@ function App() {
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
+  // View As Role scoping (owner bug reports 2026-11-11, AAG + Security) -- a shared, narrowed
+  // `stores` any OTHER call site can use directly, instead of each one re-deriving its own
+  // aagAllowedLocs filter inline. district altitude (or no simulation) leaves `stores` untouched;
+  // viewAsAllowedLocs's own no-op-for-a-real-login guarantee carries through unchanged.
+  const scopedStores = useMemo(
+    () => (aagAllowedLocs ? stores.filter(s => aagAllowedLocs.has(unpadLoc(s.loc))) : stores),
+    [stores, aagAllowedLocs]
+  );
+
   const goStore=(s,tab)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');setStoreDashInitialTab(tab||'overview');};
 
   // #208 — re-fetch coaching_cycles after a coaching modal saves (start OR record-follow-up),
@@ -4386,7 +4395,7 @@ function App() {
       // promo-roi's hand-rolled backdrop/header was refactored into RoutePanelShell internally
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
-      routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles,onPayEventSaved:refreshPayEvents}),
+      routePanel==='attention'&&h(AttentionPanel,{stores:scopedStores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles,onPayEventSaved:refreshPayEvents}),
       routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
