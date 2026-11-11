@@ -4247,10 +4247,10 @@ function App() {
           else if(modal==='fcst-accuracy'){setForecastReportsTab('fcst-accuracy');goRoute('forecast-reports');} // dispatch #106 Phase B merge
           else if(modal==='forecast-reports')goRoute('forecast-reports');
         }}),
-      view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
+      view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores:scopedStores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
       view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings,initialTab:storeDashInitialTab,onCoachingSaved:refreshCoachingCycles}),
-      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
+      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores:scopedStores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores:scopedStores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations
       // ("would I ever want to send someone a link to this?" — yes). routePanel is URL-synced
       // (src/app/routing.js) and REPLACES whichever view/store was selected, exactly like the
@@ -4260,7 +4260,7 @@ function App() {
         title:'⚡ Dialed-In vs Default Comparison',
         subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
         onBack:()=>goRoute(null),
-      }, h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      }, h(DialedInComparisonReport,{stores:scopedStores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       // fcst-accuracy / lifelenz-bridge merged into forecast-reports (dispatch #106 Phase B,
       // both now kind:'hub-tab' in panel-registry.js) — ForecastReportsPanel renders whichever
       // of its two internal tabs is active (forecastReportsTab), each reusing
@@ -4270,13 +4270,13 @@ function App() {
         title:'🎯 Forecast Reports',
         subtitle:'Forecast Accuracy backtest + MBI vs LifeLenz Accuracy — parent name is a proposal, not yet owner-confirmed (memory/dispatch-106.md)',
         onBack:()=>goRoute(null),
-      }, h(ForecastReportsPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null),initialTab:forecastReportsTab})),
+      }, h(ForecastReportsPanel,{stores:scopedStores,ds,settings,userEvents,onClose:()=>goRoute(null),initialTab:forecastReportsTab})),
       routePanel==='proj'&&h(RoutePanelShell,{
         title:'📋 Projection Workspace',
         subtitle:h('span',null,'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',h(InfoIcon,{articleKey:'proj'})),
         onBack:()=>goRoute(null),
         bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
-      }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,
+      }, h(ProjectionWorkflow,{stores:scopedStores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,
         canOwnProjections,userName,userId,projOwnerGrants,onNotifyOwners:notifyPanelOwners,
         // FY Year rail card (owner-directed 2026-11-09) — same destination/permission as the
         // existing modal==='yearly-proj' nav handler above, just reachable from inside
@@ -4286,13 +4286,13 @@ function App() {
         title:'📊 Date-Range Comprehensive Report',
         subtitle:h('span',null,'Compares all metrics for any date range across selected locations.',h(InfoIcon,{articleKey:'date_range_report_guide'})),
         onBack:()=>goRoute(null),
-      }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      }, h(DateRangeReport,{stores:scopedStores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       // checklist-fill — RoutePanelShell lives inside ChecklistFillPanel itself (same
       // "shell inside the component" pattern as sched-hub/perf-reviews/planning above).
       routePanel==='checklist-fill'&&h(ChecklistFillPanel,{stores,onClose:()=>goRoute(null)}),
       // pricing-engine — promoted out of Test Kitchen 2026-09-01, same "shell inside the
       // component" pattern (RoutePanelShell now lives inside PricingEnginePanel itself).
-      routePanel==='pricing-engine'&&h(PricingEnginePanel,{stores,ds,onClose:()=>goRoute(null)}),
+      routePanel==='pricing-engine'&&h(PricingEnginePanel,{stores:scopedStores,ds,onClose:()=>goRoute(null)}),
       // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
       // perf-reviews and eom-dashboard carry RoutePanelShell inside their own component (they
       // already rendered their own header chrome). fob-analysis ORIGINALLY had no internal
@@ -4356,14 +4356,14 @@ function App() {
       // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
       // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
       // under the old EventsAndTagsPanel.
-      routePanel==='events'&&h(EventsPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,
+      routePanel==='events'&&h(EventsPanel,{stores:scopedStores,ds,settings,userEvents,onUpdate:saveUserEvents,
         initialView:eventsView,initialCalendarScope:calInitScope,
         onClose:()=>{goRoute(null);setEventsView('upcoming');setCalInitScope(null);}}),
       // routePanel==='fob-eom' never renders here on purpose — the useEffect above (near
       // fobAnalysisInitialMode's declaration) redirects it into fob-analysis before this
       // switch is reached, so by the time this render runs routePanel is already
       // 'fob-analysis' again with fobAnalysisInitialMode==='eom'.
-      routePanel==='fob-analysis'&&h(FOBAnalysisPanel,{stores,ds,settings,
+      routePanel==='fob-analysis'&&h(FOBAnalysisPanel,{stores:scopedStores,ds,settings,
         initialMode:fobAnalysisInitialMode,
         onClose:()=>{setFobAnalysisInitialMode(null);goRoute(null);},
         // onNav (2026-10-12) -- the Emp/Mgr Meals cross-reference into Register Audit (owner-
@@ -4396,7 +4396,7 @@ function App() {
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
       routePanel==='attention'&&h(AttentionPanel,{stores:scopedStores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles,onPayEventSaved:refreshPayEvents}),
-      routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
+      routePanel==='ranking'&&h(LeaderboardPanel,{stores:scopedStores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
         subtitle:h(InfoIcon,{articleKey:'security_panel_guide'}),
@@ -4458,7 +4458,7 @@ function App() {
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='yoy-trends'&&h(YoyTrendsPanel,{ds,onClose:()=>goRoute(null)}),
-      routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
+      routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores:scopedStores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/
       // smg-voice/task-queue all carry RoutePanelShell inside their own component (same "shell
@@ -4512,7 +4512,7 @@ function App() {
     showModelAssign&&h(ModelAssignmentPanel,{stores,ds,settings,userEvents,onClose:()=>setShowModelAssign(false)}),
     // showOnePager — Dispatch #205: moved to the routePanel gate in the main content area
     // (StoreOnePager carries RoutePanelShell internally; see routePanel==='one-pager').
-    showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
+    showGMBrief&&h(GMCoachingBrief,{stores:scopedStores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
       onStreamSynced,
@@ -4538,13 +4538,13 @@ function App() {
     // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
     // routePanel==='ranking' in the main content area above.
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles,userRole:effectiveRole}),
-    showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
-    showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
-    showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
+    showCompare  &&h(MultiStoreComparison,{stores:scopedStores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
+    showRevIntel &&h(RevenueIntelligence,{stores:scopedStores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
+    showOpportunity&&h(OpportunityDollars,{stores:scopedStores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     showEmailDigests&&h(EmailDigestSubscriptionsPanel,{onClose:()=>setShowEmailDigests(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
-    showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
+    showSmartTargets&&h(SmartTargetPanel,{stores:scopedStores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
     // showLocIntel — Dispatch #206: moved to the routePanel gate in the main content area
     // (LocationIntelligence carries RoutePanelShell internally when not embedded; see
     // routePanel==='loc-intel').
@@ -4614,7 +4614,7 @@ function App() {
     }]:[]}),
     // showTaskQueue — Dispatch #206: moved to the routePanel gate in the main content area
     // (TaskQueuePanel carries RoutePanelShell internally; see routePanel==='task-queue').
-    showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,effectiveRole,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
+    showPriorityBrief&&h(DistrictPriorityBrief,{stores:scopedStores,ds,settings,userEvents,effectiveRole,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     // showOperatorSummary — Dispatch #205: moved to the routePanel gate in the main content area
     // (OperatorSummaryPanel carries RoutePanelShell internally; see routePanel==='operator-summary').
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
@@ -4684,7 +4684,7 @@ function App() {
       subtitle:h('span',null,'AI forecast accuracy vs actual results — click any cell to expand daily detail',h(InfoIcon,{articleKey:'pvsa'})),
       onClose:()=>setShowPVSA(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
     },
-      h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
+      h(ProjectionVsActualsReport,{stores:scopedStores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
     showWorkflow&&h(WorkflowGuidePanel,{
       userRole:effectiveRole,orgRoles,
@@ -4755,7 +4755,7 @@ function App() {
       subtitle:h('span',null,'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',h(InfoIcon,{articleKey:'di_calibration_panel'})),
       onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
     },
-      h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
+      h(DialedInPanel,{stores:scopedStores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
     ),
     // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
     showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)}),
