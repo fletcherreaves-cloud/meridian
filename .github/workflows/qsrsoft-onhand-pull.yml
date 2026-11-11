@@ -90,7 +90,12 @@ jobs:
 
       - name: Install Playwright browser
         if: ${{ github.event.inputs.send_test_notification != '1' && github.event.inputs.send_test_webpush != '1' }}
-        run: npx playwright install chromium --with-deps
+        run: |
+          for i in 1 2 3; do
+            npx playwright install chromium --with-deps && break
+            echo "playwright install attempt $i failed, retrying in 15s..." >&2
+            sleep 15
+          done
 
       - name: Send live test notification (dispatch #211 smoke test)
         if: ${{ github.event.inputs.send_test_notification == '1' }}

@@ -148,12 +148,19 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
     // missed-count-report.js already use): an explicit loc list straight off locScope,
     // bypassing the scope-string translation entirely, since an arbitrary cross-state/
     // cross-patch combination has no single token to encode it as.
-    if (locScope.level === 'multi') return (locScope.ids || []).map(l => unpad(l));
-    if (String(scope).startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => unpad(l));
-    return Object.keys(STORE_NAMES).filter(l =>
-      scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
-        : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
-  }, [scope, groups, locScope]);
+    const raw = locScope.level === 'multi' ? (locScope.ids || []).map(l => unpad(l))
+      : String(scope).startsWith('grp:') ? (groups[scope.slice(4)] || []).map(l => unpad(l))
+      : Object.keys(STORE_NAMES).filter(l =>
+          scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
+            : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- every branch above enumerates
+    // from the global store registry / org structure, never from the `stores` prop this panel
+    // receives, so "All stores"/a patch/a state could still reach a store outside an admin's
+    // simulated scope. Intersect with the stores prop here, covering every branch in one place
+    // rather than patching each enumeration separately.
+    const allowed = new Set((stores || []).map(s => unpad(s.loc)));
+    return allowed.size ? raw.filter(l => allowed.has(unpad(l))) : raw;
+  }, [scope, groups, locScope, stores]);
   const scopeLabel = locScope.level === 'multi' ? `Custom (${locs.length} store${locs.length === 1 ? '' : 's'})`
     : scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
     : String(scope).startsWith('grp:') ? ('Patch ' + scope.slice(4)) : (sNameC(scope) || sName(scope));
@@ -267,7 +274,12 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   const doCsv = () => downloadCsv(reportCSV(rows), `weekly-count-status-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-week-of-${dKey(weekStart)}.csv`);
 
   const headerRow = div({ style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown', multi: true }),
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- this picker's own `stores` list
+    // was hardcoded to Object.keys(STORE_NAMES) (every company store), independent of the real
+    // `stores` prop and of the `locs` fix above -- a simulated lower role could still see every
+    // other store's name listed as a selectable option, even though picking one would produce no
+    // data once scoped. Derive it from the real `stores` prop instead.
+    h(LocationSelector, { stores: (stores || []).filter(s => /^\d+$/.test(s.loc)), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locScope, onChange: setLocScope, mode: 'full', variant: 'dropdown', multi: true }),
     h('input', {
       type: 'date', value: pickedDate, onChange: e => setPickedDate(e.target.value),
       title: 'Pick any day — the roster resolves to that day\'s whole calendar week',

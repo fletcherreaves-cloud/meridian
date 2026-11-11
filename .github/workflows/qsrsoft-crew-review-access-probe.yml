@@ -39,7 +39,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Playwright browser
-        run: npx playwright install chromium --with-deps
+        run: |
+          for i in 1 2 3; do
+            npx playwright install chromium --with-deps && break
+            echo "playwright install attempt $i failed, retrying in 15s..." >&2
+            sleep 15
+          done
       - name: Probe Crew Review confidential-access denial
         run: node scripts/probe-crew-review-confidential-access.mjs
         env:

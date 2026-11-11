@@ -274,8 +274,16 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
     const manualGapFill=(ds.inventoryRows||[])
       .map(r=>({...r,loc:unpad(r.loc)}))
       .filter(r=>!cloudKeys.has(r.loc+'|'+r.wrin));
-    return[...cloudInvRows,...manualGapFill];
-  },[cloudInvRows,ds.inventoryRows]);
+    const merged=[...cloudInvRows,...manualGapFill];
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- this panel's `stores` prop was
+    // never referenced anywhere in the component; every downstream read (locs, locRows, the
+    // overstock/needs-supply sections, transfers) derived its loc universe straight from the
+    // independently-loaded cloud/manual rows, so a simulated lower role could still see (and
+    // pick) any store with inventory data. Scope here, once, at the root of every downstream
+    // read -- a no-op for a real, unscoped login.
+    const allowed=new Set((stores||[]).map(s=>unpad(s.loc)));
+    return allowed.size?merged.filter(r=>allowed.has(unpad(r.loc))):merged;
+  },[cloudInvRows,ds.inventoryRows,stores]);
   const hasCloud=cloudInvRows.length>0;
   const manualFillCount=effRows.length-cloudInvRows.length;
 

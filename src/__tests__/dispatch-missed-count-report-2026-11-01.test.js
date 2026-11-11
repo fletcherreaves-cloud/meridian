@@ -233,8 +233,17 @@ describe('Missed on Current Count report (owner req 2026-11-01)', () => {
     expect(card.textContent).toContain('Napkins');
   });
 
-  it('narrowing the Scope selector to a different state empties the report (no FL stores in this fixture)', async () => {
-    await renderPanel(root);
+  it('narrowing the Scope selector to a different state empties the report (no FL stores with any missed items in this fixture)', async () => {
+    // View As Role scoping (2026-11-11) narrowed the Location selector's own option list to the
+    // `stores` prop instead of every company store/state -- this test needs a real FL store
+    // actually present in `stores` for the state:FL option to exist at all now, so it no longer
+    // relies on the old always-both-states-regardless-of-scope picker. 6178 (Chipley-St Rd 77,
+    // FL) has no onHand/missed-item rows in this fixture, so scoping to it still empties the
+    // report, which is the behavior this test exists to prove.
+    await act(async () => {
+      root.render(React.createElement(EOMDashboardPanel, { stores: [...STORES, { loc: '6178' }], ds: {}, settings: {}, onClose: () => {} }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
     await openReport(container);
     const card = modalCard(container);
     // Location selector here renders as variant:'dropdown' (2026-11-02 rollout) -- a single

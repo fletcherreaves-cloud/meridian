@@ -59,9 +59,12 @@ describe('DistrictLensPanel (analytics.js) generateNarrative — routes through 
       opsRows.push({ loc: fixLoc, date, oepe: 200 - i * 5 });
     }
 
+    // View As Role scoping (2026-11-11) narrowed DistrictLensPanel's ALL_LOCS to the `stores`
+    // prop instead of every company store -- this fixture's data lives at `fixLoc`, so it must
+    // actually appear in `stores` now for the Story tab's data gate to see it at all.
     await act(async () => {
       root.render(React.createElement(DistrictLensPanel, {
-        stores: [], ds: { loaded: true, laborRows, opsRows }, settings: {}, onClose: () => {},
+        stores: [{ loc: fixLoc }], ds: { loaded: true, laborRows, opsRows }, settings: {}, onClose: () => {},
       }));
     });
 
