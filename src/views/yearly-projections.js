@@ -36,6 +36,7 @@ const LazyExportDropdown = React.lazy(() =>
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
+const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Print / Export (dispatch #147) ───────────────────────────────────────────
 // Same local-helper pattern every print/export builder in this codebase repeats
@@ -340,6 +341,29 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   // stale edit from a prior year's view doesn't bleed into this one.
   const [edits, setEdits] = useState({});
   useEffect(() => { setEdits({}); }, [year]);
+  // Owner request 2026-11-11 -- the same "I cannot figure out how to start this" dead end
+  // Monthly hit before #134 fixed it with handleStartMonth (analytics.js): a year with zero
+  // yearly_targets rows rendered a pure dead end pointing only at the Excel-upload flow, with
+  // no in-app way to even begin a brand-new year. Mirrors that fix's seed-then-edit-in-place
+  // pattern -- one blank row per store, via the SAME saveYearlyTargets upsert the per-cell
+  // editor (task #61) already uses, so the grid becomes editable immediately after.
+  // Seeds a real field key (tOepe:null) rather than a truly empty object: this view's own
+  // `rows` membership test below requires at least one key on the row, unlike Monthly's
+  // analogous check (presence of the loc key itself in `mt`, no inner-field requirement) --
+  // intentionally different from that file's seed shape, not a copy-paste miss.
+  const [starting, setStarting] = useState(false);
+  const handleStartYear = async () => {
+    if (starting || !canOwnProjections) return;
+    setStarting(true);
+    const seedRows = Object.fromEntries(ALL_LOCS.map(l => [locNum(l), { tOepe: null }]));
+    await saveYearlyTargets(seedRows, year, 'override').catch(() => {});
+    setEdits(prev => {
+      const next = { ...prev };
+      for (const loc of ALL_LOCS) { const ln = locNum(loc); next[ln] = { tOepe: null, ...(next[ln] || {}) }; }
+      return next;
+    });
+    setStarting(false);
+  };
 
   const byLoc = useMemo(() => {
     const fromCloud = (ds && ds.allYearlyTargets && ds.allYearlyTargets[year]) || {};
@@ -431,8 +455,16 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
 
   if (!rows.length) {
-    return div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } },
-      'No yearly targets uploaded for ' + year + '. Upload the yearly targets workbook (Data Manager → Targets) to populate OEPE/CSAT/Digital/People/Labor-FOB goals here.');
+    return div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 } },
+      div(null, 'No yearly targets started for ' + year + ' yet.'),
+      canOwnProjections
+        ? btn({ onClick: handleStartYear, disabled: starting, style: {
+            padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 6, cursor: starting ? 'default' : 'pointer',
+            background: 'var(--accent)', color: '#fff', border: 'none', opacity: starting ? .6 : 1 } },
+          starting ? 'Starting…' : `▶ Start ${year} Targets`)
+        : div({ style: { fontSize: 12 } }, 'You don\'t have edit access for Projections — ask an owner to start this year.'),
+      div({ style: { fontSize: 11 } }, 'Seeds a blank row per store so the grid below becomes editable — or upload the yearly targets workbook (Data Manager → Targets) to set a full year at once.'));
   }
 
   return div(null,
@@ -466,7 +498,7 @@ function TargetCategoriesView({ ds, year, thisYear, onExportReady, settings, onU
             h('td', { style: { ...td, textAlign: 'left', fontWeight: 800, fontFamily: 'inherit', color: 'var(--amber)' } }, label + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '(' + locs.length + ')')),
             ...active.fields.map(f => h('td', { key: f.k, style: { ...td, fontWeight: 800 } }, f.fmt(catAgg(locs, f))))) : null)))),
     div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-      'Click any store\'s value to edit it in place — saves straight to the yearly_targets table (source: "override"), no re-upload needed. Values otherwise come from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc). The Excel upload still works and stays the fastest way to set a whole year at once; in-app edits are for one-off corrections.'),
+      'Click any store\'s value to edit it in place — saves straight to the yearly_targets table (source: "override"), no re-upload needed. Values otherwise come from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc). The Excel upload still works and stays the fastest way to set a whole year at once from an existing spreadsheet; "▶ Start Targets" (shown when a year has none yet) plus in-app edits now cover building a year from scratch cell by cell, not just one-off corrections.'),
     fieldConfigOpen && h(TargetFieldConfigEditor, {
       title: 'Customize Yearly Target Categories',
       fields: YEARLY_CATS.flatMap(c => c.fields.map(f => ({ id: f.k, label: f.l, group: c.key, groupLabel: c.label }))),

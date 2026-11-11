@@ -82,12 +82,15 @@ describe('#107 Part 2: Planning > Yearly panel renders the real yearly-target ca
     expect(container.textContent).toMatch(/2\.00%/);
   });
 
-  it('shows the empty-state message for a year with no yearly-targets upload, not a crash', async () => {
+  it('shows the empty-state message (with a Start action, not a dead end) for a year with no yearly-targets upload, not a crash', async () => {
     await act(async () => {
       root.render(React.createElement(YearlyProjectionsPanel, { ds: { targets: {}, allYearlyTargets: {} }, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: true }));
     });
     const btn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
     await act(async () => { btn.click(); });
-    expect(container.textContent).toMatch(/No yearly targets uploaded/);
+    expect(container.textContent).toMatch(/No yearly targets started/);
+    // Owner report 2026-11-11 -- the old copy was a dead end pointing only at the Excel-upload
+    // flow; there must now be an in-app way to start the year, same as Monthly's #134 fix.
+    expect([...container.querySelectorAll('button')].some(b => /Start \d{4} Targets/.test(b.textContent))).toBe(true);
   });
 });
