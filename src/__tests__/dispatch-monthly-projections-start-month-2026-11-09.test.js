@@ -108,6 +108,23 @@ describe('Monthly Projections — "Start this month" (owner request 2026-11-09)'
     expect(container.textContent).toMatch(new RegExp(STORE_NAMES[A].slice(0, 10)));
   });
 
+  it('December is directly selectable from the main dropdown -- no need for the hidden 📅 picker (owner report 2026-11-11)', async () => {
+    // Before this fix, periodOpts came from listMonthlyTargetPeriods() alone (mocked to []
+    // here, same as every other test in this file), so the main <select> had zero options and
+    // never rendered at all -- the owner's only path to a never-started future month was the
+    // undiscoverable 📅 icon toggle pickDecember() above drives. Now the dropdown always
+    // includes the current + next 3 months even with zero real periods.
+    seededPeriods = new Set();
+    await render();
+    const mainSel = [...container.querySelectorAll('select')][0];
+    expect(mainSel).toBeTruthy();
+    expect([...mainSel.options].some(o => o.textContent.includes('Dec 2026'))).toBe(true);
+    const selSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+    await act(async () => { selSetter.call(mainSel, '2026-12'); mainSel.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent).toMatch(/No projections started yet for December 2026\./);
+  });
+
   it('a non-owner sees no Start button and an explicit access message instead -- never a silent dead end', async () => {
     seededPeriods = new Set();
     loadMonthlyTargets.mockClear();

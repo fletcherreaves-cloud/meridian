@@ -9140,11 +9140,30 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     groupedRows = gRows;
   }
 
-  // Period selector options
-  const periodOpts = periods.map(p=>{
+  // Period selector options — union of real (data-backed) `periods` with the current + next
+  // few calendar months, so a brand-new future month (e.g. December with zero monthly_targets
+  // rows) is always reachable from THIS dropdown. Before this, periodOpts came from `periods`
+  // alone (listMonthlyTargetPeriods() — only months that already have rows), so a never-started
+  // month never appeared in the list at all; the only way in was the hidden 📅 manual-entry
+  // picker below, which an owner report (2026-11-11) confirmed is not discoverable ("I still do
+  // not see it" re: the Start-Month button, #134 — the button itself was fine, the period that
+  // triggers its empty state was simply unreachable from here). Selecting one of these
+  // not-yet-started months still routes through the exact same selPeriod→loadMonthlyTargets→
+  // locs.length===0→handleStartMonth path #134 already built.
+  const periodKey = p => p.year+'-'+String(p.month).padStart(2,'0');
+  const startedKeys = new Set(periods.map(periodKey));
+  const nowD = new Date();
+  const upcoming = Array.from({length:4},(_,i)=>{
+    const d = new Date(nowD.getFullYear(), nowD.getMonth()+i, 1);
+    return {year:d.getFullYear(), month:d.getMonth()+1};
+  });
+  const periodMap = new Map(periods.map(p=>[periodKey(p),p]));
+  for (const p of upcoming) if (!periodMap.has(periodKey(p))) periodMap.set(periodKey(p),p);
+  const allPeriods = [...periodMap.values()].sort((a,b)=>a.year-b.year||a.month-b.month);
+  const periodOpts = allPeriods.map(p=>{
     const label2 = new Date(p.year,p.month-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
-    const v = p.year+'-'+String(p.month).padStart(2,'0');
-    return h('option',{key:v,value:v},label2);
+    const v = periodKey(p);
+    return h('option',{key:v,value:v},label2+(startedKeys.has(v)?'':' (not started)'));
   });
 
   const selVal = selPeriod ? selPeriod.year+'-'+String(selPeriod.month).padStart(2,'0') : '';
@@ -9254,8 +9273,9 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         color:myStoresOnly?'#fff':'var(--text2)',
         border:myStoresOnly?'1px solid var(--accent)':'1px solid var(--bdr)'}},
         myStoresOnly?'My Stores':'All Stores'),
-      // Period selector — show dropdown when Supabase has saved periods, else show current label
-      periods.length>0
+      // Period selector — always a dropdown now, since allPeriods always includes the current +
+      // next 3 months even with zero real `periods` rows (see periodOpts comment above).
+      allPeriods.length>0
         ? sel({
             value: selVal,
             onChange: e=>{

@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
+import { STORE_NAMES } from '../constants.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -126,9 +127,39 @@ describe('Yearly Targets in-app editor (task #61, 2026-11-03)', () => {
     expect(saveYearlyTargets).not.toHaveBeenCalled();
   });
 
-  it('Excel-upload path is untouched -- the empty-state message and upload hint still show with no data', async () => {
+  it('Excel-upload path is untouched -- the upload hint still shows with no data, alongside the new Start action', async () => {
     await openTargetCategories({ targets: {}, allYearlyTargets: {} });
-    expect(container.textContent).toMatch(/No yearly targets uploaded/);
-    expect(container.textContent).toMatch(/Upload the yearly targets workbook/);
+    expect(container.textContent).toMatch(/No yearly targets started/);
+    expect(container.textContent).toMatch(/upload the yearly targets workbook/i);
+  });
+
+  // Owner request 2026-11-11 -- same dead end Monthly hit before #134: a year with zero
+  // yearly_targets rows had no in-app way to even begin. Mirrors #134's seed-then-edit-in-place
+  // pattern via the real saveYearlyTargets() upsert, so clicking through actually reaches it.
+  it('clicking "▶ Start 2026 Targets" seeds one blank row per known store, then the grid becomes editable', async () => {
+    await openTargetCategories({ targets: {}, allYearlyTargets: {} });
+    const startBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '▶ Start 2026 Targets');
+    expect(startBtn).toBeTruthy();
+    await act(async () => { startBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    for (let i = 0; i < 5; i++) { await act(async () => { await new Promise(r => setTimeout(r, 0)); }); }
+
+    expect(saveYearlyTargets).toHaveBeenCalledTimes(1);
+    const [seedRows, year, source] = saveYearlyTargets.mock.calls[0];
+    expect(year).toBe(2026);
+    expect(source).toBe('override');
+    expect(Object.keys(seedRows).length).toBe(Object.keys(STORE_NAMES).length);
+    // The dead end is gone -- a known store now renders in the editable grid.
+    expect(container.textContent).not.toMatch(/No yearly targets started/);
+    expect(container.textContent).toMatch(new RegExp(STORE_NAMES['3708'].slice(0, 10)));
+  });
+
+  it('a non-owner sees no Start button and an explicit access message instead', async () => {
+    await act(async () => {
+      root.render(React.createElement(YearlyProjectionsPanel, { ds: { targets: {}, allYearlyTargets: {} }, stores: [], settings: {}, onClose: () => {}, embedded: true, canOwnProjections: false }));
+    });
+    const tabBtn = [...container.querySelectorAll('button')].find(b => /Target Categories/.test(b.textContent));
+    await act(async () => { tabBtn.click(); });
+    expect([...container.querySelectorAll('button')].some(b => b.textContent === '▶ Start 2026 Targets')).toBe(false);
+    expect(container.textContent).toMatch(/don't have edit access for Projections/);
   });
 });
