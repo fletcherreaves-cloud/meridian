@@ -3,13 +3,14 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups, getStoreOrg } from '../constants.js';
 import { CONTACTS, STORE_STAFF, setLiveStoreStaff, setLiveContacts, getReportRecipients, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM } from '../engine/contact-directory.js';
 import { dKey, addD } from '../utils/date.js';
-import { supabase } from '../lib/supabase.js';
+import { supabase, loadLifeLenzShiftAssignments } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
 import { autoFirstDaily } from '../engine/vs-ly.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { DAYPART_SLOTS } from '../engine/labor-standard.js';
 import { oepeSeconds, hourSlotLabel } from '../utils/oepe.js';
+import { managersOnDuty, canRevealAttributedName } from '../engine/shift-roster.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -257,7 +258,7 @@ function computeStoreNorms(loc, ds){
 }
 
 // ── Assemble one store's data for a target date ──────────────────────────────
-function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
+function assembleBriefStoreData(loc, targetDate, ds, darByLoc, managersByLoc){
   const locStr = String(loc);
   const dk = dKey(targetDate);
   const sameDay = r => String(r.loc)===locStr && dKey(r.date)===dk;
@@ -418,6 +419,11 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     // dar-sourced only (the one source this function has at per-slot grain); null when no DAR
     // row exists for this store/date or no slot clears the minimum-sample guard.
     oepeWorstSlot: dar ? worstOepeSlot(dar) : null,
+    // Every manager-tier employee scheduled this store/date -- "list out all managers present
+    // every time" (owner, 2026-11-11). Unmasked here (the underlying schedule data is already
+    // fully open, dispatch #125) -- UI-layer masking (canRevealAttributedName) is applied at
+    // render time against the VIEWER's role, never baked into this engine data.
+    managersOnDuty: managersByLoc?.[String(loc)] || [],
     // FOB / Food Cost (monthly cadence)
     baseFoodPct: fob?.baseFoodPct||null,
     totFoodPct:  fob?.pLFoodPct||null,
@@ -445,7 +451,7 @@ function evaluateStoreCorrelations(data){
 }
 
 // ── Compute full district morning brief ──────────────────────────────────────
-function computeMorningBrief(ds, targetDate, darByLoc){
+function computeMorningBrief(ds, targetDate, darByLoc, managersByLoc){
   // ds is null for one render on fresh app load (App.js's useState(null), before IDB/cloud
   // hydration resolves) -- every read below assumes ds ITSELF is truthy (ds.laborRows||[]),
   // so a caller that renders before hydration (e.g. Curated Home set as the default landing
@@ -453,7 +459,7 @@ function computeMorningBrief(ds, targetDate, darByLoc){
   // first pass. Default to {} here, once, rather than null-guarding every read site.
   ds = ds || {};
   const stores = Object.keys(STORE_NAMES).map(loc=>{
-    const data = assembleBriefStoreData(loc, targetDate, ds, darByLoc);
+    const data = assembleBriefStoreData(loc, targetDate, ds, darByLoc, managersByLoc);
     const flags = evaluateStoreCorrelations(data);
     const severity = flags.some(f=>f.severity==='RED') ? 'RED'
                    : flags.some(f=>f.severity==='AMBER') ? 'AMBER'
@@ -508,13 +514,13 @@ const SBG    = {RED:'rgba(239,68,68,.08)',AMBER:'rgba(245,158,11,.07)',GREEN:'rg
 const SBDR   = {RED:'rgba(239,68,68,.3)',AMBER:'rgba(245,158,11,.25)',GREEN:'rgba(16,185,129,.2)',NODATA:'var(--bdr)'};
 
 // ── StoreBriefCard component ─────────────────────────────────────────────────
-function StoreBriefCard({store, expanded, setExpanded}){
+function StoreBriefCard({store, expanded, setExpanded, effectiveRole}){
   const isOpen = expanded === store.loc;
   const {severity, flags, name, supervisor, hasData,
          sales, projSales, gc, oepe, oepeNorm, drawerOpens,
          actVsNeed, tpph, laborPct, kvst, dtPark,
          baseFoodPct, totFoodPct, fobMonth, smgOsat, smgMonth,
-         vsLYSales, vsLYGC} = store;
+         vsLYSales, vsLYGC, managersOnDuty: managers} = store;
   const c = SCOLOR[severity], bg = SBG[severity], bdr = SBDR[severity];
 
   return h('div',{
@@ -595,6 +601,26 @@ function StoreBriefCard({store, expanded, setExpanded}){
                             borderLeft:'2px solid '+SCOLOR[f.severity],paddingLeft:'8px',lineHeight:'1.6'}},
               '→ '+f.action),
           ))
+      ),
+      // Managers on duty -- owner-requested 2026-11-11 ("list out all managers present every
+      // time... will help users and leaders identify the real people... to address findings
+      // with"). Shown regardless of whether any flag fired, same as the metrics grid below.
+      // Masked per-entry (canRevealAttributedName) rather than per-card: a GM's own entry stays
+      // masked from their own subordinate even if a Shift Manager's entry on the same card is
+      // revealed to that same viewer, since the rule is about the NAMED person's rung, not the
+      // card's severity.
+      managers&&managers.length>0 && h('div',{style:{marginBottom:'14px'}},
+        h('div',{style:{fontSize:'10px',fontWeight:700,color:'var(--text3,#6b7280)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'6px'}},
+          '👔 Managers On Duty'),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+          managers.map((m,i)=>{
+            const revealed = canRevealAttributedName(m.jobTitle, effectiveRole);
+            return h('span',{key:i,style:{
+              fontSize:'11px',padding:'3px 9px',borderRadius:'99px',background:'var(--surf2)',
+              border:'1px solid var(--bdr)',color:'var(--text,#374151)'}},
+              revealed ? (m.name+' · '+m.jobTitle) : m.jobTitle);
+          })
+        )
       ),
       // Key metrics detail grid
       h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:'7px'}},
@@ -839,6 +865,37 @@ export function useBriefDarByLoc(briefDate, darRows){
   },[activeDarRows]);
 }
 
+// Owner follow-up (2026-11-11) to the OEPE drill-down below: "we can also list out all managers
+// present every time." Own-fetch only (no shared-prop fast path like useBriefDarByLoc's --
+// nothing else in the app pre-loads shift_assignments for an arbitrary brief date), reusing the
+// same loadLifeLenzShiftAssignments() loader Crew Schedule Lookup/Pay Rate History already go
+// through (pagination + zero-padded-loc normalization handled there, not re-derived here).
+// Groups raw rows per loc, then reduces each group through managersOnDuty() (engine/shift-
+// roster.js) once per loc rather than per render of every store card.
+export function useBriefManagersByLoc(briefDate){
+  const briefDateStr = briefDate instanceof Date && !isNaN(briefDate) ? briefDate.toISOString().slice(0,10) : null;
+  const [rows, setRows] = uSt([]);
+  uE(()=>{
+    if(!briefDateStr) return;
+    let cancelled = false;
+    loadLifeLenzShiftAssignments({start:briefDateStr, end:briefDateStr}).then(data=>{
+      if(!cancelled) setRows(data||[]);
+    });
+    return ()=>{ cancelled = true; };
+  },[briefDateStr]);
+  return uM(()=>{
+    if(!rows.length) return {};
+    const byLoc = {};
+    for(const r of rows){
+      const key = String(r.loc);
+      (byLoc[key] || (byLoc[key] = [])).push(r);
+    }
+    const out = {};
+    for(const key in byLoc) out[key] = managersOnDuty(byLoc[key]);
+    return out;
+  },[rows]);
+}
+
 // Which real hour_slot drove a store's daily OEPE the hardest -- owner-requested 2026-11-11
 // ("point out what hours or even quarter hours had the biggest opportunity," and the mirror
 // case for praise: `worst:false` finds the strongest slot instead). Uses the SAME reconciled
@@ -858,7 +915,7 @@ export function worstOepeSlot(dar, {minTrans = 3, worst = true} = {}){
   return best ? {...best, label: hourSlotLabel(best.slot)} : null;
 }
 
-function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}){
+function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar, effectiveRole}){
   const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
   const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
   const [expanded, setExpanded] = uSt(null);
@@ -870,8 +927,9 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
   uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
 
   const darByLoc = useBriefDarByLoc(briefDate, darRows);
+  const managersByLoc = useBriefManagersByLoc(briefDate);
 
-  const brief = uM(()=>computeMorningBrief(ds, briefDate, darByLoc),[ds, briefDate, darByLoc]);
+  const brief = uM(()=>computeMorningBrief(ds, briefDate, darByLoc, managersByLoc),[ds, briefDate, darByLoc, managersByLoc]);
   const filtered = uM(()=>{
     let s = brief.stores;
     if(filter!=='ALL') s=s.filter(st=>st.severity===filter);
@@ -999,7 +1057,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
     filtered.length===0
       ? h('div',{style:{textAlign:'center',padding:'40px',color:'#4a6080',fontSize:'13px'}},'No stores match the current filter')
       : filtered.map(store=>
-          h(StoreBriefCard,{key:store.loc,store,expanded,setExpanded})
+          h(StoreBriefCard,{key:store.loc,store,expanded,setExpanded,effectiveRole})
         ),
   );
 }
@@ -1188,7 +1246,7 @@ function storeDistance(locA, locB) {
 // Fixed 2026-09-03.
 function regionalRadius(loc){return getStoreOrg(loc)==='emerald'?80:150;}
 
-export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM };
+export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, StoreBriefCard, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM };
 // useBriefDarByLoc is already exported inline (export function, above) -- re-exported here isn't
 // needed, but noted for discoverability: it's the shared DAR-aggregation hook both MorningBriefPanel
 // and CuratedHomePanel (views/curated-home.js) call.
