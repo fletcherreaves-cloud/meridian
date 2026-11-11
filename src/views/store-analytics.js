@@ -2812,7 +2812,9 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
 
   return h(ModalShell,{
     title:'📊 Multi-Store Comparison', onClose, maxWidth:940, zIndex:Z.modal,
-    subtitle:selected.length>=2?selected.length+' stores selected':'Select 2–5 stores to compare',
+    // InfoIcon lives in subtitle, never title -- see the Revenue Intelligence modal above for why
+    // (dispatch 2026-11-10 KB rollout).
+    subtitle:h('span',null,selected.length>=2?selected.length+' stores selected':'Select 2–5 stores to compare',h(InfoIcon,{articleKey:'store_compare_guide'})),
     subHeader: div(null,
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:5,flexWrap:'wrap'}},
         stores.map(s=>{const idx=selected.indexOf(s.loc);const col=idx>=0?COLS[idx]:null;
