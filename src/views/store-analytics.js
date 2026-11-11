@@ -442,7 +442,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
         return COMP_KEYS.includes(e.type)||tags.some(t=>COMP_KEYS.includes(t.type));
       });
       if(!compEvts.length) return div({id:'sa-comp',style:{marginBottom:14,background:'rgba(148,163,184,.04)',border:'.5px solid rgba(148,163,184,.15)',borderRadius:'var(--r)',padding:'12px 14px'}},
-        div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',marginBottom:4}},'🏪 Competitive Intelligence'),
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',marginBottom:4,display:'flex',alignItems:'center'}},'🏪 Competitive Intelligence',h(InfoIcon,{articleKey:'competitive_impact_guide'})),
         div({style:{fontSize:'9px',color:'var(--text3)',lineHeight:1.6}},
           'No competition events tagged for this store. To enable impact analysis, open the ',
           span({style:{fontWeight:700,color:'var(--text2)'}},'Calendar'),
@@ -469,7 +469,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
       const colPkg=['comp_closure'].includes(impacts[0]?.type)?'positive':'negative';
       return div({id:'sa-comp',style:{marginBottom:14,background:'rgba(244,63,94,.04)',border:'.5px solid rgba(244,63,94,.2)',borderRadius:'var(--r)',padding:'12px 14px'}},
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)'}},'🏪 Competitive Intelligence'),
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',display:'flex',alignItems:'center'}},'🏪 Competitive Intelligence',h(InfoIcon,{articleKey:'competitive_impact_guide'})),
           div({style:{fontSize:'9px',fontFamily:'var(--mono)',color:avgImpact>=0?'#10b981':'var(--crit)',fontWeight:700}},
             'Avg impact: '+(avgImpact>=0?'+':'')+((avgImpact||0)*100).toFixed(2)+'%')
         ),

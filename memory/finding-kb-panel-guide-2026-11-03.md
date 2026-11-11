@@ -1519,3 +1519,49 @@ here). Full suite: 830/830 files, 7704/7704 tests passing. Build clean, eager pa
 ~38 unwired keys — the 5 remaining named candidates above, plus `panel_index` (deliberately
 unwired), plus the same metric/engine-concept keys this backlog has consistently left
 cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).
+
+## Batch 17 (2026-11-11)
+
+Resolves 3 of the 5 candidates batch 16 deferred (re-measured — all 3 still 0 matches before
+this batch):
+
+- **`brief_guide`** → `App.js`'s `routePanel==='brief'` `RoutePanelShell` — the real "🔭 Forecast
+  Brief" sidebar panel, on-screen title "🧠 Intelligence Brief — &lt;scope&gt;". Confirmed by
+  reading `RoutePanelShell`'s own export in `ModalShell.js` that it carries the SAME `title`→
+  `ScreenshotShareButton` forwarding hazard as `ModalShell` — not assumed from the `ModalShell`
+  precedent alone — so the `InfoIcon` goes in `subtitle`, same pattern as every other wiring so far.
+- **`intelligence_brief`** → `Brief` (`src/views/store-dash.js`, re-exported through
+  `store-analytics.js` as the Store Dashboard's "Intelligence Brief" tab), its own `'brief-hdr'`
+  div. The KB article's own text covers BOTH this per-store findings list AND the `brief_guide`
+  panel above under one "Intelligence Brief" umbrella — the two keys are deliberately separate
+  articles for two related but distinct real surfaces, not a duplicate; each now points at its
+  own real one.
+- **`competitive_impact_guide`** → `ShiftAnalysisTab` (`src/views/store-analytics.js`)'s "🏪
+  Competitive Intelligence" sub-section header, wired into BOTH its empty-state branch (no
+  competition events tagged) and its real-data branch, same "both branches" treatment
+  `why_engine_guide`/`gm_letters` got in earlier batches. This section (both branches) is gated
+  on `hasSalesData` (derived from `metricSeries('sales')` over the trailing 6 weeks) — the
+  render test feeds one `ds.laborRows` row 3 days back to satisfy that gate, discovered by
+  reading the component rather than guessed; with two `InfoIcon`s on the same mounted page
+  (this section's plus `ShiftAnalysisTab`'s own `shift_analysis_tab` icon at its top), the test's
+  `clickInfoIcon` helper disambiguates by nearest-matching-ancestor text rather than
+  first-match, since `InfoIcon` wraps its own "?" span in an extra div (one more hop up than a
+  naive `parentElement` check would reach).
+
+`brief_guide` is verified by build + full suite only, no dedicated render test — same precedent
+as `proj`/`pvsa`/`di_calibration_panel`/`date_range_report_guide`/`security_panel_guide` in
+earlier batches: its wiring lives at the `App.js` routing gate, and meaningfully mounting it
+means mounting `App.js`'s own routing JSX, not a standalone sub-component. The other 2 wirings
+get real render-level tests in `dispatch-kb-panel-guide-batch17-2026-11-11.test.js` (2 tests).
+
+**2 named candidates NOT resolved this pass:** `fcst_accuracy_guide` (needs the
+`ForecastReportsPanel`/`ForecastAccuracyPanel` hub read in the same depth `lifelenz_bridge` got
+in batch 14), `count_cycle_guide` (its real content has no dedicated per-tab header to anchor to
+inside its tabbed hub — confirmed in batch 16's entry, unchanged).
+
+**Measured running total: 82 of 117 `KB_ARTICLES` keys now wired** (79 before this batch + 3
+here). Full suite: 831/831 files, 7706/7706 tests passing. Build clean, eager payload entry
+425.41 KB gzip / 694.41 KB gzip eager total (budget 850 KB, 155.59 KB headroom). **Still open:**
+~35 unwired keys — `fcst_accuracy_guide`, `count_cycle_guide`, `panel_index` (deliberately
+unwired), plus the same metric/engine-concept keys this backlog has consistently left
+cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).
