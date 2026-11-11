@@ -119,6 +119,13 @@ and the fix in most cases is "wrap," not "rewrite," per the two reference patter
 ## Concrete recommendations (grounded in real data this app already has)
 
 ### 1. SAGE — wire the already-threaded `userRole` prop into `buildSystemPrompt`
+✅ **DONE 2026-11-11 — owner approved proceeding on judgment for this doc's open questions** (per-panel
+treatment, not a shared component; keep the 3-way altitude collapse as-is; "celebrate the wins"
+stays separate per task #111). `buildSystemPrompt`'s 5th parameter now threads `userRole` through
+`curated-home.js`'s `altitudeForRole`, appending a role-voice addendum to the prompt text
+(`src/views/sage.js`). CLAUDE.md's stale "role tunes the advice" claim corrected in the same pass.
+Covered by `src/__tests__/dispatch-sage-role-voice-2026-11-11.test.js`.
+
 **Effort: smallest in this doc.** `SagePanel` already receives `userRole` (App.js:4427); it just
 isn't forwarded into `buildSystemPrompt(ds, signals, customSignalDefs, activeContext)`. Add a
 5th parameter, append a short role-voice addendum to the system prompt text — reuse

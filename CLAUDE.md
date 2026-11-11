@@ -295,7 +295,18 @@ trusting either, same standing warning as the top of this paragraph.
 **Vision (future enhancements):**
 - Action plans, tables/charts in responses, copy/email output
 - Prompt catalog with thumbs-up/down rating
-- ✅ RBAC-aware (v4.494) — data tools hard-filtered by the caller's `accessible_locs`; role tunes the advice (manager=tactical, supervisor=patch, admin=district). Needs a `sage-chat` redeploy.
+- ✅ RBAC-aware (v4.494) — data tools hard-filtered by the caller's `accessible_locs`. ⚠️ **CORRECTED
+  2026-11-11 (task #132 Phase 1) — the "role tunes the advice" half of this line was FALSE from
+  v4.494 until this date, confirmed by reading `buildSystemPrompt`'s signature and its one call
+  site before fixing it: `SagePanel` already received `userRole` as a prop but never forwarded it
+  into the prompt.** Now real: `buildSystemPrompt`'s 5th parameter threads `userRole` through
+  `curated-home.js`'s `altitudeForRole` (the same store/patch/district collapse Curated Home and
+  the Huddle already use — gm/sm_am_dm/manager=store, area_supervisor/om/do=patch,
+  vp/owner/admin=district), appending a role-voice addendum to the prompt text client-side in
+  `src/views/sage.js`. **No `sage-chat` redeploy needed for this** — the client sends the full
+  `systemPrompt` string over the wire; the edge function only appends its own RBAC block
+  server-side (confirmed by reading `supabase/functions/sage-chat/index.ts`'s `effectiveSystem`
+  construction) and holds no system-prompt text of its own to redeploy.
 - ✅ **Cross-device session memory and conversation retention — already SHIPPED (dispatch #187),
   re-measured live 2026-09-16, do not re-implement.** `src/views/sage.js`'s `SagePanel` wraps both
   the active thread (`mf_sage_thread_v1` → `user_settings.sage_thread`) and the archived-session
