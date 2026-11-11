@@ -192,6 +192,17 @@ const thead=(p,...c)=>h('thead',p,...c);
 const tbody=(p,...c)=>h('tbody',p,...c);
 const lbl=(p,...c)=>h('label',p,...c);
 
+// Operational Quick Links footer (owner request 2026-11-08, task #133) — external systems
+// operators jump to daily that have no in-app equivalent. Owner offered sidebar or AAG footer
+// as location options, delegated the pick: AAG footer (the sidebar is mid "lean and mean"
+// cleanup and doesn't need 3 more permanent rows; At A Glance is the page everyone actually
+// lands on, so a footer fits the "jump-off point" mental model without adding nav weight).
+const QUICK_LINKS = [
+  { label: 'atMcd', title: "McDonald's Intranet", url: 'https://www.atmcd.com/' },
+  { label: 'MBSync', title: 'Martin Brower truck ordering', url: 'https://martinbrower.my.site.com/Sync/s/aggregatehomepage' },
+  { label: 'PACE Portal', title: 'PACE Portal', url: 'https://pace.mcd.com/login' },
+];
+
 function SageRunsTile() {
   const [runs, setRuns] = React.useState(null);
   React.useEffect(() => { let live = true; loadSagePromptRuns(6).then(r => { if (live) setRuns(r || []); }).catch(() => { if (live) setRuns([]); }); return () => { live = false; }; }, []);
@@ -3551,7 +3562,17 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
         );
       })()
 
-    ) // end main scroll
+    ), // end main scroll
+
+    // Quick Links footer — outside the scroll region so it's always reachable without
+    // scrolling through whatever sections are configured above.
+    div({style:{flexShrink:0,display:'flex',alignItems:'center',gap:14,padding:'6px 24px',
+      borderTop:'.5px solid var(--bdr)',background:'var(--surf)'}},
+      span({style:{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}},'Quick Links'),
+      QUICK_LINKS.map(l=>h('a',{key:l.label,href:l.url,target:'_blank',rel:'noopener noreferrer',
+        title:l.title,style:{fontSize:10,color:'var(--amber)',textDecoration:'none',whiteSpace:'nowrap'}},
+        l.label))
+    )
   ); // end AtAGlance
 }
 
