@@ -554,7 +554,13 @@ function runLifeLenzBridgeScan(loc, ds, settings, userEvents, range){
 // Undefined/null for any other caller — additive, this panel's own logic is unchanged.
 function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerTabs}) {
   const {useState:uSt} = React;
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- LOCS used to enumerate every
+  // store in the system (Object.keys(STORE_NAMES)) regardless of the `stores` prop this panel
+  // receives -- not just the single-store/accuracy pickers, but the district-mode scan loop
+  // itself (below), so a simulated lower role could still run and see a company-wide scan.
+  // Derive LOCS from the `stores` prop instead -- identical to the full company list for a
+  // real, unscoped login.
+  const LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b));
   const DOW_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
   const [mode, setMode] = uSt('single'); // 'single' | 'district'

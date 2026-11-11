@@ -142,12 +142,18 @@ export function MissedCountReportModal({ stores, onHand, period, onClose }) {
     // and viewing") is an explicit loc list straight off locValue, bypassing the scope-string
     // translation entirely -- an arbitrary combination has no single state/patch/store token to
     // encode it as.
-    if (locValue.level === 'multi') return (locValue.ids || []).map(l => unpad(l));
-    if (String(scope).startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => unpad(l));
-    return Object.keys(STORE_NAMES).filter(l =>
-      scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
-        : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
-  }, [scope, groups, locValue]);
+    const raw = locValue.level === 'multi' ? (locValue.ids || []).map(l => unpad(l))
+      : String(scope).startsWith('grp:') ? (groups[scope.slice(4)] || []).map(l => unpad(l))
+      : Object.keys(STORE_NAMES).filter(l =>
+          scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
+            : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- every branch above enumerates
+    // from the global store registry / org structure, never from the `stores` prop this modal
+    // receives, so "All stores"/a patch/a state could still reach a store outside an admin's
+    // simulated scope. Intersect with the stores prop here, covering every branch in one place.
+    const allowed = new Set((stores || []).map(s => unpad(s.loc)));
+    return allowed.size ? raw.filter(l => allowed.has(unpad(l))) : raw;
+  }, [scope, groups, locValue, stores]);
   const scopeLabel = locValue.level === 'multi' ? `Custom (${locs.length} store${locs.length === 1 ? '' : 's'})`
     : scope === 'all' ? 'All stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
     : String(scope).startsWith('grp:') ? ('Patch ' + scope.slice(4)) : (sName(scope) || scope);
@@ -228,7 +234,11 @@ export function MissedCountReportModal({ stores, onHand, period, onClose }) {
   const doCsv = () => downloadCsv(reportCSV(grouped, period), `missed-count-${scopeLabel.replace(/\s+/g, '-').toLowerCase()}-${period}.csv`);
 
   const headerRow = div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 } },
-    h(LocationSelector, { stores: Object.keys(STORE_NAMES).map(l => ({ loc: l })), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown', multi: true }),
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- this picker's own `stores` list
+    // was hardcoded to Object.keys(STORE_NAMES) (every company store), independent of the real
+    // `stores` prop this modal receives -- a simulated lower role could still see every other
+    // store's name listed as a selectable option. Derive it from the real `stores` prop instead.
+    h(LocationSelector, { stores: (stores || []).filter(s => /^\d+$/.test(s.loc)), invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locValue, onChange: setLocValue, mode: 'full', variant: 'dropdown', multi: true }),
     div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
       span({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'Force count date:'),
       h('input', {

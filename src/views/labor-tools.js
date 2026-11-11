@@ -98,7 +98,12 @@ const opt=(p,...c)=>h('option',p,...c);
 
 function DARDaypartPanel({stores, ds, settings, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- LOCS used to enumerate every
+  // store in the system (Object.keys(STORE_NAMES)) regardless of the `stores` prop this panel
+  // receives, so its store picker (and default selLoc) could reach any store in the company
+  // even while an admin/owner was simulating a lower role's narrower scope. Derive LOCS from
+  // the `stores` prop instead -- identical to the full company list for a real, unscoped login.
+  const LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b));
   const [selLoc, setSelLoc] = uSt(LOCS[0]);
   const [view,   setView]   = uSt('heatmap'); // 'heatmap' | 'daypart' | 'capacity'
 
@@ -370,8 +375,14 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
   const cloudLocs = uM(()=>{
     const s = new Set();
     (ds.pmixRows||[]).forEach(r=>{ if(r.loc!=null) s.add(String(r.loc)); });
-    return [...s].sort((a,b)=>sNameC(a).localeCompare(sNameC(b)));
-  },[ds.pmixRows]);
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- this scanned ds.pmixRows (the
+    // cloud-wide stream) directly for distinct locs, completely ignoring the `stores` prop this
+    // panel receives, so a simulated lower role could still pick and view any store that has
+    // ever had product-mix data. Intersect with `stores` -- a no-op for a real, unscoped login.
+    const allowed = new Set((stores||[]).map(st=>String(st.loc)));
+    const scoped = allowed.size ? [...s].filter(l=>allowed.has(l)) : [...s];
+    return scoped.sort((a,b)=>sNameC(a).localeCompare(sNameC(b)));
+  },[ds.pmixRows,stores]);
   const [cloudLocSel, setCloudLocSel] = uSt('');
   const cloudLoc = cloudLocSel && cloudLocs.includes(cloudLocSel) ? cloudLocSel : cloudLocs[0];
   const [cloudRange, setCloudRange] = uSt('30'); // '7'|'30'|'90'|'180'|'all'
@@ -743,7 +754,13 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
 
   const cancelBacktest = () => { cancelRef.current = true; setBtRunning(false); setBtProg(null); };
 
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- LOCS used to enumerate every
+  // store in the system (Object.keys(STORE_NAMES)) regardless of the `stores` prop this panel
+  // receives, so the per-store model-assignment table (and a "Backtest ALL stores" run) could
+  // reach any store in the company even while an admin/owner was simulating a lower role's
+  // narrower scope. Derive LOCS from the `stores` prop instead -- identical to the full company
+  // list for a real, unscoped login.
+  const LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b));
   const HORIZONS = [
     {id:'weekly',l:'Weekly',icon:'📅',sub:'~10-day lock'},
     {id:'monthly',l:'Monthly',icon:'🗓',sub:'15th prior'},

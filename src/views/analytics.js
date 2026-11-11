@@ -406,7 +406,14 @@ function computeMetricAverages(ds) {
 function DistrictLensPanel({stores, ds, settings, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
 
-  const ALL_LOCS = uM(()=>Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b])),[]);
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- ALL_LOCS used to enumerate every
+  // store in the system (Object.keys(STORE_NAMES)) regardless of the `stores` prop this panel
+  // receives, so the correlation heatmap/opportunity ranking/OK-FL summaries could reach any
+  // store in the company even while an admin/owner was simulating a lower role's narrower
+  // scope. Derive ALL_LOCS from the `stores` prop instead -- identical to the full company list
+  // for a real, unscoped login. Every downstream read here (distAvgs, okLocs/flLocs, etc.) is
+  // already keyed off this list, so narrowing it alone closes the leak.
+  const ALL_LOCS = uM(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b)),[stores]);
   const okLocs   = uM(()=>ALL_LOCS.filter(l=>(INV_ORG_COORDS[l]||{}).state!=='FL'),[ALL_LOCS]);
   const flLocs   = uM(()=>ALL_LOCS.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL'),[ALL_LOCS]);
 
@@ -758,9 +765,13 @@ Tone: practical, direct, written for a district manager presenting to a field co
 // Data: last 4W actuals vs targets, DOW pattern, model assignment,
 // top observations, KB context.
 function StoreOnePager({stores, ds, settings, onClose}) {
-  const [selLoc,   setSelLoc]   = React.useState(
-    Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))[0]
-  );
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- the `stores` prop was never
+  // referenced anywhere in this component; both the default selected store and the store-picker
+  // list (LOCS, below) came from Object.keys(STORE_NAMES) -- every store in the company,
+  // regardless of simulation. Scoped to the stores prop instead; a real, unscoped login sees
+  // the identical full list.
+  const ONE_PAGER_LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b));
+  const [selLoc,   setSelLoc]   = React.useState(ONE_PAGER_LOCS[0]);
   const [period,   setPeriod]   = React.useState('4wk');
   const [preview,  setPreview]  = React.useState(false);
 
@@ -1026,7 +1037,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     printHtml(html, { autoPrint: false });
   };
 
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  const LOCS = ONE_PAGER_LOCS;
 
   // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell is now the SOLE shell
   // (back button/title), replacing this component's own hand-rolled position:fixed/inset:0/
@@ -2706,7 +2717,12 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
 // ─────────────────────────────────────────────────────────────────────────────
 function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
   const {useState:uSt, useRef:uR} = React;
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  // View As Role scoping (owner-directed audit, 2026-11-11) -- district mode's scan already
+  // correctly uses the `stores` prop (runWhyEngineDistrict(stores,...) below), but single-store
+  // mode's own picker (LOCS, feeding selLoc) came from Object.keys(STORE_NAMES) -- every store
+  // in the company, regardless of simulation. Scoped to the stores prop instead; a real,
+  // unscoped login sees the identical full list.
+  const LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc).sort((a,b)=>(STORE_NAMES[a]||a).localeCompare(STORE_NAMES[b]||b));
 
   const [mode, setMode] = uSt('single'); // 'single' | 'district'
   const [selLoc, setSelLoc] = uSt(LOCS[0]);
@@ -4760,7 +4776,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       '<div><div style="font-size:9px;color:#64748b;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Meridian</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.5px;">Sales Anomaly Report</div>'+
       '<div style="font-size:10px;color:#64748b;margin-top:4px;">'+new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' | Threshold: \u00b1'+threshold+'% | '+spanLabel+'</div></div>'+
-      '<div style="text-align:right;font-size:10px;color:#64748b;">'+((settings&&settings.districtName)||'District')+'<br>'+Object.keys(STORE_NAMES).length+' Locations</div></div>'+
+      '<div style="text-align:right;font-size:10px;color:#64748b;">'+((settings&&settings.districtName)||'District')+'<br>'+Object.keys(results||{}).length+' Locations</div></div>'+
       '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:28px;">'+
       '<div class="card"><div class="n" style="color:#f59e0b;">'+allRows.length+'</div><div class="l">Total Anomalies</div></div>'+
       '<div class="card"><div class="n" style="color:#ef4444;">'+allRows.filter(r=>r.varPct<0).length+'</div><div class="l">Under Baseline</div></div>'+
@@ -4821,7 +4837,12 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     if(!ds||!ds.loaded) return;
     setScanning(true); setResults(null); setProgress(0);
     const allResults = {};
-    const locs = ds.storeIds;
+    // View As Role scoping (owner-directed audit, 2026-11-11) -- ds.storeIds drove this scan
+    // directly, bypassing the `stores` prop entirely, so a simulated lower role could still run
+    // (and see results for) a company-wide backtest scan. Intersect with `stores` -- a no-op for
+    // a real, unscoped login, since ds.storeIds and stores cover the same company-wide set then.
+    const allowedScan = new Set((stores||[]).map(s=>String(s.loc)));
+    const locs = allowedScan.size ? (ds.storeIds||[]).filter(l=>allowedScan.has(String(l))) : ds.storeIds;
 
     // Ends on the last CLOSED business day, not literal "now" (signature #4) — a still-filling
     // today would read as a huge deviation from the DOW baseline purely for not being finished

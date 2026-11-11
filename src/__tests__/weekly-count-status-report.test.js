@@ -120,7 +120,11 @@ describe('WeeklyCountStatusPanel', () => {
       ...fullStoreRows('6178', { lastCounted: today }),
       ...fullStoreRows('5183', { lastCounted: today }),
     ];
-    await render();
+    // View As Role scoping (2026-11-11) narrowed the multi-select's own option list to the
+    // `stores` prop instead of every company store -- this test's three-store scenario needs
+    // all three actually passed in `stores` now, not the file's empty-array default (which used
+    // to be irrelevant to this picker and is still a no-op for the report content itself).
+    await render({ stores: [{ loc: '3708' }, { loc: '6178' }, { loc: '5183' }] });
     expect(container.textContent).toContain('#3708');
     expect(container.textContent).toContain('#6178');
     expect(container.textContent).toContain('#5183');
