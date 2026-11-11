@@ -13,6 +13,7 @@ import * as React from 'react';
 import { ModalShell } from '../components/ModalShell.js';
 import { EMAIL_DIGEST_CATALOG } from '../engine/email-digest-catalog.js';
 import { loadMyEmailDigestSubscriptions, setEmailDigestSubscription } from '../lib/supabase.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -46,7 +47,9 @@ export function EmailDigestSubscriptionsPanel({ onClose }) {
 
   return h(ModalShell, {
     title: 'Email Digests',
-    subtitle: 'Opt in to whichever scheduled reports you want emailed to you.',
+    // InfoIcon lives in subtitle, never title -- see metric-lineage.js/store-analytics.js for why
+    // (dispatch 2026-11-10 KB rollout).
+    subtitle: h('span', null, 'Opt in to whichever scheduled reports you want emailed to you.', h(InfoIcon, { articleKey: 'email_digests_guide' })),
     icon: '📧',
     maxWidth: 520,
     onClose,

@@ -9,6 +9,7 @@
 import * as React from 'react';
 import { METRIC_PROVENANCE } from '../engine/metric-provenance.js';
 import { ModalShell } from '../components/ModalShell.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 // Same lazy-load-on-first-render pattern as dt-speedofservice.js/record-day.js (dispatch #136
 // Part 1) — keeps store-dash.js's ExportDropdown (145 KB + chart.js/auto) out of this small
@@ -60,7 +61,12 @@ export function MetricLineagePanel({ onClose }) {
   ];
 
   return h(ModalShell, {
-    icon: '🔍', title: 'Metric Lineage', subtitle: `How every calculated metric is built — ${composedCount} composed metrics, traceable to source`,
+    icon: '🔍', title: 'Metric Lineage',
+    // InfoIcon lives in subtitle, never title -- ModalShell passes title straight into
+    // ScreenshotShareButton's slugify(title)/native-share title, both of which expect a plain
+    // string (same reasoning as store-analytics.js's Revenue Intelligence modal, dispatch
+    // 2026-11-10 KB rollout).
+    subtitle: h('span', null, `How every calculated metric is built — ${composedCount} composed metrics, traceable to source`, h(InfoIcon, { articleKey: 'metric_lineage_guide' })),
     onClose, maxWidth: 1100, tintHeader: true,
     headerExtra: h(React.Suspense, { fallback: null },
       h(LazyExportDropdown, { rows: exportRows, columns: exportCols, title: 'Metric Lineage', filename: 'metric-lineage-' + new Date().toISOString().slice(0, 10) })),

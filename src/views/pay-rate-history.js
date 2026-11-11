@@ -20,6 +20,7 @@ import {
   weeklyCrewRates, detectRateSteps, managementRateChanges, lifelenzRosterRateChanges, payImpact,
   ASSUMED_MANAGEMENT_WEEKLY_HOURS,
 } from '../engine/employee-pay-history.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -183,7 +184,9 @@ export function PayRateHistoryPanel({ ds, stores, onClose }) {
 
   return h(ModalShell, {
     title: 'Pay Rate History', icon: '💰', maxWidth: 1000, onClose,
-    subtitle: `Every detected pay-rate change, crew (trailing ${Math.round((new Date(range.e) - new Date(range.s)) / 604800000)} weeks) + management (full history on file) — Owner/Admin/DO only.`,
+    // InfoIcon lives in subtitle, never title -- see metric-lineage.js/store-analytics.js for why
+    // (dispatch 2026-11-10 KB rollout).
+    subtitle: h('span', null, `Every detected pay-rate change, crew (trailing ${Math.round((new Date(range.e) - new Date(range.s)) / 604800000)} weeks) + management (full history on file) — Owner/Admin/DO only.`, h(InfoIcon, { articleKey: 'pay_rate_history_guide' })),
   },
     div({ style: { padding: '14px 18px' } },
       dataState === 'loading' && div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '12px' } }, 'Loading…'),

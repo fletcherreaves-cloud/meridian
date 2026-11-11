@@ -1442,3 +1442,44 @@ here). Full suite: 828/828 files, 7698/7698 tests passing. Build clean, eager pa
 `pay_rate_history_guide`, `count_cycle_guide`, `brief_guide`, `panel_index`), plus the same
 metric/engine-concept keys this backlog has consistently left cross-referenced rather than wired
 to any one panel, listed in full in the previous batch's entry above.
+
+## Batch 15 (2026-11-11)
+
+Re-measured all 12 real-candidate keys from batch 14's list (`articleKey:\s*'<key>'` grep across
+`src/`) — all still 0 matches. Wired 3, each a standalone `ModalShell`-based panel with its own
+dedicated file, no sub-component ambiguity to resolve:
+
+- **`metric_lineage_guide`** → `MetricLineagePanel` (`src/views/metric-lineage.js`).
+- **`pay_rate_history_guide`** → `PayRateHistoryPanel` (`src/views/pay-rate-history.js`).
+- **`email_digests_guide`** → `EmailDigestSubscriptionsPanel` (`src/views/email-digest-
+  subscriptions-panel.js`).
+
+All three already had a plain-string `subtitle` (not `title`) — converted each to a `<span>`
+node carrying the original string plus the `InfoIcon`, same subtitle-only placement the previous
+batch established and explained (never `title`, since `ModalShell` forwards `title` into
+`ScreenshotShareButton`'s `slugify(title)`/native-share `title`, both string-only).
+
+`PayRateHistoryPanel` and `EmailDigestSubscriptionsPanel` both call real `src/lib/supabase.js`
+loaders on mount (`loadLifeLenzShiftPay`/`loadLifeLenzShiftAssignments`/`logAppAccess`/
+`loadMyEmailDigestSubscriptions`) — read each loader before relying on it rather than assuming:
+all four are guarded `if (!supabase) return [...]` / `return new Set()`, and this sandbox has no
+`VITE_SUPABASE_URL` configured, so the render-level test needs no mock.
+
+`panel_index` (the 13th remaining named candidate from batch 14) re-confirmed as the one genuine
+App-Guide exception in this group — a live map of every panel in the app, correctly with no
+single panel header of its own — left unwired, same judgment as `file_import_guide`/
+`locked_projections`.
+
+Each of the 3 wirings gets a render-level test in `dispatch-kb-panel-guide-batch15-
+2026-11-11.test.js` (3 tests) — mounts the real exported component, clicks the real "?"
+`InfoIcon` control, asserts the real KB article title renders.
+
+**Measured running total: 76 of 117 `KB_ARTICLES` keys now wired** (73 before this batch + 3
+here). Full suite: 829/829 files, 7701/7701 tests passing. Build clean, eager payload entry
+425.37 KB gzip / 694.37 KB gzip eager total (budget 850 KB, 155.63 KB headroom) — unchanged in
+shape, since every wiring here is a one-line `InfoIcon` sibling add, no new chunk. **Still open:**
+~41 unwired keys — the 9 remaining named candidates (`intelligence_brief`,
+`competitive_impact_guide`, `store_compare_guide`, `district_lens_guide`, `fcst_accuracy_guide`,
+`forms_print_guide`, `count_cycle_guide`, `brief_guide`, plus `panel_index` left deliberately
+unwired as above), plus the same metric/engine-concept keys this backlog has consistently left
+cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).
