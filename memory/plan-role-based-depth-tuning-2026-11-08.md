@@ -169,6 +169,20 @@ flag, `focus` line, and org filter stay exactly as they are; only which grouping
 changes by role.
 
 ### 3. Intelligence Brief — re-key its existing voice branch from scope-size to caller role
+✅ **DONE 2026-11-11.** `LocationBrief`'s `generateBrief` now picks its prompt voice from
+`altitudeForRole(effectiveRole)` — 'store' altitude (gm/sm_am_dm/manager) always gets the
+coaching voice; 'patch'/'district' altitude (everyone else who can reach this panel) always gets
+the enterprise voice — falling back to the old `locs.length>1` heuristic only when no role is
+threaded in at all. **Open question #5 decided** (same "trust your judgement" latitude the owner
+gave for recommendation #1's opens): scope size is kept as a secondary modifier, not dropped —
+every prompt now states `DATA (N location(s)):` explicitly regardless of which voice is chosen.
+`effectiveRole` is threaded into `LocationBrief` at its one App.js call site (`routePanel==='brief'`).
+Covered by `src/__tests__/dispatch-location-brief-role-voice-2026-11-11.test.js` (4 tests,
+rendering the real exported component and asserting on the actual prompt text sent to
+`callSageOnce`): a GM gets the coaching voice even on a multi-store district scope, a VP/OM get
+the enterprise voice even on a single-store scope, and the old scope-size fallback still holds
+when no role is passed.
+
 **Effort: small.** The two prompt styles already exist (operator-coaching-a-GM vs.
 enterprise-briefing-a-VP) — they're just gated on `locs.length > 1` instead of on who's asking.
 Pass `effectiveRole` into `LocationBrief` (not currently threaded — a one-line addition at its

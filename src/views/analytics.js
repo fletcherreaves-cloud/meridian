@@ -6925,7 +6925,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
 
 // ─── Markdown → React nodes (for AI output rendering) ───────────────────────
 
-function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
+function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose, effectiveRole}) {
   // scope: 'store'|'patch'|'operator'|'org'|'district'
   // scopeLabel: the name/group to display
   const [brief,   setBrief]   = React.useState(null);
@@ -6976,10 +6976,25 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
     setLoading(true); setBrief(null); setError(null);
     const context = buildBriefContext(locs);
     const isMulti = locs.length > 1;
-    const prompt = isMulti
+    // Task #132 Phase 1, recommendation #3 (owner request 2026-11-08, "small focused vs big
+    // picture"): these two prompt styles already existed but were gated on scope SIZE
+    // (locs.length>1), not on who's asking -- a GM comparing two of their own stores got the
+    // enterprise/VP voice, and a VP drilling into one store got the GM-coaching voice. Re-keyed
+    // to the caller's real altitude (altitudeForRole, the same 3-way collapse recommendations
+    // #1/#2 reuse): 'store' altitude (gm/sm_am_dm/manager) always gets the coaching voice;
+    // 'patch'/'district' altitude (everyone else who can reach this panel) always gets the
+    // enterprise voice, regardless of how many stores happen to be in scope. Scope size is kept
+    // as a SECONDARY modifier (this doc's open question #5, decided under the same owner "trust
+    // your judgement" latitude already used for recommendation #1's opens) -- the location count
+    // is stated explicitly in the prompt either way, never dropped. Falls back to the old
+    // scope-size heuristic only when no role was threaded in at all (effectiveRole falsy).
+    const altitude = altitudeForRole(effectiveRole);
+    const useEnterpriseVoice = effectiveRole ? altitude !== 'store' : isMulti;
+    const scopeNote = locs.length+' location'+(locs.length>1?'s':'');
+    const prompt = useEnterpriseVoice
       ? 'You are an expert McDonald\u2019s district operations analyst with 30+ years experience. '+
         'Analyze this '+label+' data and write an ENTERPRISE-LEVEL performance brief.\n\n'+
-        'DATA:\n'+context+'\n\n'+
+        'DATA ('+scopeNote+'):\n'+context+'\n\n'+
         'REQUIREMENTS:\n'+
         '1. Start with a 2-3 sentence executive summary covering group performance trend\n'+
         '2. Identify top 2-3 opportunities across the group (ranked by $ impact)\n'+
@@ -6990,7 +7005,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
         '7. Be specific with numbers and location names\n'+
         'Format: Use bold headers, bullet points where appropriate, keep under 500 words.'
       : 'You are an expert McDonald\u2019s operations analyst. Write a LOCATION INTELLIGENCE BRIEF.\n\n'+
-        'DATA:\n'+context+'\n\n'+
+        'DATA ('+scopeNote+'):\n'+context+'\n\n'+
         'REQUIREMENTS:\n'+
         '1. Start with a 1-sentence performance headline\n'+
         '2. 3-4 specific insights connecting metrics to sales outcomes (e.g., OEPE vs sales, weather patterns)\n'+
