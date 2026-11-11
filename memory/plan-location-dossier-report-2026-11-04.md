@@ -108,11 +108,13 @@ rollup mechanics themselves, which this app already has a working pattern for.
     deciding whether that's hand-written logic (like Visit Readiness's driver text) or a SAGE
     call per report generation (more flexible, real token cost, needs a decision given the
     Managed Agents cost conversation this same session already had).
-3. **PII boundary.** Personnel data belongs in SOME version of this (the owner named it), but a
-   printable/exportable report is exactly the kind of artifact this repo's PII rules are written
-   to keep SSN/DOB-grade data out of — needs an explicit decision on what personnel detail is
-   in-bounds (tenure/headcount: almost certainly fine; wage data: payroll.view-gated already;
-   anything SSN/DOB-adjacent: no).
+3. ✅ **RESOLVED 2026-11-11 — PII boundary.** Names/identity are NOT held to a stricter standard
+   than Meridian's existing role/scope gates (`payroll.view`, `accessible_locs`, RBAC role) — show
+   every party to a finding by name to whoever already has that access, same as QSRSoft/LifeLenz
+   would show that role; a subject can see their own unmasked history. SSN/DOB/address-grade raw
+   fields stay exactly as restricted (CLAUDE.md's PII section, untouched by this). Full reasoning
+   and the exact Q&A: CLAUDE.md's PII section + `memory/finding-dossier-coaching-library-2026-11-11.md`
+   §7. Do not re-raise this as open.
 4. **Demographics** has no existing data source in this app at all — first real "where does this
    number even come from" question, not a presentation question.
 

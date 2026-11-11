@@ -707,6 +707,22 @@ actual code — this note nearly caused a duplicate reimplementation.
   - `SUPABASE_SERVICE_ROLE_KEY` is exported into the owner's shell only — never written to a file,
     never committed, never put in a `VITE_`-prefixed variable (those ship to the client bundle).
   - Never disable TLS verification or unset `HTTPS_PROXY`.
+  - **Employee NAME visibility follows existing role/scope gates, not a separate stricter rule
+    (owner-stated 2026-11-11, resolved via an interactive Q&A before this was written — do not
+    re-litigate from first principles).** This bullet is about *names/identity*, not the raw
+    sensitive fields above (ssn/DOB/address/etc. stay exactly as restricted). Owner's resolved
+    view: show every party to a finding by name — not just an "upstream" authorizer, all parties —
+    to whatever role already has that access via the app's existing gates (`payroll.view`,
+    `accessible_locs`, RBAC role). A subject can see their own unmasked history (e.g. a GM's own
+    store). Reasoning, verbatim: *"Always show upstream, never self incriminate, everything else
+    is already freely visible beyond those parameters elsewhere based on role in the respective
+    app (QSRSoft or LifeLenz, primarily)"* — clarified in follow-up: "naming all parties... that
+    is how QSRSoft handles it. A GM... can see their own history, unmasked," and the
+    never-self-incriminate instinct (don't show a person their own flagged data) is "moot" once
+    that's true, since QSRSoft/LifeLenz already expose it by role and Meridian mirroring that
+    creates no new exposure. **So: no report (the Location Dossier, task #79, included) is held
+    to a MORE conservative identity-visibility standard than the interactive panels already are.**
+    First applied in `memory/finding-dossier-coaching-library-2026-11-11.md`.
 
 ---
 
