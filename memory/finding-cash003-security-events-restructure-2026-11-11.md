@@ -57,9 +57,18 @@ correctly excluded.
 - Reuses the EXACT SAME raw-row cache (`securityEventsRawCache`) the EVENT-001/002/003/004 branch
   already populates for the same window — no new query added.
 
-Rule definition itself (threshold $5, personal baseline, field name `manualRefAmt`) is completely
-unchanged in `security_rules`. Updated `data_required` live via the Supabase Management API
-(data-only change, not a schema migration).
+Rule definition itself (threshold $5 at the time of the restructure, personal baseline, field name
+`manualRefAmt`) was initially left unchanged — only `data_required` was updated live via the
+Supabase Management API (data-only change, not a schema migration).
+
+**Threshold recalibrated same day, separate pass** (`supabase/schema-cash003-threshold-
+recalibration-2026-11-11.sql`): the first real run against the new source flagged 66 of 84 exposed
+subjects (79%) — not a finding, a stale threshold. $5 was calibrated against `audit_rows`' near-zero
+base rate (6 occurrences company-wide in 80 days); `qsr_security_events` surfaces self-authorized
+refunds as a routine occurrence. Re-measured the real distribution (percentiles, not guessed) and
+set the new threshold to $50, near the 90th percentile of the real 28-day population, flagging ~11%
+instead of ~79%. Full reasoning and the measured percentile table are in that SQL file's own header
+comment — not duplicated here.
 
 Tests: `src/__tests__/dispatch-cash003-security-events-restructure-2026-11-11.test.js` — exercises
 the real `aggregateManualRefundEvents` + `computeFindingsForRule` call sites, including the
