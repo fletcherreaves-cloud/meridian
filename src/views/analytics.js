@@ -4022,7 +4022,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose, heade
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         div({style:{flex:1}},
-          div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🎯 Forecast Accuracy Report'),
+          div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},'🎯 Forecast Accuracy Report',h(InfoIcon,{articleKey:'fcst_accuracy_guide'})),
           div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},'Backtest each model against completed actuals. Lower MAPE = more accurate. Green <5% · Yellow 5-8% · Red >8%.')),
         headerTabs||null,
         results&&btn({className:'btn btn-sm',style:{color:'#10b981',borderColor:'rgba(16,185,129,.3)'},onClick:exportCSV},'⬇ Export CSV'),
