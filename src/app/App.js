@@ -4420,6 +4420,7 @@ function App() {
         ds,settings,
         scope:briefScope.scope,
         scopeLabel:briefScope.label,
+        effectiveRole,
         onClose:()=>goRoute(null)
       })),
       routePanel==='visit-readiness'&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{goRoute(null);setVisitReadyInit(null);}}),
