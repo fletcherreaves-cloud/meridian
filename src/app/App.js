@@ -4413,7 +4413,7 @@ function App() {
       routePanel==='one-pager'&&h(StoreOnePager,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='brief'&&h(RoutePanelShell,{
         icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
-        subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
+        subtitle:h('span',null,'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',h(InfoIcon,{articleKey:'brief_guide'})),
         onBack:()=>goRoute(null),bodyStyle:{padding:0},
       }, h(LocationBrief,{
         stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,

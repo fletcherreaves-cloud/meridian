@@ -1152,7 +1152,7 @@ function Brief({store, rangeTotal, rangeLY}) {
       }])
     : store.findings;
   return div(null,
-    div({className:'brief-hdr'}, 'Intelligence Brief — '+store.name),
+    div({className:'brief-hdr'}, 'Intelligence Brief — '+store.name, h(InfoIcon,{articleKey:'intelligence_brief'})),
     findings.map((f,i) =>
       div({key:i, className:bcls[f.t]},
         span({className:icls[f.t]}, imap[f.t]),
