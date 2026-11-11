@@ -699,15 +699,62 @@ export function joinManagerEditsWithPunchVolume(editRows, punchIndex) {
 // "qsr_security_events:manager" (manager subject, EVENT-003) -- a qualified variant of the one
 // real table name, not a second fake table.
 //
-// Deliberately does NOT re-score all_promo/t_red_before/t_red_after/cash_refund/cashless_refund --
-// already covered by active CASH-002/003/004 reading audit_rows (a different QSRSoft endpoint).
-// See the design doc's own "what's already covered" section for the field-by-field check.
+// Deliberately does NOT re-score all_promo/t_red_before/t_red_after/pos_overring -- those remain
+// CASH-001/002/004's job, reading audit_rows, UNCHANGED (see the design doc's own "what's already
+// covered" section for the field-by-field check).
+//
+// ⚠️ CORRECTED 2026-11-11 — that design doc's premise for cash_refund/cashless_refund specifically
+// was WRONG by the time it was written: audit_rows (the Register Audit pull) had already been
+// dead company-wide since 2026-09-19 (a QSRSoft-side 403 "explicit deny" on that one report,
+// unrelated to token expiry -- memory/finding-register-audit-pull-403-explicit-deny-2026-11-11.md),
+// two months before this doc's 2026-11-09 date. "Already covered by CASH-003 reading audit_rows"
+// was never true for the period this doc was written in. CASH-003 (manual refund) is restructured
+// below to read qsr_security_events instead -- see aggregateManualRefundEvents. CASH-001/002/004
+// stay on audit_rows and stay genuinely blocked (their denominators -- drawerSales/drawerGC, a
+// per-register shift total -- have no equivalent in qsr_security_events, which only carries
+// discrete flagged events, not every transaction) until the QSRSoft-side permission is restored.
 
 export function supportsSecurityEventsCrew(rule) {
   return dataRequiredList(rule).includes('qsr_security_events');
 }
 export function supportsSecurityEventsMgr(rule) {
   return dataRequiredList(rule).includes('qsr_security_events:manager');
+}
+
+// CASH-003 restructure (2026-11-11) -- a third qualified variant of the same table, this one
+// producing audit_rows-SHAPED rows ({loc, date, emp, empToken, manualRefAmt, manualRefCnt})
+// instead of the EVENT-* branch's count-bucket shape, so CASH-003's existing rule definition
+// (unchanged: {"agg":"sum","field":"manualRefAmt","comparator":"gte"}, personal baseline,
+// threshold $5) and computeFindingsForRule (the SAME function audit_rows-sourced CASH rules use)
+// both work verbatim against this new source -- zero changes to the rule's own semantics.
+export function supportsManualRefundEvents(rule) {
+  return dataRequiredList(rule).includes('qsr_security_events:manual_refund');
+}
+
+// Self-authorization signal: crew_token === mgr_token on a refund event means the same employee
+// who rang the refund also carries it as the authorizing manager -- the exact "manual/self-
+// authorized refund" concept CASH-003 was built to catch (audit_rows' own manualRefAmt mapped
+// from QSRSoft's manOverringAmt field, per CLAUDE.md's standing note on that mapping). Confirmed
+// live against real qsr_security_events rows (2026-11-11): badge-matching crew/mgr pairs are a
+// real, present pattern in the data, not a theoretical filter that would zero everything out.
+// A manager-authorized refund (different crew_token and mgr_token) is NOT scored here -- that is
+// an entirely different, non-self-authorized event, outside what CASH-003 measures.
+export function aggregateManualRefundEvents(rawRows) {
+  const buckets = new Map(); // loc|date|crewToken -> aggregated row
+  for (const raw of rawRows) {
+    if (raw.event_token !== 'cash_refund' && raw.event_token !== 'cashless_refund') continue;
+    const crewToken = raw.crew_token, mgrToken = raw.mgr_token;
+    if (!crewToken || !mgrToken || crewToken !== mgrToken) continue; // self-authorized only
+    if (!raw.loc || !raw.event_dt) continue;
+    const key = `${raw.loc}::${raw.event_dt}::${crewToken}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, { loc: raw.loc, date: raw.event_dt, emp: crewToken, empToken: crewToken, manualRefAmt: 0, manualRefCnt: 0 });
+    }
+    const bucket = buckets.get(key);
+    bucket.manualRefAmt += Number(raw.event_amt) || 0;
+    bucket.manualRefCnt += 1;
+  }
+  return [...buckets.values()];
 }
 
 // event_token -> the aggregated count column it contributes to. One line per token to add
@@ -990,13 +1037,15 @@ async function loadPunchTimesDateWindow(startDate, endExclusive) {
 }
 
 // qsr_security_events -- daily grain, CASH-*'s own date-range convention (not qsr_variance_stat's
-// monthly shape). Loads only the columns the EVENT-* rules' aggregator reads.
+// monthly shape). Loads the columns the EVENT-* rules' aggregator reads, plus event_amt (2026-11-11,
+// CASH-003 restructure below -- the EVENT-* branch ignores the extra column, same as every other
+// mapper in this file that only destructures what it needs).
 async function loadSecurityEventsWindow(startDate, endDate) {
   const rows = [];
   let from = 0;
   for (;;) {
     const { data, error } = await supabase.from('qsr_security_events')
-      .select('loc,event_dt,event_token,crew_token,mgr_token,pos_session_start_dt,pos_session_start_tm')
+      .select('loc,event_dt,event_token,crew_token,mgr_token,event_amt,pos_session_start_dt,pos_session_start_tm')
       .gte('event_dt', startDate).lte('event_dt', endDate).range(from, from + PAGE - 1);
     if (error) throw new Error(`[security-rules-run] loadSecurityEventsWindow failed: ${error.message}`);
     if (!data?.length) break;
@@ -1060,7 +1109,25 @@ async function main() {
   for (const rule of rules) {
     let findings, rows, cacheKey;
 
-    if (supportsAuditRows(rule)) {
+    if (supportsManualRefundEvents(rule)) {
+      // CASH-003 restructure (2026-11-11) -- checked BEFORE the generic supportsAuditRows branch
+      // below, even though this rule's data_required also lists 'audit_rows' (kept there so
+      // computeFindingsForRule's own evaluateRule() call, which hardcodes the dataContext key as
+      // 'audit_rows' rather than reading rule.data_required[0], still resolves correctly against
+      // whatever rows this branch passes it -- confirmed by reading that call site, not assumed;
+      // a first attempt at this wiring silently zeroed every finding until a real test caught it).
+      // Rows come from qsr_security_events instead, reusing the EXACT SAME raw-row cache the
+      // EVENT-* branch below populates (one query already covers this window; no new query here).
+      // computeFindingsForRule is the SAME function CASH-001/002/004 call on audit_rows -- this
+      // rule's own definition (field, threshold, personal baseline) is completely unchanged.
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!securityEventsRawCache.has(cacheKey)) securityEventsRawCache.set(cacheKey, await loadSecurityEventsWindow(windowStart, windowEnd));
+      rows = aggregateManualRefundEvents(securityEventsRawCache.get(cacheKey));
+      findings = computeFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsAuditRows(rule)) {
       const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
       const windowEnd = fmtDate(today);
       const windowStart = fmtDate(addDay(today, -windowDays));

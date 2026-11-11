@@ -91,3 +91,48 @@ select cron.schedule(
   );
   $$
 );
+
+-- Added same day, same incident -- the gap was wider than first scoped. qsrsoft-onhand-pull.yml
+-- (own schedule: '0 * * * *' + '30 * * * *') and qsrsoft-live-pulse.yml (own schedule:
+-- '0 11-23 * * *') were ALSO found silently dead on GitHub's schedule queue during the SAME
+-- investigation window (qsrsoft-onhand-pull: no run between 10:00 UTC and discovery ~16:00 UTC;
+-- qsrsoft-live-pulse: no run between 2026-11-10T23:56Z and discovery, a 16+ hour gap against its
+-- hourly cron) -- confirmed via the GitHub Actions API, not assumed from the first two. This is a
+-- broader, ongoing GitHub Actions scheduling degradation, not isolated to the two pulls originally
+-- scoped, and not a QSRSoft-side issue (ruled out: these two failures are GitHub's schedule queue
+-- never firing at all, not a request that reached QSRSoft and failed).
+select cron.schedule(
+  'external-heartbeat-onhand-pull',
+  '0,30 * * * *',
+  $$
+  select net.http_post(
+    url := 'https://api.github.com/repos/fletcherreaves-cloud/meridian/actions/workflows/qsrsoft-onhand-pull.yml/dispatches',
+    body := jsonb_build_object('ref', 'main'),
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'github_actions_pat'),
+      'Accept', 'application/vnd.github+json',
+      'Content-Type', 'application/json',
+      'User-Agent', 'meridian-pgcron-heartbeat'
+    ),
+    timeout_milliseconds := 10000
+  );
+  $$
+);
+
+select cron.schedule(
+  'external-heartbeat-live-pulse',
+  '0 11-23 * * *',
+  $$
+  select net.http_post(
+    url := 'https://api.github.com/repos/fletcherreaves-cloud/meridian/actions/workflows/qsrsoft-live-pulse.yml/dispatches',
+    body := jsonb_build_object('ref', 'main'),
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'github_actions_pat'),
+      'Accept', 'application/vnd.github+json',
+      'Content-Type', 'application/json',
+      'User-Agent', 'meridian-pgcron-heartbeat'
+    ),
+    timeout_milliseconds := 10000
+  );
+  $$
+);
