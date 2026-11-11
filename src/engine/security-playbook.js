@@ -27,7 +27,7 @@ export const SECURITY_PLAYBOOK = [
     ruleIds: ['CASH-001'],
     what: 'The gap between counted cash and what the register expects, after accounting for tenders and refunds.',
     tell: 'The same drawer or the same cashier recurring across different days is a person-level signal; a variance that moves with total volume is usually just counting noise.',
-    floor: 'Never let one person count their own drawer and verify it. Reconcile the bank deposit the same day. Photograph the count.',
+    floor: 'Never let multiple people work on the same drawer. Verify the drawer reconciles against the Drawer Change Report. Retain that record for reference if an accountability conversation is ever needed.',
   },
   {
     key: 'refund',

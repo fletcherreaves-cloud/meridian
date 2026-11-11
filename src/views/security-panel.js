@@ -24,7 +24,8 @@ import {
   loadSecurityFindingActionsForFindings, saveSecurityFindingAction,
   loadSecurityFindingsRecentHistoryForKeys,
 } from '../lib/supabase.js';
-import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
+import { INV_ORG_COORDS, STORE_NAMES, supervisorOf, unpadLoc } from '../constants.js';
+import { altitudeForRole, viewAsAllowedLocs } from '../engine/curated-home.js';
 import { RevealName } from './store-analytics.js';
 import { addD, fmtDI } from '../utils/date.js';
 import {
@@ -501,6 +502,26 @@ function multipleOfBaseline(verdict) {
 function fmtThreshold(logicType, t) {
   if (t == null) return '—';
   return logicType === 'z-score' ? `${fNum(t)}σ` : fNum(t);
+}
+
+// Owner feedback 2026-11-11: "Show the math" is genuinely technical jargon to anyone without a
+// stats background -- value/threshold/mean/stdev/n read as a wall of unlabeled numbers. CLAUDE.md's
+// standing "Voice by role" rule says the depth stays exact and reachable, never replaced -- so this
+// adds a plain-English GLOSS line under each raw stat (what the word means), not a dumbed-down
+// substitute for it. Pure and exported so the n<=1 "not a proven pattern yet" caveat (the exact
+// Cherry W/stdev-0.00/n-1 case the owner's screenshot showed) is independently testable.
+export function mathGlossLines(rule, bc) {
+  const baselineType = rule?.baselineType === 'peer' ? 'peer' : 'personal';
+  const comparedTo = baselineType === 'peer' ? 'everyone else in this same role' : "this person's own past windows";
+  const n = bc?.n;
+  const thin = bc?.mean != null && (n == null || n <= 1);
+  return {
+    value: 'What was actually measured for this person or item during this window.',
+    threshold: 'The cutoff this rule checks against — cross it and the rule fires.',
+    baseline: bc?.mean == null ? null : (thin
+      ? `Compared against ${comparedTo} — but only ${n ?? 0} prior window${(n ?? 0) === 1 ? '' : 's'} is on file, so there isn't a real pattern here yet. Treat this comparison as provisional.`
+      : `Compared against ${comparedTo}: "mean" is the typical rate, "stdev" is how much it normally swings day to day, "n" is how many windows that average is built from.`),
+  };
 }
 
 // dispatch #46 §B -- a decision sentence beside (never instead of) the raw metric line, per
@@ -1602,8 +1623,13 @@ function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, f
           h(SubjectPlaybookSection, { flaggedVerdicts }),
         ),
     div({ style: { textAlign: 'center', paddingTop: 10 } },
+      // Owner wording request 2026-11-11: "subject" -> "employee" (the term everyone actually
+      // uses). Conditional, not a blind rename -- group.subjectType is 'wrin' for an inventory
+      // item, never a person, so that case keeps a correct, non-personifying word instead.
       btn({ onClick: onOpenTable, style: { fontSize: 12, color: 'var(--text3)', background: 'none', border: 'none', borderBottom: '1px dotted var(--text3)', cursor: 'pointer', padding: 0 } },
-        '⚙ See this subject alongside every other one — sort, filter, export →')),
+        group.subjectType === 'emp'
+          ? '⚙ See this employee alongside every other one — sort, filter, export →'
+          : '⚙ See this item alongside every other one — sort, filter, export →')),
   );
 }
 
@@ -1743,12 +1769,19 @@ function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFo
           div({ style: { fontWeight: 700, color: 'var(--ok,#10b981)', marginBottom: 4 } }, 'Before escalating, rule out:'),
           h('ul', { style: { margin: 0, paddingLeft: 18, color: 'var(--text2)' } }, falsePositives.map((fp, i) => h('li', { key: i }, fp))),
         ),
-        mathOpen && div({ style: { background: 'var(--surf2)', borderRadius: 8, padding: '8px 10px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 3 } },
-          div(null, `value: ${fmtValue(v.ruleId, v.value)}`),
-          div(null, `threshold: ${fmtThreshold(rule.logicType, v.thresholdUsed)}`),
-          bc.mean != null && div(null, `${rule.baselineType || 'baseline'}: mean ${fNum(bc.mean)}, stdev ${fNum(bc.stdev)}, n ${bc.n ?? '—'}`),
-          v.exonerationShare != null && div(null, `exoneration share: ${fPct(v.exonerationShare)}`),
-        ),
+        mathOpen && (() => {
+          const gloss = mathGlossLines(rule, bc);
+          const glossStyle = { fontFamily: 'var(--font,inherit)', fontStyle: 'italic', color: 'var(--text3)', marginBottom: 4 };
+          return div({ style: { background: 'var(--surf2)', borderRadius: 8, padding: '8px 10px', fontSize: 11, color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 3 } },
+            div({ style: glossStyle }, gloss.value),
+            div({ style: { fontFamily: 'monospace' } }, `value: ${fmtValue(v.ruleId, v.value)}`),
+            div({ style: glossStyle }, gloss.threshold),
+            div({ style: { fontFamily: 'monospace' } }, `threshold: ${fmtThreshold(rule.logicType, v.thresholdUsed)}`),
+            bc.mean != null && div({ style: glossStyle }, gloss.baseline),
+            bc.mean != null && div({ style: { fontFamily: 'monospace' } }, `${rule.baselineType || 'baseline'}: mean ${fNum(bc.mean)}, stdev ${fNum(bc.stdev)}, n ${bc.n ?? '—'}`),
+            v.exonerationShare != null && div({ style: { fontFamily: 'monospace' } }, `exoneration share: ${fPct(v.exonerationShare)}`),
+          );
+        })(),
         v.pass === true && div({ style: { fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' } },
           cameraReviewHint(group.loc, v.windowStart, v.windowEnd)),
         v.id && h(FindingActions, {
@@ -1897,10 +1930,30 @@ function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoF
 // entry takes no props beyond userRole/onClose) letting the existing Table-view test suite keep
 // asserting Table's own content/wiring without first clicking the toggle on every one of its ~70
 // render call sites; the real default below ('command') is untouched for every actual user.
-export function SecurityPanel({ userRole, onClose, initialView }) {
+export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
   const [permState, setPermState] = React.useState('checking'); // checking | denied | allowed
   const [dataState, setDataState] = React.useState('idle');     // idle | loading | loaded | error
-  const [findings, setFindings] = React.useState([]);
+  const [rawFindings, setRawFindings] = React.useState([]);
+  // View As Role scoping (owner bug report 2026-11-11, screenshot: Security's Command Center
+  // showed all 27 stores -- "Subjects Flagged 1569", the full district Store Health grid, etc. --
+  // while simulating a GM at Madill-Hwy 70). This panel does its own independent data load
+  // (loadSecurityFindings/loadSecurityRules below), bypassing the shared `ds`/`stores` App.js
+  // already narrows for other panels (src/engine/curated-home.js's viewAsAllowedLocs, the same
+  // primitive AAG/SwingAlarm/Curated Home share) -- so it needed its own application of the same
+  // primitive. `userRole` is already `effectiveRole` from App.js's one call site, so this reads
+  // correctly for a real, non-simulated login too (altitudeForRole('owner') etc. -> null
+  // allowedLocs -> everything below is an exact no-op).
+  const altitude = altitudeForRole(userRole);
+  const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope);
+  // Every consumer below (commandGroups/domainBreakdown/topRules/groups/healthList/drift
+  // candidates/the reveal-name token list/newestBatch) reads `findings` -- narrowing it ONCE
+  // here, by shadowing the name, means every one of them inherits the restriction automatically,
+  // the same "narrow the input, every view falls out correctly" pattern ToleranceRollupTile/
+  // TrackingToPlanTile/the At A Glance fix already use, rather than re-deriving scoping in each.
+  const findings = React.useMemo(
+    () => (allowedLocs ? rawFindings.filter(f => allowedLocs.has(unpadLoc(f.loc))) : rawFindings),
+    [rawFindings, allowedLocs]
+  );
   const [rules, setRules] = React.useState([]);
   const [domain, setDomain] = React.useState('cash'); // 'cash' | 'inventory' | 'labor' | 'events'
   const [scope, setScope] = React.useState({ level: 'all' });
@@ -1999,7 +2052,7 @@ export function SecurityPanel({ userRole, onClose, initialView }) {
     (async () => {
       const [f, r] = await Promise.all([loadSecurityFindings(), loadSecurityRules()]);
       if (cancelled) return;
-      setFindings(f); setRules(r); setDataState('loaded');
+      setRawFindings(f); setRules(r); setDataState('loaded');
     })().catch(() => { if (!cancelled) setDataState('error'); });
     return () => { cancelled = true; };
   }, [permState]);
@@ -2331,7 +2384,10 @@ export function SecurityPanel({ userRole, onClose, initialView }) {
   // dispatch #120 -- {loc} shape only, matching report-subscriptions.js's own LocationSelector
   // wiring: it derives state/patch/store tiers itself from INV_ORG_COORDS. Every loc
   // INV_ORG_COORDS knows about, same store universe the old hand-rolled storeLocs pill row used.
-  const _stores = React.useMemo(() => Object.keys(INV_ORG_COORDS).map(loc => ({ loc })), []);
+  const _stores = React.useMemo(() => {
+    const all = Object.keys(INV_ORG_COORDS).map(loc => ({ loc }));
+    return allowedLocs ? all.filter(s => allowedLocs.has(unpadLoc(s.loc))) : all;
+  }, [allowedLocs]);
 
   // Dispatch #143 -- CSV/JSON export (ExportDropdown) + full print report, both built from
   // `sortedGroups` -- the exact filtered/sorted rows the table below renders -- so print/export
