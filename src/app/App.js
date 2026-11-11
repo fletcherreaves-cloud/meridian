@@ -1365,7 +1365,23 @@ function App() {
   // viewAsRole itself (see its own comment above). Operator scope needs no equivalent here --
   // CuratedHomePanel's own self-service "Operator:" picker already covers it for every account.
   const [viewAsScope, setViewAsScope] = useState(null);
-  const setViewAsRole = (role) => { setViewAsRoleState(role); setViewAsScope(null); };
+  const setViewAsRole = (role) => {
+    setViewAsRoleState(role);
+    setViewAsScope(null);
+    // Mirror the real-login altitude-aware default-landing redirect (App.js's profile-load
+    // effect below, memory/finding-fresh-eyes-role-audit-2026-11-11.md §4) for the View As Role
+    // sandbox too. Without this, an admin/owner previewing "View as GM" from AtAGlance never
+    // sees Curated Home at all -- the real redirect only ever evaluates once, at the REAL
+    // account's login, and viewAsRole is picked well after that already resolved (confirmed live,
+    // 2026-11-11: simulating GM from AtAGlance left AtAGlance on screen). Same guard as the
+    // real-login check (nothing has already claimed the landing slot), so it never yanks an
+    // admin away from a panel they deliberately navigated to before simulating. Checks
+    // hasPermission(role,...) directly, not the perm() closure -- perm() still reflects the
+    // PRE-change effectiveRole inside this same synchronous handler.
+    if (role && shouldDefaultToCuratedHome({ routePanel, view, roleId: role, hasBriefPerm: hasPermission(role, 'analytics.brief', orgRoles) })) {
+      goRoute('curated-home');
+    }
+  };
   const viewAsAltitude = viewAsRole ? altitudeForRole(viewAsRole) : null;
   const viewAsScopeLabel = viewAsAltitude === 'store' ? 'Store' : viewAsAltitude === 'patch' ? 'Patch' : null;
   const viewAsScopeOptions = viewAsAltitude === 'store'
