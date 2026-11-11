@@ -23,7 +23,7 @@ import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, 
 import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis, unpadLoc } from '../constants.js';
-import { altitudeForRole, viewAsAllowedLocs } from '../engine/curated-home.js';
+import { altitudeForRole, viewAsAllowedLocs, shouldDefaultToCuratedHome } from '../engine/curated-home.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -345,6 +345,7 @@ const YoyTrendsPanel = lazyPanel(() => import('../views/yoy-trends.js').then(m =
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })), 'forms-completion');
 const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })), 'forms-reviews');
 const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })), 'quick-capture');
+const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').then(m => ({ default: m.RoleExplainerPanel })), 'role-explainer');
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -1745,6 +1746,19 @@ function App() {
           setAccessibleLocs(Array.isArray(data?.accessible_locs) && data.accessible_locs.length ? data.accessible_locs : null);
           if (data?.role) {
             setUserRole(data.role);
+            // Altitude-aware default landing (fresh-eyes role audit, 2026-11-11 --
+            // memory/finding-fresh-eyes-role-audit-2026-11-11.md §4, owner-approved
+            // "implement all of the items"). Headline finding: every role used to land on
+            // `view==='command'` (At-A-Glance) regardless of altitude, so Curated Home --
+            // built specifically to speak differently to a GM vs. a VP (tasks #92/#106) --
+            // was never what any new store/patch-altitude user actually saw; it sat behind a
+            // settings toggle nobody new would find. Predicate is shouldDefaultToCuratedHome()
+            // (engine/curated-home.js) -- see its own comment for the full reasoning (why
+            // routePanel===null && view==='command' is the correct "nothing claimed this slot
+            // yet" check, and why district altitude is deliberately excluded).
+            if (shouldDefaultToCuratedHome({ routePanel, view, roleId: data.role, hasBriefPerm: perm('analytics.brief') })) {
+              goRoute('curated-home');
+            }
             // Non-top-tier roles default to release mode (Test Kitchen hidden) unless the user
             // has already stored an explicit preference. ⚠️ CORRECTED (RBAC audit, 2026-09-16):
             // checked 'developer', which is not a real profiles.role value (dispatch #148's real
@@ -4008,6 +4022,9 @@ function App() {
         if(modal==='yoy-trends')     perm('analytics.district')&&goRoute('yoy-trends');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         if(modal==='access-log')     perm('security.auditLog')&&goRoute('access-log');
+        // No perm gate -- every role, including the top tier, can see what its own account is
+        // set up for (fresh-eyes role audit, 2026-11-11, §4 Q11a).
+        if(modal==='role-explainer') goRoute('role-explainer');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
         // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
         // tab via crewTab (see its own declaration above for the full reasoning).
@@ -4458,6 +4475,7 @@ function App() {
       routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='trend-report'&&h(TrendReportPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='yoy-trends'&&h(YoyTrendsPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='role-explainer'&&h(RoleExplainerPanel,{userRole:effectiveRole,orgRoles,accessibleLocs,onClose:()=>goRoute(null)}),
       routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores:scopedStores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/
@@ -4493,7 +4511,7 @@ function App() {
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole:effectiveRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole:effectiveRole,accessibleLocs,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:(perm('users.manage.all')||perm('users.manage.lower'))?()=>setShowAdminPanel(true):null,onOpenRoleExplainer:()=>goRoute('role-explainer')}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
     // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.

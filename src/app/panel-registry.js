@@ -278,6 +278,12 @@ export const PANELS = [
   // 'help' used to carry -- the owner's own framing is "Help should MEAN troubleshooting", so
   // the icon universally read as "help" now sits on the panel that actually does that job.
   { id:'troubleshoot', label:'Troubleshooting', icon:'?', perm:null, kind:'nav', section:'help' },
+  // 'role-explainer' -- fresh-eyes role audit (2026-11-11, §4 Q11a): a plain-language "what you
+  // can do" screen, generated from the SAME PANELS/PERMISSION_GROUPS data the admin Roles &
+  // Permissions table reads, not a hand-written second description. perm:null -- every role,
+  // including the top tier, can see what its own account is set up for; route:true since this is
+  // a real destination someone might want linked to them (e.g. "go check your own access here").
+  { id:'role-explainer', label:'What You Can Do', icon:'🧭', perm:null, kind:'nav', section:'help', route:true },
   // Dispatch #54 Job A found this had NO sidebar entry at all (only reachable via ?modal=inventory
   // deep link). Job B's Inventory & Food Cost section gives it a real one for the first time --
   // the owner's own list explicitly named it ("plus Inventory and Product Mix").

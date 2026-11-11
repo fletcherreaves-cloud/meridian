@@ -2,7 +2,8 @@
 // The Patch engine (owner request 2026-11-07) -- computePatchRollup()/computePatchMap()/
 // rankNeedsAttention().
 import { describe, it, expect } from 'vitest';
-import { computePatchRollup, computePatchMap, rankNeedsAttention } from '../engine/patch-plan.js';
+import { computePatchRollup, computePatchMap, rankNeedsAttention, computePatchStandings } from '../engine/patch-plan.js';
+import { supervisorGroups } from '../constants.js';
 
 function store(loc, name, over) {
   return { loc, name, hasData: true, severity: 'GREEN', sales: null, vsLYSales: null,
@@ -109,5 +110,49 @@ describe('rankNeedsAttention', () => {
   it('a store with no flags at all (shouldn\'t normally happen for RED/AMBER) gets a null why, not a fabricated one', () => {
     const stores = [store('A', 'A', { severity: 'RED', flags: [] })];
     expect(rankNeedsAttention(stores)[0].why).toBeNull();
+  });
+});
+
+// Fresh-eyes role audit (2026-11-11, §2 Q3) -- groups stores by the REAL live supervisorOf()
+// lookup, not a hardcoded loc->supervisor map, since who supervises what is a live-settable
+// timeline (constants.js's whoRan/orgAssignments). Pulls two currently-different real
+// supervisors' own stores from supervisorGroups() at test time instead of hardcoding names, so
+// this doesn't drift if the org chart changes.
+describe('computePatchStandings', () => {
+  const groups = supervisorGroups();
+  const supNames = Object.keys(groups).filter(n => (groups[n] || []).length > 0);
+
+  it('returns null when every store resolves to the same patch (nothing to rank against -- the real Area Supervisor case)', () => {
+    const name = supNames.find(n => groups[n].length >= 2) || supNames[0];
+    const locs = groups[name].slice(0, 2);
+    const stores = locs.map(loc => store(loc, loc, { sales: 1000, vsLYSales: 5 }));
+    expect(computePatchStandings(stores)).toBeNull();
+  });
+
+  it('ranks 2+ real patches by vs-LY% descending when the caller\'s own stores span more than one', () => {
+    expect(supNames.length).toBeGreaterThanOrEqual(2); // sanity: real org data must have 2+ supervisors
+    const locA = groups[supNames[0]][0], locB = groups[supNames[1]][0];
+    const stores = [
+      store(locA, 'A', { sales: 10000, vsLYSales: 20 }),  // best growth
+      store(locB, 'B', { sales: 10000, vsLYSales: -10 }), // worst growth
+    ];
+    const standings = computePatchStandings(stores);
+    expect(standings).toHaveLength(2);
+    expect(standings[0].patch).toBe(supNames[0]);
+    expect(standings[0].rank).toBe(1);
+    expect(standings[1].patch).toBe(supNames[1]);
+    expect(standings[1].rank).toBe(2);
+    expect(standings.every(r => r.total === 2)).toBe(true);
+  });
+
+  it('a patch with no real vs-LY comparison sorts last, never scored as "worst" by a fabricated 0', () => {
+    const locA = groups[supNames[0]][0], locB = groups[supNames[1]][0];
+    const stores = [
+      store(locA, 'A', { sales: 10000, vsLYSales: -30 }), // real, bad number
+      store(locB, 'B', { sales: 10000, vsLYSales: null }), // no comparison at all
+    ];
+    const standings = computePatchStandings(stores);
+    expect(standings[0].patch).toBe(supNames[0]); // real number, however bad, outranks "no data"
+    expect(standings[1].vsLYPct).toBeNull();
   });
 });

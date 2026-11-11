@@ -10,7 +10,7 @@
 // one real drill-down per tier, composable (Bridge will embed The Patch the same way later).
 import * as React from 'react';
 import { withAlpha } from '../utils/fmt.js';
-import { computePatchRollup, computePatchMap, rankNeedsAttention } from '../engine/patch-plan.js';
+import { computePatchRollup, computePatchMap, rankNeedsAttention, computePatchStandings } from '../engine/patch-plan.js';
 import { GamePlanFormat } from './game-plan-view.js';
 
 const h = React.createElement;
@@ -76,12 +76,39 @@ export function NeedsAttentionList({ ranked, onPick }) {
   );
 }
 
+// Fresh-eyes role audit (2026-11-11, §2 Q3) -- renders only when computePatchStandings() found
+// 2+ patches in the caller's own visible stores (an Area Supervisor's own accessible_locs-scoped
+// `stores` will legitimately only ever contain their own patch, so this renders nothing for that
+// account rather than a fabricated "1 of 1"; a DO/OM/VP/admin account whose own `ds` already
+// spans multiple patches gets a real, honest ranking).
+export function PatchStandingsCard({ standings }) {
+  if (!standings) return null;
+  return div({ style: { background: 'var(--surf,#fffdf7)', border: '1px solid var(--bdr,#e4dac4)', borderRadius: 14, padding: '14px 16px' } },
+    span({ style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#7a6f5c)' } }, 'Patch Standings'),
+    div({ style: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 } },
+      standings.map(r => div({ key: r.patch, style: {
+        display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px', borderBottom: '1px solid var(--bdr,#e4dac4)',
+      } },
+        span({ style: { flexShrink: 0, width: 22, fontSize: 12.5, fontWeight: 700, color: 'var(--text3,#7a6f5c)' } }, '#' + r.rank),
+        div({ style: { flex: 1, minWidth: 0 } },
+          div({ style: { fontWeight: 600, fontSize: 13, color: 'var(--text,#2b241a)' } }, r.patch),
+          div({ style: { fontSize: 11, color: 'var(--text3,#7a6f5c)' } }, r.storeCount + ' store' + (r.storeCount !== 1 ? 's' : '') + ' · ' + fmtDollar(r.totalSales)),
+        ),
+        span({ style: { flexShrink: 0, fontSize: 13, fontWeight: 700,
+          color: r.vsLYPct == null ? 'var(--text3,#7a6f5c)' : (r.vsLYPct >= 0 ? 'var(--good,#2f8f5b)' : 'var(--crit,#b4432c)') } },
+          fmtPct(r.vsLYPct)),
+      )),
+    ),
+  );
+}
+
 export function PatchPlanFormat({ ds, stores, items, userName, onNav }) {
   const [drillLoc, setDrillLoc] = React.useState(null);
   const withData = React.useMemo(() => (stores || []).filter(s => s.hasData), [stores]);
   const rollup = React.useMemo(() => computePatchRollup(withData), [withData]);
   const mapPoints = React.useMemo(() => computePatchMap(withData), [withData]);
   const ranked = React.useMemo(() => rankNeedsAttention(withData), [withData]);
+  const standings = React.useMemo(() => computePatchStandings(withData), [withData]);
 
   if (drillLoc) {
     const store = withData.find(s => s.loc === drillLoc);
@@ -116,5 +143,6 @@ export function PatchPlanFormat({ ds, stores, items, userName, onNav }) {
       span({ style: { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text3,#7a6f5c)' } }, 'Needs you today'),
       div({ style: { marginTop: 8 } }, h(NeedsAttentionList, { ranked, onPick: setDrillLoc })),
     ),
+    h(PatchStandingsCard, { standings }),
   );
 }

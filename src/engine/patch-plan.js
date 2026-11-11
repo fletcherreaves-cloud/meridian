@@ -9,7 +9,7 @@
 // into "N of M stores flagging rule X" (right for a text list, wrong for a map). Every field
 // used here (sales, vsLYSales, laborPct, smgOsat, severity) is already computed per store by
 // assembleBriefStoreData() -- no second data read, no new resolution logic.
-import { INV_ORG_COORDS, unpadLoc } from '../constants.js';
+import { INV_ORG_COORDS, unpadLoc, supervisorOf } from '../constants.js';
 
 // Dollar-weighted patch vs-LY (CLAUDE.md's standing "dollar-weight aggregates, never average
 // averages" rule) -- sums this-store's real $ and its implied LY $ (derived from the matched-
@@ -61,6 +61,33 @@ export function computePatchMap(stores) {
     // SVG y grows downward; north (higher latitude) should plot higher (smaller y).
     y: 1 - (p.lat - minLat) / latSpan,
   }));
+}
+
+// Patch-vs-other-patches standings (fresh-eyes role audit, 2026-11-11, §2 Q3 -- "nothing
+// surfaces 'you're patch 3 of 5, here's why' unprompted"). Groups the SAME stores The Patch
+// already has (whatever this caller's RLS-scoped `ds`/accessible_locs legitimately covers) by
+// current supervisor (supervisorOf(), constants.js's live assignment lookup, never a static
+// seed), then reuses computePatchRollup() per group -- same dollar-weighted vs-LY math already
+// trusted for "Your Patch"'s own headline stat, not a second scoring system. Returns null when
+// fewer than 2 patches are represented in `stores` -- a real, honest "nothing to rank against"
+// case for an Area Supervisor account whose own accessible_locs only ever contains one patch to
+// begin with (there is no cross-patch data to compare client-side in that case; this never
+// fabricates one). Ranked by vs-LY% descending (best growth first); a patch with no vs-LY
+// comparison for the window sorts last, never scored as "worst" by a fabricated 0.
+export function computePatchStandings(stores) {
+  const withData = (stores || []).filter(s => s.hasData);
+  const byPatch = new Map();
+  for (const s of withData) {
+    const p = supervisorOf(s.loc) || 'Unassigned';
+    if (!byPatch.has(p)) byPatch.set(p, []);
+    byPatch.get(p).push(s);
+  }
+  if (byPatch.size < 2) return null;
+  const rows = [...byPatch.entries()].map(([patch, pStores]) => ({ patch, ...computePatchRollup(pStores) }));
+  const ranked = rows.filter(r => r.vsLYPct != null).sort((a, b) => b.vsLYPct - a.vsLYPct);
+  const unranked = rows.filter(r => r.vsLYPct == null);
+  const all = [...ranked, ...unranked];
+  return all.map((r, i) => ({ ...r, rank: i + 1, total: all.length }));
 }
 
 const SEV_RANK = { RED: 2, AMBER: 1, GREEN: 0, NODATA: -1 };

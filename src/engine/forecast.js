@@ -1231,6 +1231,18 @@ const KB_ARTICLES = {
     detail: '**What it measures:** The elapsed time from when payment is collected to when the order is completed and printed for handoff. Primary speed metric for order fulfillment accuracy.\n\n**Normal range:** 60-120 seconds depending on item complexity.\n\n**Integrity signal — R2P <60s:** When R2P averages below 60 seconds consistently, it may indicate a "serve-off" pattern: items being handed to customers before payment is processed, then voided. This is one of the most common mechanisms for theft in QSR environments. This signal is most significant when combined with elevated T-Red counts.\n\n**Compound alert:** R2P <60s + T-Red after hours elevated = Critical integrity flag requiring video review.',
   },
 
+  // Added fresh-eyes role audit (2026-11-11, memory/finding-fresh-eyes-role-audit-2026-11-11.md
+  // §1 Q8) -- "FOB %" flagged as the worst bare-acronym offender in home-screen tiles, with no
+  // definitional KB entry anywhere (fob_reference_table_guide existed, but that's a PANEL guide
+  // for the FOB Reference Table, not a one-line "what is FOB%" article like oepe/r2p/labor_pct
+  // already have). This fills that specific gap.
+  fob_pct: {
+    title: 'FOB % — Food Over Base',
+    category: 'Food Cost / Inventory',
+    summary: 'Food cost loss from on-hand inventory vs. what the POS sold says should be on hand, as a % of sales. Lower is better.',
+    detail: '**What it measures:** The dollar difference between the food inventory a store SHOULD have on hand (based on what the POS says was sold, built up from each item\'s recipe/BOM) and what is ACTUALLY counted on hand, expressed as a percentage of net sales.\n\n**Why "Food OVER Base":** The on-hand count sits OVER (above or below) the theoretical BASE the POS sales data implies. A positive FOB% means more product is unaccounted for than the sales data explains — waste, spoilage, over-portioning, or theft. It is not the same thing as total food cost %, which also includes purchasing price and is not in Meridian\'s data model.\n\n**Typical targets:** 3.0-5.5% depending on store/menu mix; CLAUDE.md\'s own district targets treat <3.5% as healthy and >5.5% as a real problem, not noise.\n\n**Common causes of elevated FOB%:** over-portioning, prep waste, spoilage/expired product, miscounted on-hand inventory, or theft of product rather than cash.\n\n**Where to dig further:** FOB / Food Cost panel\'s per-store troubleshooter (FOBAnalysisPanel/FOBEOMPanel) breaks this down by item/WRIN; EOM Dashboard\'s Change Monitor shows the recount-vs-FOB impact specifically.',
+  },
+
   t_red: {
     title: 'T-Red After Total % — Post-Total Transaction Reductions',
     category: 'Controls / Integrity',

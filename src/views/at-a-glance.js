@@ -39,6 +39,7 @@ import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { intradayPace, periodPace } from '../engine/tracking-to-plan.js';
 import { COACHING_METRICS } from '../engine/coaching-loop.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -893,6 +894,75 @@ function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
   return result;
 }
 
+// Click-to-expand daily series (fresh-eyes role audit, 2026-11-11, §1/§2 Q10). Groups the SAME
+// effective merged rows a tile's own avgOf() average is built from (opsScoped/ctrlScoped/
+// fobScoped — never a separate metricSeries() pass, which runs its own independent auto-first
+// merge in metric-source.js and could disagree with this view's bespoke field-aware merges —
+// see CLAUDE.md's "when two panels disagree on one number" rule) into one point per day, with
+// the SAME presence/positivity filter avgOf() itself applies, so the series' own mean always
+// reconciles to the tile's displayed average by construction.
+function tileDailySeries(rows, field, anyMode) {
+  const byDay = new Map();
+  for (const r of (rows || [])) {
+    const v = r[field];
+    if (v == null || isNaN(v) || (!anyMode && !(v > 0))) continue;
+    const dk = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date || '').slice(0, 10);
+    if (!dk) continue;
+    if (!byDay.has(dk)) byDay.set(dk, { sum: 0, n: 0 });
+    const e = byDay.get(dk); e.sum += v; e.n++;
+  }
+  return [...byDay.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1)
+    .map(([date, e]) => ({ date, value: e.sum / e.n, n: e.n }));
+}
+
+// Small inline sparkline, styled consistently with trends.js's TrendSparkline (same dimensions/
+// stroke approach) — kept local rather than imported since that one is unexported and keyed on a
+// slightly different point shape.
+function DrillSparkline({ points }) {
+  if (!points?.length) return null;
+  const W = 480, H = 90, pad = 10;
+  const vals = points.map(p => p.value);
+  const minY = Math.min(...vals), maxY = Math.max(...vals);
+  const span = maxY - minY || 1;
+  const xStep = points.length > 1 ? (W - pad * 2) / (points.length - 1) : 0;
+  const xs = points.map((_, i) => pad + i * xStep);
+  const yCoord = v => H - pad - ((v - minY) / span) * (H - pad * 2);
+  const poly = points.map((p, i) => `${xs[i].toFixed(1)},${yCoord(p.value).toFixed(1)}`).join(' ');
+  return h('svg', { width: '100%', height: H, viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', style: { display: 'block' } },
+    h('polyline', { points: poly, fill: 'none', stroke: 'var(--amber)', strokeWidth: 1.75, strokeLinejoin: 'round' }),
+    ...points.map((p, i) => h('circle', { key: i, cx: xs[i], cy: yCoord(p.value), r: 2.25, fill: 'var(--amber)' })),
+  );
+}
+
+// `drill` shape: { key, title, fmt, rows, field, anyMode, tgt, goodDir, scopeLabel }
+function MetricDrillModal({ drill, onClose }) {
+  const series = React.useMemo(() => tileDailySeries(drill.rows, drill.field, drill.anyMode), [drill.rows, drill.field, drill.anyMode]);
+  const avg = series.length ? series.reduce((a, p) => a + p.value, 0) / series.length : null;
+  return h(ModalShell, {
+    title: drill.title, icon: '📈', onClose, maxWidth: 560, zIndex: Z.nested,
+    subtitle: span(null, (drill.scopeLabel || 'Scope') + ' daily average, same filter as the tile above' +
+      (drill.tgt != null ? ' · target ' + drill.fmt(drill.tgt) : '')),
+  },
+    !series.length ? div({ style: { padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px' } }, 'No daily data for this period.') :
+    div(null,
+      div({ style: { padding: '10px 4px 4px' } }, h(DrillSparkline, { points: series })),
+      div({ style: { display: 'flex', justifyContent: 'space-between', padding: '2px 6px 10px', fontSize: '9px', color: 'var(--text3)' } },
+        span(null, series[0].date.slice(5)), span(null, series[series.length - 1].date.slice(5))),
+      div({ style: { borderTop: '.5px solid var(--bdr)', maxHeight: 260, overflowY: 'auto' } },
+        div({ style: { display: 'flex', fontSize: '9px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', padding: '4px 10px', position: 'sticky', top: 0, background: 'var(--surf)' } },
+          span({ style: { flex: 1 } }, 'Date'), span({ style: { width: 60, textAlign: 'right' } }, 'Value'), span({ style: { width: 50, textAlign: 'right' } }, 'n stores')),
+        ...series.slice().reverse().map((p, i) => {
+          const clr = drill.tgt == null ? 'var(--text)' : (drill.goodDir === 'low' ? p.value <= drill.tgt : p.value >= drill.tgt) ? '#10b981' : 'var(--crit)';
+          return div({ key: i, style: { display: 'flex', padding: '3px 10px', fontSize: '10px', borderTop: '.5px solid var(--bdr)' } },
+            span({ style: { flex: 1, color: 'var(--text2)' } }, p.date),
+            span({ style: { width: 60, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: clr } }, drill.fmt(p.value)),
+            span({ style: { width: 50, textAlign: 'right', color: 'var(--text3)' } }, p.n));
+        })
+      )
+    )
+  );
+}
+
 function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProjections, weeklyCommittedLocs, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
@@ -1106,6 +1176,12 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
     return{s:minD,e:toD,isFallback:true,
       fallbackLabel:maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
   }),[dateRange,ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.glimpseRows?.length]);
+  // Click-to-expand daily series behind a KPI tile (fresh-eyes role audit, 2026-11-11, §1/§2
+  // Q10 — "every current-state KPI tile... shows actual vs. target with no click-through to
+  // which specific days drove this... metricSeries already returns the day-by-day series every
+  // tile's average is built from; the tile just doesn't expose it."). `drill` names which metric
+  // tile is currently expanded; null means no modal is open.
+  const [drill, setDrill] = React.useState(null);
 
   const labInRange = React.useMemo(()=>_mark('compute:labInRange',()=>{
     // FRESHEST-PER-DAY merge, not all-or-nothing (Notes: Jul-2026 "reverts to old date" bug).
@@ -1814,6 +1890,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
       kvsu,okKvsu:wMkt(okLocs,'kvsu'),flKvsu:wMkt(flLocs,'kvsu'),
       r2p,okR2p:wMkt(okLocs,'r2p'),flR2p:wMkt(flLocs,'r2p'),
       isStale:opsSt,staleLabel:opsStaleLbl,auto:svcAuto,
+      rows:opsScoped, // click-to-expand (§1/§2 Q10) reads the SAME rows avgOf() above used
     };
   }),[svcEffective,allLocs,okLocs,flLocs,labInRange]);
 
@@ -2994,19 +3071,24 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
           ),
           !collapsedSecs['service']&&(serviceSec?div({style:{padding:'10px 12px'}},
             [
-              {label:'OEPE W/O Parked',val:serviceSec.oepe,ok:serviceSec.okOepe,fl:serviceSec.flOepe,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:160},
-              {label:'DT Parked %',val:serviceSec.park,ok:serviceSec.okPark,fl:serviceSec.flPark,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low',tgt:.10},
-              {label:'KVS Time Per GC',val:serviceSec.kvst,ok:serviceSec.okKvst,fl:serviceSec.flKvst,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:55},
-              {label:'KVS Healthy Usage',val:serviceSec.kvsu,ok:serviceSec.okKvsu,fl:serviceSec.flKvsu,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'high',tgt:.90},
-              {label:'R2P',val:serviceSec.r2p,ok:serviceSec.okR2p,fl:serviceSec.flR2p,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:90},
+              {label:'OEPE W/O Parked',kb:'oepe',field:'oepe',val:serviceSec.oepe,ok:serviceSec.okOepe,fl:serviceSec.flOepe,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:160},
+              {label:'DT Parked %',field:'park',val:serviceSec.park,ok:serviceSec.okPark,fl:serviceSec.flPark,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low',tgt:.10},
+              {label:'KVS Time Per GC',field:'kvst',val:serviceSec.kvst,ok:serviceSec.okKvst,fl:serviceSec.flKvst,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:55},
+              {label:'KVS Healthy Usage',field:'kvsu',val:serviceSec.kvsu,ok:serviceSec.okKvsu,fl:serviceSec.flKvsu,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'high',tgt:.90},
+              {label:'R2P',kb:'r2p',field:'r2p',val:serviceSec.r2p,ok:serviceSec.okR2p,fl:serviceSec.flR2p,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:90},
             ].map((row,i)=>{
               const clr=row.tgt!=null&&row.val!=null?(row.goodDir==='low'?row.val<=row.tgt:row.val>=row.tgt)?'#10b981':'var(--crit)':'var(--text)';
-              return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',
+              // Click-to-expand (§1/§2 Q10) — only when there's a real daily series to show.
+              const canDrill=row.val!=null&&(serviceSec.rows||[]).length>0;
+              return div({key:i,title:canDrill?'Click to see the daily series':undefined,
+                onClick:canDrill?()=>setDrill({title:row.label,fmt:row.fmt,rows:serviceSec.rows,field:row.field,tgt:row.tgt,goodDir:row.goodDir,scopeLabel:'Service'}):undefined,
+                style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',cursor:canDrill?'pointer':'default',
                 borderBottom:i<4?'.5px solid var(--bdr)':'none'}},
-                div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
+                div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0,display:'flex',alignItems:'center'}},row.label,row.kb&&h(InfoIcon,{articleKey:row.kb})),
                 div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:600,color:clr,width:48}},
                   row.val!=null?row.fmt(row.val):'—'),
-                div({style:{flex:1}},MktBadge({ok:row.ok,fl:row.fl,fmt:row.fmt}))
+                div({style:{flex:1}},MktBadge({ok:row.ok,fl:row.fl,fmt:row.fmt})),
+                canDrill&&span({style:{fontSize:'9px',color:'var(--text3)'}},'📈')
               );
             })
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No service data for this period'))
@@ -3091,7 +3173,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',
                   color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'var(--warn)':'var(--crit)'):'var(--text3)'}},
                   fobSec.fobPct!=null?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—'),
-                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'FOB %'+(fobSec.primaryIsMTD?' · MTD':'')),
+                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',display:'flex',alignItems:'center',justifyContent:'center'}},'FOB %'+(fobSec.primaryIsMTD?' · MTD':''),h(InfoIcon,{articleKey:'fob_pct'})),
                 (fobSec.tgts&&fobSec.tgts.fobPct!=null&&fobSec.fobPct!=null)&&(()=>{const dp=(fobSec.fobPct-fobSec.tgts.fobPct)*100;return div({style:{fontSize:'8px',fontWeight:700,fontFamily:'var(--mono)',marginTop:1,color:dp>0.001?'var(--crit)':'#10b981'},title:'vs sales-weighted FOB target'},`${dp>=0?'+':''}${dp.toFixed(2)} vs tgt ${(fobSec.tgts.fobPct*100).toFixed(2)}%`);})(),
                 fobSec.priorFobPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorFobPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okFobPct,fl:fobSec.flFobPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
@@ -3572,7 +3654,11 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
       QUICK_LINKS.map(l=>h('a',{key:l.label,href:l.url,target:'_blank',rel:'noopener noreferrer',
         title:l.title,style:{fontSize:10,color:'var(--amber)',textDecoration:'none',whiteSpace:'nowrap'}},
         l.label))
-    )
+    ),
+
+    // Click-to-expand daily series modal (§1/§2 Q10) — mounted once at the AtAGlance root so any
+    // tile can open it via setDrill(), rather than each section hand-rolling its own.
+    drill&&h(MetricDrillModal,{drill,onClose:()=>setDrill(null)})
   ); // end AtAGlance
 }
 

@@ -497,8 +497,10 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     const good = lowerBetter ? actual <= target : actual >= target;
     return good ? '#4ade80' : 'var(--crit)';
   };
-  const Row = (label, actual, target, fmt, lowerBetter, extra) => div({ key: label, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
-    span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
+  // kb (fresh-eyes role audit, 2026-11-11, §2 Q8 -- "FOB % is still worth a tooltip everywhere,
+  // cheaply") -- optional KB_ARTICLES key, reuses the same InfoIcon every other panel already uses.
+  const Row = (label, actual, target, fmt, lowerBetter, extra, kb) => div({ key: label, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+    span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)', display: 'flex', alignItems: 'center' } }, label, kb && h(InfoIcon, { articleKey: kb })),
     extra ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, extra) : null,
     span({ style: { fontSize: '12px', fontWeight: 700, color: badge(actual, target, lowerBetter), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(actual, fmt)),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, target != null ? 'tgt ' + fmtV(target, fmt) : ''));
@@ -508,15 +510,44 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
     span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : 'var(--crit)'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(2) + '–' + (hi * 100).toFixed(2) + '%'));
-  // Worst store-days behind a Controls metric ("who + when"). signed=true shows +/-
-  // (Cash Over/Short: over vs short). Renders nothing when there are no offenders.
-  const ctrlOut = (key, signed) => {
-    const o = d.controlsOut && d.controlsOut[key];
-    if (!o || !o.outliers || !o.outliers.length) return null;
-    return div({ key: key + 'o', style: { fontSize: '9px', color: 'var(--text3)', padding: '0 0 3px 2px', lineHeight: 1.4 } },
-      span(null, '↳ '),
-      ...o.outliers.map((p, i) => span({ key: i, style: { color: '#f5bc00' } },
-        (i ? ' · ' : '') + (sNameC(p.loc) || p.loc) + ' ' + p.date.slice(5) + ' ' + (signed ? pct(p.val) : fmtV(p.val, '%')))));
+  // Controls outliers — visual card (fresh-eyes role audit, 2026-11-11, §2 Q9: "Controls outliers
+  // already surfaces 'who and when' for a patch — genuinely good data, currently only inside
+  // Above-Store One-Pager's text brief, not its own dashboard... promote it to its own visual
+  // card (sparkline of the outlier days, not just a text line)." Replaces the old single-line
+  // "↳ Store MM-DD val · Store MM-DD val" text row (one per metric) with one card: a horizontal
+  // bar per worst store-day, scaled to the worst offender across all three metrics so severity is
+  // visually comparable at a glance, not just readable as numbers. Same data (buildControlsOutliers),
+  // no new engine code. Renders nothing when there are no offenders at all (single-store scope,
+  // or a genuinely clean period).
+  const CTRL_OUTLIER_META = {
+    cashOSPct: { label: 'Cash Over/Short', signed: true },
+    tRedAPct: { label: 'T-Reds After', signed: false },
+    discPct: { label: 'Discount %', signed: false },
+  };
+  const controlsOutlierCard = () => {
+    const co = d.controlsOut;
+    if (!co) return null;
+    const metrics = Object.keys(CTRL_OUTLIER_META)
+      .map(key => ({ key, ...CTRL_OUTLIER_META[key], outliers: (co[key] && co[key].outliers) || [] }))
+      .filter(m => m.outliers.length);
+    if (!metrics.length) return null;
+    const maxSev = Math.max(0.0001, ...metrics.flatMap(m => m.outliers.map(o => Math.abs(o.val))));
+    return div({ key: 'ctrlOutCard', style: { marginTop: 8, padding: '8px 10px', background: 'var(--surf2)', borderRadius: 6, border: '.5px solid var(--bdr)' } },
+      div({ style: { fontSize: '9px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 } }, '🚨 Worst Store-Days'),
+      ...metrics.map(m => div({ key: m.key, style: { marginBottom: 5 } },
+        div({ style: { fontSize: '9px', color: 'var(--text2)', marginBottom: 2 } }, m.label),
+        ...m.outliers.map((o, i) => {
+          const w = Math.max(6, (Math.abs(o.val) / maxSev) * 100);
+          return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0' } },
+            span({ style: { fontSize: '8.5px', color: 'var(--text3)', width: 100, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+              (sNameC(o.loc) || o.loc) + ' ' + o.date.slice(5)),
+            div({ style: { flex: 1, height: 7, background: 'var(--bdr)', borderRadius: 3, overflow: 'hidden' } },
+              div({ style: { width: w + '%', height: '100%', background: 'var(--crit)' } })),
+            span({ style: { fontSize: '8.5px', fontWeight: 700, color: 'var(--crit)', width: 46, textAlign: 'right', flexShrink: 0 } },
+              m.signed ? pct(o.val) : fmtV(o.val, '%')));
+        })
+      ))
+    );
   };
   // Per-panel drilldown (Notes 47 v2) — per-store breakdown of THIS panel's own metrics,
   // computed by re-invoking the SAME builder functions with a single-store locs array
@@ -668,7 +699,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
         // FOB
         showP('fob') && Section('FOB / Food Cost', '🥗', 'fob',
-          Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
+          Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true, null, 'fob_pct'),
           // vs LY (dollar-weighted, same method) — lower than last year = better (green).
           // Calendar, not Trading Day: qsr_fob's own ly_* columns come from QSRSoft's
           // compType='calendar' comparison (same calendar dates last year), unlike the
@@ -729,17 +760,15 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           Row('TPPH', d.byKey.tpph?.actual, d.byKey.tpph?.target, 'n', false)),
         // Service / Speed
         showP('service') && Section('Service', '🚗', 'service',
-          Row('OEPE', d.byKey.oepe?.actual, d.byKey.oepe?.target, 's', true),
-          Row('R2P', d.byKey.r2p?.actual, d.byKey.r2p?.target, 's', true),
+          Row('OEPE', d.byKey.oepe?.actual, d.byKey.oepe?.target, 's', true, null, 'oepe'),
+          Row('R2P', d.byKey.r2p?.actual, d.byKey.r2p?.target, 's', true, null, 'r2p'),
           Row('KVS Time / GC', d.rv.kvsPerGc, d.rv.kvsTimeTarget, 's', true)),
         // Controls
         showP('controls') && Section('Controls', '🎛', 'controls',
           Row('Cash Over/Short %', d.controls.cashOS, null, '%'),
-          ctrlOut('cashOSPct', true),
           Row('T-Reds After %', d.controls.tRedA, null, '%'),
-          ctrlOut('tRedAPct', false),
           Row('Discount %', d.controls.disc, null, '%'),
-          ctrlOut('discPct', false)),
+          controlsOutlierCard()),
         // Voice
         showP('voice') && Section('Guest Voice', '💬', 'voice',
           Row('OSAT 5★', d.rv.osat, d.rv.osatTarget, '%', false),

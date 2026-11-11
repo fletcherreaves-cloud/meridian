@@ -4,7 +4,7 @@
 // mirror computeMorningBrief()'s real output shape (src/features/morning-brief.js) directly
 // rather than importing the full engine, so these tests isolate the role-voice transform itself.
 import { describe, it, expect } from 'vitest';
-import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
+import { altitudeForRole, buildCuratedHomeItems, shouldDefaultToCuratedHome } from '../engine/curated-home.js';
 
 function flag(id, over) {
   return { id, name: 'Cash Integrity Risk', icon: '💰', category: 'controls', severity: 'AMBER',
@@ -145,5 +145,43 @@ describe('buildCuratedHomeItems — patch/district altitude', () => {
     };
     const { items } = buildCuratedHomeItems(withNoData, 'do');
     expect(items[0].headline).toContain('1 of 1');
+  });
+});
+
+// Altitude-aware default landing (fresh-eyes role audit, 2026-11-11 --
+// memory/finding-fresh-eyes-role-audit-2026-11-11.md §4). Extracted as a pure predicate from
+// App.js's mount effect specifically so this is unit-testable without mounting the full App
+// component (no existing test in this repo does that).
+describe('shouldDefaultToCuratedHome', () => {
+  const base = { routePanel: null, view: 'command', hasBriefPerm: true };
+
+  it('true for a store-altitude role with nothing else claiming the landing slot', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'gm' })).toBe(true);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'sm_am_dm' })).toBe(true);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'manager' })).toBe(true);
+  });
+
+  it('true for a patch-altitude role too', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'area_supervisor' })).toBe(true);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'om' })).toBe(true);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'do' })).toBe(true);
+  });
+
+  it('false for district altitude -- AtAGlance stays the unchanged default there', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'vp' })).toBe(false);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'owner' })).toBe(false);
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'admin' })).toBe(false);
+  });
+
+  it('false when a route panel already claimed the slot (URL route, legacy redirect, or an explicit route:true defaultLandingPanel)', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, routePanel: 'proj', roleId: 'gm' })).toBe(false);
+  });
+
+  it('false when view is already "district" (an explicit defaultLandingPanel:"district" already resolved it)', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, view: 'district', roleId: 'gm' })).toBe(false);
+  });
+
+  it('false when the role lacks analytics.brief (Curated Home\'s own registry gate), even at store altitude', () => {
+    expect(shouldDefaultToCuratedHome({ ...base, roleId: 'gm', hasBriefPerm: false })).toBe(false);
   });
 });

@@ -45,6 +45,22 @@ function altWordForRole(roleId) {
   return roleId === 'do' ? 'district' : altitudeForRole(roleId) === 'district' ? 'district' : 'patch';
 }
 
+// Altitude-aware default landing (fresh-eyes role audit, 2026-11-11 --
+// memory/finding-fresh-eyes-role-audit-2026-11-11.md §4, owner-approved "implement all of the
+// items"). Pure predicate, extracted out of App.js's mount effect so it's unit-testable without
+// mounting the full App component (no existing test in this repo does that, and inventing that
+// harness for one conditional would be disproportionate -- see this dispatch's own commit body).
+// `routePanel === null && view === 'command'` is the real signal that nothing has already
+// claimed the landing slot -- both of those state values are THEMSELVES the synchronous
+// resolution of the user's own explicit defaultLandingPanel preference (App.js's routePanel/view
+// useState initializers already read it before this predicate is ever consulted), so this never
+// overrides an explicit choice, it only fills the gap an unset one leaves. District altitude is
+// deliberately excluded -- AtAGlance stays the unchanged default there, per the audit's own
+// recommendation (closest to what that altitude is already built for).
+export function shouldDefaultToCuratedHome({ routePanel, view, roleId, hasBriefPerm }) {
+  return routePanel === null && view === 'command' && altitudeForRole(roleId) !== 'district' && !!hasBriefPerm;
+}
+
 // View As Role sandbox scoping (owner bug report 2026-11-11: At A Glance + the global
 // SwingAlarm banner leaked cross-store data while simulating a lower role -- the fix this
 // panel's own scopedBrief already carries, extracted here so every other consumer of a plain

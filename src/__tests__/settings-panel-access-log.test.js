@@ -39,3 +39,33 @@ describe('Settings panel', () => {
     expect(logAppAccessMock).toHaveBeenCalledWith('panel_view', 'settings');
   });
 });
+
+// "Your Access" indicator (fresh-eyes role audit, 2026-11-11, memory/finding-fresh-eyes-role-audit-
+// 2026-11-11.md §4 Q11b, owner-approved "implement all of the items"). Identity tab is the default
+// activeSection, so no tab click is needed before asserting.
+describe('Settings panel — "Your Access" block', () => {
+  let container, root;
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); logAppAccessMock.mockClear(); });
+
+  it('shows the role label and "All N stores" when accessibleLocs is unset', async () => {
+    ({ container, root } = await mount({ settings: DEF_SETTINGS, onUpdate: () => {}, onClose: () => {}, userRole: 'gm', accessibleLocs: null }));
+    const text = container.textContent;
+    expect(text).toContain('Your Access');
+    expect(text).toContain('GM'); // DEFAULT_ROLES label for 'gm'
+    expect(text).toMatch(/All \d+ stores/);
+    expect(text).toContain('No store restriction is set on your account');
+  });
+
+  it('shows the restricted-store count and names when accessibleLocs is a real subset', async () => {
+    ({ container, root } = await mount({ settings: DEF_SETTINGS, onUpdate: () => {}, onClose: () => {}, userRole: 'gm', accessibleLocs: ['3708'] }));
+    const text = container.textContent;
+    expect(text).toMatch(/1 of \d+/);
+    expect(text).toContain('Ardmore-Broadway');
+    expect(text).toContain('This is intentional, set by an admin for your account');
+  });
+
+  it('falls back to the raw role id if it is not a recognized DEFAULT_ROLES id', async () => {
+    ({ container, root } = await mount({ settings: DEF_SETTINGS, onUpdate: () => {}, onClose: () => {}, userRole: 'not_a_real_role', accessibleLocs: null }));
+    expect(container.textContent).toContain('not_a_real_role');
+  });
+});

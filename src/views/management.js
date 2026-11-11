@@ -3,6 +3,7 @@ import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups, latestEffective } from '../constants.js';
 import { PANELS } from '../app/panel-registry.js';
 import { logOrgAssignmentChange, logAppAccess } from '../lib/supabase.js';
+import { DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 
@@ -599,7 +600,7 @@ function GroupsEditor({S, onUpdate, field, title, note}) {
   );
 }
 
-function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes, onOpenAdmin}) {
+function Settings({settings, onUpdate, onClose, userRole, accessibleLocs, onClearAll, onOpenStoreNotes, onOpenAdmin, onOpenRoleExplainer}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
 
@@ -663,6 +664,34 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           div({className:'set-row'},div({className:'set-lbl'},'District Name'),inp({className:'set-inp',defaultValue:S.districtName||'',onBlur:e=>set('districtName',e.target.value),placeholder:'e.g. McDOK'})),
           div({className:'set-note'},'Appears in report headers, file exports, and email subjects. Update if your district or operating company name changes. Stays editable.'),
           div({className:'set-row'},div({className:'set-lbl'},'Operator Name'),inp({className:'set-inp',defaultValue:S.operatorName||'',onBlur:e=>set('operatorName',e.target.value),placeholder:'e.g. Ryan Thorley'})),
+          // Your Access (fresh-eyes role audit, 2026-11-11, memory/finding-fresh-eyes-role-audit-
+          // 2026-11-11.md §4 Q11b, owner-approved "implement all of the items"): nothing
+          // previously told the user themselves whether their accessible_locs scope was
+          // narrower than "everything" -- a GM given access to only their own store had no
+          // on-screen confirmation that was intentional vs. a bug, which matters most the first
+          // time a second trusted operator (the stated beta plan) logs in and sees fewer stores
+          // than they expected. accessible_locs/RLS is the real scoping mechanism (CLAUDE.md's
+          // RBAC section) -- this is read-only confirmation of it, not a second access control.
+          div({style:{marginTop:18,paddingTop:14,borderTop:'1px solid var(--bdr)'}},
+            div({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--text2)',marginBottom:8}},'Your Access'),
+            div({className:'set-row'},div({className:'set-lbl'},'Role'),
+              div({style:{fontSize:12,color:'var(--text)',fontWeight:700}},getRoleById(userRole,DEFAULT_ROLES)?.label||userRole)),
+            div({className:'set-row'},div({className:'set-lbl'},'Stores'),
+              div({style:{fontSize:12,color:'var(--text)'}},
+                Array.isArray(accessibleLocs)&&accessibleLocs.length
+                  ? `${accessibleLocs.length} of ${Object.keys(STORE_NAMES).length}: `+accessibleLocs.map(l=>sNameC(l)||l).join(', ')
+                  : `All ${Object.keys(STORE_NAMES).length} stores`)),
+            div({className:'set-note'},Array.isArray(accessibleLocs)&&accessibleLocs.length
+              ? 'This is intentional, set by an admin for your account — not every store is hidden by accident. Contact an admin if this looks wrong.'
+              : 'No store restriction is set on your account — you see every store this role\'s permissions allow.'),
+            // "What You Can Do" screen (fresh-eyes role audit, 2026-11-11, §4 Q11a) -- the fuller,
+            // plain-language version of this exact summary, with every permission and panel
+            // listed out rather than just role+store scope.
+            onOpenRoleExplainer&&div({style:{marginTop:10}},
+              btn({className:'btn btn-sm',style:{fontWeight:600,padding:'6px 14px'},
+                onClick:()=>{ onClose&&onClose(); onOpenRoleExplainer(); }
+              },'🧭 What You Can Do'))
+          ),
           div({style:{marginTop:18,paddingTop:14,borderTop:'1px solid var(--bdr)'}},
             div({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--text2)',marginBottom:8}},'Data Policy'),
             div({className:'set-note',style:{lineHeight:1.7}},
