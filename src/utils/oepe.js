@@ -21,3 +21,17 @@ export const oepeSeconds = (x) => (x.dt_untilstore || 0) > 0
 export const oepeWithParkSeconds = (x) => (x.dt_untilstore || 0) > 0
   ? _secOf(x.dt_untilserve - x.dt_untilstore, x.dt_trans_cnt)
   : null;
+
+// Readable wall-clock label for a qsr_daily_activity hour_slot ("05:00".."28:00", confirmed live
+// -- the business day runs 4am-4am, so a post-midnight slot wraps past 24:00 rather than
+// restarting at "00:00"; a bare "00:00"/"01:00" is never a real value from this table). `%24`
+// folds the wrap back onto a normal 12-hour clock face -- task #132-adjacent (owner-requested
+// 2026-11-11 messaging work, "point out what hours or even quarter hours had the biggest
+// opportunity") needs one shared formatter rather than each caller re-deriving the wrap.
+export function hourSlotLabel(slot) {
+  const hh = parseInt(String(slot).slice(0, 2), 10);
+  if (!Number.isFinite(hh)) return slot;
+  const h24 = hh % 24;
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}${h24 < 12 ? 'am' : 'pm'}`;
+}

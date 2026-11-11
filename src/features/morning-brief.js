@@ -9,6 +9,7 @@ import { autoFirstDaily } from '../engine/vs-ly.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { DAYPART_SLOTS } from '../engine/labor-standard.js';
+import { oepeSeconds, hourSlotLabel } from '../utils/oepe.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -87,17 +88,25 @@ const MORNING_RULES = [
 
   { id:'STAFFED_SLOW', name:'Manager Not Actively Managing Floor', category:'service', icon:'👔',
     evaluate(d){
-      const {actVsNeed, oepe, oepeNorm} = d;
+      const {actVsNeed, oepe, oepeNorm, oepeWorstSlot} = d;
       if(actVsNeed==null||oepe==null||!oepeNorm) return null;
       const staffOk = Math.abs(actVsNeed) <= 2;
       const oepeHigh = oepe > oepeNorm * 1.15;
       if(!staffOk||!oepeHigh) return null;
       const pctOver = ((oepe/oepeNorm-1)*100).toFixed(2);
       const sev = oepe > oepeNorm * 1.30 ? 'RED' : 'AMBER';
+      // Owner-requested 2026-11-11 messaging work -- "point out what hours or even quarter
+      // hours had the biggest opportunity," not just the daily aggregate. Only ever ADDS detail
+      // (never contradicts/replaces the daily figure above it) and is silently absent when no
+      // DAR slot clears worstOepeSlot's minimum-sample guard, so a store with thin DAR coverage
+      // still gets the unchanged daily-only finding rather than a misleadingly specific one.
+      const slotNote = oepeWorstSlot
+        ? ` Hardest hit: the ${oepeWorstSlot.label} hour (${Math.round(oepeWorstSlot.oepe)}s over ${oepeWorstSlot.trans} cars) — start coaching there.`
+        : '';
       return {severity: sev,
         headline:`OEPE ${Math.round(oepe)}s (${pctOver}% above norm) with adequate staffing (${actVsNeed>0?'+':''}${actVsNeed} vs needed)`,
         detail:`Staffing is not the issue — the location has what it needs. High OEPE despite adequate staffing points to the manager on duty not actively managing the floor, not properly planning the shift, or not being present during peak periods. If this persists beyond one period, it escalates to a management performance concern.`,
-        action:`On next visit: observe floor management presence during peak periods. Review shift planner execution. Coach MOD on floor management fundamentals and holding crew accountable to speed standards.`};
+        action:`On next visit: observe floor management presence during peak periods. Review shift planner execution. Coach MOD on floor management fundamentals and holding crew accountable to speed standards.${slotNote}`};
     }},
 
   { id:'STAFFED_NO_PARK', name:'Drive-Through Pull-Off Risk', category:'service', icon:'🚗',
@@ -405,6 +414,10 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     kvstNorm: norms.kvstNorm,
     // Daypart data
     periods: peaks.map(r=>({period: r.date instanceof Date ? r.date.getHours() : 12, oepe:r.oepe, kvst:r.kvst})),
+    // Which real DAR hour_slot drove today's OEPE hardest -- owner-requested 2026-11-11.
+    // dar-sourced only (the one source this function has at per-slot grain); null when no DAR
+    // row exists for this store/date or no slot clears the minimum-sample guard.
+    oepeWorstSlot: dar ? worstOepeSlot(dar) : null,
     // FOB / Food Cost (monthly cadence)
     baseFoodPct: fob?.baseFoodPct||null,
     totFoodPct:  fob?.pLFoodPct||null,
@@ -794,7 +807,7 @@ export function useBriefDarByLoc(briefDate, darRows){
   uE(()=>{
     if(sharedMatch || !briefDateStr || !supabase) return;
     supabase.from('qsr_daily_activity')
-      .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours')
+      .select('loc,dt,hour_slot,product_sales,proj_sales_dollars,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,actual_punched_hours,total_needed_hours')
       .eq('dt', briefDateStr)
       .then(({data})=>setOwnDarRows(data||[]));
   },[briefDateStr, sharedMatch]);
@@ -805,16 +818,44 @@ export function useBriefDarByLoc(briefDate, darRows){
     const map = {};
     for(const r of activeDarRows){
       const key = String(parseInt(r.loc, 10));
-      if(!map[key]) map[key] = {sales:0,projSales:0,punched:0,needed:0,dtTime:0,dtCnt:0};
+      // slots (owner-requested 2026-11-11 messaging work -- "point out what hours or even
+      // quarter hours had the biggest opportunity"): additive, every existing field/consumer
+      // below is unchanged, so this never risks the pre-existing daily-sum callers (App.js's
+      // TodayPaceCard/Live Ops share this same hook's rows, but read the summed fields only).
+      if(!map[key]) map[key] = {sales:0,projSales:0,punched:0,needed:0,dtTime:0,dtCnt:0,slots:[]};
       const s = map[key];
       if((r.product_sales||0) > 0){ s.sales += r.product_sales||0; s.projSales += r.proj_sales_dollars||0; }
       s.punched += r.actual_punched_hours||0;
       s.needed  += r.total_needed_hours  ||0;
       s.dtTime  += r.dt_untilserve       ||0;
       s.dtCnt   += r.dt_trans_cnt        ||0;
+      if(r.hour_slot) s.slots.push({
+        slot: r.hour_slot,
+        dt_untilserve: r.dt_untilserve||0, dt_untilstore: r.dt_untilstore||0,
+        dt_heldtime: r.dt_heldtime||0, dt_trans_cnt: r.dt_trans_cnt||0,
+      });
     }
     return map;
   },[activeDarRows]);
+}
+
+// Which real hour_slot drove a store's daily OEPE the hardest -- owner-requested 2026-11-11
+// ("point out what hours or even quarter hours had the biggest opportunity," and the mirror
+// case for praise: `worst:false` finds the strongest slot instead). Uses the SAME reconciled
+// oepeSeconds() formula (utils/oepe.js) every other OEPE figure in the app is held to, per-slot
+// rather than day-summed. `minTrans` guards against a near-empty slot (e.g. a single car right
+// at open/close) producing a noisy, unrepresentative "worst hour."
+export function worstOepeSlot(dar, {minTrans = 3, worst = true} = {}){
+  const slots = dar?.slots;
+  if(!slots || !slots.length) return null;
+  let best = null;
+  for(const s of slots){
+    if(s.dt_trans_cnt < minTrans) continue;
+    const sec = oepeSeconds(s);
+    if(sec == null) continue;
+    if(!best || (worst ? sec > best.oepe : sec < best.oepe)) best = {slot: s.slot, oepe: sec, trans: s.dt_trans_cnt};
+  }
+  return best ? {...best, label: hourSlotLabel(best.slot)} : null;
 }
 
 function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}){
