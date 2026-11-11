@@ -22,8 +22,8 @@ const ReactDOM = { createRoot }
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
-import { altitudeForRole } from '../engine/curated-home.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis, unpadLoc } from '../constants.js';
+import { altitudeForRole, viewAsAllowedLocs } from '../engine/curated-home.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -1372,6 +1372,14 @@ function App() {
     : viewAsAltitude === 'patch'
     ? Object.keys(supervisorGroups()).map(name => ({ id: name, label: name }))
     : [];
+  // Owner bug report 2026-11-11 (screenshot: At A Glance + the global SwingAlarm banner showed
+  // cross-store data -- Holdenville -- while simulating a GM at Madill-Hwy 70). The Curated Home
+  // scoping built for View As Role (2026-11-08) only ever covered CuratedHomePanel; this is the
+  // same scoping extended to every other consumer of the raw `stores`/`ds` data that AtAGlance
+  // and the SwingAlarm feed read unfiltered. null (district altitude, or no simulation active)
+  // means no restriction -- a real, non-simulated GM/DO's own RLS-scoped `ds` already covers only
+  // its own stores, so this never changes behavior for a real login.
+  const aagAllowedLocs = viewAsAllowedLocs(viewAsAltitude, viewAsScope);
   // showOperatorSummary — dispatch #205: replaced by routePanel==='operator-summary' (see
   // routePanel above).
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
@@ -3143,9 +3151,14 @@ function App() {
     return () => { live = false; };
   }, []);
   const swingItems = React.useMemo(() => {
-    try { return buildSwingFeed(ds?.qsrActSummaryRows || [], { storeName: sName }); }
+    try {
+      const rows = ds?.qsrActSummaryRows || [];
+      // View As Role scoping (owner bug report 2026-11-11) -- see aagAllowedLocs above.
+      const scoped = aagAllowedLocs ? rows.filter(r => aagAllowedLocs.has(unpadLoc(r.loc))) : rows;
+      return buildSwingFeed(scoped, { storeName: sName });
+    }
     catch (e) { console.warn('[swing]', e); return []; }
-  }, [ds?.qsrActSummaryRows]);
+  }, [ds?.qsrActSummaryRows, viewAsAltitude, viewAsScope]);
   // Local news for the alarm. Loaded ONLY when a critical swing actually exists — a
   // store in trouble is rare, so this must not cost anything on a normal login.
   const [swingNews, setSwingNews] = React.useState([]);
@@ -4191,7 +4204,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,weeklyCommittedLocs,dateRange,darRows,
+      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:(()=>{const base=locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores;return aagAllowedLocs?base.filter(s=>aagAllowedLocs.has(unpadLoc(s.loc))):base;})(),viewAsAltitude,ds,settings,userEvents,lockedProjections,weeklyCommittedLocs,dateRange,darRows,
         onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
         onPayEventSaved:refreshPayEvents,

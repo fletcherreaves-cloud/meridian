@@ -39,13 +39,13 @@
 //      drill-through link simply doesn't render (no dead buttons), so this panel still works
 //      standalone (e.g. in a test) without the App.js wiring.
 import * as React from 'react';
-import { sNameC, operatorGroups, supervisorGroups, unpadLoc } from '../constants.js';
+import { sNameC, operatorGroups, unpadLoc } from '../constants.js';
 import { withAlpha } from '../utils/fmt.js';
 import { loadUserSetting, saveUserSetting, loadInvCountSessions, saveRecommendation } from '../lib/supabase.js';
 import { sessionsFromLog, classStreak, classSave, CLASSES } from '../engine/count-cycle.js';
 import { periodKey } from '../engine/eom-inventory.js';
 import { computeMorningBrief, getLatestBriefDate, useBriefDarByLoc } from '../features/morning-brief.js';
-import { altitudeForRole, buildCuratedHomeItems } from '../engine/curated-home.js';
+import { altitudeForRole, buildCuratedHomeItems, viewAsAllowedLocs } from '../engine/curated-home.js';
 import { operatorStores } from '../engine/operator-ledger.js';
 import { dKey } from '../utils/date.js';
 import { callSageOnce } from '../lib/sage-client.js';
@@ -431,16 +431,12 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // `ds` is already RLS-scoped this narrowly, so `viewAsScope` is simply absent/no-op there --
   // this never changes behavior for a real, non-simulated login.
   const scopedBrief = React.useMemo(() => {
-    if (!viewAsScope || !brief.stores?.length) return brief;
-    let scopedStores;
-    if (altitude === 'store') {
-      scopedStores = brief.stores.filter(s => unpadLoc(s.loc) === unpadLoc(viewAsScope));
-    } else if (altitude === 'patch') {
-      const locs = new Set((supervisorGroups()[viewAsScope] || []).map(unpadLoc));
-      scopedStores = brief.stores.filter(s => locs.has(unpadLoc(s.loc)));
-    } else {
-      return brief;
-    }
+    if (!brief.stores?.length) return brief;
+    // Shared with At A Glance + SwingAlarm's own scoping (src/engine/curated-home.js) -- same
+    // semantics, one implementation, since this used to be re-derived inline here only.
+    const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope);
+    if (!allowedLocs) return brief;
+    const scopedStores = brief.stores.filter(s => allowedLocs.has(unpadLoc(s.loc)));
     return { ...brief, stores: scopedStores, summary: summarizeStores(scopedStores) };
   }, [brief, altitude, viewAsScope]);
 

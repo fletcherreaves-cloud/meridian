@@ -14,7 +14,7 @@
 // _panelFallback, plus a startup prefetch so the chunk has almost always already arrived
 // by the time ds/stores are ready (T1 alone can take several seconds) — see App.js.
 import * as React from 'react';
-import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS } from '../constants.js';
+import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS, unpadLoc } from '../constants.js';
 import { dKey, addD, mwStart, spanTagInfo } from '../utils/date.js';
 import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual, InfoIcon } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -378,7 +378,7 @@ function NeedsYouTodayTile({ ds, stores, dateRange, onNav, onOpenStore }) {
 // computeVisitReadiness()'s OWN output (same engine the Visit Readiness panel and
 // NeedsYouTodayTile's visitRisk() detector already read) — no new scoring here, and none of
 // that scoring is touched by this widget; a future scoring change flows through automatically.
-function VisitReadinessTile({ ds, onNav }) {
+function VisitReadinessTile({ ds, stores, onNav }) {
   const [gradedVisits, setGradedVisits] = React.useState(ds?.gradedVisits || null);
   React.useEffect(() => {
     let live = true;
@@ -391,15 +391,33 @@ function VisitReadinessTile({ ds, onNav }) {
     try { return computeVisitReadiness({ ...ds, gradedVisits }); } catch { return null; }
   }, [ds, gradedVisits]);
 
+  // View As Role scoping (owner bug report 2026-11-11) -- computeVisitReadiness always scores
+  // the FULL district (result.stores is every store, sorted most-at-risk-first); this tile used
+  // to always show result.stores[0] regardless of who was actually viewing, which is exactly the
+  // "Holdenville" cross-store leak reported while simulating a GM at a different store.
+  // AtAGlance's own `stores` prop is already narrowed to the caller's real scope (RLS for a real
+  // login, or View As Role's simulated scope) -- restricting to those locs here turns "weakest
+  // store in the district" into "weakest/only store in MY scope", same number, correctly scoped,
+  // same "narrow the input, let the tile fall out correctly" pattern ToleranceRollupTile uses.
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const scopedStores = React.useMemo(() => {
+    if (!result?.stores) return null;
+    if (!allLocs.length) return result.stores;
+    const allowed = new Set(allLocs.map(unpadLoc));
+    return result.stores.filter(s => allowed.has(unpadLoc(s.loc)));
+  }, [result, allLocs]);
+  const soloStore = allLocs.length === 1;
+
   const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
   const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
     h('span', { style: { fontSize: 15 } }, '🛡️'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Visit Readiness'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, "This week's weakest store heading into its next graded visit")));
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } },
+        soloStore ? "This store's readiness heading into its next graded visit" : "This week's weakest store heading into its next graded visit")));
 
   if (!result) return card(head, div({ style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, gradedVisits === null ? 'Loading…' : 'No graded-visit data on file yet.'));
-  const weakest = (result.stores || [])[0];
+  const weakest = (scopedStores || [])[0];
   if (!weakest) return card(head, div({ style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No store has enough data to score yet.'));
 
   const bandColor = weakest.band === 'at-risk' ? '#ef4444' : weakest.band === 'watch' ? '#d97706' : '#10b981';
@@ -864,7 +882,7 @@ function computeWeeklyTrend(ds, allLocs, weekStartDay, today) {
   return result;
 }
 
-function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyCommittedLocs, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
+function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProjections, weeklyCommittedLocs, dateRange, onOpenStore, onCoachingSaved, onPayEventSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal, darRows}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
   // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
@@ -2377,7 +2395,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
     div({style:{flex:1,overflowY:'auto',padding:'12px 24px'},onScroll:handleAAGScroll},
 
       // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
-      moversStrip&&(moversStrip.up.length>0||moversStrip.down.length>0||moversStrip.slowDT.length>0)&&div({
+      // Owner bug report 2026-11-11 + follow-up design guidance ("fewer tiles... store specific
+      // at that level"): a cross-store up/down/slowest-DT ranking is meaningless at N=1 store --
+      // hidden rather than shown with a degenerate single-row "ranking", same treatment as the
+      // heatmap/bullseye/leaderboard below. Not a leak fix (moversStrip is already filtered to
+      // allLocs, which is itself the already-scoped `stores` prop) -- purely a display call.
+      viewAsAltitude!=='store'&&moversStrip&&(moversStrip.up.length>0||moversStrip.down.length>0||moversStrip.slowDT.length>0)&&div({
         style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
           borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',
           display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
@@ -2539,7 +2562,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
 
         // ── NEEDS YOU TODAY (front door, leads by owner decision) ──
         secs.find(s=>s.id==='attention'&&s.on)&&h(NeedsYouTodayTile,{key:'attention',ds,stores,dateRange,onNav,onOpenStore}),
-        secs.find(s=>s.id==='visit-readiness-today'&&s.on)&&h(VisitReadinessTile,{key:'visit-readiness-today',ds,onNav}),
+        secs.find(s=>s.id==='visit-readiness-today'&&s.on)&&h(VisitReadinessTile,{key:'visit-readiness-today',ds,stores,onNav}),
         secs.find(s=>s.id==='tracking-to-plan'&&s.on)&&h(TrackingToPlanTile,{key:'tracking-to-plan',ds,stores,darRows,onNav}),
         secs.find(s=>s.id==='coaching-loop'&&s.on)&&h(CoachingLoopTile,{key:'coaching-loop',ds,onNav}),
 
@@ -2687,12 +2710,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
         // guard is needed at this call site. #231 — does NOT take dateRange: every dimension is
         // a fixed rolling window (see the component's own header comment), never the page's
         // date-range selector.
-        div({ key: 'patch-heatmap', style: { gridColumn: '1 / -1' } },
+        // Owner bug report 2026-11-11 + follow-up design guidance: both components are
+        // inherently a MULTI-store distribution view (a grid of every store's status, a
+        // scatter of every store's position) -- at store altitude `stores` is narrowed to the
+        // one store being simulated, which would render as a degenerate single-cell/single-dot
+        // "distribution." Hidden rather than shown empty of the comparison that's the whole
+        // point of either component.
+        viewAsAltitude!=='store'&&div({ key: 'patch-heatmap', style: { gridColumn: '1 / -1' } },
           h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved, onPayEventSaved })),
 
         // #274 — Bullseye: distribution-gestalt companion to the heatmap above (gestalt, not
         // lookup — see the component's own header).
-        div({ key: 'bullseye', style: { gridColumn: '1 / -1' } },
+        viewAsAltitude!=='store'&&div({ key: 'bullseye', style: { gridColumn: '1 / -1' } },
           h(BullseyeTile, { stores, onOpenStore })),
 
         // ── PROJECTIONS SECTION ──
@@ -3327,7 +3356,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, weeklyC
           );
         })())),
         // ── STORE LEADERBOARD ──
-        secs.find(s=>s.id==='leaderboard'&&s.on)&&_mark('build:leaderboard',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        // Owner follow-up design guidance 2026-11-11: a leaderboard ranking every store is
+        // inherently a multi-store comparison -- degenerate (one row) at store altitude, where
+        // `stores` has been narrowed to the one store being simulated. Hidden, same treatment as
+        // the heatmap/bullseye/movers-strip above.
+        viewAsAltitude!=='store'&&secs.find(s=>s.id==='leaderboard'&&s.on)&&_mark('build:leaderboard',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'🏆'),
