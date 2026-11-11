@@ -10,6 +10,7 @@ import { normalizeForm, buildFormPrintHTML, sectionColor, CARD_COLOR, parseOptio
 import { printHtml } from '../utils/print-html.js';
 import { ModalShell } from '../components/ModalShell.js';
 import { triggerSync } from '../lib/supabase.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
@@ -129,7 +130,10 @@ export function FormsPrintPanel({ onClose }) {
           ));
 
   return h(ModalShell, {
-    icon: '🖨', title: 'Printable Forms', subtitle: `${index == null ? '…' : index.length} captured template${index && index.length === 1 ? '' : 's'} — blank, fill by hand`,
+    icon: '🖨', title: 'Printable Forms',
+    // InfoIcon lives in subtitle, never title -- see metric-lineage.js/store-analytics.js for why
+    // (dispatch 2026-11-10 KB rollout).
+    subtitle: h('span', null, `${index == null ? '…' : index.length} captured template${index && index.length === 1 ? '' : 's'} — blank, fill by hand`, h(InfoIcon, { articleKey: 'forms_print_guide' })),
     onClose, maxWidth: 1000,
     bodyStyle: { padding: 0, display: 'flex', minHeight: 380, maxHeight: '64vh' },
     subHeader: div({ style: { padding: '8px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },

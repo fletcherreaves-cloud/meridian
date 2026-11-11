@@ -1483,3 +1483,39 @@ shape, since every wiring here is a one-line `InfoIcon` sibling add, no new chun
 `forms_print_guide`, `count_cycle_guide`, `brief_guide`, plus `panel_index` left deliberately
 unwired as above), plus the same metric/engine-concept keys this backlog has consistently left
 cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).
+
+## Batch 16 (2026-11-11)
+
+Re-measured the 8 real-candidate keys from batch 15's list — all still 0 matches. Wired 3:
+
+- **`store_compare_guide`** → `MultiStoreComparison` (`src/views/store-analytics.js`)'s
+  `ModalShell` (on-screen title reads "📊 Multi-Store Comparison", not "Store Compare" — same
+  class of display-name divergence earlier batches have noted and left alone, nothing to fix).
+- **`forms_print_guide`** → `FormsPrintPanel` (`src/views/forms-print.js`)'s `ModalShell`.
+  Confirmed by reading the component that its `fetch('/forms/index.json')` on mount is caught on
+  both success and failure paths and falls back to an empty index either way — the title/subtitle
+  render unconditionally, so no mock was needed for the render-level test.
+- **`district_lens_guide`** → `DistrictLensPanel` (`src/views/analytics.js`)'s hand-rolled modal
+  header — this one builds its own fixed overlay/header `div` rather than using `ModalShell`, so
+  the `title`/`subtitle` string-forwarding hazard from the other two wirings here doesn't apply;
+  the `InfoIcon` is appended directly to the title `div`, same pattern as `shift_analysis_tab`/
+  `why_engine_guide` from earlier batches.
+
+**5 named candidates NOT resolved this pass, left for a future batch rather than wired on a
+guess:** `intelligence_brief`, `competitive_impact_guide`, `fcst_accuracy_guide`,
+`count_cycle_guide`, `brief_guide`. `count_cycle_guide` specifically: its real content
+(`CountCycleSection`, `src/views/count-cycle-panel.js`) is a "no fetch, no chrome of its own"
+section the caller (`eom-dashboard.js`) owns the loading/header for, rendered as one tab inside a
+hub shell with no dedicated per-tab header text of its own to anchor an icon to (`SummaryTiles`
+and the tab-bar label are shared/generic, not this tab's own). The other 4 need more reading of
+their host components before wiring confidently — not attempted blind.
+
+Each of the 3 wirings gets a render-level test in `dispatch-kb-panel-guide-batch16-
+2026-11-11.test.js` (3 tests).
+
+**Measured running total: 79 of 117 `KB_ARTICLES` keys now wired** (76 before this batch + 3
+here). Full suite: 830/830 files, 7704/7704 tests passing. Build clean, eager payload entry
+425.40 KB gzip / 694.40 KB gzip eager total (budget 850 KB, 155.60 KB headroom). **Still open:**
+~38 unwired keys — the 5 remaining named candidates above, plus `panel_index` (deliberately
+unwired), plus the same metric/engine-concept keys this backlog has consistently left
+cross-referenced rather than wired to any one panel (listed in full in the batch-13 entry above).

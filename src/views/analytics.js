@@ -706,7 +706,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
         display:'flex',alignItems:'center',gap:10}},
         span({style:{fontSize:'20px'}},'🌐'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'District Lens — What Works Where'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center'}},'District Lens — What Works Where',h(InfoIcon,{articleKey:'district_lens_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             'Correlation patterns across all '+Object.keys(STORE_NAMES).length+' stores — heatmap, metric ranking, coaching opportunities & AI narrative')
         ),
