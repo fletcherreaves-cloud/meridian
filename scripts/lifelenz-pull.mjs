@@ -36,7 +36,7 @@ import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // reads the rollup (raw shifts are never stored).
 // shiftsForEmployeeSchedule (dispatch #123, Crew Schedule Lookup) — same source, per-SHIFT
 // instead of rolled up. See the pullShiftAssignments() section below.
-import { rollupShiftsByRole, shiftsForEmployeeSchedule } from '../src/engine/lifelenz-shift-jobs.js';
+import { rollupShiftsByRole, shiftsForEmployeeSchedule, enrichRowsWithJobTitleByEmploymentId } from '../src/engine/lifelenz-shift-jobs.js';
 // Crew pay-rate ground truth (owner request 2026-11-05) -- reuses the SAME read-before-overwrite
 // diff logic scripts/qsrsoft-employee-roster-pull.mjs already proves out for management, with
 // source:'lifelenz_roster' instead of the default 'qsr_tenure'. See pullEmployeeRoster() below
@@ -1275,10 +1275,29 @@ async function pullShiftAssignments(token, schedules, start, end) {
       }
     }
     if (storeRows.length) {
+      // job_title backfill (2026-11-11 dispatch) -- GetSchedulableEmploymentsForPeriod above
+      // deliberately never requests a title (PII-minimization), so storeRows' own jobTitle is
+      // always null at this point. lifelenz_employee_roster (separate pull, same tenant) already
+      // carries a real job_title_code per employee, keyed by the SAME assignedEmploymentId when
+      // resolveRosterPersonKeys() resolved it to a real id. One extra read, no new LifeLenz call,
+      // no change to either pull's own GraphQL -- see enrichRowsWithJobTitleByEmploymentId's own
+      // header comment in lifelenz-shift-jobs.js for the full root-cause writeup.
+      try {
+        const { data: rosterRows, error: rosterErr } = await supabase
+          .from('lifelenz_employee_roster')
+          .select('person_key,job_title_code')
+          .eq('loc', loc);
+        if (rosterErr) console.warn(`[shift-assignments] job_title backfill read failed for ${loc}: ${rosterErr.message}`);
+        else storeRows = enrichRowsWithJobTitleByEmploymentId(storeRows, rosterRows);
+      } catch (e) {
+        console.warn(`[shift-assignments] job_title backfill read threw for ${loc}: ${e.message}`);
+      }
+
       const n = await upsertShiftAssignmentRows(loc, storeRows);
       total += storeRows.length; saved += n;
       const named = storeRows.filter(r => r.name).length;
-      console.log(`  [shift-assignments] ${loc}: ${n} shift-rows saved (${named}/${storeRows.length} with a resolved name)`);
+      const titled = storeRows.filter(r => r.jobTitle).length;
+      console.log(`  [shift-assignments] ${loc}: ${n} shift-rows saved (${named}/${storeRows.length} with a resolved name, ${titled}/${storeRows.length} with a resolved job title)`);
       // Separate table, separate (role-gated) RLS -- see upsertShiftPayRows' own header comment.
       await upsertShiftPayRows(loc, storeRows);
     }

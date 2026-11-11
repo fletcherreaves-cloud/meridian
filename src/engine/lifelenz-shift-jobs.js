@@ -62,6 +62,67 @@ export const LIFELENZ_JOB_TITLES = {
   '01979dc1-f5ac-7e66-a074-741f6007ee9c': 'Dept Mgr I',           // 10001
 };
 
+// ── job_title backfill for lifelenz_shift_assignments (dispatch 2026-11-11) ────────────────────
+// Root cause (measured live, not guessed): GetSchedulableEmploymentsForPeriod -- the roster
+// lookup scripts/lifelenz-pull.mjs's pullShiftAssignments() uses to resolve a name for each shift
+// -- was deliberately built to request ONLY `{ id computedName firstName lastName }` (PII-
+// minimization; see that query's own header comment), never `employmentRates`/jobTitle. So
+// `_primaryJobTitle()` below always fell through to null -- confirmed via a live service-role
+// read 2026-11-11: job_title is null in all 88,908 real rows, 100%.
+//
+// Fix does NOT touch that query (a wrong GraphQL field there has broken production before --
+// dispatch #137's own header comment). Instead: `lifelenz_employee_roster` (populated by the
+// SEPARATE employee_roster_report CSV pull, owner request 2026-11-05) already carries a real
+// `job_title_code` per employee (e.g. "00650"), and -- confirmed live -- its `person_key` IS the
+// same `assignedEmploymentId` shift_assignments rows carry, whenever resolveRosterPersonKeys()
+// resolved it to a real id rather than a synthetic `name:<x>` fallback. So the join is by ID, not
+// name-fuzzy-matching: enrichRowsWithJobTitleByEmploymentId() below backfills `jobTitle` on
+// already-built shift rows from a `{employmentId: job_title_code}` map the caller builds from a
+// plain read of that table (one extra query, no new LifeLenz call, no change to either pull's own
+// GraphQL).
+//
+// Codes below are CONFIRMED against real `lifelenz_employee_roster.job_title_code` values
+// (service-role read, 2026-11-11: '00641','00647','00648','00650','00670','00671','10001','10002'
+// all appear in real data) cross-referenced against LIFELENZ_JOB_TITLES' own code comments above.
+// '00671' and '10002' are real, live codes with NO confirmed name -- deliberately left OUT rather
+// than guessed; an unmapped code resolves to null (no job_title, same as today), not a fabricated
+// title. Expand this map from a fresh employee_roster_report capture if those names are needed.
+export const JOB_TITLE_CODE_NAMES = {
+  '00641': 'General Manager',
+  '00647': 'Cert. Swing Mgr.',
+  '00648': 'Crew Trainer',
+  '00650': 'Crew Person',
+  '00670': 'Backup Maintenance',
+  '00739': 'Shift Manager Trainee',
+  '10001': 'Dept Mgr I',
+};
+
+export const resolveJobTitleByCode = code => (code && JOB_TITLE_CODE_NAMES[code]) || null;
+
+// Pure join: `rows` are shiftsForEmployeeSchedule()'s own output shape ({employmentId, jobTitle,
+// ...}); `rosterRows` are a plain read of lifelenz_employee_roster for this store ({person_key,
+// job_title_code}). Only fills `jobTitle` when the row doesn't already have one (never overwrites
+// a value _primaryJobTitle() might someday actually resolve) and only trusts a roster row whose
+// person_key is a real employment id -- a `name:`-prefixed synthetic key (resolveRosterPersonKeys'
+// own unresolved/ambiguous fallback) is never used as a join key, since collisions there are
+// exactly the "two different people, one key" risk that function's own comment warns about.
+export function enrichRowsWithJobTitleByEmploymentId(rows, rosterRows) {
+  if (!rows || !rows.length) return rows || [];
+  const codeByEmploymentId = new Map();
+  for (const r of (rosterRows || [])) {
+    if (!r || !r.person_key || !r.job_title_code) continue;
+    if (String(r.person_key).startsWith('name:')) continue; // unresolved/ambiguous -- not a real id
+    codeByEmploymentId.set(r.person_key, r.job_title_code);
+  }
+  if (!codeByEmploymentId.size) return rows;
+  return rows.map(row => {
+    if (row.jobTitle || !row.employmentId) return row;
+    const code = codeByEmploymentId.get(row.employmentId);
+    const resolved = resolveJobTitleByCode(code);
+    return resolved ? { ...row, jobTitle: resolved } : row;
+  });
+}
+
 const _n = v => (typeof v === 'number' && isFinite(v)) ? v : 0;
 const _shortId = id => 'Role ' + String(id || '').slice(-4);
 
