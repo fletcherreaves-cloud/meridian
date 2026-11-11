@@ -45,6 +45,15 @@ on:
         required: false
         default: '0'
 
+# External heartbeat (2026-11-11, memory/finding-github-schedule-unreliable-external-
+# heartbeat-2026-11-11.md) dispatches this workflow via workflow_dispatch on the same
+# cadence as the schedule above, from outside GitHub's own cron queue — so a run from
+# one trigger can land while the other's run is still in flight. Queue rather than
+# overlap; the pull itself is idempotent (upsert on loc,dt,hour_slot) either way.
+concurrency:
+  group: qsrsoft-dar-pull-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   pull:
     runs-on: ubuntu-latest
