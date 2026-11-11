@@ -411,12 +411,16 @@ describe('reconcileLadderLevels()', () => {
 });
 
 // Owner request 2026-10-15 (pay-rate history): wage data gets its own permission key,
-// deliberately narrower than analytics.labor -- Owner/Admin/DO only. The real enforcement
-// boundary is Supabase RLS (get_my_role() in ('admin','owner','do')); this is the UI-layer
-// mirror of that, same relationship every other permission key here has to its own RLS.
-describe('permissions.js — payroll.view (pay-rate history, owner request 2026-10-15)', () => {
-  it('admin/owner/do can see it; every other role cannot', () => {
-    const allowed = ['admin', 'owner', 'do'];
+// deliberately narrower than analytics.labor -- Owner/Admin/VP/DO only. The real enforcement
+// boundary is Supabase RLS (get_my_role() in ('admin','owner','vp','do') -- 4 tables, see
+// supabase/schema-payroll-view-add-vp-2026-11-11.sql); this is the UI-layer mirror of that, same
+// relationship every other permission key here has to its own RLS.
+// 'vp' added 2026-11-11 (fresh-eyes role audit) -- VP (level 2) previously saw LESS than DO
+// (level 3, reports to VP on the ladder) on this key, an inversion owner-flagged as a real bug:
+// "They should be equal in settings > Role up to DO level." Raised VP to match, not lowered DO.
+describe('permissions.js — payroll.view (pay-rate history, owner request 2026-10-15; vp added 2026-11-11)', () => {
+  it('admin/owner/vp/do can see it; every other role cannot', () => {
+    const allowed = ['admin', 'owner', 'vp', 'do'];
     for (const role of DEFAULT_ROLES) {
       expect(hasPermission(role.id, 'payroll.view')).toBe(allowed.includes(role.id));
     }

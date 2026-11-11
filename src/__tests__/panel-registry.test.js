@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the sixty panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, Layout Planner, Equipment Results, Curated Home, Launch Planner, and YoY Trends (task #90, fifty-nine -> sixty))', () => {
+  it('is exactly the sixty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, Layout Planner, Equipment Results, Curated Home, Launch Planner, YoY Trends (task #90, fifty-nine -> sixty), and What You Can Do (fresh-eyes role audit, 2026-11-11, §4 Q11a, sixty -> sixty-one))', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -361,7 +361,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
       'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'launch-planner', 'loc-intel', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
-      'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
+      'report', 'role-explainer', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
       'weather-impact', 'weekly-count-status', 'yoy-trends',
     ]);
   });

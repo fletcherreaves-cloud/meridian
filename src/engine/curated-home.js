@@ -30,6 +30,37 @@ export function altitudeForRole(roleId) {
   return ALTITUDE_BY_ROLE[roleId] || 'store';
 }
 
+// Narration WORD, separate from altitude (owner-corrected 2026-11-11, fresh-eyes role audit).
+// CLAUDE.md's own RBAC table documents `do` as "District-level" scope, but ALTITUDE_BY_ROLE
+// above buckets it into 'patch' altitude (correctly -- its aggregation/grouping logic, how many
+// stores share a flag, is identical for a supervisor's patch and a DO's whole district, and `do`
+// genuinely sees a bigger `ds` than an Area Supervisor via its own accessible_locs/RLS scope, not
+// via anything this file does). What was wrong is narrower: patternItems() used to derive the
+// WORD "patch" straight from altitude, so a DO's own home screen literally called their district
+// a "patch" -- exactly the kind of org-chart-language mismatch the person being addressed is
+// most likely to notice. Only the word changes here; `altitude` (the aggregation branch + the
+// `scope:` field on each returned item) is untouched, so `do` still gets patch-shaped grouping,
+// just district-shaped words.
+function altWordForRole(roleId) {
+  return roleId === 'do' ? 'district' : altitudeForRole(roleId) === 'district' ? 'district' : 'patch';
+}
+
+// Altitude-aware default landing (fresh-eyes role audit, 2026-11-11 --
+// memory/finding-fresh-eyes-role-audit-2026-11-11.md §4, owner-approved "implement all of the
+// items"). Pure predicate, extracted out of App.js's mount effect so it's unit-testable without
+// mounting the full App component (no existing test in this repo does that, and inventing that
+// harness for one conditional would be disproportionate -- see this dispatch's own commit body).
+// `routePanel === null && view === 'command'` is the real signal that nothing has already
+// claimed the landing slot -- both of those state values are THEMSELVES the synchronous
+// resolution of the user's own explicit defaultLandingPanel preference (App.js's routePanel/view
+// useState initializers already read it before this predicate is ever consulted), so this never
+// overrides an explicit choice, it only fills the gap an unset one leaves. District altitude is
+// deliberately excluded -- AtAGlance stays the unchanged default there, per the audit's own
+// recommendation (closest to what that altitude is already built for).
+export function shouldDefaultToCuratedHome({ routePanel, view, roleId, hasBriefPerm }) {
+  return routePanel === null && view === 'command' && altitudeForRole(roleId) !== 'district' && !!hasBriefPerm;
+}
+
 // View As Role sandbox scoping (owner bug report 2026-11-11: At A Glance + the global
 // SwingAlarm banner leaked cross-store data while simulating a lower role -- the fix this
 // panel's own scopedBrief already carries, extracted here so every other consumer of a plain
@@ -71,7 +102,7 @@ function storeItems(stores) {
 // investigation guidance), not per live numeric value, so they stay accurate at any altitude --
 // only the number-bearing headline needed resynthesis. Affected store names are always listed so
 // a reader can drill into any one store's own exact figure.
-function patternItems(stores, altitude) {
+function patternItems(stores, altitude, altWord) {
   const withData = stores.filter(s => s.hasData);
   const total = withData.length;
   const byRule = new Map();
@@ -81,7 +112,6 @@ function patternItems(stores, altitude) {
       byRule.get(f.id).hits.push(st);
     }
   }
-  const altWord = altitude === 'district' ? 'district' : 'patch';
   const items = [];
   for (const [ruleId, { rule, hits }] of byRule) {
     const n = hits.length;
@@ -105,6 +135,6 @@ function patternItems(stores, altitude) {
 export function buildCuratedHomeItems(brief, roleId) {
   const altitude = altitudeForRole(roleId);
   const stores = (brief && brief.stores) || [];
-  const items = altitude === 'store' ? storeItems(stores) : patternItems(stores, altitude);
+  const items = altitude === 'store' ? storeItems(stores) : patternItems(stores, altitude, altWordForRole(roleId));
   return { altitude, items, summary: (brief && brief.summary) || { red: 0, amber: 0, green: 0, noData: 0, totalFlags: 0 } };
 }

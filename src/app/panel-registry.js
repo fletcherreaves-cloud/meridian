@@ -142,8 +142,10 @@ export const PANELS = [
   // Pay Rate History (owner request 2026-10-15) -- deliberately a NARROWER permission than
   // every sibling 'people' panel above (payroll.view, not analytics.store/analytics.labor):
   // wage data is a different sensitivity tier. The real enforcement boundary is Supabase RLS
-  // (get_my_role() in ('admin','owner','do') on the underlying tables) -- this key only gates
-  // the nav entry, same relationship every permission key here has to its own RLS.
+  // (get_my_role() in ('admin','owner','vp','do') on the underlying tables -- 'vp' added
+  // 2026-11-11, fresh-eyes role audit, raising VP to DO's level after an owner-flagged
+  // inconsistency; see supabase/schema-payroll-view-add-vp-2026-11-11.sql) -- this key only
+  // gates the nav entry, same relationship every permission key here has to its own RLS.
   { id:'pay-rate-history', label:'Pay Rate History', icon:'💰', perm:'payroll.view', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
@@ -276,6 +278,12 @@ export const PANELS = [
   // 'help' used to carry -- the owner's own framing is "Help should MEAN troubleshooting", so
   // the icon universally read as "help" now sits on the panel that actually does that job.
   { id:'troubleshoot', label:'Troubleshooting', icon:'?', perm:null, kind:'nav', section:'help' },
+  // 'role-explainer' -- fresh-eyes role audit (2026-11-11, §4 Q11a): a plain-language "what you
+  // can do" screen, generated from the SAME PANELS/PERMISSION_GROUPS data the admin Roles &
+  // Permissions table reads, not a hand-written second description. perm:null -- every role,
+  // including the top tier, can see what its own account is set up for; route:true since this is
+  // a real destination someone might want linked to them (e.g. "go check your own access here").
+  { id:'role-explainer', label:'What You Can Do', icon:'🧭', perm:null, kind:'nav', section:'help', route:true },
   // Dispatch #54 Job A found this had NO sidebar entry at all (only reachable via ?modal=inventory
   // deep link). Job B's Inventory & Food Cost section gives it a real one for the first time --
   // the owner's own list explicitly named it ("plus Inventory and Product Mix").
