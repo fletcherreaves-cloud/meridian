@@ -176,8 +176,13 @@ arrangement with a fully trusted party):**
 5. Real lawyer drafts Terms of Use (ownership, liability, confidentiality, termination/data
    handling) and a Privacy Notice, using §2/§4 above as the technical input.
 6. Decide and build whatever data export/deletion mechanic the ToU ends up promising.
-7. Add an in-app disclaimer on SAGE/forecast/recommendation outputs that they're advisory (§2.2) —
-   this one's cheap, low-risk, and worth doing regardless of how formal the relationship is.
+7. ✅ **DONE 2026-11-11** — added a visible "⚠ AI-generated — advisory, not a guarantee. Verify
+   before acting." disclaimer to SAGE's own header (`src/views/sage.js`), the surface §2.2 singled
+   out specifically (an LLM, can be wrong, nothing disclaimed that to the end user before this).
+   Scoped to SAGE only this pass — the Recommendation Ledger has no UI panel yet (Phase 1 is pure
+   helpers only, `supabase/schema-recommendation-ledger.sql` not yet run), and "forecast outputs"
+   spans dozens of panels that would need their own scoping pass rather than a drive-by addition
+   here. Covered by `src/__tests__/dispatch-sage-advisory-disclaimer-2026-11-11.test.js`.
 
 **Ongoing, regardless of tenant count:** keep the forecasting-methodology panels (`model-assign`,
 `dialedin`, `fcst-accuracy`, `why-engine`, etc.) gated at `admin`/`owner` only — don't extend that
