@@ -13,6 +13,8 @@
 // pattern item per rule aggregated across every store that actually has data (patch/district
 // altitude).
 
+import { supervisorGroups, unpadLoc } from '../constants.js';
+
 const SEV_RANK = { RED: 2, AMBER: 1, GREEN: 0 };
 
 // Role -> altitude. Real DEFAULT_ROLES ids only (src/engine/permissions.js) -- never a parallel
@@ -26,6 +28,20 @@ const ALTITUDE_BY_ROLE = {
 
 export function altitudeForRole(roleId) {
   return ALTITUDE_BY_ROLE[roleId] || 'store';
+}
+
+// View As Role sandbox scoping (owner bug report 2026-11-11: At A Glance + the global
+// SwingAlarm banner leaked cross-store data while simulating a lower role -- the fix this
+// panel's own scopedBrief already carries, extracted here so every other consumer of a plain
+// store/loc list can reuse the identical semantics instead of re-deriving them). Returns the set
+// of unpadded locs the simulated altitude should see, or null for "no restriction" (district
+// altitude, or no simulation active -- a real, non-simulated GM/DO's own ds is already
+// RLS-scoped this narrowly, so this is always a no-op for a real login).
+export function viewAsAllowedLocs(altitude, viewAsScope) {
+  if (!viewAsScope) return null;
+  if (altitude === 'store') return new Set([unpadLoc(viewAsScope)]);
+  if (altitude === 'patch') return new Set((supervisorGroups()[viewAsScope] || []).map(unpadLoc));
+  return null;
 }
 
 // 'store' altitude -- one item per flag, for every store that actually has data, reusing Morning
