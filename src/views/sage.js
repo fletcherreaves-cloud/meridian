@@ -1467,6 +1467,10 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, use
           h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
           h(InfoIcon, { articleKey: 'sage_guide' })),
         h('div', { style: { fontSize: '11px', color: muted, marginTop: 4 } }, 'Strategic Analytics & Guidance Engine · Claude Opus'),
+        // Task #70 punch-list #7 (memory/plan-legal-ip-protection-2026-11-04.md §2.2) -- SAGE is
+        // an LLM: it can be wrong, and nothing disclaimed that to the end user inside the app
+        // itself before this. A visible, not just contractual, disclaimer.
+        h('div', { style: { fontSize: '10px', color: amber, opacity: .85, marginTop: 3 } }, '⚠ AI-generated — advisory, not a guarantee. Verify before acting.'),
       ),
       h('div', { style: { display: 'flex', gap: 6, flexShrink: 0, marginTop: 2 } },
         h('button', {
