@@ -22,7 +22,7 @@ import {
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
   loadQsrSecurityEventsForSubject, loadSecurityFindingsForSubject,
   loadSecurityFindingActionsForFindings, saveSecurityFindingAction,
-  loadSecurityFindingsRecentHistoryForKeys,
+  loadSecurityFindingsRecentHistoryForKeys, loadSecurityFlaggedEventsForRules,
 } from '../lib/supabase.js';
 import { INV_ORG_COORDS, STORE_NAMES, supervisorOf, unpadLoc } from '../constants.js';
 import { altitudeForRole, viewAsAllowedLocs } from '../engine/curated-home.js';
@@ -746,7 +746,7 @@ function SubjectHistory({ group }) {
   );
 }
 
-function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction }) {
+function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction, flaggedDatesByKey }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
     // Owner feedback, 2026-11-10: subjectLabel was already threaded into this component (used
     // inside each verdict's buildDecisionSentence), but never rendered on its own -- a name stated
@@ -803,7 +803,7 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
         // actual verdict to act on (never for undetermined/hygiene, which have nothing to
         // investigate yet).
         v.pass === true && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 4, fontStyle: 'italic' } },
-          cameraReviewHint(group.loc, v.windowStart, v.windowEnd)),
+          cameraReviewHint(group.loc, v.windowStart, v.windowEnd, flaggedDatesByKey?.get(flaggedDatesKey(v.ruleId, group.loc, group.empToken, group.wrin)))),
         v.id && v.pass != null && !v.lifecycleCategory && h(FindingActions, {
           findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
           error: actionError?.[v.id], onSubmit: onFindingAction,
@@ -863,6 +863,15 @@ const ACTION_LABEL = {
 // is wired up for so far, see security-rules-run.mjs's own header on that). With no dates supplied,
 // or none loaded yet, this still falls back to the window -- an honest "narrower than this" is
 // strictly better than a wrong specific date, never the reverse.
+// Phase 1c (camera-hint UI wiring, 2026-11-12 follow-on) -- the ONE key shape shared by every
+// caller that builds or reads the flaggedDatesByKey map (SecurityPanel builds it, SubjectDetail/
+// SecurityBriefingCard/SubjectCameraReminder read it) -- a verdict's own ruleId plus its subject's
+// (loc, empToken-or-wrin), matching security_flagged_events' own subject_key shape (exactly one of
+// empToken/wrin is ever set, enforced by that table's own check constraint).
+export function flaggedDatesKey(ruleId, loc, empToken, wrin) {
+  return `${ruleId}|${loc}|${empToken || ''}::${wrin || ''}`;
+}
+
 export function cameraReviewHint(loc, windowStart, windowEnd, flaggedDates = null) {
   if (Array.isArray(flaggedDates) && flaggedDates.length) {
     const dates = flaggedDates.join(', ');
@@ -879,15 +888,19 @@ export function cameraReviewHint(loc, windowStart, windowEnd, flaggedDates = nul
 // callout at the top of the Brief view. Deduped by distinct (windowStart, windowEnd) across every
 // currently-flagged verdict for this subject -- most subjects flag on the same or overlapping
 // window, so this is usually one line, not N copies of the same reminder.
-function SubjectCameraReminder({ group, flaggedVerdicts }) {
+function SubjectCameraReminder({ group, flaggedVerdicts, flaggedDatesByKey }) {
   if (!flaggedVerdicts.length) return null;
   const seen = new Set();
   const lines = [];
   flaggedVerdicts.forEach(v => {
-    const key = `${v.windowStart}|${v.windowEnd}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    lines.push(cameraReviewHint(group.loc, v.windowStart, v.windowEnd));
+    // Phase 1c -- dedup on the actual rendered line, not just the window. Two rules sharing a
+    // window but flagging on DIFFERENT specific days must not collapse into one line and silently
+    // drop a day; two rules that render identically (same window, or the same specific day(s))
+    // still collapse, same as before.
+    const hint = cameraReviewHint(group.loc, v.windowStart, v.windowEnd, flaggedDatesByKey?.get(flaggedDatesKey(v.ruleId, group.loc, group.empToken, group.wrin)));
+    if (seen.has(hint)) return;
+    seen.add(hint);
+    lines.push(hint);
   });
   return div({
     style: {
@@ -1080,7 +1093,7 @@ function fDateTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
 // the parent's <tbody> gets valid direct children -- same cell content as before the table
 // conversion, just laid out in columns instead of one flex row.
 const SUBJECT_ROW_COLS = 6;
-function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item, findingActions, actionBusy, actionError, onFindingAction }) {
+function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item, findingActions, actionBusy, actionError, onFindingAction, flaggedDatesByKey }) {
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
     .map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v }));
@@ -1127,7 +1140,7 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
     ),
     expanded && h('tr', null,
       td({ colSpan: SUBJECT_ROW_COLS, style: { padding: 0 } },
-        h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction }))),
+        h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds, findingActions, actionBusy, actionError, onFindingAction, flaggedDatesByKey }))),
   );
 }
 
@@ -1607,7 +1620,7 @@ function CaseQueueBar({ caseQueue }) {
 // where it genuinely exists is intentionally left to Table's own "🔎 Investigate further" drill-
 // down (SubjectDrilldown/SubjectEvents) rather than duplicated here -- the gateway link below is
 // how a reader gets there, scoped to this exact subject, not a second copy of that fetch.
-function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey, onBack, onOpenTable }) {
+function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey, onBack, onOpenTable, flaggedDatesByKey }) {
   const linkStyle = { fontSize: 12, fontWeight: 600, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 };
   if (!group) {
     return div({ style: { padding: '40px 20px', textAlign: 'center' } },
@@ -1636,10 +1649,10 @@ function SubjectBriefView({ group, rulesById, revealed, onReveal, itemInfoFor, f
       : h(React.Fragment, null,
           h(SubjectStatTiles, { flaggedVerdicts, rulesById }),
           h(SubjectSynthesisBox, { group, flaggedVerdicts, rulesById, subjectLabel }),
-          h(SubjectCameraReminder, { group, flaggedVerdicts }),
+          h(SubjectCameraReminder, { group, flaggedVerdicts, flaggedDatesByKey }),
           h(SecurityBriefingCard, {
             group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError,
-            onFindingAction, openDrawers, onToggleDrawer, driftPerKey,
+            onFindingAction, openDrawers, onToggleDrawer, driftPerKey, flaggedDatesByKey,
           }),
           h(SubjectPlaybookSection, { flaggedVerdicts }),
         ),
@@ -1724,7 +1737,7 @@ function SecurityHealthGrid({ list, scope, onSelectStore }) {
 // and independently case-tracked, rather than one card hiding two of three findings behind a
 // click. `clear`/`undetermined`/`hygiene` verdicts never get a card here (nothing to action) --
 // they still render in the Table view's full per-subject detail.
-function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey }) {
+function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFor, findingActions, actionBusy, actionError, onFindingAction, openDrawers, onToggleDrawer, driftPerKey, flaggedDatesByKey }) {
   const subjectLabel = subjectLabelFor(group, revealed, itemInfoFor);
   const flaggedVerdicts = group.verdicts.filter(v => v.pass === true && !v.lifecycleCategory);
   if (!flaggedVerdicts.length) return null;
@@ -1804,7 +1817,7 @@ function SecurityBriefingCard({ group, rulesById, revealed, onReveal, itemInfoFo
           );
         })(),
         v.pass === true && div({ style: { fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' } },
-          cameraReviewHint(group.loc, v.windowStart, v.windowEnd)),
+          cameraReviewHint(group.loc, v.windowStart, v.windowEnd, flaggedDatesByKey?.get(flaggedDatesKey(v.ruleId, group.loc, group.empToken, group.wrin)))),
         v.id && h(FindingActions, {
           findingId: v.id, actions: findingActions?.[v.id], busy: actionBusy === v.id,
           error: actionError?.[v.id], onSubmit: onFindingAction,
@@ -2243,6 +2256,49 @@ export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
     return () => { cancelled = true; };
   }, [view, commandGroups]);
 
+  // Phase 1c (camera-hint UI wiring, 2026-11-12 follow-on) -- the day-level dates behind every
+  // CURRENTLY FLAGGED verdict across BOTH the table view (sortedGroups) and Command/Brief
+  // (commandGroups), same "bulk across everything currently on screen" shape as the
+  // findingActions effect immediately above, not a per-card fetch. security_flagged_events has no
+  // finding_id (see its own schema comment), so this batches by DISTINCT RULE ID instead --
+  // loadSecurityFlaggedEventsForRules() -- and matches each row to its (loc, subject) client-side.
+  // flaggedEventsAttemptedRules tracks rule ids already fetched (not subject/finding ids -- a rule
+  // id is reused across many subjects, so re-fetching it per subject would be the exact N-query
+  // mistake this bulk approach exists to avoid).
+  const flaggedEventsAttemptedRules = React.useRef(new Set());
+  const [flaggedEvents, setFlaggedEvents] = React.useState([]);
+  React.useEffect(() => {
+    const ruleIds = new Set();
+    for (const g of [...sortedGroups, ...commandGroups]) {
+      for (const v of g.verdicts) {
+        if (v.pass === true && !v.lifecycleCategory && !flaggedEventsAttemptedRules.current.has(v.ruleId)) ruleIds.add(v.ruleId);
+      }
+    }
+    if (!ruleIds.size) return;
+    ruleIds.forEach(id => flaggedEventsAttemptedRules.current.add(id));
+    let cancelled = false;
+    (async () => {
+      const rows = await loadSecurityFlaggedEventsForRules([...ruleIds]);
+      if (cancelled || !rows.length) return;
+      setFlaggedEvents(prev => [...prev, ...rows]);
+    })();
+    return () => { cancelled = true; };
+  }, [sortedGroups, commandGroups]);
+
+  // One row per (ruleId, loc, specific day) -> grouped into flaggedDatesKey()'s own shape, sorted
+  // oldest-first (matching deriveDailyBreaches' own order, so a re-sort here never contradicts
+  // what the batch job itself already ordered).
+  const flaggedDatesByKey = React.useMemo(() => {
+    const m = new Map();
+    for (const r of flaggedEvents) {
+      const key = flaggedDatesKey(r.ruleId, r.loc, r.empToken, r.wrin);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(r.date);
+    }
+    for (const dates of m.values()) dates.sort();
+    return m;
+  }, [flaggedEvents]);
+
   const caseQueue = React.useMemo(() => tallyCaseQueue(commandGroups, findingActions), [commandGroups, findingActions]);
 
   const handleFindingAction = React.useCallback(async (findingId, action, note) => {
@@ -2584,6 +2640,7 @@ export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
               key: g.key, group, rulesById, revealed, onReveal, itemInfoFor,
               findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
               openDrawers, onToggleDrawer: toggleDrawer, driftPerKey: driftRollup?.perKey,
+              flaggedDatesByKey,
             });
           }),
         ),
@@ -2631,6 +2688,7 @@ export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
               // assembleEventsDrilldown() exists either -- so it's nulled here for the same reason.
               domainRuleIds: (domain === 'labor' || domain === 'events') ? null : domainRuleIds, item,
               findingActions, actionBusy, actionError, onFindingAction: handleFindingAction,
+              flaggedDatesByKey,
             });
           })),
         ),
@@ -2656,6 +2714,7 @@ export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
           openDrawers, onToggleDrawer: toggleDrawer, driftPerKey: driftRollup?.perKey,
           onBack: () => setView('command'),
           onOpenTable: () => setView('table'),
+          flaggedDatesByKey,
         }),
     ),
   );

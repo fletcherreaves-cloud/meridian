@@ -6861,14 +6861,44 @@ function _mapSecurityFlaggedEventRow(r) {
     windowStart: r.window_start, windowEnd: r.window_end, status: r.status, computedAt: r.computed_at,
   };
 }
+// Same "table not migrated yet" guard as loadSecurityFindingActionsForFindings's own
+// _securityFindingActionsTableMissing -- security_flagged_events' schema shipped in v5.747 but
+// isn't run yet, so every call would otherwise warn on the exact same PGRST205 on every render
+// until the owner applies it. Shared by both loaders below (one table, one guard).
+let _securityFlaggedEventsTableMissing = false;
 export async function loadSecurityFlaggedEventsForSubject({ loc, ruleId = null, empToken = null, wrin = null } = {}) {
   if (!supabase || !loc || (!empToken && !wrin)) return [];
+  if (_securityFlaggedEventsTableMissing) return [];
   let q = supabase.from('security_flagged_events').select(SECURITY_FLAGGED_EVENTS_COLS)
     .eq('loc', String(loc).padStart(7, '0')).order('event_date', { ascending: true }).limit(500);
   q = empToken ? q.eq('emp_token', empToken) : q.eq('wrin', wrin);
   if (ruleId) q = q.eq('rule_id', ruleId);
   const { data, error } = await q;
-  if (error) { console.warn('[loadSecurityFlaggedEventsForSubject]', error.message); return []; }
+  if (error) {
+    if (error.code === 'PGRST205') { _securityFlaggedEventsTableMissing = true; return []; }
+    console.warn('[loadSecurityFlaggedEventsForSubject]', error.message);
+    return [];
+  }
+  return (data || []).map(_mapSecurityFlaggedEventRow);
+}
+
+// Phase 1c (camera-hint UI wiring, 2026-11-12 follow-on) -- the BULK sibling of the lazy
+// per-subject loader above, same shape as loadSecurityFindingActionsForFindings just below it:
+// one query for every rule currently in play, not one query per card. security_flagged_events
+// has no finding_id column (it's deliberately decoupled from the window-level finding -- see its
+// own schema comment), so this batches on rule_id instead and leaves matching a specific
+// (loc, subject) pair to the caller, which already has the full verdict list in hand and would
+// otherwise have to re-derive a second query shape per subject.
+export async function loadSecurityFlaggedEventsForRules(ruleIds) {
+  if (!supabase || !Array.isArray(ruleIds) || !ruleIds.length) return [];
+  if (_securityFlaggedEventsTableMissing) return [];
+  const { data, error } = await supabase.from('security_flagged_events').select(SECURITY_FLAGGED_EVENTS_COLS)
+    .in('rule_id', ruleIds).order('event_date', { ascending: true }).limit(2000);
+  if (error) {
+    if (error.code === 'PGRST205') { _securityFlaggedEventsTableMissing = true; return []; }
+    console.warn('[loadSecurityFlaggedEventsForRules]', error.message);
+    return [];
+  }
   return (data || []).map(_mapSecurityFlaggedEventRow);
 }
 
