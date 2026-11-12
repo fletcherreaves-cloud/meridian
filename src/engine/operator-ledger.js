@@ -19,7 +19,13 @@ export { rankNeedsAttention };
 // This operator's own stores, from the real live-or-seed operatorGroups() map — never a second,
 // parallel grouping. A loc in the group with no matching brief store (not yet reporting/no data
 // stream) is simply absent, same as every other altitude in this app.
+// No operatorGroup set (owner request 2026-11-12 -- OM/DO/VP cascading scope flexibility on The
+// Ledger, which never self-identifies as one fixed real operator) means "no operator-identity
+// filter" -- pass `stores` through unfiltered rather than matching against an empty locs set.
+// Every existing caller already guards this call behind a truthy operatorGroup check of its own
+// (curated-home.js's huddleStores), so this only changes behavior for the new caller that doesn't.
 export function operatorStores(stores, operatorGroup) {
+  if (!operatorGroup) return stores || [];
   const locs = new Set((operatorGroups()[operatorGroup] || []).map(unpadLoc));
   return (stores || []).filter(s => locs.has(unpadLoc(s.loc)));
 }

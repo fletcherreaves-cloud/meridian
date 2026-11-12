@@ -17,7 +17,11 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 
 const STATE_LABEL = { OK: 'Oklahoma', FL: 'Florida Panhandle' };
-const stateLabel = (code) => STATE_LABEL[code] || code;
+// Exported (2026-11-12) so curated-home.js's cascading-scope header can show the same friendly
+// name the region cards below already use, rather than the raw 2-letter state code
+// buildLocationHierarchy's own generic `label` carries (that one has no org-specific naming --
+// see its own comment).
+export const stateLabel = (code) => STATE_LABEL[code] || code;
 
 function RegionCard({ region, onPick }) {
   return div({ style: { flex: '1 1 300px', minWidth: 260, background: 'var(--surf,#fffdf7)',
@@ -49,7 +53,7 @@ function PeerBar({ peers }) {
   );
 }
 
-export function OperatorLedgerFormat({ ds, stores, items, userName, operatorGroup, onNav }) {
+export function OperatorLedgerFormat({ ds, stores, allStores, items, userName, operatorGroup, scopeLabel, onNav }) {
   const [drillLoc, setDrillLoc] = React.useState(null);
   const myStores = React.useMemo(() => operatorStores(stores, operatorGroup), [stores, operatorGroup]);
   const withData = React.useMemo(() => myStores.filter(s => s.hasData), [myStores]);
@@ -57,7 +61,11 @@ export function OperatorLedgerFormat({ ds, stores, items, userName, operatorGrou
   const regions = React.useMemo(() => operatorRegions(withData), [withData]);
   const apartMi = React.useMemo(() => distanceBetweenRegions(regions), [regions]);
   const ranked = React.useMemo(() => rankNeedsAttention(withData), [withData]);
-  const peers = React.useMemo(() => operatorPeerComparison(stores, operatorGroup), [stores, operatorGroup]);
+  // Peer comparison always sweeps the REAL full universe (never whatever `stores` was narrowed
+  // to for the viewer's own cascading scope pick, 2026-11-12) -- otherwise an OM/DO/VP viewing
+  // just one state/patch would see a peer "operator" rollup computed from only that slice,
+  // silently wrong for every operator except the one who happens to live entirely inside it.
+  const peers = React.useMemo(() => operatorPeerComparison(allStores || stores, operatorGroup), [allStores, stores, operatorGroup]);
 
   const onPick = (loc) => setDrillLoc(loc);
 
@@ -76,7 +84,7 @@ export function OperatorLedgerFormat({ ds, stores, items, userName, operatorGrou
 
   return div({ style: { display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 820, margin: '0 auto' } },
     div(null,
-      div({ style: { fontSize: 17, fontWeight: 700, color: 'var(--text,#2b241a)' } }, operatorGroup || 'Your Restaurants'),
+      div({ style: { fontSize: 17, fontWeight: 700, color: 'var(--text,#2b241a)' } }, scopeLabel || operatorGroup || 'Your Restaurants'),
       div({ style: { fontSize: 11.5, color: 'var(--text3,#7a6f5c)', marginTop: 2 } },
         rollup.storeCount + ' restaurant' + (rollup.storeCount !== 1 ? 's' : '') +
         (regions.length > 1 ? ' · ' + regions.map(r => stateLabel(r.state)).join(' & ') : '') +

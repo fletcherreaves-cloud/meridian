@@ -81,13 +81,33 @@ describe('View As Role altitude switch no longer strands a stale Game Plan forma
     // Confirms Game Plan really was active at store altitude (the stale value this bug relies on).
     expect(container.textContent).toContain("Today's one thing");
 
+    // area_supervisor, not 'do'/'om' -- those two cascading-scope roles (2026-11-12) now default
+    // to The Ledger instead of The Patch (see curated-home-operator-ledger.test.js), so this
+    // regression test uses the one patch-altitude role that still lands on The Patch.
     await act(async () => {
-      root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'do', darRows: [] }));
+      root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'area_supervisor', darRows: [] }));
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     });
     expect(container.textContent).toContain('Your Patch');
     expect(container.textContent).not.toContain('Not enough closed days');
     expect(container.textContent).not.toContain("Today's one thing");
+  });
+
+  it('the same stale-format switch to a cascading-scope role (do/om/vp) lands on The Ledger instead, never the stranded Game Plan', async () => {
+    localStorage.setItem('mf_curated_home_format', 'gameplan');
+    await act(async () => {
+      root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'gm', darRows: [] }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Today's one thing");
+
+    await act(async () => {
+      root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'do', darRows: [] }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain("Today's one thing");
+    expect(container.textContent).not.toContain('Your Patch');
+    expect(container.textContent).toContain('Your restaurants, right now'); // The Ledger's own section heading
   });
 });
 
