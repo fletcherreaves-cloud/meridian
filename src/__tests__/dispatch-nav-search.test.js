@@ -76,6 +76,29 @@ describe('nav search', () => {
     expect(container.textContent).toContain('No matches.');
   });
 
+  // Owner-caught bug (2026-11-12, live): "I just toggled District Lens to on in Panel Manager
+  // but... it did not show up in search." Root cause -- navIndex never read OPTIONAL_PANELS at
+  // all (its own comment wrongly claimed panelsForSection() returned 'optional' kind too; it
+  // only ever returns 'nav'), so every kind:'optional' panel was unreachable from search no
+  // matter what panelVis held. Fixed by adding the same OPTIONAL_PANELS pass the sidebar itself
+  // renders from.
+  it('an optional panel toggled on in panelVis is now findable through search, same as any nav panel', () => {
+    const { container, onOpenModal } = mountSidebar({ panelVis: { 'district-lens': true } });
+    const input = container.querySelector('input[placeholder="🔍 Search…"]');
+    act(() => { setNativeValue(input, 'District Lens'); });
+    const match = [...container.querySelectorAll('div')].find(d => d.textContent === 'District Lens');
+    expect(match, 'District Lens should appear in search results once panelVis enables it').toBeTruthy();
+    act(() => { match.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onOpenModal).toHaveBeenCalledWith('district-lens');
+  });
+
+  it('an optional panel NOT toggled on in panelVis stays out of search (the fix is scoped to visible optional panels, not a blanket add)', () => {
+    const { container } = mountSidebar({ panelVis: {} });
+    const input = container.querySelector('input[placeholder="🔍 Search…"]');
+    act(() => { setNativeValue(input, 'District Lens'); });
+    expect(container.textContent).toContain('No matches.');
+  });
+
   it('is not rendered at all when the sidebar is collapsed (no room for a text box in the 48px rail)', () => {
     // Collapse via the logo-click toggle (component-local state, no prop for it).
     const { container } = mountSidebar();

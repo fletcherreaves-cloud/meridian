@@ -101,4 +101,30 @@ describe('AppSidebar nav regroup — v2 (default, no settings.navStyle field at 
     // Classic shows panels flat, no click needed.
     expect(container.textContent).toMatch(/Projections/);
   });
+
+  // Owner-caught bug (2026-11-12, live): "I just toggled District Lens to on in Panel Manager
+  // but I can't find it." Root cause -- the optional-panel row used pi() (betaMode-gated, meant
+  // for the Test Kitchen rows right above it in the same block) instead of pis(), so the whole
+  // Deep Dive optional-panel set vanished whenever Test Kitchen was hidden (betaMode:true),
+  // regardless of panelVis. Reproduces the owner's exact scenario -- District Lens toggled ON in
+  // panelVis, Test Kitchen hidden -- and must find it once the header is expanded.
+  it('an optional panel toggled on in panelVis still renders even when Test Kitchen is hidden (betaMode:true) -- the exact owner-reported bug', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(h(AppSidebar, {
+        view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+        settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+        onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+        betaMode: true, panelVis: { 'district-lens': true }, initialCollapsed: false,
+      }));
+    });
+    const header = byText(container, 'Deep Dive');
+    expect(header, 'Deep Dive header should still exist -- District Lens is on even with Test Kitchen hidden').toBeTruthy();
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toContain('District Lens');
+    act(() => { root.unmount(); });
+    container.remove();
+  });
 });

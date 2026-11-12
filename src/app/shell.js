@@ -395,14 +395,21 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
 
   // ── Global nav search (owner req: "a search bar at the top of the menu to find anything
   // in-app") ────────────────────────────────────────────────────────────────────────────────
-  // Index built from the SAME two sources + the SAME visibility rules the sidebar itself
-  // already renders from -- panelsForSection() per real section (matching renderSection()'s own
-  // `can(...)` gate) plus testKitchenPanels() when Test Kitchen is showing (renderTestKitchen()'s
-  // own `!betaMode` gate) -- so a search result is never something the user couldn't also have
-  // found by scrolling, and never silently drifts from what's actually clickable. kind:'internal'/
-  // 'orphan'/'hub-tab' panels are excluded by construction (panelsForSection/testKitchenPanels only
-  // return 'nav'/'optional'/'test-kitchen' kinds) -- an internal redirect-only id or a broken
-  // orphan is not something a user should be able to "find".
+  // Index built from the SAME sources + the SAME visibility rules the sidebar itself already
+  // renders from -- panelsForSection() per real section (matching renderSection()'s own `can(...)`
+  // gate), testKitchenPanels() when Test Kitchen is showing (renderTestKitchen()'s own `!betaMode`
+  // gate), and OPTIONAL_PANELS filtered by panelVis/perm/panelOk (matching the Deep Dive block's
+  // own filter below) -- so a search result is never something the user couldn't also have found
+  // by scrolling, and never silently drifts from what's actually clickable.
+  // ⚠️ Owner-caught bug (2026-11-12): "I just toggled District Lens to on in Panel Manager but...
+  // it did not show up in search." Root cause -- OPTIONAL_PANELS was never added to this index at
+  // all (this comment used to claim panelsForSection/testKitchenPanels "return 'nav'/'optional'/
+  // 'test-kitchen' kinds", which was simply wrong -- panelsForSection only ever matches
+  // kind:'nav'). Every kind:'optional' panel was unreachable from search regardless of panelVis,
+  // not just District Lens. Fixed by adding the same OPTIONAL_PANELS pass the sidebar itself uses.
+  // kind:'internal'/'hub-tab' panels remain excluded by construction (no source here returns
+  // them) -- an internal redirect-only id or a hub-tab sub-panel is not something a user should be
+  // able to "find" as a standalone destination.
   const [navQuery, setNavQuery] = useState('');
   const [navSearchOpen, setNavSearchOpen] = useState(false);
   const navSearchRef = useRef(null);
@@ -428,8 +435,13 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
         items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: 'Test Kitchen' });
       }
     }
+    for (const p of OPTIONAL_PANELS) {
+      if (seen.has(p.id) || !(panelVis && panelVis[p.id]) || (p.perm && !can(p.perm)) || !panelOk(p.id)) continue;
+      seen.add(p.id);
+      items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: 'Deep Dive' });
+    }
     return items;
-  }, [can, betaMode, panelOk]);
+  }, [can, betaMode, panelOk, panelVis]);
   const navResults = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return [];
@@ -575,15 +587,22 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       // exactly as before (byte-identical); v2 wraps the SAME items (nothing reclassified in
       // panel-registry.js) in one collapsible "🔷 Deep Dive" header instead of two blocks, one
       // of which (Optional) previously had no header/label at all.
+      // Owner-caught bug (2026-11-12): "I just toggled District Lens to on in Panel Manager but
+      // I can't find it." Root cause -- this used pi() (betaMode-gated, correct for the Test
+      // Kitchen items right above) for OPTIONAL_PANELS too, so the whole Deep Dive optional-panel
+      // block vanished whenever Test Kitchen was hidden (betaMode:true), regardless of panelVis.
+      // OPTIONAL_PANELS (kind:'optional') is a different category from Test Kitchen
+      // (kind:'test-kitchen') with its own visibility toggle (panelVis, set in Panel Manager) --
+      // it has no reason to also hide with betaMode. pis() (not betaMode-gated) is correct here.
       ...(navStyle==='classic' ? [
         ...(renderTestKitchen() || []),
         ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
-          .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
+          .map(p=>pis(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
       ] : (() => {
         const items=[
           ...(renderTestKitchen() || []),
           ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm))&&panelOk(p.id))
-            .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
+            .map(p=>pis(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
         ].filter(Boolean);
         if(!items.length) return [];
         return [
