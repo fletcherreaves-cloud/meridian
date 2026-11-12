@@ -15,10 +15,12 @@ import * as React from 'react';
 import { f$, fP, fPct } from '../utils/fmt.js';
 import {
   loadQsrFob, loadQsrVarianceHistory, loadDailyActivityRangeForStore, loadStoreLaborConfig,
+  loadInvCountSessions,
 } from '../lib/supabase.js';
 import { buildStoreFobReport } from '../engine/fob-report.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { fobDailyTrace, biggestJumpDay, classTrace, FOB_CLASS_KEYS } from '../engine/variance-trace.js';
+import { sessionsFromLog } from '../engine/count-cycle.js';
 import { computeStoreDataDiscipline } from '../engine/waste-discipline.js';
 import { scanAllPairs } from '../engine/signal-registry.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -264,6 +266,24 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   // attaches each point's class breakdown to the same trace, zero new fetch.
   const clsTrace = useMemo(() => classTrace(trace), [trace]);
 
+  // Real weekly/daily count-session touchpoints for the Day-by-Day Variance chart (owner,
+  // live, 2026-11-12: "Still need to wire in the weekly and daily counts to this chart") — this
+  // is the `annotateTouchpoints` deferral this tab's own trace comment already flagged.
+  // Sourced from the SAME durable inv_count_sessions log Spot-Check Ruler/Huddle read
+  // (sessionsFromLog, count-cycle.js) rather than weekly-cadence.js's older analyzeCountCadence
+  // over qsr_raw_item_detail -- eom-dashboard.js's own dispatch #97 comment already states that
+  // older basis was superseded by this log-backed one; this tab adopts the current one directly
+  // rather than wiring up the superseded path.
+  const [countSessions, setCountSessions] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setCountSessions(null);
+    loadInvCountSessions({ period: reportPeriod })
+      .then(rows => { if (live) setCountSessions(sessionsFromLog(rows).sessions[loc] || []); })
+      .catch(() => { if (live) setCountSessions([]); });
+    return () => { live = false; };
+  }, [loc, reportPeriod]);
+
   // Data-discipline (waste-logging cadence) — lazy-fill, load-on-open, same shape as
   // analytics.js's FOBAnalysisPanel.
   const [wastePending, setWastePending] = useState(true);
@@ -327,7 +347,7 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
     ),
     div(gridStyle('1fr 1fr'),
       Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod + ' · by class' },
-        trace.length ? h(VarianceTrace, { trace: clsTrace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
+        trace.length ? h(VarianceTrace, { trace: clsTrace, sessions: countSessions }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
         // Gated at >=$25, same threshold eom-dashboard.js's VarianceTraceChart callout uses
         // (line ~664) -- without it, a quiet-period trivial swing gets flagged with the same
         // critical red styling as a real jump (mass-review notes 70, 2026-10-13).
@@ -383,7 +403,13 @@ const CLASS_LINE = {
 // (mirrors the mockup's inline SVG line chart, extended with the class breakdown). `trace` is
 // variance-trace.js's classTrace() output — each point already carries `.cls.{food,
 // condiment,paper}` alongside the existing `.delta.fob` total.
-function VarianceTrace({ trace }) {
+// Weekly/EOM/mid-month-paper cycle counts vs. a daily spot touch — same two-tier distinction
+// sessionLabel() itself already encodes (a joined cycle-name string vs. "Spot check"/"Partial").
+// Never a 3rd bucket invented here: these are the only two kinds a real inv_count_sessions row
+// can resolve to.
+const isCycleCount = (kind) => /Weekly|End of month|Mid-month paper/.test(kind || '');
+
+function VarianceTrace({ trace, sessions }) {
   const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
   const totalVals = trace.map(p => p.delta.fob || 0);
   const classVals = { food: [], condiment: [], paper: [] };
@@ -402,6 +428,16 @@ function VarianceTrace({ trace }) {
   const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
   const money = v => (v >= 0 ? '+' : '') + '$' + Math.round(v).toLocaleString();
 
+  // Count-session touchpoints (owner, live, 2026-11-12: "Still need to wire in the weekly and
+  // daily counts to this chart") — only the sessions whose date actually falls inside this
+  // trace's own date range render; a count logged outside the period (last/next month's
+  // spillover) is simply not plotted, never clamped onto an edge day it didn't happen on.
+  const idxByDate = {}; trace.forEach((p, i) => { idxByDate[p.date] = i; });
+  const markers = (sessions || [])
+    .filter(s => idxByDate[s.date] !== undefined)
+    .map(s => ({ i: idxByDate[s.date], date: s.date, kind: s.kind, n: s.n, cycle: isCycleCount(s.kind) }));
+  const markerY = H - padB + 9;
+
   return div(null,
     h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
       h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
@@ -415,14 +451,26 @@ function VarianceTrace({ trace }) {
           ...vals.map((v, i) => h('circle', {
             key: i, cx: xOf(i), cy: yOf(v), r: i === mi ? 4 : 2.2, fill: style.color, stroke: 'var(--surf)', strokeWidth: 1,
           }, h('title', null, `${dLbl(trace[i].date)} · ${style.label}: ${money(v)}`))));
-      })),
+      }),
+      ...markers.map((m, idx) => h('path', {
+        key: 'sess' + idx,
+        d: `M${xOf(m.i).toFixed(1)},${(markerY - 4).toFixed(1)} l4,4 l-4,4 l-4,-4 z`,
+        fill: m.cycle ? 'var(--amber)' : 'var(--text3)',
+        stroke: 'var(--surf)', strokeWidth: 0.75,
+      }, h('title', null, `${dLbl(m.date)} · ${m.kind}${m.n ? ' · ' + m.n + ' items counted' : ''}`)))),
     div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
       ...FOB_CLASS_KEYS.map(k => div({ key: k, style: { display: 'flex', alignItems: 'center', gap: 4 } },
         span({ style: { width: 7, height: 7, borderRadius: '50%', background: CLASS_LINE[k].color, flexShrink: 0 } }),
         span(null, CLASS_LINE[k].label))),
       div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
         span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--text3)', flexShrink: 0 } }),
-        span(null, 'Total (ref)'))));
+        span(null, 'Total (ref)')),
+      markers.length > 0 && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, background: 'var(--amber)', flexShrink: 0, transform: 'rotate(45deg)' } }),
+        span(null, 'Weekly/EOM count')),
+      markers.some(m => !m.cycle) && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, background: 'var(--text3)', flexShrink: 0, transform: 'rotate(45deg)' } }),
+        span(null, 'Daily spot count'))));
 }
 
 // ═════════════════════════════════════ LABOR & SCHEDULING TAB ═════════════════════════════════
