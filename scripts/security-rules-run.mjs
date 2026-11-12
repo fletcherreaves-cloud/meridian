@@ -38,11 +38,16 @@ import { personalBaseline, peerBaseline, storeBaseline, networkBaseline } from '
 import { daypartOf } from '../src/engine/labor-standard.js';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 // Phase 1 of the camera-hint fix (owner dispatch, 2026-11-12, memory/dispatch-cash004-ryan-a-
-// single-day-2026-11-12.md) -- see security-daily-events.js's own header for the full why. Wired
-// into computeFindingsForRule() only for now (the CASH-* / audit_rows family -- the exact rule
-// type the motivating case, CASH-004, belongs to). EVENT-*/LABOR-*/INV-004 are the natural next
-// increment, not done in this pass -- each has its own subject grain and would need its own
-// dateField/dataKey wiring, not a copy-paste of this one.
+// single-day-2026-11-12.md) -- see security-daily-events.js's own header for the full why.
+// Phase 1 wired CASH-*/audit_rows only (computeFindingsForRule) -- the exact rule type the
+// motivating case, CASH-004, belongs to. Phase 1b (same day, follow-on) extends the SAME helper to
+// every other day-grain rule family: EVENT-* (computeSecurityEventFindingsForRule), LABOR-001/002
+// (computeLaborEmployeeFindingsForRule), LABOR-003 (computeManagerEditFindingsForRule), and INV-004
+// (computeManagerDaypartFindingsForRule) -- each already produces one-row-per-subject-per-day
+// rows with a `date` field, the only precondition deriveDailyBreaches() needs, so this is wiring,
+// not new logic. INV-001/002 (computeItemFindingsForRule) are the one deliberate exclusion:
+// qsr_variance_stat is monthly grain, so there is no finer "which day" to ask about -- the month
+// IS the atomic unit that data can speak to.
 import { deriveDailyBreaches } from '../src/engine/security-daily-events.js';
 
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -494,10 +499,19 @@ export function computeManagerDaypartFindingsForRule(rule, rows, { windowStart, 
 
     const evalResult = evaluateRule(rule, { [dataRequiredList(rule)[0]]: subjectRows }, { loc, baseline });
 
+    // Phase 1b camera-hint fix (2026-11-12 follow-on) -- same gate and shape as
+    // computeFindingsForRule's own wiring (see security-daily-events.js's header). subjectRows
+    // here already carries a `date` field (joinWasteDaypartSales's output row shape), so the same
+    // helper applies unchanged.
+    const dailyBreaches = evalResult.pass === true
+      ? deriveDailyBreaches(rule, subjectRows, dataRequiredList(rule)[0], baseline, 'date')
+      : [];
+
     findings.push({
       empToken, loc, daypart, ruleId: rule.rule_id, windowStart, windowEnd,
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      dailyBreaches,
     });
   }
   return findings;
@@ -664,10 +678,17 @@ export function computeLaborEmployeeFindingsForRule(rule, rows, { windowStart, w
 
     const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
 
+    // Phase 1b camera-hint fix (2026-11-12 follow-on) -- mapPunchEditRow() rows already carry a
+    // `date` field (modified_at, sliced to YYYY-MM-DD), same shape as audit_rows.
+    const dailyBreaches = evalResult.pass === true
+      ? deriveDailyBreaches(rule, subjectRows, primary, baseline, 'date')
+      : [];
+
     findings.push({
       empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      dailyBreaches,
     });
   }
   return findings;
@@ -867,10 +888,18 @@ export function computeSecurityEventFindingsForRule(rule, rows, { windowStart, w
 
     const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
 
+    // Phase 1b camera-hint fix (2026-11-12 follow-on) -- aggregateSecurityEventsBySubject's own
+    // output rows already carry `date` (eventDt mapped straight onto it), same per-subject-per-day
+    // grain as audit_rows.
+    const dailyBreaches = evalResult.pass === true
+      ? deriveDailyBreaches(rule, subjectRows, primary, baseline, 'date')
+      : [];
+
     findings.push({
       empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      dailyBreaches,
     });
   }
   return findings;
@@ -900,10 +929,17 @@ export function computeManagerEditFindingsForRule(rule, rows, { windowStart, win
 
     const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
 
+    // Phase 1b camera-hint fix (2026-11-12 follow-on) -- joinManagerEditsWithPunchVolume's own
+    // output rows already carry `date`, one row per (loc, date, managerToken).
+    const dailyBreaches = evalResult.pass === true
+      ? deriveDailyBreaches(rule, subjectRows, primary, baseline, 'date')
+      : [];
+
     findings.push({
       empToken: managerToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      dailyBreaches,
     });
   }
   return findings;
@@ -1102,10 +1138,11 @@ async function upsertFindings(findings) {
   return { saved, errors };
 }
 
-// Phase 1 camera-hint fix -- flattens each finding's own dailyBreaches (computed above, only for a
-// pass:true window) into one security_flagged_events row per (rule, subject, specific day).
-// Findings with no dailyBreaches (every non-CASH family, for now, plus every clear/undetermined
-// CASH finding) contribute nothing -- this is additive, never required.
+// Phase 1/1b camera-hint fix -- flattens each finding's own dailyBreaches (computed above, only
+// for a pass:true window) into one security_flagged_events row per (rule, subject, specific day).
+// Findings with no dailyBreaches (INV-001/002's monthly-grain family, which never sets the field
+// at all, plus every clear/undetermined finding in every other family) contribute nothing -- this
+// is additive, never required.
 async function upsertFlaggedEvents(findings) {
   const rows = [];
   for (const f of findings) {
@@ -1269,9 +1306,9 @@ async function main() {
     totalFindings += saved;
     if (errors.length) totalErrors += errors.length;
 
-    // Phase 1 camera-hint fix -- additive, only ever populated for the CASH/audit_rows family so
-    // far (computeFindingsForRule attaches dailyBreaches; every other compute function above does
-    // not set the field at all, so flaggedRows is empty and this is a cheap no-op for them).
+    // Phase 1/1b camera-hint fix -- additive, populated for every day-grain rule family
+    // (CASH-*/EVENT-*/LABOR-*/INV-004); computeItemFindingsForRule (INV-001/002, monthly grain)
+    // never sets dailyBreaches at all, so this is a cheap no-op for that family.
     const { saved: flaggedSaved, errors: flaggedErrors } = await upsertFlaggedEvents(findings);
     if (flaggedSaved) console.log(`[security-rules-run] ${rule.rule_id}: ${flaggedSaved} day-level flagged event(s) upserted`);
     if (flaggedErrors.length) totalErrors += flaggedErrors.length;

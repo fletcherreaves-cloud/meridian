@@ -158,6 +158,9 @@ describe('computeLaborEmployeeFindingsForRule() — LABOR-001/002\'s (loc,empTok
     const alex = findings.find(f => f.empToken === 'tok-alex');
     expect(jordan.value).toBe(1);
     expect(jordan.pass).toBe(true);
+    // Phase 1b camera-hint fix (2026-11-12 follow-on) -- LABOR-* rules now get the same
+    // day-level breakdown CASH-*/EVENT-* rules got in Phase 1.
+    expect(jordan.dailyBreaches).toEqual([{ date: '2026-10-09', value: 1, thresholdUsed: 1 }]);
     expect(alex.value).toBe(0);
     expect(alex.pass).toBe(false);
   });
