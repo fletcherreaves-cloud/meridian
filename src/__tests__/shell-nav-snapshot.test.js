@@ -575,6 +575,24 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     expect(on).not.toContain('⚗ TEST KITCHEN');
     for (const p of testKitchenIds) expect(on).not.toContain(p.label);
   });
+
+  // Owner-caught bug (2026-11-12, live): "I just toggled District Lens to on in Panel Manager
+  // but I can't find it." The optional-panel row (kind:'optional', a different category from
+  // kind:'test-kitchen' right above) used to use the SAME betaMode-gated helper as Test Kitchen
+  // items, so it vanished under betaMode:true too, regardless of panelVis -- District Lens
+  // specifically, and every other optional panel. Classic mode renders it flat (no header-click
+  // needed), unlike v2's collapsible Deep Dive header (covered in nav-regroup-v2.test.js).
+  it('an optional panel toggled on in panelVis still renders in classic mode under betaMode:true', () => {
+    const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
+      view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+      settings: { districtName: 'Test', navStyle: 'classic' }, onOpenModal: () => {}, onLoadFiles: () => {},
+      onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+      betaMode: true, panelVis: { 'district-lens': true },
+    }));
+    const texts = html.replace(/<[^>]+>/g, '|').split('|')
+      .map(s => s.trim().replace(/&amp;/g, '&')).filter(Boolean);
+    expect(texts).toContain('District Lens');
+  });
 });
 
 describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle, section is placement")', () => {
