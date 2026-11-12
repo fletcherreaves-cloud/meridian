@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB, supervisorGroups } from '../constants.js';
-import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo } from '../utils/date.js';
+import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo, businessDate } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync, InfoIcon } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -1700,17 +1700,25 @@ export function daypartTimeStatus(slots, elapsedHours) {
   return { isActive: elapsedHours > dpStart && elapsedHours < dpEnd, isDone: elapsedHours >= dpEnd };
 }
 
+// Owner-caught live 2026-11-12 (6:48pm CST): "today" flipped to tomorrow's date hours before
+// midnight. Root cause: `new Date().toISOString().slice(0,10)` reads the UTC calendar day, which
+// is already tomorrow for any US timezone once local time crosses (24 - UTC offset) — 6pm CST
+// (UTC-6), 7pm CDT (UTC-5). businessDate()/lastClosedBusinessDay() (utils/date.js) are the
+// standing local+4am-aware answer (CLAUDE.md: "Never re-derive the cutover inline") and also
+// correctly keep a 1am view on yesterday's business day instead of flipping at local midnight.
+// Exported (pure, no I/O) so this can be asserted directly at a fixed `now`, same convention as
+// daypartTimeStatus/sortRecentEvents above.
+export function daypartTargetDate(dateOpt, now = new Date()) {
+  return dateOpt === 'yesterday' ? dKey(lastClosedBusinessDay(now)) : businessDate(now);
+}
+
 function DaypartPaceCard({loc}) {
   const [rows, setRows]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateOpt, setDateOpt] = useState('today');  // 'today' | 'yesterday'
   const [collapsed, setCollapsed] = useState(false);
 
-  const targetDate = (() => {
-    const d = new Date();
-    if(dateOpt === 'yesterday') d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
+  const targetDate = daypartTargetDate(dateOpt);
 
   useEffect(() => {
     if(!supabase || !loc) { setLoading(false); return; }
