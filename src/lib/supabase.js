@@ -6847,6 +6847,31 @@ export async function loadSecurityFindingsForSubject({ loc, empToken = null, wri
   return (data || []).map(_mapSecurityFindingRow);
 }
 
+// Phase 1 camera-hint fix (owner dispatch, 2026-11-12) -- the day-level sibling of
+// loadSecurityFindingsForSubject above. security_flagged_events carries one row per SPECIFIC day
+// a subject actually breached a rule, not one row per rolling window -- this is what lets
+// cameraReviewHint() (security-panel.js) name a date instead of a month. Scoped to one (rule,
+// subject) pair at a time, same lazy-on-expand shape as the window-level loader, since this is
+// only ever read for a subject already on-screen in a detail/drilldown view.
+const SECURITY_FLAGGED_EVENTS_COLS = 'id,emp_token,wrin,loc,rule_id,event_date,value,threshold_used,window_start,window_end,status,computed_at';
+function _mapSecurityFlaggedEventRow(r) {
+  return {
+    id: r.id, empToken: r.emp_token, wrin: r.wrin, loc: r.loc ? String(parseInt(r.loc, 10)) : null,
+    ruleId: r.rule_id, date: r.event_date, value: r.value, thresholdUsed: r.threshold_used,
+    windowStart: r.window_start, windowEnd: r.window_end, status: r.status, computedAt: r.computed_at,
+  };
+}
+export async function loadSecurityFlaggedEventsForSubject({ loc, ruleId = null, empToken = null, wrin = null } = {}) {
+  if (!supabase || !loc || (!empToken && !wrin)) return [];
+  let q = supabase.from('security_flagged_events').select(SECURITY_FLAGGED_EVENTS_COLS)
+    .eq('loc', String(loc).padStart(7, '0')).order('event_date', { ascending: true }).limit(500);
+  q = empToken ? q.eq('emp_token', empToken) : q.eq('wrin', wrin);
+  if (ruleId) q = q.eq('rule_id', ruleId);
+  const { data, error } = await q;
+  if (error) { console.warn('[loadSecurityFlaggedEventsForSubject]', error.message); return []; }
+  return (data || []).map(_mapSecurityFlaggedEventRow);
+}
+
 // Bulk, bounded multi-window history for a NAMED set of (ruleId, subject) candidates --
 // dispatch 2026-11-10 follow-on, feeds src/engine/security-drift.js's computeDriftRollup(). This
 // is deliberately NOT "every subject's full history" (loadSecurityFindingsForSubject above is

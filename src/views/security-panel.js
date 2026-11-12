@@ -847,7 +847,28 @@ const ACTION_LABEL = {
 // is the honest fix, not a 16-row migration repeating the same sentence. No camera/DVR integration
 // exists anywhere in this codebase (checked before writing this) -- this is a reminder to go check
 // whatever system the store already has, nothing more.
-export function cameraReviewHint(loc, windowStart, windowEnd) {
+//
+// ⚠️ CORRECTED 2026-11-12 -- owner's own standing complaint, sharpened by a real case (Holdenville/
+// CASH-004/Ryan A): "no one is ever going to sit and watch or pour through that much video." A
+// rolling-window rule's own value can be driven by a SINGLE outlier day smeared across many
+// overlapping windows (Ryan A's flagged figure matched exactly one day's own rate, not a real
+// multi-week pattern) -- so naming the whole window here was actively misleading about what
+// actually happened, not just impractical to act on.
+//
+// `flaggedDates` (Phase 1, security_flagged_events via loadSecurityFlaggedEventsForSubject -- see
+// src/engine/security-daily-events.js for how those rows get derived) is the fix: the SAME specific
+// day(s) that themselves breach the threshold, not the window they were found inside. Optional and
+// backward-compatible -- every existing call site keeps working unchanged until it's updated to
+// fetch and pass real dates (the next increment; CASH-*/audit_rows rules are the only family this
+// is wired up for so far, see security-rules-run.mjs's own header on that). With no dates supplied,
+// or none loaded yet, this still falls back to the window -- an honest "narrower than this" is
+// strictly better than a wrong specific date, never the reverse.
+export function cameraReviewHint(loc, windowStart, windowEnd, flaggedDates = null) {
+  if (Array.isArray(flaggedDates) && flaggedDates.length) {
+    const dates = flaggedDates.join(', ');
+    const plural = flaggedDates.length > 1;
+    return `📹 Before deciding: pull camera footage for Store ${loc || '—'} on ${plural ? 'these specific days' : 'this specific day'} — ${dates} — to verify what actually happened.`;
+  }
   const range = windowStart && windowEnd ? `${windowStart} – ${windowEnd}` : (windowEnd || windowStart || 'this window');
   return `📹 Before deciding: pull camera footage for Store ${loc || '—'}, ${range}, to verify what actually happened.`;
 }

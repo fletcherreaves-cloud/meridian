@@ -297,6 +297,25 @@ describe('cameraReviewHint() — the owner-requested camera-footage reminder (20
     expect(cameraReviewHint('0000001', null, null)).toContain('this window');
     expect(cameraReviewHint(null, null, null)).toContain('Store —');
   });
+
+  // Phase 1 camera-hint fix (2026-11-12) -- the Holdenville/CASH-004/Ryan A case this was built
+  // for: a flagged window's own value can be driven by a single outlier day, and naming the whole
+  // 28-day window is not just impractical, it misstates what actually happened. flaggedDates (from
+  // security_flagged_events, see security-daily-events.js) names the real day(s) instead.
+  it('names the specific day(s) when flaggedDates is supplied, instead of the window', () => {
+    expect(cameraReviewHint('0035064', '2026-09-18', '2026-10-16', ['2026-09-18'])).toBe(
+      '📹 Before deciding: pull camera footage for Store 0035064 on this specific day — 2026-09-18 — to verify what actually happened.');
+  });
+  it('pluralizes and lists every day when more than one breach is supplied', () => {
+    const hint = cameraReviewHint('0035064', '2026-09-18', '2026-10-16', ['2026-09-18', '2026-10-02']);
+    expect(hint).toContain('these specific days');
+    expect(hint).toContain('2026-09-18, 2026-10-02');
+  });
+  it('falls back to the window when flaggedDates is null, undefined, or empty -- never breaks an existing caller', () => {
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28', null)).toContain('2026-10-01 – 2026-10-28');
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28', [])).toContain('2026-10-01 – 2026-10-28');
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28')).toContain('2026-10-01 – 2026-10-28');
+  });
 });
 
 describe('buildCommandGroups() — cross-domain, emp-subjects only (person-attributable rules, never a wrin/item finding)', () => {

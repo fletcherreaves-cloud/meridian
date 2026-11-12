@@ -37,6 +37,13 @@ import { evaluateRule } from '../src/engine/security-rules.js';
 import { personalBaseline, peerBaseline, storeBaseline, networkBaseline } from '../src/engine/security-baselines.js';
 import { daypartOf } from '../src/engine/labor-standard.js';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
+// Phase 1 of the camera-hint fix (owner dispatch, 2026-11-12, memory/dispatch-cash004-ryan-a-
+// single-day-2026-11-12.md) -- see security-daily-events.js's own header for the full why. Wired
+// into computeFindingsForRule() only for now (the CASH-* / audit_rows family -- the exact rule
+// type the motivating case, CASH-004, belongs to). EVENT-*/LABOR-*/INV-004 are the natural next
+// increment, not done in this pass -- each has its own subject grain and would need its own
+// dateField/dataKey wiring, not a copy-paste of this one.
+import { deriveDailyBreaches } from '../src/engine/security-daily-events.js';
 
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const DEFAULT_WINDOW_DAYS = 28;
@@ -175,10 +182,18 @@ export function computeFindingsForRule(rule, rows, { windowStart, windowEnd }) {
 
     const evalResult = evaluateRule(rule, { audit_rows: subjectRows }, { loc, baseline });
 
+    // Phase 1 camera-hint fix -- only worth computing for a real flag (same "only for a real
+    // flagged subject" cost discipline computeWasteExoneration's own gate uses below). A clear or
+    // undetermined window has no outlier day worth hunting for.
+    const dailyBreaches = evalResult.pass === true
+      ? deriveDailyBreaches(rule, subjectRows, 'audit_rows', baseline, 'date')
+      : [];
+
     findings.push({
       empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      dailyBreaches,
     });
   }
   return findings;
@@ -1087,6 +1102,39 @@ async function upsertFindings(findings) {
   return { saved, errors };
 }
 
+// Phase 1 camera-hint fix -- flattens each finding's own dailyBreaches (computed above, only for a
+// pass:true window) into one security_flagged_events row per (rule, subject, specific day).
+// Findings with no dailyBreaches (every non-CASH family, for now, plus every clear/undetermined
+// CASH finding) contribute nothing -- this is additive, never required.
+async function upsertFlaggedEvents(findings) {
+  const rows = [];
+  for (const f of findings) {
+    for (const b of (f.dailyBreaches || [])) {
+      rows.push({
+        tenant_id: TENANT, emp_token: f.empToken ?? null, wrin: f.wrin ?? null,
+        loc: f.loc, rule_id: f.ruleId, event_date: b.date,
+        value: b.value, threshold_used: b.thresholdUsed,
+        window_start: f.windowStart, window_end: f.windowEnd,
+      });
+    }
+  }
+  if (!rows.length) return { saved: 0, errors: [] };
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    // Same subject_key-based idempotency as upsertFindings -- a re-run that re-derives the same
+    // day's own breach upserts in place (value/threshold may legitimately change if an upstream
+    // row was corrected) rather than duplicating it.
+    const { error } = await supabase.from('security_flagged_events').upsert(
+      rows.slice(i, i + CHUNK),
+      { onConflict: 'tenant_id,rule_id,loc,event_date,subject_key' },
+    );
+    if (error) { console.error('[security-rules-run] flagged-events upsert error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, rows.length - i);
+  }
+  return { saved, errors };
+}
+
 async function main() {
   if (!supabase) { console.error('[security-rules-run] Missing VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
 
@@ -1220,6 +1268,13 @@ async function main() {
     const { saved, errors } = await upsertFindings(findings);
     totalFindings += saved;
     if (errors.length) totalErrors += errors.length;
+
+    // Phase 1 camera-hint fix -- additive, only ever populated for the CASH/audit_rows family so
+    // far (computeFindingsForRule attaches dailyBreaches; every other compute function above does
+    // not set the field at all, so flaggedRows is empty and this is a cheap no-op for them).
+    const { saved: flaggedSaved, errors: flaggedErrors } = await upsertFlaggedEvents(findings);
+    if (flaggedSaved) console.log(`[security-rules-run] ${rule.rule_id}: ${flaggedSaved} day-level flagged event(s) upserted`);
+    if (flaggedErrors.length) totalErrors += flaggedErrors.length;
   }
 
   console.log(`[security-rules-run] done — ${totalFindings} finding(s) upserted across ${rules.length - skipped} rule(s) (${skipped} skipped), ${totalErrors} error(s)`);
