@@ -597,12 +597,29 @@ export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, o
   // and are not listed here") — reused directly rather than a second hand-maintained list, which
   // is exactly the kind of drift this registry itself was built to end (see its own header).
   const coreSecs = [...new Set(PANELS.filter(p => p.kind === 'nav').map(p => p.section))];
+  // Owner request 2026-11-12 (follow-on to the optional-panel kill switch): "Do you think the
+  // option should be there for the core panels as well? If so, go ahead and wire that up also."
+  // isPanelGloballyEnabled/globalDisabled already gate CORE panels end-to-end for free -- shell.js's
+  // navP/navPBeta (sidebar) and navIndex (search) both call panelOk(id) with no kind:'nav' vs
+  // kind:'optional' distinction, since panelsForSection() feeds both through the same functions.
+  // So this is pure UI: the same admin-only "🔒 Everyone" control, reusing onToggleGlobal/
+  // globalDisabled verbatim -- no new engine wiring needed. Honest limit, same as the optional
+  // panels' own: this hides a panel from the sidebar + search, it does not block a direct
+  // onOpenModal(id) call some OTHER panel might make -- a reachability control, not a hard
+  // access boundary (real data access stays RLS-gated regardless).
   const coreRow = (p) => {
     const allowed = !p.perm || !perm || perm(p.perm);
-    return div({ key:p.id, style:{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderRadius:8, opacity:allowed?1:0.4, border:'.5px solid var(--bdr)', background:'var(--surf2)' } },
+    const killed = isAdmin && globalDisabled && globalDisabled.includes(p.id);
+    return div({ key:p.id, style:{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderRadius:8, opacity:(allowed&&!killed)?1:0.4,
+      border:'.5px solid '+(killed?'rgba(244,63,94,.35)':'var(--bdr)'), background:killed?'rgba(244,63,94,.06)':'var(--surf2)' } },
       span({ style:{ fontSize:15, width:20, textAlign:'center', flexShrink:0 } }, p.icon),
-      div({ style:{ flex:1, minWidth:0, fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label),
-      !allowed ? span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access') : null);
+      div({ style:{ flex:1, minWidth:0, fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label,
+        killed ? span({ style:{ fontSize:9, color:'var(--crit)', fontWeight:500, marginLeft:6 } }, 'off for everyone') : null),
+      !allowed ? span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access') : null,
+      isAdmin && div({ onClick:()=>onToggleGlobal(p.id), title:killed?'Re-enable for everyone':'Disable for everyone, systemwide — hides it from the sidebar and search for every role, including your own',
+        style:{ display:'flex', alignItems:'center', gap:5, cursor:'pointer', flexShrink:0, paddingLeft:8, borderLeft:'.5px solid var(--bdr)' } },
+        span({ style:{ fontSize:8.5, color:killed?'var(--crit)':'var(--text3)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.03em' } }, '🔒 Everyone'),
+        sw(killed, 'var(--crit)')));
   };
   const sw = (on, color) => div({ style:{ width:34, height:19, borderRadius:99, background:on?(color||'var(--amber)'):'var(--surf3)', position:'relative', transition:'background .15s', flexShrink:0 } },
     div({ style:{ position:'absolute', top:2, left:on?17:2, width:15, height:15, borderRadius:'50%', background:'#fff', transition:'left .15s' } }));
