@@ -42,11 +42,21 @@ export const RULE_PANEL_LABEL = {
 // +3% floor matches this app's own existing "clearly ahead" framing elsewhere (e.g. AAG movers).
 export const WIN_VS_LY_FLOOR_PCT = 3;
 
+// How far back the "not enough of a week yet" fallback looks (owner feedback 2026-11-11:
+// "that would imply a day or two of Nothing to show yet... Maybe a rolling monthly or last 7
+// days") -- a new store onboarding, or any store with a genuine gap in its trailing week, still
+// gets a real number instead of a blank card for however long that gap lasts.
+const FALLBACK_LOOKBACK_DAYS = 30;
+
+function closedDayRange(lastClosed, daysBack) {
+  const start = new Date(lastClosed);
+  start.setDate(start.getDate() - daysBack);
+  return { s: start, e: lastClosed };
+}
+
 export function computeGamePlanWeek(ds, loc, asOf = new Date()) {
   const lastClosed = lastClosedBusinessDay(asOf);
-  const start = new Date(lastClosed);
-  start.setDate(start.getDate() - 6);
-  const range = { s: start, e: lastClosed };
+  const range = closedDayRange(lastClosed, 6);
   const salesByDate = metricSeries(ds, loc, range, 'sales');
   const planByDate = metricSeries(ds, loc, range, 'projSales');
 
@@ -69,11 +79,27 @@ export function computeGamePlanWeek(ds, loc, asOf = new Date()) {
   const lyTotal = Object.values(lyByDate).reduce((a, b) => a + b, 0);
   const vsLYPct = (curTotal > 0 && lyTotal > 0) ? ((curTotal - lyTotal) / lyTotal * 100) : null;
 
-  return {
+  const result = {
     bars, vsLYPct, curTotal, lyTotal,
     isWin: vsLYPct != null && vsLYPct >= WIN_VS_LY_FLOOR_PCT,
     rangeLabel: bars.length ? (bars[0].label + '–' + bars[bars.length - 1].label) : null,
+    fallback: null,
   };
+  if (bars.length > 0) return result;
+
+  // Nothing in the trailing week -- widen the lookback and report ONE honest rollup number
+  // instead of a blank card (or squeezing 30 tiny bars into a 7-bar-wide layout). Same shared
+  // metricSeries() helper, just a longer window; still real-or-nothing (if even THIS comes back
+  // empty, the store genuinely has no sales on file yet and the plain empty state stands).
+  const wideRange = closedDayRange(lastClosed, FALLBACK_LOOKBACK_DAYS - 1);
+  const wideSales = metricSeries(ds, loc, wideRange, 'sales');
+  const wideDays = Object.keys(wideSales);
+  if (!wideDays.length) return result;
+  const widePlan = metricSeries(ds, loc, wideRange, 'projSales');
+  const totalSales = wideDays.reduce((a, dk) => a + (wideSales[dk] || 0), 0);
+  const totalPlan = Object.keys(widePlan).reduce((a, dk) => a + (widePlan[dk] || 0), 0);
+  result.fallback = { days: wideDays.length, totalSales, pct: totalPlan > 0 ? (totalSales / totalPlan * 100) : null };
+  return result;
 }
 
 // Today's #1 priority + the supporting action list, from the SAME role-voice items

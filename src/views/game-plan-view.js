@@ -9,7 +9,7 @@
 // on this screen is real or it doesn't render -- a zero-item day gets an honest all-clear, a flat
 // or negative week gets no celebration, a day with no plan data gets no fabricated percentage.
 import * as React from 'react';
-import { withAlpha } from '../utils/fmt.js';
+import { withAlpha, f$ } from '../utils/fmt.js';
 import { dKey } from '../utils/date.js';
 import { computeGamePlanWeek, gamePlanActions, RULE_PANEL, RULE_PANEL_LABEL } from '../engine/game-plan.js';
 
@@ -89,10 +89,27 @@ function WeekLegend() {
       span({ style: { width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 } }), label)));
 }
 
-function WeekBars({ weekData }) {
-  if (!weekData.bars.length) {
+// Owner feedback (2026-11-11): a blank "Nothing to show yet" for however many days the
+// trailing week has no real data is wasted real estate -- a rolling lookback (same metricSeries()
+// helper, just a longer window; see computeGamePlanWeek's `fallback`) fills the space with one
+// real, honest number instead. Only when EVEN THAT comes back empty is there genuinely nothing on
+// file yet, and the plain empty state is the honest thing to show.
+function WeekFallback({ fallback }) {
+  if (!fallback) {
     return div({ style: { fontSize: 12.5, color: 'var(--text3,#958975)', padding: '10px 0' } },
       'Nothing to show yet — check back after a day or two of sales.');
+  }
+  return div({ style: { padding: '6px 0' } },
+    div({ style: { fontSize: 11.5, color: 'var(--text3,#958975)' } },
+      `Not enough days yet for a weekly trend — here's the last ${fallback.days} day${fallback.days === 1 ? '' : 's'} instead:`),
+    div({ style: { fontSize: 20, fontWeight: 700, color: 'var(--text,#fff)', marginTop: 6 } },
+      f$(fallback.totalSales) + (fallback.pct != null ? ' · ' + Math.round(fallback.pct) + '% of plan' : '')),
+  );
+}
+
+function WeekBars({ weekData }) {
+  if (!weekData.bars.length) {
+    return h(WeekFallback, { fallback: weekData.fallback });
   }
   const story = weekStory(weekData.bars);
   return div(null,

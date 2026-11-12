@@ -102,3 +102,34 @@ describe('gamePlanActions', () => {
     expect(gamePlanActions(null).length).toBe(0);
   });
 });
+
+describe('computeGamePlanWeek — rolling-lookback fallback (owner feedback 2026-11-11)', () => {
+  it('with real sales outside the trailing week but none inside it, falls back to a wider rollup instead of a blank week', () => {
+    const qsrActSummaryRows = rowsFor([
+      { offset: -20, sales: 9000, projSales: 10000, lySales: 8000 },
+      { offset: -15, sales: 11000, projSales: 10000, lySales: 9000 },
+    ]);
+    const ds = { loaded: true, qsrActSummaryRows };
+    const result = computeGamePlanWeek(ds, LOC, new Date('2026-11-07T15:00:00'));
+    expect(result.bars).toEqual([]);
+    expect(result.fallback).not.toBeNull();
+    expect(result.fallback.days).toBe(2);
+    expect(result.fallback.totalSales).toBe(20000);
+    expect(result.fallback.pct).toBeCloseTo(100, 5);
+  });
+
+  it('with truly zero sales on file anywhere, fallback stays null (the plain empty state is the honest one)', () => {
+    const ds = { loaded: true, qsrActSummaryRows: [] };
+    const result = computeGamePlanWeek(ds, LOC, new Date('2026-11-07T15:00:00'));
+    expect(result.bars).toEqual([]);
+    expect(result.fallback).toBeNull();
+  });
+
+  it('fallback pct is null when there is no plan data to compare against, never a fabricated percentage', () => {
+    const qsrActSummaryRows = rowsFor([{ offset: -20, sales: 9000, projSales: 0, lySales: null }]);
+    const ds = { loaded: true, qsrActSummaryRows };
+    const result = computeGamePlanWeek(ds, LOC, new Date('2026-11-07T15:00:00'));
+    expect(result.fallback).not.toBeNull();
+    expect(result.fallback.pct).toBeNull();
+  });
+});

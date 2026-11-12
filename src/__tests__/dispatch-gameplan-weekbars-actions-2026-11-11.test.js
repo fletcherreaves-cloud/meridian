@@ -88,6 +88,26 @@ describe('Game Plan — "Your Week So Far" tells a story (owner feedback 2026-11
   });
 });
 
+describe('Game Plan — week card fallback when the trailing week itself has no real days (owner feedback 2026-11-11: "that would imply a day or two of Nothing to show yet... Maybe a rolling monthly or last 7 days")', () => {
+  it('rolls up a wider real lookback instead of a blank card when the trailing week has no sales', async () => {
+    const wideWindowRows = [
+      { loc: '3708', date: new Date('2026-10-20T12:00:00'), sales: 9000, projSales: 10000, lySales: 8000 },
+      { loc: '3708', date: new Date('2026-10-25T12:00:00'), sales: 11000, projSales: 10000, lySales: 9000 },
+    ];
+    await mount({ ds: { loaded: true, qsrActSummaryRows: wideWindowRows } });
+    const text = container.textContent;
+    expect(text).toContain('Not enough days yet for a weekly trend');
+    expect(text).toContain('$20,000');
+    expect(text).toContain('100% of plan');
+    expect(text).not.toContain('Nothing to show yet');
+  });
+
+  it('shows the plain honest empty state only when even the wider lookback has no real sales', async () => {
+    await mount({ ds: { loaded: true, qsrActSummaryRows: [] } });
+    expect(container.textContent).toContain('Nothing to show yet');
+  });
+});
+
 describe('Game Plan — "3 things worth a few minutes" drill-through + review checkbox (owner feedback 2026-11-11)', () => {
   it('an item whose rule maps to a real panel shows a "Go to X" link that calls onNav AND marks it reviewed', async () => {
     const onNav = vi.fn();
