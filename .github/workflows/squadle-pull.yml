@@ -1,0 +1,46 @@
+name: Squadle Checklist Pull
+
+# Squadle food-safety checklist tablet, item-level daily records (task #105). Full auth chain
+# (Firebase login -> createRealtimePermissionSession -> verifyCustomToken -> raw RTDB wire
+# protocol) confirmed live 2026-11-12 -- see scripts/squadle-pull.mjs's own header and
+# memory/finding-hme-squadle-integration-2026-11-06.md for the complete research history. Runs
+# once daily (checklist data settles by the next morning, unlike HME's live DT feed) -- pulls
+# both yesterday and today so a still-in-progress day's partial state is also captured and
+# corrected on the next run.
+
+on:
+  schedule:
+    # 11:30 UTC = 6:30 AM CDT -- after the overnight shift's closing checklist would have been
+    # completed, same reasoning as the other once-daily morning pulls.
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Squadle checklist pull
+        run: node scripts/squadle-pull.mjs
+        env:
+          SQUADLE_USERNAME:          ${{ secrets.SQUADLE_USERNAME }}
+          SQUADLE_PASSWORD:          ${{ secrets.SQUADLE_PASSWORD }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SQUADLE_DEBUG:             ${{ github.event.inputs.debug || '0' }}

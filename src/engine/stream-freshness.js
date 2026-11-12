@@ -170,6 +170,20 @@ export const STREAMS = [
   // is safe for the client checklist too. dateField defaults to 'date', which already
   // matches loadQsrSalesQuarterHour's row shape (src/lib/supabase.js) -- no override needed.
   { key: 'qsrSalesQtrHour', label: 'Record Hour (Quarter-Hour Sales)', dsField: 'qsrSalesQtrHourRows', cadenceDays: 1, group: 'sales' },
+
+  // ⚠️ HME Cloud (DT timer) and Squadle (food-safety checklist) are DELIBERATELY NOT added to
+  // this array yet (task #105, 2026-11-12). Both pulls are live and watched in
+  // sync-failure-watch.yml ('HME Cloud Pull' / 'Squadle Checklist Pull'), and both tables exist
+  // (supabase/schema-hme-cloud-dt.sql / schema-squadle-checklist-records.sql, pending the
+  // owner's own DDL run) -- but no client-side ds.hmeDtRows/ds.squadleChecklistRows loader
+  // exists yet. Same precedent as payrollReadiness/payHistory above: Phase 1 of this dispatch
+  // is get-the-data-flowing; wiring a real ds loader (and deciding where each surfaces --
+  // HME likely extends dt-speedofservice.js, Squadle likely extends or parallels Forms
+  // Completion) is a deliberately separate Phase 2 follow-on. See
+  // memory/finding-hme-squadle-integration-2026-11-06.md for the full plan. Uncomment once
+  // those loaders exist.
+  //   { key: 'hmeDt', label: 'HME Cloud (DT timer)', dsField: 'hmeDtRows', cadenceDays: 1, group: 'service' },
+  //   { key: 'squadle', label: 'Squadle (food safety checklist)', dsField: 'squadleChecklistRows', cadenceDays: 1, group: 'foodcost' },
 ];
 
 // Display metadata for groupFreshness() -- icon/label per group, in the strip's render order.
