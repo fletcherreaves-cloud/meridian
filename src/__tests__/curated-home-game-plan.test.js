@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
+import { lastClosedBusinessDay } from '../utils/date.js';
 
 const loadUserSettingMock = vi.fn();
 const saveUserSettingMock = vi.fn();
@@ -112,8 +113,13 @@ describe('CuratedHomePanel — Game Plan default (owner request 2026-11-07)', ()
   });
 
   it('shows a real win line only when the trailing-week vs-LY comparison is clearly positive', async () => {
+    // Anchored to lastClosedBusinessDay() -- the same real end-of-window computeGamePlanWeek
+    // itself uses -- rather than a fixed calendar date, so this row stays inside the engine's
+    // real trailing-7-day window on whatever day this suite actually runs. A fixed date rolls
+    // out of that window after 7 real days and falls through to the 30-day fallback branch
+    // instead (exactly the flakiness this test hit once already).
     const qsrActSummaryRows = [
-      { loc: '3708', date: new Date('2026-11-04T12:00:00'), sales: 11000, projSales: 10000, lySales: 9000 },
+      { loc: '3708', date: lastClosedBusinessDay(), sales: 11000, projSales: 10000, lySales: 9000 },
     ];
     await mount({ ds: { loaded: true, qsrActSummaryRows } });
     expect(container.textContent).toContain('vs last year');

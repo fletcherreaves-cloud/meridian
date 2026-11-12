@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import { dKey } from '../utils/date.js';
+import { dKey, lastClosedBusinessDay, addD } from '../utils/date.js';
 
 const loadUserSettingMock = vi.fn();
 const saveUserSettingMock = vi.fn();
@@ -64,12 +64,16 @@ async function mount(props) {
 }
 
 // Three distinct days in the same trailing-week window curated-home-game-plan.test.js's own
-// "shows a real win line" test already confirms lands inside computeGamePlanWeek's range on
-// today's real system clock -- one at/above plan, one close, one clearly behind.
+// "shows a real win line" test already confirms lands inside computeGamePlanWeek's range --
+// anchored to lastClosedBusinessDay() (the same engine's own window end), not an absolute
+// calendar date, so this stays inside the real trailing-7-day window on whatever day this
+// suite actually runs (a fixed date rolls out of that window after 7 real days, exactly the
+// flakiness this caused once already -- one at/above plan, one close, one clearly behind).
+const LAST_CLOSED = lastClosedBusinessDay();
 const qsrActSummaryRows = [
-  { loc: '3708', date: new Date('2026-11-04T12:00:00'), sales: 11000, projSales: 10000, lySales: 9000 },
-  { loc: '3708', date: new Date('2026-11-05T12:00:00'), sales: 9300, projSales: 10000, lySales: 9000 },
-  { loc: '3708', date: new Date('2026-11-06T12:00:00'), sales: 7000, projSales: 10000, lySales: 9000 },
+  { loc: '3708', date: addD(LAST_CLOSED, -2), sales: 11000, projSales: 10000, lySales: 9000 },
+  { loc: '3708', date: addD(LAST_CLOSED, -1), sales: 9300, projSales: 10000, lySales: 9000 },
+  { loc: '3708', date: LAST_CLOSED, sales: 7000, projSales: 10000, lySales: 9000 },
 ];
 
 describe('Game Plan — "Your Week So Far" tells a story (owner feedback 2026-11-11)', () => {
