@@ -11,7 +11,7 @@ import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchFo
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
 import { LocationIntelligence, liComputeAll, liBuildRoadmap } from '../features/location-intel.js';
-import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline } from './store-cockpit.js';
+import { FoodCostCockpitTab, LaborCockpitTab, CashControlsCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline, CTRL_DRIVERS } from './store-cockpit.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -1990,6 +1990,27 @@ function TabDigestRow({store, ds, settings, setTab}) {
     return {target, actualPct, gapPP, shortVerdict};
   }, [ds, loc, locS, t]);
 
+  // 2b. Cash Controls -> cashcontrols. Cash O/S % vs target + gap, plus the worst of the 5
+  // Controls drivers (CTRL_DRIVERS, imported from store-cockpit.js rather than re-listed here —
+  // same single-source-of-truth reasoning as laborInfo's threshold reuse above). Trailing 6
+  // weeks, matching CashControlsCockpitTab's own window.
+  const cashInfo = React.useMemo(() => {
+    if (!ds) return { cashOSPct: null, target: null, gapPP: null, worstLabel: null };
+    const end = lastClosedBusinessDay();
+    const range = { s: addD(end, -41), e: end };
+    const cashOSPct = metricRate(ds, loc, range, 'cashOSPct');
+    const target = t.tCashOSPct != null ? Number(t.tCashOSPct) : null;
+    const gapPP = (cashOSPct != null && target != null) ? (cashOSPct - target) * 100 : null;
+    const drivers = CTRL_DRIVERS.map(d => {
+      const actual = metricRate(ds, loc, range, d.key);
+      const tgt = t[d.tgtKey] != null ? Number(t[d.tgtKey]) : null;
+      const deltaPP = (actual != null && tgt != null) ? (actual - tgt) * 100 : null;
+      return { label: d.label, deltaPP };
+    }).sort((a, b) => (b.deltaPP ?? -999) - (a.deltaPP ?? -999));
+    const worstLabel = (drivers[0] && drivers[0].deltaPP > 0) ? drivers[0].label : null;
+    return { cashOSPct, target, gapPP, worstLabel };
+  }, [ds, loc, t]);
+
   // 3. Location Intelligence -> intelligence. Total Opp/Year — sum of the roadmap's dollarOpp.
   // liComputeAll/liBuildRoadmap were module-private in location-intel.js; dispatch #208 added
   // both to that file's export list (pure addition, no logic change) so this tile can call them.
@@ -2043,6 +2064,16 @@ function TabDigestRow({store, ds, settings, setTab}) {
       ok: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct<=laborInfo.target*1.01,
       bad: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct>laborInfo.target*1.03,
       onClick: () => setTab('laborsched'),
+    }),
+    digestTile({
+      key:'cashcontrols', icon:'💵', label:'CASH CONTROLS',
+      value: cashInfo.cashOSPct!=null ? fP(cashInfo.cashOSPct,3) : '—',
+      detail: (cashInfo.target!=null ? 'target '+fP(cashInfo.target,3) : 'no target set')
+        + (cashInfo.gapPP!=null ? ' · '+(cashInfo.gapPP>=0?'+':'')+cashInfo.gapPP.toFixed(3)+'pp' : '')
+        + (cashInfo.worstLabel ? ' · driver: '+cashInfo.worstLabel : ''),
+      ok: cashInfo.cashOSPct!=null && cashInfo.target!=null && Math.abs(cashInfo.cashOSPct - cashInfo.target) <= 0.001,
+      bad: cashInfo.cashOSPct!=null && cashInfo.target!=null && Math.abs(cashInfo.cashOSPct - cashInfo.target) > 0.005,
+      onClick: () => setTab('cashcontrols'),
     }),
     digestTile({
       key:'intelligence', icon:'📊', label:'LOCATION INTELLIGENCE', neutral:true,
@@ -2150,6 +2181,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {id:'intelligence',l:'📊 Intelligence'},
     {id:'foodcost',    l:'Food Cost'},
     {id:'laborsched',  l:'Labor & Scheduling'},
+    {id:'cashcontrols',l:'Cash Controls'},
     {id:'action',      l:'📋 Action Plan'},
     {id:'shift',       l:'⏱ Shift Analysis'},
     {id:'scoreboard',  l:'🏁 Shift Scoreboard'},
@@ -2516,7 +2548,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
     tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
     tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds,onCoachingSaved}),
-    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved,settings})
+    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved,settings}),
+    tab==='cashcontrols' && h(CashControlsCockpitTab,{store,ds,onCoachingSaved,settings})
   );
 }
 

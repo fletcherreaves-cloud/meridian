@@ -76,6 +76,7 @@ vi.mock('../engine/metric-source.js', async (importOriginal) => {
 
 import { StoreDash } from '../views/store-analytics.js';
 import { liComputeAll, liBuildRoadmap, LocationIntelligence } from '../features/location-intel.js';
+import { lastClosedBusinessDay } from '../utils/date.js';
 
 const NOOP = () => {};
 
@@ -104,10 +105,34 @@ function makeStore(loc, overrides = {}) {
   return {
     loc, name: 'Test Store ' + loc, org: 'MCDOK', gm: null, sup: null, city: 'Testville', state: 'OK', addr: null,
     p: { laborPct: 0.28, oepe: 175, tpph: 5, cashOSPct: 0.0005, t2w: null, otHrs: 3, _cov: {} },
-    t: { tOepe: 180, tTpph: 90, tCrewLabor: 0.25, tFOBTarget: 0.018, tStatLoss: 0.001 },
+    t: {
+      tOepe: 180, tTpph: 90, tCrewLabor: 0.25, tFOBTarget: 0.018, tStatLoss: 0.001,
+      // Cash Controls targets -- see opsCashRow() below for the matching actuals.
+      tCashOSPct: -0.0005, tRedAPct: 0.002, tRedBPct: 0.03, tDiscCoupPct: 0.008, tPosOverPct: 0.003, tPromoPct: 0.03, tDrawer: 50,
+    },
     opsScore: 78, ctrlScore: 82, findings: [],
     pSales: 50000, pLY: 48000,
     ...overrides,
+  };
+}
+
+// Cash Controls fixture -- one opsCashRows day. Unlike every other fixture row in this file
+// (pinned to a fixed past date, since their consuming engines read a period/week keyed off the
+// row's own date), the TabDigestRow Cash Controls tile reads a TRAILING-42-DAYS-FROM-NOW window
+// (same as CashControlsCockpitTab itself) -- so this row must land inside that real, moving
+// window or metricSeries finds nothing and every number reads '—'. lastClosedBusinessDay(), not
+// a fixed date, for the same reason dispatch-204's own CashControlsCockpitTab test uses it.
+// All 5 driver %s compute as exact round numbers against the targets above: cashOSPct -0.10%
+// (target -0.05% -> -0.05pp), tRedAPct ("T-Red After") 0.30% vs 0.20% target -> +0.10pp,
+// tRedBPct ("T-Red Before") 3.00% vs 3.00% target -> 0pp (good), discPct 1.00% vs 0.80% ->
+// +0.20pp (the worst driver -- confirms the digest tile's worst-driver pick), posOverPct
+// (derived, posOverAmt/netSalesAmt) 0.40% vs 0.30% -> +0.10pp, promoPct (direct field, no ratio
+// derive) 2.50% vs 3.00% -> -0.50pp (good).
+function opsCashRow(loc) {
+  return {
+    loc, date: lastClosedBusinessDay(),
+    netSalesAmt: 100000, cashOSAmt: -100, tRedAAmt: 300, tRedBAmt: 3000, discAmt: 1000,
+    posOverAmt: 400, promoPct: 0.025, drawerOpens: 60, cashRefCnt: 4,
   };
 }
 
@@ -154,6 +179,7 @@ function baseDs(loc, { fobRowFn = fobRow, laborWk = { needHrs: 350, actHrs: 364,
     qsrActSummaryRows: laborWeekRow(loc, laborWk),
     ctrlRows: [ctrlLaborRow(loc, laborPct)],
     auditRows: [auditRow(loc)],
+    opsCashRows: [opsCashRow(loc)],
     laborRows: [], opsRows: [], records: {},
   };
 }
@@ -248,6 +274,24 @@ describe('dispatch #208 — Overview Tab Digest row', () => {
     expect(action).toBeTruthy();
     expect(action.textContent).toContain('HIGH');
     expect(action.textContent).toContain('Overtime averaging 3.0 hrs/day');
+  });
+
+  // Cash Controls -- real opsCashRows row, auto-first through metricRate (Sum/Sum for the
+  // ratio-derived chains). cashOSPct -100/100000 = -0.10%, target -0.05% -> gap -0.05pp. Worst
+  // of the 5 CTRL_DRIVERS by deltaPP is discPct (1.00% vs 0.80% target, +0.20pp) -- a real
+  // engine computation, not a fixed string, per this file's own "would this survive a revert"
+  // standard (if CTRL_DRIVERS or metric-source.js's posOverPct derive were reverted, this would
+  // show a different driver or '—' instead).
+  it('the Cash Controls tile renders a real Cash O/S% vs target and the real worst driver', () => {
+    const store = makeStore(LOC1);
+    const ds = baseDs(LOC1);
+    ({ container, root } = renderStoreDash(store, ds, baseSettings(), [store]));
+    const cash = tileByLabel(container, 'CASH CONTROLS');
+    expect(cash).toBeTruthy();
+    expect(cash.textContent).toContain('-0.100%');
+    expect(cash.textContent).toContain('target -0.050%');
+    expect(cash.textContent).toContain('-0.050pp');
+    expect(cash.textContent).toMatch(/driver: Discount %/);
   });
 
   it('the Register Audit tile is IntersectionObserver-gated -- with the REAL happy-dom observer (which never auto-fires), it stays in the "not yet visible" state and never renders auditRows data', () => {

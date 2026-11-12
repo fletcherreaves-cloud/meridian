@@ -12,7 +12,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import { FoodCostCockpitTab, LaborCockpitTab } from '../views/store-cockpit.js';
+import { FoodCostCockpitTab, LaborCockpitTab, CashControlsCockpitTab } from '../views/store-cockpit.js';
+import { lastClosedBusinessDay } from '../utils/date.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -185,5 +186,74 @@ describe('LaborCockpitTab "Coach" box threshold (dispatch: configurable ±hrs/da
     render(weekOf(50, 52, 51), { laborCoachHrsPerDay: 0.5 });
     expect(container.textContent).not.toContain('On track');
     expect(container.textContent).toMatch(/±0\.5 hrs\/day/);
+  });
+});
+
+// Cash Controls tab -- mounts the REAL exported CashControlsCockpitTab (not a mock), same
+// "would this verification still pass if the change were reverted" standard as the Food
+// Cost/Labor describes above. posOverPct has no raw column anywhere in the data model (it's
+// derivation-only, see metric-source.js's own comment) so this is also the one place that
+// exercises that chain through a real rendered component, not just the engine directly.
+describe('CashControlsCockpitTab (Cash Controls Cockpit tab)', () => {
+  let container, root;
+  afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); });
+
+  const CASH_STORE = {
+    loc: '10422', name: 'Atoka-Mississippi', org: 'MCDOK',
+    t: {
+      tCashOSPct: -0.0005, tRedAPct: 0.002, tRedBPct: 0.03, tDiscCoupPct: 0.008,
+      tPosOverPct: 0.003, tPromoPct: 0.03, tDrawer: 50,
+    },
+  };
+
+  function render(opsCashRows, props) {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root.render(React.createElement(CashControlsCockpitTab, { store: CASH_STORE, ds: { opsCashRows }, ...props })); });
+  }
+
+  it('shows a loading state, not a crash, when ds is not yet loaded', () => {
+    render(undefined, { ds: null });
+    expect(container.textContent).toContain('Loading');
+  });
+
+  it('renders a real hero Cash O/S%, the correctly-labeled T-Red After/Before drivers (not the alphabetically-tempting opposite), and real Loss Prevention stats, all from one real opsCashRows day', () => {
+    const row = {
+      loc: '10422', date: lastClosedBusinessDay(),
+      netSalesAmt: 100000, cashOSAmt: -100, tRedAAmt: 300, tRedBAmt: 3000, discAmt: 1000,
+      posOverAmt: 400, promoPct: 0.025, drawerOpens: 60, cashRefCnt: 4,
+    };
+    render([row]);
+    // Hero: cashOSPct -100/100000 = -0.10%, target -0.05% -> gap -0.05pp.
+    expect(container.textContent).toContain('-0.100%');
+    expect(container.textContent).toContain('-0.050pp');
+    // T-Red After (tRedAPct) 300/100000=0.30% vs 0.20% target -> +0.10pp. T-Red Before
+    // (tRedBPct) 3000/100000=3.00% vs 3.00% target -> 0pp. Both real labels must appear,
+    // correctly assigned -- store-dash.js's CtrlScorecard is the one other place in the app
+    // that names both, and this must agree with it.
+    expect(container.textContent).toMatch(/T-Red After %/);
+    expect(container.textContent).toMatch(/T-Red Before %/);
+    expect(container.textContent).toContain('0.30%');
+    expect(container.textContent).toContain('+0.10pp');
+    // Discount % 1000/100000=1.00% vs 0.80% target -> +0.20pp, the worst of the 5 drivers.
+    expect(container.textContent).toContain('1.00%');
+    expect(container.textContent).toContain('+0.20pp');
+    // POS Over % -- derivation-only chain (posOverAmt/netSalesAmt, no raw column) -- 400/100000
+    // = 0.40% vs 0.30% target -> +0.10pp. A reverted posOverPct derive would render '—' here.
+    expect(container.textContent).toMatch(/POS Over %/);
+    expect(container.textContent).toContain('0.40%');
+    // Loss Prevention Signals -- Drawer Opens/Day 60 vs the real tDrawer target 50 -> +10.0/day;
+    // Cash Refund/Day 4 vs the flat 2/day standard -> +2.0/day.
+    expect(container.textContent).toContain('Drawer Opens/Day');
+    expect(container.textContent).toContain('60.0');
+    expect(container.textContent).toContain('+10.0/day');
+    expect(container.textContent).toContain('Cash Refund/Day');
+    expect(container.textContent).toContain('+2.0/day');
+  });
+
+  it('shows the no-data message when ds has no opsCashRows for this store', () => {
+    render([]);
+    expect(container.textContent).toMatch(/No Cash Controls data resolved yet/i);
   });
 });

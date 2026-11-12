@@ -30,6 +30,7 @@ import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
 } from '../engine/metric-source.js';
 import { addD, dKey, lastClosedBusinessDay, dowOf, businessDate } from '../utils/date.js';
+import { DEF_SETTINGS } from '../constants.js';
 import { CoachingModal } from './coaching-modal.js';
 
 const h = React.createElement;
@@ -652,6 +653,184 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved, settings }) {
         scan ? h(CorrelationStrip, { results: laborCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…'))),
     Card({ title: 'Intraday Deployment', sub: 'scheduled hrs needed − actual, by hour × day-of-week · trailing 6 weeks' },
       heat && heat.slots.length ? h(HeatMap, { heat }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 24, textAlign: 'center' } }, hourly === null ? 'Loading hourly activity…' : 'No hourly DAR data loaded for this window.')));
+}
+
+// ═════════════════════════════════════ CASH CONTROLS TAB ══════════════════════════════════════
+// Driver list: five real cash/loss-prevention % metrics (metric-source.js auto-first chains,
+// each read via metricRate — Sum/Sum for the ones whose chain declares a ratio derive [cashOSPct/
+// tRedAPct/tRedBPct/discPct/posOverPct all do; promoPct doesn't, so metricRate's own documented
+// fallback to mean-of-daily covers it there], never a raw filter over ctrlRows/opsCashRows) vs
+// each driver's own real per-store target field (constants.js) — same actual-vs-target gap
+// framing Food Cost's Component Drivers and Labor's Crew Labor % hero already use.
+//
+// tRedAPct = "T-Red After %" (post-close voids), tRedBPct = "T-Red Before %" (pre-total voids) —
+// confirmed against store-dash.js's CtrlScorecard (the one place in the app that already labels
+// both), not the alphabetically-tempting opposite guess.
+export const CTRL_DRIVERS = [
+  { key: 'tRedAPct',   label: 'T-Red After %',  tgtKey: 'tRedAPct' },
+  { key: 'tRedBPct',   label: 'T-Red Before %', tgtKey: 'tRedBPct' },
+  { key: 'discPct',    label: 'Discount %',     tgtKey: 'tDiscCoupPct' },
+  { key: 'posOverPct', label: 'POS Over %',     tgtKey: 'tPosOverPct' },
+  { key: 'promoPct',   label: 'Promo %',        tgtKey: 'tPromoPct' },
+];
+// store-dash.js's own CtrlScorecard grades this exact row against a flat 2/day, not against
+// t.tRefundCnt (which it leaves unread there) — reused here rather than guessing tRefundCnt's
+// actual intended period (it reads like a monthly total, not a daily one, and nothing in the
+// app currently compares it as either).
+const CASH_REF_DAY_STANDARD = 2;
+
+function CashTrend({ series, target }) {
+  const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
+  const vals = series.map(p => p.value);
+  const allVals = target != null ? [...vals, target, 0] : [...vals, 0];
+  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const range = (maxV - minV) || 0.001;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const xOf = i => padL + (series.length > 1 ? (i / (series.length - 1)) * innerW : innerW / 2);
+  const yOf = v => padT + innerH - (((v || 0) - minV) / range) * innerH;
+  const zeroY = yOf(0);
+  const targetY = target != null ? yOf(target) : null;
+  const pathD = series.map((p, i) => (i === 0 ? 'M' : 'L') + xOf(i).toFixed(1) + ',' + yOf(p.value).toFixed(1)).join(' ');
+  const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
+  const worstIdx = series.reduce((best, p, i) => {
+    const score = target != null ? Math.abs(p.value - target) : Math.abs(p.value);
+    const bestScore = target != null ? Math.abs(series[best].value - target) : Math.abs(series[best].value);
+    return score > bestScore ? i : best;
+  }, 0);
+
+  return div(null,
+    h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
+      h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
+      targetY != null && h('line', { x1: padL, y1: targetY, x2: W - padR, y2: targetY, stroke: 'var(--amber)', strokeWidth: 1, strokeDasharray: '4,3', opacity: .7 }),
+      h('path', { d: pathD, fill: 'none', stroke: 'var(--blue)', strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' }),
+      ...series.map((p, i) => h('circle', {
+        key: i, cx: xOf(i), cy: yOf(p.value), r: i === worstIdx ? 4 : 2.2, fill: 'var(--blue)', stroke: 'var(--surf)', strokeWidth: 1,
+      }, h('title', null, `${dLbl(p.date)}: ${fP(p.value, 3)}`)))),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--blue)', flexShrink: 0 } }), span(null, 'Cash O/S %')),
+      target != null && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--amber)', flexShrink: 0 } }), span(null, 'Target')),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--bdr2)', flexShrink: 0 } }), span(null, 'Zero'))));
+}
+
+export function CashControlsCockpitTab({ store, ds, onCoachingSaved, settings }) {
+  const loc = String(store.loc), t = store.t || {};
+
+  // Trailing 6 weeks — same window Labor's Intraday Deployment heat map uses (DAYS_BACK_HEAT).
+  // Every driver here is a % (already period-normalized), so there's no monthly-report-period
+  // requirement the way Food Cost's FOB% has.
+  const range = useMemo(() => {
+    const end = lastClosedBusinessDay();
+    return { s: addD(end, -(DAYS_BACK_HEAT - 1)), e: end };
+  }, []);
+
+  const sumOf = (key) => { if (!ds) return null; const vals = Object.values(metricSeries(ds, loc, range, key)); return vals.length ? vals.reduce((a, b) => a + b, 0) : null; };
+  const avgOf = (key) => { if (!ds) return null; const vals = Object.values(metricSeries(ds, loc, range, key)); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; };
+
+  const netSales = useMemo(() => sumOf('netSalesAmt'), [ds, loc, range]);
+  const cashOSPct = useMemo(() => (ds ? metricRate(ds, loc, range, 'cashOSPct') : null), [ds, loc, range]);
+  const cashOSAmtSum = useMemo(() => sumOf('cashOSAmt'), [ds, loc, range]);
+  const cashTarget = t.tCashOSPct != null ? Number(t.tCashOSPct) : null;
+  const gapPP = (cashOSPct != null && cashTarget != null) ? (cashOSPct - cashTarget) * 100 : null;
+
+  // Severity — the SAME |cashOSPct| tiers pipeline.js's computeCtrlScore uses for the real
+  // Controls Health score (settings.scoring, DEF_SETTINGS fallback), collapsed to 3 bands, so
+  // this tile's color never disagrees with wherever Controls Health is shown for this store.
+  const sc = settings?.scoring || {};
+  const cashT2 = sc.cashT2 ?? DEF_SETTINGS.scoring.cashT2, cashT4 = sc.cashT4 ?? DEF_SETTINGS.scoring.cashT4;
+  const absCash = cashOSPct != null ? Math.abs(cashOSPct) : null;
+  const cashStatus = absCash == null ? 'flat' : absCash <= cashT2 ? 'good' : absCash <= cashT4 ? 'warn' : 'crit';
+
+  const drivers = useMemo(() => CTRL_DRIVERS.map(d => {
+    const actual = ds ? metricRate(ds, loc, range, d.key) : null;
+    const tgt = t[d.tgtKey] != null ? Number(t[d.tgtKey]) : null;
+    const actualPP = actual != null ? actual * 100 : null;
+    const tgtPP = tgt != null ? tgt * 100 : null;
+    const deltaPP = (actualPP != null && tgtPP != null) ? actualPP - tgtPP : null;
+    return { ...d, actualPP, tgtPP, deltaPP };
+  }).sort((a, b) => (b.deltaPP ?? -999) - (a.deltaPP ?? -999)), [ds, loc, range, t]);
+  const maxDriver = Math.max(1, ...drivers.map(d => Math.max(d.actualPP || 0, d.tgtPP || 0))) * 1.15;
+
+  // Loss-prevention counts — Drawer Opens has a real settable per-store target already labeled
+  // "/Day" by store-dash.js's CtrlScorecard (t.tDrawer compared directly, no scaling); Cash
+  // Refund Count reuses that same panel's own flat 2/day standard (see CASH_REF_DAY_STANDARD).
+  const drawerPerDay = useMemo(() => avgOf('drawerOpens'), [ds, loc, range]);
+  const drawerTarget = t.tDrawer != null ? Number(t.tDrawer) : null;
+  const cashRefPerDay = useMemo(() => avgOf('cashRefCnt'), [ds, loc, range]);
+  const lpMax = Math.max(1, drawerPerDay || 0, drawerTarget || 0, cashRefPerDay || 0, CASH_REF_DAY_STANDARD) * 1.15;
+
+  // Flagship trend — Cash O/S % day by day over the same window, target as a dashed reference.
+  const cashSeries = useMemo(() => {
+    if (!ds) return [];
+    const s = metricSeries(ds, loc, range, 'cashOSPct');
+    return Object.keys(s).sort().map(dk => ({ date: dk, value: s[dk] }));
+  }, [ds, loc, range]);
+
+  // Correlation strip — same scanAllPairs Scanner uses, scoped to this store, daily (Controls
+  // metrics are daily, unlike Food Cost's monthly-only FOB chain).
+  const scan = useMemo(() => (ds ? scanAllPairs(ds, { granularity: 'daily', scopeLoc: loc }) : null), [ds, loc]);
+  const ctrlCorr = useMemo(() => (scan ? scan.results.filter(r => r.xCat === 'Controls' || r.yCat === 'Controls').slice(0, 6) : []), [scan]);
+
+  if (!ds) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading…');
+  if (cashOSPct == null && !drivers.some(d => d.actualPP != null)) {
+    return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'No Cash Controls data resolved yet for this store — check the auto Operations Report pull or upload a Controls report.');
+  }
+
+  const verdictText = (cashStatus !== 'good' && cashStatus !== 'flat')
+    ? span(null, 'Cash Over/Short is running ', h('b', { style: { color: STATUS_COLOR[cashStatus] } }, (cashOSPct >= 0 ? '+' : '') + fP(cashOSPct, 3)), ' over the trailing 6 weeks — target is ', h('b', null, cashTarget != null ? fP(cashTarget, 3) : '—'), '. A swing this size usually traces to drawer-count discipline or a specific register/shift, not the whole store.')
+    : span(null, 'Cash Over/Short is within normal range — no coaching signal here.');
+  const whyText = (drivers[0] && drivers[0].deltaPP > 0)
+    ? `Why: ${drivers[0].label} is currently ${drivers[0].deltaPP.toFixed(2)}pp over its own target, the largest gap of the five Controls drivers tracked here.`
+    : null;
+
+  return div(null,
+    div(gridStyle('1.3fr 1fr'),
+      Card({ accent: 'var(--amber)' },
+        HeroNumber({
+          label: 'Cash Over/Short % — trailing 6 weeks',
+          value: cashOSPct != null ? fP(cashOSPct, 3) : '—',
+          valueColor: STATUS_COLOR[cashStatus],
+          delta: gapPP != null ? (gapPP >= 0 ? '+' : '') + gapPP.toFixed(3) + 'pp' : null,
+          deltaColor: gapPP != null ? STATUS_COLOR[cashStatus] : 'var(--text3)',
+          sub: 'vs target ' + (cashTarget != null ? fP(cashTarget, 3) : '—') + ' · ' + (netSales ? f$(Math.round(netSales)) + ' net sales' : ''),
+          oppLabel: cashOSAmtSum != null ? (cashOSAmtSum >= 0 ? 'Net over (6 wk)' : 'Net short (6 wk)') : null,
+          oppValue: cashOSAmtSum != null ? f$(Math.round(Math.abs(cashOSAmtSum))) : null,
+        }),
+        VerdictBand('Coach', verdictText, whyText, h(CoachThisButton, { loc, metricKey: 'cash_os_pct', ds, onCoachingSaved }))),
+      Card({ title: 'Controls Drivers', sub: 'actual vs. target, ranked worst→best' },
+        div(null, drivers.map((d, i) => h(DriverRow, {
+          key: d.key, rank: i + 1, label: d.label,
+          actualTxt: d.actualPP != null ? d.actualPP.toFixed(2) + '%' : '—',
+          gapTxt: d.deltaPP != null ? (d.deltaPP >= 0 ? '+' : '') + d.deltaPP.toFixed(2) + 'pp' : '',
+          actualPct: d.actualPP != null ? (d.actualPP / maxDriver) * 100 : 0,
+          targetPct: d.tgtPP != null ? (d.tgtPP / maxDriver) * 100 : null,
+          status: statusOf(d.deltaPP),
+        })))),
+    ),
+    div(gridStyle('1fr 1fr'),
+      Card({ title: 'Cash O/S % Trend', sub: 'daily, trailing 6 weeks' },
+        cashSeries.length ? h(CashTrend, { series: cashSeries, target: cashTarget }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily Cash O/S data yet for this window.')),
+      Card({ title: 'Loss Prevention Signals', sub: 'daily average, trailing 6 weeks' },
+        div(null,
+          h(DriverRow, {
+            rank: 1, label: 'Drawer Opens/Day',
+            actualTxt: drawerPerDay != null ? drawerPerDay.toFixed(1) : '—',
+            gapTxt: (drawerPerDay != null && drawerTarget != null) ? ((drawerPerDay - drawerTarget) >= 0 ? '+' : '') + (drawerPerDay - drawerTarget).toFixed(1) + '/day' : '',
+            actualPct: drawerPerDay != null ? (drawerPerDay / lpMax) * 100 : 0,
+            targetPct: drawerTarget != null ? (drawerTarget / lpMax) * 100 : null,
+            status: (drawerPerDay != null && drawerTarget != null) ? (drawerPerDay <= drawerTarget ? 'good' : 'warn') : 'flat',
+          }),
+          h(DriverRow, {
+            rank: 2, label: 'Cash Refund/Day',
+            actualTxt: cashRefPerDay != null ? cashRefPerDay.toFixed(1) : '—',
+            gapTxt: cashRefPerDay != null ? ((cashRefPerDay - CASH_REF_DAY_STANDARD) >= 0 ? '+' : '') + (cashRefPerDay - CASH_REF_DAY_STANDARD).toFixed(1) + '/day' : '',
+            actualPct: cashRefPerDay != null ? (cashRefPerDay / lpMax) * 100 : 0,
+            targetPct: (CASH_REF_DAY_STANDARD / lpMax) * 100,
+            status: cashRefPerDay != null ? (cashRefPerDay <= CASH_REF_DAY_STANDARD ? 'good' : 'warn') : 'flat',
+          }),
+          div({ style: { fontSize: 10, color: 'var(--text3)', marginTop: 10 } }, 'Cash Refund standard (2/day) mirrors the existing Controls Scorecard threshold — no separate settable target exists for this one yet.'))),
+    ),
+    Card({ title: 'What Moves With Controls', sub: JargonTip('Metrics that tend to move with cash/loss-prevention controls — a dot means the pattern is real, not random noise', 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant') },
+      scan ? h(CorrelationStrip, { results: ctrlCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…')));
 }
 
 function Decomp({ decomp }) {
