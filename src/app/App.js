@@ -4639,6 +4639,7 @@ function App() {
     // always-reachable "+ Log Something" entry point (AppTopbar button -> onOpenModal('quick-capture')).
     showQuickCapture&&h(ModalShell,{
       title:'‼ Log Something',
+      subtitle:h(InfoIcon,{articleKey:'quick_capture_guide'}),
       onClose:()=>setShowQuickCapture(false),maxWidth:560,zIndex:Z.nested,
     },
       h(QuickCapturePanel,{stores,selStore,settings,onClose:()=>setShowQuickCapture(false)})

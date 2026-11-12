@@ -617,7 +617,7 @@ function Settings({settings, onUpdate, onClose, userRole, accessibleLocs, onClea
   const Toggle=({label,path,options})=>div({className:'set-row'},div({className:'set-lbl'},label),div({style:{display:'flex',gap:4}},options.map(([l,v])=>btn({key:String(l),className:'sbtn'+(S[path]===v?' on':''),onClick:()=>set(path,v),style:{fontSize:'10px',padding:'2px 8px'}},l))));
 
   return h(ModalShell,{
-    title:'⚙ Settings', onClose, maxWidth:640, zIndex:Z.modal,
+    title:'⚙ Settings', subtitle:h(InfoIcon,{articleKey:'settings_guide'}), onClose, maxWidth:640, zIndex:Z.modal,
     justify:'flex-start', bodyStyle:{padding:0,display:'flex',overflow:'hidden'},
   },
         // ── Sidebar menu
