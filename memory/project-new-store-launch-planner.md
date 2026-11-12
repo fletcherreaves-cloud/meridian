@@ -10,6 +10,16 @@ sensitivity: open
 
 # New Store Launch Planner (2026-11-06)
 
+⚠️ **OPENING DATE SLIPPED 2026-11-12 (owner update) — Lindsay (44689) is NOT opening Saturday
+2026-11-14 as planned throughout this doc.** A construction issue (concrete pour for the DT pad
+and parking lot) pushed the actual opening to **Monday 2026-11-16, 7am**. The **official grand
+opening stays 2026-11-17, unchanged**. Every day-0/day-N ramp number and date below was computed
+against the original 2026-11-14 start and has NOT been re-run against the new 11-16 start as of
+this note — re-anchor `new-store-ramp.js`'s day-0 date (and `SEED_DEFAULTS['44689']`'s plan, if it
+was ever persisted per the "No auto-persist" note below) before trusting any specific calendar
+date in this file; the comparable-store ramp SHAPE (day-0 soft-open low, days 1-7 at 0.96x-1.81x
+mature) is unaffected by a 2-day slip and needs no rework.
+
 ## What prompted this
 
 Same conversation, same session: the owner needed Lindsay's (44689) new-standalone-building
