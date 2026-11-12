@@ -198,10 +198,26 @@ const lbl=(p,...c)=>h('label',p,...c);
 // as location options, delegated the pick: AAG footer (the sidebar is mid "lean and mean"
 // cleanup and doesn't need 3 more permanent rows; At A Glance is the page everyone actually
 // lands on, so a footer fits the "jump-off point" mental model without adding nav weight).
+// Notes 74 (owner, 2026-11-11) expanded this footer with QSRSoft deep links. Per-store
+// scoping syntax for these is a separate, still-in-progress verification (memory/notes-74-queue.md)
+// — every URL below is the plain unscoped page, same as the original 3 links always were.
 const QUICK_LINKS = [
   { label: 'atMcd', title: "McDonald's Intranet", url: 'https://www.atmcd.com/' },
   { label: 'MBSync', title: 'Martin Brower truck ordering', url: 'https://martinbrower.my.site.com/Sync/s/aggregatehomepage' },
   { label: 'PACE Portal', title: 'PACE Portal', url: 'https://pace.mcd.com/login' },
+  { label: 'QSRSoft Home', title: 'QSRSoft Home', url: 'https://v3.myqsrsoft.com/home-dashboard', group: 'qsr' },
+  { label: 'Register Audit', title: 'QSRSoft Register Audit', url: 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit', group: 'qsr' },
+  { label: 'Tickets', title: 'QSRSoft Equipment Tickets', url: 'https://v3.myqsrsoft.com/equipment/tickets', group: 'qsr' },
+  { label: 'Travel Path (Playplace)', title: 'QSRSoft Travel Path — With Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=fd2c551a-5859-449a-80c1-5bb980ce7704', group: 'qsr' },
+  { label: 'Travel Path (No Playplace)', title: 'QSRSoft Travel Path — No Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=3ee1cc75-9f29-42d2-b49f-6ca3216addb4', group: 'qsr' },
+  { label: 'Pre-Shift – Breakfast', title: 'QSRSoft Pre-Shift Checklist — Breakfast', url: 'https://v3.myqsrsoft.com/forms/take?formId=af2c43a5-2416-4f51-ba78-8377bea88745', group: 'qsr' },
+  { label: 'Pre-Shift – Lunch', title: 'QSRSoft Pre-Shift Checklist — Lunch', url: 'https://v3.myqsrsoft.com/forms/take?formId=9f09c80c-436f-4c26-93d6-85198bd1da0e', group: 'qsr' },
+  { label: 'Pre-Shift – Dinner', title: 'QSRSoft Pre-Shift Checklist — Dinner', url: 'https://v3.myqsrsoft.com/forms/take?formId=55e8846f-bbcd-4129-a05a-85c964bec805', group: 'qsr' },
+  { label: 'Operations Report', title: 'QSRSoft Operations Report', url: 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', group: 'qsr' },
+  { label: '3 Peaks', title: 'QSRSoft 3 Peaks Report', url: 'https://v3.myqsrsoft.com/reports/mcd/shift/3PeaksReport', group: 'qsr' },
+  { label: 'Food Over Base', title: 'QSRSoft Food Over Base', url: 'https://v3.myqsrsoft.com/cimt/inventory/food-over-base', group: 'foodcost' },
+  { label: 'On Hand Inventory', title: 'QSRSoft On Hand Inventory', url: 'https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory', group: 'foodcost' },
+  { label: 'Variance/Yields', title: 'QSRSoft Variance Stat/Yields', url: 'https://v3.myqsrsoft.com/cimt/inventory/stat-variance', group: 'foodcost' },
 ];
 
 function SageRunsTile() {
@@ -3653,11 +3669,16 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
     // Quick Links footer — outside the scroll region so it's always reachable without
     // scrolling through whatever sections are configured above.
     div({style:{flexShrink:0,display:'flex',alignItems:'center',gap:14,padding:'6px 24px',
-      borderTop:'.5px solid var(--bdr)',background:'var(--surf)'}},
-      span({style:{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}},'Quick Links'),
-      QUICK_LINKS.map(l=>h('a',{key:l.label,href:l.url,target:'_blank',rel:'noopener noreferrer',
-        title:l.title,style:{fontSize:10,color:'var(--amber)',textDecoration:'none',whiteSpace:'nowrap'}},
-        l.label))
+      borderTop:'.5px solid var(--bdr)',background:'var(--surf)',overflowX:'auto'}},
+      span({style:{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4,flexShrink:0}},'Quick Links'),
+      QUICK_LINKS.map((l,i)=>{
+        const prevGroup = i>0 ? QUICK_LINKS[i-1].group : undefined;
+        const divider = l.group && l.group!==prevGroup
+          ? h('span',{key:l.label+'-div',style:{color:'var(--bdr)',flexShrink:0}},'│') : null;
+        return [divider, h('a',{key:l.label,href:l.url,target:'_blank',rel:'noopener noreferrer',
+          title:l.title,style:{fontSize:10,color:'var(--amber)',textDecoration:'none',whiteSpace:'nowrap',flexShrink:0}},
+          l.label)];
+      })
     ),
 
     // Click-to-expand daily series modal (§1/§2 Q10) — mounted once at the AtAGlance root so any

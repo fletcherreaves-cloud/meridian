@@ -52,4 +52,33 @@ describe('At A Glance — operational Quick Links footer', () => {
     expect(pace, 'PACE Portal link not found').toBeTruthy();
     expect(pace.getAttribute('href')).toBe('https://pace.mcd.com/login');
   });
+
+  // Notes 74 (owner, 2026-11-11): expanded the same footer with QSRSoft operational deep links
+  // and a separate QSRSoft Food Cost group. These are the plain unscoped URLs the owner supplied
+  // — per-store scoping syntax is a separate, still-in-progress verification (memory/notes-74-queue.md).
+  it('renders the Notes 74 QSRSoft + Food Cost links as real external links', async () => {
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await act(async () => { root.render(React.createElement(AtAGlance, baseProps)); });
+
+    const links = [...container.querySelectorAll('a')];
+    const byLabel = label => links.find(a => a.textContent.trim() === label);
+
+    const qsrHome = byLabel('QSRSoft Home');
+    expect(qsrHome, 'QSRSoft Home link not found').toBeTruthy();
+    expect(qsrHome.getAttribute('href')).toBe('https://v3.myqsrsoft.com/home-dashboard');
+    expect(qsrHome.getAttribute('target')).toBe('_blank');
+
+    const registerAudit = byLabel('Register Audit');
+    expect(registerAudit.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit');
+
+    const opsReport = byLabel('Operations Report');
+    expect(opsReport.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport');
+
+    const foodOverBase = byLabel('Food Over Base');
+    expect(foodOverBase, 'Food Over Base link not found').toBeTruthy();
+    expect(foodOverBase.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/food-over-base');
+
+    const variance = byLabel('Variance/Yields');
+    expect(variance.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/stat-variance');
+  });
 });
