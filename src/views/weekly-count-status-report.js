@@ -29,7 +29,7 @@ import { cycleCompliance, diffNewWrins, detectWeeklyCountDay,
 import { periodKey } from '../engine/eom-inventory.js';
 import { InfoIcon } from '../engine/forecast.js';
 import { printHtml } from '../utils/print-html.js';
-import { weekStartOf, addD, dKey, fmtRng } from '../utils/date.js';
+import { weekStartOf, addD, dKey, fmtRng, businessDate } from '../utils/date.js';
 
 const { useState, useEffect, useMemo } = React;
 const h = React.createElement;
@@ -184,8 +184,12 @@ export function WeeklyCountStatusPanel({ stores, ds, settings, onClose, initialS
   // day so every day within the same week agrees. Clamped to today for the current, still-
   // in-progress week — using a future week-end would make an in-progress week read as
   // "overdue" for days that haven't happened yet.
-  const [pickedDate, setPickedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+  // tomorrow for a US timezone past 6pm CST/7pm CDT, which defeats the future-week-end clamp
+  // below for roughly the last 6 hours of this week's own final day (same bug class as the
+  // Daypart Pace fix, 2026-11-12).
+  const [pickedDate, setPickedDate] = useState(() => businessDate());
+  const todayKey = useMemo(() => businessDate(), []);
   const weekStart = useMemo(() => weekStartOf(pickedDate, settings?.weekStartDay), [pickedDate, settings?.weekStartDay]);
   const weekEndKey = useMemo(() => dKey(addD(weekStart, 6)), [weekStart]);
   const asOf = weekEndKey > todayKey ? todayKey : weekEndKey;

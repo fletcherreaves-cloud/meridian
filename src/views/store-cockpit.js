@@ -29,7 +29,7 @@ import { overnightOpenness, overnightExcessByStore } from '../engine/labor-stand
 import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
 } from '../engine/metric-source.js';
-import { addD, dKey, lastClosedBusinessDay, dowOf } from '../utils/date.js';
+import { addD, dKey, lastClosedBusinessDay, dowOf, businessDate } from '../utils/date.js';
 import { CoachingModal } from './coaching-modal.js';
 
 const h = React.createElement;
@@ -298,7 +298,7 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   const discipline = useMemo(() => {
     if (wastePending || wasteFailed || !ds) return null;
     const rows = (ds.wasteRows || []).filter(r => r && String(parseInt(r.loc, 10)) === loc);
-    const d = computeStoreDataDiscipline(rows, { asOf: new Date().toISOString().slice(0, 10) });
+    const d = computeStoreDataDiscipline(rows, { asOf: businessDate() });
     return d.find(x => x.loc === loc) || null;
   }, [ds, wastePending, wasteFailed, loc]);
 

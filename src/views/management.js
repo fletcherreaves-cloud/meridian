@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups, latestEffective } from '../constants.js';
+import { businessDate } from '../utils/date.js';
 import { PANELS } from '../app/panel-registry.js';
 import { logOrgAssignmentChange, logAppAccess } from '../lib/supabase.js';
 import { DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
@@ -219,7 +220,10 @@ function DevDashboard({settings, onUpdate}) {
 // start ≤ that date. Reassigning = add a row with the effective date (older rows stay
 // as history; the newer date wins). Persists to settings.orgAssignments → org_config.
 function SupervisorAssignmentsEditor({ S, onUpdate }) {
-  const today = new Date().toISOString().slice(0, 10);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+  // tomorrow for a US timezone past 6pm CST/7pm CDT, which would save a wrong effective date for
+  // any assignment edited in the evening (same bug class as the Daypart Pace fix, 2026-11-12).
+  const today = businessDate();
   const asg = (S.orgAssignments && S.orgAssignments.length) ? S.orgAssignments : seedAssignmentsFromGroups(S.supervisorGroups);
   // Persist the timeline as the source of truth AND a today-derived flat supervisorGroups so
   // panels that read settings.supervisorGroups directly (One-Pager, EOM, Store Dash, Labor
@@ -293,7 +297,7 @@ function SupervisorAssignmentsEditor({ S, onUpdate }) {
 // gmAssignments row -- uses a dynamic import instead, same technique App.js's live-sync
 // useEffect and its contact_registry sync already use.
 function GmAssignmentsEditor({ S, onUpdate }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate(); // see SupervisorAssignmentsEditor's comment above
   const [seed, setSeed] = useState(null);
   useEffect(() => {
     if (S.gmAssignments && S.gmAssignments.length) return;
@@ -383,7 +387,7 @@ function roleSlug(name) {
   return s.length >= 2 ? s : 'role';
 }
 function RoleAssignmentsEditor({ S, onUpdate }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate(); // see SupervisorAssignmentsEditor's comment above
   const asg = S.roleAssignments || [];
   const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), roleAssignments: next });
   const roleNames = [...new Set(asg.map(a => a.role))].sort();
@@ -478,7 +482,7 @@ function RoleAssignmentsEditor({ S, onUpdate }) {
 // Smart Targets' roster (the first wired consumer) stops computing targets for it once the date
 // is reached.
 function StoreStatusEditor({ S, onUpdate }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate(); // see SupervisorAssignmentsEditor's comment above
   const lifecycle = S.storeLifecycle || {};
   const openDates = S.storeOpenDates || {};
   const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), storeLifecycle: next });

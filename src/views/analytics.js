@@ -3091,7 +3091,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode, onNav}){
     if(wastePending||wasteFailed) return null;
     const allowed=new Set(allLocs);
     const rows=(ds.wasteRows||[]).filter(r=>r&&allowed.has(unpad(r.loc)));
-    return computeStoreDataDiscipline(rows,{asOf:new Date().toISOString().slice(0,10)});
+    return computeStoreDataDiscipline(rows,{asOf:businessDate()});
   },[ds.wasteRows,wastePending,wasteFailed,allLocs]);
   const disciplineSum=React.useMemo(()=>discipline?disciplineSummary(discipline):null,[discipline]);
   const cloudFobRows=React.useMemo(()=>(qsrFobRows||[]).map(r=>{
