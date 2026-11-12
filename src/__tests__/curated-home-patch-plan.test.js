@@ -1,6 +1,10 @@
 // @ts-nocheck
-// The Patch (owner request 2026-11-07, "build The Patch next") -- the new front-facing
-// DO/OM/Area Supervisor home screen, layered on CuratedHomePanel the same way Game Plan is.
+// The Patch (owner request 2026-11-07, "build The Patch next") -- the front-facing
+// Area Supervisor home screen, layered on CuratedHomePanel the same way Game Plan is.
+// ✅ UPDATED 2026-11-12 (owner request: "A OM, DO or VP should have the flexibility to see any
+// group of operators or state or stores they wish to see") -- OM and DO now default to The
+// Ledger's cascading scope picker instead (see curated-home-operator-ledger.test.js), so this
+// file's own default role is area_supervisor, the one patch-altitude role The Patch still fits.
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
@@ -60,13 +64,13 @@ afterEach(async () => {
 
 async function mount(props) {
   await act(async () => {
-    root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'do', darRows: [], ...props }));
+    root.render(React.createElement(CuratedHomePanel, { ds: {}, settings: {}, role: 'area_supervisor', darRows: [], ...props }));
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   });
 }
 
 describe('CuratedHomePanel — The Patch default (owner request 2026-11-07)', () => {
-  it('a fresh DO/OM/area_supervisor login with no saved preference lands on The Patch, with real store names and a real needs-attention count', async () => {
+  it('a fresh area_supervisor login with no saved preference lands on The Patch, with real store names and a real needs-attention count', async () => {
     await mount({});
     expect(container.textContent).toContain('Your Patch');
     expect(container.textContent).toContain('Ardmore-Broadway');

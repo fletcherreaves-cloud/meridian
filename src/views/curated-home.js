@@ -39,8 +39,9 @@
 //      drill-through link simply doesn't render (no dead buttons), so this panel still works
 //      standalone (e.g. in a test) without the App.js wiring.
 import * as React from 'react';
-import { sNameC, operatorGroups, unpadLoc } from '../constants.js';
+import { sNameC, operatorGroups, unpadLoc, INV_ORG_COORDS, STORE_NAMES } from '../constants.js';
 import { withAlpha } from '../utils/fmt.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { loadUserSetting, saveUserSetting, loadInvCountSessions, saveRecommendation } from '../lib/supabase.js';
 import { sessionsFromLog, classStreak, classSave, CLASSES } from '../engine/count-cycle.js';
 import { periodKey } from '../engine/eom-inventory.js';
@@ -51,9 +52,10 @@ import { dKey } from '../utils/date.js';
 import { callSageOnce } from '../lib/sage-client.js';
 import { huddleScopeKey, huddleStorageKey, buildHuddleFacts, huddleSystemPrompt, huddleUserMessage } from '../engine/huddle-narrative.js';
 import { GamePlanFormat } from './game-plan-view.js';
+import { RULE_PANEL, RULE_PANEL_LABEL } from '../engine/game-plan.js';
 import { ShiftScoreboardFormat } from './shift-scoreboard-view.js';
 import { PatchPlanFormat } from './patch-plan-view.js';
-import { OperatorLedgerFormat } from './operator-ledger-view.js';
+import { OperatorLedgerFormat, stateLabel } from './operator-ledger-view.js';
 import { freshCountSessionPrompts } from '../engine/spot-check-ruler.js';
 import { SpotCheckRulerModal } from './spot-check-ruler-view.js';
 
@@ -70,6 +72,12 @@ const FORMAT_LS_KEY = 'mf_curated_home_format';
 // format preference just below.
 const OPERATOR_GROUP_KEY = 'curated_home_operator_group';
 const OPERATOR_GROUP_LS_KEY = 'mf_curated_home_operator_group';
+// OM/DO/VP cascading scope picker (owner request 2026-11-12) -- a LocationSelector `{level,id}`
+// (or `{level:'multi',ids}`) value, separate from OPERATOR_GROUP_* above (that stays the real
+// operator's own self-identity; this is "which slice of MY OWN already-visible stores do I want
+// my home screen to focus on").
+const HOME_SCOPE_KEY = 'curated_home_scope';
+const HOME_SCOPE_LS_KEY = 'mf_curated_home_scope';
 // 'gameplan'/'patch' (owner request 2026-11-07, following the "Four Decks" mockup exploration)
 // are the new FRONT-FACING defaults, one per altitude -- Game Plan is the GM/SM/AM/DM day (no
 // meaning for a multi-store pattern), The Patch is the DO/OM/Area Supervisor territory view (no
@@ -115,17 +123,10 @@ const SEV_DOT   = { RED: '!', AMBER: '~', GREEN: '✓' };
 // ruleId -> real panel-registry id (src/app/panel-registry.js). Every one of MORNING_RULES' 12
 // rule ids (src/features/morning-brief.js) is covered -- checked against the real registry, not
 // guessed; see the Phase 2 header comment above for the per-rule reasoning.
-const RULE_PANEL = {
-  DRAWER_OPENS: 'security', REFUND_OVERRING: 'security', TRED_SPIKE: 'security',
-  GC_SALES_DIVERGE: 'security', CASH_OS: 'security',
-  FOOD_COST_HIGH: 'fob-analysis',
-  STAFFED_SLOW: 'dt-sos', STAFFED_NO_PARK: 'dt-sos', TIMER_GAMING: 'dt-sos',
-  KVS_USAGE_LOW: 'dt-sos', DAYPART_OEPE: 'dt-sos',
-  SMG_OSAT_LOW: 'smg-voice',
-};
-const RULE_PANEL_LABEL = {
-  security: 'Security', 'fob-analysis': 'Food Cost', 'dt-sos': 'DT Speed of Service', 'smg-voice': 'Guest Voice',
-};
+// RULE_PANEL/RULE_PANEL_LABEL now live in engine/game-plan.js (owner feedback, 2026-11-11) so
+// game-plan-view.js's ActionsCard can reuse the exact same rule->panel mapping for its own
+// drill-through links without a circular import (this file already imports GamePlanFormat from
+// game-plan-view.js).
 
 // ── Phase 2 shared pieces: summary header + item tile ───────────────────────────────────────
 
@@ -424,6 +425,14 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
 
   const altitude = altitudeForRole(role);
 
+  // Cascading scope flexibility (owner request 2026-11-12): "A OM, DO or VP should have the
+  // flexibility to see any group of operators or state or stores they wish to see" -- these
+  // three roles get a real, persisted scope picker on The Ledger instead of being pinned to one
+  // fixed view. Deliberately NOT area_supervisor (their patch-altitude home stays The Patch,
+  // unaffected) and NOT owner/admin (their existing operatorGroup self-identity flow for Ledger,
+  // used when an actual owner wants to preview an operator's real view, is untouched).
+  const canFlexScope = role === 'om' || role === 'do' || role === 'vp';
+
   // View As Role sandbox scoping (owner request 2026-11-08): an admin/owner simulating a GM
   // sees ALL stores in their own unrestricted `ds` -- picking one deterministically (rather than
   // storeItems()'s arbitrary "first with data") needs narrowing down to just that store; same
@@ -477,8 +486,81 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // forces the SAME store-altitude grouping buildCuratedHomeItems() already uses for a GM,
   // independent of the viewer's own role, computed only when it's actually needed.
   const storeLevelItems = React.useMemo(
-    () => (altitude === 'patch' || operatorGroup ? buildCuratedHomeItems(scopedBrief, 'gm').items : null),
-    [scopedBrief, altitude, operatorGroup]);
+    () => (altitude === 'patch' || operatorGroup || canFlexScope ? buildCuratedHomeItems(scopedBrief, 'gm').items : null),
+    [scopedBrief, altitude, operatorGroup, canFlexScope]);
+
+  // Cascading scope flexibility, continued -- the picker itself. Reuses the SAME LocationSelector
+  // every other panel in this app uses (full All -> State -> Patch -> Store hierarchy, plus
+  // multi-select for an arbitrary set), with the real operatorGroups() map passed as its
+  // `customGroups` so "any group of operators" is a real tier (`level:'group'`), not a separate
+  // control -- one picker covers operator/state/patch/store/multi, per "check whether a helper
+  // exists before writing one." Default (`homeScope` unset, `{level:'all'}`) is every store this
+  // account's own RLS-scoped `ds` already covers -- the SAME real assignment it always showed,
+  // never narrower, never wider. Same local-first/cloud-confirm persistence pattern as
+  // operatorGroup/format above.
+  // Not memoized (cheap -- a handful of real operators) so a live org_config reload (same
+  // setLiveOperators() mechanism operatorPicker's own plain Object.keys(operatorGroups()) call
+  // already relies on, unmemoized, just below) is reflected immediately rather than frozen at
+  // this component's first render.
+  const operatorCustomGroups = Object.entries(operatorGroups() || {}).map(([name, locs]) => ({ id: name, name, locs }));
+  const homeScopeTree = React.useMemo(
+    () => buildLocationHierarchy(canFlexScope ? (scopedBrief.stores || []) : [], INV_ORG_COORDS, STORE_NAMES, operatorCustomGroups),
+    [canFlexScope, scopedBrief, operatorCustomGroups]);
+  const [homeScope, setHomeScopeState] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem(HOME_SCOPE_LS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { level: 'all', id: null };
+  });
+  React.useEffect(() => {
+    if (!canFlexScope) return;
+    let live = true;
+    loadUserSetting(HOME_SCOPE_KEY).then(v => {
+      if (live && v && typeof v === 'object' && v.level) setHomeScopeState(v);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [canFlexScope]);
+  const setHomeScope = (v) => {
+    setHomeScopeState(v);
+    try { localStorage.setItem(HOME_SCOPE_LS_KEY, JSON.stringify(v)); } catch {}
+    saveUserSetting(HOME_SCOPE_KEY, v).catch(() => {});
+  };
+  const homeScopeLocs = React.useMemo(() => locationSelectorLocs(homeScope, homeScopeTree), [homeScope, homeScopeTree]);
+  const flexScopedStores = React.useMemo(() => {
+    if (!canFlexScope || !homeScope || homeScope.level === 'all') return scopedBrief.stores || [];
+    const allowed = new Set(homeScopeLocs);
+    return (scopedBrief.stores || []).filter(s => allowed.has(unpadLoc(s.loc)));
+  }, [canFlexScope, homeScope, homeScopeLocs, scopedBrief]);
+  // A short, honest label for the current selection -- "All [N] Stores" by default (states the
+  // real count, never just the word "all"), else the real state/patch/operator name or a plain
+  // "{n} stores" for a multi-pick, so the header always says exactly what's on screen.
+  function homeScopeLabel(value, tree, storeCount) {
+    if (!value || value.level === 'all') return `All ${storeCount} Store${storeCount === 1 ? '' : 's'}`;
+    if (value.level === 'state') return stateLabel(value.id);
+    if (value.level === 'patch') return (tree.patches.find(p => p.id === value.id) || {}).label || value.id;
+    if (value.level === 'group') return (tree.groups || []).find(g => g.id === value.id)?.name || value.id;
+    if (value.level === 'store') return sNameC(value.id) || value.id;
+    if (value.level === 'multi') {
+      const ids = value.ids || [];
+      // The "add a whole group at once" quick-add (LocationSelector's own dropdown+multi variant)
+      // bulk-toggles a state/patch/group's locs INTO the multi ids list rather than ever emitting
+      // a single-level {level:'state'/'patch'/'group'} value -- that's what makes "pick Oklahoma,
+      // then add one more Florida store" representable at all. Detecting an exact match against
+      // a real group's own loc set here is what keeps "picked the whole state of Oklahoma" reading
+      // as "Oklahoma" instead of a bare, less legible "9 Stores" count.
+      const idSet = new Set(ids);
+      const sameSet = (locs) => locs.length === idSet.size && locs.every(l => idSet.has(l));
+      const matchState = tree.states.find(s => sameSet(s.locs));
+      if (matchState) return stateLabel(matchState.id);
+      const matchPatch = tree.patches.find(p => sameSet(p.locs));
+      if (matchPatch) return matchPatch.label;
+      const matchGroup = (tree.groups || []).find(g => sameSet(g.locs));
+      if (matchGroup) return matchGroup.name;
+      return `${ids.length} Store${ids.length === 1 ? '' : 's'}`;
+    }
+    return `All ${storeCount} Store${storeCount === 1 ? '' : 's'}`;
+  }
 
   // Default format (owner request 2026-11-07, extended 2026-11-08 for The Ledger): one real
   // front door per altitude, for anyone who has never set a preference. An existing saved
@@ -489,9 +571,11 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // becomes the fallback at a different one. The Ledger additionally requires operatorGroup to
   // be set -- an owner/VP/admin account with no operator identity gets the SAME 'dataview'
   // (Checklist, by default) it always has, never a surprise new front door it never asked for.
-  const defaultFormat = (altitude === 'district' && operatorGroup) ? 'ledger' : (DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'dataview');
+  const defaultFormat = canFlexScope ? 'ledger'
+    : (altitude === 'district' && operatorGroup) ? 'ledger'
+    : (DEFAULT_FORMAT_BY_ALTITUDE[altitude] || 'dataview');
   const formatFitsAltitude = (id) => {
-    if (id === 'ledger') return altitude === 'district' && !!operatorGroup;
+    if (id === 'ledger') return canFlexScope || (altitude === 'district' && !!operatorGroup);
     return !FORMAT_ALTITUDE[id] || FORMAT_ALTITUDE[id] === altitude;
   };
   // A saved format value from BEFORE this consolidation is one of the three data-view style ids
@@ -543,6 +627,16 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     saveUserSetting(FORMAT_KEY, 'dataview').catch(() => {});
   };
 
+  // Owner bug report (2026-11-11, live): switching View As Role from a store-altitude role to
+  // Area Supervisor kept rendering Game Plan (with no loc, since myStore is store-altitude-only)
+  // -- "Your Week So Far" then permanently read "not enough closed days", which the owner first
+  // (reasonably) suspected was a day-of-week artifact. It wasn't: `format` is state that survives
+  // a View As Role altitude change without remounting (no mount-time recompute), and the loader
+  // effect above only OVERWRITES it with a freshly-loaded preference that fits the new altitude --
+  // it never resets a stale one that doesn't. `effectiveFormat` re-derives the right answer on
+  // every render instead of trusting stale state, so an altitude change self-corrects immediately
+  // without waiting on (or depending on) that network round trip.
+  const effectiveFormat = formatFitsAltitude(format) ? format : defaultFormat;
   const visibleFormats = FORMATS.filter(f => formatFitsAltitude(f.id));
   const formatPicker = div({ style: { display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surf2,#f3f4f6)', border: '1px solid var(--bdr,#e5e7eb)', borderRadius: 999, padding: '4px' } },
     ...visibleFormats.map(f => h('button', {
@@ -550,8 +644,8 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       style: {
         padding: '5px 10px', borderRadius: 999, border: 'none', fontSize: 11, fontWeight: 700,
         cursor: 'pointer',
-        background: format === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
-        color: format === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
+        background: effectiveFormat === f.id ? 'var(--gold,#f5bc00)' : 'transparent',
+        color: effectiveFormat === f.id ? '#1a1200' : 'var(--text3,#6b7280)',
       },
     }, f.id === 'dataview' ? DATA_VIEW_LABELS[dataViewStyle] : f.label)),
   );
@@ -589,6 +683,18 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     ),
   );
 
+  // Cascading scope picker (OM/DO/VP) -- the real control. Dropdown variant (compact, matches
+  // this header row's other controls) + multi:true so "add more when desired" means picking any
+  // combination of individual stores, not just one whole tier at a time.
+  const homeScopePicker = canFlexScope && div({ style: { display: 'flex', alignItems: 'center', gap: 6 } },
+    span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } }, 'Viewing:'),
+    h(LocationSelector, {
+      stores: scopedBrief.stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+      customGroups: operatorCustomGroups, value: homeScope, onChange: setHomeScope,
+      variant: 'dropdown', multi: true,
+    }),
+  );
+
   // View As Role sandbox scope tag (owner request 2026-11-08: "a way for me to select what
   // patch or operator or store to mimic... Tag @ would be awesome") -- a visible "@<name>" badge
   // confirming exactly which real store/patch this view has been narrowed to, alongside the
@@ -618,6 +724,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   const huddleSimulating = (altitude === 'store' || altitude === 'patch') && viewAsScope;
   const huddleStores = (!huddleSimulating && operatorGroup)
     ? operatorStores(scopedBrief.stores, operatorGroup)
+    : (!huddleSimulating && canFlexScope) ? flexScopedStores
     : scopedBrief.stores;
 
   // Task #129 — the Spot-Check Ruler prompt, "timed to prompt it in a timely manner" (owner,
@@ -683,7 +790,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
   // things the owner asked to make "the front facing version," not a peer inside the old one.
   // The format picker stays visible (small, top-right) so switching back to Checklist/Bullets/
   // Narrative is always one click, per "keep the other intact and make it optional for users."
-  if (format === 'gameplan') {
+  if (effectiveFormat === 'gameplan') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -694,7 +801,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       }),
     );
   }
-  if (format === 'scoreboard') {
+  if (effectiveFormat === 'scoreboard') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -702,7 +809,7 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       h(ShiftScoreboardFormat, { ds, loc: myStore?.loc, storeName: myStore?.name }),
     );
   }
-  if (format === 'patch') {
+  if (effectiveFormat === 'patch') {
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
@@ -710,12 +817,15 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
       h(PatchPlanFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, onNav }),
     );
   }
-  if (format === 'ledger') {
+  if (effectiveFormat === 'ledger') {
+    const ledgerStores = canFlexScope ? flexScopedStores : scopedBrief.stores;
+    const ledgerScopeLabel = canFlexScope ? homeScopeLabel(homeScope, homeScopeTree, (scopedBrief.stores || []).length) : null;
     return div({ style: { padding: '16px', maxWidth: 860, margin: '0 auto' } },
       h(HuddleNarrative, { stores: huddleStores, altitude, scopeKey: huddleScope, dateKey: huddleDateKey }),
       renderRulerPrompt(), rulerModal,
-      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14 } }, scopeTag, operatorPicker, formatPicker),
-      h(OperatorLedgerFormat, { ds, stores: scopedBrief.stores, items: storeLevelItems, userName, operatorGroup, onNav }),
+      div({ style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' } },
+        scopeTag, operatorPicker, homeScopePicker, formatPicker),
+      h(OperatorLedgerFormat, { ds, stores: ledgerStores, allStores: scopedBrief.stores, items: storeLevelItems, userName, operatorGroup, scopeLabel: ledgerScopeLabel, onNav }),
     );
   }
 

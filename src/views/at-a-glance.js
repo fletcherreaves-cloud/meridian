@@ -15,7 +15,7 @@
 // by the time ds/stores are ready (T1 alone can take several seconds) — see App.js.
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS, unpadLoc } from '../constants.js';
-import { dKey, addD, mwStart, spanTagInfo } from '../utils/date.js';
+import { dKey, addD, mwStart, spanTagInfo, businessDate } from '../utils/date.js';
 import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual, InfoIcon } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
@@ -658,7 +658,11 @@ function CountFobPulseTile({ ds, onOpenModal }) {
     return () => { live = false; };
   }, []);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+  // tomorrow for a US timezone past 6pm CST/7pm CDT, which would read a store that counted hours
+  // ago as "not counted today" for the rest of every evening (same bug class as the Daypart Pace
+  // fix, 2026-11-12).
+  const todayStr = businessDate();
   const newWrinsByLoc = React.useMemo(() => diffNewWrins(onHand || [], prevOnHand), [onHand, prevOnHand]);
   const locs = React.useMemo(() => [...new Set((onHand || []).map(r => String(r.loc)))], [onHand]);
 

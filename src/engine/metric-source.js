@@ -396,6 +396,15 @@ export const METRIC_SOURCES = {
   // then emailed Glimpse, then emailed Cash Sheet, then manual Controls last (parseCtrlData
   // does emit posOverAmt/posOverCnt, confirmed — kept as the final fallback).
   posOverAmt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'posOverAmt'], ['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
+  // POS Over % — gap found while building the Cash Controls Cockpit tab: posOverAmt/posOverCnt
+  // had chains, the % did not. Checked parseCtrlData directly (src/parsers/index.js:505) before
+  // assuming a raw field existed — it emits only posOverCnt/posOverAmt per row; the "POS
+  // Overring %" column (findCol, index.js:587) belongs to the TARGETS sheet parser
+  // (-> tPosOverPct), not the daily Controls row. So this is derivation-only, like avgRate/spph/
+  // primeCostPct: the same net-sales-weighted derive the other ratio metrics here use
+  // (posOverAmt ÷ netSalesAmt), same shape as discPct/tRedAPct/tRedBPct above.
+  posOverPct:     { mode: 'any', direction: 'lower',
+                    derive: { inputs: ['posOverAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
   posOverCnt:     { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'posOverCnt'], ['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
   // Promo $ / % — auto-first (dispatch #180): the auto-pulled Operations Report cash-sheet

@@ -52,7 +52,7 @@ import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
 import { detectSessions, cycleCompliance, isActive as isActiveOnHand, COVER_FRAC, diffNewWrins, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
-import { dowOf, weekStartOf, dKey } from '../utils/date.js';
+import { dowOf, weekStartOf, dKey, businessDate } from '../utils/date.js';
 import { printHtml } from '../utils/print-html.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
@@ -314,7 +314,7 @@ function weeklyByClassFor(cadence) {
 // itemVarianceWindows (the click-to-expand FOB variance-trace drill-down, just below in this file)
 // is UNCHANGED — it stays on rawByLoc/qsr_raw_item_detail, the right source for "when did this
 // item's variance happen," a genuinely different question from "did they complete the count."
-export function cadenceFromOnHand(onHandRows, { asOf = new Date(), newWrinsByLoc = {} } = {}) {
+export function cadenceFromOnHand(onHandRows, { asOf = new Date(businessDate() + 'T00:00:00'), newWrinsByLoc = {} } = {}) {
   const rows = onHandRows || [];
   let sessionsByLoc = {}, classTotalsByLoc = {};
   try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows, { newWrinsByLoc })); } catch { /* leave empty */ }
@@ -901,8 +901,12 @@ const GRAN_COUNT_LABEL = {
 };
 const GRAN_COUNT_COLOR = { complete: '#4ade80', overdue: '#f59e0b', never: 'var(--text3)', weekly: '#4ade80', spot: '#f5bc00', none: 'var(--text3)' };
 function GranularityScoreboard({ rows, fobRows, cadenceByLoc, weeklyStatusByLoc, granularity, period }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const since = (() => { const d = new Date(); d.setDate(d.getDate() - SB_GRAN_DAYS[granularity]); return d.toISOString().slice(0, 10); })();
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the "counted today" check below
+  // reads the UTC calendar day otherwise, which is already tomorrow for a US timezone past
+  // 6pm CST/7pm CDT -- a store that counted hours ago would falsely read "No count today" for
+  // the rest of every evening (same bug class as the Daypart Pace fix, 2026-11-12).
+  const todayStr = businessDate();
+  const since = (() => { const d = new Date(businessDate() + 'T00:00:00'); d.setDate(d.getDate() - SB_GRAN_DAYS[granularity]); return dKey(d); })();
   return div(null,
     div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
       granularity === 'daily'
@@ -2123,7 +2127,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // ≥ 8 days. Powers the Count Cycle view's cadence monitor. Dispatch #97 — sourced from `onHand`
   // (qsr_onhand, already loaded above for EOM completion) via cadenceFromOnHand(), not rawByLoc/
   // qsr_raw_item_detail — see cadenceFromOnHand's own header comment for why.
-  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date(), newWrinsByLoc }), [onHand, newWrinsByLoc]);
+  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date(businessDate() + 'T00:00:00'), newWrinsByLoc }), [onHand, newWrinsByLoc]);
 
   // Weekly Scoreboard view (owner req, 2026-10-12: "keep the checklist monthly, add a separate
   // weekly view -- FOB%/count% trend and simple count completed satisfactorily or not"). A small
@@ -2134,7 +2138,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const weeklyStatusByLoc = useMemo(() => {
     const m = {};
     try {
-      for (const c of cycleCompliance(onHand, { asOf: new Date().toISOString().slice(0, 10), newWrinsByLoc })) {
+      for (const c of cycleCompliance(onHand, { asOf: businessDate(), newWrinsByLoc })) {
         m[c.loc] = { status: c.daysSinceWeekly == null ? 'never' : c.daysSinceWeekly > WEEKLY_DUE_DAYS ? 'overdue' : 'complete',
           lastWeekly: c.lastWeekly ? c.lastWeekly.date : null, daysSinceWeekly: c.daysSinceWeekly };
       }

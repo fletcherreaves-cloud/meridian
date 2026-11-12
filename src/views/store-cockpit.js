@@ -15,10 +15,12 @@ import * as React from 'react';
 import { f$, fP, fPct } from '../utils/fmt.js';
 import {
   loadQsrFob, loadQsrVarianceHistory, loadDailyActivityRangeForStore, loadStoreLaborConfig,
+  loadInvCountSessions,
 } from '../lib/supabase.js';
 import { buildStoreFobReport } from '../engine/fob-report.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { fobDailyTrace, biggestJumpDay, classTrace, FOB_CLASS_KEYS } from '../engine/variance-trace.js';
+import { sessionsFromLog } from '../engine/count-cycle.js';
 import { computeStoreDataDiscipline } from '../engine/waste-discipline.js';
 import { scanAllPairs } from '../engine/signal-registry.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -27,7 +29,8 @@ import { overnightOpenness, overnightExcessByStore } from '../engine/labor-stand
 import {
   metricSeries, metricRate, ensureLazyFill, isLazyFillPending, isLazyFillError,
 } from '../engine/metric-source.js';
-import { addD, dKey, lastClosedBusinessDay, dowOf } from '../utils/date.js';
+import { addD, dKey, lastClosedBusinessDay, dowOf, businessDate } from '../utils/date.js';
+import { DEF_SETTINGS } from '../constants.js';
 import { CoachingModal } from './coaching-modal.js';
 
 const h = React.createElement;
@@ -264,6 +267,24 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   // attaches each point's class breakdown to the same trace, zero new fetch.
   const clsTrace = useMemo(() => classTrace(trace), [trace]);
 
+  // Real weekly/daily count-session touchpoints for the Day-by-Day Variance chart (owner,
+  // live, 2026-11-12: "Still need to wire in the weekly and daily counts to this chart") — this
+  // is the `annotateTouchpoints` deferral this tab's own trace comment already flagged.
+  // Sourced from the SAME durable inv_count_sessions log Spot-Check Ruler/Huddle read
+  // (sessionsFromLog, count-cycle.js) rather than weekly-cadence.js's older analyzeCountCadence
+  // over qsr_raw_item_detail -- eom-dashboard.js's own dispatch #97 comment already states that
+  // older basis was superseded by this log-backed one; this tab adopts the current one directly
+  // rather than wiring up the superseded path.
+  const [countSessions, setCountSessions] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setCountSessions(null);
+    loadInvCountSessions({ period: reportPeriod })
+      .then(rows => { if (live) setCountSessions(sessionsFromLog(rows).sessions[loc] || []); })
+      .catch(() => { if (live) setCountSessions([]); });
+    return () => { live = false; };
+  }, [loc, reportPeriod]);
+
   // Data-discipline (waste-logging cadence) — lazy-fill, load-on-open, same shape as
   // analytics.js's FOBAnalysisPanel.
   const [wastePending, setWastePending] = useState(true);
@@ -278,7 +299,7 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
   const discipline = useMemo(() => {
     if (wastePending || wasteFailed || !ds) return null;
     const rows = (ds.wasteRows || []).filter(r => r && String(parseInt(r.loc, 10)) === loc);
-    const d = computeStoreDataDiscipline(rows, { asOf: new Date().toISOString().slice(0, 10) });
+    const d = computeStoreDataDiscipline(rows, { asOf: businessDate() });
     return d.find(x => x.loc === loc) || null;
   }, [ds, wastePending, wasteFailed, loc]);
 
@@ -327,7 +348,7 @@ export function FoodCostCockpitTab({ store, ds, onCoachingSaved }) {
     ),
     div(gridStyle('1fr 1fr'),
       Card({ title: 'Day-by-Day Variance', sub: '$ swing vs. prior day, ' + reportPeriod + ' · by class' },
-        trace.length ? h(VarianceTrace, { trace: clsTrace }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
+        trace.length ? h(VarianceTrace, { trace: clsTrace, sessions: countSessions }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily FOB snapshots yet for this period.'),
         // Gated at >=$25, same threshold eom-dashboard.js's VarianceTraceChart callout uses
         // (line ~664) -- without it, a quiet-period trivial swing gets flagged with the same
         // critical red styling as a real jump (mass-review notes 70, 2026-10-13).
@@ -383,7 +404,13 @@ const CLASS_LINE = {
 // (mirrors the mockup's inline SVG line chart, extended with the class breakdown). `trace` is
 // variance-trace.js's classTrace() output — each point already carries `.cls.{food,
 // condiment,paper}` alongside the existing `.delta.fob` total.
-function VarianceTrace({ trace }) {
+// Weekly/EOM/mid-month-paper cycle counts vs. a daily spot touch — same two-tier distinction
+// sessionLabel() itself already encodes (a joined cycle-name string vs. "Spot check"/"Partial").
+// Never a 3rd bucket invented here: these are the only two kinds a real inv_count_sessions row
+// can resolve to.
+const isCycleCount = (kind) => /Weekly|End of month|Mid-month paper/.test(kind || '');
+
+function VarianceTrace({ trace, sessions }) {
   const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
   const totalVals = trace.map(p => p.delta.fob || 0);
   const classVals = { food: [], condiment: [], paper: [] };
@@ -402,6 +429,16 @@ function VarianceTrace({ trace }) {
   const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
   const money = v => (v >= 0 ? '+' : '') + '$' + Math.round(v).toLocaleString();
 
+  // Count-session touchpoints (owner, live, 2026-11-12: "Still need to wire in the weekly and
+  // daily counts to this chart") — only the sessions whose date actually falls inside this
+  // trace's own date range render; a count logged outside the period (last/next month's
+  // spillover) is simply not plotted, never clamped onto an edge day it didn't happen on.
+  const idxByDate = {}; trace.forEach((p, i) => { idxByDate[p.date] = i; });
+  const markers = (sessions || [])
+    .filter(s => idxByDate[s.date] !== undefined)
+    .map(s => ({ i: idxByDate[s.date], date: s.date, kind: s.kind, n: s.n, cycle: isCycleCount(s.kind) }));
+  const markerY = H - padB + 9;
+
   return div(null,
     h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
       h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
@@ -415,14 +452,26 @@ function VarianceTrace({ trace }) {
           ...vals.map((v, i) => h('circle', {
             key: i, cx: xOf(i), cy: yOf(v), r: i === mi ? 4 : 2.2, fill: style.color, stroke: 'var(--surf)', strokeWidth: 1,
           }, h('title', null, `${dLbl(trace[i].date)} · ${style.label}: ${money(v)}`))));
-      })),
+      }),
+      ...markers.map((m, idx) => h('path', {
+        key: 'sess' + idx,
+        d: `M${xOf(m.i).toFixed(1)},${(markerY - 4).toFixed(1)} l4,4 l-4,4 l-4,-4 z`,
+        fill: m.cycle ? 'var(--amber)' : 'var(--text3)',
+        stroke: 'var(--surf)', strokeWidth: 0.75,
+      }, h('title', null, `${dLbl(m.date)} · ${m.kind}${m.n ? ' · ' + m.n + ' items counted' : ''}`)))),
     div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
       ...FOB_CLASS_KEYS.map(k => div({ key: k, style: { display: 'flex', alignItems: 'center', gap: 4 } },
         span({ style: { width: 7, height: 7, borderRadius: '50%', background: CLASS_LINE[k].color, flexShrink: 0 } }),
         span(null, CLASS_LINE[k].label))),
       div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
         span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--text3)', flexShrink: 0 } }),
-        span(null, 'Total (ref)'))));
+        span(null, 'Total (ref)')),
+      markers.length > 0 && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, background: 'var(--amber)', flexShrink: 0, transform: 'rotate(45deg)' } }),
+        span(null, 'Weekly/EOM count')),
+      markers.some(m => !m.cycle) && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } },
+        span({ style: { width: 7, height: 7, background: 'var(--text3)', flexShrink: 0, transform: 'rotate(45deg)' } }),
+        span(null, 'Daily spot count'))));
 }
 
 // ═════════════════════════════════════ LABOR & SCHEDULING TAB ═════════════════════════════════
@@ -604,6 +653,184 @@ export function LaborCockpitTab({ store, ds, onCoachingSaved, settings }) {
         scan ? h(CorrelationStrip, { results: laborCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…'))),
     Card({ title: 'Intraday Deployment', sub: 'scheduled hrs needed − actual, by hour × day-of-week · trailing 6 weeks' },
       heat && heat.slots.length ? h(HeatMap, { heat }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 24, textAlign: 'center' } }, hourly === null ? 'Loading hourly activity…' : 'No hourly DAR data loaded for this window.')));
+}
+
+// ═════════════════════════════════════ CASH CONTROLS TAB ══════════════════════════════════════
+// Driver list: five real cash/loss-prevention % metrics (metric-source.js auto-first chains,
+// each read via metricRate — Sum/Sum for the ones whose chain declares a ratio derive [cashOSPct/
+// tRedAPct/tRedBPct/discPct/posOverPct all do; promoPct doesn't, so metricRate's own documented
+// fallback to mean-of-daily covers it there], never a raw filter over ctrlRows/opsCashRows) vs
+// each driver's own real per-store target field (constants.js) — same actual-vs-target gap
+// framing Food Cost's Component Drivers and Labor's Crew Labor % hero already use.
+//
+// tRedAPct = "T-Red After %" (post-close voids), tRedBPct = "T-Red Before %" (pre-total voids) —
+// confirmed against store-dash.js's CtrlScorecard (the one place in the app that already labels
+// both), not the alphabetically-tempting opposite guess.
+export const CTRL_DRIVERS = [
+  { key: 'tRedAPct',   label: 'T-Red After %',  tgtKey: 'tRedAPct' },
+  { key: 'tRedBPct',   label: 'T-Red Before %', tgtKey: 'tRedBPct' },
+  { key: 'discPct',    label: 'Discount %',     tgtKey: 'tDiscCoupPct' },
+  { key: 'posOverPct', label: 'POS Over %',     tgtKey: 'tPosOverPct' },
+  { key: 'promoPct',   label: 'Promo %',        tgtKey: 'tPromoPct' },
+];
+// store-dash.js's own CtrlScorecard grades this exact row against a flat 2/day, not against
+// t.tRefundCnt (which it leaves unread there) — reused here rather than guessing tRefundCnt's
+// actual intended period (it reads like a monthly total, not a daily one, and nothing in the
+// app currently compares it as either).
+const CASH_REF_DAY_STANDARD = 2;
+
+function CashTrend({ series, target }) {
+  const W = 560, H = 150, padL = 6, padR = 6, padT = 10, padB = 20;
+  const vals = series.map(p => p.value);
+  const allVals = target != null ? [...vals, target, 0] : [...vals, 0];
+  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const range = (maxV - minV) || 0.001;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const xOf = i => padL + (series.length > 1 ? (i / (series.length - 1)) * innerW : innerW / 2);
+  const yOf = v => padT + innerH - (((v || 0) - minV) / range) * innerH;
+  const zeroY = yOf(0);
+  const targetY = target != null ? yOf(target) : null;
+  const pathD = series.map((p, i) => (i === 0 ? 'M' : 'L') + xOf(i).toFixed(1) + ',' + yOf(p.value).toFixed(1)).join(' ');
+  const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
+  const worstIdx = series.reduce((best, p, i) => {
+    const score = target != null ? Math.abs(p.value - target) : Math.abs(p.value);
+    const bestScore = target != null ? Math.abs(series[best].value - target) : Math.abs(series[best].value);
+    return score > bestScore ? i : best;
+  }, 0);
+
+  return div(null,
+    h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
+      h('line', { x1: padL, y1: zeroY, x2: W - padR, y2: zeroY, stroke: 'var(--bdr2)', strokeWidth: 1, strokeDasharray: '2,3' }),
+      targetY != null && h('line', { x1: padL, y1: targetY, x2: W - padR, y2: targetY, stroke: 'var(--amber)', strokeWidth: 1, strokeDasharray: '4,3', opacity: .7 }),
+      h('path', { d: pathD, fill: 'none', stroke: 'var(--blue)', strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' }),
+      ...series.map((p, i) => h('circle', {
+        key: i, cx: xOf(i), cy: yOf(p.value), r: i === worstIdx ? 4 : 2.2, fill: 'var(--blue)', stroke: 'var(--surf)', strokeWidth: 1,
+      }, h('title', null, `${dLbl(p.date)}: ${fP(p.value, 3)}`)))),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginTop: 6 } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--blue)', flexShrink: 0 } }), span(null, 'Cash O/S %')),
+      target != null && div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--amber)', flexShrink: 0 } }), span(null, 'Target')),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 4 } }, span({ style: { width: 10, height: 0, borderTop: '1.5px dashed var(--bdr2)', flexShrink: 0 } }), span(null, 'Zero'))));
+}
+
+export function CashControlsCockpitTab({ store, ds, onCoachingSaved, settings }) {
+  const loc = String(store.loc), t = store.t || {};
+
+  // Trailing 6 weeks — same window Labor's Intraday Deployment heat map uses (DAYS_BACK_HEAT).
+  // Every driver here is a % (already period-normalized), so there's no monthly-report-period
+  // requirement the way Food Cost's FOB% has.
+  const range = useMemo(() => {
+    const end = lastClosedBusinessDay();
+    return { s: addD(end, -(DAYS_BACK_HEAT - 1)), e: end };
+  }, []);
+
+  const sumOf = (key) => { if (!ds) return null; const vals = Object.values(metricSeries(ds, loc, range, key)); return vals.length ? vals.reduce((a, b) => a + b, 0) : null; };
+  const avgOf = (key) => { if (!ds) return null; const vals = Object.values(metricSeries(ds, loc, range, key)); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; };
+
+  const netSales = useMemo(() => sumOf('netSalesAmt'), [ds, loc, range]);
+  const cashOSPct = useMemo(() => (ds ? metricRate(ds, loc, range, 'cashOSPct') : null), [ds, loc, range]);
+  const cashOSAmtSum = useMemo(() => sumOf('cashOSAmt'), [ds, loc, range]);
+  const cashTarget = t.tCashOSPct != null ? Number(t.tCashOSPct) : null;
+  const gapPP = (cashOSPct != null && cashTarget != null) ? (cashOSPct - cashTarget) * 100 : null;
+
+  // Severity — the SAME |cashOSPct| tiers pipeline.js's computeCtrlScore uses for the real
+  // Controls Health score (settings.scoring, DEF_SETTINGS fallback), collapsed to 3 bands, so
+  // this tile's color never disagrees with wherever Controls Health is shown for this store.
+  const sc = settings?.scoring || {};
+  const cashT2 = sc.cashT2 ?? DEF_SETTINGS.scoring.cashT2, cashT4 = sc.cashT4 ?? DEF_SETTINGS.scoring.cashT4;
+  const absCash = cashOSPct != null ? Math.abs(cashOSPct) : null;
+  const cashStatus = absCash == null ? 'flat' : absCash <= cashT2 ? 'good' : absCash <= cashT4 ? 'warn' : 'crit';
+
+  const drivers = useMemo(() => CTRL_DRIVERS.map(d => {
+    const actual = ds ? metricRate(ds, loc, range, d.key) : null;
+    const tgt = t[d.tgtKey] != null ? Number(t[d.tgtKey]) : null;
+    const actualPP = actual != null ? actual * 100 : null;
+    const tgtPP = tgt != null ? tgt * 100 : null;
+    const deltaPP = (actualPP != null && tgtPP != null) ? actualPP - tgtPP : null;
+    return { ...d, actualPP, tgtPP, deltaPP };
+  }).sort((a, b) => (b.deltaPP ?? -999) - (a.deltaPP ?? -999)), [ds, loc, range, t]);
+  const maxDriver = Math.max(1, ...drivers.map(d => Math.max(d.actualPP || 0, d.tgtPP || 0))) * 1.15;
+
+  // Loss-prevention counts — Drawer Opens has a real settable per-store target already labeled
+  // "/Day" by store-dash.js's CtrlScorecard (t.tDrawer compared directly, no scaling); Cash
+  // Refund Count reuses that same panel's own flat 2/day standard (see CASH_REF_DAY_STANDARD).
+  const drawerPerDay = useMemo(() => avgOf('drawerOpens'), [ds, loc, range]);
+  const drawerTarget = t.tDrawer != null ? Number(t.tDrawer) : null;
+  const cashRefPerDay = useMemo(() => avgOf('cashRefCnt'), [ds, loc, range]);
+  const lpMax = Math.max(1, drawerPerDay || 0, drawerTarget || 0, cashRefPerDay || 0, CASH_REF_DAY_STANDARD) * 1.15;
+
+  // Flagship trend — Cash O/S % day by day over the same window, target as a dashed reference.
+  const cashSeries = useMemo(() => {
+    if (!ds) return [];
+    const s = metricSeries(ds, loc, range, 'cashOSPct');
+    return Object.keys(s).sort().map(dk => ({ date: dk, value: s[dk] }));
+  }, [ds, loc, range]);
+
+  // Correlation strip — same scanAllPairs Scanner uses, scoped to this store, daily (Controls
+  // metrics are daily, unlike Food Cost's monthly-only FOB chain).
+  const scan = useMemo(() => (ds ? scanAllPairs(ds, { granularity: 'daily', scopeLoc: loc }) : null), [ds, loc]);
+  const ctrlCorr = useMemo(() => (scan ? scan.results.filter(r => r.xCat === 'Controls' || r.yCat === 'Controls').slice(0, 6) : []), [scan]);
+
+  if (!ds) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading…');
+  if (cashOSPct == null && !drivers.some(d => d.actualPP != null)) {
+    return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'No Cash Controls data resolved yet for this store — check the auto Operations Report pull or upload a Controls report.');
+  }
+
+  const verdictText = (cashStatus !== 'good' && cashStatus !== 'flat')
+    ? span(null, 'Cash Over/Short is running ', h('b', { style: { color: STATUS_COLOR[cashStatus] } }, (cashOSPct >= 0 ? '+' : '') + fP(cashOSPct, 3)), ' over the trailing 6 weeks — target is ', h('b', null, cashTarget != null ? fP(cashTarget, 3) : '—'), '. A swing this size usually traces to drawer-count discipline or a specific register/shift, not the whole store.')
+    : span(null, 'Cash Over/Short is within normal range — no coaching signal here.');
+  const whyText = (drivers[0] && drivers[0].deltaPP > 0)
+    ? `Why: ${drivers[0].label} is currently ${drivers[0].deltaPP.toFixed(2)}pp over its own target, the largest gap of the five Controls drivers tracked here.`
+    : null;
+
+  return div(null,
+    div(gridStyle('1.3fr 1fr'),
+      Card({ accent: 'var(--amber)' },
+        HeroNumber({
+          label: 'Cash Over/Short % — trailing 6 weeks',
+          value: cashOSPct != null ? fP(cashOSPct, 3) : '—',
+          valueColor: STATUS_COLOR[cashStatus],
+          delta: gapPP != null ? (gapPP >= 0 ? '+' : '') + gapPP.toFixed(3) + 'pp' : null,
+          deltaColor: gapPP != null ? STATUS_COLOR[cashStatus] : 'var(--text3)',
+          sub: 'vs target ' + (cashTarget != null ? fP(cashTarget, 3) : '—') + ' · ' + (netSales ? f$(Math.round(netSales)) + ' net sales' : ''),
+          oppLabel: cashOSAmtSum != null ? (cashOSAmtSum >= 0 ? 'Net over (6 wk)' : 'Net short (6 wk)') : null,
+          oppValue: cashOSAmtSum != null ? f$(Math.round(Math.abs(cashOSAmtSum))) : null,
+        }),
+        VerdictBand('Coach', verdictText, whyText, h(CoachThisButton, { loc, metricKey: 'cash_os_pct', ds, onCoachingSaved }))),
+      Card({ title: 'Controls Drivers', sub: 'actual vs. target, ranked worst→best' },
+        div(null, drivers.map((d, i) => h(DriverRow, {
+          key: d.key, rank: i + 1, label: d.label,
+          actualTxt: d.actualPP != null ? d.actualPP.toFixed(2) + '%' : '—',
+          gapTxt: d.deltaPP != null ? (d.deltaPP >= 0 ? '+' : '') + d.deltaPP.toFixed(2) + 'pp' : '',
+          actualPct: d.actualPP != null ? (d.actualPP / maxDriver) * 100 : 0,
+          targetPct: d.tgtPP != null ? (d.tgtPP / maxDriver) * 100 : null,
+          status: statusOf(d.deltaPP),
+        })))),
+    ),
+    div(gridStyle('1fr 1fr'),
+      Card({ title: 'Cash O/S % Trend', sub: 'daily, trailing 6 weeks' },
+        cashSeries.length ? h(CashTrend, { series: cashSeries, target: cashTarget }) : div({ style: { fontSize: 11, color: 'var(--text3)', padding: 20, textAlign: 'center' } }, 'No daily Cash O/S data yet for this window.')),
+      Card({ title: 'Loss Prevention Signals', sub: 'daily average, trailing 6 weeks' },
+        div(null,
+          h(DriverRow, {
+            rank: 1, label: 'Drawer Opens/Day',
+            actualTxt: drawerPerDay != null ? drawerPerDay.toFixed(1) : '—',
+            gapTxt: (drawerPerDay != null && drawerTarget != null) ? ((drawerPerDay - drawerTarget) >= 0 ? '+' : '') + (drawerPerDay - drawerTarget).toFixed(1) + '/day' : '',
+            actualPct: drawerPerDay != null ? (drawerPerDay / lpMax) * 100 : 0,
+            targetPct: drawerTarget != null ? (drawerTarget / lpMax) * 100 : null,
+            status: (drawerPerDay != null && drawerTarget != null) ? (drawerPerDay <= drawerTarget ? 'good' : 'warn') : 'flat',
+          }),
+          h(DriverRow, {
+            rank: 2, label: 'Cash Refund/Day',
+            actualTxt: cashRefPerDay != null ? cashRefPerDay.toFixed(1) : '—',
+            gapTxt: cashRefPerDay != null ? ((cashRefPerDay - CASH_REF_DAY_STANDARD) >= 0 ? '+' : '') + (cashRefPerDay - CASH_REF_DAY_STANDARD).toFixed(1) + '/day' : '',
+            actualPct: cashRefPerDay != null ? (cashRefPerDay / lpMax) * 100 : 0,
+            targetPct: (CASH_REF_DAY_STANDARD / lpMax) * 100,
+            status: cashRefPerDay != null ? (cashRefPerDay <= CASH_REF_DAY_STANDARD ? 'good' : 'warn') : 'flat',
+          }),
+          div({ style: { fontSize: 10, color: 'var(--text3)', marginTop: 10 } }, 'Cash Refund standard (2/day) mirrors the existing Controls Scorecard threshold — no separate settable target exists for this one yet.'))),
+    ),
+    Card({ title: 'What Moves With Controls', sub: JargonTip('Metrics that tend to move with cash/loss-prevention controls — a dot means the pattern is real, not random noise', 'Pearson r · Benjamini–Hochberg FDR-guarded · dot = significant') },
+      scan ? h(CorrelationStrip, { results: ctrlCorr }) : div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Scanning…')));
 }
 
 function Decomp({ decomp }) {

@@ -16,6 +16,7 @@
 // Behavior is byte-for-byte unchanged from what lived in morning-brief.js — this is a move, not
 // a rewrite.
 import { latestEffective } from '../constants.js';
+import { businessDate } from '../utils/date.js';
 
 export const CONTACTS = {
   aboveStore: [
@@ -200,7 +201,11 @@ let _liveGmAssignments = null;
 export function setLiveGmAssignments(list) {
   if (!Array.isArray(list) || !list.length) return;
   _liveGmAssignments = list;
-  const today = new Date().toISOString().slice(0, 10);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+  // tomorrow for a US timezone past 6pm CST/7pm CDT, which would misattribute the CURRENT GM for
+  // a store whose GM transition takes effect "today" (same bug class as the Daypart Pace fix,
+  // 2026-11-12).
+  const today = businessDate();
   const current = {};
   for (const loc of [...new Set(list.map(a => String(parseInt(a.loc, 10))))]) {
     const rec = whoIsGM(loc, today, list);

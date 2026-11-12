@@ -51,6 +51,7 @@
 // ['Sun'..'Sat'] array. Nothing else is imported from that file — its detection logic is what got
 // superseded, not this one constant.
 import { WEEKDAY_NAMES } from './weekly-cadence.js';
+import { businessDate } from '../utils/date.js';
 // isDeactivatedByDescr() reused from eom-inventory.js (a leaf module, no risk of a cycle) rather
 // than a second copy of the same "(Deactivated)"/"(Obsolete)" regex — see isActive() below for
 // why Condiment needs it.
@@ -785,7 +786,12 @@ export function buildCycleVerdict({ exceptions, daysSinceWeekly, lastPartial }) 
 }
 
 function complianceFromSessions(sessions, classTotals, { asOf = null, newItemsByLoc = {}, staleItemsByLoc = {} } = {}) {
-  const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- a caller passing no asOf (or
+  // passing today's live `new Date()` through dOnly(), which has the same UTC-slice behavior)
+  // would grade compliance "as of tomorrow" for the ~6 evening hours where the UTC calendar day
+  // has already rolled over but local time hasn't -- same bug class as the Daypart Pace fix
+  // (2026-11-12), but here it can flip a just-completed count to "overdue".
+  const today = dOnly(asOf) || businessDate();
   const month = today.slice(0, 7);
 
   return Object.keys(sessions).sort().map(loc => {

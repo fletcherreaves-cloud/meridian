@@ -26,6 +26,7 @@
 // already-measured repo-wide threshold is different from inventing a new unmeasured one — no
 // live Supabase session in this sandbox to independently measure waste-submission cadence.
 import { isHoliday } from '../utils/holidays.js';
+import { businessDate } from '../utils/date.js';
 
 export const COVER_FRAC = 0.75;
 export const LOOKBACK_DAYS = 56; // 8 weeks — enough DOW repetitions to judge a pattern, short enough to track a recent schedule change
@@ -83,7 +84,10 @@ export function expectedDaysOfWeek(dateSet, asOf) {
  * is never flagged — the store genuinely has nothing to record.
  */
 export function computeMissingWasteDays(rows = [], { asOf = null } = {}) {
-  const today = dOnly(asOf) || new Date().toISOString().slice(0, 10);
+  // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+  // tomorrow for a US timezone past 6pm CST/7pm CDT, which would grade "missing waste days" one
+  // day ahead of the real local/business day for the rest of every evening.
+  const today = dOnly(asOf) || businessDate();
   const byKey = datesByLocType(rows);
   const out = {}; // loc -> { raw: {...}, completed: {...} }
   for (const key of Object.keys(byKey)) {

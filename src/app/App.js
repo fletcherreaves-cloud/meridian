@@ -19,7 +19,7 @@ import { LATEST_CHANGELOG_ENTRY } from './changelog-latest.js'
 
 const ReactDOM = { createRoot }
 
-import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
+import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek, businessDate } from '../utils/date.js';
 import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis, unpadLoc } from '../constants.js';
@@ -1572,7 +1572,12 @@ function App() {
   const STALE_MS = 30 * 60 * 1000;
   const refreshDar = useCallback(async (targetDate) => {
     if (!supabase) return;
-    const dt = targetDate || new Date().toISOString().slice(0, 10);
+    // businessDate(), not new Date().toISOString().slice(0,10) -- the UTC calendar day is already
+    // tomorrow for a US timezone past 6pm CST/7pm CDT, and `qsr_daily_activity` is itself keyed on
+    // the 4am-4am business day (CLAUDE.md), so a UTC-day `dt` fetches an empty/wrong day for the
+    // rest of every evening -- the same bug class as the Daypart Pace card fix (2026-11-12), but
+    // wider blast radius: this feeds Morning Brief's Today's Pace card and Live Ops too.
+    const dt = targetDate || businessDate();
     const cache = darFetchRef.current;
     if (cache.date === dt && Date.now() - cache.ts < STALE_MS) return;
     darFetchRef.current = { date: dt, ts: Date.now() }; // claim slot to prevent parallel fetches
@@ -1618,16 +1623,16 @@ function App() {
   const lastActivityCheckRef = useRef(0);
   React.useEffect(() => {
     if (!supabase) return;
-    refreshDar(new Date().toISOString().slice(0, 10));
+    refreshDar(businessDate());
     const onVisible = () => {
       if (document.visibilityState === 'visible')
-        refreshDar(new Date().toISOString().slice(0, 10));
+        refreshDar(businessDate());
     };
     const onActivity = () => {
       const now = Date.now();
       if (now - lastActivityCheckRef.current < STALE_MS) return;
       lastActivityCheckRef.current = now;
-      refreshDar(new Date().toISOString().slice(0, 10));
+      refreshDar(businessDate());
     };
     document.addEventListener('visibilitychange', onVisible);
     document.addEventListener('click', onActivity, { passive: true });

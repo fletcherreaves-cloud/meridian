@@ -12,12 +12,12 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, metricRate, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165), plus kvst (dispatch #221), plus condiment/empMeal/unexplained (2026-09-13, closing dispatch #229\'s own "no chain today" follow-on)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165), plus kvst (dispatch #221), plus condiment/empMeal/unexplained (2026-09-13, closing dispatch #229\'s own "no chain today" follow-on), plus posOverPct (added while building the Cash Controls Cockpit tab -- the % had no chain at all; posOverAmt/posOverCnt did)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
       'avgCheck', 'cashOSPct', 'compWaste', 'condiment', 'discPct', 'dtMixPct', 'empMeal',
-      'fobPct', 'kvst', 'laborPct', 'oepe', 'r2p', 'rawWaste', 'spph', 'statVar', 'tRedAPct',
-      'tRedBPct', 'tpph', 'unexplained',
+      'fobPct', 'kvst', 'laborPct', 'oepe', 'posOverPct', 'r2p', 'rawWaste', 'spph', 'statVar',
+      'tRedAPct', 'tRedBPct', 'tpph', 'unexplained',
     ].sort());
   });
 
@@ -252,6 +252,9 @@ const RATIO_METRIC_ROWS = {
   // opsSalesMixRows carries both legs on the same row (qsr_sales_mix, reconciled EXACTLY
   // against salesLedgerRows on a live shared day -- see loadOpsSalesMix's comment).
   dtMixPct:  { src: 'opsSalesMixRows',   numField: 'dtSalesAmt',      denField: 'netSalesAmt' },
+  // Added while building the Cash Controls Cockpit tab -- same opsCashRows $-over-net-sales
+  // pattern as its cashOSPct/tRedAPct/tRedBPct siblings just above.
+  posOverPct: { src: 'opsCashRows',      numField: 'posOverAmt',      denField: 'netSalesAmt' },
 };
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB, supervisorGroups } from '../constants.js';
-import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo } from '../utils/date.js';
+import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo, businessDate } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync, InfoIcon } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -11,7 +11,7 @@ import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchFo
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
 import { LocationIntelligence, liComputeAll, liBuildRoadmap } from '../features/location-intel.js';
-import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline } from './store-cockpit.js';
+import { FoodCostCockpitTab, LaborCockpitTab, CashControlsCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline, CTRL_DRIVERS } from './store-cockpit.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -1700,17 +1700,25 @@ export function daypartTimeStatus(slots, elapsedHours) {
   return { isActive: elapsedHours > dpStart && elapsedHours < dpEnd, isDone: elapsedHours >= dpEnd };
 }
 
+// Owner-caught live 2026-11-12 (6:48pm CST): "today" flipped to tomorrow's date hours before
+// midnight. Root cause: `new Date().toISOString().slice(0,10)` reads the UTC calendar day, which
+// is already tomorrow for any US timezone once local time crosses (24 - UTC offset) — 6pm CST
+// (UTC-6), 7pm CDT (UTC-5). businessDate()/lastClosedBusinessDay() (utils/date.js) are the
+// standing local+4am-aware answer (CLAUDE.md: "Never re-derive the cutover inline") and also
+// correctly keep a 1am view on yesterday's business day instead of flipping at local midnight.
+// Exported (pure, no I/O) so this can be asserted directly at a fixed `now`, same convention as
+// daypartTimeStatus/sortRecentEvents above.
+export function daypartTargetDate(dateOpt, now = new Date()) {
+  return dateOpt === 'yesterday' ? dKey(lastClosedBusinessDay(now)) : businessDate(now);
+}
+
 function DaypartPaceCard({loc}) {
   const [rows, setRows]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateOpt, setDateOpt] = useState('today');  // 'today' | 'yesterday'
   const [collapsed, setCollapsed] = useState(false);
 
-  const targetDate = (() => {
-    const d = new Date();
-    if(dateOpt === 'yesterday') d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  })();
+  const targetDate = daypartTargetDate(dateOpt);
 
   useEffect(() => {
     if(!supabase || !loc) { setLoading(false); return; }
@@ -1982,6 +1990,27 @@ function TabDigestRow({store, ds, settings, setTab}) {
     return {target, actualPct, gapPP, shortVerdict};
   }, [ds, loc, locS, t]);
 
+  // 2b. Cash Controls -> cashcontrols. Cash O/S % vs target + gap, plus the worst of the 5
+  // Controls drivers (CTRL_DRIVERS, imported from store-cockpit.js rather than re-listed here —
+  // same single-source-of-truth reasoning as laborInfo's threshold reuse above). Trailing 6
+  // weeks, matching CashControlsCockpitTab's own window.
+  const cashInfo = React.useMemo(() => {
+    if (!ds) return { cashOSPct: null, target: null, gapPP: null, worstLabel: null };
+    const end = lastClosedBusinessDay();
+    const range = { s: addD(end, -41), e: end };
+    const cashOSPct = metricRate(ds, loc, range, 'cashOSPct');
+    const target = t.tCashOSPct != null ? Number(t.tCashOSPct) : null;
+    const gapPP = (cashOSPct != null && target != null) ? (cashOSPct - target) * 100 : null;
+    const drivers = CTRL_DRIVERS.map(d => {
+      const actual = metricRate(ds, loc, range, d.key);
+      const tgt = t[d.tgtKey] != null ? Number(t[d.tgtKey]) : null;
+      const deltaPP = (actual != null && tgt != null) ? (actual - tgt) * 100 : null;
+      return { label: d.label, deltaPP };
+    }).sort((a, b) => (b.deltaPP ?? -999) - (a.deltaPP ?? -999));
+    const worstLabel = (drivers[0] && drivers[0].deltaPP > 0) ? drivers[0].label : null;
+    return { cashOSPct, target, gapPP, worstLabel };
+  }, [ds, loc, t]);
+
   // 3. Location Intelligence -> intelligence. Total Opp/Year — sum of the roadmap's dollarOpp.
   // liComputeAll/liBuildRoadmap were module-private in location-intel.js; dispatch #208 added
   // both to that file's export list (pure addition, no logic change) so this tile can call them.
@@ -2035,6 +2064,16 @@ function TabDigestRow({store, ds, settings, setTab}) {
       ok: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct<=laborInfo.target*1.01,
       bad: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct>laborInfo.target*1.03,
       onClick: () => setTab('laborsched'),
+    }),
+    digestTile({
+      key:'cashcontrols', icon:'💵', label:'CASH CONTROLS',
+      value: cashInfo.cashOSPct!=null ? fP(cashInfo.cashOSPct,3) : '—',
+      detail: (cashInfo.target!=null ? 'target '+fP(cashInfo.target,3) : 'no target set')
+        + (cashInfo.gapPP!=null ? ' · '+(cashInfo.gapPP>=0?'+':'')+cashInfo.gapPP.toFixed(3)+'pp' : '')
+        + (cashInfo.worstLabel ? ' · driver: '+cashInfo.worstLabel : ''),
+      ok: cashInfo.cashOSPct!=null && cashInfo.target!=null && Math.abs(cashInfo.cashOSPct - cashInfo.target) <= 0.001,
+      bad: cashInfo.cashOSPct!=null && cashInfo.target!=null && Math.abs(cashInfo.cashOSPct - cashInfo.target) > 0.005,
+      onClick: () => setTab('cashcontrols'),
     }),
     digestTile({
       key:'intelligence', icon:'📊', label:'LOCATION INTELLIGENCE', neutral:true,
@@ -2142,6 +2181,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {id:'intelligence',l:'📊 Intelligence'},
     {id:'foodcost',    l:'Food Cost'},
     {id:'laborsched',  l:'Labor & Scheduling'},
+    {id:'cashcontrols',l:'Cash Controls'},
     {id:'action',      l:'📋 Action Plan'},
     {id:'shift',       l:'⏱ Shift Analysis'},
     {id:'scoreboard',  l:'🏁 Shift Scoreboard'},
@@ -2508,7 +2548,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
     tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
     tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds,onCoachingSaved}),
-    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved,settings})
+    tab==='laborsched' && h(LaborCockpitTab,{store,ds,onCoachingSaved,settings}),
+    tab==='cashcontrols' && h(CashControlsCockpitTab,{store,ds,onCoachingSaved,settings})
   );
 }
 
