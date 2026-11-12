@@ -504,6 +504,57 @@ export function isPanelEnabledForRole(panelId, roleId, roles) {
   return !(role.disabledPanels || []).includes(panelId);
 }
 
+// ── Systemwide panel kill switch (owner request 2026-11-12: "for developer/admin role add a
+// secondary toggle to disable systemwide") ───────────────────────────────────────────────────
+// A SEPARATE, stronger gate than disabledPanels above. That one is per-role and explicitly
+// bypassed for level-1 roles (isPanelEnabledForRole's own `role.level <= 1` early return --
+// admin/owner always see everything there, by design). Neither disabledPanels nor Panel
+// Manager's own panelVis (per-device, opt-in) is a true "disable for everyone" switch -- this
+// is: a panel id named here is off for literally every role, including admin/owner themselves,
+// with no bypass. Same localStorage-cache + sync-from-Supabase shape as getOrgRoles/
+// syncOrgRolesFromSupabase just above (org_config, key:'globally_disabled_panels' -- zero new
+// schema), for the same reason: the caller (App.js's panelEnabled, read on every render) must
+// stay synchronous.
+const GLOBAL_DISABLED_PANELS_KEY = 'mf_global_disabled_panels_v1';
+
+export function getGloballyDisabledPanels() {
+  try {
+    const raw = localStorage.getItem(GLOBAL_DISABLED_PANELS_KEY);
+    if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; }
+  } catch {}
+  return [];
+}
+
+export function saveGloballyDisabledPanels(ids) {
+  try { localStorage.setItem(GLOBAL_DISABLED_PANELS_KEY, JSON.stringify(ids || [])); } catch {}
+}
+
+export async function syncGloballyDisabledPanelsFromSupabase(sb) {
+  if (!sb) return null;
+  try {
+    const { data } = await sb.from('org_config').select('data').eq('key', 'globally_disabled_panels').maybeSingle();
+    if (data?.data && Array.isArray(data.data)) {
+      saveGloballyDisabledPanels(data.data);
+      return data.data;
+    }
+  } catch {}
+  return null;
+}
+
+export async function pushGloballyDisabledPanelsToSupabase(sb, ids) {
+  if (!sb) return;
+  try {
+    await sb.from('org_config').upsert({ key: 'globally_disabled_panels', data: ids, updated_at: new Date().toISOString() });
+  } catch {}
+}
+
+// Checked with NO role bypass, unlike isPanelEnabledForRole -- that's the entire point of this
+// gate. `globalList` defaults to the cached list so callers that already have it in state can
+// pass it directly (avoids a redundant localStorage read on every render).
+export function isPanelGloballyEnabled(panelId, globalList) {
+  return !(globalList || getGloballyDisabledPanels()).includes(panelId);
+}
+
 // Default permissions for a brand-new role at a given level. Picks the closest built-in template
 // at or below the requested level (i.e. the least-privileged built-in that's still >= as
 // authoritative) so a new role dropped between two existing rungs gets a sane starting point --

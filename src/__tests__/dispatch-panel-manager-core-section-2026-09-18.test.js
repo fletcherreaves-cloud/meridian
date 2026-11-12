@@ -87,3 +87,62 @@ describe('PanelManagerPanel -- core panel reference section', () => {
     expect(container.textContent).toContain('no access');
   });
 });
+
+// Owner request 2026-11-12: "Let's leave it the same for the panel manager, but for developer/
+// admin role add a secondary toggle to disable systemwide." A SEPARATE control from the existing
+// per-device show/hide switch above -- answers "does anyone ever see this" rather than "do I see
+// this on my device" -- gated on isAdmin (App.js passes effectiveRole's level<=1, the real
+// admin/owner tier; CLAUDE.md's RBAC table confirms there is no separate 'developer' role id --
+// owner IS "Owner / Developer", level 1 -- so level<=1 is the correct, not a guessed, gate).
+describe('PanelManagerPanel -- systemwide kill switch (owner request 2026-11-12, admin/owner only)', () => {
+  let container, root;
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); logAppAccessMock.mockClear(); });
+
+  it('a non-admin viewer sees no "Everyone" secondary control at all', async () => {
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: false, globalDisabled: [], onToggleGlobal: () => {} }));
+    });
+    expect(container.textContent).not.toContain('Everyone');
+  });
+
+  it('an admin/owner viewer sees the "Everyone" toggle per optional panel, and clicking it calls onToggleGlobal with that panel id', async () => {
+    const onToggleGlobal = vi.fn();
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: true, globalDisabled: [], onToggleGlobal }));
+    });
+    expect(container.textContent).toContain('Everyone');
+    const row = [...container.querySelectorAll('div')].filter(d => d.textContent.includes('District Lens') && d.textContent.includes('Everyone')).pop();
+    expect(row, 'District Lens row with Everyone toggle not found').toBeTruthy();
+    const lockToggle = [...row.querySelectorAll('span')].find(s => s.textContent.includes('Everyone'));
+    await act(async () => { lockToggle.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggleGlobal).toHaveBeenCalledWith('district-lens');
+  });
+
+  it('a globally-disabled panel reads "off for everyone" and the per-device switch no longer toggles it (the stronger gate wins)', async () => {
+    const onToggle = vi.fn();
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: { 'district-lens': true }, onToggle, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: true, globalDisabled: ['district-lens'], onToggleGlobal: () => {} }));
+    });
+    expect(container.textContent).toContain('off for everyone');
+    // Clicking the panel's own icon (inside the per-device wrapper, not the lock control) must
+    // NOT fire onToggle -- a systemwide-killed panel can't be turned back on per-device.
+    const icon = [...container.querySelectorAll('span')].find(s => s.textContent === '🌐');
+    await act(async () => { icon.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('clicking "Everyone" on an already-killed panel calls onToggleGlobal again (to re-enable it)', async () => {
+    const onToggleGlobal = vi.fn();
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: true, globalDisabled: ['district-lens'], onToggleGlobal }));
+    });
+    const row = [...container.querySelectorAll('div')].filter(d => d.textContent.includes('District Lens') && d.textContent.includes('Everyone')).pop();
+    const lockToggle = [...row.querySelectorAll('span')].find(s => s.textContent.includes('Everyone'));
+    await act(async () => { lockToggle.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggleGlobal).toHaveBeenCalledWith('district-lens');
+  });
+});

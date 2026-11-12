@@ -353,7 +353,7 @@ import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTarge
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
-import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole, getRoleById } from '../engine/permissions.js';
+import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission, isPanelEnabledForRole, getRoleById, getGloballyDisabledPanels, saveGloballyDisabledPanels, syncGloballyDisabledPanelsFromSupabase, pushGloballyDisabledPanelsToSupabase, isPanelGloballyEnabled } from '../engine/permissions.js';
 import { canOwnPanel } from '../engine/panel-ownership.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { OnboardingTour } from '../components/OnboardingTour.js';
@@ -581,7 +581,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
 // panels hidden from the sidebar. Lists each with a blurb; the switch shows/hides its nav
 // entry (persisted to localStorage). Nothing is deleted — hidden panels keep their modal
 // routing. Also the future basis for per-tenant module flags.
-export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose }) {
+export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose, isAdmin, globalDisabled, onToggleGlobal }) {
   const [coreOpen, setCoreOpen] = React.useState(false);
 
   // Owner request 2026-10-17 (app_access_log) -- only ever mounted behind the caller's own
@@ -604,20 +604,32 @@ export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, o
       div({ style:{ flex:1, minWidth:0, fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label),
       !allowed ? span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access') : null);
   };
-  const sw = (on) => div({ style:{ width:34, height:19, borderRadius:99, background:on?'var(--amber)':'var(--surf3)', position:'relative', transition:'background .15s', flexShrink:0 } },
+  const sw = (on, color) => div({ style:{ width:34, height:19, borderRadius:99, background:on?(color||'var(--amber)'):'var(--surf3)', position:'relative', transition:'background .15s', flexShrink:0 } },
     div({ style:{ position:'absolute', top:2, left:on?17:2, width:15, height:15, borderRadius:'50%', background:'#fff', transition:'left .15s' } }));
+  // Owner request 2026-11-12: "for developer/admin role add a secondary toggle to disable
+  // systemwide" -- a true global kill switch (no per-role bypass, unlike disabledPanels), only
+  // ever rendered for admin/owner (isAdmin, passed from App.js as effectiveRole's level<=1).
+  // Separate control, separate state (globalDisabled/onToggleGlobal) from the per-device
+  // show/hide switch to its left -- the two answer different questions ("do I see this on my
+  // own device" vs "does ANYONE see this, ever") and must not be collapsed into one switch.
   const row = (p) => {
     const on = !!(vis && vis[p.id]);
     const allowed = !p.perm || !perm || perm(p.perm);
-    return div({ key:p.id, onClick:()=>allowed&&onToggle(p.id),
-      style:{ display:'flex', alignItems:'flex-start', gap:10, padding:'9px 12px', borderRadius:8, cursor:allowed?'pointer':'default', opacity:allowed?1:0.4,
-        border:'.5px solid var(--bdr)', background:on?'rgba(245,188,0,.06)':'var(--surf2)' } },
-      span({ style:{ fontSize:16, width:20, textAlign:'center', flexShrink:0 } }, p.icon),
-      div({ style:{ flex:1, minWidth:0 } },
-        div({ style:{ fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label,
-          span({ style:{ fontSize:9, color:'var(--text3)', fontWeight:500, marginLeft:6 } }, on?'shown':'hidden')),
-        div({ style:{ fontSize:10, color:'var(--text3)', marginTop:2, lineHeight:1.4 } }, p.blurb)),
-      allowed ? sw(on) : span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access'));
+    const killed = isAdmin && globalDisabled && globalDisabled.includes(p.id);
+    return div({ key:p.id,
+      style:{ display:'flex', alignItems:'flex-start', gap:10, padding:'9px 12px', borderRadius:8, opacity:(allowed&&!killed)?1:0.5,
+        border:'.5px solid '+(killed?'rgba(244,63,94,.35)':'var(--bdr)'), background:killed?'rgba(244,63,94,.06)':(on?'rgba(245,188,0,.06)':'var(--surf2)') } },
+      div({ onClick:()=>allowed&&!killed&&onToggle(p.id), style:{ display:'flex', flex:1, minWidth:0, gap:10, cursor:(allowed&&!killed)?'pointer':'default' } },
+        span({ style:{ fontSize:16, width:20, textAlign:'center', flexShrink:0 } }, p.icon),
+        div({ style:{ flex:1, minWidth:0 } },
+          div({ style:{ fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label,
+            span({ style:{ fontSize:9, color:'var(--text3)', fontWeight:500, marginLeft:6 } }, killed?'off for everyone':(on?'shown':'hidden'))),
+          div({ style:{ fontSize:10, color:'var(--text3)', marginTop:2, lineHeight:1.4 } }, p.blurb))),
+      allowed ? sw(on && !killed) : span({ style:{ fontSize:9, color:'var(--text3)', alignSelf:'center' } }, 'no access'),
+      isAdmin && div({ onClick:()=>onToggleGlobal(p.id), title:killed?'Re-enable for everyone':'Disable for everyone, systemwide — overrides every role, including your own',
+        style:{ display:'flex', alignItems:'center', gap:5, cursor:'pointer', flexShrink:0, paddingLeft:8, borderLeft:'.5px solid var(--bdr)' } },
+        span({ style:{ fontSize:8.5, color:killed?'var(--crit)':'var(--text3)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.03em' } }, '🔒 Everyone'),
+        sw(killed, 'var(--crit)')));
   };
   return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460, display:'flex', flexDirection:'column', paddingTop:20 } },
     div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
@@ -626,7 +638,8 @@ export function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, o
         span({ style:{ fontSize:18 } }, '🧩'),
         div({ style:{ flex:1, minWidth:160 } },
           div({ style:{ fontSize:14, fontWeight:800, color:'var(--text)', display:'flex', alignItems:'center', gap:6 } }, 'Panel Manager', h(InfoIcon,{articleKey:'panel_manager_guide'})),
-          div({ style:{ fontSize:9, color:'var(--text3)' } }, 'Show or hide optional / experimental panels in the sidebar. '+shownCount+' of '+OPTIONAL_PANELS.length+' shown. Hidden panels are never deleted — toggle any back on anytime.')),
+          div({ style:{ fontSize:9, color:'var(--text3)' } }, 'Show or hide optional / experimental panels in the sidebar. '+shownCount+' of '+OPTIONAL_PANELS.length+' shown. Hidden panels are never deleted — toggle any back on anytime.'),
+          isAdmin && div({ style:{ fontSize:9, color:'var(--crit)', marginTop:2 } }, '🔒 Everyone: disables a panel for every user, every device, every role — including you. Admin/Owner only.')),
         btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onShowAll }, 'Show all'),
         btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onHideAll }, 'Hide all'),
         btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕')),
@@ -1181,6 +1194,16 @@ function App() {
   const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
   const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
+  // Owner request 2026-11-12: "for developer/admin role add a secondary toggle to disable
+  // systemwide" -- a TRUE global kill switch (org_config-persisted, no per-role bypass), separate
+  // from panelVis above (per-device, opt-in) -- see permissions.js's isPanelGloballyEnabled.
+  const [globalDisabledPanels, setGlobalDisabledPanels] = useState(getGloballyDisabledPanels);
+  const toggleGlobalDisabled = (id) => setGlobalDisabledPanels(prev => {
+    const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+    saveGloballyDisabledPanels(next);
+    pushGloballyDisabledPanelsToSupabase(supabase, next);
+    return next;
+  });
   // showPerfCalc removed — dispatch #199 moved this UI into Performance Review -> Customize ->
   // Calculator (perfReviewsEntry above drives the redirect for old deep links).
   // showCorrExplorer — RETIRED (dispatch #195, 2026-08-28): corr-explorer merged into Signals'
@@ -1701,6 +1724,8 @@ function App() {
     syncTemplatesFromSupabase(supabase).catch(()=>{});
     // Sync org roles (role definitions + permissions) from Supabase
     syncOrgRolesFromSupabase(supabase).then(roles => { if (roles) setOrgRoles(roles); }).catch(()=>{});
+    // Sync the systemwide panel kill switch (admin/owner-set, applies to everyone) from Supabase
+    syncGloballyDisabledPanelsFromSupabase(supabase).then(ids => { if (ids) setGlobalDisabledPanels(ids); }).catch(()=>{});
     // Sync app settings from Supabase — Supabase wins over localStorage for any key it has
     // Batched (backlog firing #6, 2026-09-24): these 4 org_config reads all fire in the same
     // instant and each used to be its own round trip — loadOrgConfigs() does one `.in('key',…)`
@@ -3798,7 +3823,9 @@ function App() {
   const canOwnProjections = canOwnPanel('projections', effectiveRole, projOwnerGrants, userId, orgRoles);
   // Owner request 2026-11-02: "role-based panel active/inactive toggles" — finer-grained than
   // perm() above (several panels share one perm key; this is one specific panel id per role).
-  const panelEnabled = (id) => isPanelEnabledForRole(id, effectiveRole, orgRoles);
+  // isPanelGloballyEnabled checked FIRST and with no bypass -- a systemwide-disabled panel stays
+  // off even for admin/owner, unlike isPanelEnabledForRole's own per-role level-1 bypass.
+  const panelEnabled = (id) => isPanelGloballyEnabled(id, globalDisabledPanels) && isPanelEnabledForRole(id, effectiveRole, orgRoles);
 
   // Render
   // ── anyModalOpen  (v4.212 — performance) ────────────────────────────────
@@ -4542,7 +4569,7 @@ function App() {
     // sched-hub — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside SchedulingHubPanel itself; see routePanel==='sched-hub').
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
-    showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
+    showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false),isAdmin:(getRoleById(effectiveRole,orgRoles)?.level??99)<=1,globalDisabled:globalDisabledPanels,onToggleGlobal:toggleGlobalDisabled}),
     // PerformanceCalculator render line — RETIRED (dispatch #199, 2026-08-28): see
     // perfReviewsEntry above and the perf-calc modal handler.
     // MetricCorrelationExplorer render line — RETIRED (dispatch #195, 2026-08-28): see
