@@ -249,12 +249,29 @@ create table if not exists public.staff_assignments (
 -- split into a separate, clearly-flagged final step rather than folded into the ADD COLUMN
 -- statements themselves.
 alter table public.staff_assignments add column if not exists person text;
-update public.staff_assignments set person = profile_id::text where person is null and profile_id is not null;
+-- Guarded: on a database where staff_assignments was just CREATED fresh by the `create table if
+-- not exists` above (never had the old profile_id/store_loc shape at all), `profile_id` is not a
+-- real column and a bare UPDATE referencing it fails at plan time with 42703 regardless of row
+-- count -- `alter ... drop column if exists` further down is safe this way, but a plain UPDATE
+-- has no "if exists" form, so it needs an explicit existence check instead. Hit live 2026-11-13.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'staff_assignments' and column_name = 'profile_id') then
+    update public.staff_assignments set person = profile_id::text where person is null and profile_id is not null;
+  end if;
+end $$;
 alter table public.staff_assignments add column if not exists role text;
 alter table public.staff_assignments add column if not exists target_type text;
 update public.staff_assignments set target_type = 'store' where target_type is null;
 alter table public.staff_assignments add column if not exists target text;
-update public.staff_assignments set target = store_loc where target is null and store_loc is not null;
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'staff_assignments' and column_name = 'store_loc') then
+    update public.staff_assignments set target = store_loc where target is null and store_loc is not null;
+  end if;
+end $$;
 
 alter table public.staff_assignments drop constraint if exists staff_assignments_role_check;
 alter table public.staff_assignments add constraint staff_assignments_role_check
