@@ -2809,9 +2809,14 @@ export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
 export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
   if (!supabase) return [];
   const target = date || new Date().toISOString().slice(0, 10);
+  // Columns beyond the original set (dt_untilstore/dt_heldtime/dt_carsheld, fc_*, mfy1_*/mfy2_*,
+  // trans_scrubbed, prod_sales_scrubbed, actual_punched_dollars) were added for Signals' Live Ops
+  // tab's real OEPE-w/o-parked fix + R2P/KVS Time/DT Parked %/Labor $%/TPPH expansion (owner
+  // request, 2026-11-13) — exact field names and formulas verified against
+  // memory/project-qsrsoft-dar-columns.md (QSRSoft's own column-factory bundle), not guessed.
   const { data, error } = await supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,product_sales,mean_sales,transactions,mean_transactions,proj_total_transactions,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count,proj_sales_dollars')
+    .select('loc,dt,hour_slot,product_sales,prod_sales_scrubbed,mean_sales,transactions,trans_scrubbed,mean_transactions,proj_total_transactions,dt_untilserve,dt_untilstore,dt_heldtime,dt_carsheld,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,actual_punched_hours,actual_punched_dollars,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count,proj_sales_dollars')
     .eq('dt', target)
     .order('loc')
     .order('hour_slot');
