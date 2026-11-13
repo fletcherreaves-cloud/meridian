@@ -100,8 +100,21 @@ pulls can now be dispatched to confirm their first real write.
 
 ## Status
 
-Received, logged verbatim. Feasibility crosswalk against Meridian's existing metric sources
-(what's already computable today vs. what's a gap) is being done same-night as a direct reply,
-not yet written up as its own memory file — see the session's own response for the live
-crosswalk. No code written yet; Supervisor/OM notes still pending before any build starts, per
-this session's own "don't build Phase 1 before the shape across all roles is settled" caution.
+**Phase 1 shipped same night (v5.751, task #105-adjacent new build), owner explicitly authorized
+going bigger than a mockup: "if you determine a parallel system is a better fit, by all means
+proceed that direction... have fun with this one."** New engine `src/engine/daily-review.js` +
+panel `src/views/daily-review.js` (registry id `daily-review`, Test Kitchen, section
+`operations`) assemble yesterday's Sales/Service/Controls/FOB vs target for one store, reusing
+`metric-source.js`/`vs-ly.js`/`getTargetsForDate` — no new data source. Feasibility crosswalk
+against the GM list above: **every metric already had a real source and a real target except
+Paper Cost %** (target exists in `DEFAULT_TARGETS.tPaperCost`, no `metric-source.js` actual-value
+key yet — flagged in the engine's own comment, not silently dropped). "Eat-In % of Sales" also
+has no direct source (implicitly a remainder of the other channel %s, not independently
+measured) — left uncomputed rather than guessed. Service section calls out the worst/best
+DAYPART per OEPE/R2P/KVS Time from the raw hourly DAR rows (same source DT Speed of Service
+already uses), both directions as the owner asked. "Verify Cash Controls" (Safe Contents/Cash
+Drawers) has no digital source (physical count) — not attempted this pass. Tickets/Calendar
+(maintenance, promotions/events/payroll-release/truck-orders) deliberately NOT built this pass —
+cheap, well-scoped follow-on once Supervisor/OM notes land, to avoid shipping four rich sections
+plus two shallow ones in one pass. GM-only; Supervisor/OM data flows still pending from the
+owner — this engine is designed so a patch/district rollup extends it, not a rewrite.

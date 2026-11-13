@@ -326,6 +326,7 @@ const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projectio
 // this fully removes the module from the entry chunk, unlike morning-brief.js below).
 const PromoRoiPanel = lazyPanel(() => import('../views/promo-roi.js').then(m => ({ default: m.PromoRoiPanel })), 'promo-roi');
 const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })), 'visit-readiness');
+const DailyReviewPanel = lazyPanel(() => import('../views/daily-review.js').then(m => ({ default: m.DailyReviewPanel })), 'daily-review');
 const WeeklyCountStatusPanel = lazyPanel(() => import('../views/weekly-count-status-report.js').then(m => ({ default: m.WeeklyCountStatusPanel })), 'weekly-count-status');
 const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.js').then(m => ({ default: m.LaborAllocationPanel })), 'labor-allocation');
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
@@ -4085,6 +4086,7 @@ function App() {
         if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
         if(modal==='trend-report')   perm('analytics.district')&&goRoute('trend-report');
         if(modal==='yoy-trends')     perm('analytics.district')&&goRoute('yoy-trends');
+        if(modal==='daily-review')   perm('analytics.store')&&goRoute('daily-review');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         if(modal==='access-log')     perm('security.auditLog')&&goRoute('access-log');
         // No perm gate -- every role, including the top tier, can see what its own account is
@@ -4528,6 +4530,7 @@ function App() {
         onClose:()=>goRoute(null)
       })),
       routePanel==='visit-readiness'&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{goRoute(null);setVisitReadyInit(null);}}),
+      routePanel==='daily-review'&&h(DailyReviewPanel,{ds,stores:scopedStores,onClose:()=>goRoute(null)}),
       routePanel==='weekly-count-status'&&h(WeeklyCountStatusPanel,{stores,ds,settings,initialScope:weeklyCountStatusInit,onClose:()=>{goRoute(null);setWeeklyCountStatusInit(null);}}),
       routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='customer-complaints'&&h(CustomerComplaintsPanel,{ds,stores,onClose:()=>goRoute(null)}),
