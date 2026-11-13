@@ -15,14 +15,23 @@
 // "analyzed/discovered" tier here is limited to the store's own already-computed `findings` array
 // (same structured output District Priority Brief/the store dashboard already use) — Scanner-
 // driven cross-metric correlation curation is a real Phase 2, not duplicated here.
-import { metricAvg, metricSumRatio, METRIC_SOURCES } from './metric-source.js';
+import { metricAvg, metricSumRatio, metricSeries, METRIC_SOURCES } from './metric-source.js';
 import { dKey, mwStart, lastClosedBusinessDay } from '../utils/date.js';
 import { STORE_KB } from '../constants.js';
 
 // Rate metrics get metricAvg (mean of daily values — the standard aggregate for a rate).
-// Ratio metrics with a declared numerator/denominator (fobPct, laborPct, cashOSPct, primeCostPct)
-// get metricSumRatio instead, the TRUE period rollup (Σnum/Σden), matching metric-source.js's own
+// Ratio metrics with a declared numerator/denominator (fobPct, laborPct, cashOSPct) get
+// metricSumRatio instead, the TRUE period rollup (Σnum/Σden), matching metric-source.js's own
 // documented reasoning for why a rate metric must never be averaged as an average of averages.
+//
+// primeCostPct (relabeled "Labor + FOB %" for display — see finding-prime-cost-rename below) is
+// `agg:'avg'`, NOT `'ratio'`, on purpose: metric-source.js's own primeCostPct entry derives from
+// two ALREADY-RESOLVED ratios (laborPct + fobPct), not a numerator/denominator pair of its own —
+// its own comment there says plainly "metricSumRatio has nothing separate to sum for it; mean-
+// of-daily (metricAvg) is the correct rollup here." Routing it through metricSumRatio instead (as
+// this file did before 2026-11-13) always returns null, since metricSumRatio bails out the moment
+// `derive.kind !== 'ratio'` — confirmed live: every window read "–" for every store, not a data
+// gap. Fixed as part of the same dispatch that also fixed the real data gap below.
 export const DOSSIER_METRICS = [
   { key: 'sales', label: 'Net Sales', unit: '$', agg: 'avg' },
   { key: 'gc', label: 'Guest Count', unit: 'n', agg: 'avg' },
@@ -32,7 +41,7 @@ export const DOSSIER_METRICS = [
   { key: 'kvst', label: 'KVS Time', unit: 'sec', agg: 'avg' },
   { key: 'cashOSPct', label: 'Cash O/S %', unit: 'pct3', agg: 'ratio' },
   { key: 'fobPct', label: 'FOB %', unit: 'pct', agg: 'ratio' },
-  { key: 'primeCostPct', label: 'Prime Cost %', unit: 'pct', agg: 'ratio' },
+  { key: 'primeCostPct', label: 'Labor + FOB %', unit: 'pct', agg: 'avg' },
 ];
 
 // Pure: today -> the 5 fixed windows the owner named (current/28d/lm/l3m/ytd), each {id,label,s,e}
@@ -104,4 +113,20 @@ export function topFindings(findings, max = 3) {
 // duplicated, per this plan's own §2C note).
 export function dossierStoreContext(loc) {
   return STORE_KB[String(loc)] || null;
+}
+
+// Phase 1.5 (owner request, 2026-11-13 — "the initial dream was way more broad in scope... give
+// an overwhelming display... Charts, spark lines, whatever it takes to tell the story in a single
+// view"). A continuous daily series for one metric, ending on the last closed business day — the
+// data behind every sparkline/trend chart in the view. Reuses metricSeries (auto-first per day,
+// the SAME resolver buildFactualGrid's cells already go through), so a sparkline's shape can never
+// disagree with the number next to it. Returns [{date, value}], sorted ascending, gaps (no day in
+// range resolved) simply absent rather than interpolated or zero-filled.
+export function dossierSparklineSeries(ds, loc, metricSpec, days = 90) {
+  const e = lastClosedBusinessDay(new Date());
+  const s = new Date(e); s.setDate(s.getDate() - (days - 1));
+  const range = { s: dKey(s), e: dKey(e) };
+  const series = metricSeries(ds, loc, range, metricSpec.key);
+  return Object.keys(series).filter(dk => series[dk] != null).sort()
+    .map(dk => ({ date: dk, value: series[dk] }));
 }

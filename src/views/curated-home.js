@@ -443,11 +443,11 @@ export function CuratedHomePanel({ ds, settings, role, darRows, onNav, userName,
     if (!brief.stores?.length) return brief;
     // Shared with At A Glance + SwingAlarm's own scoping (src/engine/curated-home.js) -- same
     // semantics, one implementation, since this used to be re-derived inline here only.
-    const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope);
+    const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope, ds?.assignmentRows);
     if (!allowedLocs) return brief;
     const scopedStores = brief.stores.filter(s => allowedLocs.has(unpadLoc(s.loc)));
     return { ...brief, stores: scopedStores, summary: summarizeStores(scopedStores) };
-  }, [brief, altitude, viewAsScope]);
+  }, [brief, altitude, viewAsScope, ds?.assignmentRows]);
 
   const { items, summary } = React.useMemo(() => buildCuratedHomeItems(scopedBrief, role), [scopedBrief, role]);
 

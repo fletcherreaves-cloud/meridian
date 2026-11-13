@@ -9,8 +9,12 @@ import {
 } from '../engine/permissions.js';
 import { PANELS, SECTIONS } from '../app/panel-registry.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
-import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups, DEF_SETTINGS } from '../constants.js';
 import { InfoIcon } from '../engine/forecast.js';
+import {
+  loadStaffAssignments, saveStaffAssignment, deleteStaffAssignment, setPrimaryStaffAssignment,
+} from '../lib/supabase.js';
+import { resolveScope, AssignmentCycleError } from '../engine/assignment-graph.js';
 
 const h    = React.createElement;
 const div  = (p,...c) => h('div',p,...c);
@@ -19,7 +23,7 @@ const btn  = (p,...c) => h('button',p,...c);
 const inp  = (p)      => h('input',p);
 const sel  = (p,...c) => h('select',p,...c);
 const opt  = (p,t)    => h('option',p,t);
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useMemo } = React;
 
 const AMBER = 'var(--amber)';
 const S2    = 'var(--surf2)';
@@ -748,6 +752,211 @@ function OwnersTab() {
       grantList));
 }
 
+// ── Roles & Assignments Tab (dual-role RBAC fix, 2026-11-13) ───────────────────────────────────
+// Owner report: "When viewing as Ops Manager, (Ashley) it only shows her supervisor patch
+// locations... Brad Denley as DO and Supervisor" has the same gap. Root cause: the live "View as
+// role" scoping (src/engine/curated-home.js's viewAsAllowedLocs) used to resolve 'patch' altitude
+// ONLY against the flat supervisorGroups() map keyed by person name -- one entry per person, no
+// room for someone holding two roles at once. `assignment-graph.js`'s resolveScope() (dispatch
+// #150, already built for Performance Review continuity) already models exactly this: a person
+// can hold several `staff_assignments` rows, and their real scope is the UNION of everything they
+// hold. viewAsAllowedLocs now reads through that graph first (falling back to the flat maps when
+// a person has no rows yet, so nobody's current view changes unless they're given rows here).
+//
+// This tab is the editor for those rows -- owner's own proposed shape: "a setting where we can
+// clearly list roles by user (auto populate the obvious, let user add additional and specify
+// which is primary for the app views)". "Primary" drives only the DEFAULT landing
+// altitude/label; a person's real resolved STORE SCOPE is always the union of every row they
+// hold, never narrowed to just the primary row (owner's own words: "doesn't hurt to set it up to
+// accommodate either way").
+//
+// Requires the schema.sql migration in this same PR (is_primary column on staff_assignments +
+// the RLS policies' `owner` fix) to actually read/write -- surfaces that as a plain error from
+// Supabase rather than guessing, since this tab cannot tell "migration not run yet" from any
+// other RLS/column error without probing the schema itself.
+export function AssignmentsTab() {
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [addingFor, setAddingFor] = useState(null); // person name currently showing the add-row form
+  const [newPersonName, setNewPersonName]   = useState(''); // for adding someone not in knownPeople yet
+  const [newRole, setNewRole]               = useState('om');
+  const [newTargetType, setNewTargetType]   = useState('person');
+  const [newTarget, setNewTarget]           = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    const data = await loadStaffAssignments();
+    setRows(data);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // "Auto populate the obvious" — the union of every name already known to the org's seed maps
+  // (supervisorGroups/doGroups/omGroups, same real-person data src/constants.js already carries
+  // for AS/DO/OM), plus anyone who already holds a staff_assignments row (so a person added by
+  // hand via "+ Add a person" below stays visible across reloads even if they're not in a seed
+  // map at all).
+  const knownPeople = useMemo(() => {
+    const names = new Set([
+      ...Object.keys(supervisorGroups()),
+      ...Object.keys(DEF_SETTINGS.doGroups || {}),
+      ...Object.keys(DEF_SETTINGS.omGroups || {}),
+      ...rows.map(r => r.person),
+    ]);
+    return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const rowsByPerson = useMemo(() => {
+    const map = new Map();
+    for (const name of knownPeople) map.set(name, []);
+    for (const r of rows) {
+      if (!map.has(r.person)) map.set(r.person, []);
+      map.get(r.person).push(r);
+    }
+    return map;
+  }, [knownPeople, rows]);
+
+  // Live resolved scope preview per person — lets the owner SEE the union actually working
+  // (e.g. Ashley's AS row + OM row resolving to more stores than either row alone), not just
+  // trust that it does. Fails safe to "—" on a malformed cyclic graph rather than crashing the
+  // tab, same posture viewAsAllowedLocs() itself takes.
+  const scopeFor = (person) => {
+    try {
+      const locs = resolveScope(person, new Date(), rows);
+      return locs.length ? locs.length + ' store' + (locs.length === 1 ? '' : 's') : '—';
+    } catch (e) {
+      if (e instanceof AssignmentCycleError) return '⚠ cycle in assignment graph';
+      throw e;
+    }
+  };
+
+  const resetAddForm = () => {
+    setAddingFor(null); setNewRole('om'); setNewTargetType('person'); setNewTarget('');
+  };
+
+  const submitAdd = async (person) => {
+    const who = (person || newPersonName).trim();
+    if (!who || !newTarget.trim()) return;
+    setSaving(true);
+    const { error: err } = await saveStaffAssignment({
+      person: who, role: newRole, target_type: newTargetType, target: newTarget.trim(),
+      start: new Date().toISOString().slice(0, 10),
+    });
+    setSaving(false);
+    if (err) { alert('Could not save assignment: ' + err); return; }
+    setNewPersonName('');
+    resetAddForm();
+    load();
+  };
+
+  const removeRow = async (row) => {
+    if (!confirm(`Remove this ${row.role} assignment for ${row.person}?`)) return;
+    setSaving(true);
+    const { error: err } = await deleteStaffAssignment(row);
+    setSaving(false);
+    if (err) { alert('Could not remove assignment: ' + err); return; }
+    load();
+  };
+
+  const makePrimary = async (row) => {
+    setSaving(true);
+    const { error: err } = await setPrimaryStaffAssignment(row);
+    setSaving(false);
+    if (err) { alert('Could not set primary: ' + err); return; }
+    load();
+  };
+
+  const addForm = (person) => div({style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',
+    marginTop:8,padding:8,background:'var(--surf3)',borderRadius:R}},
+    sel({value:newRole,onChange:e=>setNewRole(e.target.value),
+      style:{...inputStyle,padding:'5px 6px'}},
+      ...['admin','owner','vp','do','om','area_supervisor','gm','sm_am_dm','manager']
+        .map(r=>opt({value:r,key:r},r))),
+    sel({value:newTargetType,onChange:e=>setNewTargetType(e.target.value),
+      style:{...inputStyle,padding:'5px 6px'}},
+      opt({value:'person'},'oversees person'),
+      opt({value:'store'},'oversees store')),
+    newTargetType === 'store'
+      ? sel({value:newTarget,onChange:e=>setNewTarget(e.target.value),
+          style:{...inputStyle,padding:'5px 6px',minWidth:160}},
+          opt({value:''},'Select a store…'),
+          ...Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
+            .map(loc=>opt({value:loc,key:loc},STORE_NAMES[loc])))
+      : inp({value:newTarget,placeholder:'supervisor/OM/DO name they oversee',
+          onChange:e=>setNewTarget(e.target.value),
+          style:{...inputStyle,minWidth:200}}),
+    btn({onClick:()=>submitAdd(person),disabled:saving||!newTarget.trim(),
+      style:{padding:'5px 10px',background:AMBER,color:'#000',border:'none',borderRadius:R,
+        fontSize:11,fontWeight:700,cursor:saving?'not-allowed':'pointer'}},
+      saving?'…':'Add'),
+    btn({onClick:resetAddForm,
+      style:{padding:'5px 10px',background:'none',color:TEXT3,border:`1px solid ${BDR}`,
+        borderRadius:R,fontSize:11,cursor:'pointer'}},
+      'Cancel'));
+
+  return div({style:{display:'flex',flexDirection:'column',gap:16}},
+    div({style:{background:S2,borderRadius:R,border:`1px solid ${BDR}`,padding:'10px 14px',
+      fontSize:11,color:TEXT3,lineHeight:1.6}},
+      'Give a person more than one role (e.g. an Area Supervisor who is ALSO an Ops Manager, or '+
+      'a District Operator who is ALSO a Supervisor over part of their own district). Their real '+
+      'scope everywhere in the app — "View as role" previews included — is always the UNION of '+
+      'every role below, never just one of them. "★ Primary" only decides their default landing '+
+      'view; it never narrows what they can see.'),
+
+    error && div({style:{padding:10,color:'var(--crit)',fontSize:12,background:S2,
+      borderRadius:R,border:`1px solid ${BDR}`}}, error),
+    loading && div({style:{padding:28,textAlign:'center',color:TEXT3,fontSize:12}},'Loading assignments…'),
+
+    !loading && div({style:{display:'flex',flexDirection:'column',gap:10}},
+      ...knownPeople.map(person => {
+        const personRows = rowsByPerson.get(person) || [];
+        return div({key:person,style:{background:S2,borderRadius:R,border:`1px solid ${BDR}`,padding:12}},
+          div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}},
+            div({style:{fontWeight:700,fontSize:13,color:TEXT}}, person),
+            div({style:{display:'flex',alignItems:'center',gap:10}},
+              div({style:{fontSize:10,color:TEXT3}}, 'Resolved scope: '+scopeFor(person)),
+              btn({onClick:()=>setAddingFor(addingFor===person?null:person),
+                style:{padding:'4px 9px',background:'none',color:AMBER,
+                  border:`1px solid ${AMBER}`,borderRadius:R,fontSize:10,fontWeight:700,cursor:'pointer'}},
+                '+ Add role'))),
+          personRows.length
+            ? div({style:{marginTop:8,display:'flex',flexDirection:'column',gap:4}},
+                ...personRows.map((r,i) => div({key:i,style:{display:'flex',alignItems:'center',gap:8,
+                  fontSize:11,color:TEXT2,padding:'4px 0',
+                  borderTop:i>0?`1px solid ${BDR}`:'none'}},
+                  r.isPrimary && span({title:'Primary — drives default landing view',style:{color:AMBER}},'★'),
+                  span({style:{fontWeight:600,minWidth:110}}, r.role),
+                  span({style:{flex:1,color:TEXT3}},
+                    (r.target_type==='store' ? (STORE_NAMES[r.target]||r.target) : 'oversees '+r.target)
+                    +' · since '+r.start),
+                  !r.isPrimary && btn({onClick:()=>makePrimary(r),disabled:saving,
+                    style:{padding:'2px 7px',background:'none',color:TEXT3,border:`1px solid ${BDR}`,
+                      borderRadius:R,fontSize:9,cursor:'pointer'}},'Make primary'),
+                  btn({onClick:()=>removeRow(r),disabled:saving,
+                    style:{padding:'2px 7px',background:'none',color:'var(--crit)',
+                      border:'1px solid rgba(244,63,94,.35)',borderRadius:R,fontSize:9,cursor:'pointer'}},'Remove')))
+              )
+            : div({style:{marginTop:6,fontSize:11,color:TEXT3,fontStyle:'italic'}},
+                'No assignments yet — add one above.'),
+          addingFor===person && addForm(person));
+      }),
+      // Add a brand-new person not already in knownPeople (e.g. before they're in any seed map).
+      div({style:{background:S2,borderRadius:R,border:`1px dashed ${BDR}`,padding:12}},
+        div({style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
+          inp({value:newPersonName,placeholder:'New person’s name',
+            onChange:e=>setNewPersonName(e.target.value),style:{...inputStyle,minWidth:160}}),
+          btn({onClick:()=>setAddingFor(newPersonName.trim()?'__new__':null),
+            disabled:!newPersonName.trim(),
+            style:{padding:'5px 10px',background:'none',color:AMBER,border:`1px solid ${AMBER}`,
+              borderRadius:R,fontSize:11,fontWeight:700,
+              cursor:newPersonName.trim()?'pointer':'not-allowed'}},
+            '+ Add a person')),
+        addingFor==='__new__' && addForm(newPersonName))
+    ));
+}
+
 export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRoles, userRole }) {
   const [orgRoles, setOrgRoles] = useState(() => initRoles || getOrgRoles());
   // Owner request 2026-11-02: "delegated sub-role management." App.js's own onOpenAdmin gate now
@@ -776,6 +985,12 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   const tabs = [
     ...(fullAccess ? [{ key:'users', label:'Users' }] : []),
     { key:'roles', label:'Roles & Permissions' },
+    // Dual-role RBAC fix (2026-11-13) — admin/owner only, same tier as Users above (fullAccess
+    // already means userRole is admin/owner or this panel wasn't opened at all per App.js's own
+    // onOpenAdmin gate), not a separate, narrower permission key — this edits the SAME
+    // staff_assignments graph Performance Review routing already depends on, so it belongs next
+    // to Users, not behind a bespoke new permission.
+    ...(fullAccess ? [{ key:'assignments', label:'Roles & Assignments' }] : []),
     ...(canOwnProjections ? [{ key:'owners', label:'Projections & Targets Owners' }] : []),
   ];
 
@@ -795,6 +1010,7 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
   },
     tab==='users' && fullAccess && h(UsersTab,{orgRoles}),
     tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles,userRole,fullAccess}),
+    tab==='assignments' && fullAccess && h(AssignmentsTab),
     tab==='owners' && canOwnProjections && h(OwnersTab),
   );
 }

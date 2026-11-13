@@ -1,4 +1,6 @@
-// Task #86 -- Prime Cost % (Labor % + FOB %), added as a named, rankable KPI.
+// Task #86 -- primeCostPct (Labor % + FOB %), added as a named, rankable KPI. Displayed label
+// relabeled "Labor + FOB %" 2026-11-13 (owner-reported; not the industry "Prime Cost" term's
+// real meaning here, since fobPct is waste/variance, not full COGS -- key name unchanged).
 // primeCostPct is a derive-only metric-source.js chain (no `srcs`) built on two metrics that
 // are themselves resolved auto-first (laborPct, fobPct) -- so this fixture supplies the real
 // underlying atoms each of THOSE already derives from (qsrFobRows' six $ legs for fobPct,
@@ -56,7 +58,7 @@ describe('primeCostPct (task #86)', () => {
     expect(rankableMetricKeys()).toContain('primeCostPct');
     const entry = PERFORMER_METRICS.find(m => m.key === 'primeCostPct');
     expect(entry).toBeTruthy();
-    expect(entry.label).toBe('Prime Cost %');
+    expect(entry.label).toBe('Labor + FOB %');
     expect(entry.fmt(0.27)).toBe('27.00%');
   });
 });

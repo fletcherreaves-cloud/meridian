@@ -56,6 +56,13 @@ const CURATED_PROVENANCE = {
   foodOB:     { label: 'FOB % (Food + Paper over Base)', system: 'QSRSoft', report: 'FOB / Food Cost', table: 'qsr_fob', composed: true,
     inputs: ['Σ food + paper $ (components)', 'Σ product sales base'],
     formula: 'FOB % = Σ (food + paper) $ ÷ Σ product-sales base — DOLLAR-WEIGHTED (never an average of store %s). Uses the FOB rows own period base, not a window sales base', grain: 'monthly · per store' },
+  // Curated (not auto-generated) so the label is "Labor + FOB %", never the humanizer's
+  // mechanical "Prime Cost Pct"/"Prime Cost %" — relabeled 2026-11-13 (owner-reported; not the
+  // real industry Prime Cost term here, since fobPct below is waste/variance, not full COGS —
+  // see memory/finding-prime-cost-rename-2026-11-13.md). Key name (`primeCostPct`) unchanged.
+  primeCostPct: { label: 'Labor + FOB %', system: 'Meridian-derived', report: 'Location Dossier / Top-Bottom Performers', table: '(computed)', composed: true,
+    inputs: ['Labor % (laborPct)', 'FOB % (fobPct)'],
+    formula: 'Labor + FOB % = Labor % + FOB % — a sum of two already-resolved ratios, not its own numerator/denominator pair, so it rolls up as a mean of daily values (metricAvg), never a Σ/Σ ratio', grain: 'daily · per store' },
   turnover90: { label: '0–90 Day Turnover', system: 'QSRSoft', report: 'Turnover Report (Crew)', table: 'turnover_monthly', composed: true,
     inputs: ['Retained > 90 days %'],
     formula: '0–90 turnover = 1 − Retained>90% (crew)', grain: 'monthly · per store' },
@@ -75,6 +82,9 @@ const CURATED_PROVENANCE = {
   oppTotal:   { label: 'Opportunity $ (recoverable)', system: 'Meridian-derived', report: 'Leadership One-Pager', table: '(computed)', composed: true,
     inputs: ['Labor: (labor% − target) × net sales', 'Food: (FOB% − target) × prod sales', 'GC: (best GC/day − actual) × avg check × days'],
     formula: 'Opportunity $ = Labor$ + Food$ + GC$ (three disjoint pillars, each floored at $0 — beating the benchmark = $0, never a negative credit). Dollar-weighted rollup (Σ$, never average-of-averages). Weekly figure = $ × 7 ÷ days', grain: 'range · per store → district' },
+  visitReadiness: { label: 'Visit Readiness (PACE composite)', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['Speed sub-score (35%)', 'Accuracy sub-score (30%)', 'Quality sub-score (20%)', 'Leadership sub-score (15%)'],
+    formula: 'Visit Readiness % = Speed×0.35 + Accuracy×0.30 + Quality×0.20 + Leadership×0.15 (engine/visit-readiness.js READINESS_WEIGHTS), renormalized over whichever sub-scores have real data for that store. Each sub-score is itself the store\'s own metrics graded against its own DEFAULT_TARGETS, not a fixed scale. Food-safety flag (EcoSure when current, waste/variance proxy as fallback) is tracked independently and deliberately excluded from this composite', grain: 'current · per store' },
 
   // ── Direct reads (a single source field / count — shown for completeness) ─────
   headcount:  { label: 'Active Headcount', system: 'QSRSoft', report: 'Roster Statistics', table: 'roster_statistics', composed: false,

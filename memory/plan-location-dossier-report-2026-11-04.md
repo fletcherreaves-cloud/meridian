@@ -161,3 +161,59 @@ has a real anchor:
 
 Building Phase 1 before the §5 questions are answered risks building the wrong shape twice —
 recommend settling at least §5.1 and §5.2 with the owner before writing any code here.
+
+## 7. Phase 1.5 — the real visual density pass + two bug fixes (v5.766, 2026-11-13)
+
+Owner, same day Phase 1 shipped, after actually looking at it: *"the initial dream was way more
+broad in scope. It was my vision to give an overwhelming display of what we know about a location
+utilizing all data we have. Charts, spark lines, whatever it takes to tell the story in a single
+view."* Phase 1 shipped a plain table + a findings list — correct per §2A/§2B's letter, but not
+what "overwhelming display" meant. Also reported, same message, with a screenshot: FOB % and
+"Prime Cost %" read blank ("–") for every window, every store.
+
+**Two bugs, confirmed live, not guessed:**
+
+1. **"Prime Cost %" always null.** `DOSSIER_METRICS` marked it `agg:'ratio'`, routing it through
+   `metricSumRatio`. But metric-source.js's own `primeCostPct` entry sums two ALREADY-RESOLVED
+   ratios (`laborPct + fobPct`), not a numerator/denominator pair of its own — its own comment
+   says plainly metricSumRatio "has nothing separate to sum for it." `metricSumRatio` bails to
+   `null` the instant `derive.kind !== 'ratio'`, which this entry never sets. Fixed: `agg:'avg'`.
+   Reproduced directly against `src/engine/metric-source.js`'s real functions before and after —
+   `null` every time pre-fix, a real number (confirmed 72.97%-shape live-verified math) post-fix.
+2. **FOB % blank specifically on the owner's screenshot, while every other metric was populated.**
+   NOT a data gap (`qsr_fob` has 1030 real rows for the screenshot's store, confirmed via direct
+   Supabase query) and NOT a loc-padding bug (metric-source.js's `_PADDED_LOC_SOURCES` already
+   normalizes `qsrFobRows` correctly). The real cause: `src/views/location-dossier.js`'s `run()`
+   called `buildFactualGrid(ds, loc, windows)` ONCE when "Run" fired and froze the result into
+   `useState`. `qsrFobRows` loads in this app's **T2** startup tier (after `laborRows`/DAR's T1),
+   so a Dossier run that fires in the T1-to-T2 gap captures FOB as null and then NEVER
+   recomputes, even after T2 resolves seconds later and every other panel in the app already has
+   fresh FOB data. Fixed: `grid`/`sparklines`/`demographics` are now `useMemo`'d off the live
+   `ds` prop (keyed on `ds` + the selected store/windows), not a frozen snapshot — same reactive
+   shape every other panel in this app already uses. Regression test reproduces the exact
+   sequence (Run fires with no FOB source yet, `ds` updates afterward with no second click,
+   assert the grid picks it up).
+
+**"Prime Cost %" renamed "Labor + FOB %" everywhere** (Dossier, Top/Bottom Performers
+leaderboard) — owner-reported, not a term the team recognizes. Substantively, it was never true
+industry Prime Cost (Labor % + full COGS %) — this app's `fobPct` is a waste/variance measure
+(comp/raw waste, condiments, emp meals, stat variance, unexplained ÷ production sales), not total
+food cost, and the data model has no COGS% to compute the real thing with. The old name implied
+coverage the number never had. Internal key (`primeCostPct`) and math unchanged.
+
+**Visual density, actually built, not just a token sparkline:** every factual-grid row now has a
+90-day sparkline (hand-rolled inline SVG, same pattern as `at-a-glance.js`'s `DrillSparkline` /
+`trends.js`'s `TrendSparkline` — no new chart library); three full-size trend charts (Net Sales,
+Labor %, TPPH) sit above the grid; Top Findings is now a severity-colored chip strip (red/amber/
+green backgrounds) instead of a plain list; the demographics card gained a median-household-
+income bar comparing the store against the district average (computed from the SAME
+`loadStoreDemographics()` call already fetching every store — no new query). The SAGE narrative
+is unchanged in place, additive per the standing "both tables/charts AND narrative" answer.
+
+Still not built (unchanged from §6): Phase 2 (Scanner-curated cross-metric correlations), Phase 3
+(layout/equipment/personnel context — equipment/layout data itself still being collected), Phase 4
+(patch/operator/state rollup views).
+
+7 new/updated tests (2 engine, 1 render + 1 reactivity regression, 1 top-bottom-performers label,
+1 dispatch-86 label). Full suite (8017 tests) and build pass clean (701.97 KB eager, budget
+850 KB). See `memory/finding-prime-cost-rename-2026-11-13.md` for the rename's full reasoning.

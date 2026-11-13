@@ -1964,7 +1964,7 @@ function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoF
 // entry takes no props beyond userRole/onClose) letting the existing Table-view test suite keep
 // asserting Table's own content/wiring without first clicking the toggle on every one of its ~70
 // render call sites; the real default below ('command') is untouched for every actual user.
-export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
+export function SecurityPanel({ userRole, viewAsScope, assignmentRows, onClose, initialView }) {
   const [permState, setPermState] = React.useState('checking'); // checking | denied | allowed
   const [dataState, setDataState] = React.useState('idle');     // idle | loading | loaded | error
   const [rawFindings, setRawFindings] = React.useState([]);
@@ -1978,7 +1978,7 @@ export function SecurityPanel({ userRole, viewAsScope, onClose, initialView }) {
   // correctly for a real, non-simulated login too (altitudeForRole('owner') etc. -> null
   // allowedLocs -> everything below is an exact no-op).
   const altitude = altitudeForRole(userRole);
-  const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope);
+  const allowedLocs = viewAsAllowedLocs(altitude, viewAsScope, assignmentRows);
   // Every consumer below (commandGroups/domainBreakdown/topRules/groups/healthList/drift
   // candidates/the reveal-name token list/newestBatch) reads `findings` -- narrowing it ONCE
   // here, by shadowing the name, means every one of them inherits the restriction automatically,

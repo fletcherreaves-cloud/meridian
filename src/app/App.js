@@ -1429,7 +1429,22 @@ function App() {
   const viewAsScopeOptions = viewAsAltitude === 'store'
     ? Object.keys(STORE_NAMES).map(loc => ({ id: loc, label: sNameC(loc) }))
     : viewAsAltitude === 'patch'
-    ? Object.keys(supervisorGroups()).map(name => ({ id: name, label: name }))
+    // Dual-role fix (2026-11-13): this used to be ONLY supervisorGroups() keys, so a pure DO who
+    // never also holds an AS patch (e.g. Hugh Bonner -- DO over the whole OK district, no
+    // separate AS row of his own) couldn't even be SELECTED when simulating "View as DO" --
+    // narrower than the real bug report (Ashley/Brad), but the same root shape: one flat,
+    // role-blind name list standing in for three different roles. Now the union of every name
+    // that holds ANY patch-level assignment, from whichever source actually has it (the flat
+    // seed maps today; staff_assignments rows once the new Roles & Assignments editor is used) --
+    // viewAsAllowedLocs() resolves whichever scope that name actually holds, correctly, via
+    // resolveScope()/the flat-map fallback, regardless of which one of the three roles is being
+    // simulated.
+    ? [...new Set([
+        ...Object.keys(supervisorGroups()),
+        ...Object.keys((settings && settings.doGroups) || {}),
+        ...Object.keys((settings && settings.omGroups) || {}),
+        ...(ds?.assignmentRows || []).map(r => r.person).filter(Boolean),
+      ])].sort((a, b) => a.localeCompare(b)).map(name => ({ id: name, label: name }))
     : [];
   // Owner bug report 2026-11-11 (screenshot: At A Glance + the global SwingAlarm banner showed
   // cross-store data -- Holdenville -- while simulating a GM at Madill-Hwy 70). The Curated Home
@@ -1438,7 +1453,7 @@ function App() {
   // and the SwingAlarm feed read unfiltered. null (district altitude, or no simulation active)
   // means no restriction -- a real, non-simulated GM/DO's own RLS-scoped `ds` already covers only
   // its own stores, so this never changes behavior for a real login.
-  const aagAllowedLocs = viewAsAllowedLocs(viewAsAltitude, viewAsScope);
+  const aagAllowedLocs = viewAsAllowedLocs(viewAsAltitude, viewAsScope, ds?.assignmentRows);
   // showOperatorSummary — dispatch #205: replaced by routePanel==='operator-summary' (see
   // routePanel above).
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
@@ -4513,7 +4528,7 @@ function App() {
         subtitle:h(InfoIcon,{articleKey:'security_panel_guide'}),
         onBack:()=>goRoute(null),
         bodyStyle:{display:'flex',flexDirection:'column'},
-      }, h(SecurityPanel,{userRole:effectiveRole,viewAsScope,onClose:()=>goRoute(null)})),
+      }, h(SecurityPanel,{userRole:effectiveRole,viewAsScope,assignmentRows:ds?.assignmentRows,onClose:()=>goRoute(null)})),
       routePanel==='access-log'&&h(RoutePanelShell,{
         title:'🪪 Access Log',
         onBack:()=>goRoute(null),
