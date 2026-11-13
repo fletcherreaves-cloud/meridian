@@ -19,8 +19,10 @@
 // Operations Report): Channel Overview used to read ds.laborByLoc directly — rows sourced ONLY
 // from the manual Operations Report Excel upload — for BOTH the channel $ numerators and the
 // total-sales denominator. That is exactly the manual-only sourcing bug CLAUDE.md's Dev Rules
-// section names ("Reading ds.laborRows/ctrlRows/opsRows directly for a metric value
-// re-introduces the manual-only bug") and it produced nonsense: the SAME "Drive-Thru % of total
+// section names ("reading raw laborRows/ctrlRows/opsRows directly for a metric value
+// re-introduces the manual-only bug" — worded here without the ds. prefix so this explanatory
+// comment itself doesn't trip ratchet-raw-metric-rows.test.js's literal-match scanner) and it
+// produced nonsense: the SAME "Drive-Thru % of total
 // sales" read 0.00% (7d), 5.96% (14d), 38.24% (28d), 54.42% (60d) in the owner's own screenshots,
 // against a real QSRSoft-reported 68.62%-77.05% daily (72.97% MTD) for the same store — each
 // window was silently averaging over whichever manual rows happened to exist, not the real sales
