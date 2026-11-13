@@ -82,3 +82,43 @@ Regression coverage:
 `src/__tests__/dispatch-delivery-mix-autofirst-sourcing-2026-11-13.test.js` (4 tests) — proves
 the panel no longer reads `ds.laborByLoc`, resolves DT% via the real Sum/Sum ratio (not a mean
 of daily percentages), and shows an honest no-data state rather than 0.00%.
+
+## Scoped pass elsewhere (owner request, 2026-11-13 — "make the fix applied here apply
+elsewhere where data may be impacted")
+
+Audited every other direct read of `ds.laborRows`/`ds.laborByLoc`/`ds.ctrlRows`/`ds.opsRows`/
+`ds.fobRows` across `src/` for the same bug class (a displayed percentage/ratio sourced
+manual-only when an auto-first `metric-source.js` chain already exists and isn't used).
+Checked the highest-traffic, highest-risk candidates by hand:
+
+- **at-a-glance.js CI/Drift computation** (`locRows(ds.laborByLoc, ds.laborRows, loc)`,
+  lines ~2139/2181) — reads only `.sales`/`.date` to re-run `forecastDay` for calibration
+  backtesting. `.sales` is already auto-supplemented at the pipeline level
+  (`labor-supplement.js`'s `supplementLaborWithSched` blends in `qsrActSummaryRows` for the
+  sales figure specifically — auto wins on any overlapping day, fills days with zero manual
+  coverage). Not the bug class; this is the correct, already-established pattern.
+- **labor-tools.js** (`LaborAnalyticsPanel`) — every rate metric (laborPct/tpph/otHrs/
+  actVsNeed/avgRate/crewHrs/otCost/sales) already routes through `metricAvg`/`metricRate`/
+  `metricSeries` per dispatches #68/#155/#175/#324. The remaining raw `ds.laborRows`/
+  `ds.ctrlRows` reads are a manual-coverage-count diagnostic (`dowStats`'s `all`, explicitly
+  commented as deliberate) and the store-inclusion gate (also explicit) — not metric values.
+- **promo-roi.js** (`buildDailyRecords`) — sales/GC merge priority is glimpse → salesLedger →
+  laborRows → qsrActSummary; discount merge is `opsCashRows` (auto-pulled `qsr_cash_sheet`)
+  before `ctrlRows` (manual). Already auto-first, already documented (dispatch-111/113).
+- **eom-supervisor.js** (`computeStoreEOM`) — manual FOB/Labor/Controls uploads are
+  INTENTIONALLY preferred here (dispatch #52): EOM is a monthly submission workflow where the
+  manual figure IS the authoritative one, with an explicit auto-first "backstop" fallback only
+  when the manual submission is missing for the period. Correct by design, not the same bug
+  shape (manual-preferred-on-purpose vs. delivery-mix's manual-only-with-no-fallback-at-all).
+- **scheduling.js** (`OpportunityReport`) — builds a `dsShim` and explicitly treats
+  `laborRows`/`ctrlRows` as "only a LAST-RESORT fill for a loc/date the cloud streams [don't
+  cover]" (comment at line ~353). Already auto-first.
+- **store-analytics.js:2145** — a raw `ds.laborRows` filter, but it's an auto-calibration
+  trigger gate (counts new rows since last run), not a displayed metric.
+
+**Conclusion: no other real instance of this bug class found.** The codebase has already
+been through repeated, well-documented sweeps closing this exact pattern (dispatch #52, #64,
+#68, #104, #155, #175, #309, #324, "data-integrity sweep signature #2") everywhere except
+`delivery-mix.js`, which slipped through specifically because dispatch #201 (the Channel
+Intel merge) explicitly deferred its sourcing fix at the time. No code changes made in this
+pass — this is a documented clean bill, not a fix.
