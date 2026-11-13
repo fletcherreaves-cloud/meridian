@@ -110,7 +110,16 @@ export function TutorialOverlay({ onClose }) {
 
   return div({
     style: {
-      position: 'fixed', inset: 0, zIndex: 500,
+      // top:44 (not inset:0) deliberately leaves AppTopbar's 44px bar (shell.js) clickable
+      // through the tour -- owner-reported "menu not dropping down," 2026-11-13. inset:0 put
+      // this backdrop (z500, full viewport) ABOVE the topbar's hamburger/search/SAGE/bell/
+      // profile row, which is static-positioned and so always loses that stacking fight
+      // regardless of z-index value. The topbar is the one persistent control surface this app
+      // promises is "always reachable, one tap away" (shell.js's own SAGE/Quick-Capture
+      // comments) -- a tour (or a stuck one, if its own TUTORIAL_KEY write ever silently fails)
+      // should never be able to take that away. The dialog itself already anchors to the
+      // bottom (alignItems:'flex-end'), so this costs nothing visually.
+      position: 'fixed', top: 44, left: 0, right: 0, bottom: 0, zIndex: 500,
       background: 'rgba(0,0,0,.55)',
       display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
       padding: '0 16px 24px',
