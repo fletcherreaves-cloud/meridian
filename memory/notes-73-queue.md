@@ -56,16 +56,29 @@ Three related asks in one note:
   training resource, etc.). Possibly overlaps SAGE's existing `search_qsr_kb`/`search_project_memory`
   tools and the Why Engine's cause tagging — check before building a parallel mechanism.
   cross-references
-- Curated explanations of HOW a bad condition occurred on the floor, paired with PRACTICAL
-  prevention steps — reads as an extension of the Why Engine (`src/engine/why.js`) and/or Visit
-  Readiness's risk-driver output, turning a diagnosis into a coaching action, not just a flag.
+- ✅ **SHIPPED (v5.752, 2026-11-13) — curated explanations + remedies.** `diagnoseMiss()`
+  (`src/engine/why.js`) now carries a practical `remedy` field on every cause object (10 distinct
+  texts across event-tag/cross-store/weather/ops-factor/trend/no-LY/single-store-anomaly/
+  unexplained-fallback branches), rendered as a green "→" line under the cause in both
+  Store Dashboard's Biggest Miss card and Analytics' Why Engine miss list. Reuses the existing
+  trusted diagnosis — no parallel coaching engine. The "suggest where to look for more
+  context, with links (incl. external)" half of this item is still open — not the same build.
 - **"We should always remember to celebrate the wins when people and locations achieve good or
-  great things as well!"** — explicit owner value statement. Nothing in the app currently
-  does this (Movers Alerts deliberately has NO up-swing rule per the 2026-11-07 measurement that
-  up-swings aren't anomalous at this grain — see `memory/plan-movers-alerts-2026-11-07.md` — so
-  that engine is the wrong place for this). A positive-recognition mechanism is a genuinely
-  separate, unscoped idea: what counts as a "win" worth surfacing, to whom, and where it shows up
-  (a tile, a notification, a leaderboard callout) are all open questions.
+  great things as well!"** — explicit owner value statement. Movers Alerts deliberately has NO
+  up-swing rule per the 2026-11-07 measurement that up-swings aren't anomalous at this grain (see
+  `memory/plan-movers-alerts-2026-11-07.md`), so that engine was never going to be this. ✅
+  **First build SHIPPED (v5.753, 2026-11-13), owner-prompted directly: "I think for each location
+  we need to find somewhere to find at least one positive thing to call for each day. See what
+  you can dream up here!"** `findDailyWin()` (`src/engine/daily-review.js`) answers "what counts
+  as a win, to whom, where it shows up" for the store/day grain specifically: a gold banner above
+  the Scorecard in the GM Daily Review panel, naming the single biggest real beat of the day
+  (sales/GC vs-LY ≥3%, or any on-target line beating target by ≥5%, ranked by actual margin —
+  never invented), with an honest "clean, steady day" / "no standout yet" fallback instead of a
+  fabricated win when nothing clears the bar. Scoped to GM/store-grain for now, same as the panel
+  it lives in — a patch/district rollup version is a natural follow-on once the Supervisor/OM
+  data-routine notes (still pending from the owner) extend Daily Review past GM. Not yet built: a
+  win surfaced *outside* Daily Review (a notification, a leaderboard callout, a cross-location
+  roll-up) — those remain open per the original framing above.
 
 ## 5. "Lean and mean" app-wide real-estate review
 

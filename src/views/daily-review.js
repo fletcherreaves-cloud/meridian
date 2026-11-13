@@ -7,7 +7,7 @@
 // GM-only for now (Supervisor/OM notes are still pending from the owner); store-grain today,
 // designed so a later patch/district rollup can reuse the same engine rather than a rewrite.
 import * as React from 'react';
-import { buildDailyReview, buildServiceDaypartBreakdown } from '../engine/daily-review.js';
+import { buildDailyReview, buildServiceDaypartBreakdown, findDailyWin } from '../engine/daily-review.js';
 import { getTargetsForDate } from './store-dash.js';
 import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
 import { lastClosedBusinessDay, addD, dFmt, dKey } from '../utils/date.js';
@@ -71,6 +71,27 @@ function DaypartNote({ breakdown }) {
       span({ style: { color: '#10b981', fontWeight: 700 } }, b.best.label), ' (', Math.round(b.best.avgSec), 's)')));
 }
 
+// "At least one positive thing to call out, every day" (owner, 2026-11-13). Deliberately NOT
+// styled like a status card — gold ribbon, not red/amber/green — so a win reads as its own kind
+// of thing, not just another metric row. `kind` lets a "clean day"/"no standout" read stay
+// honest (muted tone) instead of forcing fake enthusiasm onto an unremarkable day.
+const WIN_TONE = {
+  win: { bg: 'rgba(255,188,13,.10)', bdr: 'rgba(255,188,13,.4)', text: '#FFBC0D' },
+  clean: { bg: 'rgba(16,185,129,.08)', bdr: 'rgba(16,185,129,.3)', text: '#34d399' },
+  none: { bg: 'var(--surf2,#151821)', bdr: 'var(--bdr,#2a2f3a)', text: 'var(--text3,#6b7280)' },
+};
+function WinBanner({ win }) {
+  if (!win) return null;
+  const tone = WIN_TONE[win.kind] || WIN_TONE.none;
+  return div({ style: { display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 12, background: tone.bg, border: '1px solid ' + tone.bdr } },
+    span({ style: { fontSize: 22, flexShrink: 0 } }, win.icon),
+    div({ style: { flex: 1, minWidth: 0 } },
+      div({ style: { fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: tone.text, marginBottom: 2 } },
+        win.kind === 'win' ? "Today's Win" : win.kind === 'clean' ? 'Steady Day' : 'Nothing Standout Yet'),
+      div({ style: { fontSize: 14, fontWeight: 700, color: 'var(--text,#e8eaed)' } }, win.headline),
+      div({ style: { fontSize: 11, color: 'var(--text2,#9aa0aa)', marginTop: 2 } }, win.detail)));
+}
+
 function Scorecard({ sections }) {
   return div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
     sections.map(s => {
@@ -94,6 +115,7 @@ export function DailyReviewPanel({ ds, stores, selStore, onClose }) {
 
   const targets = React.useMemo(() => getTargetsForDate(date, loc, DEFAULT_TARGETS[loc]), [date, loc]);
   const review = React.useMemo(() => (ds?.loaded ? buildDailyReview(ds, loc, date, targets) : null), [ds, loc, date, targets]);
+  const win = React.useMemo(() => (review ? findDailyWin(review) : null), [review]);
   const daypart = React.useMemo(() => buildServiceDaypartBreakdown(dtRows, loc, date), [dtRows, loc, date]);
   const daypartByKey = React.useMemo(() => Object.fromEntries(daypart.map(d => [d.key, d])), [daypart]);
 
@@ -110,6 +132,7 @@ export function DailyReviewPanel({ ds, stores, selStore, onClose }) {
       ),
       !review ? div({ style: { padding: 24, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } }, 'Loading…') :
       div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+        h(WinBanner, { win }),
         h(Scorecard, { sections: review.sections }),
         review.sections.map(s => h(SectionCard, {
           key: s.key, section: s,
