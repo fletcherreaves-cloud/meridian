@@ -535,11 +535,18 @@ function HmeTodayStrip({ hmeRows, activeLocs }) {
   }, [hmeRows, activeLocs]);
   if (!latest.length) return null;
   const asOf = latest.reduce((max, r) => (r.date > max ? r.date : max), latest[0].date);
+  // Owner request 2026-11-13: the date alone doesn't say how fresh this read is — this is a live
+  // vendor rollup accumulating through the business day, so "as of Nov 13" could mean 6am or
+  // 6pm. `pulledAt` (hme_dt_daily's own pulled_at timestamp, already on every row, just not
+  // previously surfaced) is the actual last-pull time, not the business date.
+  const pulledAt = latest.reduce((max, r) => (r.pulledAt && (!max || r.pulledAt > max) ? r.pulledAt : max), null);
   return div({ style:{ border:'.5px solid var(--bdr)', borderRadius:'var(--r)', background:'var(--surf2)', padding:'10px 14px' }},
     div({ style:{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, flexWrap:'wrap' }},
       span({ style:{ fontSize:'12px', fontWeight:800, color:'var(--text)' }}, '🚗 HME Cloud — DT Timer (Today)'),
       span({ style:{ fontSize:'9px', color:'var(--text3)' }}, 'live vendor rollup, accumulating through the business day — separate from the qsr_daily_activity stations below'),
-      span({ style:{ fontSize:'9px', color:'var(--text3)', marginLeft:'auto' }}, 'as of ' + asOf.toLocaleDateString('en-US', { month:'short', day:'numeric' }))),
+      span({ style:{ fontSize:'9px', color:'var(--text3)', marginLeft:'auto' }},
+        'as of ' + asOf.toLocaleDateString('en-US', { month:'short', day:'numeric' }) +
+        (pulledAt ? ', ' + pulledAt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : ''))),
     div({ style:{ overflowX:'auto' }},
       h('table', { style:{ width:'max-content', minWidth:'100%', borderCollapse:'collapse', fontSize:'10px' }},
         h('thead', null, h('tr', null,

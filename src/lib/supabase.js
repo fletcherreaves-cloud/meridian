@@ -2408,6 +2408,7 @@ export async function loadHmeDtRows({ daysBack = 90 } = {}) {
     // "54 stores" — 27 doubled — in At A Glance's checklist after this loader shipped unstripped).
     loc:        String(parseInt(r.loc, 10)),
     date:       new Date(r.dt + 'T00:00:00'),
+    pulledAt:   r.pulled_at ? new Date(r.pulled_at) : null,
     storeRank:  r.store_rank,
     cars:       r.cars,
     avgSeconds: r.avg_seconds,
