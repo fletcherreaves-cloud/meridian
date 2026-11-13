@@ -1,13 +1,37 @@
 // @ts-nocheck
 import * as React from 'react';
 import { addD, dKey } from '../utils/date.js';
-import { fetchWx, getForecastWeather, forecastDay } from '../engine/forecast.js';
+import { fetchWx, getForecastWeather, forecastDay, InfoIcon } from '../engine/forecast.js';
 import { metricDaily, metricSeries } from '../engine/metric-source.js';
 import { DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS, DOW_BASE } from '../constants.js';
 import { callSageOnce } from '../lib/sage-client.js';
 
 const h = React.createElement;
-const a = (p, ...c) => h('a', p, ...c);
+const div = (p, ...c) => h('div', p, ...c);
+const span = (p, ...c) => h('span', p, ...c);
+const btn = (p, ...c) => h('button', p, ...c);
+
+// Renders a cause's "learn more" row — the existing in-app KB article (cause.kbKey) plus an
+// "Ask SAGE" button that seeds the pre-built, cause-specific question (cause.askPrompt) into
+// SAGE via the same window.__MF_SAGE_SEED__ / 'mf:open-sage' convention eom-dashboard.js's own
+// "Ask SAGE" buttons already use. One shared component so store-dash.js and analytics.js render
+// this identically instead of each hand-rolling the same button twice.
+function CauseLinks({cause}) {
+  if(!cause.kbKey&&!cause.askPrompt) return null;
+  return div({style:{display:'flex',alignItems:'center',gap:8,marginTop:4}},
+    cause.kbKey&&h(InfoIcon,{articleKey:cause.kbKey,inline:true}),
+    cause.askPrompt&&btn({
+      onClick:()=>{
+        try{
+          window.__MF_SAGE_SEED__={context:cause.text,prompt:cause.askPrompt};
+          window.dispatchEvent(new CustomEvent('mf:open-sage'));
+        }catch{}
+      },
+      title:'Ask SAGE to dig deeper on this cause — it may search the QSRSoft KB, project notes, or live data',
+      style:{background:'none',color:'var(--accent,#f5bc00)',border:'1px solid var(--accent,#f5bc00)',
+        borderRadius:5,padding:'1px 7px',fontSize:9,fontWeight:700,cursor:'pointer',flexShrink:0}
+    },'🧠 Ask SAGE'));
+}
 
 // ~14 same-DOW weeks -- matches the EWMA DOW forecast model's own established lookback
 // convention (forecast.js's standalone EWMA model docs: "up to 14 most-recent same-DOW
@@ -88,17 +112,31 @@ async function lookupMissEvent(date, affectedStores, wRow, setResult, affectedLo
   }
 }
 
+// "Suggest where to look for more context on a finding, with links — even external" (owner,
+// Notes 73 #4). Checked before building anything new: the in-app half already exists
+// (KB_ARTICLES/InfoIcon, forecast.js) and the external half already exists too — SAGE's own
+// search_qsr_kb (the real QSRSoft Help Center) + search_project_memory + its live data tools
+// (query_labor_summary, query_forecast_snapshots, web_search). So each cause below gets a
+// `kbKey` (an EXISTING KB article, never a new one written for this) for the quick in-app
+// definition, and an `askPrompt` (a cause-specific question pre-seeded into SAGE via the same
+// window.__MF_SAGE_SEED__/'mf:open-sage' convention eom-dashboard.js's "Ask SAGE" buttons
+// already use) that lets SAGE itself decide which of its tools — including the external one —
+// actually answers it. No parallel help mechanism; just wiring two that already exist onto causes.
 function diagnoseMiss(loc, ds, userEvents, r) {
   if(!r) return [];
   const causes=[];
   const missDir=r.actual>r.forecast?'under':'over';
   const missPct=Math.abs(r.varPct||0)*100;
   const ev=userEvents&&userEvents[loc]&&userEvents[loc][dKey(r.date)];
+  const storeName=STORE_NAMES[loc]||loc;
+  const dateStr=r.date.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 
   // ── 1. Event tag ─────────────────────────
   if(ev) causes.push({icon:'📌',color:'#a5b4fc',weight:'PRIMARY',
     text:'Tagged event: '+ev.label+(ev.note?' — '+ev.note:'')+'. '+(missDir==='under'?'Event likely drove incremental sales above baseline.':'Event suppressed sales below model baseline.'),
-    remedy:'Already accounted for — no action needed. If this event recurs on a predictable schedule, make it a recurring Calendar rule so future forecasts adjust for it automatically instead of missing every time.'});
+    remedy:'Already accounted for — no action needed. If this event recurs on a predictable schedule, make it a recurring Calendar rule so future forecasts adjust for it automatically instead of missing every time.',
+    kbKey:'event_registry',
+    askPrompt:'A "'+ev.label+'" event was tagged at '+storeName+' on '+dateStr+'. Search project memory and the QSRSoft KB for whether this event type has a known, learnable sales impact pattern we should be relying on instead of treating each occurrence as one-off.'});
 
   // ── 2. Cross-store correlation ────────────
   const cross = crossStoreCheck(loc, ds, r.date, missDir);
@@ -109,11 +147,15 @@ function diagnoseMiss(loc, ds, userEvents, r) {
     causes.push({icon:'🏪',color:cross.sameDir.length>=8?'#ef4444':cross.sameDir.length>=4?'#f97316':'#f59e0b',
       weight:severity, crossData:cross, missDate:r.date, missDir,
       text:cross.sameDir.length+' of '+cross.total+' other stores ('+pct+'%) also showed '+(missDir==='over'?'below-normal':'above-normal')+' sales on this date ('+names+'). This is almost certainly a district-wide or regional event, NOT a store-specific issue. Use AI Lookup below to identify the cause.',
-      remedy:'Don’t hold this store’s manager accountable for it alone — a swing this wide across '+cross.sameDir.length+' stores is outside any one manager’s control. Confirm the cause with AI Lookup, then tag it once in Event Calendar so every affected store’s forecast corrects, not just this one.'});
+      remedy:'Don’t hold this store’s manager accountable for it alone — a swing this wide across '+cross.sameDir.length+' stores is outside any one manager’s control. Confirm the cause with AI Lookup, then tag it once in Event Calendar so every affected store’s forecast corrects, not just this one.',
+      kbKey:'why_engine_guide',
+      askPrompt:cross.sameDir.length+' stores besides '+storeName+' ('+names+') showed the same '+(missDir==='over'?'below-normal':'above-normal')+' sales pattern on '+dateStr+'. Search for local news, weather, or events on that date that could explain a swing this wide across that many stores.'});
   } else if(cross&&cross.sameDir.length===1) {
     causes.push({icon:'🏪',color:'#94a3b8',weight:'NOTE',
       text:'1 other store showed a similar pattern on this date ('+cross.sameDir[0].name+'). May be coincidence or a localized event affecting nearby stores.',
-      remedy:'Worth a quick check with that store’s manager — if you both confirm a shared cause (weather, a nearby closure), tag it in both stores’ calendars so neither forecast repeats the miss.'});
+      remedy:'Worth a quick check with that store’s manager — if you both confirm a shared cause (weather, a nearby closure), tag it in both stores’ calendars so neither forecast repeats the miss.',
+      kbKey:'why_engine_guide',
+      askPrompt:storeName+' and '+cross.sameDir[0].name+' both showed a similar sales pattern on '+dateStr+'. Search for local news or weather near both stores on that date that might tie them together.'});
   }
 
   // ── 3. Weather ────────────────────────────
@@ -132,11 +174,15 @@ function diagnoseMiss(loc, ds, userEvents, r) {
       text:'Weather adj: '+(wAdj*100>0?'+':'')+(wAdj*100).toFixed(2)+'% for '+wxDesc+'. '+(mismatch?'Weather impact exceeded model estimate.':'Weather model aligned but other factors drove miss.'),
       remedy:mismatch
         ?'The model correctly flagged weather as a factor but undersized it. If this weather type keeps under-predicting at this store, flag it for a coefficient recalibration rather than treating each miss as a one-off.'
-        :'Weather tracked as expected here — look at the other causes below for what actually drove the miss, not this one.'});
+        :'Weather tracked as expected here — look at the other causes below for what actually drove the miss, not this one.',
+      kbKey:'weather_adjustment',
+      askPrompt:'Weather adjustment at '+storeName+' on '+dateStr+' was '+(wAdj*100).toFixed(2)+'% for '+(wxDesc||'weather')+((mismatch)?', which undersized the real impact':'')+'. Should this store\'s weather coefficients be recalibrated, and has this weather type undersized the forecast before at this store?'});
   } else if(wRow&&wRow.rain>1.0) {
     causes.push({icon:'🌧',color:'#93c5fd',weight:'CONTRIBUTING',
       text:'Rain detected ('+wRow.rain.toFixed(1)+'in): model note — minimal weather adjustment applied. Calibrate weather coefficients if needed.',
-      remedy:'The model didn’t treat this rain as material. If rain this size reliably moves sales at this store, flag it so the weather sensitivity for this location gets recalibrated.'});
+      remedy:'The model didn’t treat this rain as material. If rain this size reliably moves sales at this store, flag it so the weather sensitivity for this location gets recalibrated.',
+      kbKey:'weather_adjustment',
+      askPrompt:storeName+' got '+wRow.rain.toFixed(1)+'in of rain on '+dateStr+' but the model applied almost no weather adjustment. Has rain this size moved sales at this store historically, and should its weather sensitivity be recalibrated?'});
   }
 
   // ── 4. Ops factor ─────────────────────────
@@ -152,18 +198,23 @@ function diagnoseMiss(loc, ds, userEvents, r) {
       opsFactor<1&&r.actual<r.forecast?'Check scheduling against actual punches for this date — thin staffing or a late open are the usual causes of an ops-drag day like this.':
       opsFactor<1&&r.actual>r.forecast?'The crew pushed through a tough staffing day and still beat the forecast — worth recognizing with the team, not flagging as a problem.':
       opsFactor>=1&&r.actual>r.forecast?'Strong crew performance — worth noting what the team did right (staffing level, speed) so it can be repeated.':
-      'Execution was fine — look at the other causes below before assuming an ops problem on this date.'
-    });
+      'Execution was fine — look at the other causes below before assuming an ops problem on this date.',
+    kbKey:'forecast_formula',
+    askPrompt:'Pull the exact labor summary for '+storeName+' on '+dateStr+' — OT, Act-vs-Need staffing gap, OEPE/TPPH — and tell me whether staffing was the real driver of the '+(opsFactor<1?'ops drag':'ops lift')+' that day.'});
 
   // ── 5. Trend divergence ───────────────────
   if(Math.abs((r.t2||0)-(r.t6||0))>0.04) causes.push({icon:'📈',color:'#84cc16',weight:'CONTRIBUTING',
     text:'Trend divergence: T2W='+(((r.t2||0)*100)>0?'+':'')+((r.t2||0)*100).toFixed(2)+'% vs T6W='+(((r.t6||0)*100)>0?'+':'')+((r.t6||0)*100).toFixed(2)+'%. Blended forecast carries higher uncertainty when short and long trend windows disagree.',
-    remedy:'Short- and long-term trends disagree, so this forecast is inherently less reliable right now. Don’t over-correct a target off one day like this — wait for the trend windows to re-converge.'});
+    remedy:'Short- and long-term trends disagree, so this forecast is inherently less reliable right now. Don’t over-correct a target off one day like this — wait for the trend windows to re-converge.',
+    kbKey:'forecast_formula',
+    askPrompt:'Pull '+storeName+'\'s recent forecast accuracy snapshots and tell me whether the 2-week or 6-week trend has been the better predictor lately, so I know which one to trust until they re-converge.'});
 
   // ── 6. No LY data ─────────────────────────
   if(r.noLYData) causes.push({icon:'📂',color:'#94a3b8',weight:'PRIMARY',
     text:'No last-year baseline for this date. District averages substituted. New store projections have higher variance until 12+ months of history exist.',
-    remedy:'Expected for a new or recently-relocated store. Grade it against district averages, not its own forecast, until 12+ months of real history exist to re-run this comparison against.'});
+    remedy:'Expected for a new or recently-relocated store. Grade it against district averages, not its own forecast, until 12+ months of real history exist to re-run this comparison against.',
+    kbKey:'new_store_ramp',
+    askPrompt:storeName+' has no valid last-year baseline for '+dateStr+'. Search project memory for how new-store forecasts should be graded until it has 12+ months of real history.'});
 
   // ── 7. Single-store anomaly ───────────────
   if(ds&&ds.loaded&&missPct>8&&!r.noLYData&&(!cross||cross.sameDir.length<2)){
@@ -175,14 +226,18 @@ function diagnoseMiss(loc, ds, userEvents, r) {
       const z=std>0?(r.actual-mean)/std:0;
       if(Math.abs(z)>=2.0) causes.push({icon:'🔍',color:Math.abs(z)>=3?'#ef4444':'#f97316',weight:'PRIMARY',
         text:'Store-specific anomaly: actual was '+(z>0?'+':'')+z.toFixed(1)+'σ from normal '+DOW_BASE[dow]+' baseline ($'+Math.round(r.actual).toLocaleString()+' vs avg $'+Math.round(mean).toLocaleString()+'). Isolated to this store — check staffing, equipment, or local events on that date.'+((!ev&&!cross)||cross.sameDir.length<2?' Consider tagging in Event Calendar.':''),
-        remedy:'Isolated to this store on this date — walk back through that day’s staffing, any equipment downtime, or a local event with the GM before assuming it’s a real trend. If a real cause turns up, tag it in Event Calendar so it stops skewing the model.'});
+        remedy:'Isolated to this store on this date — walk back through that day’s staffing, any equipment downtime, or a local event with the GM before assuming it’s a real trend. If a real cause turns up, tag it in Event Calendar so it stops skewing the model.',
+        kbKey:'why_engine_guide',
+        askPrompt:storeName+' was '+z.toFixed(1)+'σ off its normal '+DOW_BASE[dow]+' baseline on '+dateStr+' with no weather or cross-store explanation. Search for local news or events that date, and pull this store\'s recent labor summary for anything unusual.'});
     }
   }
 
   // ── 8. Fallback ───────────────────────────
   if(causes.length===0) causes.push({icon:'❓',color:'#64748b',weight:'UNKNOWN',
     text:'No dominant signal. Weather neutral, ops near baseline, trends aligned, no cross-store correlation. Likely random variance. Tag in Event Calendar if cause is known.',
-    remedy:'No action needed — this reads as ordinary day-to-day variance. If this store keeps landing in "unexplained" misses regularly rather than occasionally, that pattern is worth a deeper look at its baseline.'});
+    remedy:'No action needed — this reads as ordinary day-to-day variance. If this store keeps landing in "unexplained" misses regularly rather than occasionally, that pattern is worth a deeper look at its baseline.',
+    kbKey:'why_engine_guide',
+    askPrompt:'No dominant cause explains '+storeName+'\'s miss on '+dateStr+'. Look at this store\'s broader miss pattern in forecast accuracy — is "unexplained" a one-off here, or a recurring blind spot worth a deeper look?'});
   return causes;
 }
 
@@ -319,7 +374,7 @@ async function runWhyEngineDistrict(stores, ds, userEvents, settings, weeksBack,
 }
 
 export {
-  crossStoreCheck, lookupMissEvent, diagnoseMiss,
+  crossStoreCheck, lookupMissEvent, diagnoseMiss, CauseLinks,
   computeForecastComposition, classifyMissCauses,
   runWhyEngineScan, runWhyEngineDistrict,
 };

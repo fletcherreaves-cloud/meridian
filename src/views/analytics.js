@@ -7,7 +7,7 @@ import { forecastDay, getWeatherNote, getDIRecommendation, fetchLY, getStoreOrg,
 import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY, buildAckHistory } from '../engine/swing-feed.js';
 import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
-import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
+import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict, CauseLinks } from '../engine/why.js';
 import { LocationSelector } from '../components/PanelControls.js';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { TargetFieldConfigEditor } from '../components/TargetFieldConfigEditor.js';
@@ -2914,7 +2914,8 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
                         span({style:{fontSize:'7px',fontWeight:700,color:c.color,marginRight:6}},c.weight),
                         span({style:{fontSize:'8.5px',color:'var(--text2)',lineHeight:1.5}},c.text),
                         c.remedy&&div({style:{fontSize:'8.5px',color:'#34d399',lineHeight:1.5,marginTop:3,display:'flex',gap:5}},
-                          span({style:{flexShrink:0}},'→'),span(null,c.remedy))
+                          span({style:{flexShrink:0}},'→'),span(null,c.remedy)),
+                        h(CauseLinks,{cause:c})
                       )
                     )),
                     btn({style:{fontSize:'8px',padding:'3px 9px',borderRadius:4,background:'rgba(245,158,11,.1)',
