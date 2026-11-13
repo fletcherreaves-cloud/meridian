@@ -106,6 +106,32 @@ describe('computeFindingsForRule() — RULE_A (personal baseline, cash O/S)', ()
   });
 });
 
+// Phase 1 of the camera-hint fix (owner dispatch, 2026-11-12) -- computeFindingsForRule() now
+// attaches dailyBreaches to each finding, computed ONLY for a real flag (pass:true), reusing
+// security-daily-events.js's deriveDailyBreaches() against the exact subjectRows already in hand.
+describe('computeFindingsForRule() — dailyBreaches (Phase 1 camera-hint fix, 2026-11-12)', () => {
+  it('Bob (flagged, pass:true, a single real day) gets that one day back as his dailyBreaches', () => {
+    const f = computeFindingsForRule(RULE_A, ROWS, WIN).find(x => x.empToken === 'tok-bob');
+    expect(f.pass).toBe(true);
+    expect(f.dailyBreaches).toHaveLength(1);
+    expect(f.dailyBreaches[0]).toMatchObject({ date: '2026-08-01', thresholdUsed: 5 });
+    expect(f.dailyBreaches[0].value).toBeCloseTo(6, 6);
+  });
+
+  it('Alice (clear, pass:false) gets an empty dailyBreaches array, not a computed-but-unused result', () => {
+    const f = computeFindingsForRule(RULE_A, ROWS, WIN).find(x => x.empToken === 'tok-alice');
+    expect(f.pass).toBe(false);
+    expect(f.dailyBreaches).toEqual([]);
+  });
+
+  it('a finding with no threshold configured (pass:null, undetermined) also gets an empty dailyBreaches array', () => {
+    const f = computeFindingsForRule(CASH003_COUNT_RULE, [{ loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-01', drawerGC: 100, manualRefCnt: 1 }], WIN)
+      .find(x => x.empToken === 'tok-eve');
+    expect(f.pass).toBeNull();
+    expect(f.dailyBreaches).toEqual([]);
+  });
+});
+
 // Dispatch #59's own consumer audit concluded computeFindingsForRule() needs NO code change --
 // subjectRows already includes every register-type row for an (loc,empToken) pair, and
 // evaluateRule() sums numerator/denominator across all of them, which is the CORRECT behaviour

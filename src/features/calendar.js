@@ -11,6 +11,7 @@ import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent, sav
 import { printHtml } from '../utils/print-html.js';
 import { LocationSelector } from '../components/PanelControls.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -704,7 +705,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
         display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         span({style:{fontSize:'18px'}},'📅'),
         div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Calendar Manager'),
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:6}},'Calendar Manager',h(InfoIcon,{articleKey:'calendar_manager_guide'})),
           div({style:{fontSize:'9px',color:'var(--text3)'}},'Proactive event calendar — school dates, local events, recurring rules, feeding every forecast in the system')
         ),
         div({style:{display:'flex',gap:3}},

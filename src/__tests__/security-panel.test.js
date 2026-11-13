@@ -42,6 +42,11 @@ const saveSecurityFindingActionMock = vi.fn().mockResolvedValue({ id: 'action-1'
 // (none of which switch to the Briefing view and assert on drift) keeps passing unchanged;
 // dedicated drift tests below override this per-case.
 const loadSecurityFindingsRecentHistoryForKeysMock = vi.fn().mockResolvedValue([]);
+// Phase 1c (camera-hint UI wiring, 2026-11-12 follow-on) -- the bulk flagged-events fetch, same
+// lazy shape as the mocks above. Defaults to empty so every EXISTING render test keeps passing
+// with cameraReviewHint() falling back to its window-only text; dedicated tests below override
+// this per-case to verify a real flaggedDates list actually reaches the rendered hint.
+const loadSecurityFlaggedEventsForRulesMock = vi.fn().mockResolvedValue([]);
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -57,6 +62,7 @@ vi.mock('../lib/supabase.js', () => ({
   loadSecurityFindingActionsForFindings: (...args) => loadSecurityFindingActionsForFindingsMock(...args),
   saveSecurityFindingAction: (...args) => saveSecurityFindingActionMock(...args),
   loadSecurityFindingsRecentHistoryForKeys: (...args) => loadSecurityFindingsRecentHistoryForKeysMock(...args),
+  loadSecurityFlaggedEventsForRules: (...args) => loadSecurityFlaggedEventsForRulesMock(...args),
 }));
 
 import {
@@ -296,6 +302,25 @@ describe('cameraReviewHint() — the owner-requested camera-footage reminder (20
     expect(cameraReviewHint('0000001', null, '2026-10-28')).toContain('2026-10-28');
     expect(cameraReviewHint('0000001', null, null)).toContain('this window');
     expect(cameraReviewHint(null, null, null)).toContain('Store —');
+  });
+
+  // Phase 1 camera-hint fix (2026-11-12) -- the Holdenville/CASH-004/Ryan A case this was built
+  // for: a flagged window's own value can be driven by a single outlier day, and naming the whole
+  // 28-day window is not just impractical, it misstates what actually happened. flaggedDates (from
+  // security_flagged_events, see security-daily-events.js) names the real day(s) instead.
+  it('names the specific day(s) when flaggedDates is supplied, instead of the window', () => {
+    expect(cameraReviewHint('0035064', '2026-09-18', '2026-10-16', ['2026-09-18'])).toBe(
+      '📹 Before deciding: pull camera footage for Store 0035064 on this specific day — 2026-09-18 — to verify what actually happened.');
+  });
+  it('pluralizes and lists every day when more than one breach is supplied', () => {
+    const hint = cameraReviewHint('0035064', '2026-09-18', '2026-10-16', ['2026-09-18', '2026-10-02']);
+    expect(hint).toContain('these specific days');
+    expect(hint).toContain('2026-09-18, 2026-10-02');
+  });
+  it('falls back to the window when flaggedDates is null, undefined, or empty -- never breaks an existing caller', () => {
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28', null)).toContain('2026-10-01 – 2026-10-28');
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28', [])).toContain('2026-10-01 – 2026-10-28');
+    expect(cameraReviewHint('0000001', '2026-10-01', '2026-10-28')).toContain('2026-10-01 – 2026-10-28');
   });
 });
 
@@ -766,6 +791,41 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
     expect(container.textContent).toMatch(/Next: Pull the flagged employee's drawer-count photos\./);
     // The plain-language rule explainer (security_rules.description) renders too.
     expect(container.textContent).toMatch(/How much cash is over or short/);
+  });
+
+  // Phase 1c (camera-hint UI wiring, 2026-11-12 follow-on) -- through the REAL panel, not the
+  // pure cameraReviewHint() helper alone (same "verification must touch the call site" discipline
+  // as the test above it): a real security_flagged_events row for Alice's CASH-001 finding must
+  // make the rendered hint name that specific day instead of the window, end to end.
+  it('a real flagged-events row for the expanded subject makes the rendered hint name the specific day, not the window', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    loadSecurityFlaggedEventsForRulesMock.mockReset().mockResolvedValue([
+      { id: 'fe-1', empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', date: '2026-07-15', value: 12, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', status: 'open', computedAt: '2026-07-29T10:00:00Z' },
+    ]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFlaggedEventsForRulesMock).toHaveBeenCalled();
+    // CASH-001 (the rule the mocked flagged-events row belongs to) names the specific day...
+    expect(container.textContent).toContain(
+      '📹 Before deciding: pull camera footage for Store 0000001 on this specific day — 2026-07-15 — to verify what actually happened.');
+    // ...while CASH-002 (same subject, no matching flagged-events row) correctly still falls back
+    // to its own window -- proves the lookup is keyed per-rule, not a blanket subject-level flag.
+    expect(container.textContent).toContain(
+      '📹 Before deciding: pull camera footage for Store 0000001, 2026-07-01 – 2026-07-28, to verify what actually happened.');
+  });
+
+  it('with no matching flagged-events row (table not migrated / nothing fetched yet), the hint falls back to the window -- never breaks', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    loadSecurityFlaggedEventsForRulesMock.mockReset().mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn(), initialView: 'table' })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/2026-07-01\s*[–-]\s*2026-07-28/);
   });
 });
 

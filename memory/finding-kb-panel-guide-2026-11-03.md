@@ -1597,3 +1597,51 @@ here). Full suite: 832/832 files, 7707/7707 tests passing. Build clean, eager pa
 ~34 unwired keys — `count_cycle_guide`, `panel_index` (deliberately unwired), plus the same
 metric/engine-concept keys this backlog has consistently left cross-referenced rather than wired
 to any one panel (listed in full in the batch-13 entry above).
+
+## Batch 19 (2026-11-12)
+
+Re-measured every unwired `KB_ARTICLES` key fresh (grepped `articleKey:\s*'<key>'` across `src/`,
+excluding tests, against all 121 top-level keys) rather than trust batches 14-18's "117 keys"
+figure, which was itself already stale (the key count has grown since from unrelated content
+work). 35 keys came back unwired. Most are the already-documented, deliberately-left-
+cross-referenced metric/engine-concept keys (`oepe`, `tpph`, `labor_pct`, `forecast_formula`,
+`model_types`, `adaptive_ensemble`, etc. — 26 of the 35) plus the two standing App-Guide
+exceptions (`panel_index`, `file_import_guide`, `locked_projections`). **Four genuine candidates
+surfaced that no prior wiring batch's named-candidate list had ever included** — real
+panel-level articles written in an early CONTENT batch (long before the InfoIcon-wiring phase
+began at batch 14), simply never picked up by a later wiring pass because those passes worked
+off `memory/plan-role-based-panel-gating-2026-11-03.md`'s named lists, not a fresh full sweep:
+
+- **`settings_guide`** → `Settings` (`src/views/management.js`)'s own `ModalShell`
+  (`title:'⚙ Settings'`, previously no `subtitle` at all — added one).
+- **`troubleshooting_guide`** → `TroubleshootingPanel` (`src/views/troubleshooting.js`)'s own
+  `ModalShell` — converted its existing plain-string `subtitle` to a `<span>` node carrying the
+  original text plus the `InfoIcon`, same string-forwarding-hazard precedent batch 15 established
+  (`ModalShell` forwards `title`, never `subtitle`, into `ScreenshotShareButton`'s
+  `slugify(title)`/native-share `title`).
+- **`calendar_manager_guide`** → `CalendarManagerPanel` (`src/features/calendar.js`)'s own
+  hand-rolled header div ("📅 Calendar Manager" + subtitle text, not `ModalShell`) — the
+  `InfoIcon` is appended directly to the title div, same pattern as `district_lens_guide`/
+  `fcst_accuracy_guide`.
+- **`quick_capture_guide`** → the `ModalShell` wrapping `QuickCapturePanel` in `App.js`
+  (`title:'‼ Log Something'`) — `QuickCapturePanel` itself (`src/views/quick-capture.js`) has no
+  header of its own, same "wiring lives at the App.js routing gate" situation `brief_guide`/
+  `proj`/`pvsa` hit in earlier batches, so this one is build+full-suite verified only, no
+  dedicated render test.
+
+**`count_cycle_guide` re-confirmed still genuinely unresolved** — re-read `CountCycleSection`
+(`src/views/eom-dashboard.js`); still a body-only component inside a tabbed hub with no dedicated
+per-tab header of its own to anchor an icon to, unchanged across batches 16-18. Not re-attempted.
+
+3 render-level tests in `dispatch-kb-panel-guide-batch19-2026-11-12.test.js` (mounting the real
+`Settings`/`TroubleshootingPanel`/`CalendarManagerPanel` components, clicking the real "?"
+`InfoIcon`, asserting the real article title renders) — `quick_capture_guide` has no dedicated
+test per the precedent above. Build clean, eager payload entry 427.58 KB gzip / 697.56 KB gzip
+eager total (budget 850 KB, 152.44 KB headroom).
+
+**Measured running total: 86 of 121 `KB_ARTICLES` keys now wired** (83 before this batch + 3
+directly wired here, +1 more via the App.js routing gate not counted toward the "wired" grep
+total since `articleKey:'quick_capture_guide'` does appear in `src/` once this lands — so the
+real count is 87/121 once that's included). **Still open:** `count_cycle_guide` and `panel_index`
+(deliberately unwired), plus the same ~26 metric/engine-concept keys this backlog has
+consistently left cross-referenced rather than wired to any one panel.

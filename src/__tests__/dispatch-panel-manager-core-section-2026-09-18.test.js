@@ -146,3 +146,53 @@ describe('PanelManagerPanel -- systemwide kill switch (owner request 2026-11-12,
     expect(onToggleGlobal).toHaveBeenCalledWith('district-lens');
   });
 });
+
+// Owner follow-on, same session 2026-11-12: "Panel manager looks great. Do you think the option
+// should be there for the core panels as well? If so, go ahead and wire that up also." Confirmed
+// first (not assumed) that isPanelGloballyEnabled/globalDisabled already gate CORE panels for
+// free -- shell.js's navP/navPBeta (sidebar) and navIndex (search) both call panelOk(id) with no
+// kind:'nav' vs kind:'optional' distinction -- so this is pure UI, reusing onToggleGlobal/
+// globalDisabled verbatim on the Core panels reference list.
+describe('PanelManagerPanel -- systemwide kill switch, Core panels section (owner follow-on, 2026-11-12)', () => {
+  let container, root;
+  afterEach(() => { act(() => { root.unmount(); }); container.remove(); logAppAccessMock.mockClear(); });
+
+  async function openCoreSection() {
+    const toggle = [...container.querySelectorAll('div')].filter(d => d.textContent.includes('Core panels')).pop();
+    await act(async () => { toggle.click(); });
+  }
+
+  it('a non-admin viewer sees no "Everyone" control on any core panel row', async () => {
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: false, globalDisabled: [], onToggleGlobal: () => {} }));
+    });
+    await openCoreSection();
+    expect(container.textContent).toContain('About'); // core section did expand
+    expect(container.textContent).not.toContain('Everyone');
+  });
+
+  it('an admin/owner viewer sees the "Everyone" toggle on a real core panel row, and clicking it calls onToggleGlobal with that panel id', async () => {
+    const onToggleGlobal = vi.fn();
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: true, globalDisabled: [], onToggleGlobal }));
+    });
+    await openCoreSection();
+    const row = [...container.querySelectorAll('div')].filter(d => d.textContent.includes('About') && d.textContent.includes('Everyone')).pop();
+    expect(row, 'About row with Everyone toggle not found').toBeTruthy();
+    const lockToggle = [...row.querySelectorAll('span')].find(s => s.textContent.includes('Everyone'));
+    await act(async () => { lockToggle.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onToggleGlobal).toHaveBeenCalledWith('about');
+  });
+
+  it('a globally-disabled core panel reads "off for everyone" in the reference list', async () => {
+    ({ container, root } = mountRoot());
+    await act(async () => {
+      root.render(React.createElement(PanelManagerPanel, { vis: {}, onToggle: () => {}, onShowAll: () => {}, onHideAll: () => {}, perm: () => true, onClose: () => {}, isAdmin: true, globalDisabled: ['about'], onToggleGlobal: () => {} }));
+    });
+    await openCoreSection();
+    const row = [...container.querySelectorAll('div')].filter(d => d.textContent.includes('About')).pop();
+    expect(row.textContent).toContain('off for everyone');
+  });
+});

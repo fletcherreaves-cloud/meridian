@@ -1,6 +1,6 @@
 ---
 name: finding-hme-squadle-integration-2026-11-06
-description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. UPDATED 2026-11-09: HME's login is now fully solved (direct two-step REST POST, no Playwright needed) but its REST reporting endpoint cannot do real historical date ranges -- that only exists via a Power BI embed, confirmed fragile/not recommended. Squadle's full real-time wire protocol is now captured end-to-end (auth -> squad -> location -> per-day/per-location checklist record) over standard wss/443 -- the earlier-flagged cws.squadle.com:700 relay is blocked in THIS sandbox (non-standard port) but is not the only path to the data; the one remaining unknown is which RTDB shard hosts a given location's records."
+description: "Live-tested findings for two new automated data sources the owner is standing up: HME Cloud (drive-thru timer/DT timing data, all locations) and Squadle (food-safety checklist tablet). Real endpoints and auth mechanisms confirmed by direct testing. UPDATED 2026-11-09: HME's login is now fully solved (direct two-step REST POST, no Playwright needed) but its REST reporting endpoint cannot do real historical date ranges -- that only exists via a Power BI embed, confirmed fragile/not recommended. Squadle's full real-time wire protocol is now captured end-to-end (auth -> squad -> location -> per-day/per-location checklist record) over standard wss/443 -- the earlier-flagged cws.squadle.com:700 relay is blocked in THIS sandbox (non-standard port) but is not the only path to the data; the one remaining unknown is which RTDB shard hosts a given location's records. ✅ UPDATED 2026-11-12 (task #105) -- BOTH integrations now fully built and live-validated end-to-end with the owner's real credentials: scripts/hme-cloud-pull.mjs and scripts/squadle-pull.mjs, Supabase schema (pending the owner's DDL run), GitHub Actions workflows, sync-failure-watch registration. Squadle's remaining unknowns (realtime-permission-session step, exact email-key encoding, shard resolution) are all now resolved -- see the new section below."
 metadata:
   node_type: memory
   type: finding
@@ -366,3 +366,96 @@ credential-hygiene note above.
 
 Nothing in this doc is built. This is the research this session did, written up so it survives the
 owner's own expected break until tomorrow.
+
+## ✅ Task #105 built and live-validated end-to-end (2026-11-12)
+
+Owner provided real credentials (same username/password for both systems) specifically to
+unblock this. Both `scripts/hme-cloud-pull.mjs` and `scripts/squadle-pull.mjs` are built,
+Supabase schema SQL written (`supabase/schema-hme-cloud-dt.sql` / `schema-squadle-checklist-
+records.sql` -- **pending the owner's own DDL run**, per this repo's standing "DDL is never
+applied unattended" rule), GitHub Actions workflows added, both registered in
+`sync-failure-watch.yml`. `stream-freshness.js` STREAMS entries deliberately deferred as
+commented-out placeholders (same precedent as payrollReadiness/payHistory) -- Phase 1 here is
+get-the-data-flowing, a real `ds` loader is a separate Phase 2.
+
+Every credential used was kept in-memory only (shell env vars within a single command, never
+written to a file) and every scratch script/response file created during live testing was
+deleted immediately after use, same discipline as the original 2026-11-06/11-09 research passes.
+
+### HME: fully solved, nothing left open
+
+The two-step REST login (§1 above) works exactly as documented with real values: step 1 body
+`{username, ip:'', portalBaseUrl:'https://portal.hmecloud.com', isAdmin:false, isPartner:false}`
+→ `202 {"location":null}`; step 2 adds `password` → `200` with a real `accessToken`
+(`expiresIn:"24h"`). `getAllStores` and `getDashboardData` both confirmed live with real data
+(24 stores, e.g. `storeNumber:"6838"` → Meridian's own `0006838` Defuniak, `storeNumber:"5183"`
+→ Chickasha-2 -- both match `STORE_NAMES` exactly). No further research needed here.
+
+### Squadle: the full chain, including the trap that cost the most time
+
+Live-tested the complete path with the real account (`fletcher@mcdok.com`):
+
+1. **Login** (`verifyPassword`) → real `idToken`/`refreshToken`. **Refresh-token rotation
+   confirmed OFF** (the 2026-11-06 doc's "one real open question") -- the SAME refresh token
+   was exchanged twice in a row and worked both times, no new token forced. Not that it matters
+   for the shipped design: the pull script re-logs-in with username/password every run, same
+   simplicity as the HME script, rather than managing a stored refresh token.
+2. **`/channels/email/<key>` -- the exact key transform, confirmed from hq.squadle.com's own
+   compiled JS bundle** (`HQ.*.js`, fetched and grepped live): `encodeURIComponent(email)
+   .replace(/\./g, '%2E')`. The critical, easy-to-get-wrong detail: `%2E` is sent as the LITERAL
+   3-character string inside the RTDB wire-protocol JSON frame, never re-decoded — because this
+   travels inside a JSON payload over a WebSocket, not as an HTTP path, there is no URL-decoding
+   layer to strip it back to `.`. An earlier guess (`.replace(/\./g, ',')`, matching a different
+   pattern seen elsewhere in the bundle) returned `200` with `null` -- a silent, misleading
+   "it worked but found nothing" rather than an error, which is why this took real digging
+   rather than a one-shot guess. The correct key resolved the real userId
+   (`-P5m_zSDuPJHXVGrcz4y`), confirming the earlier 2026-11-08 capture exactly.
+3. **The shards (`sqdl-prod-cd-NNN`) reject the plain login idToken outright** (`permission_
+   denied` on all 23) **-- a SEPARATE session-creation step is required**, also found by
+   reading the compiled bundle (the `realtimePermissions` Angular factory's `requestSession`
+   method): `POST https://sl.squadle.com/createRealtimePermissionSession`, body
+   `{clientType:'hq'}`, headers `Authorization: Bearer <loginIdToken>`, `X-Squadle-User-Id:
+   <userId>` → `200 {token, sessionId, expiresAt}`. That `token` is the short-lived custom
+   Firebase JWT the 2026-11-08 update already found (signed by Squadle's own Admin SDK service
+   account) -- exchanging it via `verifyCustomToken` yields a SECOND idToken that IS valid on
+   the shards. The plain login idToken remains valid on the PRIMARY `squadle` project the whole
+   time (channels/users/squads reads never needed the exchange).
+4. **Shard resolution confirmed live**: brute-forcing all 23 shards in parallel for a real
+   location (`/records/<date>/-M8rkFa0NUGRQPamf4CH`) using the exchanged idToken -- 22 return
+   `permission_denied` immediately, exactly one (`sqdl-prod-cd-012`) grants access and returns
+   the real record. Confirms option (b) from the original doc works as designed.
+5. **⚠️ THE BIG ONE -- large RTDB responses are fragmented across multiple WebSocket frames,
+   and the naive "JSON.parse every frame" approach every scratch test in this session's own
+   research used (including the ones that produced this doc's earlier "confirmed live" claims
+   about reading `/records/...` directly) silently swallows the real data.** Firebase's own JS
+   SDK (`websocket_connection.js`'s frame-reassembly logic) sends a lone decimal-digits string
+   as its own frame first (e.g. `"25"`) announcing how many further physical frames the
+   logical message spans; those N frames must be concatenated (plain string concat, not array
+   join) before the result is valid JSON. Every wrong-shard `permission_denied` response is
+   small and never fragments, which is exactly why those "worked" in every prior test while the
+   one genuinely large real-record response appeared to simply hang/time out -- it was never a
+   network, concurrency, or sandbox-proxy issue (all seriously considered and ruled out live
+   before this was found: tested smaller connection-concurrency batches, longer per-connection
+   timeouts, and a fresh unpolluted session -- none of it was the real cause). `rtdbQuery()` in
+   `scripts/squadle-pull.mjs` implements the fix (tracks `pendingFrames`/`frameBuffer`); its own
+   header comment has the full account so this is never rediscovered. Live-validated after the
+   fix: all 21 real locations × 2 dates (yesterday + today) resolve their shard and parse a real
+   record successfully (confirmed by the pull script's own per-location log lines before the
+   expected "table doesn't exist yet" Supabase error, since the schema SQL is still pending the
+   owner's DDL run).
+6. **Store-number mapping confirmed robust**: every real record's own `tags` map includes the
+   literal store number as one entry in no guaranteed position/index (e.g.
+   `{"0":{"text":"rfp-2"},"1":{"text":"6972"}}`) -- the pull script scans every tag's text for a
+   4-7-digit run rather than assuming a fixed key, so no separate Squadle-location → Meridian-
+   store lookup table is needed.
+
+### Next steps for the owner
+
+1. Run `supabase/schema-hme-cloud-dt.sql` and `schema-squadle-checklist-records.sql`.
+2. Add GitHub Secrets: `HME_USERNAME`, `HME_PASSWORD`, `SQUADLE_USERNAME`, `SQUADLE_PASSWORD`.
+3. Either wait for the scheduled cron or manually dispatch `HME Cloud Pull` / `Squadle Checklist
+   Pull` once the above are in place to confirm the first real write.
+
+Phase 2 (surfacing the data in a real panel/engine, per the original §3 plan -- HME likely
+extends `dt-speedofservice.js`, Squadle likely extends or parallels Forms Completion) is
+deliberately not started.

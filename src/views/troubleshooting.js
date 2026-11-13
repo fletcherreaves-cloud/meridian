@@ -33,6 +33,7 @@ import * as React from 'react';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { withAlpha } from './patch-heatmap.js';
 import { printHtml as printHtmlOverlay } from '../utils/print-html.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -152,7 +153,7 @@ export function TroubleshootingPanel({ onClose }) {
 
   return h(ModalShell, {
     title: '🔧 Troubleshooting',
-    subtitle: 'End-user fixes and developer diagnostics for when something in Meridian looks wrong',
+    subtitle: h('span', null, 'End-user fixes and developer diagnostics for when something in Meridian looks wrong', h(InfoIcon, { articleKey: 'troubleshooting_guide' })),
     onClose, maxWidth: 860, zIndex: Z.nested,
     bodyStyle: { padding: '14px 20px 20px', fontSize: '11px', lineHeight: 1.7 },
     headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 8 } },

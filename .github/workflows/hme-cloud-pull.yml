@@ -1,0 +1,45 @@
+name: HME Cloud Pull
+
+# Drive-thru timer/DT timing data, all stores (task #105). Two-step REST login, no Playwright
+# needed (confirmed live 2026-11-12 -- see scripts/hme-cloud-pull.mjs's own header and
+# memory/finding-hme-squadle-integration-2026-11-06.md). HME's own dashboard endpoint only ever
+# returns the CURRENT business day's running total, so this runs intraday -- same cadence family
+# as the other intraday pulls (Operations Report/DAR) -- and each run overwrites that day's row
+# with the latest accumulated total.
+
+on:
+  schedule:
+    # Every 2 hours, 11:00–23:00 UTC (6am–6pm CDT) -- the drive-thru's own active hours; no need
+    # to poll overnight when the lane isn't running.
+    - cron: '0 11-23/2 * * *'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run HME Cloud pull
+        run: node scripts/hme-cloud-pull.mjs
+        env:
+          HME_USERNAME:              ${{ secrets.HME_USERNAME }}
+          HME_PASSWORD:              ${{ secrets.HME_PASSWORD }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HME_DEBUG:                 ${{ github.event.inputs.debug || '0' }}

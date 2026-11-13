@@ -57,6 +57,7 @@ on:
       - Event Impact — Weather Lift Measurement
       - Forecast Rolling Capture
       - Forecast Week Precompute
+      - HME Cloud Pull
       - Hourly Projection Accuracy
       - LifeLenz Attendance Pull
       - LifeLenz Compliance Audit Pull
@@ -104,6 +105,7 @@ on:
       - Scheduled-Run Reliability Watchdog
       - Security Rules Run
       - Spot-Check Ruler Weekly Digest
+      - Squadle Checklist Pull
       - Weekly Cycle Digest Send (roll-up email)
       - YouTube Mentions Pull
     types: [completed]

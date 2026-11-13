@@ -148,6 +148,15 @@ describe('computeSecurityEventFindingsForRule() — EVENT-001-shaped ratio rule,
     expect(b.pass).toBe(false);
     expect(b.baselineContext).toHaveProperty('mean');
   });
+  // Phase 1b camera-hint fix (2026-11-12 follow-on) -- EVENT-* rules now get the same day-level
+  // breakdown CASH-* rules got in Phase 1.
+  it('a flagged subject gets dailyBreaches naming the specific day; a clear subject gets none', () => {
+    const findings = computeSecurityEventFindingsForRule(rule, rows, { windowStart: '2026-11-01', windowEnd: '2026-11-09' });
+    const a = findings.find(f => f.empToken === 'crew-A');
+    const b = findings.find(f => f.empToken === 'crew-B');
+    expect(a.dailyBreaches).toEqual([{ date: '2026-11-01', value: 1000, thresholdUsed: 50 }]);
+    expect(b.dailyBreaches).toEqual([]);
+  });
   it('a subject below min_denominator (too few sessions to mean anything) gets an honest null, not a fabricated verdict', () => {
     const thin = [{ loc: 'S1', date: '2026-11-01', emp: 'crew-C', empToken: 'crew-C', employeeMealCnt: 3, sessionCnt: 2 }];
     const findings = computeSecurityEventFindingsForRule(rule, thin, { windowStart: '2026-11-01', windowEnd: '2026-11-09' });
