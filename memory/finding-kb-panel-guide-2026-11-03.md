@@ -1701,3 +1701,41 @@ here). **Still open:** `count_cycle_guide` and `panel_index` (deliberately unwir
 `priority_brief`/`data_collection_bounds` (flagged this batch, need more than mechanical wiring),
 plus the same ~15 Forecast Engine internals this backlog has consistently left cross-referenced
 rather than wired to any one panel.
+
+## Batch 20 follow-up (2026-11-13): `dialed_in`/`dialed_in_calibration` resolved as duplicates, `file_import_guide` deleted as stale
+
+Picked up the two deferred-for-redundancy items flagged above, by reading both full article
+bodies directly rather than guessing from the title.
+
+- **`dialed_in` vs `dialed_in_calibration`: confirmed genuine duplicates, not two angles on the
+  same topic.** Both describe the identical Dialed-In grid-search calibration mechanism and
+  formula. `dialed_in` is the weaker/stale copy — it undercounts the parameter list as 4 (the
+  real count is 5) and has no "DI Skip" section that `dialed_in_calibration` carries. Decisive
+  evidence for which one is canonical: the already-wired `di_calibration_panel` article's own
+  text points to "Dialed-In Calibration — Grid Search" for the calibration math — that's
+  `dialed_in_calibration`'s exact title, not `dialed_in`'s. **Action:** added a second
+  `InfoIcon` (`articleKey:'dialed_in_calibration'`) next to the existing `di_calibration_panel`
+  icon on the Dialed-In panel's `ModalShell` subtitle (`src/app/App.js`), and deleted the
+  redundant `dialed_in` entry from `KB_ARTICLES` (`src/engine/forecast.js`). Confirmed via grep
+  that the only other codebase hits for the string `'dialed_in'` are an unrelated
+  `user_settings` blob key (`DIALED_IN_SETTING`, used in `analytics.js`/`App.js`/`session.js`/
+  one test) — not a naming collision with the deleted KB key.
+- **`file_import_guide` vs `data_manager_guide`: NOT a duplicate — a stale, factually-wrong
+  article, deleted outright.** `file_import_guide` describes a pre-cloud, browser-only,
+  re-upload-every-session architecture that directly contradicts CLAUDE.md's "Architecture
+  (Cloud-First)" section — this app has not worked that way for a long time. It was never wired
+  to any `InfoIcon` anywhere (confirmed via grep), so it was already fully invisible to users.
+  Wiring it would mislead; merging it into `data_manager_guide` would require rewriting it from
+  scratch since the content itself is wrong, not just redundant. **Action:** deleted the entry
+  from `KB_ARTICLES` outright.
+- Grepped `src/__tests__/*.test.js` for any test asserting an exact `KB_ARTICLES` length/count —
+  none exists, so neither deletion trips a ratchet. Full suite (7964 tests) and build both pass
+  clean (698.91 KB eager, budget 850 KB).
+
+**Running total after this follow-up: 90 of 119 `KB_ARTICLES` keys wired** (89 wired entries
+stand; the 2 deletions drop the denominator from 121 to 119, net unchanged ratio-wise but one
+fewer "still open" item — `dialed_in`/`dialed_in_calibration` is resolved). **Still open:**
+`count_cycle_guide` and `panel_index` (deliberately unwired), `cash_os`/`drawer_open`/
+`condiment_pct`/`priority_brief`/`data_collection_bounds` (still need more than mechanical
+wiring), plus the same ~15 Forecast Engine internals this backlog has consistently left
+cross-referenced rather than wired to any one panel.

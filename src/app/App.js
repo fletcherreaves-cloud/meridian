@@ -4863,7 +4863,7 @@ function App() {
     ),
     showDialedIn&&h(ModalShell,{
       title:'🎯 Dialed-In — Per-Store Calibration Engine',
-      subtitle:h('span',null,'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',h(InfoIcon,{articleKey:'di_calibration_panel'})),
+      subtitle:h('span',null,'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',h(InfoIcon,{articleKey:'di_calibration_panel'}),h(InfoIcon,{articleKey:'dialed_in_calibration'})),
       onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
     },
       h(DialedInPanel,{stores:scopedStores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
