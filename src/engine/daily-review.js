@@ -225,3 +225,72 @@ export function buildServiceDaypartBreakdown(rows, loc, date) {
     return { key, dayparts, overallAvg, best, worst };
   }).filter(d => d.dayparts.length);
 }
+
+// ── Today's Win — "find at least one positive thing to call out, every store, every day" ──────
+// Owner, 2026-11-13 (prompted by the Why Engine remedy work): "for each location we need to
+// find somewhere to find at least one positive thing to call for each day." Deliberately reuses
+// buildDailyReview()'s own already-computed lines rather than a parallel positives engine — a
+// "win" is just the single best-performing real number this review already has, ranked by how
+// far past target it actually is, never invented praise. Honesty rule mirrors the remedy work's
+// own: every win cites a real figure, and a day with no standout beat says so plainly instead
+// of manufacturing one.
+const WIN_LY_MIN_MARGIN = 0.03; // sales/GC must beat LY by at least 3% to be headline-worthy
+const WIN_TARGET_MIN_MARGIN = 0.05; // a targeted line must beat target by at least 5% of target
+
+const WIN_SECTION_ICON = { sales: '💰', service: '⏱️', labor: '👥', cash: '💵', fob: '🥗' };
+
+function marginBeyondTarget(line) {
+  if (line.actual == null || line.target == null || !line.target) return null;
+  const diff = line.direction === 'lower' ? (line.target - line.actual) : (line.actual - line.target);
+  return diff / Math.abs(line.target);
+}
+
+/**
+ * Finds the single best real positive in an already-built `buildDailyReview()` result. Always
+ * returns a real object (never null) — if nothing clears the "genuinely notable" bar, it falls
+ * back to an honest "clean day" or "no standout yet" read rather than inventing a win.
+ */
+export function findDailyWin(review) {
+  const candidates = [];
+
+  const sales = review.sections.find(s => s.key === 'sales');
+  const prodSales = sales?.lines.find(l => l.key === 'prodSales');
+  const gc = sales?.lines.find(l => l.key === 'gc');
+  if (prodSales?.vsLYPct != null && prodSales.vsLYPct >= WIN_LY_MIN_MARGIN) {
+    candidates.push({ margin: prodSales.vsLYPct, icon: '💰',
+      headline: 'Sales up ' + (prodSales.vsLYPct * 100).toFixed(1) + '% vs LY',
+      detail: '$' + Math.round(prodSales.actual).toLocaleString() + ' vs $' + Math.round(prodSales.ly).toLocaleString() + ' last year' });
+  }
+  if (gc?.vsLYPct != null && gc.vsLYPct >= WIN_LY_MIN_MARGIN) {
+    candidates.push({ margin: gc.vsLYPct, icon: '🚶',
+      headline: 'Guest counts up ' + (gc.vsLYPct * 100).toFixed(1) + '% vs LY',
+      detail: Math.round(gc.actual).toLocaleString() + ' guests vs ' + Math.round(gc.ly).toLocaleString() + ' last year' });
+  }
+
+  for (const sec of review.sections) {
+    if (sec.key === 'sales') continue; // already covered via vsLY above, not a target beat
+    for (const line of sec.lines) {
+      if (line.status !== 'good') continue;
+      const margin = marginBeyondTarget(line);
+      if (margin == null || margin < WIN_TARGET_MIN_MARGIN) continue;
+      candidates.push({ margin, icon: WIN_SECTION_ICON[sec.key] || '✓',
+        headline: line.label + ' beat target by ' + (margin * 100).toFixed(1) + '%',
+        detail: sec.label + ' — real number, not just "within range"' });
+    }
+  }
+
+  if (candidates.length) {
+    candidates.sort((a, b) => b.margin - a.margin);
+    const best = candidates[0];
+    return { headline: best.headline, detail: best.detail, icon: best.icon, kind: 'win' };
+  }
+
+  const anyConcern = review.sections.some(s => s.severity === 'bad' || s.severity === 'watch');
+  if (!anyConcern) {
+    return { headline: 'Clean, steady day', icon: '✅', kind: 'clean',
+      detail: 'Nothing flagged across sales, service, labor, cash, or food cost — held at or inside target all day.' };
+  }
+
+  return { headline: 'No standout yet', icon: '—', kind: 'none',
+    detail: 'Nothing cleared the bar for a headline win today — check back once today’s data is fully in, or look for one in the lines above.' };
+}
