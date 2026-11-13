@@ -14,18 +14,35 @@
 // for panel-registry.test.js's pairing check) and constants.js's OPTIONAL_PANELS (entry
 // removed — no more Panel Manager toggle for it, matching the corr-explorer/calendar-manager
 // retirement precedent).
-// Data sources are NOT unified (out of scope, per the dispatch — "redesigning either panel's
-// underlying computation" is explicitly out): Channel Overview reads ds.laborByLoc (Operations
-// Report Sales-sheet channel columns); Delivery Platforms reads ds.cashRows (QSRSoft Cash Sheet,
-// cloud auto-pulled). Ported verbatim from ChannelIntelligencePanel with only two dead
-// CSS-var-name fixes (var(--surface) -> var(--surf), var(--text1) -> var(--text) — neither
-// token is defined anywhere in meridian.css, so the original panel was silently falling back to
-// inherited/initial styling for those rules; not a computation change).
+// Delivery Platforms reads ds.cashRows (QSRSoft Cash Sheet, cloud auto-pulled) — unchanged.
+// ⚠️ CORRECTED 2026-11-13 (owner-reported live bug, screenshots against the real QSRSoft
+// Operations Report): Channel Overview used to read ds.laborByLoc directly — rows sourced ONLY
+// from the manual Operations Report Excel upload — for BOTH the channel $ numerators and the
+// total-sales denominator. That is exactly the manual-only sourcing bug CLAUDE.md's Dev Rules
+// section names ("Reading ds.laborRows/ctrlRows/opsRows directly for a metric value
+// re-introduces the manual-only bug") and it produced nonsense: the SAME "Drive-Thru % of total
+// sales" read 0.00% (7d), 5.96% (14d), 38.24% (28d), 54.42% (60d) in the owner's own screenshots,
+// against a real QSRSoft-reported 68.62%-77.05% daily (72.97% MTD) for the same store — each
+// window was silently averaging over whichever manual rows happened to exist, not the real sales
+// base. Now sourced through metric-source.js's existing auto-first `dtMixPct`/`bfMixPct`/
+// `mopMixPct`/`kioskMixPct`/`delivMixPct` registry entries (emailed Sales Ledger / auto-pulled
+// Sales Mix first, manual Operations Report last-resort fill only, per the standing
+// "auto/emailed-first, freshest-wins" rule) — the manual upload is still IN the chain, just no
+// longer the only rung. dtMixPct additionally has a real Σ$/Σ$ ratio derive (opsSalesMixRows),
+// so it goes through `metricRate` (sum-ratio first, mean-of-daily only as fallback — never
+// blends an in-progress day in at full weight); the other four have no decomposed $ chain yet,
+// so they go through `metricAvg` (mean of already-computed daily %, same "never average an
+// average" floor every other rate metric in this app already gets). Per-channel dollar figures
+// are derived as pct × the store's own auto-first `sales` total for the window, since none of
+// the four non-DT channels carry an independent $ leg in the registry today — not a new
+// approximation, the same shape every other panel already uses when the raw channel-mix $ fields
+// are what's actually missing from every current stream. See memory/finding-delivery-mix-manual-only-sourcing-2026-11-13.md.
 import * as React from 'react';
 import { f$, fPct } from '../utils/fmt.js';
 import { STORE_NAMES } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
+import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 
 const h = React.createElement;
 const { useState, useMemo } = React;
@@ -139,51 +156,55 @@ function Pill({ active, onClick, children }) {
 }
 
 // ── Tab 1: Channel Overview (ported from ChannelIntelligencePanel) ──────────────────────
+// `key` is the short id used for focus/sort state; `metricKey` is the metric-source.js
+// registry entry that actually resolves the daily value, auto-first. `rate:true` (DT only)
+// means the registry entry has a real Σ$/Σ$ derive, so it goes through metricRate (sum-ratio
+// first); the other four have no decomposed $ chain yet, so metricAvg (mean of daily %) is the
+// correct — and best currently possible — aggregator for them.
 const CHANNELS = [
-  {key:'dtSales',    pctKey:'dtPctTotal',   label:'Drive-Thru',  color:'#60a5fa', emoji:'🚗'},
-  {key:'bfSales',    pctKey:'bfPctTotal',   label:'Breakfast',   color:'#fbbf24', emoji:'☀️'},
-  {key:'delivSales', pctKey:'delivPctTotal',label:'Delivery',    color:'#34d399', emoji:'🛵'},
-  {key:'mopSales',   pctKey:'mopPctTotal',  label:'MOP',         color:'#a78bfa', emoji:'📱'},
-  {key:'kioskSales', pctKey:'kioskPctTotal',label:'Kiosk',       color:'var(--crit)', emoji:'🖥'},
+  {key:'dt',    metricKey:'dtMixPct',    label:'Drive-Thru',  color:'#60a5fa', emoji:'🚗', rate:true},
+  {key:'bf',    metricKey:'bfMixPct',    label:'Breakfast',   color:'#fbbf24', emoji:'☀️'},
+  {key:'deliv', metricKey:'delivMixPct', label:'Delivery',    color:'#34d399', emoji:'🛵'},
+  {key:'mop',   metricKey:'mopMixPct',   label:'MOP',         color:'#a78bfa', emoji:'📱'},
+  {key:'kiosk', metricKey:'kioskMixPct', label:'Kiosk',       color:'var(--crit)', emoji:'🖥'},
 ];
 
 function ChannelOverviewTab({ stores, ds }) {
-  const [focus, setFocus] = useState('dtSales');
+  const [focus, setFocus] = useState('dt');
   const [sortBy, setSortBy] = useState('pct');
   const [range, setRange] = useState(28);
 
-  const cutoff = useMemo(() => new Date(Date.now() - range * 86400000), [range]);
+  const window = useMemo(() => ({ s: new Date(Date.now() - range * 86400000), e: new Date() }), [range]);
 
-  // Aggregate channel data per store for the chosen date range
+  // Aggregate channel data per store for the chosen date range — auto-first per metric-source.js,
+  // never the manual-only ds.laborByLoc read this replaced (see file header).
   const storeData = useMemo(() => {
-    if (!ds || !ds.loaded || !ds.laborByLoc) return [];
+    if (!ds || !ds.loaded) return [];
     return (stores || []).map(s => {
-      const rows = (ds.laborByLoc[s.loc] || []).filter(r => r.date >= cutoff && (r.sales || 0) > 0);
-      if (!rows.length) return null;
-      const totSales = rows.reduce((a, r) => a + (r.sales || 0), 0);
+      const dailySales = metricSeries(ds, s.loc, window, 'sales');
+      const totSales = Object.values(dailySales).reduce((a, v) => a + (v || 0), 0);
+      if (totSales <= 0) return null;
       const chans = {};
       for (const ch of CHANNELS) {
-        const sales = rows.reduce((a, r) => a + (r[ch.key] || 0), 0);
-        // Fallback: use stored pctTotal field when dollar sales column not populated
-        const pctFallback = sales === 0 && ch.pctKey && rows.length > 0
-          ? rows.reduce((a, r) => a + (r[ch.pctKey] || 0), 0) / rows.length : null;
-        chans[ch.key] = { sales, pct: totSales > 0 && sales > 0 ? sales / totSales : pctFallback ?? 0 };
+        const pct = ch.rate ? metricRate(ds, s.loc, window, ch.metricKey) : metricAvg(ds, s.loc, window, ch.metricKey);
+        chans[ch.key] = { pct: pct ?? 0, sales: pct != null ? pct * totSales : 0, hasData: pct != null };
       }
       return { loc: s.loc, name: s.name, totSales, chans };
     }).filter(Boolean);
-  }, [stores, ds, cutoff]);
+  }, [stores, ds, window]);
 
-  // District totals
+  // District totals — dollar-weighted rollup (sum each store's own channel $, divide by
+  // district total sales), never a mean of per-store percentages (CLAUDE.md: never average an
+  // average, dollar-weight aggregates).
   const distTotals = useMemo(() => {
     if (!storeData.length) return null;
     const tot = storeData.reduce((a, s) => a + s.totSales, 0);
     const chans = {};
     for (const ch of CHANNELS) {
-      const s = storeData.reduce((a, r) => a + r.chans[ch.key].sales, 0);
-      // If sales-based pct works, use it; else average the per-store pct fallbacks
-      const pct = tot > 0 && s > 0 ? s / tot
-        : storeData.length > 0 ? storeData.reduce((a, r) => a + r.chans[ch.key].pct, 0) / storeData.length : 0;
-      chans[ch.key] = { sales: s, pct };
+      const known = storeData.filter(s => s.chans[ch.key].hasData);
+      const s = known.reduce((a, r) => a + r.chans[ch.key].sales, 0);
+      const pct = tot > 0 ? s / tot : 0;
+      chans[ch.key] = { sales: s, pct, hasData: known.length > 0 };
     }
     return { totSales: tot, chans };
   }, [storeData]);
@@ -197,8 +218,10 @@ function ChannelOverviewTab({ stores, ds }) {
 
   const focusCh = CHANNELS.find(c => c.key === focus) || CHANNELS[0];
 
-  // Non-DT channels require the Operations Report Sales sheet — flag if none of them have data
-  const hasExtendedChannels = distTotals && CHANNELS.slice(1).some(ch => distTotals.chans[ch.key].pct > 0.001);
+  // Non-DT channels have no decomposed $ chain today, so a store that genuinely runs 0% of a
+  // channel is indistinguishable from "no source answered" by value alone — use the explicit
+  // hasData flag (never a `pct > 0` threshold, which would also hide a real, legitimate 0%).
+  const hasExtendedChannels = distTotals && CHANNELS.slice(1).some(ch => distTotals.chans[ch.key].hasData);
 
   // Sort stores by focused channel
   const sortedStores = useMemo(() => [...storeData].sort((a, b) => {
@@ -232,8 +255,9 @@ function ChannelOverviewTab({ stores, ds }) {
           }
         },
           h('div', { style: { fontSize: 11, marginBottom: 2 } }, ch.emoji + ' ' + ch.label),
-          h('div', { style: { fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: ch.color } }, fmtP(distTotals.chans[ch.key].pct)),
-          h('div', { style: { fontSize: 9, color: 'var(--text3)', marginTop: 1 } }, fmtS(distTotals.chans[ch.key].sales)),
+          h('div', { style: { fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: distTotals.chans[ch.key].hasData ? ch.color : 'var(--text3)' } },
+            distTotals.chans[ch.key].hasData ? fmtP(distTotals.chans[ch.key].pct) : '–'),
+          h('div', { style: { fontSize: 9, color: 'var(--text3)', marginTop: 1 } }, distTotals.chans[ch.key].hasData ? fmtS(distTotals.chans[ch.key].sales) : 'no data this window'),
         ))
       )
     ),
@@ -243,12 +267,12 @@ function ChannelOverviewTab({ stores, ds }) {
       h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 } },
         h('div', { style: { fontSize: 14, flexShrink: 0 } }, '⚠️'),
         h('div', null,
-          h('div', { style: { fontSize: 10, fontWeight: 700, color: '#fbbf24', marginBottom: 2 } }, 'Breakfast, Delivery, MOP & Kiosk data not loading'),
-          h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.6 } }, 'Your Operations Report Sales sheet is loaded, but the channel columns were not found. This is usually a column naming difference.'),
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: '#fbbf24', marginBottom: 2 } }, 'Breakfast, Delivery, MOP & Kiosk have no data for this window'),
+          h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.6 } }, 'Meridian checks the QSRSoft Sales Ledger and Sales Mix streams first, then a manual Operations Report upload as a last resort — none of those have these four channels for the selected range yet. Drive-Thru has its own chain and is unaffected.'),
         )
       ),
       h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.7, paddingLeft: 24 } },
-        h('div', { style: { fontWeight: 700, color: 'var(--text2)', marginBottom: 3 } }, 'Meridian looks for these columns in your Operations Report Sales sheet:'),
+        h('div', { style: { fontWeight: 700, color: 'var(--text2)', marginBottom: 3 } }, 'If uploading an Operations Report manually as a fallback, Meridian looks for these columns in its Sales sheet:'),
         [
           ['Breakfast', 'BF All Net Sales / Breakfast All Net Sales / BF Net Sales / BF Sales'],
           ['MOP', 'MOP Sales / MOP Net Sales / Mobile Order and Pay Net Sales / MOB Sales'],
