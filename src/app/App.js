@@ -247,6 +247,7 @@ const CustomReportBuilderPanel = lazyPanel(() => import('../views/custom-report-
 // Reports redesign Phase 5 (2026-10-16) -- six new base reports, same lazy-panel treatment.
 const ControlsFoodCostLinkPanel = lazyPanel(() => import('../views/controls-food-cost-link.js').then(m => ({ default: m.ControlsFoodCostLinkPanel })), 'controls-food-cost-link');
 const WeatherImpactPanel = lazyPanel(() => import('../views/weather-impact.js').then(m => ({ default: m.WeatherImpactPanel })), 'weather-impact');
+const LocationDossierPanel = lazyPanel(() => import('../views/location-dossier.js').then(m => ({ default: m.LocationDossierPanel })), 'location-dossier');
 const PriceChangeImpactPanel = lazyPanel(() => import('../views/price-change-impact.js').then(m => ({ default: m.PriceChangeImpactPanel })), 'price-change-impact');
 const ItemVelocityPanel = lazyPanel(() => import('../views/item-velocity.js').then(m => ({ default: m.ItemVelocityPanel })), 'item-velocity');
 const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m => ({ default: m.ChannelMixPanel })), 'channel-mix');
@@ -4127,6 +4128,7 @@ function App() {
         if(modal==='controls-food-cost-link') perm('analytics.store')&&goRoute('controls-food-cost-link');
         if(modal==='weather-impact') perm('analytics.store')&&goRoute('weather-impact');
         if(modal==='price-change-impact') perm('analytics.store')&&goRoute('price-change-impact');
+        if(modal==='location-dossier') perm('analytics.store')&&goRoute('location-dossier');
         if(modal==='item-velocity') perm('analytics.store')&&goRoute('item-velocity');
         if(modal==='channel-mix') perm('analytics.store')&&goRoute('channel-mix');
         if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
@@ -4451,6 +4453,7 @@ function App() {
       routePanel==='controls-food-cost-link'&&h(ControlsFoodCostLinkPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='weather-impact'&&h(WeatherImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='price-change-impact'&&h(PriceChangeImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='location-dossier'&&h(LocationDossierPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='item-velocity'&&h(ItemVelocityPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='channel-mix'&&h(ChannelMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),

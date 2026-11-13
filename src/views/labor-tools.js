@@ -2,12 +2,13 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_COFFEE } from '../constants.js';
 import { forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate, InfoIcon } from '../engine/forecast.js';
-import { addD, sodOf } from '../utils/date.js';
+import { addD, sodOf, dKey } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { DAYPART_SLOTS } from '../engine/labor-standard.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
-import { saveUserSetting, loadUserSetting, loadVlhStoreConfigs } from '../lib/supabase.js';
+import { saveUserSetting, loadUserSetting, loadVlhStoreConfigs, supabase } from '../lib/supabase.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
@@ -1258,6 +1259,46 @@ const VLH_COFFEE_TO_SERVICE_AREA_LABEL = Object.fromEntries(
   VLH_COFFEE.map(o => [o.value, { none: 'None', bdap: 'BDAP', mccafe: 'McCafe', both: 'BDAP + McCafe' }[o.value]])
 );
 
+// Volume Tier bands (owner correction 2026-11-13 — the prior <$1.2M/$1.2–2M/$2–3M/>$3M bands
+// were stale) — Low <$2M/yr, Mid $2–3.5M, High $3.5–6M, Very High >$6M, all trailing-12-month
+// actual sales.
+const VOLUME_TIER_OPTIONS = ['Low (<$2M/yr)', 'Mid ($2–3.5M)', 'High ($3.5–6M)', 'Very High (>$6M)'];
+export function volumeTierForAnnualSales(annual) {
+  if (annual == null) return undefined;
+  if (annual < 2_000_000) return 'Low (<$2M/yr)';
+  if (annual < 3_500_000) return 'Mid ($2–3.5M)';
+  if (annual < 6_000_000) return 'High ($3.5–6M)';
+  return 'Very High (>$6M)';
+}
+
+// Primary Daypart auto-pull (owner req 2026-11-13) — same auto-pull/manual-override shape as the
+// VLH-backed fields above. Bucketed on the SAME DAYPART_SLOTS boundaries labor-standard.js/
+// daily-review.js/store-analytics.js's Daypart Pace card already use (never re-derive the
+// Breakfast/Lunch/Afternoon/Dinner/Late Night hour windows a 4th time) — Afternoon is tracked for
+// an honest total/share denominator but has no matching option in this field's own dropdown, so a
+// store genuinely led by it (same as one with no standout daypart at all) reads as 'Balanced'.
+const DAYPART_MIX_DEF = [
+  { label: 'Breakfast', slots: DAYPART_SLOTS['Breakfast'] },
+  { label: 'Lunch', slots: DAYPART_SLOTS['Lunch'] },
+  { label: 'Afternoon', slots: DAYPART_SLOTS['Afternoon'] },
+  { label: 'Dinner', slots: DAYPART_SLOTS['Dinner'] },
+  { label: 'Late Night', slots: DAYPART_SLOTS['Late Night'] },
+];
+// Exported (pure) so this can be asserted directly against a fixed mix without a network mock.
+export function primaryDaypartFromMix(byLabel) {
+  const total = Object.values(byLabel || {}).reduce((a, b) => a + (b || 0), 0);
+  if (!total) return undefined;
+  const entries = Object.entries(byLabel).sort((a, b) => b[1] - a[1]);
+  const [topLabel, topVal] = entries[0];
+  const topShare = topVal / total;
+  const runnerUpShare = (entries[1]?.[1] || 0) / total;
+  // A real plurality: the leading daypart clears 30% of sales AND holds at least an 8-point
+  // lead over the runner-up -- otherwise this store doesn't have ONE dominant daypart, which is
+  // exactly what 'Balanced' means (not "we couldn't compute an answer").
+  if (topLabel === 'Afternoon' || topShare < 0.30 || (topShare - runnerUpShare) < 0.08) return 'Balanced';
+  return topLabel;
+}
+
 const DEFAULT_PROFILE = {
   storeType:'', market:'', volumeTier:'', primaryDaypart:'',
   dtLayout:'', serviceAreaLayout:'', beverage:'', productionAreaLayout:'',
@@ -1306,6 +1347,56 @@ function StoreKBEditor({onClose, ds}) {
     productionAreaLayout: VLH_KITCHEN_LABEL[vlhCfg.kitchen] || undefined,
   } : {};
 
+  // Volume Tier auto-pull (owner req 2026-11-13) -- trailing-12-month actual sales, summed from
+  // the SAME auto-first metric-source.js registry every other panel reads (ds already holds this
+  // app-wide, no new network call needed). metricSeries, not metricAvg -- a tier needs the real
+  // ANNUAL TOTAL, never a mean-of-daily-values treated as a sum.
+  const annualSales = React.useMemo(() => {
+    if (!ds || !selLoc) return null;
+    const e = lastClosedBusinessDay(new Date());
+    const s = addD(e, -364);
+    const series = metricSeries(ds, selLoc, { s: dKey(s), e: dKey(e) }, 'sales');
+    const vals = Object.values(series).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
+  }, [ds, selLoc]);
+  const volumeTierAuto = volumeTierForAnnualSales(annualSales);
+
+  // Primary Daypart auto-pull (owner req 2026-11-13) -- trailing-90-day hourly product_sales,
+  // bucketed into the standard dayparts. Needs real hour_slot granularity, which ds's own
+  // day-aggregated qsrActSummaryRows doesn't carry (same "rollup table, not the hourly source"
+  // shape loadQsrActSummary's own header documents) -- a direct per-store query, same pattern
+  // store-analytics.js's DaypartPaceCard already uses for one day, just a wider window here, and
+  // re-fetched on store change rather than once per panel open (the mix is store-specific).
+  const [daypartMix, setDaypartMix] = React.useState(null);
+  React.useEffect(() => {
+    if (!supabase || !selLoc) { setDaypartMix(null); return; }
+    let cancelled = false;
+    const nsn = String(selLoc).padStart(7, '0');
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    (async () => {
+      const PAGE = 1000; let rows = []; let from = 0;
+      while (true) {
+        const { data, error } = await supabase.from('qsr_daily_activity')
+          .select('hour_slot,product_sales').eq('loc', nsn).gte('dt', cutoffStr)
+          .range(from, from + PAGE - 1);
+        if (error || !data || !data.length) break;
+        rows = rows.concat(data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      if (cancelled) return;
+      const byLabel = {};
+      for (const dp of DAYPART_MIX_DEF) {
+        byLabel[dp.label] = rows.filter(r => dp.slots.includes(r.hour_slot))
+          .reduce((a, r) => a + (r.product_sales || 0), 0);
+      }
+      setDaypartMix(byLabel);
+    })().catch(() => { if (!cancelled) setDaypartMix(null); });
+    return () => { cancelled = true; };
+  }, [selLoc]);
+  const primaryDaypartAuto = daypartMix ? primaryDaypartFromMix(daypartMix) : undefined;
+
   const saveDraft = () => {
     // Persist whichever value is actually ON SCREEN -- a VLH-backed field the user never
     // touched is still showing (and meant) its auto-pulled default (see PROFILE_FIELD's own
@@ -1316,6 +1407,8 @@ function StoreKBEditor({onClose, ds}) {
     for (const key of ['dtLayout','serviceAreaLayout','beverage','productionAreaLayout']) {
       if (!resolvedProfile[key] && vlhAuto[key]) resolvedProfile[key] = vlhAuto[key];
     }
+    if (!resolvedProfile.volumeTier && volumeTierAuto) resolvedProfile.volumeTier = volumeTierAuto;
+    if (!resolvedProfile.primaryDaypart && primaryDaypartAuto) resolvedProfile.primaryDaypart = primaryDaypartAuto;
     const newEdits = {...edits, [selLoc]:{
       notes:  draft.notes,
       tags:   draft.tags.split(',').map(t=>t.trim()).filter(Boolean),
@@ -1390,7 +1483,7 @@ function StoreKBEditor({onClose, ds}) {
   // Save resolves it (saveDraft's own fallback, same value this renders). A field with no
   // `autoValue` (every pre-existing field, plus a VLH-backed one with no config row/value yet)
   // behaves exactly as before.
-  const PROFILE_FIELD = (label, key, options, autoValue) => {
+  const PROFILE_FIELD = (label, key, options, autoValue, badgeLabel) => {
     const manual = draft.profile[key] || '';
     const effective = manual || autoValue || '';
     const isAuto = !manual && !!autoValue;
@@ -1398,7 +1491,7 @@ function StoreKBEditor({onClose, ds}) {
       div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4,display:'flex',alignItems:'center',gap:5}},
         label,
         isAuto && span({style:{fontSize:'7px',fontWeight:700,color:'#60a5fa',textTransform:'none',letterSpacing:0,padding:'1px 5px',borderRadius:99,background:'rgba(96,165,250,.15)'}},
-          '📡 Store VLH Config'),
+          badgeLabel || '📡 Store VLH Config'),
       ),
       options
         ? h('select',{value:effective,
@@ -1606,8 +1699,8 @@ function StoreKBEditor({onClose, ds}) {
                 div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 16px'}},
                   PROFILE_FIELD('Store Format',    'storeType',     STORE_FORMAT_OPTIONS),
                   PROFILE_FIELD('Market Type',     'market',        ['Rural','Small Town','Suburban','Urban','Interstate/Highway','Tourist/Seasonal']),
-                  PROFILE_FIELD('Volume Tier',     'volumeTier',    ['Low (<$1.2M/yr)','Mid ($1.2–2M)','High ($2–3M)','Very High (>$3M)']),
-                  PROFILE_FIELD('Primary Daypart', 'primaryDaypart',['Breakfast','Lunch','Dinner','Late Night','Balanced'])
+                  PROFILE_FIELD('Volume Tier',     'volumeTier',    VOLUME_TIER_OPTIONS, volumeTierAuto, '📊 Auto (trailing 12mo sales)'),
+                  PROFILE_FIELD('Primary Daypart', 'primaryDaypart',['Breakfast','Lunch','Dinner','Late Night','Balanced'], primaryDaypartAuto, '📊 Auto (sales mix, 90d)')
                 ),
                 // Layout & Equipment (owner req 2026-10-12) -- the 4 new sections, modeled off
                 // Store VLH Config (Data Manager -> ⚙ Store VLH Config) and auto-pulled from it

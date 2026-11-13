@@ -118,6 +118,30 @@ rollup mechanics themselves, which this app already has a working pattern for.
 4. **Demographics** has no existing data source in this app at all — first real "where does this
    number even come from" question, not a presentation question.
 
+## ✅ Phase 1 SHIPPED (v5.761, 2026-11-13)
+
+Owner answered §5.1/§5.2/§5.2a the same session: (1) top 3 actionable findings headline, "+N
+more" to expand the rest — proactive managers should be able to work through as much as they
+want; (2) build on-demand first, measure before adding caching (not yet measured slow enough to
+need it); (2a) both tables/charts AND SAGE narration, not one or the other.
+
+Built: `src/engine/location-dossier.js` (pure: `dossierWindows` — the 5 fixed windows, Current/
+28-Day/Last Month/L3M/YTD; `buildFactualGrid` — one row per metric via `metric-source.js`'s
+existing registry, `metricAvg` for rates / `metricSumRatio` for true Sum/Sum ratios; `topFindings`
+— crit-before-watch-before-ok, sliced to top-N with the rest reachable; `dossierStoreContext` —
+reuses `STORE_KB`, no new "general context" mechanism) + `src/views/location-dossier.js`
+(ReportShell-based panel, `locationMode:'store'`, SAGE narrative button via the existing
+`callSageOnce`, demographics card reading `store_demographics` directly). Wired as panel id
+`location-dossier`, route:true + kind:'nav' from day one (Reports section).
+
+**Scope actually shipped = §2A (factual) + a limited slice of §2B** (the store's own already-
+computed `findings` array, not Scanner-driven cross-metric correlation curation — that's still a
+real Phase 2). Single-store only (§4's rollup views are still Phase 4, not started).
+
+11 engine tests + 1 render test (`location-dossier-engine-2026-11-13.test.js`,
+`location-dossier-panel-2026-11-13.test.js`). Full suite (7979 tests) and build pass clean
+(699.02 KB eager, budget 850 KB).
+
 ## 6. A staged build, if/when this moves from design to build
 
 Not committing to this now — just sizing it so a future "how long would this take" conversation

@@ -224,3 +224,108 @@ revert live), or (b) have a future session seed `disabledPanels` directly on the
 `DEFAULT_ROLES` (`src/engine/permissions.js`) if the owner wants it as the shipped default for
 every org, not just a live per-org override. Recommend starting with (a) on this org only, watching
 whether any hidden panel turns out to still be needed, before considering (b).
+
+---
+
+## 6. Owner's own Area Supervisor / Ops Manager routine notes (2026-11-13) — the Daily Review seed
+
+**Promised notes, logged verbatim-in-substance per the owner's own instruction ("We need to keep
+these somewhere for future revising").** Unlike §3 above (which was reverse-engineered from
+generic 2022 job-description PDFs at a prior employer), this is the owner's own fresh, Meridian-
+specific description of what a Supervisor/OM daily review should actually contain — written for
+**building the Daily Review engine's Supervisor/OM scope**, not just panel visibility. Treat this
+as the authoritative source over §3's panel-gating conclusions wherever the two touch the same
+ground (e.g. §3 says "no hide recommendations" for these roles based on generic routines; this
+section is the real spec for what they should see and how).
+
+### Area Supervisor
+
+- **Primarily works through the GM** of the restaurants to achieve business goals — not
+  restricted, but GM is the default relationship, not a bypass.
+- **Owner's own framing (ex-Supervisor himself):** largely the same review as a GM's, but across
+  *all assigned locations*, with the purpose of identifying every hotspot and communicating to
+  GMs where to direct focus. Should read as an overview with enough detail to keep teams grounded
+  in continuous operational improvement — not a raw data dump.
+- **Time windows:** daily is not enough. Supervisor and OM levels especially should also see
+  **WTD and MTD**, and it never hurts to call out **yearly/seasonal trends** (detected or known
+  upcoming) to aid planning.
+- **Reports to:** OM, DO, and/or VP and Owners.
+
+**Daily/weekly review checklist, in the owner's own order:**
+
+1. **Verify Cash Controls** — Safe Contents, Cash Drawers.
+2. **Review Previous Day's Results** (owner's follow-on idea: after doing the below, also break
+   it out and report by **daypart**).
+   - **Operations Report — Sales**: vs. targets, with problem time frames made to stand out.
+     Look at trends, identify weaknesses in a location's ability to hit targets, and bring
+     smart, specific improvement suggestions to the GM conversation — not just the numbers.
+     Metrics: Product Sales (actual, +/- vs LY), Guest Count (actual, +/- vs LY), DT % of
+     Sales, Breakfast % of Sales, Eat In % of Sales, McDelivery % of Sales, MOP % of Sales,
+     Kiosk % of Sales.
+   - **Operations Report — Service**: vs. targets, Daily AND Day Part. When something is out of
+     range, name the actual times of day responsible — don't make the manager go hunting.
+     Equally call out the positive times of day, not just the misses. Metrics: OEPE W/O Parked,
+     DT Parked %, R2P, KVS Time, 2nd Side Healthy Usage %.
+   - **Operations Report — Controls**: same logic — compare vs. targets, dive in, present
+     findings so the manager doesn't have to go looking. For any major violation/deviation or
+     suspected wrongdoing, **event detail + who's associated is critical** to this actually
+     working. Metrics — Labor: Punched Labor %, Act Hours, TPPH, OT Hours, Act vs Scheduled, Act
+     vs Needed. Cash: Cash +/-, Promos, T-Red Before, T-Red After, Refund, Overring, Employee/Mgr
+     Meal.
+   - **Operations Report — FOB**: same logic — compare vs. targets, dive in, present findings,
+     and offer guidance on where each store should focus to improve or sustain results. Metrics:
+     FOB %, Comp Waste %, Raw Waste %, Condiment %, Empl Meal %, Stat Var %, Unexplained %, Disc
+     Coupon %, Paper Cost %.
+3. **Review Tickets** — confirm any pending maintenance/repair items (Maintenance and
+   Technology) are logged. Triage by priority to expedite remediation. List by agency and how it
+   affects operations.
+4. **Review Calendar**:
+   - Current and upcoming promotions (expected impact).
+   - Current and upcoming events.
+   - Payroll released as needed (cadence: **every other Wednesday starting 11/18/26**).
+   - Truck orders (Martin Brower) — store-specific order days. Follow up on inventory levels,
+     flag product outages by location, check transfers, and address why a location ran out of
+     supply.
+   - Other calendar events (games, concerts, community events, etc.) — list expected impacts.
+   - **When visiting a location**: follow up on Pre-Shift Checklist, DSPT, and Travel Paths —
+     coach and give feedback as appropriate.
+   - Check email, respond as needed.
+
+### Ops Manager
+
+- **Follows up on Area Supervisors** and addresses patch results. Views data from a higher
+  level, but wants the detail behind any major swing in order to root-cause and build an
+  improvement plan.
+- **Profitability-minded**, always looking for creative ways to improve, via (examples given):
+  additional training; support visits; assisting in the personal development of Area Supervisors
+  and even GMs to a degree; lots of coaching and feedback; celebrating wins with teams while
+  addressing concerns at the right level (Supervisor, GM, or even a specific manager); aware of
+  every metric a Supervisor is, but over a larger set of locations, so daily/weekly triage looks
+  different in what to focus on and who to address it with; generally needs a working,
+  patch-specific action plan per patch.
+- Needs the information and supporting results to comfortably discuss current business state and
+  results **up or down the chain, at any time**.
+- **Reports to:** DO and/or VP and Owners.
+- Reviews and knows the needs of locations: current tickets, their own walkthroughs and the
+  findings from them, current promotions/directives, and goals for individual locations.
+- **Needs data presented structurally to identify focus areas, by patch.**
+
+### Notes for whoever builds this next
+
+- This reads as a direct spec for extending the Daily Review engine's scope to `area_supervisor`
+  and `om` (patch-level rollup, same metric set as the GM-level review, plus the explicit
+  WTD/MTD/seasonal-trend windows these roles specifically asked for) — not a new report type.
+  Check `src/engine/daily-review.js`/`review-engine.js` for what already exists at store level
+  before building a parallel mechanism (standing rule).
+- Every metric named above already has a real Meridian source (`metric-source.js`'s
+  `METRIC_SOURCES`, the Signals/Controls registries, `qsr_security_events` for T-Red/overring/
+  refund event detail) — this is a rollup/presentation design, not a new-data-source question.
+- The "name the actual times of day, don't make them go looking" and "call out the positives
+  too" instructions directly match CLAUDE.md's existing "say the number AND the decision"
+  standing voice rule — this is reinforcement of an existing product principle, not a new one.
+- The daypart-breakdown idea for Previous Day's Results was explicitly offered as a "maybe,"
+  not a firm requirement — confirm before building it as load-bearing.
+- This is design input, not yet scoped or built. Treat the same way task #79 was treated: do not
+  start building without going back to the owner on sequencing/priority once a concrete plan
+  exists, consistent with this session's standing practice of not making product-shape calls for
+  him unprompted.

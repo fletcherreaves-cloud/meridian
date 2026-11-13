@@ -335,6 +335,10 @@ export const PANELS = [
   { id:'controls-food-cost-link', label:'Controls ↔ Food Cost Linkage', icon:'🔗', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'weather-impact', label:'Weather Impact', icon:'🌦️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'price-change-impact', label:'Price Change Impact', icon:'🎚️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Location Dossier (task #79, Phase 1) — "everything we know about one store," factual tier +
+  // top findings, across Current/28-Day/Last Month/L3M/YTD. Single-store only this phase; the
+  // patch/operator/state rollup views are a planned Phase 4.
+  { id:'location-dossier', label:'Location Dossier', icon:'📋', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'item-velocity', label:'Item Velocity', icon:'🔥', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'channel-mix', label:'Channel Mix', icon:'🔀', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'labor-opportunity-cost', label:'Labor Opportunity Cost', icon:'⏱️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
