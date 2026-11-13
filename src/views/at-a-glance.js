@@ -3597,7 +3597,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
                     fontSize:'9px',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'},
                     title:'Acc% (completed days only): |actual minus projected| / actual for days where actuals exist. Green <5%, Yellow 5-10%, Red >=10%. Blank for future days.'},'Acc%'),
                   h('th',{style:{textAlign:'center',padding:'4px 6px',color:'var(--text3)',fontWeight:600,
-                    fontSize:'9px',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'}},'Lock')
+                    fontSize:'9px',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'}},'Lock',h(InfoIcon,{articleKey:'locked_projections'}))
                 )
               ),
               h('tbody',null,

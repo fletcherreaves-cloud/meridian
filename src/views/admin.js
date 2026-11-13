@@ -10,6 +10,7 @@ import {
 import { PANELS, SECTIONS } from '../app/panel-registry.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h    = React.createElement;
 const div  = (p,...c) => h('div',p,...c);
@@ -466,6 +467,7 @@ function RolesTab({ orgRoles, setOrgRoles, userRole, fullAccess }) {
         fullAccess
           ? 'Roles are ordered by authority level (1 = highest). Level-1 roles bypass all permission checks.'
           : 'Showing only roles you outrank -- you can manage their permissions and panel access, but not rename, add, or delete roles.',
+        h(InfoIcon,{articleKey:'roles_and_permissions',inline:true}),
         saving && span({style:{marginLeft:10,color:AMBER,fontSize:10}},'Saving…')
       ),
       fullAccess && btn({onClick:()=>setShowAddForm(v=>!v),

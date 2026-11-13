@@ -1645,3 +1645,59 @@ total since `articleKey:'quick_capture_guide'` does appear in `src/` once this l
 real count is 87/121 once that's included). **Still open:** `count_cycle_guide` and `panel_index`
 (deliberately unwired), plus the same ~26 metric/engine-concept keys this backlog has
 consistently left cross-referenced rather than wired to any one panel.
+
+## Batch 20 (2026-11-13)
+
+Re-measured the gap via a background fork before picking this batch (same methodology as every
+prior batch — diff literal `articleKey:'...'` usages against the real `KB_ARTICLES` keys). The
+fork's static grep had a real blind spot worth recording: `event_registry`/`forecast_formula`/
+`new_store_ramp`/`weather_adjustment` read as "unwired" by a literal-string grep but are actually
+wired *dynamically* as of this same session's v5.754 (`src/engine/why.js`'s `CauseLinks`
+component passes `articleKey:cause.kbKey`, a variable, not a literal) — not a real gap, just a
+grep limitation. Worth remembering for any future batch's own re-measurement.
+
+Wired 2, both with an unambiguous single mount point and no overlap with an already-wired, more
+specific article:
+- **`roles_and_permissions`** → `AdminPanel`'s Roles & Permissions tab (`RolesTab`,
+  `src/views/admin.js`) — the article (shipped under task #78) existed but had never been wired
+  to any `InfoIcon` anywhere; added next to the tab's own explanatory text row.
+- **`locked_projections`** → At A Glance's weekly-projections table's "Lock" column header
+  (`src/views/at-a-glance.js`) — the actual UI the article explains, not just a page that
+  mentions locking.
+
+Left several fork-flagged candidates deliberately unwired this batch, each for a real reason, not
+oversight:
+- **`cash_os` / `drawer_open`**: the fork suggested `security-panel.js`, but that panel is a
+  rule/finding-card architecture with no simple per-metric tile to anchor an icon to (confirmed
+  by reading it — "Cash O/S" and "Drawer Open" appear only inside rule descriptions and finding
+  text, never as a labeled tile header). Needs a real design decision on where in that
+  architecture a definition icon would even go, not a mechanical wiring.
+- **`condiment_pct`**: no single obvious FOB-breakdown tile found with its own header to anchor
+  to in the time available — same "needs a closer look" as `cash_os`.
+- **`dialed_in` vs. `dialed_in_calibration`**: two KB articles that may cover overlapping ground
+  (Dialed-In calibration) — wiring one or both without first deciding whether they should be
+  merged risks shipping a confusing double-icon or the wrong one. Left for a dedicated pass.
+- **`file_import_guide` vs. `data_manager_guide`**: same redundancy concern — `data_manager_guide`
+  is already wired on the Data Manager panel; `file_import_guide`'s actual scope relative to it
+  wasn't confirmed this pass.
+- **`priority_brief`**: Priority Brief is referenced in several files (`at-a-glance.js`,
+  `tutorial.js`, `App.js`, `panel-registry.js`) but which one actually renders its title row
+  wasn't conclusively located this pass.
+- **`count_cycle_guide` re-confirmed still genuinely unresolved** — same `CountCycleSection`
+  (`src/views/eom-dashboard.js`) situation as batches 16-19: a body-only component inside a
+  tabbed hub with no dedicated per-tab header to anchor an icon to.
+
+1 render-level test (`dispatch-kb-batch20-2026-11-13.test.js`, mounting the real `AdminPanel`,
+clicking to its real Roles & Permissions tab, clicking the real "?" `InfoIcon`, asserting the
+real article title renders). `locked_projections` has no dedicated render test — `AtAGlance` is
+too large/dependency-heavy to mount cleanly in isolation, same "wiring lives somewhere too deep
+to mount standalone" precedent `quick_capture_guide`/`brief_guide`/`proj`/`pvsa` already
+established in earlier batches — verified by local build + full suite instead. Build clean,
+eager payload 700.6x KB gzip eager total (budget 850 KB).
+
+**Measured running total: 89 of 121 `KB_ARTICLES` keys now wired** (87 before this batch + 2
+here). **Still open:** `count_cycle_guide` and `panel_index` (deliberately unwired), `cash_os`/
+`drawer_open`/`condiment_pct`/`dialed_in`/`dialed_in_calibration`/`file_import_guide`/
+`priority_brief`/`data_collection_bounds` (flagged this batch, need more than mechanical wiring),
+plus the same ~15 Forecast Engine internals this backlog has consistently left cross-referenced
+rather than wired to any one panel.
