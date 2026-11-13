@@ -4262,7 +4262,10 @@ export async function saveOrgConfig(key, data) {
   const { data: { user } } = await supabase.auth.getUser();
   await supabase.from('org_config').upsert(
     { key, data, updated_by: user?.id || null, updated_at: new Date().toISOString() },
-    { onConflict: 'key' });
+    // task #70 (multi-tenant readiness) -- org_config's PK is (key, tenant_id), not just key,
+    // once supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql has been run. Match that
+    // composite target, not the single column, so this upsert doesn't error once it has.
+    { onConflict: 'key,tenant_id' });
 }
 
 export async function loadOrgConfig(key) {
@@ -4387,7 +4390,8 @@ export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
     sendHourUtc: Number.isInteger(sendHourUtc) ? sendHourUtc : DEFAULT_EOM_DIGEST_CONFIG.sendHourUtc,
   };
   const { error } = await supabase.from('org_config')
-    .upsert({ key: 'eom_digest_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    // task #70 -- see saveOrgConfig's own comment above on why this is 'key,tenant_id' now.
+    .upsert({ key: 'eom_digest_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key,tenant_id' });
   if (error) { console.warn('[supabase] saveEomDigestConfig:', error.message); return { saved: false, error: error.message }; }
   return { saved: true };
 }
@@ -4423,7 +4427,8 @@ export async function saveSpotCheckRulerConfig({ enabled, dowUtc, hourUtc, topN 
     topN: Number.isInteger(topN) && topN > 0 ? topN : DEFAULT_SPOT_CHECK_RULER_CONFIG.topN,
   };
   const { error } = await supabase.from('org_config')
-    .upsert({ key: 'spot_check_ruler_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    // task #70 -- see saveOrgConfig's own comment above on why this is 'key,tenant_id' now.
+    .upsert({ key: 'spot_check_ruler_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key,tenant_id' });
   if (error) { console.warn('[supabase] saveSpotCheckRulerConfig:', error.message); return { saved: false, error: error.message }; }
   return { saved: true };
 }
@@ -4489,7 +4494,8 @@ export async function saveCustomLocationGroups(groups) {
   if (!supabase) return { saved: false, error: 'Supabase not configured' };
   const payload = { groups: Array.isArray(groups) ? groups : [] };
   const { error } = await supabase.from('org_config')
-    .upsert({ key: 'custom_location_groups', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    // task #70 -- see saveOrgConfig's own comment above on why this is 'key,tenant_id' now.
+    .upsert({ key: 'custom_location_groups', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key,tenant_id' });
   if (error) { console.warn('[supabase] saveCustomLocationGroups:', error.message); return { saved: false, error: error.message }; }
   return { saved: true };
 }

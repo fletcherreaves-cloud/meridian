@@ -68,11 +68,13 @@ describe('loadEomDigestConfig', () => {
 });
 
 describe('saveEomDigestConfig', () => {
-  it('upserts to org_config under key eom_digest_config, onConflict key', async () => {
+  it('upserts to org_config under key eom_digest_config, onConflict key,tenant_id', async () => {
     const r = await saveEomDigestConfig({ levels: ['district'], sendHourUtc: 8 });
     expect(r.saved).toBe(true);
     expect(_lastUpsert.table).toBe('org_config');
-    expect(_lastUpsert.opts).toEqual({ onConflict: 'key' });
+    // task #70 -- org_config's PK is (key, tenant_id), not just key, once
+    // supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql has been run.
+    expect(_lastUpsert.opts).toEqual({ onConflict: 'key,tenant_id' });
     expect(_lastUpsert.row.key).toBe('eom_digest_config');
     expect(_lastUpsert.row.data).toEqual({ levels: ['district'], sendHourUtc: 8 });
   });

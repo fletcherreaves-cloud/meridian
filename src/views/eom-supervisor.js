@@ -1026,7 +1026,10 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
       saveManual(selYear, selMonth, next);
       if (supabase) {
         const sbKey = `eom_manual_${selYear}_${selMonth}`;
-        supabase.from('org_config').upsert({ key: sbKey, data: next }, { onConflict: 'key' }).catch(() => {});
+        // task #70 -- org_config's PK becomes (key, tenant_id) once schema-fix-org-config-
+        // tenant-pk-2026-11-13.sql is run; match that composite target, same as every other
+        // org_config upsert in the codebase (see saveOrgConfig's own comment, src/lib/supabase.js).
+        supabase.from('org_config').upsert({ key: sbKey, data: next }, { onConflict: 'key,tenant_id' }).catch(() => {});
       }
       return next;
     });

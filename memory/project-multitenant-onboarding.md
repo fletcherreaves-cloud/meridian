@@ -44,13 +44,28 @@ a redesign.
 
 ## What's actually still open
 
-1. **`org_config`'s primary key is just `key`, not `(key, tenant_id)`.** Flagged directly in
-   `schema-multitenant-phase2-rls.sql`'s own comment on the `org_config` policy block. Today a
-   second tenant's `org_config` row (including the `store_registry` key the mechanism above reads)
-   would collide with the owner's single row on the same key. This blocks the store-registry
-   mechanism specifically — it's the one dependency standing between "already wired" and "actually
-   works for tenant #2." Needs the PK change plus updating the app's upsert `onConflict` target to
-   match.
+1. ✅ **Fix WRITTEN 2026-11-13, awaiting the owner's SQL-editor run** —
+   `supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql`. `org_config`'s primary key was just
+   `key`, not `(key, tenant_id)` — flagged directly in `schema-multitenant-phase2-rls.sql`'s own
+   comment on the `org_config` policy block. Today a second tenant's `org_config` row (including
+   the `store_registry` key the mechanism above reads) would collide with the owner's single row
+   on the same key. **Re-scoped while writing this fix — a PK-only change does NOT actually solve
+   the collision.** `org_config`'s `tenant_id` column DEFAULTs to the owner's hardcoded literal
+   UUID with no `set_tenant_id_trg` trigger attached (that trigger table-list explicitly excludes
+   `profiles`/`org_config`, "handled specially... KEEP their default"). A column DEFAULT is
+   applied before any BEFORE INSERT trigger runs, so even after the PK changes, a second tenant's
+   insert with no explicit `tenant_id` would still land tagged as the OWNER's tenant — both
+   tenants' rows would carry the identical `tenant_id` value, so the composite key never actually
+   comes into play and the collision survives untouched. The migration therefore also drops that
+   default and attaches the standard trigger (same pattern ~70 other tables already use) —
+   confirmed safe to do (not just copying the pattern blindly) by grepping every real org_config
+   writer in the codebase: all of them are authenticated-session calls (none are service-role), so
+   `current_tenant_id()` always resolves to a real value for anyone able to write to this table at
+   all; there's no genuine bootstrap gap here the way there is for `profiles`' brand-new-signup
+   case. All 5 app-side `onConflict:'key'` upsert call sites updated to `'key,tenant_id'`
+   (`src/lib/supabase.js` ×4, `src/views/eom-supervisor.js` ×1); the other 2 org_config upserts in
+   the codebase pass no explicit `onConflict` at all, so they'll retarget the new PK automatically
+   with no code change needed.
 2. **The automated pull scripts (LifeLenz, QSRSoft EBOS/DAR/ops, email-parse, etc.) always stamp
    the owner's tenant_id.** Also flagged directly in the same file: `set_tenant_id()`'s fallback is
    the owner's tenant because service-role inserts (which is what every pull script uses) carry no
@@ -73,7 +88,8 @@ a redesign.
 
 ## If this ever becomes real, in order
 
-1. Fix `org_config`'s PK to `(key, tenant_id)` + the app's upsert target.
+1. Owner runs `supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql` — the app's upsert
+   targets are already updated, nothing else to do code-side once it runs.
 2. Insert the new `tenants` row + `tenant_stores` rows for their stores.
 3. Populate their `org_config.store_registry`/`app_settings` so the UI picks up their stores/targets
    via the already-wired `setLiveStoreNames`/`setLiveDefaultTargets` path.

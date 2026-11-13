@@ -144,7 +144,7 @@ what's legal-posture-relevant specifically:
 |---|---|---|
 | Tenant RLS isolation (~70 tables, phase2 sweep) | ✅ Live, independently measured | The technical backbone every confidentiality claim in §2.3 rests on |
 | 46-table hardcoded-literal fix (task #76) | Written, **awaiting owner's SQL-editor run** | Until run, those 46 tables mistag any service-role insert as the owner's tenant — a real cross-org exposure risk the moment tenant #2's pull scripts start writing |
-| `org_config` PK collision (key, not key+tenant_id) | Open | Blocks tenant #2's own store registry/settings from existing without colliding with tenant #1's row |
+| `org_config` PK collision (key, not key+tenant_id) | ✅ Fix written (2026-11-13), **awaiting owner's SQL-editor run** — `supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql` | Blocks tenant #2's own store registry/settings from existing without colliding with tenant #1's row. ⚠️ Turned out deeper than a PK change alone: `org_config`'s tenant_id column DEFAULTs to the owner's literal UUID with no tenant-stamping trigger attached, so a PK-only fix would NOT have solved the collision — every insert, from any tenant, would still land tagged as the owner's tenant and collide anyway. The migration also drops that default and attaches the standard `set_tenant_id_trg` (same pattern ~70 other tables already use); confirmed safe since every real org_config writer is an authenticated session (none are service-role). All 5 app-side `onConflict:'key'` call sites updated to `'key,tenant_id'`. |
 | Pull-script tenant stamping | Open | Every automated pull (LifeLenz/QSRSoft/email-parse) needs its own tenant's credentials + an explicit tenant parameter, or it silently writes to tenant #1 |
 | Shared infra (one Supabase project, one Vercel project, one Anthropic key) | Known, not necessarily a problem | Fine technically given RLS; becomes a real question the moment this is a PAID relationship (no per-tenant cost attribution, no isolated blast radius if the Supabase project itself has an incident) |
 | Secrets handling | Governed by CLAUDE.md's standing PII/credential rules | Same rules, no change needed — just confirm they're followed per-tenant too (e.g. a second operator's own LifeLenz/QSRSoft tokens get the same no-commit/no-log treatment) |
@@ -167,7 +167,8 @@ what's legal-posture-relevant specifically:
 
 **Before any second operator's data exists:**
 1. Owner runs `supabase/schema-fix-tenant-id-hardcode-2026-11-03.sql` (task #76's output).
-2. Fix `org_config`'s PK to `(key, tenant_id)` + the app's upsert target.
+2. Owner runs `supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql` (task #70) — app's
+   upsert targets already updated in the same pass, nothing else to do code-side once it runs.
 3. Decide the account-model question in §3 (tenant-scoped admin tier, or managed-for-them).
 4. Verify Supabase's actual backup/retention tier.
 
