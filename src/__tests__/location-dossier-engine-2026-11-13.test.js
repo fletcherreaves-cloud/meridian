@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Task #79 Phase 1 — Location Dossier engine (src/engine/location-dossier.js).
 import { describe, it, expect } from 'vitest';
-import { dossierWindows, buildFactualGrid, topFindings, dossierStoreContext, DOSSIER_METRICS } from '../engine/location-dossier.js';
+import { dossierWindows, buildFactualGrid, dossierSparklineSeries, topFindings, dossierStoreContext, DOSSIER_METRICS } from '../engine/location-dossier.js';
 
 describe('dossierWindows', () => {
   it('returns 5 fixed windows in order: current, 28d, lm, l3m, ytd', () => {
@@ -77,6 +77,63 @@ describe('topFindings', () => {
     const { headline, rest } = topFindings([]);
     expect(headline).toEqual([]);
     expect(rest).toEqual([]);
+  });
+});
+
+// Phase 1.5 fix (owner-reported, 2026-11-13, screenshots): the SAME "Prime Cost %" (now
+// labeled "Labor + FOB %") read "–" for every store, every window, not a data gap. Root cause:
+// this file used to route it through metricSumRatio (agg:'ratio'), but metric-source.js's own
+// primeCostPct entry has no `derive.kind:'ratio'` (it sums two ALREADY-resolved ratios, laborPct
+// + fobPct, not a numerator/denominator pair of its own) -- metricSumRatio bails to null the
+// moment `derive.kind !== 'ratio'`. Fixed to `agg:'avg'`, matching metric-source.js's own
+// documented contract for this exact metric.
+describe('primeCostPct ("Labor + FOB %") resolves instead of always reading null (Phase 1.5)', () => {
+  it('DOSSIER_METRICS routes primeCostPct through agg:\'avg\', not \'ratio\'', () => {
+    const spec = DOSSIER_METRICS.find(m => m.key === 'primeCostPct');
+    expect(spec.agg).toBe('avg');
+    expect(spec.label).toBe('Labor + FOB %');
+  });
+
+  it('resolves a real number from real laborPct + qsrFobRows data, not null', () => {
+    const ds = {
+      laborRows: [
+        { loc: '3708', date: '2026-10-20', laborPct: 0.25 },
+        { loc: '3708', date: '2026-10-21', laborPct: 0.25 },
+      ],
+      qsrFobRows: [
+        { loc: '0003708', date: '2026-10-20', compWasteAmt: 10, rawWasteAmt: 5, condimentsAmt: 3, empMgrMealsAmt: 2, statVarianceAmt: 0, unexplainedAmt: 0, prodSalesAmt: 1000 },
+        { loc: '0003708', date: '2026-10-21', compWasteAmt: 10, rawWasteAmt: 5, condimentsAmt: 3, empMgrMealsAmt: 2, statVarianceAmt: 0, unexplainedAmt: 0, prodSalesAmt: 1000 },
+      ],
+    };
+    const windows = dossierWindows(new Date('2026-11-13T12:00:00'));
+    const grid = buildFactualGrid(ds, '3708', windows);
+    const row = grid.find(g => g.key === 'primeCostPct');
+    // laborPct 0.25 + fobPct (10+5+3+2+0+0)/1000=0.02 = 0.27, for the L3M window which covers Oct.
+    expect(row.values.l3m).toBeCloseTo(0.27, 4);
+    expect(row.values.l3m).not.toBeNull();
+  });
+});
+
+describe('dossierSparklineSeries', () => {
+  it('returns an ascending, gap-free {date,value} series for a resolvable metric', () => {
+    const ds = {
+      qsrActSummaryRows: [
+        { loc: '3708', date: '2026-11-10', sales: 1000 },
+        { loc: '3708', date: '2026-11-11', sales: 1100 },
+        { loc: '3708', date: '2026-11-12', sales: 1200 },
+      ],
+    };
+    const spec = DOSSIER_METRICS.find(m => m.key === 'sales');
+    const series = dossierSparklineSeries(ds, '3708', spec, 10);
+    expect(series.length).toBeGreaterThan(0);
+    expect(series.every(p => p.value != null)).toBe(true);
+    const dates = series.map(p => p.date);
+    expect([...dates].sort()).toEqual(dates);
+  });
+
+  it('returns an empty array, not a crash, when nothing resolves', () => {
+    const spec = DOSSIER_METRICS.find(m => m.key === 'sales');
+    expect(dossierSparklineSeries({}, '9999', spec, 10)).toEqual([]);
   });
 });
 

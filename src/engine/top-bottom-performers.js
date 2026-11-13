@@ -71,8 +71,11 @@ export const PERFORMER_METRICS = [
   // aggregation (metric-source.js's fobTotalAmt/fobPct chains), not the ~24x-inflated raw-sum
   // one #102 replaced.
   { key: 'fobPct',     label: 'FOB %',             fmt: v => (v * 100).toFixed(2) + '%' },
-  // Task #86 -- Prime Cost % = Labor % + FOB %, the standard QSR combined-cost KPI.
-  { key: 'primeCostPct', label: 'Prime Cost %',    fmt: v => (v * 100).toFixed(2) + '%' },
+  // Task #86 -- Labor + FOB % = Labor % + FOB %, combining the two largest controllable cost/
+  // loss levers. Relabeled from "Prime Cost %" 2026-11-13 (owner-reported, not the industry
+  // term's real meaning since fobPct is waste/variance, not full COGS -- see metric-source.js's
+  // primeCostPct comment for the full explanation).
+  { key: 'primeCostPct', label: 'Labor + FOB %',    fmt: v => (v * 100).toFixed(2) + '%' },
 ];
 
 // Pure ranking. `locs` is the already-scope-resolved store list (caller's job, via

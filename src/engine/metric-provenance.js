@@ -56,6 +56,13 @@ const CURATED_PROVENANCE = {
   foodOB:     { label: 'FOB % (Food + Paper over Base)', system: 'QSRSoft', report: 'FOB / Food Cost', table: 'qsr_fob', composed: true,
     inputs: ['Σ food + paper $ (components)', 'Σ product sales base'],
     formula: 'FOB % = Σ (food + paper) $ ÷ Σ product-sales base — DOLLAR-WEIGHTED (never an average of store %s). Uses the FOB rows own period base, not a window sales base', grain: 'monthly · per store' },
+  // Curated (not auto-generated) so the label is "Labor + FOB %", never the humanizer's
+  // mechanical "Prime Cost Pct"/"Prime Cost %" — relabeled 2026-11-13 (owner-reported; not the
+  // real industry Prime Cost term here, since fobPct below is waste/variance, not full COGS —
+  // see memory/finding-prime-cost-rename-2026-11-13.md). Key name (`primeCostPct`) unchanged.
+  primeCostPct: { label: 'Labor + FOB %', system: 'Meridian-derived', report: 'Location Dossier / Top-Bottom Performers', table: '(computed)', composed: true,
+    inputs: ['Labor % (laborPct)', 'FOB % (fobPct)'],
+    formula: 'Labor + FOB % = Labor % + FOB % — a sum of two already-resolved ratios, not its own numerator/denominator pair, so it rolls up as a mean of daily values (metricAvg), never a Σ/Σ ratio', grain: 'daily · per store' },
   turnover90: { label: '0–90 Day Turnover', system: 'QSRSoft', report: 'Turnover Report (Crew)', table: 'turnover_monthly', composed: true,
     inputs: ['Retained > 90 days %'],
     formula: '0–90 turnover = 1 − Retained>90% (crew)', grain: 'monthly · per store' },

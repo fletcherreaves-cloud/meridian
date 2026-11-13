@@ -662,13 +662,21 @@ export const DERIVED_METRICS = {
   avgRate: { mode: 'pos', derive: { inputs: ['laborPct', 'sales', 'actHrs'],
              fn: (pct, sales, hrs) => (hrs > 0 && pct > 0 ? (pct * sales) / hrs : null) } },
 
-  // Prime Cost % (task #86) = Labor % + FOB % (food-over-base) -- the standard QSR cost KPI,
-  // combining the two largest controllable cost levers into one number. direction:'lower',
-  // matching both components. Deliberately NOT kind:'ratio' -- it's a SUM of two already-
-  // resolved ratios (laborPct, fobPct), not its own numerator/denominator pair, so
-  // metricSumRatio has nothing separate to sum for it; mean-of-daily (metricAvg) is the
-  // correct rollup here, same treatment as oppCostPct/avgRate above. mode:'pos' since a real
-  // reading is always > 0 (laborPct alone already requires > 0).
+  // primeCostPct (task #86) = Labor % + FOB % -- combining the two largest controllable cost/
+  // loss levers into one number. direction:'lower', matching both components. Deliberately NOT
+  // kind:'ratio' -- it's a SUM of two already-resolved ratios (laborPct, fobPct), not its own
+  // numerator/denominator pair, so metricSumRatio has nothing separate to sum for it; mean-of-
+  // daily (metricAvg) is the correct rollup here, same treatment as oppCostPct/avgRate above.
+  // mode:'pos' since a real reading is always > 0 (laborPct alone already requires > 0).
+  // ⚠️ RELABELED 2026-11-13 (owner-reported, memory/finding-prime-cost-rename-2026-11-13.md) --
+  // every USER-FACING occurrence of "Prime Cost %" is now "Labor + FOB %". This key's own `fn`
+  // and `inputs` are unchanged; only display labels moved. The rename exists because fobPct
+  // here is a WASTE/VARIANCE measure (comp+raw waste, condiments, emp meals, stat variance,
+  // unexplained -- see fobTotalAmt above), not full food-cost/COGS, so this was never true
+  // industry "Prime Cost" (Labor % + COGS %, typically 55-65% combined for QSR) -- this app's
+  // data model has no COGS%/total-food-cost figure to compute that with. The old name implied
+  // coverage this number doesn't have; "Labor + FOB %" says exactly what's summed and nothing
+  // more.
   primeCostPct: { mode: 'pos', direction: 'lower', derive: { inputs: ['laborPct', 'fobPct'],
                   fn: (labor, fob) => labor + fob } },
 };
