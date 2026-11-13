@@ -2912,7 +2912,9 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
                       span({style:{fontSize:'11px',flexShrink:0}},c.icon),
                       div({style:{flex:1}},
                         span({style:{fontSize:'7px',fontWeight:700,color:c.color,marginRight:6}},c.weight),
-                        span({style:{fontSize:'8.5px',color:'var(--text2)',lineHeight:1.5}},c.text)
+                        span({style:{fontSize:'8.5px',color:'var(--text2)',lineHeight:1.5}},c.text),
+                        c.remedy&&div({style:{fontSize:'8.5px',color:'#34d399',lineHeight:1.5,marginTop:3,display:'flex',gap:5}},
+                          span({style:{flexShrink:0}},'→'),span(null,c.remedy))
                       )
                     )),
                     btn({style:{fontSize:'8px',padding:'3px 9px',borderRadius:4,background:'rgba(245,158,11,.1)',
