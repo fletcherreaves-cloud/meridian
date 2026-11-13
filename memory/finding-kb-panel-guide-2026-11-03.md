@@ -1739,3 +1739,26 @@ fewer "still open" item — `dialed_in`/`dialed_in_calibration` is resolved). **
 `condiment_pct`/`priority_brief`/`data_collection_bounds` (still need more than mechanical
 wiring), plus the same ~15 Forecast Engine internals this backlog has consistently left
 cross-referenced rather than wired to any one panel.
+
+## Batch 20 second follow-up (2026-11-13): `priority_brief` located and wired
+
+Resolved the one remaining batch-20 "couldn't locate the render target" item. The panel id
+`priority-brief` (`panel-registry.js:428`, label "Priority Actions" — the article itself
+already documents this registry-label/article-name mismatch as "a known internal naming
+inconsistency, not two different features") routes in `App.js` to `DistrictPriorityBrief`
+(`src/views/analytics.js`), whose own hand-rolled header (it predates `ModalShell` and isn't
+using it — a pre-existing panel-contract gap, left alone here since fixing it isn't this
+dispatch's job) reads "District Priority Brief" — an exact match for the article's own
+documented on-screen title ("Priority Brief — District Priority Brief"). **Action:** added
+`h(InfoIcon,{articleKey:'priority_brief'})` next to that header text. 1 render-level test
+(`dispatch-kb-batch20-followup-priority-brief-2026-11-13.test.js`, mounting the real
+`DistrictPriorityBrief` with one minimal store so it clears the component's own
+`!stores.some(s=>s.findings)` empty-state gate, clicking the real "?" InfoIcon, asserting the
+real article title renders). Full suite (7965 tests, 869 files) and build both pass clean
+(698.90 KB eager, budget 850 KB).
+
+**Running total after this second follow-up: 91 of 119 `KB_ARTICLES` keys wired.** **Still
+open:** `count_cycle_guide` and `panel_index` (deliberately unwired), `cash_os`/`drawer_open`/
+`condiment_pct`/`data_collection_bounds` (still need more than mechanical wiring), plus the same
+~15 Forecast Engine internals this backlog has consistently left cross-referenced rather than
+wired to any one panel.

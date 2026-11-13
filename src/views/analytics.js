@@ -2542,7 +2542,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
         span({style:{fontSize:'20px'}},'🎯'),
         div({style:{flex:1}},
-          div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'District Priority Brief'),
+          div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)',display:'flex',alignItems:'center',gap:4}},'District Priority Brief',h(InfoIcon,{articleKey:'priority_brief'})),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             (settings.districtName||'District')+' · '+new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+
             (ds&&ds.loaded?' · '+((stores||[]).filter(s=>s.findings).length)+' stores with data':' · Load data to generate'))
