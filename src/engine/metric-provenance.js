@@ -75,6 +75,9 @@ const CURATED_PROVENANCE = {
   oppTotal:   { label: 'Opportunity $ (recoverable)', system: 'Meridian-derived', report: 'Leadership One-Pager', table: '(computed)', composed: true,
     inputs: ['Labor: (labor% − target) × net sales', 'Food: (FOB% − target) × prod sales', 'GC: (best GC/day − actual) × avg check × days'],
     formula: 'Opportunity $ = Labor$ + Food$ + GC$ (three disjoint pillars, each floored at $0 — beating the benchmark = $0, never a negative credit). Dollar-weighted rollup (Σ$, never average-of-averages). Weekly figure = $ × 7 ÷ days', grain: 'range · per store → district' },
+  visitReadiness: { label: 'Visit Readiness (PACE composite)', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['Speed sub-score (35%)', 'Accuracy sub-score (30%)', 'Quality sub-score (20%)', 'Leadership sub-score (15%)'],
+    formula: 'Visit Readiness % = Speed×0.35 + Accuracy×0.30 + Quality×0.20 + Leadership×0.15 (engine/visit-readiness.js READINESS_WEIGHTS), renormalized over whichever sub-scores have real data for that store. Each sub-score is itself the store\'s own metrics graded against its own DEFAULT_TARGETS, not a fixed scale. Food-safety flag (EcoSure when current, waste/variance proxy as fallback) is tracked independently and deliberately excluded from this composite', grain: 'current · per store' },
 
   // ── Direct reads (a single source field / count — shown for completeness) ─────
   headcount:  { label: 'Active Headcount', system: 'QSRSoft', report: 'Roster Statistics', table: 'roster_statistics', composed: false,

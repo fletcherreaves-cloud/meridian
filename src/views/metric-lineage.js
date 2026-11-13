@@ -29,23 +29,25 @@ const SYS_COLOR = {
 
 export function MetricLineagePanel({ onClose }) {
   const [q, setQ] = useState('');
-  const [onlyComposed, setOnlyComposed] = useState(true);
+  const [tab, setTab] = useState('calculated'); // 'calculated' | 'direct'
+
+  const wantComposed = tab === 'calculated';
 
   const entries = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const all = Object.entries(METRIC_PROVENANCE).map(([key, p]) => ({ key, ...p }));
     return all
-      .filter(e => (onlyComposed ? e.composed : true))
+      .filter(e => !!e.composed === wantComposed)
       .filter(e => {
         if (!needle) return true;
         const hay = [e.key, e.label, e.system, e.report, e.table, e.formula, (e.inputs || []).join(' ')].join(' ').toLowerCase();
         return hay.includes(needle);
       })
-      // composed first, then alpha by label
-      .sort((a, b) => (b.composed - a.composed) || (a.label || a.key).localeCompare(b.label || b.key));
-  }, [q, onlyComposed]);
+      .sort((a, b) => (a.label || a.key).localeCompare(b.label || b.key));
+  }, [q, wantComposed]);
 
   const composedCount = Object.values(METRIC_PROVENANCE).filter(p => p.composed).length;
+  const directCount = Object.values(METRIC_PROVENANCE).length - composedCount;
 
   const btn = { padding: '6px 12px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 700 };
   const th = t => h('th', { style: { textAlign: 'left', padding: '7px 10px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--surf)' } }, t);
@@ -66,32 +68,43 @@ export function MetricLineagePanel({ onClose }) {
     // ScreenshotShareButton's slugify(title)/native-share title, both of which expect a plain
     // string (same reasoning as store-analytics.js's Revenue Intelligence modal, dispatch
     // 2026-11-10 KB rollout).
-    subtitle: h('span', null, `How every calculated metric is built — ${composedCount} composed metrics, traceable to source`, h(InfoIcon, { articleKey: 'metric_lineage_guide' })),
+    subtitle: h('span', null, `How every number is built or sourced — ${composedCount} calculated, ${directCount} direct-from-source`, h(InfoIcon, { articleKey: 'metric_lineage_guide' })),
     onClose, maxWidth: 1100, tintHeader: true,
     headerExtra: h(React.Suspense, { fallback: null },
       h(LazyExportDropdown, { rows: exportRows, columns: exportCols, title: 'Metric Lineage', filename: 'metric-lineage-' + new Date().toISOString().slice(0, 10) })),
   },
-      // Directive note + controls
+      // Directive note + tabs + search
       div({ style: { padding: '10px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
         div({ style: { fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.5 } },
-          'Every number Meridian shows must be traceable to its verifiable source. Metrics ',
-          span({ style: { fontWeight: 700, color: 'var(--text)' } }, 'calculated from other metrics'),
-          ' show their exact math and inputs below — pull one up and check it against the applicable report.'),
+          'Every number Meridian shows must be traceable to its verifiable source. ',
+          span({ style: { fontWeight: 700, color: 'var(--text)' } }, 'Calculated'),
+          ' metrics are built from other fields/metrics — their exact math is below. ',
+          span({ style: { fontWeight: 700, color: 'var(--text)' } }, 'Direct / Source Data'),
+          ' items are read straight from one source with no math applied — what matters there is exactly which table/report it comes from and how it\'s kept fresh.'),
         div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+          h('div', { style: { display: 'flex', gap: 4, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--bg)' } },
+            h('button', { onClick: () => setTab('calculated'),
+              style: { ...btn, border: 'none', background: tab === 'calculated' ? 'var(--accent,#f5bc00)' : 'transparent', color: tab === 'calculated' ? '#111' : 'var(--text2)' } },
+              `Calculated (${composedCount})`),
+            h('button', { onClick: () => setTab('direct'),
+              style: { ...btn, border: 'none', background: tab === 'direct' ? 'var(--accent,#f5bc00)' : 'transparent', color: tab === 'direct' ? '#111' : 'var(--text2)' } },
+              `Direct / Source Data (${directCount})`)),
           h('input', { value: q, onChange: e => setQ(e.target.value), placeholder: 'Search metric, formula, field, report…',
-            style: { flex: 1, minWidth: 200, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12.5 } }),
-          h('button', { onClick: () => setOnlyComposed(v => !v),
-            style: { ...btn, border: '1px solid ' + (onlyComposed ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: onlyComposed ? 'var(--accent-dim,rgba(245,188,0,.12))' : 'var(--surf)' },
-            title: 'Toggle whether direct (single-source) reads are shown alongside calculated metrics' },
-            onlyComposed ? 'Calculated only' : 'All metrics'))),
+            style: { flex: 1, minWidth: 200, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12.5 } }))),
 
-      // Table
+      // Table — column set differs by tab: Calculated shows Inputs+Formula (the math);
+      // Direct shows an Automation badge instead of Inputs, since a direct read has no math
+      // to show and "is this auto-pulled, emailed, or a manual upload" is the useful fact.
       div({ style: { padding: 16 } },
         entries.length === 0
           ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text2)' } }, 'No metrics match.')
           : div({ style: { overflowX: 'auto', border: '1px solid var(--bdr)', borderRadius: 10 } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 820 } },
-                h('thead', null, h('tr', null, th('Metric'), th('Source'), th('Inputs'), th('Formula'), th('Grain'))),
+                h('thead', null, h('tr', null,
+                  th('Metric'), th('Source'),
+                  wantComposed ? th('Inputs') : th('Automation'),
+                  wantComposed ? th('Formula') : th('How it\'s sourced'),
+                  th('Grain'))),
                 h('tbody', null, entries.map(e => h('tr', { key: e.key, style: { borderTop: '.5px solid var(--bdr)', verticalAlign: 'top' } },
                   h('td', { style: { padding: '8px 10px', whiteSpace: 'nowrap' } },
                     div({ style: { fontSize: 12.5, fontWeight: 700, color: 'var(--text)' } }, e.label || e.key),
@@ -101,16 +114,29 @@ export function MetricLineagePanel({ onClose }) {
                     div({ style: { fontWeight: 700, color: SYS_COLOR[e.system] || 'var(--text)' } }, e.system),
                     div(null, e.report),
                     e.table ? div({ style: { fontSize: 9.5, fontFamily: 'ui-monospace,monospace', color: 'var(--text3,var(--text2))' } }, e.table) : null),
-                  h('td', { style: { padding: '8px 10px', fontSize: 10.5, color: 'var(--text2)', minWidth: 150 } },
-                    (e.inputs || []).length
-                      ? h('ul', { style: { margin: 0, paddingLeft: 15 } }, (e.inputs || []).map((inp, i) => h('li', { key: i, style: { marginBottom: 2 } }, inp)))
-                      : '—'),
+                  wantComposed
+                    ? h('td', { style: { padding: '8px 10px', fontSize: 10.5, color: 'var(--text2)', minWidth: 150 } },
+                        (e.inputs || []).length
+                          ? h('ul', { style: { margin: 0, paddingLeft: 15 } }, (e.inputs || []).map((inp, i) => h('li', { key: i, style: { marginBottom: 2 } }, inp)))
+                          : '—')
+                    : h('td', { style: { padding: '8px 10px', fontSize: 10.5, minWidth: 110 } }, automationBadge(e.report)),
                   h('td', { style: { padding: '8px 10px', fontSize: 11.5, color: 'var(--text)', lineHeight: 1.5 } }, e.formula),
                   h('td', { style: { padding: '8px 10px', fontSize: 10.5, color: 'var(--text2)', whiteSpace: 'nowrap' } }, e.grain)
                 )))))
             ,
         div({ style: { fontSize: 10, color: 'var(--text3,var(--text2))', marginTop: 10, lineHeight: 1.5 } },
-          'This registry (src/engine/metric-provenance.js) is the single source of truth — the same text also powers the ⓘ source tooltip on each KPI. Speed metrics (OEPE / R2P / TPPH / Avg Win TTL / Avg DT TTL) were each reconciled field-by-field to the QSRSoft Daily Activity report.')
+          'This registry (src/engine/metric-provenance.js) is the single source of truth — the same text also powers the ⓘ source tooltip on each KPI. Most entries are generated mechanically straight from the auto-first sourcing registry (engine/metric-source.js) — a metric added there gets a Metric Lineage entry for free. Speed metrics (OEPE / R2P / TPPH / Avg Win TTL / Avg DT TTL) and a handful of others were hand-curated with exact field-reconciled math.')
       )
   );
+}
+
+// A direct-read's "automation" status, inferred from its report label — cheap and accurate
+// since DS_FIELD_META (metric-provenance.js) already spells out "(manual upload)" / "(emailed)"
+// in the report text for every stream that isn't a daily automated cloud pull.
+function automationBadge(report) {
+  const r = (report || '').toLowerCase();
+  const kind = r.includes('manual upload') ? ['Manual upload', '#c67d1f']
+    : r.includes('emailed') ? ['Emailed', '#3b82c4']
+    : ['Auto-pulled', '#2f9e63'];
+  return span({ style: { display: 'inline-block', fontSize: 9.5, fontWeight: 700, color: kind[1] } }, '● ' + kind[0]);
 }
