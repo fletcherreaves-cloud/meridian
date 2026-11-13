@@ -514,8 +514,52 @@ function SummaryCard({ label, value, sub, color }) {
   );
 }
 
+// ── HME Cloud DT timer (task #105 Phase 2, 2026-11-13) ────────────────────────
+// Deliberately NOT folded into the stations above as a 5th station: HME's own REST API only
+// ever returns the CURRENT business day's accumulating rollup (no real historical range, no
+// hour-level data — confirmed live, see memory/finding-hme-squadle-integration-2026-11-06.md),
+// so it can't feed the weekly-trend chart, daypart chart, or early/late split those stations
+// share. Shown as its own small, clearly-labeled "today" strip instead of pretending it's a
+// 6th qsr_daily_activity station it structurally isn't.
+function HmeTodayStrip({ hmeRows, activeLocs }) {
+  const latest = React.useMemo(() => {
+    const byLoc = {};
+    for (const r of (hmeRows || [])) {
+      const loc = String(parseInt(r.loc, 10));
+      if (activeLocs.length && !activeLocs.includes(loc)) continue;
+      const prev = byLoc[loc];
+      if (!prev || r.date > prev.date) byLoc[loc] = r;
+    }
+    return Object.entries(byLoc).map(([loc, r]) => ({ loc, ...r }))
+      .sort((a, b) => (a.storeRank ?? 999) - (b.storeRank ?? 999));
+  }, [hmeRows, activeLocs]);
+  if (!latest.length) return null;
+  const asOf = latest.reduce((max, r) => (r.date > max ? r.date : max), latest[0].date);
+  return div({ style:{ border:'.5px solid var(--bdr)', borderRadius:'var(--r)', background:'var(--surf2)', padding:'10px 14px' }},
+    div({ style:{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, flexWrap:'wrap' }},
+      span({ style:{ fontSize:'12px', fontWeight:800, color:'var(--text)' }}, '🚗 HME Cloud — DT Timer (Today)'),
+      span({ style:{ fontSize:'9px', color:'var(--text3)' }}, 'live vendor rollup, accumulating through the business day — separate from the qsr_daily_activity stations below'),
+      span({ style:{ fontSize:'9px', color:'var(--text3)', marginLeft:'auto' }}, 'as of ' + asOf.toLocaleDateString('en-US', { month:'short', day:'numeric' }))),
+    div({ style:{ overflowX:'auto' }},
+      h('table', { style:{ width:'max-content', minWidth:'100%', borderCollapse:'collapse', fontSize:'10px' }},
+        h('thead', null, h('tr', null,
+          ['Rank','Store','Cars','Avg (s)','Goal %'].map(c => h('th', { key:c,
+            style:{ textAlign: c==='Store' ? 'left' : 'right', padding:'4px 8px', color:'var(--text3)',
+              fontWeight:700, borderBottom:'.5px solid var(--bdr)' }}, c)))),
+        h('tbody', null, latest.map(r => h('tr', { key:r.loc, style:{ borderTop:'.5px solid var(--bdr)' }},
+          h('td', { style:{ padding:'4px 8px', textAlign:'right', color:'var(--text3)', fontVariantNumeric:'tabular-nums' }}, r.storeRank ?? '—'),
+          h('td', { style:{ padding:'4px 8px', fontWeight:600 }}, sNameC(r.loc)),
+          h('td', { style:{ padding:'4px 8px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}, (r.cars ?? 0).toLocaleString()),
+          h('td', { style:{ padding:'4px 8px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}, r.avgSeconds ?? '—'),
+          h('td', { style:{ padding:'4px 8px', textAlign:'right', fontVariantNumeric:'tabular-nums',
+            color: r.pct==null ? 'var(--text3)' : r.pct<70 ? '#ef4444' : r.pct<85 ? '#f59e0b' : '#10b981' }},
+            r.pct!=null ? Math.round(r.pct)+'%' : '—'),
+        )))),
+    ));
+}
+
 // ── Main panel ───────────────────────────────────────────────────────────────
-export function DTSpeedOfServicePanel({ stores, onClose }) {
+export function DTSpeedOfServicePanel({ stores, ds, onClose }) {
   // Dispatch #110 item 3 -- was a hardcoded PERIODS=[30d,60d,90d] <select>; now the shared
   // DateRangeControl (7/14/28/30/60/90/180 presets + custom start/end), matching security-panel.js/
   // forms-panel.js's own adoption. Default unchanged in spirit (was 90d).
@@ -553,6 +597,8 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     if (orgFilter !== 'all') return base.filter(l => l === orgFilter);
     return base;
   }, [stores, orgFilter]);
+
+  const hmeRows = ds?.hmeDtRows || [];
 
   // Midpoint of the SELECTED range (was "now - days/2", implicitly assuming the range always
   // ends today -- no longer true once custom start/end dates are selectable). Early/late halves
@@ -777,6 +823,9 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             'No DT data found — check qsr_daily_activity has dt_trans_cnt > 0 rows')
         : div({ style:{ flex:1, overflowY:'auto', padding:'12px 16px', display:'flex',
             flexDirection:'column', gap:14 }},
+
+            // ── HME Cloud DT timer (today, separate source) ───────
+            h(HmeTodayStrip, { hmeRows, activeLocs }),
 
             // ── Summary cards ─────────────────────────────────────
             div({ style:{ display:'flex', gap:10, flexWrap:'wrap' }},

@@ -65,4 +65,8 @@ export const PULL_REGISTRY = {
   // run by now, silently didn't" failure mode this watchdog exists to catch. No clampToToday
   // needed -- unlike lifelenz, this table never carries a future-dated row.
   qsrSalesQtrHour: { table: 'qsr_sales_quarter_hour', dateCol: 'dt', workflowFile: 'qsrsoft-sales-quarter-hour-pull.yml' },
+  // task #105 Phase 2 (2026-11-13) -- hmeDt/squadle just left stream-freshness.js's commented-
+  // out placeholder state (now real STREAMS entries), so the watchdog needs these two now too.
+  hmeDt:   { table: 'hme_dt_daily',              dateCol: 'dt', workflowFile: 'hme-cloud-pull.yml' },
+  squadle: { table: 'squadle_checklist_records', dateCol: 'dt', workflowFile: 'squadle-pull.yml' },
 };

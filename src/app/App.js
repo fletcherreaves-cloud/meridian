@@ -350,7 +350,7 @@ const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -2334,6 +2334,28 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${prRows.length} LifeLenz payroll-readiness rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz payroll-readiness load failed:',e);} };
+      const _stHmeDt = async () => {
+      try{
+        // HME Cloud drive-thru timer (task #105 Phase 2) — see scripts/hme-cloud-pull.mjs /
+        // supabase/schema-hme-cloud-dt.sql. Surfaces in dt-speedofservice.js.
+        const hmeRows = await loadHmeDtRows();
+        if(hmeRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev, hmeDtRows: hmeRows};});
+          console.log(`[Meridian] ✓ Loaded ${hmeRows.length} HME Cloud DT rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] HME Cloud load failed:',e);} };
+      const _stSquadle = async () => {
+      try{
+        // Squadle food-safety checklist (task #105 Phase 2) — raw JSONB per
+        // schema-squadle-checklist-records.sql; no consuming engine/panel yet (deliberately —
+        // see memory/finding-hme-squadle-integration-2026-11-06.md), loaded now purely so
+        // stream-freshness.js can track it like every other watched stream.
+        const sqRows = await loadSquadleChecklistRecords();
+        if(sqRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev, squadleChecklistRows: sqRows};});
+          console.log(`[Meridian] ✓ Loaded ${sqRows.length} Squadle checklist rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Squadle load failed:',e);} };
       const _stGradedVisits = async () => {
       try{
         // Graded visits — same Supabase source the Graded Visits panel uses, loaded into
@@ -2879,6 +2901,8 @@ function App() {
         _timedStage('T2 complianceAudit', _stComplianceAudit, _t2Start),
         _timedStage('T2 employeePerformance', _stEmployeePerformance, _t2Start),
         _timedStage('T2 payrollReadiness', _stPayrollReadiness, _t2Start),
+        _timedStage('T2 hmeDt', _stHmeDt, _t2Start),
+        _timedStage('T2 squadle', _stSquadle, _t2Start),
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
         _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
@@ -4553,7 +4577,7 @@ function App() {
       // routes elsewhere for the calendar/visit-readiness/above-store branches — a second
       // goRoute call in the same handler simply supersedes the first, same as every other
       // saved-report launch.
-      routePanel==='dt-sos'&&h(DTSpeedOfServicePanel,{stores,onClose:()=>goRoute(null)}),
+      routePanel==='dt-sos'&&h(DTSpeedOfServicePanel,{stores,ds,onClose:()=>goRoute(null)}),
       routePanel==='news'&&h(NewsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='inventory'&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='launch-planner'&&h(NewStoreLaunchPlanner,{onClose:()=>goRoute(null)}),

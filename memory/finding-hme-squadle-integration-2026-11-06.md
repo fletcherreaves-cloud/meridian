@@ -467,3 +467,29 @@ Live-tested the complete path with the real account (`fletcher@mcdok.com`):
 Phase 2 (surfacing the data in a real panel/engine, per the original §3 plan -- HME likely
 extends `dt-speedofservice.js`, Squadle likely extends or parallels Forms Completion) is
 deliberately not started -- still open, not blocked on anything now that both streams write.
+
+## ✅ Phase 2, HME half SHIPPED (v5.755, 2026-11-13) -- do not re-raise "no ds loader yet"
+
+`loadHmeDtRows()` (`src/lib/supabase.js`) now exists and is wired into `ds.hmeDtRows` via
+App.js's `_stHmeDt` background stage (same pattern as `_stEmployeePerformance`/
+`_stPayrollReadiness`). Surfaced in `dt-speedofservice.js` as a small, clearly-labeled
+"HME Cloud — DT Timer (Today)" strip -- each store's freshest row (rank/cars/avg seconds/goal%),
+scoped to the panel's own active-location filter. **Deliberately NOT folded into the DT/FC/
+Kitchen/Beverage stations as a 5th station** -- HME's REST API genuinely cannot do historical
+ranges or hour-level data (confirmed live above), so it can't feed the weekly-trend chart,
+daypart chart, or early/late split those stations share; forcing it into that shape would
+misrepresent what the data actually is. `stream-freshness.js`'s `hmeDt`/`squadle` STREAMS
+entries are live now (no longer the commented-out placeholder), and both got matching entries
+in `scripts/lib/scheduled-pull-registry.mjs` (the reliability watchdog) and therefore in SAGE's
+`query_data_health` tool too (it reads the same registry).
+
+**Squadle's half is still open, genuinely separate work, not just "the same thing for the other
+source."** `loadSquadleChecklistRecords()` also exists now (same file) and is loaded into
+`ds.squadleChecklistRows` purely so its freshness is tracked like every other watched stream --
+but its record is a deliberately raw JSONB blob (`schema-squadle-checklist-records.sql`'s own
+header: "the real shape is deep, nested, and per-checklist-template-variable, so promoting
+fields to columns is Phase 2 work once a real consuming panel/engine decides what it actually
+needs"). Building that consuming engine needs a real look at the actual nested shape (shifts →
+tasks → actions, temperature readings, pass/fail formulas, signature URLs) before deciding what
+a Forms-Completion-style compliance rollup should even look like -- genuinely its own task, not
+started here.
