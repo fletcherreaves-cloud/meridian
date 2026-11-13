@@ -97,7 +97,8 @@ function diagnoseMiss(loc, ds, userEvents, r) {
 
   // ── 1. Event tag ─────────────────────────
   if(ev) causes.push({icon:'📌',color:'#a5b4fc',weight:'PRIMARY',
-    text:'Tagged event: '+ev.label+(ev.note?' — '+ev.note:'')+'. '+(missDir==='under'?'Event likely drove incremental sales above baseline.':'Event suppressed sales below model baseline.')});
+    text:'Tagged event: '+ev.label+(ev.note?' — '+ev.note:'')+'. '+(missDir==='under'?'Event likely drove incremental sales above baseline.':'Event suppressed sales below model baseline.'),
+    remedy:'Already accounted for — no action needed. If this event recurs on a predictable schedule, make it a recurring Calendar rule so future forecasts adjust for it automatically instead of missing every time.'});
 
   // ── 2. Cross-store correlation ────────────
   const cross = crossStoreCheck(loc, ds, r.date, missDir);
@@ -107,10 +108,12 @@ function diagnoseMiss(loc, ds, userEvents, r) {
     const severity = cross.sameDir.length>=8?'DISTRICT-WIDE':cross.sameDir.length>=4?'MULTI-STORE':'REGIONAL';
     causes.push({icon:'🏪',color:cross.sameDir.length>=8?'#ef4444':cross.sameDir.length>=4?'#f97316':'#f59e0b',
       weight:severity, crossData:cross, missDate:r.date, missDir,
-      text:cross.sameDir.length+' of '+cross.total+' other stores ('+pct+'%) also showed '+(missDir==='over'?'below-normal':'above-normal')+' sales on this date ('+names+'). This is almost certainly a district-wide or regional event, NOT a store-specific issue. Use AI Lookup below to identify the cause.'});
+      text:cross.sameDir.length+' of '+cross.total+' other stores ('+pct+'%) also showed '+(missDir==='over'?'below-normal':'above-normal')+' sales on this date ('+names+'). This is almost certainly a district-wide or regional event, NOT a store-specific issue. Use AI Lookup below to identify the cause.',
+      remedy:'Don’t hold this store’s manager accountable for it alone — a swing this wide across '+cross.sameDir.length+' stores is outside any one manager’s control. Confirm the cause with AI Lookup, then tag it once in Event Calendar so every affected store’s forecast corrects, not just this one.'});
   } else if(cross&&cross.sameDir.length===1) {
     causes.push({icon:'🏪',color:'#94a3b8',weight:'NOTE',
-      text:'1 other store showed a similar pattern on this date ('+cross.sameDir[0].name+'). May be coincidence or a localized event affecting nearby stores.'});
+      text:'1 other store showed a similar pattern on this date ('+cross.sameDir[0].name+'). May be coincidence or a localized event affecting nearby stores.',
+      remedy:'Worth a quick check with that store’s manager — if you both confirm a shared cause (weather, a nearby closure), tag it in both stores’ calendars so neither forecast repeats the miss.'});
   }
 
   // ── 3. Weather ────────────────────────────
@@ -126,10 +129,14 @@ function diagnoseMiss(loc, ds, userEvents, r) {
     const wxDesc=rain>1.5?'heavy rain ('+rain.toFixed(1)+'")':rain>0.25?'rain ('+rain.toFixed(1)+'")':tmax>100?'extreme heat ('+tmax+'F)':tmax>95?'very hot ('+tmax+'F)':tmax<28?'freezing ('+tmax+'F)':tmax<35?'very cold ('+tmax+'F)':wind>30?'high winds ('+wind+'mph)':''
     const mismatch=(missDir==='under'&&wAdj<0)||(missDir==='over'&&wAdj>0);
     causes.push({icon:'🌦',color:'#93c5fd',weight:mismatch?'PRIMARY':'CONTRIBUTING',
-      text:'Weather adj: '+(wAdj*100>0?'+':'')+(wAdj*100).toFixed(2)+'% for '+wxDesc+'. '+(mismatch?'Weather impact exceeded model estimate.':'Weather model aligned but other factors drove miss.')});
+      text:'Weather adj: '+(wAdj*100>0?'+':'')+(wAdj*100).toFixed(2)+'% for '+wxDesc+'. '+(mismatch?'Weather impact exceeded model estimate.':'Weather model aligned but other factors drove miss.'),
+      remedy:mismatch
+        ?'The model correctly flagged weather as a factor but undersized it. If this weather type keeps under-predicting at this store, flag it for a coefficient recalibration rather than treating each miss as a one-off.'
+        :'Weather tracked as expected here — look at the other causes below for what actually drove the miss, not this one.'});
   } else if(wRow&&wRow.rain>1.0) {
     causes.push({icon:'🌧',color:'#93c5fd',weight:'CONTRIBUTING',
-      text:'Rain detected ('+wRow.rain.toFixed(1)+'in): model note — minimal weather adjustment applied. Calibrate weather coefficients if needed.'});
+      text:'Rain detected ('+wRow.rain.toFixed(1)+'in): model note — minimal weather adjustment applied. Calibrate weather coefficients if needed.',
+      remedy:'The model didn’t treat this rain as material. If rain this size reliably moves sales at this store, flag it so the weather sensitivity for this location gets recalibrated.'});
   }
 
   // ── 4. Ops factor ─────────────────────────
@@ -140,15 +147,23 @@ function diagnoseMiss(loc, ds, userEvents, r) {
       opsFactor<1&&r.actual>r.forecast?'Despite ops headwinds ('+((opsFactor-1)*100).toFixed(2)+'% drag), crew outperformed the forecast — strong execution overcame model expectations.':
       opsFactor>=1&&r.actual>r.forecast?'Strong execution drove volume above the forecast.':
       'Favorable ops metrics, though actual came in below forecast — other factors may have offset the advantage.'
-    )});
+    ),
+    remedy:
+      opsFactor<1&&r.actual<r.forecast?'Check scheduling against actual punches for this date — thin staffing or a late open are the usual causes of an ops-drag day like this.':
+      opsFactor<1&&r.actual>r.forecast?'The crew pushed through a tough staffing day and still beat the forecast — worth recognizing with the team, not flagging as a problem.':
+      opsFactor>=1&&r.actual>r.forecast?'Strong crew performance — worth noting what the team did right (staffing level, speed) so it can be repeated.':
+      'Execution was fine — look at the other causes below before assuming an ops problem on this date.'
+    });
 
   // ── 5. Trend divergence ───────────────────
   if(Math.abs((r.t2||0)-(r.t6||0))>0.04) causes.push({icon:'📈',color:'#84cc16',weight:'CONTRIBUTING',
-    text:'Trend divergence: T2W='+(((r.t2||0)*100)>0?'+':'')+((r.t2||0)*100).toFixed(2)+'% vs T6W='+(((r.t6||0)*100)>0?'+':'')+((r.t6||0)*100).toFixed(2)+'%. Blended forecast carries higher uncertainty when short and long trend windows disagree.'});
+    text:'Trend divergence: T2W='+(((r.t2||0)*100)>0?'+':'')+((r.t2||0)*100).toFixed(2)+'% vs T6W='+(((r.t6||0)*100)>0?'+':'')+((r.t6||0)*100).toFixed(2)+'%. Blended forecast carries higher uncertainty when short and long trend windows disagree.',
+    remedy:'Short- and long-term trends disagree, so this forecast is inherently less reliable right now. Don’t over-correct a target off one day like this — wait for the trend windows to re-converge.'});
 
   // ── 6. No LY data ─────────────────────────
   if(r.noLYData) causes.push({icon:'📂',color:'#94a3b8',weight:'PRIMARY',
-    text:'No last-year baseline for this date. District averages substituted. New store projections have higher variance until 12+ months of history exist.'});
+    text:'No last-year baseline for this date. District averages substituted. New store projections have higher variance until 12+ months of history exist.',
+    remedy:'Expected for a new or recently-relocated store. Grade it against district averages, not its own forecast, until 12+ months of real history exist to re-run this comparison against.'});
 
   // ── 7. Single-store anomaly ───────────────
   if(ds&&ds.loaded&&missPct>8&&!r.noLYData&&(!cross||cross.sameDir.length<2)){
@@ -159,13 +174,15 @@ function diagnoseMiss(loc, ds, userEvents, r) {
       const std=Math.sqrt(peers.reduce((a,p)=>a+(p.sales-mean)**2,0)/peers.length);
       const z=std>0?(r.actual-mean)/std:0;
       if(Math.abs(z)>=2.0) causes.push({icon:'🔍',color:Math.abs(z)>=3?'#ef4444':'#f97316',weight:'PRIMARY',
-        text:'Store-specific anomaly: actual was '+(z>0?'+':'')+z.toFixed(1)+'σ from normal '+DOW_BASE[dow]+' baseline ($'+Math.round(r.actual).toLocaleString()+' vs avg $'+Math.round(mean).toLocaleString()+'). Isolated to this store — check staffing, equipment, or local events on that date.'+((!ev&&!cross)||cross.sameDir.length<2?' Consider tagging in Event Calendar.':'')});
+        text:'Store-specific anomaly: actual was '+(z>0?'+':'')+z.toFixed(1)+'σ from normal '+DOW_BASE[dow]+' baseline ($'+Math.round(r.actual).toLocaleString()+' vs avg $'+Math.round(mean).toLocaleString()+'). Isolated to this store — check staffing, equipment, or local events on that date.'+((!ev&&!cross)||cross.sameDir.length<2?' Consider tagging in Event Calendar.':''),
+        remedy:'Isolated to this store on this date — walk back through that day’s staffing, any equipment downtime, or a local event with the GM before assuming it’s a real trend. If a real cause turns up, tag it in Event Calendar so it stops skewing the model.'});
     }
   }
 
   // ── 8. Fallback ───────────────────────────
   if(causes.length===0) causes.push({icon:'❓',color:'#64748b',weight:'UNKNOWN',
-    text:'No dominant signal. Weather neutral, ops near baseline, trends aligned, no cross-store correlation. Likely random variance. Tag in Event Calendar if cause is known.'});
+    text:'No dominant signal. Weather neutral, ops near baseline, trends aligned, no cross-store correlation. Likely random variance. Tag in Event Calendar if cause is known.',
+    remedy:'No action needed — this reads as ordinary day-to-day variance. If this store keeps landing in "unexplained" misses regularly rather than occasionally, that pattern is worth a deeper look at its baseline.'});
   return causes;
 }
 

@@ -451,11 +451,19 @@ Live-tested the complete path with the real account (`fletcher@mcdok.com`):
 
 ### Next steps for the owner
 
-1. Run `supabase/schema-hme-cloud-dt.sql` and `schema-squadle-checklist-records.sql`.
-2. Add GitHub Secrets: `HME_USERNAME`, `HME_PASSWORD`, `SQUADLE_USERNAME`, `SQUADLE_PASSWORD`.
-3. Either wait for the scheduled cron or manually dispatch `HME Cloud Pull` / `Squadle Checklist
-   Pull` once the above are in place to confirm the first real write.
+1. ✅ Run `supabase/schema-hme-cloud-dt.sql` and `schema-squadle-checklist-records.sql` -- DONE,
+   confirmed live (see below).
+2. ✅ Add GitHub Secrets: `HME_USERNAME`, `HME_PASSWORD`, `SQUADLE_USERNAME`, `SQUADLE_PASSWORD`
+   -- DONE (owner, 2026-11-12 night).
+3. ✅ **First real write CONFIRMED live (2026-11-13), both pulls manually dispatched and
+   measured directly via service-role query, not just a green workflow run:**
+   - `hme_dt_daily`: `content-range: 0-2/24` -- 24 real rows, real content (e.g. loc `0043380`
+     "Tishomingo - 2", 542 cars, 148s avg, store_rank 1).
+   - `squadle_checklist_records`: `content-range: 0-2/42` -- 42 real rows, real content (e.g.
+     loc `0006972`, shard `sqdl-prod-cd-012`, a real nested shift/task JSON blob).
+   Both tables are genuinely live now -- do not re-raise "is this live yet" without a fresh
+   measurement.
 
 Phase 2 (surfacing the data in a real panel/engine, per the original §3 plan -- HME likely
 extends `dt-speedofservice.js`, Squadle likely extends or parallels Forms Completion) is
-deliberately not started.
+deliberately not started -- still open, not blocked on anything now that both streams write.

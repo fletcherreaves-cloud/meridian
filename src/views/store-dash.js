@@ -892,7 +892,9 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
               span({style:{fontSize:'13px',flexShrink:0,marginTop:1}},cause.icon),
               div({style:{flex:1}},
                 span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',borderRadius:2,background:'rgba(239,68,68,.12)',color:cause.color,letterSpacing:'.3px',marginRight:5}},cause.weight),
-                span({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5}},cause.text)
+                span({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5}},cause.text),
+                cause.remedy&&div({style:{fontSize:'10px',color:'#34d399',lineHeight:1.5,marginTop:3,display:'flex',gap:5}},
+                  span({style:{flexShrink:0}},'→'),span(null,cause.remedy))
               )
             )),
             // AI Lookup button
