@@ -11,7 +11,7 @@ import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-mo
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
 import { matchedVsLY, lyQuality } from '../engine/vs-ly.js';
 import { metricAvg, metricRate, metricSeries as _msSeries } from '../engine/metric-source.js';
-import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
+import { diagnoseMiss, lookupMissEvent, CauseLinks } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
@@ -894,7 +894,8 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',borderRadius:2,background:'rgba(239,68,68,.12)',color:cause.color,letterSpacing:'.3px',marginRight:5}},cause.weight),
                 span({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5}},cause.text),
                 cause.remedy&&div({style:{fontSize:'10px',color:'#34d399',lineHeight:1.5,marginTop:3,display:'flex',gap:5}},
-                  span({style:{flexShrink:0}},'→'),span(null,cause.remedy))
+                  span({style:{flexShrink:0}},'→'),span(null,cause.remedy)),
+                h(CauseLinks,{cause})
               )
             )),
             // AI Lookup button

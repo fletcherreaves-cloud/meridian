@@ -50,19 +50,27 @@ already do some of this) vs. where every role sees the identical dense view toda
 
 ## 4. More interactivity: contextual help links (incl. external), root-cause-to-remedy coaching, and celebrating wins
 
-Three related asks in one note:
-- Suggest where to look for more context on a finding, with links — "even external" (i.e., not
-  just in-app cross-references; could mean linking out to a QSRSoft KB article, a relevant
-  training resource, etc.). Possibly overlaps SAGE's existing `search_qsr_kb`/`search_project_memory`
-  tools and the Why Engine's cause tagging — check before building a parallel mechanism.
-  cross-references
-- ✅ **SHIPPED (v5.752, 2026-11-13) — curated explanations + remedies.** `diagnoseMiss()`
-  (`src/engine/why.js`) now carries a practical `remedy` field on every cause object (10 distinct
+✅ **ALL THREE sub-items SHIPPED as of v5.754 (2026-11-13) — this item is CLOSED, do not re-open.**
+
+- ✅ **SHIPPED (v5.752) — curated explanations + remedies.** `diagnoseMiss()`
+  (`src/engine/why.js`) carries a practical `remedy` field on every cause object (10 distinct
   texts across event-tag/cross-store/weather/ops-factor/trend/no-LY/single-store-anomaly/
   unexplained-fallback branches), rendered as a green "→" line under the cause in both
   Store Dashboard's Biggest Miss card and Analytics' Why Engine miss list. Reuses the existing
-  trusted diagnosis — no parallel coaching engine. The "suggest where to look for more
-  context, with links (incl. external)" half of this item is still open — not the same build.
+  trusted diagnosis — no parallel coaching engine.
+- ✅ **SHIPPED (v5.754) — "suggest where to look for more context, with links — even external."**
+  Checked before building anything new, per the owner's own framing above: both halves of this
+  already existed. The in-app half is KB_ARTICLES/InfoIcon (`src/engine/forecast.js`); the
+  external half is SAGE's own `search_qsr_kb` (the real QSRSoft Help Center)/`search_project_memory`/
+  live data tools. So every cause got a `kbKey` (an EXISTING KB article — `event_registry`,
+  `weather_adjustment`, `forecast_formula`, `new_store_ramp`, or `why_engine_guide`, mapped per
+  cause type, no new articles written) and an `askPrompt` (a cause-specific question seeded into
+  SAGE via the same `window.__MF_SAGE_SEED__`/`'mf:open-sage'` convention eom-dashboard.js's own
+  "Ask SAGE" buttons already use — SAGE itself decides which tool, including the external one,
+  actually answers it). Rendered via a new shared `CauseLinks` component in `why.js` (one
+  component, not duplicated per view) in both render sites. Static external URLs were
+  deliberately rejected in favor of this — a hardcoded link rots; routing through SAGE's live
+  tools doesn't.
 - **"We should always remember to celebrate the wins when people and locations achieve good or
   great things as well!"** — explicit owner value statement. Movers Alerts deliberately has NO
   up-swing rule per the 2026-11-07 measurement that up-swings aren't anomalous at this grain (see
