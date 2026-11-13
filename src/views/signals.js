@@ -9,6 +9,7 @@ import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-qua
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { intradayPace } from '../engine/tracking-to-plan.js';
+import { oepeSeconds } from '../utils/oepe.js';
 import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon } from '../engine/forecast.js';
 import { dKey } from '../utils/date.js';
@@ -759,10 +760,12 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
 // ── Main Panel ────────────────────────────────────────────────────────────────
 // ── Live Ops Tab ──────────────────────────────────────────────────────────────
 
-const DT_RED = 240, DT_AMB = 200; // seconds
+const OEPE_AMB = 200, OEPE_RED = 240; // seconds -- fallback bands for a store with no tOepe/tR2p/tKvst
+  // target, same flat numbers + relationship dt-speedofservice.js's own DT_GREEN/DT_AMB fallback uses.
 const PACE_AMB = 90, PACE_RED = 80; // % of mean
-const LABOR_AMB = 110, LABOR_RED = 120; // % of needed
-const ACC_AMB = 92, ACC_RED = 85; // % healthy (below = bad)
+const LABOR_AMB = 110, LABOR_RED = 120; // % of needed hours (staffing level -- distinct from the
+  // cost-based Punch Labor % below; never conflate the two, per owner directive)
+const ACC_AMB = 92, ACC_RED = 85; // % healthy (2nd Side Healthy Usage -- below = bad)
 
 function fmtSecs(s) {
   if (s == null || isNaN(s)) return '—';
@@ -774,14 +777,19 @@ function fmtPct(v) {
   return v.toFixed(2) + '%';
 }
 
+function fmtRate(v) {
+  if (v == null || isNaN(v)) return '—';
+  return v.toFixed(2);
+}
+
 function metricDot(col) {
   return h('span', { style: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: col, flexShrink: 0 } });
 }
 
 function speedColor(s) {
   if (s == null) return muted;
-  if (s > DT_RED) return red;
-  if (s > DT_AMB) return amber;
+  if (s > OEPE_RED) return red;
+  if (s > OEPE_AMB) return amber;
   return grn;
 }
 function paceColor(pct) {
@@ -805,6 +813,37 @@ function accColor(pct) {
   return grn;
 }
 
+// Per-store, per-second-metric green/amber bands -- the exact convention dt-speedofservice.js
+// already established for this same DEFAULT_TARGETS data (its stationBands): green = this
+// store's own target field, amber = green + 40s, falling back to the flat OEPE_AMB/OEPE_RED
+// bands (same 40s relationship) when this store has no target for that field. Reused here, not
+// re-invented, so the new R2P/KVS alerting rests on the same basis OEPE already carries.
+function secBands(field, loc) {
+  const t = DEFAULT_TARGETS[loc]?.[field];
+  const green = t != null ? t : OEPE_AMB;
+  return { green, amber: t != null ? green + 40 : OEPE_RED, hasTarget: t != null };
+}
+function secColor(s, bands) {
+  if (s == null) return muted;
+  if (s > bands.amber) return red;
+  if (s > bands.green) return amber;
+  return grn;
+}
+
+// Actual-vs-target coloring for the new % / rate metrics that have no seconds-style target --
+// copied verbatim from analytics.js's own established deltaColor convention (used there for
+// tLabor/tTpph/tFOB*/tCrewLabor etc., ~line 8106): within 0.5pp(or 0.005 raw) of target = amber,
+// better = green, worse = red. Not an invented threshold -- `actual`/`target` must already be in
+// the same units DEFAULT_TARGETS stores them in (fractions for the %s, raw rate for tTpph);
+// callers convert before calling.
+function targetColor(actual, target, lowerBetter = false) {
+  if (actual == null || target == null) return muted;
+  const better = lowerBetter ? actual <= target : actual >= target;
+  const within = Math.abs(actual - target) <= 0.005;
+  if (within) return amber;
+  return better ? grn : red;
+}
+
 function storeLocKey(loc7) {
   return String(parseInt(loc7, 10));
 }
@@ -812,14 +851,35 @@ function storeLocKey(loc7) {
 export function aggregateByStore(rows) {
   const map = {};
   for (const r of rows) {
-    if (!map[r.loc]) map[r.loc] = { loc: r.loc, dtTime: 0, dtCnt: 0, punched: 0, needed: 0, healthy: 0, unhealthy: 0, slots: [] };
+    if (!map[r.loc]) map[r.loc] = {
+      loc: r.loc,
+      dtUntilServe: 0, dtUntilStore: 0, dtHeldTime: 0, dtCarsHeld: 0, dtTransCnt: 0,
+      fcUntilServe: 0, fcUntilClosedDrawer: 0, fcTransCnt: 0,
+      mfy1UntilServe: 0, mfy1TransCnt: 0, mfy2UntilServe: 0, mfy2TransCnt: 0,
+      punched: 0, needed: 0, healthy: 0, unhealthy: 0,
+      prodSalesScrubbed: 0, transScrubbed: 0, actualPunchedDollars: 0,
+      slots: [],
+    };
     const s = map[r.loc];
-    s.dtTime    += r.dt_untilserve || 0;
-    s.dtCnt     += r.dt_trans_cnt  || 0;
-    s.punched   += r.actual_punched_hours || 0;
-    s.needed    += r.total_needed_hours   || 0;
-    s.healthy   += r.healthy_count   || 0;
-    s.unhealthy += r.unhealthy_count || 0;
+    s.dtUntilServe        += r.dt_untilserve        || 0;
+    s.dtUntilStore        += r.dt_untilstore        || 0;
+    s.dtHeldTime          += r.dt_heldtime          || 0;
+    s.dtCarsHeld          += r.dt_carsheld           || 0;
+    s.dtTransCnt          += r.dt_trans_cnt          || 0;
+    s.fcUntilServe        += r.fc_untilserve         || 0;
+    s.fcUntilClosedDrawer += r.fc_untilclosedrawer   || 0;
+    s.fcTransCnt          += r.fc_trans_cnt          || 0;
+    s.mfy1UntilServe      += r.mfy1_untilserve       || 0;
+    s.mfy1TransCnt        += r.mfy1_trans_cnt        || 0;
+    s.mfy2UntilServe      += r.mfy2_untilserve       || 0;
+    s.mfy2TransCnt        += r.mfy2_trans_cnt        || 0;
+    s.punched             += r.actual_punched_hours  || 0;
+    s.needed              += r.total_needed_hours    || 0;
+    s.healthy              += r.healthy_count        || 0;
+    s.unhealthy            += r.unhealthy_count      || 0;
+    s.prodSalesScrubbed    += r.prod_sales_scrubbed    || 0;
+    s.transScrubbed        += r.trans_scrubbed         || 0;
+    s.actualPunchedDollars += r.actual_punched_dollars || 0;
     s.slots.push(r);
   }
   return Object.values(map).map(s => {
@@ -828,13 +888,36 @@ export function aggregateByStore(rows) {
     const done = s.slots.filter(r => (r.product_sales || 0) > 0);
     const sales     = done.reduce((a, r) => a + (r.product_sales || 0), 0);
     const meanSales = done.reduce((a, r) => a + (r.mean_sales    || 0), 0);
+    const mfyServe = s.mfy1UntilServe + s.mfy2UntilServe;
+    const mfyCnt   = s.mfy1TransCnt   + s.mfy2TransCnt;
     return {
       ...s,
       key,
       storeName: STORE_NAMES?.[key] || `Store ${key}`,
       salesPct:  meanSales > 0 ? (sales / meanSales * 100)       : null,
-      dtAvgSec:  s.dtCnt > 0   ? (s.dtTime / s.dtCnt / 1000)     : null,
+      // OEPE W/O Parked -- sum the four raw components first, divide once via the shared,
+      // reconciled oepeSeconds() (r=0.9958 against a real QSRSoft report). This REPLACES the old
+      // dt_untilserve/dt_trans_cnt/1000 "DT TTL" formula, which never subtracted dt_untilstore or
+      // dt_heldtime and so was reporting a different, longer metric under the "DT Speed" label.
+      oepeSec: oepeSeconds({ dt_untilserve: s.dtUntilServe, dt_untilstore: s.dtUntilStore, dt_heldtime: s.dtHeldTime, dt_trans_cnt: s.dtTransCnt }),
+      // R2P (Receipt-to-Present, Front Counter) -- QSRSoft's own formula
+      // (memory/project-qsrsoft-dar-columns.md): (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt.
+      r2pSec: s.fcTransCnt > 0 ? ((s.fcUntilServe - s.fcUntilClosedDrawer) / s.fcTransCnt / 1000) : null,
+      // KVS Time Per GC (Kitchen/MFY) -- both prep-table sides summed, divided once; mirrors
+      // dt-speedofservice.js's own (already-correct) Kitchen station.
+      kvsSec: mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : null,
+      // DT Pull Forward % ("DT Parked %") -- cars held/parked as a % of DT transactions.
+      parkPct: s.dtTransCnt > 0 ? (s.dtCarsHeld / s.dtTransCnt * 100) : null,
+      // Punch Labor % -- cost-based ($ labor ÷ product sales). Deliberately a SEPARATE field from
+      // laborPct below (staffing-level: punched hrs ÷ needed hrs) -- owner directive: never
+      // conflate the two.
+      laborCostPct: s.prodSalesScrubbed > 0 ? (s.actualPunchedDollars / s.prodSalesScrubbed * 100) : null,
+      // TPPH -- transactions (scrubbed) per punched hour.
+      tpph: s.punched > 0 ? (s.transScrubbed / s.punched) : null,
       laborPct:  s.needed > 0  ? (s.punched / s.needed * 100)    : null,
+      // 2nd Side Healthy Usage % (KVS) -- same healthy/(healthy+unhealthy) formula as before;
+      // this is NOT order accuracy (daily-review.js's kvsHealthy is the same concept under its
+      // real name -- see memory/finding-signals-liveops-mislabels-2026-11-13.md).
       accRate:   (s.healthy + s.unhealthy) > 0
                    ? (s.healthy / (s.healthy + s.unhealthy) * 100)
                    : null,
@@ -845,36 +928,63 @@ export function aggregateByStore(rows) {
 export function alertCount(store) {
   let n = 0;
   if (store.salesPct != null && store.salesPct < PACE_AMB) n++;
-  if (store.dtAvgSec != null && store.dtAvgSec > DT_AMB)   n++;
+  if (store.oepeSec  != null && store.oepeSec  > OEPE_AMB)  n++;
   if (store.laborPct != null && store.laborPct > LABOR_AMB) n++;
   if (store.accRate  != null && store.accRate  < ACC_AMB)   n++;
+  // R2P/KVS -- alert when past this store's own target band (or the flat fallback), same
+  // "not green" definition as OEPE above, same per-store-target basis dt-speedofservice.js uses.
+  const r2pBands = secBands('tR2p', store.key);
+  if (store.r2pSec != null && store.r2pSec > r2pBands.green) n++;
+  const kvsBands = secBands('tKvst', store.key);
+  if (store.kvsSec != null && store.kvsSec > kvsBands.green) n++;
+  // Park% / Labor cost% / TPPH -- alert only when "worse than target" per targetColor's own
+  // established tolerance (analytics.js's deltaColor convention), never on a value with no target.
+  const tgt = DEFAULT_TARGETS[store.key];
+  if (store.parkPct != null && tgt?.tPark != null && targetColor(store.parkPct / 100, tgt.tPark, true) === red) n++;
+  if (store.laborCostPct != null && tgt?.tLabor != null && targetColor(store.laborCostPct / 100, tgt.tLabor, true) === red) n++;
+  if (store.tpph != null && tgt?.tTpph != null && targetColor(store.tpph, tgt.tTpph, false) === red) n++;
   return n;
 }
 
-function HourlyDetail({ slots }) {
+function HourlyDetail({ slots, storeKey }) {
   const sorted = [...slots].sort((a, b) => a.hour_slot.localeCompare(b.hour_slot));
+  const r2pBands = secBands('tR2p', storeKey);
+  const kvsBands = secBands('tKvst', storeKey);
+  const tgt = DEFAULT_TARGETS[storeKey];
   const cellStyle = { padding: '5px 10px', fontSize: 11, textAlign: 'right' };
   const hdr = { ...cellStyle, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
   const lbl = { ...cellStyle, textAlign: 'left', color: muted };
-  return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}` } },
-    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+  return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}`, overflowX: 'auto' } },
+    h('table', { style: { width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 11 } },
       h('thead', null,
         h('tr', null,
           h('th', { style: { ...hdr, textAlign: 'left' } }, 'Hour'),
-          h('th', { style: hdr }, 'Sales'),
+          h('th', { style: hdr }, 'Product Sales'),
           h('th', { style: hdr }, 'vs Mean'),
-          h('th', { style: hdr }, 'DT Speed'),
+          h('th', { style: hdr, title: 'Order-End → Present, excluding parked wait (sum of raw components, divided once)' }, 'OEPE'),
+          h('th', { style: hdr, title: 'Front Counter Receipt-to-Present' }, 'R2P'),
+          h('th', { style: hdr, title: 'Kitchen (MFY) time per guest check, both prep-table sides' }, 'KVS'),
+          h('th', { style: hdr, title: 'Cars held/parked ÷ DT transactions' }, 'DT Parked%'),
           h('th', { style: hdr, title: 'Actual punched hours ÷ needed hours (staffing level, not cost)' }, 'Punch/Need'),
           h('th', { style: hdr, title: 'Punched − needed hours (− short / + over)' }, 'Gap vs Need'),
           h('th', { style: hdr, title: 'Punched − scheduled hours (− short vs plan / + over plan)' }, 'Gap vs Sched'),
-          h('th', { style: hdr }, 'Accuracy'),
+          h('th', { style: hdr, title: 'Punched $ labor ÷ product sales (cost-based)' }, 'Labor %'),
+          h('th', { style: hdr, title: 'Transactions (scrubbed) ÷ punched hour' }, 'TPPH'),
+          h('th', { style: hdr, title: '2nd Side Healthy Usage (both prep-table sides open & balanced) -- NOT order accuracy' }, '2nd Side Usage'),
         )
       ),
       h('tbody', null,
         sorted.map(r => {
           const pace = r.mean_sales > 0 ? (r.product_sales / r.mean_sales * 100) : null;
-          const dt   = r.dt_trans_cnt > 0 ? (r.dt_untilserve / r.dt_trans_cnt / 1000) : null;
+          const oepe = oepeSeconds(r);
+          const r2p  = r.fc_trans_cnt > 0 ? ((r.fc_untilserve - r.fc_untilclosedrawer) / r.fc_trans_cnt / 1000) : null;
+          const mfyServe = (r.mfy1_untilserve || 0) + (r.mfy2_untilserve || 0);
+          const mfyCnt   = (r.mfy1_trans_cnt   || 0) + (r.mfy2_trans_cnt   || 0);
+          const kvs  = mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : null;
+          const park = r.dt_trans_cnt > 0 ? (r.dt_carsheld / r.dt_trans_cnt * 100) : null;
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
+          const laborCost = r.prod_sales_scrubbed > 0 ? (r.actual_punched_dollars / r.prod_sales_scrubbed * 100) : null;
+          const tpphH = r.actual_punched_hours > 0 ? (r.trans_scrubbed / r.actual_punched_hours) : null;
           const acc  = (r.healthy_count + r.unhealthy_count) > 0
                          ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
           // Intraday labor gaps for this block, in hours. Negative = short
@@ -899,10 +1009,15 @@ function HourlyDetail({ slots }) {
             h('td', { style: lbl }, `${fmt(start)}–${fmt(end % 24)}`),
             h('td', { style: cellStyle }, r.product_sales != null ? `$${r.product_sales.toLocaleString('en-US', {maximumFractionDigits:0})}` : '—'),
             h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(2)}%` : '—'),
-            h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
+            h('td', { style: { ...cellStyle, color: speedColor(oepe), fontWeight: oepe != null && oepe > OEPE_AMB ? 700 : 400 } }, oepe != null ? fmtSecs(oepe) : '—'),
+            h('td', { style: { ...cellStyle, color: secColor(r2p, r2pBands) } }, r2p != null ? fmtSecs(r2p) : '—'),
+            h('td', { style: { ...cellStyle, color: secColor(kvs, kvsBands) } }, kvs != null ? fmtSecs(kvs) : '—'),
+            h('td', { style: { ...cellStyle, color: tgt?.tPark != null ? targetColor(park / 100, tgt.tPark, true) : muted } }, park != null ? fmtPct(park) : '—'),
             h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
             h('td', { style: { ...cellStyle, color: gapColor, fontWeight: gap != null && gap <= -1 ? 700 : 400 } }, gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'),
             h('td', { style: { ...cellStyle, color: gapClr(gapSched), fontWeight: gapSched != null && gapSched <= -1 ? 700 : 400 } }, gapSched != null ? `${gapSched > 0 ? '+' : ''}${gapSched.toFixed(1)}` : '—'),
+            h('td', { style: { ...cellStyle, color: tgt?.tLabor != null ? targetColor(laborCost / 100, tgt.tLabor, true) : muted } }, laborCost != null ? fmtPct(laborCost) : '—'),
+            h('td', { style: { ...cellStyle, color: tgt?.tTpph != null ? targetColor(tpphH, tgt.tTpph, false) : muted } }, tpphH != null ? fmtRate(tpphH) : '—'),
             h('td', { style: { ...cellStyle, color: accColor(acc) } }, acc != null ? fmtPct(acc) : '—'),
           );
         })
@@ -911,46 +1026,63 @@ function HourlyDetail({ slots }) {
   );
 }
 
+// One labeled metric chip in StoreRow's summary strip -- a tiny uppercase label above a
+// monospace value, with the established-color dot alongside it when a color is known. Replaces
+// the old fixed 4-column grid (dispatch 2026-11-13): 9 metrics don't fit a fixed-width grid
+// readably, so the strip scrolls horizontally on narrow screens instead (panel-contract mobile
+// convention) while the store name + toggle stay pinned.
+function MetricCell({ label, value, color, bold, title }) {
+  return h('div', { title, style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 68, flexShrink: 0 } },
+    h('span', { style: { fontSize: 9, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2, whiteSpace: 'nowrap' } }, label),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 4 } },
+      metricDot(color),
+      h('span', { style: { fontFamily: 'monospace', fontSize: 12, color, fontWeight: bold ? 700 : 400 } }, value),
+    ),
+  );
+}
+
 function StoreRow({ store, expanded, onToggle }) {
   const alerts = alertCount(store);
   const isExp = expanded === store.loc;
+  const r2pBands = secBands('tR2p', store.key);
+  const kvsBands = secBands('tKvst', store.key);
+  const tgt = DEFAULT_TARGETS[store.key];
   return h('div', { style: { border: `1px solid ${alerts >= 2 ? 'rgba(239,68,68,.25)' : alerts === 1 ? 'rgba(245,158,11,.2)' : bdr}`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', background: alerts >= 2 ? 'rgba(239,68,68,.02)' : surf2 } },
     h('div', {
       onClick: onToggle,
-      style: { cursor: 'pointer', padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 110px 110px 100px 100px 28px', alignItems: 'center', gap: 8, userSelect: 'none' },
+      style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, userSelect: 'none' },
     },
-      // Store name + alert badge
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+      // Store name + alert badge -- pinned, never scrolls with the metrics strip
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto', minWidth: 150 } },
         alerts > 0 && h('span', { style: { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: alerts >= 2 ? 'rgba(239,68,68,.15)' : 'rgba(245,158,11,.12)', color: alerts >= 2 ? red : amber, flexShrink: 0 } }, `${alerts} alert${alerts > 1 ? 's' : ''}`),
         h('span', { style: { fontWeight: 600, fontSize: 13 } }, store.storeName),
       ),
-      // Sales pace
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
-        metricDot(paceColor(store.salesPct)),
-        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: paceColor(store.salesPct), fontWeight: store.salesPct != null && store.salesPct < PACE_AMB ? 700 : 400 } },
-          store.salesPct != null ? `${store.salesPct.toFixed(2)}%` : '—'),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 16, overflowX: 'auto', flex: '1 1 auto', paddingBottom: 2 } },
+        h(MetricCell, { label: 'Sales Pace', value: store.salesPct != null ? `${store.salesPct.toFixed(2)}%` : '—',
+          color: paceColor(store.salesPct), bold: store.salesPct != null && store.salesPct < PACE_AMB }),
+        h(MetricCell, { label: 'OEPE', value: store.oepeSec != null ? fmtSecs(store.oepeSec) : '—',
+          color: speedColor(store.oepeSec), bold: store.oepeSec != null && store.oepeSec > OEPE_AMB,
+          title: 'Order-End → Present, excluding parked wait' }),
+        h(MetricCell, { label: 'R2P', value: store.r2pSec != null ? fmtSecs(store.r2pSec) : '—',
+          color: secColor(store.r2pSec, r2pBands), title: 'Front Counter Receipt-to-Present' }),
+        h(MetricCell, { label: 'KVS', value: store.kvsSec != null ? fmtSecs(store.kvsSec) : '—',
+          color: secColor(store.kvsSec, kvsBands), title: 'Kitchen (MFY) time per guest check' }),
+        h(MetricCell, { label: 'DT Parked%', value: store.parkPct != null ? fmtPct(store.parkPct) : '—',
+          color: tgt?.tPark != null ? targetColor(store.parkPct / 100, tgt.tPark, true) : muted }),
+        h(MetricCell, { label: 'Labor vs Need', value: store.laborPct != null ? fmtPct(store.laborPct) : '—',
+          color: laborColor(store.laborPct), bold: store.laborPct != null && store.laborPct > LABOR_AMB,
+          title: 'Punched hours ÷ needed hours -- staffing level, not cost' }),
+        h(MetricCell, { label: 'Labor %', value: store.laborCostPct != null ? fmtPct(store.laborCostPct) : '—',
+          color: tgt?.tLabor != null ? targetColor(store.laborCostPct / 100, tgt.tLabor, true) : muted,
+          title: 'Punched $ labor ÷ product sales -- cost-based, distinct from Labor vs Need' }),
+        h(MetricCell, { label: 'TPPH', value: store.tpph != null ? fmtRate(store.tpph) : '—',
+          color: tgt?.tTpph != null ? targetColor(store.tpph, tgt.tTpph, false) : muted }),
+        h(MetricCell, { label: '2nd Side Usage', value: store.accRate != null ? fmtPct(store.accRate) : '—',
+          color: accColor(store.accRate), title: '2nd Side Healthy Usage -- NOT order accuracy' }),
       ),
-      // DT speed
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
-        store.dtAvgSec != null ? metricDot(speedColor(store.dtAvgSec)) : null,
-        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: speedColor(store.dtAvgSec), fontWeight: store.dtAvgSec != null && store.dtAvgSec > DT_AMB ? 700 : 400 } },
-          store.dtAvgSec != null ? fmtSecs(store.dtAvgSec) : '—'),
-      ),
-      // Labor %
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
-        store.laborPct != null ? metricDot(laborColor(store.laborPct)) : null,
-        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: laborColor(store.laborPct), fontWeight: store.laborPct != null && store.laborPct > LABOR_AMB ? 700 : 400 } },
-          store.laborPct != null ? fmtPct(store.laborPct) : '—'),
-      ),
-      // Accuracy
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
-        store.accRate != null ? metricDot(accColor(store.accRate)) : null,
-        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: accColor(store.accRate) } },
-          store.accRate != null ? fmtPct(store.accRate) : '—'),
-      ),
-      h('span', { style: { fontSize: 12, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none', justifySelf: 'end' } }, '▾'),
+      h('span', { style: { fontSize: 12, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none', flexShrink: 0 } }, '▾'),
     ),
-    isExp && h(HourlyDetail, { slots: store.slots }),
+    isExp && h(HourlyDetail, { slots: store.slots, storeKey: store.key }),
   );
 }
 
@@ -1124,14 +1256,11 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
     ),
 
     !loading && rows.length > 0 && h('div', null,
-      // Column headers
-      h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 110px 110px 100px 100px 28px', gap: 8, padding: '4px 14px', marginBottom: 4 } },
-        h('div', { style: { ...colHdr, textAlign: 'left' } }, 'Store'),
-        h('div', { style: colHdr }, 'Sales Pace'),
-        h('div', { style: colHdr }, 'DT Speed'),
-        h('div', { style: colHdr }, 'Labor vs Need'),
-        h('div', { style: colHdr }, 'Accuracy'),
-        h('div', null),
+      // Each store's own metrics strip now carries its own per-metric label (MetricCell) --
+      // 9 metrics don't line up under one fixed-width header row the way the old 4 did, so this
+      // is a section label, not a column header.
+      h('div', { style: { padding: '4px 14px', marginBottom: 4 } },
+        h('div', { style: { ...colHdr, textAlign: 'left' } }, 'Store · Sales Pace · OEPE · R2P · KVS · DT Parked% · Labor vs Need · Labor % · TPPH · 2nd Side Usage'),
       ),
       // Sort: alerts-first, then alpha
       [...stores].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName))
@@ -1146,9 +1275,15 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
 
     !loading && rows.length > 0 && h('div', { style: { marginTop: 14, fontSize: 10, color: muted, lineHeight: 1.7 } },
       `Pace = actual sales ÷ QSRSoft mean sales for the day. `,
-      `DT speed = avg seconds from order to serve (🔴 > 4:00, 🟡 3:20–4:00, 🟢 < 3:20). `,
-      `Labor vs Need = punched hours ÷ needed hours — a staffing level, NOT cost-based labor % (🔴 > 120%, 🟡 110–120%). `,
-      `Accuracy = healthy orders ÷ total (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). Click a store for the hourly breakdown, incl. Gap vs Need / Gap vs Sched (punched − needed / − scheduled hours, − short · + over).`,
+      `OEPE = Order-End → Present, excluding parked wait -- (DT serve time − DT store time − DT held time) ÷ DT transactions, summed across the day then divided once (🔴 > ${OEPE_RED}s, 🟡 > ${OEPE_AMB}s vs this store's own target where set). `,
+      `R2P = Front Counter Receipt-to-Present; KVS = Kitchen (MFY) time per guest check -- both colored vs this store's own target + 40s where one exists, else the same flat bands as OEPE. `,
+      `DT Parked% = cars held at the window ÷ DT transactions. `,
+      `Labor vs Need = punched hours ÷ needed hours — a staffing level, NOT cost-based labor % (🔴 > ${LABOR_RED}%, 🟡 ${LABOR_AMB}–${LABOR_RED}%). `,
+      `Labor % = punched $ labor ÷ product sales — the cost-based figure, distinct from Labor vs Need above. `,
+      `TPPH = transactions (scrubbed) ÷ punched hour. `,
+      `2nd Side Usage = healthy orders ÷ total -- the % of time this store's 2nd prep-table side is open and balanced (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). This is NOT order accuracy. `,
+      `DT Parked% / Labor % / TPPH are colored vs each store's own target where DEFAULT_TARGETS has one (green = at/better than target, amber = within 0.5pp, red = worse); shown plain (no color) where a store has none. `,
+      `Click a store for the hourly breakdown, incl. Gap vs Need / Gap vs Sched (punched − needed / − scheduled hours, − short · + over).`,
     ),
   );
 }
@@ -2559,22 +2694,37 @@ function liveOpsExportSpec(data) {
   const today = new Date().toISOString().slice(0, 10);
   const rows = (data.stores || []).map(s => ({
     Store: s.storeName, 'Sales Pace %': s.salesPct != null ? s.salesPct.toFixed(2) : '—',
-    'DT Speed (s)': s.dtAvgSec != null ? Math.round(s.dtAvgSec) : '—',
+    'OEPE (s)': s.oepeSec != null ? Math.round(s.oepeSec) : '—',
+    'R2P (s)': s.r2pSec != null ? Math.round(s.r2pSec) : '—',
+    'KVS (s)': s.kvsSec != null ? Math.round(s.kvsSec) : '—',
+    'DT Parked %': s.parkPct != null ? s.parkPct.toFixed(2) : '—',
     'Labor vs Need %': s.laborPct != null ? s.laborPct.toFixed(2) : '—',
-    'Accuracy %': s.accRate != null ? s.accRate.toFixed(2) : '—', Alerts: alertCount(s),
+    'Labor %': s.laborCostPct != null ? s.laborCostPct.toFixed(2) : '—',
+    TPPH: s.tpph != null ? s.tpph.toFixed(2) : '—',
+    '2nd Side Usage %': s.accRate != null ? s.accRate.toFixed(2) : '—', Alerts: alertCount(s),
   }));
-  return { rows, columns: ['Store', 'Sales Pace %', 'DT Speed (s)', 'Labor vs Need %', 'Accuracy %', 'Alerts'].map(k => ({ key: k, label: k })),
+  return { rows, columns: ['Store', 'Sales Pace %', 'OEPE (s)', 'R2P (s)', 'KVS (s)', 'DT Parked %', 'Labor vs Need %', 'Labor %', 'TPPH', '2nd Side Usage %', 'Alerts'].map(k => ({ key: k, label: k })),
     title: `Signals — Live Ops — ${data.date}`, filename: `signals-liveops-${data.date}` };
 }
 function liveOpsPrintHtml(data) {
-  const rows = [...(data.stores || [])].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName)).map(s => [
-    esc(s.storeName),
-    s.salesPct != null ? `<b style="color:${paceColor(s.salesPct)}">${s.salesPct.toFixed(2)}%</b>` : '—',
-    s.dtAvgSec != null ? `<b style="color:${speedColor(s.dtAvgSec)}">${Math.round(s.dtAvgSec)}s</b>` : '—',
-    s.laborPct != null ? `<b style="color:${laborColor(s.laborPct)}">${s.laborPct.toFixed(2)}%</b>` : '—',
-    s.accRate != null ? `<b style="color:${accColor(s.accRate)}">${s.accRate.toFixed(2)}%</b>` : '—',
-    alertCount(s) || '—',
-  ]);
+  const rows = [...(data.stores || [])].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName)).map(s => {
+    const r2pBands = secBands('tR2p', s.key);
+    const kvsBands = secBands('tKvst', s.key);
+    const tgt = DEFAULT_TARGETS[s.key];
+    return [
+      esc(s.storeName),
+      s.salesPct != null ? `<b style="color:${paceColor(s.salesPct)}">${s.salesPct.toFixed(2)}%</b>` : '—',
+      s.oepeSec != null ? `<b style="color:${speedColor(s.oepeSec)}">${Math.round(s.oepeSec)}s</b>` : '—',
+      s.r2pSec != null ? `<b style="color:${secColor(s.r2pSec, r2pBands)}">${Math.round(s.r2pSec)}s</b>` : '—',
+      s.kvsSec != null ? `<b style="color:${secColor(s.kvsSec, kvsBands)}">${Math.round(s.kvsSec)}s</b>` : '—',
+      s.parkPct != null ? `<b style="color:${tgt?.tPark != null ? targetColor(s.parkPct / 100, tgt.tPark, true) : muted}">${s.parkPct.toFixed(2)}%</b>` : '—',
+      s.laborPct != null ? `<b style="color:${laborColor(s.laborPct)}">${s.laborPct.toFixed(2)}%</b>` : '—',
+      s.laborCostPct != null ? `<b style="color:${tgt?.tLabor != null ? targetColor(s.laborCostPct / 100, tgt.tLabor, true) : muted}">${s.laborCostPct.toFixed(2)}%</b>` : '—',
+      s.tpph != null ? `<b style="color:${tgt?.tTpph != null ? targetColor(s.tpph, tgt.tTpph, false) : muted}">${s.tpph.toFixed(2)}</b>` : '—',
+      s.accRate != null ? `<b style="color:${accColor(s.accRate)}">${s.accRate.toFixed(2)}%</b>` : '—',
+      alertCount(s) || '—',
+    ];
+  });
   const p = data.planPace;
   const heroCard = (label, val, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
     <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
@@ -2589,7 +2739,7 @@ function liveOpsPrintHtml(data) {
   const anomalyRows = (data.anomalies || []).map(a => [esc(STORE_NAMES?.[a.key] || `Store ${a.key}`), a.slot, (a.pace >= 100 ? '+' : '') + Math.round(a.pace - 100) + '%']);
   return reportShell('Live Ops', `${data.date} · ${(data.stores || []).length} stores`,
     (heroSection ? reportSection('District Pace vs Plan', heroSection) : '') +
-    reportSection('Store Status', reportTable(['Store', 'Sales Pace', 'DT Speed', 'Labor vs Need', 'Accuracy', 'Alerts'], rows)) +
+    reportSection('Store Status', reportTable(['Store', 'Sales Pace', 'OEPE', 'R2P', 'KVS', 'DT Parked %', 'Labor vs Need', 'Labor %', 'TPPH', '2nd Side Usage', 'Alerts'], rows)) +
     (anomalyRows.length ? reportSection('Baseline Anomalies', reportTable(['Store', 'Hour Slot', 'vs Mean'], anomalyRows)) : ''));
 }
 
