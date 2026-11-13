@@ -14,6 +14,7 @@
 // altitude).
 
 import { supervisorGroups, unpadLoc } from '../constants.js';
+import { resolveScope, AssignmentCycleError } from './assignment-graph.js';
 
 const SEV_RANK = { RED: 2, AMBER: 1, GREEN: 0 };
 
@@ -68,10 +69,38 @@ export function shouldDefaultToCuratedHome({ routePanel, view, roleId, hasBriefP
 // of unpadded locs the simulated altitude should see, or null for "no restriction" (district
 // altitude, or no simulation active -- a real, non-simulated GM/DO's own ds is already
 // RLS-scoped this narrowly, so this is always a no-op for a real login).
-export function viewAsAllowedLocs(altitude, viewAsScope) {
+//
+// Dual-role fix (owner report 2026-11-13: "viewing as Ops Manager (Ashley) only shows her
+// Supervisor patch locations" -- same gap affects Brad Denley, DO + Supervisor over a subset of
+// his own district). Root cause: `altitude==='patch'` used to ALWAYS resolve against the flat
+// `supervisorGroups()` map keyed by person name -- the only data area_supervisor/om/do altitude
+// ever consulted, and the SAME lookup regardless of which of those three roles was being
+// simulated. A person who holds two roles (an AS patch AND an OM's broader oversight) has only
+// ONE name-keyed entry in that flat map, so there was nowhere for the broader scope to live.
+// `assignment-graph.js`'s `resolveScope()` (dispatch #150, built for Performance Review
+// continuity) already solves exactly this shape -- a person can hold several `staff_assignments`
+// rows, and resolveScope unions their own direct stores with the recursively-resolved scope of
+// everyone who reports to them. `assignmentRows` is `ds.assignmentRows` (loaded eagerly by
+// dispatch #157) -- optional and omittable by every existing caller (defaults to `[]`), so this
+// is purely additive: a person with zero staff_assignments rows (today, nearly everyone) resolves
+// EXACTLY as before via the flat-map fallback. A person who gains real assignment rows (via the
+// new Roles & Assignments editor, admin.js) automatically gets the union the moment those rows
+// exist -- no further code change needed per person.
+export function viewAsAllowedLocs(altitude, viewAsScope, assignmentRows) {
   if (!viewAsScope) return null;
   if (altitude === 'store') return new Set([unpadLoc(viewAsScope)]);
-  if (altitude === 'patch') return new Set((supervisorGroups()[viewAsScope] || []).map(unpadLoc));
+  if (altitude === 'patch') {
+    let graphScope = [];
+    if (assignmentRows && assignmentRows.length) {
+      // A malformed row (A reports to B who reports to A) must not crash a render path --
+      // fail safe to the flat-map fallback below, same posture personOversees() already
+      // takes on the identical error (assignment-graph.js).
+      try { graphScope = resolveScope(viewAsScope, new Date(), assignmentRows); }
+      catch (e) { if (!(e instanceof AssignmentCycleError)) throw e; }
+    }
+    if (graphScope.length) return new Set(graphScope.map(unpadLoc));
+    return new Set((supervisorGroups()[viewAsScope] || []).map(unpadLoc));
+  }
   return null;
 }
 

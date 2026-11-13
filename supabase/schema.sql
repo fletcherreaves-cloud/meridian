@@ -279,6 +279,20 @@ alter table public.staff_assignments drop column if exists store_loc;
 -- alter table public.staff_assignments alter column target set not null;
 -- alter table public.staff_assignments alter column role set not null;
 
+-- Dual-role RBAC fix (2026-11-13) — the new Roles & Assignments editor (admin.js) needs to mark
+-- which of a person's several rows is their PRIMARY one (drives default landing altitude/label
+-- only — their real resolved store SCOPE is always the union of every row they hold, via
+-- resolveScope()/assignment-graph.js, never narrowed to just the primary row). Idempotent, same
+-- style as every ALTER above. "Exactly one primary per person" is enforced by the editor's own
+-- write path (clear-then-set, two statements), not a DB constraint — not worth a partial unique
+-- index for a UI-level invariant with no RLS/security consequence either way.
+alter table public.staff_assignments add column if not exists is_primary boolean not null default false;
+-- The RLS policies below ("assignments: own or above" / "assignments: admin/supervisor write")
+-- are updated further down this file (dual-role RBAC fix, 2026-11-13) to also admit `owner`, not
+-- just `admin` — see that block's own comment for why. Not repeated here to avoid defining the
+-- same two policies twice in one file, where order-of-execution would make the LATER definition
+-- win regardless of which one carries the explanatory comment.
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -614,27 +628,38 @@ alter table public.staff_assignments enable row level security;
 -- supervisor name string, not the caller's own uuid, so "is this row about me" has no defined
 -- answer yet (mapping a logged-in user onto their own `person` identity in this graph is real,
 -- un-built Phase 3b work — see the CREATE TABLE header comment above). Read access is therefore
--- ADMIN/AREA_SUPERVISOR ONLY for now, same role check the write policy below already used —
--- narrower than before for a non-admin/non-AS caller (previously: nothing, since `profile_id`
--- was never populated by any code path either — this is a behavior change in principle, not in
--- practice, on a table with zero writers to date).
+-- ADMIN/OWNER/AREA_SUPERVISOR ONLY for now, same role check the write policy below already used —
+-- narrower than before for a non-admin/non-owner/non-AS caller (previously: nothing, since
+-- `profile_id` was never populated by any code path either — this is a behavior change in
+-- principle, not in practice, on a table with zero writers to date).
+--
+-- ⚠️ `owner` added 2026-11-13 (dual-role RBAC fix) — this policy originally checked only
+-- `('area_supervisor', 'admin')`. CLAUDE.md's own RBAC table documents `admin` and `owner` as the
+-- SAME top tier (level 1, "Owner/Developer" — not a separate lesser role), but this table's RLS
+-- never got `owner` added when dispatch #148 established that ladder, so an `'owner'`-role
+-- account could not read or write this table at all. Confirmed by reading the policy text
+-- directly, not inferred. Harmless for the real owner's own account to date (its profiles.role is
+-- `'admin'`, confirmed live) — but the new Roles & Assignments editor (admin.js) is gated to admit
+-- BOTH ids, matching every other admin-tier surface in this app, so RLS must actually admit both
+-- too, or an `'owner'`-role account would see the editor render with every write silently
+-- rejected underneath it.
 drop policy if exists "assignments: own or above" on public.staff_assignments;
 create policy "assignments: own or above" on public.staff_assignments
   for select using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
+      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin', 'owner')
     )
   );
 
 -- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
--- above.) Unchanged by dispatch #150 — references only profiles.role, no column this dispatch
--- renamed.
+-- above.) `owner` added 2026-11-13, same reasoning as the select policy immediately above.
+drop policy if exists "assignments: admin/supervisor write" on public.staff_assignments;
 create policy "assignments: admin/supervisor write" on public.staff_assignments
   for all using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
+      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin', 'owner')
     )
   );
 

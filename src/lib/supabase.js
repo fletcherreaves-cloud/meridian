@@ -7531,13 +7531,52 @@ export async function loadStaffAssignments() {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('staff_assignments')
-    .select('person, role, target_type, target, start_date, end_date')
+    .select('person, role, target_type, target, start_date, end_date, is_primary')
     .order('start_date', { ascending: true });
   if (error || !data) { console.warn('[staff_assignments] load error:', error); return []; }
   return data.map(r => ({
     person: r.person, role: r.role, target_type: r.target_type, target: r.target,
-    start: r.start_date, end: r.end_date,
+    start: r.start_date, end: r.end_date, isPrimary: !!r.is_primary,
   }));
+}
+
+// Dual-role RBAC fix (2026-11-13) — the first client-side WRITER of `staff_assignments`. Every
+// prior write came only from the one-time backfill script (scripts/backfill-staff-assignments-
+// 2026.mjs, service-role) — this is the real-time editor path (admin.js's new Roles &
+// Assignments tab) that lets an admin/owner add a row without a script. `is_primary` requires
+// the schema.sql migration in this same PR (is_primary column + the RLS policies' `owner` fix) —
+// callers surface the Supabase error message as-is rather than guessing at the cause, since
+// "column does not exist" / "RLS violation" are both real, distinguishable failures here until
+// that migration is run.
+export async function saveStaffAssignment({ person, role, target_type, target, start, end, isPrimary }) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const { error } = await supabase.from('staff_assignments').insert({
+    person, role, target_type, target,
+    start_date: start || new Date().toISOString().slice(0, 10),
+    end_date: end || null,
+    is_primary: !!isPrimary,
+  });
+  return { error: error ? error.message : null };
+}
+
+export async function deleteStaffAssignment({ person, role, target_type, target, start }) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const { error } = await supabase.from('staff_assignments').delete()
+    .match({ person, role, target_type, target, start_date: start });
+  return { error: error ? error.message : null };
+}
+
+// Marks exactly one row primary for a person: clears every other row's flag first (two
+// statements — a UI-level invariant, not a DB constraint; see schema.sql's own comment on
+// is_primary for why a partial unique index isn't worth it here), then sets the chosen one.
+export async function setPrimaryStaffAssignment({ person, role, target_type, target, start }) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const { error: clearErr } = await supabase.from('staff_assignments')
+    .update({ is_primary: false }).eq('person', person);
+  if (clearErr) return { error: clearErr.message };
+  const { error } = await supabase.from('staff_assignments')
+    .update({ is_primary: true }).match({ person, role, target_type, target, start_date: start });
+  return { error: error ? error.message : null };
 }
 
 // Dispatch #162 (Performance Review continuity, build item #6) — the first client-side reader of
