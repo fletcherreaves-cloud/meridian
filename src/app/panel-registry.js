@@ -147,6 +147,12 @@ export const PANELS = [
   // inconsistency; see supabase/schema-payroll-view-add-vp-2026-11-11.sql) -- this key only
   // gates the nav entry, same relationship every permission key here has to its own RLS.
   { id:'pay-rate-history', label:'Pay Rate History', icon:'💰', perm:'payroll.view', kind:'nav', section:'people', route:true },
+  // Daily Review (Notes 75, owner 2026-11-12 night) -- "answer the questions up front each day":
+  // Sales/Service/Controls/FOB vs target for yesterday, one store at a time, Service daypart-
+  // called-out (engine/daily-review.js). GM-only for now; Supervisor/OM notes still pending.
+  // kind:'test-kitchen' with its real eventual section:'operations' set from day one (same
+  // tier as Visit Readiness, which this sits beside) -- standing promotion rule (dispatch #61).
+  { id:'daily-review', label:'Daily Review', icon:'🧭', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:20 },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations', route:true },

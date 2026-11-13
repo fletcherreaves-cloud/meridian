@@ -1,0 +1,123 @@
+// @ts-nocheck
+// GM Daily Review — Notes 75 (owner, 2026-11-12 night, memory/notes-75-queue.md). "Figure out
+// how to incorporate this into what we have already built to see if we can answer the questions
+// up front each day." Reuses buildDailyReview()/buildServiceDaypartBreakdown()
+// (engine/daily-review.js) over data every other panel already has — no new pull, no new table.
+//
+// GM-only for now (Supervisor/OM notes are still pending from the owner); store-grain today,
+// designed so a later patch/district rollup can reuse the same engine rather than a rewrite.
+import * as React from 'react';
+import { buildDailyReview, buildServiceDaypartBreakdown } from '../engine/daily-review.js';
+import { getTargetsForDate } from './store-dash.js';
+import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
+import { lastClosedBusinessDay, addD, dFmt, dKey } from '../utils/date.js';
+import { loadDtHistory } from '../lib/supabase.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
+import { withAlpha, f$ } from '../utils/fmt.js';
+
+const h = React.createElement;
+const div = (p, ...c) => h('div', p, ...c);
+const span = (p, ...c) => h('span', p, ...c);
+
+const SEV_COLOR = { bad: '#ef4444', watch: '#f59e0b', good: '#10b981' };
+const SEV_ICON = { bad: '!', watch: '~', good: '✓' };
+
+function pct(v, digits = 1) { return v == null ? '—' : (v * 100).toFixed(digits) + '%'; }
+function sec(v) { return v == null ? '—' : Math.round(v) + 's'; }
+function hrs(v) { return v == null ? '—' : v.toFixed(1) + 'h'; }
+function dollar(v) { return v == null ? '—' : f$(v); }
+function rate(v) { return v == null ? '—' : v.toFixed(1); }
+
+const UNIT_FMT = { pct, sec, hours: hrs, dollar, rate, count: v => (v == null ? '—' : Math.round(v).toLocaleString()) };
+
+// One line item — status pill (the decision) + the real actual/target numbers (CLAUDE.md's
+// "say the number AND the decision" standing rule), never one without the other.
+function LineRow({ line }) {
+  const fmt = UNIT_FMT[line.unit] || (v => v ?? '—');
+  const color = line.status ? SEV_COLOR[line.status] : 'var(--text3,#6b7280)';
+  return div({ style: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, background: line.status ? withAlpha(SEV_COLOR[line.status], '08') : 'transparent' } },
+    div({ style: { width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color, background: line.status ? withAlpha(SEV_COLOR[line.status], '20') : 'var(--surf2,#f3f4f6)' } },
+      line.status ? SEV_ICON[line.status] : '·'),
+    div({ style: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--text,#111827)' } }, line.label),
+    line.vsLYPct !== undefined && line.ly != null && span({ style: { fontSize: 10, fontFamily: 'var(--mono)', color: line.vsLYPct >= 0 ? '#10b981' : '#ef4444', flexShrink: 0 } },
+      (line.vsLYPct >= 0 ? '+' : '') + (line.vsLYPct * 100).toFixed(1) + '% vs LY'),
+    div({ style: { fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: 'var(--text,#111827)', flexShrink: 0, minWidth: 54, textAlign: 'right' } }, fmt(line.actual)),
+    line.target != null && span({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', flexShrink: 0, minWidth: 70, textAlign: 'right' } }, 'target ' + fmt(line.target)),
+  );
+}
+
+function SectionCard({ section, daypartNote }) {
+  const color = section.severity ? SEV_COLOR[section.severity] : 'var(--bdr,#2a2f3a)';
+  return div({ style: { border: '1px solid ' + (section.severity ? withAlpha(color, '35') : 'var(--bdr,#2a2f3a)'), borderLeft: '4px solid ' + color, borderRadius: 10, background: 'var(--surf2,#151821)', overflow: 'hidden' } },
+    div({ style: { padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)', display: 'flex', alignItems: 'center', gap: 8 } },
+      span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, section.label),
+      section.severity && span({ style: { marginLeft: 'auto', fontSize: 9, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color } }, section.severity)),
+    div({ style: { padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2 } },
+      section.lines.map(l => h(LineRow, { key: l.key, line: l }))),
+    daypartNote,
+  );
+}
+
+// "Literally point out the times of day" — one line per daypart-capable Service metric naming
+// its best and worst daypart, called out in BOTH directions (owner: "Equally call out the
+// positives along with times of day").
+function DaypartNote({ breakdown }) {
+  if (!breakdown || !breakdown.length) return null;
+  const LABEL = { oepe: 'OEPE', r2p: 'R2P', kvst: 'KVS Time' };
+  return div({ style: { padding: '8px 14px', borderTop: '.5px solid var(--bdr,#2a2f3a)', background: 'var(--surf,#111822)', display: 'flex', flexDirection: 'column', gap: 4 } },
+    breakdown.map(b => div({ key: b.key, style: { fontSize: 11, color: 'var(--text2,#9aa0aa)' } },
+      span({ style: { fontWeight: 700, color: 'var(--text,#e8eaed)' } }, LABEL[b.key] + ': '),
+      'slowest in ', span({ style: { color: '#ef4444', fontWeight: 700 } }, b.worst.label), ' (', Math.round(b.worst.avgSec), 's) · best in ',
+      span({ style: { color: '#10b981', fontWeight: 700 } }, b.best.label), ' (', Math.round(b.best.avgSec), 's)')));
+}
+
+function Scorecard({ sections }) {
+  return div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+    sections.map(s => {
+      const color = s.severity ? SEV_COLOR[s.severity] : 'var(--text3,#6b7280)';
+      return div({ key: s.key, style: { flex: '1 1 90px', minWidth: 80, padding: '8px 10px', borderRadius: 8, textAlign: 'center', background: s.severity ? withAlpha(color, '14') : 'var(--surf2,#151821)', border: '1px solid ' + (s.severity ? withAlpha(color, '40') : 'var(--bdr,#2a2f3a)') } },
+        div({ style: { fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } }, s.label),
+        div({ style: { fontSize: 16, marginTop: 2 } }, s.severity ? SEV_ICON[s.severity] : '–'));
+    }));
+}
+
+export function DailyReviewPanel({ ds, stores, selStore, onClose }) {
+  const storeOpts = React.useMemo(() => (stores || []).map(s => ({ loc: String(s.loc), name: STORE_NAMES[String(s.loc)] || s.loc })), [stores]);
+  const [loc, setLoc] = React.useState(() => String(selStore?.loc || stores?.[0]?.loc || storeOpts[0]?.loc || ''));
+  const [date, setDate] = React.useState(() => lastClosedBusinessDay());
+  const [dtRows, setDtRows] = React.useState([]);
+
+  React.useEffect(() => {
+    const dk = dKey(date);
+    loadDtHistory({ s: dk, e: dk }).then(rows => setDtRows(rows || [])).catch(() => setDtRows([]));
+  }, [date]);
+
+  const targets = React.useMemo(() => getTargetsForDate(date, loc, DEFAULT_TARGETS[loc]), [date, loc]);
+  const review = React.useMemo(() => (ds?.loaded ? buildDailyReview(ds, loc, date, targets) : null), [ds, loc, date, targets]);
+  const daypart = React.useMemo(() => buildServiceDaypartBreakdown(dtRows, loc, date), [dtRows, loc, date]);
+  const daypartByKey = React.useMemo(() => Object.fromEntries(daypart.map(d => [d.key, d])), [daypart]);
+
+  const storeName = STORE_NAMES[loc] || loc;
+
+  return h(RoutePanelShell, { title: 'Daily Review', subtitle: storeName + ' · ' + dFmt(date), icon: '🧭', onBack: onClose },
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        storeOpts.length > 1 && h('select', { value: loc, onChange: e => setLoc(e.target.value), style: { fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '.5px solid var(--bdr,#2a2f3a)', background: 'var(--surf2,#151821)', color: 'var(--text,#e8eaed)' } },
+          storeOpts.map(o => h('option', { key: o.loc, value: o.loc }, o.name))),
+        h('button', { className: 'btn btn-sm', onClick: () => setDate(d => addD(d, -1)) }, '← Prior Day'),
+        span({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } }, dFmt(date)),
+        h('button', { className: 'btn btn-sm', onClick: () => setDate(d => addD(d, 1)) }, 'Next Day →'),
+      ),
+      !review ? div({ style: { padding: 24, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } }, 'Loading…') :
+      div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+        h(Scorecard, { sections: review.sections }),
+        review.sections.map(s => h(SectionCard, {
+          key: s.key, section: s,
+          daypartNote: s.key === 'service' ? h(DaypartNote, { breakdown: daypart }) : null,
+        })),
+        div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', textAlign: 'center', padding: '4px 0 0' } },
+          'Sales mix %s and Service dayparts are informational — no formal target exists for them yet. Paper Cost % has a target but no live source (flagged gap, see memory/notes-75-queue.md).'),
+      ),
+    ),
+  );
+}
