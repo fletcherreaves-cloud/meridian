@@ -22,8 +22,8 @@
 // No new data source, no new Supabase table — pure presentation/synthesis over what already
 // auto-flows in.
 
-import { metricDaily, metricDirection } from './metric-source.js';
-import { autoFirstDaily } from './vs-ly.js';
+import { metricDaily, metricDirection, metricSeries, metricRate } from './metric-source.js';
+import { autoFirstDaily, matchedVsLY } from './vs-ly.js';
 import { DAYPART_SLOTS } from './labor-standard.js';
 import { lastClosedBusinessDay, dKey } from '../utils/date.js';
 
@@ -293,4 +293,96 @@ export function findDailyWin(review) {
 
   return { headline: 'No standout yet', icon: '—', kind: 'none',
     detail: 'Nothing cleared the bar for a headline win today — check back once today’s data is fully in, or look for one in the lines above.' };
+}
+
+// ── Patch-level rollup (Area Supervisor / OM) ───────────────────────────────────────────────────
+// Owner spec, memory/plan-role-based-panel-gating-2026-11-03.md §6 (2026-11-13 night, the
+// Supervisor/OM notes this file's own header flagged as "still pending"): "largely the same
+// review as a GM's, but across all assigned locations, with the purpose of identifying every
+// hotspot... Supervisor and OM levels especially should also see WTD and MTD." Additive only —
+// does not touch buildLine/buildDailyReview above, so the GM store-grain path is byte-identical
+// to before this was added (see dispatch-daily-review-patch-rollup-2026-11-13.test.js).
+//
+// Reuses the SAME SECTIONS/line definitions (one spec, not a parallel metric list) and the SAME
+// house rules for rollup math: a dollar/hours/count line is a true SUM across stores and days
+// (sumMetric below); a rate/% line goes through metricRate (Σ/Σ sum-ratio first, mean-of-daily
+// only as fallback — never a mean of per-store percentages, never an in-progress day blended in
+// at full weight); Sales/GC vs LY goes through vs-ly.js's own matchedVsLY, which already does the
+// matched-day, multi-loc sum the single-store path gets from autoFirstDaily.
+
+function sumMetric(ds, locs, range, key) {
+  const list = Array.isArray(locs) ? locs : [locs];
+  let sum = 0, any = false;
+  for (const loc of list) {
+    const series = metricSeries(ds, loc, range, key);
+    for (const k in series) { sum += series[k] || 0; any = true; }
+  }
+  return any ? sum : null;
+}
+
+// Totals (dollars/hours/counts) sum across the patch; everything else is a rate/% that must go
+// through metricRate's Sum/Sum, never averaged as if it were already a total.
+const TOTAL_UNITS = new Set(['dollar', 'count', 'hours']);
+
+function buildPatchLine(ds, locs, range, targetsByLoc, def) {
+  let actual = null, ly = null, vsLYPct = null;
+  if (def.vsLY) {
+    const r = matchedVsLY(ds, locs, range, def.vsLY);
+    actual = r.days ? r.cur : null;
+    ly = r.days ? r.ly : null;
+    vsLYPct = r.pct;
+  } else if (def.ms) {
+    actual = TOTAL_UNITS.has(def.unit) ? sumMetric(ds, locs, range, def.ms) : metricRate(ds, locs, range, def.ms);
+  } else if (def.sumMs) {
+    const vals = def.sumMs.map(k => sumMetric(ds, locs, range, k));
+    actual = vals.every(v => v == null) ? null : vals.reduce((a, v) => a + (v || 0), 0);
+  }
+  const direction = def.dir || (def.ms ? metricDirection(def.ms) : 'lower');
+  let target = null;
+  if (def.t) {
+    const list = Array.isArray(locs) ? locs : [locs];
+    // Most targets are uniform system-wide (DEFAULT_TARGETS); averaging is a no-op in that common
+    // case and still a reasonable patch-level figure when a store carries its own override,
+    // rather than arbitrarily picking one store's target to represent the whole patch.
+    const vals = list.map(loc => targetsByLoc?.[loc]?.[def.t]).filter(v => v != null && Number.isFinite(v));
+    target = vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
+  }
+  const status = def.t ? statusFor(actual, target, direction) : null;
+  const line = { key: def.key, label: def.label, unit: def.unit, actual, target, direction, status };
+  if (def.vsLY) { line.ly = ly; line.vsLYPct = vsLYPct; }
+  return line;
+}
+
+/**
+ * The Supervisor/OM Daily Review for a PATCH (a list of stores) over an arbitrary date range —
+ * same section/line shape buildDailyReview returns for one store, so every existing render
+ * component (SectionCard, Scorecard, LineRow) works unchanged against either. `targetsByLoc`:
+ * {loc: targetsObject}, one resolved getTargetsForDate() result per store (the caller's job, same
+ * as buildDailyReview's own `targets` param).
+ */
+export function buildPatchDailyReview(ds, locs, range, targetsByLoc = {}) {
+  const list = (locs || []).map(String);
+  const sections = SECTIONS.map(sec => {
+    const lines = sec.lines.map(def => buildPatchLine(ds, list, range, targetsByLoc, def));
+    return { key: sec.key, label: sec.label, lines, severity: sectionSeverity(lines) };
+  });
+  return { locs: list, range: { s: dKey(range.s), e: dKey(range.e) }, sections };
+}
+
+/**
+ * Per-store severity ranking across a patch for ONE business day — "identify every hotspot...
+ * enough detail to keep teams grounded in continuous operational improvement" (owner's own
+ * framing for what a Supervisor's review should do). Reuses buildDailyReview() verbatim per
+ * store (never a parallel per-store calculation) and ranks worst-first, so a Supervisor/OM sees
+ * which stores need attention without opening every store's full review one at a time.
+ */
+export function buildPatchHotspots(ds, locs, date, targetsByLoc = {}) {
+  const list = (locs || []).map(String);
+  return list.map(loc => {
+    const review = buildDailyReview(ds, loc, date, targetsByLoc[loc] || null);
+    const bad = review.sections.filter(s => s.severity === 'bad').length;
+    const watch = review.sections.filter(s => s.severity === 'watch').length;
+    const worst = review.sections.reduce((w, s) => (SEV_RANK[s.severity || 'good'] > SEV_RANK[w] ? (s.severity || 'good') : w), 'good');
+    return { loc, review, bad, watch, worst };
+  }).sort((a, b) => (SEV_RANK[b.worst] - SEV_RANK[a.worst]) || (b.bad - a.bad) || (b.watch - a.watch));
 }

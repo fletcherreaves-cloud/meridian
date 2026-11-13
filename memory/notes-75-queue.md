@@ -100,6 +100,21 @@ pulls can now be dispatched to confirm their first real write.
 
 ## Status
 
+**✅ Phase 2 SHIPPED (v5.765, 2026-11-13) — Supervisor/OM patch rollup, per the owner's own
+routine notes in `memory/plan-role-based-panel-gating-2026-11-03.md` §6.** `DailyReviewPanel` now
+has a Store/Patch toggle; Patch mode picks a real supervisor patch (`supervisorGroups()`, filtered
+to the stores actually in scope), adds Today/WTD/MTD window tabs (the owner's own ask — "Supervisor
+and OM levels especially should also see WTD and MTD"), and reuses the SAME section/line
+definitions as the GM view so every existing render component works unchanged. New engine
+functions `buildPatchDailyReview`/`buildPatchHotspots` (`src/engine/daily-review.js`) are additive
+— the GM store-grain path is untouched, proven byte-for-byte identical by the existing test suite.
+Dollar/hours/count lines are a true sum across stores and days; rate/% lines go through
+metric-source.js's `metricRate` (real Σ/Σ, never a mean of store percentages); Sales/GC vs LY goes
+through vs-ly.js's `matchedVsLY`. A worst-first hotspot list (reusing `buildDailyReview` per store)
+surfaces which stores need attention, clicking one jumps straight to its Store view. Not built this
+pass: the Tickets/Calendar section (still flagged below as a cheap follow-on) and the "break out by
+daypart" idea the owner offered as a maybe, not a firm requirement.
+
 **Phase 1 shipped same night (v5.751, task #105-adjacent new build), owner explicitly authorized
 going bigger than a mockup: "if you determine a parallel system is a better fit, by all means
 proceed that direction... have fun with this one."** New engine `src/engine/daily-review.js` +
