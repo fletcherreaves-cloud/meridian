@@ -116,6 +116,30 @@ describe('#171 verification bar — case 2: real sales_ledger_daily gap, Aug 12-
   });
 });
 
+describe('HME Cloud + Squadle freshness (task #105 Phase 2, 2026-11-13 -- was a deliberate placeholder, now live)', () => {
+  it('both are present in STREAMS, checked the same as every other auto stream', () => {
+    const hme = STREAMS.find(x => x.key === 'hmeDt');
+    expect(hme).toBeTruthy();
+    expect(hme.dsField).toBe('hmeDtRows');
+    expect(hme.cadenceDays).toBe(1);
+
+    const sq = STREAMS.find(x => x.key === 'squadle');
+    expect(sq).toBeTruthy();
+    expect(sq.dsField).toBe('squadleChecklistRows');
+    expect(sq.cadenceDays).toBe(1);
+  });
+
+  it('names HME Cloud specifically when its stream goes stale while siblings are current', () => {
+    const ds = freshDs(day(16));
+    ds.hmeDtRows = rowsAt(day(13)); // 3 days stale
+    const w = worstStream(ds, day(16));
+    expect(w).toBeTruthy();
+    expect(w.key).toBe('hmeDt');
+    expect(w.label).toBe('HME Cloud (DT timer)');
+    expect(w.staleDays).toBe(3);
+  });
+});
+
 describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a documented gap)', () => {
   it('is present in STREAMS, checked the same as every other auto stream', () => {
     const s = STREAMS.find(x => x.key === 'inventorySummary');

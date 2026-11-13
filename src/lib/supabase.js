@@ -2386,6 +2386,58 @@ export async function saveDarRows(rows) {
   return { saved, errors };
 }
 
+// ── HME Cloud (DT timer) + Squadle (food-safety checklist) — task #105 Phase 2 (2026-11-13) ──
+// Both tables exist and are live-pulled (scripts/hme-cloud-pull.mjs / squadle-pull.mjs); these
+// are the first client-side loaders for them (dsField names hmeDtRows/squadleChecklistRows
+// match stream-freshness.js's own STREAMS entries, written and commented out ahead of this).
+export async function loadHmeDtRows({ daysBack = 90 } = {}) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase
+    .from('hme_dt_daily').select('*')
+    .gte('dt', cutoffStr)
+    .order('dt', { ascending: false })
+    .range(from, to), 1000, 'hme_dt_daily');
+  if (!data.length) return [];
+  return data.map(r => ({
+    loc:        r.loc,
+    date:       new Date(r.dt + 'T00:00:00'),
+    storeRank:  r.store_rank,
+    cars:       r.cars,
+    avgSeconds: r.avg_seconds,
+    goalA:      r.goal_a,
+    goalB:      r.goal_b,
+    goalC:      r.goal_c,
+    goalD:      r.goal_d,
+    pct:        r.pct,
+  }));
+}
+
+// Squadle's record is a raw JSONB blob by design (schema-squadle-checklist-records.sql's own
+// header — the real shape is deep/per-template, promoting fields to columns is deferred to a
+// real consuming engine). This loader stays equally raw — `data` is passed through untouched —
+// so parsing stays in one place (the engine that eventually reads it) rather than guessed here.
+export async function loadSquadleChecklistRecords({ daysBack = 30 } = {}) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase
+    .from('squadle_checklist_records').select('*')
+    .gte('dt', cutoffStr)
+    .order('dt', { ascending: false })
+    .range(from, to), 1000, 'squadle_checklist_records');
+  if (!data.length) return [];
+  return data.map(r => ({
+    loc:               r.loc,
+    squadleLocationId: r.squadle_location_id,
+    date:              new Date(r.dt + 'T00:00:00'),
+    shard:             r.shard,
+    createdOn:         r.created_on,
+    data:              r.data,
+  }));
+}
+
 export async function loadDarRows({ daysBack = 90 } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
