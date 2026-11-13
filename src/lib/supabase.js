@@ -2401,7 +2401,12 @@ export async function loadHmeDtRows({ daysBack = 90 } = {}) {
     .range(from, to), 1000, 'hme_dt_daily');
   if (!data.length) return [];
   return data.map(r => ({
-    loc:        r.loc,
+    // Strip zero-padding ("0003708" → "3708") — hme_dt_daily stores loc zero-padded like every
+    // other QSRSoft/LifeLenz pull table; omitting this strip reintroduces the exact dual-entry
+    // store-duplication bug memory/finding-lifelenz-loc-padding-store-duplication-2026-11-02.md
+    // already found and fixed in 6 other loaders (found live again 2026-11-13: the owner saw
+    // "54 stores" — 27 doubled — in At A Glance's checklist after this loader shipped unstripped).
+    loc:        String(parseInt(r.loc, 10)),
     date:       new Date(r.dt + 'T00:00:00'),
     storeRank:  r.store_rank,
     cars:       r.cars,
@@ -2429,7 +2434,10 @@ export async function loadSquadleChecklistRecords({ daysBack = 30 } = {}) {
     .range(from, to), 1000, 'squadle_checklist_records');
   if (!data.length) return [];
   return data.map(r => ({
-    loc:               r.loc,
+    // Strip zero-padding — same reasoning as loadHmeDtRows above and
+    // memory/finding-lifelenz-loc-padding-store-duplication-2026-11-02.md; squadle_checklist_records
+    // also stores loc zero-padded (verified live 2026-11-13).
+    loc:               String(parseInt(r.loc, 10)),
     squadleLocationId: r.squadle_location_id,
     date:              new Date(r.dt + 'T00:00:00'),
     shard:             r.shard,

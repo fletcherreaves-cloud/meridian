@@ -68,3 +68,32 @@ unpadded string).
 chars on write (`locFromName()`'s `.padStart(7, '0')`) — any new `loadLifeLenz*` function in
 `src/lib/supabase.js` needs the same strip in its row mapping, or it silently re-introduces this
 exact duplication the next time its `dsField` is added to `STREAMS`.
+
+## Recurrence (2026-11-13) — the takeaway above was right, and it happened again, not to LifeLenz
+
+The owner reported "stores duplicating again" via a live screenshot (At A Glance's Action
+Checklist: "**54** stores missing this week's projection commit" against a 27-store district,
+listing each store as a `0003708, Ardmore-Broadway` pair — the identical unresolved-padded/
+resolved-named signature as the original report). Root cause, confirmed live: the two new
+loaders built earlier in this same session, `loadHmeDtRows`/`loadSquadleChecklistRecords`
+(src/lib/supabase.js, task #105), returned `loc: r.loc` raw with no strip — and both `hme_dt_daily`
+and `squadle_checklist_records` were confirmed (live `curl` against Supabase) to store `loc`
+zero-padded, same as every other QSRSoft/LifeLenz pull table. `dsAutoStoreIds()`
+(`pipeline.js`) unions EVERY `STREAMS` entry's dsField, not just the three named in the original
+finding — this bug class recurs for any newly-added stream, from any vendor, not just LifeLenz.
+
+**Fixed** the same way as the original six: `loc: String(parseInt(r.loc, 10))` in both loaders,
+with a comment pointing back to this file. **Also added a real regression test this time**
+(`src/__tests__/dispatch-hme-squadle-loc-padding-2026-11-13.test.js`) — the original 2026-11-02
+fix had none, which is very likely why this recurred undetected until a live screenshot caught
+it. Full suite (7967 tests) and build pass clean (698.90 KB eager, budget 850 KB).
+
+**Sharper takeaway:** the per-loader comment convention clearly isn't sufficient — it didn't stop
+this session's own author (me) from reintroducing the bug within the same session the comment
+exists in. **Any future STREAMS loader must be checked against its real Supabase column's actual
+loc format (a live `curl`/`select`, not an assumption) before shipping**, the same "measure it,
+don't reason about it" standing rule this whole bug class keeps proving out. A generic ratchet
+test that walks every `STREAMS` entry's loader against a zero-padded fixture and asserts unpadded
+output would close this gap for good instead of relying on a comment being read — not built this
+pass (would need a registry of which Supabase function backs each loader, more scope than this
+fix), but worth doing before a third recurrence.
