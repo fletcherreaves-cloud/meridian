@@ -159,7 +159,14 @@ export function mapRow(r, nsn) {
     totalHours:     (r.totalHours === '' || r.totalHours == null) ? null : Number(r.totalHours),
     totalDollars:   (r.totalDollars === '' || r.totalDollars == null) ? null : Number(r.totalDollars),
     isFinal:        r.isFinal == null ? null : /^y(es)?$/i.test(String(r.isFinal).trim()),
-    jobTitleCode:   r.jobTitleCode ?? null,
+    // GH #1698 fix: job_title_code is now part of qsr_employee_pay_period_history's primary key
+    // (schema-qsr-employee-pay-history-widen-pk-2026-11-14.sql) -- an employee working two job
+    // titles in one pay period is two genuinely distinct real rows from QSRSoft, and the old
+    // 5-column PK collided them into one upsert conflict ("ON CONFLICT DO UPDATE command cannot
+    // affect row a second time" on 15/28 stores). The DB column is NOT NULL with default ''
+    // (a PK column can't be nullable) -- '' is the sentinel for "QSRSoft returned no job title,"
+    // matching the backfill applied to the pre-existing rows, never a real null going forward.
+    jobTitleCode:   r.jobTitleCode ?? '',
   };
 }
 
@@ -170,7 +177,7 @@ const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_
 async function saveRows(rows) {
   if (!rows.length) return 0;
   const upsert = rows
-    .filter(r => r.loc && r.geid && r.payType && r.periodStart) // PK: loc,geid,pay_type,period_start
+    .filter(r => r.loc && r.geid && r.payType && r.periodStart) // PK: loc,geid,pay_type,period_start,job_title_code
     .map(r => ({
       loc:             r.loc,
       geid:            r.geid,
@@ -189,7 +196,7 @@ async function saveRows(rows) {
   for (let i = 0; i < upsert.length; i += CHUNK) {
     const batch = upsert.slice(i, i + CHUNK);
     const { error } = await withRetry(
-      () => supabase.from('qsr_employee_pay_period_history').upsert(batch, { onConflict: 'tenant_id,loc,geid,pay_type,period_start' }),
+      () => supabase.from('qsr_employee_pay_period_history').upsert(batch, { onConflict: 'tenant_id,loc,geid,pay_type,period_start,job_title_code' }),
       { label: 'qsr_employee_pay_period_history upsert' });
     if (error) throw error;
     saved += batch.length;
