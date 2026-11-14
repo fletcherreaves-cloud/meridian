@@ -1,30 +1,29 @@
 // @ts-nocheck
-// scripts/qsrsoft-register-audit-pull.mjs's mapRow() (dispatch #35) -- no supabase/fetch
-// dependency in that function itself, cheap to test directly, same reasoning
-// pull-outcome.test.js/pipeline-contract.test.js already give for testing a scripts/ module
-// from src/__tests__/. This is the ONLY verification possible from this sandbox (no live
-// QSRSoft credentials or network access -- see memory/dispatch35-register-audit-implementation.md)
-// so it's deliberately thorough: every field mapping and derivation dispatch #34's capture
-// left ambiguous is covered here against realistic fixture rows shaped like the documented
-// real response, not against actual production data.
+// scripts/qsrsoft-register-audit-pull.mjs's mapRow() (dispatch #35, migrated 2026-11-14 for GH
+// issue #1314). Every formula below was confirmed live against the real on-screen Register
+// Audit report (memory/finding-register-audit-pull-endpoint-migration-2026-11-14.md has the
+// exact rows and arithmetic) -- this fixture is shaped like the REAL response, not a guess, and
+// the T-Red Pct test below specifically pins the CORRECTED formula ($-share-of-sales, not the
+// old qty/transactions one, which was checked against real data and rejected).
 import { describe, it, expect, vi } from 'vitest';
 import { mapRow, extractRows, buildUrl, REGISTER_TYPES } from '../../scripts/qsrsoft-register-audit-pull.mjs';
 
-// Shaped like dispatch #34's captured field list (memory/dispatch-34-phase0a-findings.md Part 1).
+// Shaped like the new data_layer/v1/cash/register-audit-by-employee response (confirmed live
+// 2026-11-14), with field VALUES chosen to be internally consistent with the confirmed formulas
+// (e.g. drawerSales/drawerGC really does equal the Average Check this fixture implies).
 const SAMPLE_ROW = {
-  busnDt: '2026-08-12', nsn: 3708, empID: 'E4471', empName: 'Aaden W',
-  allNetSales: 1240.50, transactions: 118,
-  overShortAmt: -6.25,
+  date: '2026-08-12', storeNum: 3708, empId: 'E4471', empName: 'Aaden W',
+  netSalesAmt: 1240.50, netSalesEatinQty: 50, netSalesTakeoutQty: 68, // trans = 118
   promoAmt: 42.10, promoQty: 9,
-  tRedBeforeQty: 4, tRedBeforeAmt: 18.40,
-  tRedAfterQty: 1, tRedAfterAmt: 5.99,
-  drawerOpens: 6,
+  tredsBeforeQty: 4, tredsBeforeAmt: 18.40,
+  tredsAfterQty: 1, tredsAfterAmt: 5.99,
+  drawerOpensQty: 6,
   overringQty: 2, overringAmt: 3.50,
-  manOverringAmt: 12.75, manOverringQty: 1,
-  refundCashQty: 2, refundCashAmt: 8.00,
-  refundCashlessQty: 1, refundCashlessAmt: 4.50,
-  empMealDiscQty: 1, empMealDiscAmt: 6.25,
-  mgrMealDiscQty: 0, mgrMealDiscAmt: 0,
+  manualRefundOverrings: 12.75,
+  cashRefundsQty: 2, cashRefundsAmt: 8.00,
+  cashlessRefundsQty: 1, cashlessRefundsAmt: 4.50,
+  empMealDiscountQty: 1, empMealDiscountAmt: 6.25,
+  mgrMealDiscountQty: 0, mgrMealDiscountAmt: 0,
 };
 
 describe('mapRow() — field-by-field against the confirmed response shape', () => {
@@ -35,74 +34,67 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
     expect(r.emp).toBe('Aaden W');
   });
 
-  it('maps empId from empID (dispatch #51) additively alongside emp -- confirmed field name, not inferred', () => {
+  it('maps empId directly from the response\'s own empId field, additively alongside emp', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.empId).toBe('E4471');
   });
 
-  it('empId is null (not undefined/empty string) when empID is missing -- same honest-missing contract as manualRefCnt', () => {
-    const { empID, ...withoutId } = SAMPLE_ROW;
+  it('empId is null (not undefined/empty string) when empId is missing -- same honest-missing contract as manualRefCnt', () => {
+    const { empId, ...withoutId } = SAMPLE_ROW;
     const r = mapRow(withoutId);
     expect(r.empId).toBeNull();
   });
 
   it('empId trims whitespace and treats a blank string the same as missing', () => {
-    expect(mapRow({ ...SAMPLE_ROW, empID: '  E4471  ' }).empId).toBe('E4471');
-    expect(mapRow({ ...SAMPLE_ROW, empID: '' }).empId).toBeNull();
+    expect(mapRow({ ...SAMPLE_ROW, empId: '  E4471  ' }).empId).toBe('E4471');
+    expect(mapRow({ ...SAMPLE_ROW, empId: '' }).empId).toBeNull();
   });
 
-  it('maps drawerSales/drawerGC from allNetSales/transactions (the analyzeRegisterAudit-consumed pair)', () => {
+  it('maps drawerSales from netSalesAmt and drawerGC from netSalesEatinQty+netSalesTakeoutQty (the analyzeRegisterAudit-consumed pair)', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.drawerSales).toBe(1240.50);
-    expect(r.drawerGC).toBe(118);
+    expect(r.drawerGC).toBe(118); // 50 + 68
   });
 
-  it('derives avgCheck = sales/transactions even though the engine recomputes its own', () => {
+  it('derives avgCheck = sales/(eatIn+takeout) even though the engine recomputes its own', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.avgCheck).toBeCloseTo(1240.50 / 118, 6);
   });
 
-  it('keeps manualRefAmt (manOverringAmt) and posOverAmt/posOverCnt (overringAmt/overringQty) as DISTINCT columns, not folded together', () => {
+  it('keeps manualRefAmt (manualRefundOverrings) and posOverAmt/posOverCnt (overringAmt/overringQty) as DISTINCT columns, not folded together', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.manualRefAmt).toBe(12.75);
     expect(r.posOverAmt).toBe(3.50);
     expect(r.posOverCnt).toBe(2);
   });
 
-  it('maps manualRefCnt from manOverringQty (dispatch #44) -- the Amt/Qty sibling pair every other override category already has', () => {
+  it('manualRefCnt stays null -- confirmed absent on the new endpoint too (no Qty sibling field exists)', () => {
     const r = mapRow(SAMPLE_ROW);
-    expect(r.manualRefCnt).toBe(1);
-    expect(r.manualRefCnt).not.toBe(r.manualRefAmt);
-  });
-
-  it('manualRefCnt is null (not 0) when the response omits manOverringQty -- num()\'s honest-missing contract, same as every other optional field', () => {
-    const { manOverringQty, ...withoutQty } = SAMPLE_ROW;
-    const r = mapRow(withoutQty);
     expect(r.manualRefCnt).toBeNull();
   });
 
-  it('cashOSDollar is the raw overShortAmt; cashOSPct is derived as a fraction of sales', () => {
+  it('cashOSDollar/cashOSPct are always null -- confirmed unavailable from this endpoint (see mapRow\'s header comment for what was tried)', () => {
     const r = mapRow(SAMPLE_ROW);
-    expect(r.cashOSDollar).toBe(-6.25);
-    expect(r.cashOSPct).toBeCloseTo(-6.25 / 1240.50, 6);
+    expect(r.cashOSDollar).toBeNull();
+    expect(r.cashOSPct).toBeNull();
   });
 
-  it('refundCnt sums BOTH cash and cashless refund counts (dispatch #34\'s own high-confidence mapping)', () => {
+  it('refundCnt sums BOTH cash and cashless refund counts', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.refundCnt).toBe(3); // 2 cash + 1 cashless
     expect(r.refundCash).toBe(8.00);
     expect(r.refundCashless).toBe(4.50);
   });
 
-  it('derives T-Red rate (qty/transactions) and average $ (amt/qty) for both Before and After', () => {
+  it('derives T-Red Pct as a $ SHARE OF SALES (amt/sales), NOT qty/transactions -- the corrected formula, confirmed live against real on-screen values (see header comment)', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.tRedBCnt).toBe(4);
     expect(r.tRedBDollar).toBe(18.40);
-    expect(r.tRedBPct).toBeCloseTo(4 / 118, 6);
+    expect(r.tRedBPct).toBeCloseTo(18.40 / 1240.50, 6);
     expect(r.tRedBAvg).toBeCloseTo(18.40 / 4, 6);
     expect(r.tRedACnt).toBe(1);
     expect(r.tRedADollar).toBe(5.99);
-    expect(r.tRedAPct).toBeCloseTo(1 / 118, 6);
+    expect(r.tRedAPct).toBeCloseTo(5.99 / 1240.50, 6);
     expect(r.tRedAAvg).toBeCloseTo(5.99 / 1, 6);
   });
 
@@ -122,7 +114,7 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
   });
 
   it('never divides by zero into NaN/Infinity — a zero-transaction row derives all ratios as null, not garbage', () => {
-    const r = mapRow({ ...SAMPLE_ROW, transactions: 0, allNetSales: 0, tRedBeforeQty: 0, tRedAfterQty: 0 });
+    const r = mapRow({ ...SAMPLE_ROW, netSalesEatinQty: 0, netSalesTakeoutQty: 0, netSalesAmt: 0, tredsBeforeQty: 0, tredsAfterQty: 0 });
     expect(r.avgCheck).toBeNull();
     expect(r.cashOSPct).toBeNull();
     expect(r.promoPct).toBeNull();
@@ -134,14 +126,20 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
     expect(Number.isFinite(r.cashOSPct) || r.cashOSPct === null).toBe(true);
   });
 
+  it('drawerGC is null (not 0) when BOTH eatin/takeout qty are missing, but sums whichever is present otherwise', () => {
+    const { netSalesEatinQty, netSalesTakeoutQty, ...withoutQtys } = SAMPLE_ROW;
+    expect(mapRow(withoutQtys).drawerGC).toBeNull();
+    expect(mapRow({ ...SAMPLE_ROW, netSalesEatinQty: undefined }).drawerGC).toBe(68);
+  });
+
   it('handles a missing/blank empName by returning an empty emp string rather than throwing (caller filters these out)', () => {
     const r = mapRow({ ...SAMPLE_ROW, empName: null });
     expect(r.emp).toBe('');
   });
 
-  it('pads a 4-digit nsn the same way as a 5-digit one', () => {
-    expect(mapRow({ ...SAMPLE_ROW, nsn: 6178 }).loc).toBe('0006178');
-    expect(mapRow({ ...SAMPLE_ROW, nsn: 43701 }).loc).toBe('0043701');
+  it('pads a 4-digit storeNum the same way as a 5-digit one', () => {
+    expect(mapRow({ ...SAMPLE_ROW, storeNum: 6178 }).loc).toBe('0006178');
+    expect(mapRow({ ...SAMPLE_ROW, storeNum: 43701 }).loc).toBe('0043701');
   });
 
   // Dispatch #59 -- registerType is a REQUEST FILTER, never a response field (the API returns no
@@ -211,20 +209,22 @@ describe('the PK collision this dispatch\'s migration fixes (dispatch #59)', () 
   });
 });
 
-// extractRows() -- the envelope unwrapper. Three separate CI runs were burned guessing this key
-// ([], {result}, {data}) before run 32399056951's shape log measured the real one: {resp[3793]}.
-// A wrong key here returns [] and prints "0 rows returned", which is indistinguishable from an
-// empty report -- so it is worth a test that fails loudly if the key is ever changed back.
+// extractRows() -- the envelope unwrapper. The OLD endpoint's real envelope was {resp:[...]}
+// (measured run 32399056951); the NEW endpoint (GH #1314 migration, 2026-11-14) was directly
+// observed live to send { result: [...] } instead -- confirmed by reading real response bodies
+// during the migration, not guessed. A wrong key here returns [] and prints "0 rows returned",
+// which is indistinguishable from an empty report -- so it is worth a test that fails loudly if
+// the key is ever changed back.
 describe('extractRows — response envelope', () => {
   const R = [{ nsn: 6178 }, { nsn: 3708 }];
 
-  it("unwraps the REAL envelope QSRSoft sends: { resp: [...] }", () => {
-    expect(extractRows({ resp: R }, 'unit')).toEqual(R);
+  it("unwraps the REAL envelope the new endpoint sends: { result: [...] }", () => {
+    expect(extractRows({ result: R }, 'unit')).toEqual(R);
   });
 
-  it('still accepts a bare array, and the two undocumented alternates', () => {
+  it('still accepts a bare array, and the two undocumented alternates (old envelope + a generic fallback)', () => {
     expect(extractRows(R, 'unit')).toEqual(R);
-    expect(extractRows({ result: R }, 'unit')).toEqual(R);
+    expect(extractRows({ resp: R }, 'unit')).toEqual(R);
     expect(extractRows({ data: R }, 'unit')).toEqual(R);
   });
 
