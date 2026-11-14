@@ -3,7 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB, supervisorGroups } from '../constants.js';
 import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo, businessDate } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync, InfoIcon } from '../engine/forecast.js';
-import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
+import { analyzeRegisterAudit, registerTypeBreakdown, computeTargetAwareRegisterFlags } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { computeOepeDollarGap, computeDaypartErosion, computeParkOptimization } from '../engine/revenue-opportunity.js';
@@ -1370,6 +1370,14 @@ function RegisterAuditTab({ds, loc, dateRange}) {
   // never touches more than one register) renders behaviourally identically to before #62.
   const filteredAuditRows = registerFilter==='all' ? auditRows : auditRows.filter(r=>(r.registerType||'cashier')===registerFilter);
   const auditData = filteredAuditRows.length>0 ? analyzeRegisterAudit(filteredAuditRows) : null;
+  // Notes 61 items #10/#11 (owner, 2026-11-14) -- target-aware risk, independent of whatever
+  // date-range the toolbar above has selected. Fed the FULL row history for this store
+  // (allLocRows, not the date-range-filtered auditRows analyzeRegisterAudit above uses for its
+  // period-scoped totals) so "recent window" flags and "full history" reference stats both mean
+  // what they say regardless of which date range happens to be selected. See register-audit.js's
+  // own header on computeTargetAwareRegisterFlags for the full design + the thresholds chosen.
+  const targetFlags = allLocRows.length>0 ? computeTargetAwareRegisterFlags(allLocRows) : {};
+  const flagsFor = e => targetFlags[e.loc+'::'+e.empName] || null;
   // Breakdown is always computed against the FULL (unfiltered) rows -- an employee's "blended"
   // status and per-type split shouldn't disappear just because the filter narrowed the table.
   const breakdown = React.useMemo(() => registerTypeBreakdown(auditRows), [auditRows]);
@@ -1406,9 +1414,21 @@ function RegisterAuditTab({ds, loc, dateRange}) {
   }
 
   const {employees=[],summary={}} = auditData||{};
-  const sorted = [...employees].sort((a,b)=>(b.riskScore||0)-(a.riskScore||0));
+  // Target-aware score (full-history, recency-weighted, computed above) drives the badge/sort/
+  // summary whenever it's available — it reflects real opportunities to act on, not just
+  // whatever's in the toolbar's current date-range window. Falls back to the legacy period-
+  // scoped score only if no full-history data reached this employee at all (shouldn't happen in
+  // practice: allLocRows is always a superset of whatever window produced `employees`).
+  const riskScoreOf = e => flagsFor(e)?.riskScore ?? e.riskScore ?? 0;
+  const sorted = [...employees].sort((a,b)=>riskScoreOf(b)-riskScoreOf(a));
   const riskColor = s=>s>=70?'var(--crit)':s>=40?'var(--warn)':s>=15?'#84cc16':'#10b981';
   const riskLabel = s=>s>=70?'HIGH':s>=40?'WATCH':s>=15?'LOW':'CLEAN';
+  const flagsTitleFor = e => {
+    const f = flagsFor(e);
+    if (!f) return 'No target data available for this store.';
+    if (!f.flags.length) return 'No target-relative issues in the trailing '+f.recentWindowDays+' days.';
+    return f.flags.map(x => (x.kind==='egregious'?'⚠ EGREGIOUS':'↻ REPETITIVE')+' '+x.label+(x.detail?' — '+x.detail:'')).join('\n');
+  };
 
   // dispatch #62 -- register type is now a visible, filterable dimension instead of an inert
   // column on the wire. Pill style copied from PanelControls.js's _pillStyle (the established
@@ -1507,8 +1527,8 @@ function RegisterAuditTab({ds, loc, dateRange}) {
     // Summary KPIs
     div({style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}},
       [{l:'Employees',v:employees.length,c:'var(--text)'},
-       {l:'High Risk',v:employees.filter(e=>e.riskScore>=70).length,c:'var(--crit)'},
-       {l:'Watch',v:employees.filter(e=>e.riskScore>=40&&e.riskScore<70).length,c:'#f59e0b'},
+       {l:'High Risk',v:employees.filter(e=>riskScoreOf(e)>=70).length,c:'var(--crit)'},
+       {l:'Watch',v:employees.filter(e=>riskScoreOf(e)>=40&&riskScoreOf(e)<70).length,c:'#f59e0b'},
        {l:'T-Red After (total)',v:employees.reduce((a,e)=>a+e.tRedACnt,0),c:'var(--crit)'},
        {l:'T-Red $ (total)',v:'$'+employees.reduce((a,e)=>a+e.tRedADollar,0).toFixed(2),c:'var(--crit)'},
        {l:'Refunds (count)',v:employees.reduce((a,e)=>a+e.refundCnt,0),c:'#f59e0b'},
@@ -1530,25 +1550,38 @@ function RegisterAuditTab({ds, loc, dateRange}) {
     ),
 
     // ── OVERVIEW ──
+    // Notes 61 item #11 (owner, 2026-11-14): "the big ones are cash +/-, T-Reds before and
+    // after, Refunds and Overrings" -- each now has its %-of-sales right next to its $/count,
+    // not buried in a separate tab. The Risk badge's title is the egregious/repetitive detail
+    // (target-aware, trailing-window) rather than a plain label, so hovering it says WHY.
     activeSection==='overview'&&div({style:{overflowX:'auto'}},
       tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
         h('thead',null,tr(null,
-          ColHdr('Employee'),ColHdr('Risk'),ColHdr('Register'),ColHdr('Days'),ColHdr('T-Red A#','right'),ColHdr('T-Red A$','right'),
-          ColHdr('Refunds','right'),ColHdr('POS Over','right'),ColHdr('O/S','right'),ColHdr('Disc%','right')
+          ColHdr('Employee'),ColHdr('Risk'),ColHdr('Register'),ColHdr('Days'),
+          ColHdr('T-Red Before (%)','right'),ColHdr('T-Red After (%)','right'),
+          ColHdr('Refund $ (%)','right'),ColHdr('Overring $ (%)','right'),ColHdr('O/S $ (%)','right'),ColHdr('Disc%','right')
         )),
-        h('tbody',null,sorted.flatMap((e,i)=>[tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
+        h('tbody',null,sorted.flatMap((e,i)=>{
+          const score = riskScoreOf(e);
+          return [tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
-          td({style:{padding:'5px 8px'}},span({style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,
-            background:riskColor(e.riskScore||0)+'22',color:riskColor(e.riskScore||0),border:`.5px solid ${riskColor(e.riskScore||0)}44`}},riskLabel(e.riskScore||0))),
+          td({style:{padding:'5px 8px'}},span({title:flagsTitleFor(e),style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,cursor:'help',
+            background:riskColor(score)+'22',color:riskColor(score),border:`.5px solid ${riskColor(score)}44`}},riskLabel(score))),
           td({style:{padding:'5px 8px'}},registerCell(e)),
           Cell(e.txCount||'—','var(--text3)','right'),
-          Cell(e.tRedACnt||0, e.tRedACnt>5?'var(--crit)':e.tRedACnt>2?'var(--warn)':'var(--text)','right'),
-          Cell('$'+(e.tRedADollar||0).toFixed(2), e.tRedADollar>20?'var(--crit)':e.tRedADollar>5?'var(--warn)':'var(--text)','right'),
-          Cell(e.refundCnt||0, e.refundCnt>3?'#f59e0b':'var(--text)','right'),
-          Cell(e.posOver||0, e.posOver>5?'#f59e0b':'var(--text)','right'),
-          Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'var(--crit)':Math.abs(e.cashOS||0)>2?'var(--warn)':'var(--text)','right'),
+          Cell((e.tRedBDollar||0)===0?'—':'$'+e.tRedBDollar.toFixed(2)+' ('+fP(e.tRedBPctSelf,2)+')',
+            flagsFor(e)?.metrics?.tRedB?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.tRedB?.isRepetitive?'var(--warn)':'var(--text)','right'),
+          Cell((e.tRedADollar||0)===0?'—':'$'+e.tRedADollar.toFixed(2)+' ('+fP(e.tRedAPctSelf,2)+')',
+            flagsFor(e)?.metrics?.tRedA?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.tRedA?.isRepetitive?'var(--warn)':'var(--text)','right'),
+          Cell(((e.refundCash||0)+(e.refundCashless||0))===0?'—':'$'+((e.refundCash||0)+(e.refundCashless||0)).toFixed(2)+' ('+fP(e.refundPctSelf,2)+')',
+            flagsFor(e)?.metrics?.refund?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.refund?.isRepetitive?'var(--warn)':'var(--text)','right'),
+          Cell((e.posOverAmt||0)===0?'—':'$'+e.posOverAmt.toFixed(2)+' ('+fP(e.posOverPctSelf,2)+')',
+            flagsFor(e)?.metrics?.posOver?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.posOver?.isRepetitive?'var(--warn)':'var(--text)','right'),
+          Cell(((e.cashOSTotal||0)>=0?'+$':'-$')+Math.abs(e.cashOSTotal||0).toFixed(2)+' ('+fPct(e.cashOSPctSelf||0,2)+')',
+            flagsFor(e)?.metrics?.cashOS?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.cashOS?.isRepetitive?'var(--warn)':'var(--text)','right'),
           Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'var(--crit)':(e.discPct||0)>.1?'var(--warn)':'var(--text)','right')
-        ), registerBreakdownRow(e,10)].filter(Boolean)))
+        ), registerBreakdownRow(e,10)].filter(Boolean);
+        }))
       )
     ),
 
@@ -1568,8 +1601,17 @@ function RegisterAuditTab({ds, loc, dateRange}) {
           Cell('$'+(e.avgTRedADollar||0).toFixed(2), e.avgTRedADollar>3?'var(--crit)':e.avgTRedADollar>1?'var(--warn)':'var(--text)','right'),
           Cell(e.tRedBCnt, e.tRedBCnt>8?'#f59e0b':'var(--text)','right'),
           Cell('$'+(e.tRedBDollar||0).toFixed(2),'var(--text3)','right'),
-          td({style:{padding:'5px 8px',fontSize:'9px',color:'var(--text3)'}},
-            e.tRedACnt>5?'⚠ High T-Reds after Total pressed':e.tRedADollar>20?'⚠ High reduction dollar value':e.tRedBCnt>8?'↑ Elevated pre-total reductions':'—')
+          // Notes 61 item #10 (owner, 2026-11-14) -- target-relative, not a flat magic number.
+          // Pulls whichever of this employee's T-Red A/B metric results carries a flag, egregious
+          // taking priority over repetitive (same priority the risk score itself weights by).
+          td({style:{padding:'5px 8px',fontSize:'9px',color:'var(--text3)'}}, (() => {
+            const f = flagsFor(e); const a = f?.metrics?.tRedA, b = f?.metrics?.tRedB;
+            if (a?.isEgregious) return '⚠ EGREGIOUS T-Red After — worst day '+a.worst?.dk+' ('+(a.worst?.dayPct*100).toFixed(2)+'% vs target)';
+            if (b?.isEgregious) return '⚠ EGREGIOUS T-Red Before — worst day '+b.worst?.dk+' ('+(b.worst?.dayPct*100).toFixed(2)+'% vs target)';
+            if (a?.isRepetitive) return '↻ Repetitive T-Red After — '+a.overDays+'/'+a.totalRecentDays+' recent days over target';
+            if (b?.isRepetitive) return '↻ Repetitive T-Red Before — '+b.overDays+'/'+b.totalRecentDays+' recent days over target';
+            return '—';
+          })())
         )))
       )
     ),

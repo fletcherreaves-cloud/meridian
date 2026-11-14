@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 
 // dispatch #200 (Task Group B, 2026-08-28) — the returned employee objects now carry the
 // plaintext name as `e.empName`, sourced from `r.emp`. Owner, live: "on the Register Audit
@@ -84,6 +84,26 @@ function finalizeGroup(e) {
   e.avgTRedADollar = e.days>0 ? Math.round(e.tRedADollar/e.days*100)/100 : 0;
   e.avgPosOver     = e.days>0 ? Math.round(e.posOver/e.days*10)/10 : 0;
   e.avgRefundCnt   = e.days>0 ? Math.round(e.refundCnt/e.days*10)/10 : 0;
+  // Notes 61 item #11 (owner, 2026-11-14): "the big ones are cash +/-, T-Reds before and after,
+  // Refunds and Overrings" -- surfaced as real %-of-sales columns, not buried as raw $/counts.
+  // Computed over WHATEVER PERIOD this group's rows span (same totals already summed above, same
+  // totalSales denominator analyzeRegisterAudit's callers already display) -- null (not 0) when
+  // totalSales<=0, so "no sales to divide by" renders distinctly from "genuinely $0 variance."
+  const pctOf = dollar => e.totalSales>0 ? Math.round((dollar/e.totalSales)*10000)/10000 : null;
+  e.cashOSPctSelf  = pctOf(e.cashOSTotal);
+  e.tRedBPctSelf   = pctOf(e.tRedBDollar);
+  e.tRedAPctSelf   = pctOf(e.tRedADollar);
+  e.posOverPctSelf = pctOf(e.posOverAmt);
+  e.refundPctSelf  = pctOf(e.refundCash + e.refundCashless);
+  // Legacy, magic-number, PERIOD-SCOPED risk score -- kept as-is (not removed: still returned,
+  // still what registerTypeBreakdown's per-type slices use) for backward compatibility with
+  // whatever rows this specific call was handed, since analyzeRegisterAudit has no visibility
+  // into the employee's FULL history from inside one call. Notes 61 items #10/#11 (owner,
+  // 2026-11-14) replace this as the panel's PRIMARY signal with computeTargetAwareRegisterFlags()
+  // below, which is target-relative and recency-weighted rather than a flat magic number, and is
+  // fed the employee's full row history separately by the caller. See that function's own header
+  // for the design. This block stays as a reasonable fallback for any caller that never wires
+  // the new analysis in (e.g. a future direct consumer of analyzeRegisterAudit() alone).
   let risk=0;
   if(e.avgDrawerOpens>8){risk+=30;e.flags.push('HIGH drawer opens ('+e.avgDrawerOpens.toFixed(1)+'/day)');}
   else if(e.avgDrawerOpens>5){risk+=15;e.flags.push('Elevated drawer opens');}
@@ -172,4 +192,158 @@ function registerTypeBreakdown(auditRows) {
   return out;
 }
 
-export { analyzeRegisterAudit, registerTypeBreakdown };
+// ── Target-aware flagging (Notes 61 items #10/#11, owner-approved 2026-11-14) ───────────────────
+// Owner's exact framing: "as far as we have data for reference and trends, but realistically the
+// recent items are what is acted upon. Flags triggered by variation from target or being highly
+// repetitive or egregious... Goal is to identify true opportunities that need to be acted upon."
+// And for which metrics to surface as %'s: "the big ones are cash +/-, T-Reds before and after,
+// Refunds and Overrings."
+//
+// This treats all 5 of those named metrics uniformly as a $-over-sales RATIO compared against the
+// SAME store's own real DEFAULT_TARGETS %-field (tCashOSPct/tRedBPct/tRedAPct/tPosOverPct/
+// tRefundPct, constants.js) -- the identical number used for the self-% columns above, so "here's
+// your %" and "here's why it's flagged" are always the same figure, never two different bases.
+//
+// Judgment calls made here (owner explicitly delegated these -- "maybe research how to best
+// handle this" / "open to suggestion"), each with its reasoning:
+//   - RECENT_WINDOW_DAYS = 42 (trailing 6 weeks): NOT a fresh number -- reuses the exact window
+//     store-cockpit.js's own Cash Controls Cockpit already established for Cash O/S specifically
+//     (DAYS_BACK_HEAT, "Cash Over/Short % — trailing 6 weeks"), so this flagging window matches
+//     the cadence the owner already signed off on elsewhere rather than inventing a new one.
+//   - EGREGIOUS_MULTIPLE = 3: a single day's deviation from target must be at least 3x the
+//     target's own magnitude to count as a one-off blowout worth immediate attention -- large
+//     enough to rule out the ordinary day-to-day noise a target already has some tolerance for,
+//     small enough to still catch a real one-off before it has a chance to repeat.
+//   - FLOOR_PCT = 0.005 (0.5% of that day's sales): an absolute minimum deviation before ANY day
+//     counts as "over" at all, for either egregious or repetitive purposes. Several store targets
+//     here are near-zero (e.g. a store's tPosOverPct can be 0.0003) -- without a floor, a trivial
+//     one-cent overring would multiply out to "egregious" against a near-zero target. The floor
+//     is expressed as a fixed %-of-sales rather than a dollar amount so it scales with store size.
+//   - REPETITIVE_MIN_DAYS = 3 and REPETITIVE_SHARE = 0.5: "repetitive" requires BOTH at least 3
+//     notably-over days in the recent window AND at least half of the employee's sales-bearing
+//     days in that window being notably over -- the count guards against "1 bad day out of 2
+//     worked" reading as a 50% pattern; the share guards against a high RAW count that's actually
+//     a small fraction of a high-volume employee's many shifts.
+//   - Score weighting: egregious (+25/metric) outweighs repetitive (+15/metric) -- a single
+//     blowout needs same-week attention regardless of history; a pattern still needs coaching but
+//     is comparatively less urgent. Same 0-100 scale / critical-60/high-30/watch-15 bucket
+//     convention the legacy score above already used, so riskLevel reads consistently either way.
+//
+// Cash O/S is the one SIGNED metric (being too far over OR too far under target both matter --
+// extra cash can be as real a problem as short cash); the other 4 only flag for EXCEEDING target
+// (running under target on refunds/overrings/voids is never a problem).
+const RECENT_WINDOW_DAYS   = 42;
+const EGREGIOUS_MULTIPLE   = 3;
+const FLOOR_PCT            = 0.005;
+const REPETITIVE_MIN_DAYS  = 3;
+const REPETITIVE_SHARE     = 0.5;
+
+const TARGET_RATIO_METRICS = [
+  { key: 'cashOS',  label: 'Cash O/S',     signed: true,  day: d => d.cashOS,   targetField: 'tCashOSPct' },
+  { key: 'tRedB',   label: 'T-Red Before', signed: false, day: d => d.tRedB,    targetField: 'tRedBPct' },
+  { key: 'tRedA',   label: 'T-Red After',  signed: false, day: d => d.tRedA,    targetField: 'tRedAPct' },
+  { key: 'posOver', label: 'Overring',     signed: false, day: d => d.posOver, targetField: 'tPosOverPct' },
+  { key: 'refund',  label: 'Refund',       signed: false, day: d => d.refund,  targetField: 'tRefundPct' },
+];
+
+// Collapses an employee's raw rows into one total PER CALENDAR DAY (same distinct-day rationale
+// as `days`/`cashOSDays` above -- a blended employee can have >1 row on one date, and a single
+// day's deviation-from-target has to be judged on that day's TRUE combined total, not one drawer
+// in isolation).
+function dailyRowTotals(rows) {
+  const byDate = {};
+  for (const r of rows) {
+    const dk = dateKey(r.date);
+    const d = (byDate[dk] ||= { dk, sales: 0, cashOS: 0, tRedB: 0, tRedA: 0, posOver: 0, refund: 0 });
+    d.sales   += r.drawerSales || 0;
+    d.cashOS  += r.cashOSDollar || 0;
+    d.tRedB   += r.tRedBDollar || 0;
+    d.tRedA   += r.tRedADollar || 0;
+    d.posOver += r.posOverAmt || 0;
+    d.refund  += (r.refundCash || 0) + (r.refundCashless || 0);
+  }
+  return Object.values(byDate).sort((a, b) => a.dk.localeCompare(b.dk));
+}
+
+function subtractDaysStr(dk, n) {
+  const d = new Date(dk + 'T12:00:00');
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// One employee's full row history (ALL dates on file, not just whatever window a caller may
+// have filtered to for display elsewhere) -> {riskScore, riskLevel, flags[], metrics{}, fullHistory}.
+// `maxDateStr` is the most recent date across the WHOLE dataset (not just this one employee's own
+// rows), so "recent" means the same calendar window for every employee being compared, not a
+// window that silently slides earlier for someone who hasn't worked in a while.
+function targetAwareFlagsForEmployee(rows, maxDateStr) {
+  const loc = rows[0]?.loc;
+  const target = DEFAULT_TARGETS[loc] || {};
+  const days = dailyRowTotals(rows);
+  const cutoff = subtractDaysStr(maxDateStr, RECENT_WINDOW_DAYS);
+  const recentDays = days.filter(d => d.dk >= cutoff && d.sales > 0);
+
+  const metrics = {};
+  const flags = [];
+  let risk = 0;
+
+  for (const m of TARGET_RATIO_METRICS) {
+    const targetPct = target[m.targetField];
+    if (targetPct == null) { metrics[m.key] = null; continue; }
+    let overDays = 0, egregiousDays = 0, worst = null;
+    for (const d of recentDays) {
+      const dayPct = m.day(d) / d.sales;
+      const deviation = m.signed ? Math.abs(dayPct - targetPct) : Math.max(0, dayPct - targetPct);
+      if (deviation < FLOOR_PCT) continue;
+      overDays++;
+      if (!worst || deviation > worst.deviation) worst = { dk: d.dk, dayPct, deviation };
+      if (deviation >= Math.max(EGREGIOUS_MULTIPLE * Math.abs(targetPct), EGREGIOUS_MULTIPLE * FLOOR_PCT)) egregiousDays++;
+    }
+    const totalRecentDays = recentDays.length;
+    const share = totalRecentDays > 0 ? overDays / totalRecentDays : 0;
+    const isEgregious  = egregiousDays > 0;
+    const isRepetitive = overDays >= REPETITIVE_MIN_DAYS && share >= REPETITIVE_SHARE;
+    metrics[m.key] = { targetPct, overDays, egregiousDays, totalRecentDays, share: Math.round(share * 1000) / 1000, isEgregious, isRepetitive, worst };
+    if (isEgregious) { risk += 25; flags.push({ metric: m.key, label: m.label, kind: 'egregious',
+      detail: worst ? ('worst day ' + worst.dk + ': ' + (worst.dayPct * 100).toFixed(2) + '% vs target ' + (targetPct * 100).toFixed(2) + '%') : '' }); }
+    if (isRepetitive) { risk += 15; flags.push({ metric: m.key, label: m.label, kind: 'repetitive',
+      detail: overDays + '/' + totalRecentDays + ' recent days over target' }); }
+  }
+
+  // Full-history reference stats (owner: "as far as we have data for reference and trends") --
+  // the same ratio, same target, over EVERY day on file for this employee, not just the recent
+  // window the flags above are driven by. Context, not an action trigger.
+  const fullHistoryPct = {};
+  for (const m of TARGET_RATIO_METRICS) {
+    const totalSales = days.reduce((a, d) => a + d.sales, 0);
+    const totalVal = days.reduce((a, d) => a + m.day(d), 0);
+    fullHistoryPct[m.key] = totalSales > 0 ? totalVal / totalSales : null;
+  }
+
+  return {
+    riskScore: Math.min(100, risk),
+    riskLevel: risk >= 60 ? 'critical' : risk >= 30 ? 'high' : risk >= 15 ? 'watch' : 'ok',
+    flags, metrics,
+    recentWindowDays: RECENT_WINDOW_DAYS,
+    recentDaysWithSales: recentDays.length,
+    fullHistory: { pct: fullHistoryPct, daysOnFile: days.length, spanStart: days[0]?.dk || null, spanEnd: days[days.length - 1]?.dk || null },
+  };
+}
+
+// Public entry point -- takes an employee's FULL row history across every date on file for this
+// store (e.g. `ds.auditRows` filtered only by loc, NOT by whatever date-range toolbar a panel
+// happens to have selected), independent of analyzeRegisterAudit()'s own period-scoped totals.
+// Keyed by the SAME `loc::emp` composite key analyzeRegisterAudit groups by internally (not the
+// empToken -- that falls back to the colliding literal 'Unknown' for pre-backfill rows, see this
+// file's header comment; `loc::emp` never collides between two different real employees).
+function computeTargetAwareRegisterFlags(allRows) {
+  if (!allRows || !allRows.length) return {};
+  const maxDateStr = allRows.reduce((m, r) => { const dk = dateKey(r.date); return (!m || dk > m) ? dk : m; }, null);
+  const rowsByEmpKey = {};
+  for (const r of allRows) { (rowsByEmpKey[r.loc + '::' + r.emp] ||= []).push(r); }
+  const out = {};
+  for (const [key, rows] of Object.entries(rowsByEmpKey)) out[key] = targetAwareFlagsForEmployee(rows, maxDateStr);
+  return out;
+}
+
+export { analyzeRegisterAudit, registerTypeBreakdown, computeTargetAwareRegisterFlags };
