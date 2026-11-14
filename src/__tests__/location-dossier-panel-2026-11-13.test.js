@@ -108,4 +108,32 @@ describe('Location Dossier panel (2026-11-13)', () => {
     // 0.25 laborPct + 0.02 fobPct = 0.27 -- the grid picked up the new stream without a re-Run.
     expect(container.textContent).toContain('27.00%');
   });
+
+  // Phase 2 (2026-11-14): Scanner-curated correlations + L3M trend reads render for real.
+  it('renders the What Moves Together section and an L3M Read column', async () => {
+    const { LocationDossierPanel } = await import('../views/location-dossier.js');
+    const stores = [{ loc: '3708', name: 'Ardmore-Broadway' }];
+    const rows = [];
+    const d = new Date('2026-08-01T00:00:00');
+    for (let i = 0; i < 92; i++) {
+      const date = d.toISOString().slice(0, 10);
+      const secondHalf = i >= 46;
+      // sales rises sharply + stays perfectly proportional to gc, so BOTH a real L3M trend
+      // ("up") and a real sales<->gc correlation have something genuine to surface.
+      rows.push({ loc: '3708', date, sales: (secondHalf ? 1300 : 1000) + i, gc: 100 + i });
+      d.setDate(d.getDate() + 1);
+    }
+    const ds = { laborRows: rows };
+
+    mountEl(h(LocationDossierPanel, { ds, stores, onClose: () => {} }));
+    const select = [...container.querySelectorAll('select')].find(s => s.textContent.includes('Ardmore-Broadway'));
+    await act(async () => { setSelectValue(select, 'store:3708'); });
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Run Report'));
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    expect(container.textContent).toContain('What Moves Together');
+    expect(container.textContent).toContain('L3M Read');
+    // Net Sales rose well past the 3% floor across the L3M window -> a real up/improving read.
+    expect(container.textContent).toContain('improving');
+  });
 });
