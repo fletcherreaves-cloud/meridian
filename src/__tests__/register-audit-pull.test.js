@@ -6,7 +6,7 @@
 // the T-Red Pct test below specifically pins the CORRECTED formula ($-share-of-sales, not the
 // old qty/transactions one, which was checked against real data and rejected).
 import { describe, it, expect, vi } from 'vitest';
-import { mapRow, extractRows, buildUrl, REGISTER_TYPES } from '../../scripts/qsrsoft-register-audit-pull.mjs';
+import { mapRow, extractRows, buildUrl, REGISTER_TYPES, dedupeAuditRows } from '../../scripts/qsrsoft-register-audit-pull.mjs';
 
 // Shaped like the new data_layer/v1/cash/register-audit-by-employee response (confirmed live
 // 2026-11-14), with field VALUES chosen to be internally consistent with the confirmed formulas
@@ -244,5 +244,62 @@ describe('extractRows — response envelope', () => {
     expect(extractRows('<html>nope</html>', 'unit')).toEqual([]);
     expect(extractRows(null, 'unit')).toEqual([]);
     err.mockRestore();
+  });
+});
+
+// GH #1314 follow-up (2026-11-14, live-dispatch run #107): the `preparer` register type's
+// response can carry two rows for the identical (loc, date, emp, registerType) composite, which
+// collides the DB's onConflict key and fails Postgres with "ON CONFLICT DO UPDATE command cannot
+// affect row a second time" -- confirmed live, cashier (1060 rows) and manager (488 rows) both
+// saved cleanly in that same run, only preparer hit this. Root cause of WHY two rows share a key
+// is not yet confirmed (sandbox network access to re-probe the live endpoint is WAF-blocked) --
+// this dedup is a resilience measure so one collision can't fail the entire register-type
+// window, not a claim about what's producing the duplicate.
+describe('dedupeAuditRows() — the #1314 preparer-duplicate resilience fix', () => {
+  const row = (over = {}) => ({ loc: '0003708', date: '2026-11-10', emp: 'Jordan P', registerType: 'preparer', empId: 'E1', ...over });
+
+  it('passes through rows with no duplicates unchanged', () => {
+    const rows = [row({ emp: 'A' }), row({ emp: 'B' }), row({ emp: 'C' })];
+    expect(dedupeAuditRows(rows)).toHaveLength(3);
+  });
+
+  it('collapses a duplicate (loc,date,emp,registerType) to one row, keeping the LATER one', () => {
+    const a = row({ empId: 'E1', drawerSales: 100 });
+    const b = row({ empId: 'E2', drawerSales: 200 }); // same loc/date/emp/registerType as a
+    const result = dedupeAuditRows([a, b]);
+    expect(result).toHaveLength(1);
+    expect(result[0].empId).toBe('E2');
+    expect(result[0].drawerSales).toBe(200);
+  });
+
+  it('does NOT collide two rows that differ only by registerType (cashier vs preparer are independent keys)', () => {
+    const cashier = row({ registerType: 'cashier' });
+    const preparer = row({ registerType: 'preparer' });
+    expect(dedupeAuditRows([cashier, preparer])).toHaveLength(2);
+  });
+
+  it('does NOT collide two rows for the same employee on DIFFERENT dates', () => {
+    const d1 = row({ date: '2026-11-10' });
+    const d2 = row({ date: '2026-11-11' });
+    expect(dedupeAuditRows([d1, d2])).toHaveLength(2);
+  });
+
+  it('logs every collision via the injected warn function, naming loc/date/emp/type and both empIds', () => {
+    const warn = vi.fn();
+    const a = row({ empId: 'E1' });
+    const b = row({ empId: 'E2' });
+    dedupeAuditRows([a, b], warn);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const msg = warn.mock.calls[0][0];
+    expect(msg).toContain('0003708');
+    expect(msg).toContain('2026-11-10');
+    expect(msg).toContain('Jordan P');
+    expect(msg).toContain('preparer');
+    expect(msg).toContain('E1');
+    expect(msg).toContain('E2');
+  });
+
+  it('handles an empty array without throwing', () => {
+    expect(dedupeAuditRows([])).toEqual([]);
   });
 });

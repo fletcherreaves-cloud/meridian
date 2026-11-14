@@ -178,13 +178,42 @@ function chunkDateRange(startDate, endDate, maxDays = 21) {
 // under plain Node: that file's `import.meta.env` is undefined outside Vite and it opens the
 // anon key, not service role -- every pull script in this repo avoids importing it for exactly
 // that reason). Column mapping and onConflict copied verbatim from src/lib/supabase.js:859.
+// GH #1314 follow-up (2026-11-14 dispatch): the new endpoint's `preparer` register type can
+// return TWO rows for the identical (loc, date, emp) composite -- the DB's onConflict key
+// (loc,date,emp,register_type) collides them, and Postgres cannot resolve a duplicate conflict
+// key within ONE multi-row upsert statement ("ON CONFLICT DO UPDATE command cannot affect row a
+// second time"), unlike #1698's cause (a genuinely different employee split by job_title_code)
+// -- here register_type is fixed for the whole call, so the collision is within THIS single
+// endpoint response, not yet root-caused to a specific data shape (sandbox network access to
+// re-probe is WAF-blocked; the real cause needs a debug-mode production run to surface). Exported
+// standalone (pure, no supabase dependency) so it's unit-testable like mapRow()/extractRows().
+// Logs every collision loudly so the next run's job log names the exact colliding employee/date/
+// store, and deduplicates (last-row-wins, by array order) so one collision no longer fails the
+// ENTIRE register-type window's upsert -- the same outcome two separate single-row upserts would
+// produce anyway, just resolved in JS since Postgres can't do it within one statement when both
+// rows are in the same payload.
+export function dedupeAuditRows(rows, warn = console.warn) {
+  const seenKeys = new Map();
+  for (const r of rows) {
+    const key = `${r.loc}|${r.date}|${r.emp}|${r.registerType || 'cashier'}`;
+    if (seenKeys.has(key)) {
+      warn(`[audit-pull] duplicate (loc,date,emp,registerType) in one response -- ` +
+        `loc=${r.loc} date=${r.date} emp="${r.emp}" type=${r.registerType} ` +
+        `empId(A)=${seenKeys.get(key).empId} empId(B)=${r.empId} -- keeping the later row`);
+    }
+    seenKeys.set(key, r);
+  }
+  return [...seenKeys.values()];
+}
+
 async function saveAuditRows(rows) {
   if (!rows?.length) return { saved: 0, errors: [] };
+  const dedupedRows = dedupeAuditRows(rows);
   // dispatch #37 (Direction B) -- one token lookup/create per DISTINCT employee name in this
   // batch, not per row. emp_token is additive alongside emp (the name column) -- see
   // supabase/schema-identity-vault.sql's header for why the PK/emp column itself is untouched.
-  const tokenMap = await tokenizeRows(supabase, rows, 'emp');
-  const upsert = rows.map(r => ({
+  const tokenMap = await tokenizeRows(supabase, dedupedRows, 'emp');
+  const upsert = dedupedRows.map(r => ({
     loc: r.loc, date: r.date, emp: r.emp,
     register_type: r.registerType || 'cashier',
     emp_id:   r.empId ?? null,
