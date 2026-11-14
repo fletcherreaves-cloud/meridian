@@ -199,26 +199,48 @@ const lbl=(p,...c)=>h('label',p,...c);
 // cleanup and doesn't need 3 more permanent rows; At A Glance is the page everyone actually
 // lands on, so a footer fits the "jump-off point" mental model without adding nav weight).
 // Notes 74 (owner, 2026-11-11) expanded this footer with QSRSoft deep links. Per-store
-// scoping syntax for these is a separate, still-in-progress verification (memory/notes-74-queue.md)
-// — every URL below is the plain unscoped page, same as the original 3 links always were.
+// scoping syntax verified live 2026-11-14 (owner's own authorization: "login as well and
+// verify syntax to make the links even more specific to open directly to active store where
+// appropriate") — see memory/notes-74-queue.md's dated update block for the full measurement.
+// Confirmed via real Playwright login (v3.myqsrsoft.com main app, NOT the WAF-blocked
+// /equipment/tickets sub-app): every QSR report/form page except Home and QSRSoft Home itself
+// accepts `?location=<unpadded loc>` (the SAME short code INV_ORG_COORDS already keys on, e.g.
+// '5183' not '0005183') and genuinely scopes the page to that store (confirmed by forcing a
+// DIFFERENT store's code and seeing the page's own store-selector badge/body text update to
+// match, not just echo back whatever was already selected). `locParam:true` marks the entries
+// this was confirmed for. Operations Report/3 Peaks weren't cleanly confirmed the same way
+// (Operations Report's own render never settled on a visible per-store label within a
+// reasonable wait — ambiguous, not a measured failure) and are left unscoped rather than guessed.
 const QUICK_LINKS = [
   { label: 'atMcd', title: "McDonald's Intranet", url: 'https://www.atmcd.com/' },
   { label: 'MBSync', title: 'Martin Brower truck ordering', url: 'https://martinbrower.my.site.com/Sync/s/aggregatehomepage' },
   { label: 'PACE Portal', title: 'PACE Portal', url: 'https://pace.mcd.com/login' },
   { label: 'QSRSoft Home', title: 'QSRSoft Home', url: 'https://v3.myqsrsoft.com/home-dashboard', group: 'qsr' },
-  { label: 'Register Audit', title: 'QSRSoft Register Audit', url: 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit', group: 'qsr' },
+  { label: 'Register Audit', title: 'QSRSoft Register Audit', url: 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit', group: 'qsr', locParam: true },
   { label: 'Tickets', title: 'QSRSoft Equipment Tickets', url: 'https://v3.myqsrsoft.com/equipment/tickets', group: 'qsr' },
-  { label: 'Travel Path (Playplace)', title: 'QSRSoft Travel Path — With Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=fd2c551a-5859-449a-80c1-5bb980ce7704', group: 'qsr' },
-  { label: 'Travel Path (No Playplace)', title: 'QSRSoft Travel Path — No Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=3ee1cc75-9f29-42d2-b49f-6ca3216addb4', group: 'qsr' },
-  { label: 'Pre-Shift – Breakfast', title: 'QSRSoft Pre-Shift Checklist — Breakfast', url: 'https://v3.myqsrsoft.com/forms/take?formId=af2c43a5-2416-4f51-ba78-8377bea88745', group: 'qsr' },
-  { label: 'Pre-Shift – Lunch', title: 'QSRSoft Pre-Shift Checklist — Lunch', url: 'https://v3.myqsrsoft.com/forms/take?formId=9f09c80c-436f-4c26-93d6-85198bd1da0e', group: 'qsr' },
-  { label: 'Pre-Shift – Dinner', title: 'QSRSoft Pre-Shift Checklist — Dinner', url: 'https://v3.myqsrsoft.com/forms/take?formId=55e8846f-bbcd-4129-a05a-85c964bec805', group: 'qsr' },
+  { label: 'Travel Path (Playplace)', title: 'QSRSoft Travel Path — With Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=fd2c551a-5859-449a-80c1-5bb980ce7704', group: 'qsr', locParam: true },
+  { label: 'Travel Path (No Playplace)', title: 'QSRSoft Travel Path — No Playplace', url: 'https://v3.myqsrsoft.com/forms/take?formId=3ee1cc75-9f29-42d2-b49f-6ca3216addb4', group: 'qsr', locParam: true },
+  { label: 'Pre-Shift – Breakfast', title: 'QSRSoft Pre-Shift Checklist — Breakfast', url: 'https://v3.myqsrsoft.com/forms/take?formId=af2c43a5-2416-4f51-ba78-8377bea88745', group: 'qsr', locParam: true },
+  { label: 'Pre-Shift – Lunch', title: 'QSRSoft Pre-Shift Checklist — Lunch', url: 'https://v3.myqsrsoft.com/forms/take?formId=9f09c80c-436f-4c26-93d6-85198bd1da0e', group: 'qsr', locParam: true },
+  { label: 'Pre-Shift – Dinner', title: 'QSRSoft Pre-Shift Checklist — Dinner', url: 'https://v3.myqsrsoft.com/forms/take?formId=55e8846f-bbcd-4129-a05a-85c964bec805', group: 'qsr', locParam: true },
   { label: 'Operations Report', title: 'QSRSoft Operations Report', url: 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', group: 'qsr' },
-  { label: '3 Peaks', title: 'QSRSoft 3 Peaks Report', url: 'https://v3.myqsrsoft.com/reports/mcd/shift/3PeaksReport', group: 'qsr' },
-  { label: 'Food Over Base', title: 'QSRSoft Food Over Base', url: 'https://v3.myqsrsoft.com/cimt/inventory/food-over-base', group: 'foodcost' },
-  { label: 'On Hand Inventory', title: 'QSRSoft On Hand Inventory', url: 'https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory', group: 'foodcost' },
-  { label: 'Variance/Yields', title: 'QSRSoft Variance Stat/Yields', url: 'https://v3.myqsrsoft.com/cimt/inventory/stat-variance', group: 'foodcost' },
+  { label: '3 Peaks', title: 'QSRSoft 3 Peaks Report', url: 'https://v3.myqsrsoft.com/reports/mcd/shift/3PeaksReport', group: 'qsr', locParam: true },
+  { label: 'Food Over Base', title: 'QSRSoft Food Over Base', url: 'https://v3.myqsrsoft.com/cimt/inventory/food-over-base', group: 'foodcost', locParam: true },
+  { label: 'On Hand Inventory', title: 'QSRSoft On Hand Inventory', url: 'https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory', group: 'foodcost', locParam: true },
+  { label: 'Variance/Yields', title: 'QSRSoft Variance Stat/Yields', url: 'https://v3.myqsrsoft.com/cimt/inventory/stat-variance', group: 'foodcost', locParam: true },
 ];
+
+// Appends the confirmed `?location=<unpadded loc>` param when the link supports it AND exactly
+// one store is in view (stores.length===1) -- a district/patch view has no single store to
+// scope to, so those cases fall back to the plain unscoped URL, same as before this change.
+function quickLinkHref(link, stores) {
+  if (!link.locParam || !stores || stores.length !== 1) return link.url;
+  // `stores` here is an array of store objects ({loc, ...}), per App.js's own AtAGlance call
+  // site (stores.filter(s=>INV_ORG_COORDS[s.loc]...)) -- NOT an array of bare loc strings.
+  const code = unpadLoc(stores[0].loc);
+  if (!code || code === 'NaN') return link.url;
+  return link.url + (link.url.includes('?') ? '&' : '?') + 'location=' + code;
+}
 
 function SageRunsTile() {
   const [runs, setRuns] = React.useState(null);
@@ -3675,7 +3697,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
         const prevGroup = i>0 ? QUICK_LINKS[i-1].group : undefined;
         const divider = l.group && l.group!==prevGroup
           ? h('span',{key:l.label+'-div',style:{color:'var(--bdr)',flexShrink:0}},'│') : null;
-        return [divider, h('a',{key:l.label,href:l.url,target:'_blank',rel:'noopener noreferrer',
+        return [divider, h('a',{key:l.label,href:quickLinkHref(l,stores),target:'_blank',rel:'noopener noreferrer',
           title:l.title,style:{fontSize:10,color:'var(--amber)',textDecoration:'none',whiteSpace:'nowrap',flexShrink:0}},
           l.label)];
       })
@@ -3688,4 +3710,4 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
 }
 
 
-export { AtAGlance, computeWeeklyTrend };
+export { AtAGlance, computeWeeklyTrend, QUICK_LINKS, quickLinkHref };
