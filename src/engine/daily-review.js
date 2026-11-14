@@ -25,7 +25,9 @@
 import { metricDaily, metricDirection, metricSeries, metricRate } from './metric-source.js';
 import { autoFirstDaily, matchedVsLY } from './vs-ly.js';
 import { DAYPART_SLOTS } from './labor-standard.js';
-import { lastClosedBusinessDay, dKey } from '../utils/date.js';
+import { lastClosedBusinessDay, dKey, addD, dowOf } from '../utils/date.js';
+import { orgEventsToDayMap, groupEventRanges } from './events-import.js';
+import { EVENT_TYPES, defaultVisibilityFor, INV_ORG_COORDS } from '../constants.js';
 
 // ── Metric tables — one row per owner-named line item ───────────────────────────────────────
 // `ms`: metric-source.js key (actual value + auto direction). `t`: DEFAULT_TARGETS field name,
@@ -88,12 +90,9 @@ const FOB_LINES = [
   { key: 'statVar', label: 'Stat Var %', ms: 'statVar', t: 'tStatLoss', unit: 'pct' },
   { key: 'unexplained', label: 'Unexplained %', ms: 'unexplained', t: 'tUnex', unit: 'pct' },
   { key: 'discPct', label: 'Disc Coupon %', ms: 'discPct', t: 'tDiscCoupPct', unit: 'pct' },
-  // Paper Cost %: DEFAULT_TARGETS carries a real target (tPaperCost) but metric-source.js has
-  // no actual-value key for it yet — the one genuine gap found while building this (everything
-  // else the owner named already had both a real source AND a real target). Surfaced as a
-  // target-only line (no actual) rather than silently dropped, so the gap stays visible instead
-  // of invisible.
-  { key: 'paperCost', label: 'Paper Cost %', ms: null, t: 'tPaperCost', unit: 'pct' },
+  // Paper Cost %: closed (2026-11-14) — metric-source.js now has a real 'paperCost' chain
+  // (manual FOB Excel's own pLPaperPct, qsr_fob's P&L paper roll-forward as the auto fallback).
+  { key: 'paperCost', label: 'Paper Cost %', ms: 'paperCost', t: 'tPaperCost', unit: 'pct' },
 ];
 
 const SECTIONS = [
@@ -305,6 +304,108 @@ export function findDailyWin(review) {
 
   return { headline: 'No standout yet', icon: '—', kind: 'none',
     detail: 'Nothing cleared the bar for a headline win today — check back once today’s data is fully in, or look for one in the lines above.' };
+}
+
+// ── Tickets/Calendar — "review tickets and calendar" (Notes 75's 2nd routine item) ─────────────
+// Owner spec, verbatim: review pending maintenance/tech tickets; Promotions (expected impact);
+// upcoming events; Payroll Released ("every other Wednesday starting on 11/18/26"); Truck Orders
+// (Martin Brower, store-specific order days); other calendar events (games/concerts/community,
+// expected impacts). Deferred as "a cheap, well-scoped follow-on" when the rest of this engine
+// shipped (v4.751) — closed here (task #155).
+//
+// Maintenance/Technology Tickets deliberately NOT built: no automated or manual data source
+// exists. QSRSoft's own Equipment/Tickets sub-app (`/equipment/tickets`) returns a WAF block to
+// every tested auth path (memory/notes-74-queue.md's own finding) — there is nothing to read.
+// Surfaced below as an honest "not available" line, not a fabricated one, same discipline the
+// (now-fixed) Paper Cost gap used while it was still open.
+
+// Promotions/events reuse the SAME org_events day-map expansion (orgEventsToDayMap,
+// events-import.js) every other calendar consumer already uses (App.js's own hydration,
+// above-store-onepager.js's "Upcoming Impacts") — no new scope-expansion logic here. `ds.
+// orgEventRows` is the raw loadOrgEvents() rows App.js already stores on the shared datastore.
+const CALENDAR_WINDOW_DAYS = 21; // same "upcoming" window above-store-onepager.js's own list uses
+
+function calendarEventsFor(ds, loc, today) {
+  const dayMap = orgEventsToDayMap(ds?.orgEventRows || []);
+  const byLoc = dayMap[String(parseInt(loc, 10))] || dayMap[String(loc)] || {};
+  const start = today, end = addD(today, CALENDAR_WINDOW_DAYS);
+  const flat = [];
+  for (const dk of Object.keys(byLoc)) {
+    const d = new Date(dk + 'T12:00:00');
+    if (d < start || d > end) continue;
+    const e = byLoc[dk];
+    // Log-only types (staffing/training/competitor intel/etc.) are deliberately excluded — this
+    // is the customer-facing calendar the owner's spec describes, not the internal incident log.
+    if ((e.visibility ?? defaultVisibilityFor(e.type)) !== 'calendar') continue;
+    flat.push({ dk, ...e });
+  }
+  // A multi-day span (e.g. a 55-day promo campaign, confirmed against a real live org_events row
+  // while building this) shares a rangeId across every day it touches — groupEventRanges
+  // collapses that to ONE entry covering the window, the same convention above-store-onepager.js's
+  // "Upcoming Impacts" list already uses. Without this, a long campaign would render as one row
+  // PER DAY in the 21-day window, all with the same label and an incrementing "(Day N of M)".
+  const grouped = groupEventRanges(flat);
+  const promos = [], events = [];
+  for (const e of grouped) {
+    const row = {
+      dk: e.dk, dkEnd: e.dkEnd || e.dk, type: e.type, label: e.label,
+      icon: (EVENT_TYPES[e.type] || EVENT_TYPES.other).icon,
+      impact: e.impact || null,
+      expectedSalesDelta: e.expectedSalesDelta ?? null,
+      expectedGcDelta: e.expectedGcDelta ?? null,
+      totalDays: e.totalDays || 1, daysShown: e.daysShown || 1,
+    };
+    (e.type === 'promo' ? promos : events).push(row);
+  }
+  return { promos, events };
+}
+
+// Payroll Released — pure date arithmetic, not a data pull. Owner's exact words: "every other
+// Wednesday starting on 11/18/26." 2026-11-18 is itself a Wednesday (confirmed: dowOf gives 3);
+// every 14 days from that anchor is a release Wednesday, every other Wednesday is not.
+const PAYROLL_ANCHOR = new Date(2026, 10, 18); // 2026-11-18, local midnight — matches `today`'s own construction
+
+function payrollReleaseInfo(today) {
+  const anchorDk = dKey(PAYROLL_ANCHOR);
+  const diffDays = Math.round((new Date(dKey(today) + 'T12:00:00') - new Date(anchorDk + 'T12:00:00')) / 86400000);
+  // Walk forward/back from `today` to the nearest release Wednesday on the biweekly cadence,
+  // rather than assuming today IS one — diffDays can land on an off-week Wednesday too.
+  const mod14 = ((diffDays % 14) + 14) % 14;
+  const daysToNext = mod14 === 0 ? 0 : 14 - mod14;
+  const nextRelease = addD(today, daysToNext);
+  return { nextReleaseDk: dKey(nextRelease), isToday: daysToNext === 0, isTomorrow: daysToNext === 1 };
+}
+
+// Truck Orders (Martin Brower) — INV_ORG_COORDS[loc].del is already a real field ("Wed/Sun"
+// abbreviated-weekday-pair string), just never parsed anywhere before this (confirmed: every
+// existing reader, e.g. inventory.js, only ever displays the raw string). Not a new data source.
+const DOW_ABBR_TO_NUM = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+function truckOrderInfo(loc, today) {
+  const del = INV_ORG_COORDS[String(parseInt(loc, 10))]?.del || INV_ORG_COORDS[String(loc)]?.del || null;
+  if (!del || !/^[A-Za-z]{3}(\/[A-Za-z]{3})*$/.test(del)) return { days: [], raw: del, isToday: false, isTomorrow: false };
+  const days = del.split('/');
+  const nums = new Set(days.map(d => DOW_ABBR_TO_NUM[d]).filter(n => n !== undefined));
+  return {
+    days, raw: del,
+    isToday: nums.has(dowOf(today)),
+    isTomorrow: nums.has(dowOf(addD(today, 1))),
+  };
+}
+
+/**
+ * The Tickets/Calendar section for one store — Notes 75's 2nd routine item. `today` (default
+ * real now, not the review's own `date` param) because this is forward-looking — "what's coming
+ * up" reads from today regardless of which past business day the rest of the review covers.
+ */
+export function buildTicketsCalendar(ds, loc, today = new Date()) {
+  const { promos, events } = calendarEventsFor(ds, loc, today);
+  return {
+    maintenanceTickets: { available: false, reason: 'No automated or manual data source — QSRSoft Equipment/Tickets is WAF-blocked to every tested auth path.' },
+    promos, events,
+    payrollRelease: payrollReleaseInfo(today),
+    truckOrders: truckOrderInfo(loc, today),
+  };
 }
 
 // ── Patch-level rollup (Area Supervisor / OM) ───────────────────────────────────────────────────

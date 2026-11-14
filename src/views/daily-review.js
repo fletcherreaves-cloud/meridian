@@ -7,10 +7,10 @@
 // GM-only for now (Supervisor/OM notes are still pending from the owner); store-grain today,
 // designed so a later patch/district rollup can reuse the same engine rather than a rewrite.
 import * as React from 'react';
-import { buildDailyReview, buildServiceDaypartBreakdown, findDailyWin, buildPatchDailyReview, buildPatchHotspots } from '../engine/daily-review.js';
+import { buildDailyReview, buildServiceDaypartBreakdown, findDailyWin, buildPatchDailyReview, buildPatchHotspots, buildTicketsCalendar } from '../engine/daily-review.js';
 import { getTargetsForDate } from './store-dash.js';
 import { DEFAULT_TARGETS, STORE_NAMES, supervisorGroups } from '../constants.js';
-import { lastClosedBusinessDay, addD, dFmt, dKey, weekStartOf } from '../utils/date.js';
+import { lastClosedBusinessDay, addD, dFmt, dFmtShort, dFmtDow, dKey, weekStartOf } from '../utils/date.js';
 import { loadDtHistory } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { withAlpha, f$ } from '../utils/fmt.js';
@@ -100,6 +100,61 @@ function Scorecard({ sections }) {
         div({ style: { fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } }, s.label),
         div({ style: { fontSize: 16, marginTop: 2 } }, s.severity ? SEV_ICON[s.severity] : '–'));
     }));
+}
+
+// ── Tickets/Calendar — Notes 75's 2nd routine item (task #155) ─────────────────────────────────
+// Not a metric-line section (no actual/target pair fits "list of upcoming events" or "is today a
+// truck-order day"), so this gets its own card shape rather than forcing SectionCard/LineRow.
+function eventDateLabel(e) {
+  if (e.totalDays > 1) return dFmtShort(new Date(e.dk + 'T12:00:00')) + ' – ' + dFmtShort(new Date(e.dkEnd + 'T12:00:00'));
+  return dFmtDow(new Date(e.dk + 'T12:00:00')) + ' ' + dFmtShort(new Date(e.dk + 'T12:00:00'));
+}
+function impactLabel(e) {
+  const parts = [];
+  if (e.expectedSalesDelta != null) parts.push((e.expectedSalesDelta >= 0 ? '+' : '') + f$(e.expectedSalesDelta) + ' sales');
+  if (e.expectedGcDelta != null) parts.push((e.expectedGcDelta >= 0 ? '+' : '') + Math.round(e.expectedGcDelta) + ' GC');
+  if (!parts.length && e.impact?.magnitude) parts.push(e.impact.magnitude + ' impact');
+  return parts.length ? parts.join(' · ') : 'Impact not yet estimated';
+}
+function CalendarEventRow({ e }) {
+  return div({ key: e.dk + e.label, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px' } },
+    span({ style: { fontSize: 14, flexShrink: 0 } }, e.icon),
+    div({ style: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--text,#111827)' } }, e.label),
+    span({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', flexShrink: 0 } }, eventDateLabel(e)),
+    span({ style: { fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text2,#9aa0aa)', flexShrink: 0, minWidth: 90, textAlign: 'right' } }, impactLabel(e)),
+  );
+}
+function TicketsCalendarCard({ tc }) {
+  if (!tc) return null;
+  const { maintenanceTickets, promos, events, payrollRelease, truckOrders } = tc;
+  const payrollSoon = payrollRelease.isToday || payrollRelease.isTomorrow;
+  const truckSoon = truckOrders.isToday || truckOrders.isTomorrow;
+  return div({ style: { border: '1px solid var(--bdr,#2a2f3a)', borderRadius: 10, background: 'var(--surf2,#151821)', overflow: 'hidden' } },
+    div({ style: { padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)', display: 'flex', alignItems: 'center', gap: 8 } },
+      span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Tickets / Calendar')),
+    div({ style: { padding: '8px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', display: 'flex', alignItems: 'center', gap: 6 } },
+      span({ style: { fontWeight: 700 } }, '🔧 Maintenance/Technology Tickets: '),
+      'Not available — ' + maintenanceTickets.reason),
+    div({ style: { padding: '8px 14px', display: 'flex', flexWrap: 'wrap', gap: 10, borderTop: '.5px solid var(--bdr,#2a2f3a)' } },
+      div({ style: { flex: '1 1 160px', padding: '6px 10px', borderRadius: 8, background: payrollSoon ? withAlpha('#FFBC0D', '14') : 'transparent', border: '1px solid ' + (payrollSoon ? withAlpha('#FFBC0D', '40') : 'var(--bdr,#2a2f3a)') } },
+        div({ style: { fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } }, '💰 Payroll Released'),
+        div({ style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#e8eaed)', marginTop: 2 } },
+          payrollRelease.isToday ? 'Releases today' : payrollRelease.isTomorrow ? 'Releases tomorrow' : 'Next: ' + dFmtShort(new Date(payrollRelease.nextReleaseDk + 'T12:00:00')))),
+      div({ style: { flex: '1 1 160px', padding: '6px 10px', borderRadius: 8, background: truckSoon ? withAlpha('#FFBC0D', '14') : 'transparent', border: '1px solid ' + (truckSoon ? withAlpha('#FFBC0D', '40') : 'var(--bdr,#2a2f3a)') } },
+        div({ style: { fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text3,#6b7280)' } }, '🚚 Truck Orders (Martin Brower)'),
+        div({ style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#e8eaed)', marginTop: 2 } },
+          truckOrders.days.length
+            ? (truckOrders.isToday ? 'Order day — today' : truckOrders.isTomorrow ? 'Order day — tomorrow' : truckOrders.days.join('/'))
+            : '—'))),
+    (promos.length > 0) && div({ style: { borderTop: '.5px solid var(--bdr,#2a2f3a)' } },
+      div({ style: { padding: '6px 14px 2px', fontSize: 10, fontWeight: 800, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Promotions'),
+      promos.map(e => h(CalendarEventRow, { key: e.dk + e.label, e }))),
+    (events.length > 0) && div({ style: { borderTop: '.5px solid var(--bdr,#2a2f3a)' } },
+      div({ style: { padding: '6px 14px 2px', fontSize: 10, fontWeight: 800, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Events'),
+      events.map(e => h(CalendarEventRow, { key: e.dk + e.label, e }))),
+    (promos.length === 0 && events.length === 0) && div({ style: { padding: '8px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', borderTop: '.5px solid var(--bdr,#2a2f3a)' } },
+      'No promotions or events in the next 21 days.'),
+  );
 }
 
 // ── Patch mode (Area Supervisor / OM) ───────────────────────────────────────────────────────────
@@ -199,6 +254,7 @@ export function DailyReviewPanel({ ds, stores, selStore, onClose }) {
   const review = React.useMemo(() => (ds?.loaded && scope === 'store' ? buildDailyReview(ds, loc, date, targets) : null), [ds, loc, date, targets, scope]);
   const win = React.useMemo(() => (review ? findDailyWin(review) : null), [review]);
   const daypart = React.useMemo(() => buildServiceDaypartBreakdown(dtRows, loc, date), [dtRows, loc, date]);
+  const ticketsCalendar = React.useMemo(() => (ds?.loaded ? buildTicketsCalendar(ds, loc) : null), [ds, loc]);
 
   const storeName = STORE_NAMES[loc] || loc;
   const subtitle = scope === 'patch' ? (patchName || 'Patch') + ' · ' + dFmt(date) : storeName + ' · ' + dFmt(date);
@@ -229,6 +285,7 @@ export function DailyReviewPanel({ ds, stores, selStore, onClose }) {
               key: s.key, section: s,
               daypartNote: s.key === 'service' ? h(DaypartNote, { breakdown: daypart }) : null,
             })),
+            h(TicketsCalendarCard, { tc: ticketsCalendar }),
             div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', textAlign: 'center', padding: '4px 0 0' } },
               'Sales mix %s and Service dayparts are informational — no formal target exists for them yet. Paper Cost % has a target but no live source (flagged gap, see memory/notes-75-queue.md).'),
           )),

@@ -56,3 +56,37 @@ session, before these links were supplied:
 Results for the main-app URLs will be appended to this file once measured — see the dated update
 block below if one exists; if not, this verification had not yet completed when this file was
 last committed.
+
+## ✅ RESOLVED 2026-11-14 (task #156) — main-app URLs measured live, `at-a-glance.js` updated
+
+Logged into `v3.myqsrsoft.com` live via Playwright (real `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`,
+same credentials the automated pulls use, main app only — `/equipment/tickets` was NOT touched
+again). Confirmed the real store-scoping syntax is `?location=<unpadded loc>` — the SAME short
+code `INV_ORG_COORDS` already keys on (e.g. `'5183'`, `'3708'`), not the 7-digit zero-padded
+`loc` used elsewhere in Meridian.
+
+Measured by forcing a DIFFERENT store's code onto each URL and confirming the page's own
+store-selector badge / body text updated to match (not just echoing back whatever was already
+selected from a prior page) — a real scoping effect, not a coincidence:
+
+| URL | `?location=` confirmed? | Notes |
+|---|---|---|
+| Home (`/home-dashboard`) | No — drops the param | Inherits whatever store the LAST scoped navigation set, doesn't take its own `location=` |
+| Register Audit | ✅ Yes | Body text showed the forced store code after navigating with it |
+| Tickets (`/equipment/tickets`) | Not tested | Separate WAF-blocked sub-app, deliberately not touched again |
+| Travel Path (both forms) | ✅ Yes | `forms/take?formId=...` — also auto-appends its own `startedAt=` timestamp; `location=` still applies |
+| Pre-Shift (Breakfast/Lunch/Dinner) | ✅ Yes (Breakfast tested directly; Lunch/Dinner are the identical `forms/take?formId=` pattern) | |
+| Operations Report | ⚠️ Ambiguous | URL retained the param but the report (a BY-LOCATION table, still "Loading…" after a generous wait) never rendered a visible single-store confirmation within a reasonable wait — not a measured failure, just not cleanly confirmed the same way its siblings were. Left unscoped in code rather than guessed. |
+| 3 Peaks | ✅ Yes | |
+| Food Over Base | ✅ Yes | Also auto-appends `&tab=currentMonth` |
+| On Hand Inventory | ✅ Yes | Also auto-appends `&class=F&recipe=all&nonzero=true&duplicates=false&date=<today>` |
+| Variance/Yields | ✅ Yes | Also auto-appends `&tab=varianceStat&start=...&period=M&class=F` |
+
+**Shipped:** `src/views/at-a-glance.js`'s `QUICK_LINKS` now has `locParam: true` on every confirmed
+entry; a new `quickLinkHref(link, stores)` appends `?location=<unpadLoc(stores[0].loc)>` only
+when exactly one store is in view (`stores.length===1`) — a district/patch view has no single
+store to scope to, so those cases fall back to the original unscoped URL, same as before this
+change. 7 new tests: `src/__tests__/at-a-glance-quick-links-location.test.js`.
+
+Do not re-run this verification from scratch — re-measure only if QSRSoft changes its own URL
+scheme, or if Operations Report's ambiguous result is worth a second, more patient look.

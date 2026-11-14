@@ -12,12 +12,12 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, metricRate, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165), plus kvst (dispatch #221), plus condiment/empMeal/unexplained (2026-09-13, closing dispatch #229\'s own "no chain today" follow-on), plus posOverPct (added while building the Cash Controls Cockpit tab -- the % had no chain at all; posOverAmt/posOverCnt did)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165), plus kvst (dispatch #221), plus condiment/empMeal/unexplained (2026-09-13, closing dispatch #229\'s own "no chain today" follow-on), plus posOverPct (added while building the Cash Controls Cockpit tab -- the % had no chain at all; posOverAmt/posOverCnt did), plus paperCost (2026-11-14, closing daily-review.js\'s own flagged gap)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
       'avgCheck', 'cashOSPct', 'compWaste', 'condiment', 'discPct', 'dtMixPct', 'empMeal',
-      'fobPct', 'kvst', 'laborPct', 'oepe', 'posOverPct', 'r2p', 'rawWaste', 'spph', 'statVar',
-      'tRedAPct', 'tRedBPct', 'tpph', 'unexplained',
+      'fobPct', 'kvst', 'laborPct', 'oepe', 'paperCost', 'posOverPct', 'r2p', 'rawWaste', 'spph',
+      'statVar', 'tRedAPct', 'tRedBPct', 'tpph', 'unexplained',
     ].sort());
   });
 
@@ -193,6 +193,79 @@ describe('metricSumRatio -- fobPct (fobTotalAmt / prodSalesAmt, dispatch #104)',
   });
 });
 
+// ── 2026-11-14 -- paperCost (paperCostAmt / prodSalesAmt, a 6-input roll-forward numerator) ─────
+// Not table-driven like RATIO_METRIC_ROWS above: paperCostAmt is a derived 6-input roll-forward
+// (Begin+Purchases+Adjustments+Transfers-Promotions-End), not a single raw field on one row --
+// same reason fobPct/laborPct/discPct get their own describe blocks instead of a row.
+describe('metricSumRatio -- paperCost (paperCostAmt / prodSalesAmt, roll-forward numerator)', () => {
+  function fixture() {
+    return {
+      qsrFobRows: [
+        // Day 1: small roll-forward net over small sales.
+        { loc: '1', date: new Date('2026-08-01'), prodSalesAmt: 1000,
+          pnlPaperCostBegin: 100, pnlPaperCostPurchases: 20, pnlPaperCostAdjustments: 0,
+          pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0, pnlPaperCostEnd: 90 }, // net 30, 3.0%
+        // Day 2: much larger roll-forward net over much larger sales, a DIFFERENT ratio.
+        { loc: '1', date: new Date('2026-08-02'), prodSalesAmt: 10000,
+          pnlPaperCostBegin: 900, pnlPaperCostPurchases: 200, pnlPaperCostAdjustments: 0,
+          pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0, pnlPaperCostEnd: 800 }, // net 300
+      ],
+    };
+  }
+  const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+
+  it('computes the roll-forward as Begin+Purchases+Adjustments+Transfers-Promotions-End', () => {
+    const ds = fixture();
+    const sum = metricSumRatio(ds, '1', range, 'paperCost');
+    // day1 net=30, day2 net=300 -- Sum/Sum = (30+300)/(1000+10000) = 330/11000
+    expect(sum.value).toBeCloseTo(330 / 11000, 6);
+    expect(sum.n).toBe(2);
+  });
+
+  it('Sum/Sum diverges from mean-of-daily on an uneven-volume fixture', () => {
+    const ds = {
+      qsrFobRows: [
+        { loc: '1', date: new Date('2026-08-01'), prodSalesAmt: 1000,
+          pnlPaperCostBegin: 100, pnlPaperCostPurchases: 20, pnlPaperCostAdjustments: 0,
+          pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0, pnlPaperCostEnd: 90 }, // net 30, 3.0%
+        { loc: '1', date: new Date('2026-08-02'), prodSalesAmt: 10000,
+          pnlPaperCostBegin: 900, pnlPaperCostPurchases: 900, pnlPaperCostAdjustments: 0,
+          pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0, pnlPaperCostEnd: 1200 }, // net 600, 6.0%
+      ],
+    };
+    const mean = metricAvg(ds, '1', range, 'paperCost');
+    const sum = metricSumRatio(ds, '1', range, 'paperCost');
+    expect(mean).toBeCloseTo((0.03 + 0.06) / 2, 5);
+    expect(sum.value).toBeCloseTo((30 + 600) / 11000, 6);
+    expect(Math.abs(mean - sum.value)).toBeGreaterThan(0.005);
+  });
+
+  it('a day missing even one roll-forward leg resolves null rather than treating the gap as zero', () => {
+    const ds = {
+      qsrFobRows: [
+        { loc: '1', date: new Date('2026-08-01'), prodSalesAmt: 1000,
+          pnlPaperCostBegin: 100, pnlPaperCostPurchases: 20, pnlPaperCostAdjustments: 0,
+          pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0 /* no End */ },
+      ],
+    };
+    const range1 = { s: new Date('2026-08-01'), e: new Date('2026-08-01') };
+    const sum = metricSumRatio(ds, '1', range1, 'paperCost');
+    expect(sum).toBeNull();
+  });
+
+  it('the manual FOB Excel upload (fobRows.pLPaperPct) outranks the qsr_fob derive when both exist', () => {
+    const ds = {
+      fobRows: [{ loc: '1', date: new Date('2026-08-01'), pLPaperPct: 0.025 }],
+      qsrFobRows: [{ loc: '1', date: new Date('2026-08-01'), prodSalesAmt: 1000,
+        pnlPaperCostBegin: 100, pnlPaperCostPurchases: 20, pnlPaperCostAdjustments: 0,
+        pnlPaperCostTransfers: 0, pnlPaperCostPromotions: 0, pnlPaperCostEnd: 90 }], // would derive 3.0%
+    };
+    const range1 = { s: new Date('2026-08-01'), e: new Date('2026-08-01') };
+    const mean = metricAvg(ds, '1', range1, 'paperCost');
+    expect(mean).toBeCloseTo(0.025, 6);
+  });
+});
+
 // ── Dispatch #87 item 1 -- pin metricAvg against silent absorption ─────────────────────────────
 // #86's verification bar asked for this, #628 (the fix this file tests) correctly left metricAvg
 // untouched but shipped without a regression pin. Nothing stops a future refactor from quietly
@@ -259,7 +332,7 @@ const RATIO_METRIC_ROWS = {
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {
   it('RATIO_METRIC_ROWS covers every rollup-capable metric not already tested above', () => {
-    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct', 'oepe', 'r2p', 'kvst']);
+    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct', 'oepe', 'r2p', 'kvst', 'paperCost']);
     for (const k of rollupCapableMetricKeys()) expect(covered.has(k), k).toBe(true);
   });
 
