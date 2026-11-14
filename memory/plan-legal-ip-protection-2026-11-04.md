@@ -148,7 +148,7 @@ what's legal-posture-relevant specifically:
 | Pull-script tenant stamping | Open | Every automated pull (LifeLenz/QSRSoft/email-parse) needs its own tenant's credentials + an explicit tenant parameter, or it silently writes to tenant #1 |
 | Shared infra (one Supabase project, one Vercel project, one Anthropic key) | Known, not necessarily a problem | Fine technically given RLS; becomes a real question the moment this is a PAID relationship (no per-tenant cost attribution, no isolated blast radius if the Supabase project itself has an incident) |
 | Secrets handling | Governed by CLAUDE.md's standing PII/credential rules | Same rules, no change needed — just confirm they're followed per-tenant too (e.g. a second operator's own LifeLenz/QSRSoft tokens get the same no-commit/no-log treatment) |
-| Backups | **Not independently verified this session** — Supabase's own backup tier/retention hasn't been checked against what a second operator's data would need | Worth a real measurement (what plan/tier, what retention, point-in-time recovery or not) before a second tenant's data exists, not assumed |
+| Backups | ✅ **Measured directly 2026-11-14** (Supabase Management API, `/v1/organizations/{id}` + `/v1/projects/{ref}/database/backups`) | Org plan is **Pro**. Daily physical backups confirmed running — 8 consecutive daily snapshots visible (2026-11-07 → 2026-11-14), each `status:"COMPLETED"`, consistent with Pro's standard rolling 7-day daily-backup retention. **`pitr_enabled: false`** — point-in-time recovery is OFF. Recovery granularity today is "restore to a specific day's snapshot," not "restore to any second" — worth knowing before a second tenant's data exists, since a mid-day incident (bad migration, accidental mass-delete) loses up to a full day's writes for BOTH tenants, not just the one that caused it. Enabling PITR is a plan/cost decision for the owner, not something to turn on unilaterally. |
 
 ---
 
@@ -170,7 +170,10 @@ what's legal-posture-relevant specifically:
 2. Owner runs `supabase/schema-fix-org-config-tenant-pk-2026-11-13.sql` (task #70) — app's
    upsert targets already updated in the same pass, nothing else to do code-side once it runs.
 3. Decide the account-model question in §3 (tenant-scoped admin tier, or managed-for-them).
-4. Verify Supabase's actual backup/retention tier.
+4. ✅ **DONE 2026-11-14** — verified Supabase's actual backup/retention tier (Pro plan, daily
+   physical backups, 7-day rolling retention confirmed live, PITR currently off — see §5's
+   Backups row above for the exact measurement). Remaining open question is the owner's own
+   call: whether PITR is worth turning on before a second tenant's data exists.
 
 **Before any PAID or formal second-operator relationship (not needed for a casual/favor
 arrangement with a fully trusted party):**
