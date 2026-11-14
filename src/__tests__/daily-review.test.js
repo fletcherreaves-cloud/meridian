@@ -18,7 +18,7 @@ vi.mock('../engine/vs-ly.js', () => ({
   autoFirstDaily: (...a) => autoFirstDailyMock(...a),
 }));
 
-const { buildDailyReview, buildServiceDaypartBreakdown } = await import('../engine/daily-review.js');
+const { buildDailyReview, buildServiceDaypartBreakdown, buildTicketsCalendar } = await import('../engine/daily-review.js');
 
 const LOC = '10422';
 const DATE = new Date(2026, 10, 11); // 2026-11-11
@@ -194,5 +194,117 @@ describe('buildServiceDaypartBreakdown()', () => {
     expect(r2p.dayparts[0].avgSec).toBe(300);
     expect(kvst).toBeTruthy();
     expect(kvst.dayparts[0].avgSec).toBe(200);
+  });
+});
+
+// Task #155 (2026-11-14) -- Tickets/Calendar section (Notes 75's 2nd routine item, deferred as a
+// "cheap, well-scoped follow-on" when the rest of this engine shipped). No mocking needed: this
+// section reads real org_events rows through the SAME orgEventsToDayMap() every other calendar
+// consumer uses (events-import.js, already fully tested on its own), plus pure date arithmetic
+// (Payroll Released) and a real constants.js field (INV_ORG_COORDS[loc].del, Truck Orders) --
+// nothing here needs metric-source.js/vs-ly.js, so this suite exercises the real functions, not
+// stubs of them.
+describe('buildTicketsCalendar()', () => {
+  const TODAY = new Date(2026, 10, 14); // 2026-11-14, a Saturday
+
+  it('maintenanceTickets is explicitly unavailable, not silently dropped', () => {
+    const r = buildTicketsCalendar({ orgEventRows: [] }, LOC, TODAY);
+    expect(r.maintenanceTickets.available).toBe(false);
+    expect(r.maintenanceTickets.reason).toMatch(/WAF/);
+  });
+
+  it('splits promo-type events into promos, other calendar-visible types into events', () => {
+    const ds = {
+      orgEventRows: [
+        { id: 1, loc: LOC, scope: 'store', dateStart: '2026-11-16', dateEnd: '2026-11-16', type: 'promo', label: 'McRib LTO', expectedSalesDelta: 500 },
+        { id: 2, loc: LOC, scope: 'store', dateStart: '2026-11-20', dateEnd: '2026-11-20', type: 'sports', label: 'High School Playoff Game' },
+      ],
+    };
+    const r = buildTicketsCalendar(ds, LOC, TODAY);
+    expect(r.promos).toHaveLength(1);
+    expect(r.promos[0].label).toBe('McRib LTO');
+    expect(r.promos[0].expectedSalesDelta).toBe(500);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0].label).toBe('High School Playoff Game');
+  });
+
+  it('excludes log-only types (e.g. staffing/training/competitor intel) -- this is the customer-facing calendar, not the incident log', () => {
+    const ds = {
+      orgEventRows: [
+        { id: 3, loc: LOC, scope: 'store', dateStart: '2026-11-16', dateEnd: '2026-11-16', type: 'staffing', label: 'Short a shift lead' },
+        { id: 4, loc: LOC, scope: 'store', dateStart: '2026-11-17', dateEnd: '2026-11-17', type: 'comp_promo', label: 'Competitor BOGO' },
+      ],
+    };
+    const r = buildTicketsCalendar(ds, LOC, TODAY);
+    expect(r.promos).toHaveLength(0);
+    expect(r.events).toHaveLength(0);
+  });
+
+  it('excludes events outside the current+upcoming window, and before today', () => {
+    const ds = {
+      orgEventRows: [
+        { id: 5, loc: LOC, scope: 'store', dateStart: '2026-11-01', dateEnd: '2026-11-01', type: 'promo', label: 'Already past' },
+        { id: 6, loc: LOC, scope: 'store', dateStart: '2026-12-20', dateEnd: '2026-12-20', type: 'promo', label: 'Too far out' },
+        { id: 7, loc: LOC, scope: 'store', dateStart: '2026-11-14', dateEnd: '2026-11-14', type: 'promo', label: 'Today' },
+      ],
+    };
+    const r = buildTicketsCalendar(ds, LOC, TODAY);
+    expect(r.promos.map(p => p.label)).toEqual(['Today']);
+  });
+
+  it('a district-wide (scope!=="store") event expands to this store via scopeLocs, same as every other calendar consumer', () => {
+    const ds = {
+      orgEventRows: [
+        { id: 8, loc: '__all__', scope: 'all', scopeLocs: [LOC, '99999'], dateStart: '2026-11-15', dateEnd: '2026-11-15', type: 'holiday', label: 'Thanksgiving week push' },
+      ],
+    };
+    const r = buildTicketsCalendar(ds, LOC, TODAY);
+    expect(r.events.map(e => e.label)).toEqual(['Thanksgiving week push']);
+  });
+
+  it('Payroll Released: the anchor Wednesday itself reads as today', () => {
+    const r = buildTicketsCalendar({ orgEventRows: [] }, LOC, new Date(2026, 10, 18)); // 2026-11-18
+    expect(r.payrollRelease.nextReleaseDk).toBe('2026-11-18');
+    expect(r.payrollRelease.isToday).toBe(true);
+  });
+
+  it('Payroll Released: an off-week Wednesday is NOT a release day, and finds the real next one', () => {
+    const r = buildTicketsCalendar({ orgEventRows: [] }, LOC, new Date(2026, 10, 25)); // 2026-11-25, Wed, off-week
+    expect(r.payrollRelease.isToday).toBe(false);
+    expect(r.payrollRelease.nextReleaseDk).toBe('2026-12-02');
+  });
+
+  it('Payroll Released: the day before a release Wednesday reads as tomorrow', () => {
+    const r = buildTicketsCalendar({ orgEventRows: [] }, LOC, new Date(2026, 11, 1)); // 2026-12-01, Tue
+    expect(r.payrollRelease.isTomorrow).toBe(true);
+  });
+
+  it('Truck Orders: parses INV_ORG_COORDS[loc].del and flags today/tomorrow against it', () => {
+    // LOC '10422' carries del:'Wed/Sun' in constants.js. 2026-11-14 is a Saturday, so Sunday is tomorrow.
+    const r = buildTicketsCalendar({ orgEventRows: [] }, LOC, TODAY);
+    expect(r.truckOrders.days).toEqual(['Wed', 'Sun']);
+    expect(r.truckOrders.isToday).toBe(false);
+    expect(r.truckOrders.isTomorrow).toBe(true);
+  });
+
+  // Found via a live org_events read while building this (id 6147, "Beverage All Store Sell",
+  // a real 55-day promo campaign spanning 2026-11-03..2026-12-27) -- without groupEventRanges,
+  // every day of a long campaign inside the 21-day window renders as its own separate row.
+  it('collapses a multi-day campaign spanning the window into ONE row, not one row per day', () => {
+    const ds = {
+      orgEventRows: [
+        { id: 9, loc: '*ALL*', scope: 'all', scopeLocs: [LOC], dateStart: '2026-11-03', dateEnd: '2026-12-27', type: 'promo', label: 'Beverage All Store Sell (New Holiday Flavors)' },
+      ],
+    };
+    const r = buildTicketsCalendar(ds, LOC, TODAY); // TODAY = 2026-11-14, well inside the campaign
+    expect(r.promos).toHaveLength(1);
+    expect(r.promos[0].label).toBe('Beverage All Store Sell (New Holiday Flavors)'); // no "(Day N of M)" suffix leaking through
+    expect(r.promos[0].totalDays).toBe(55);
+  });
+
+  it('Truck Orders: a loc with no INV_ORG_COORDS entry degrades to an empty, honest result', () => {
+    const r = buildTicketsCalendar({ orgEventRows: [] }, '00000', TODAY);
+    expect(r.truckOrders.days).toEqual([]);
+    expect(r.truckOrders.raw).toBeNull();
   });
 });
