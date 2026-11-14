@@ -17,10 +17,17 @@
 // driven cross-metric correlation curation is a real Phase 2, not duplicated here.
 import { metricAvg, metricSumRatio, metricSeries, METRIC_SOURCES } from './metric-source.js';
 import { dKey, mwStart, lastClosedBusinessDay } from '../utils/date.js';
-import { STORE_KB } from '../constants.js';
+import { STORE_KB, unpadLoc } from '../constants.js';
 // Phase 2's correlation curation reuses Signals' own auto-scanner as-is (scanAllPairs) rather
 // than re-implementing any correlation math here — see dossierCorrelations() below.
 import { scanAllPairs } from './signal-registry.js';
+// Phase 3 reuses — no new data plumbing, no re-derivation of logic that already exists:
+import { buildEquipmentStoreSummary, latestEntriesByInstance, PLACEMENTS } from './equipment-survey.js';
+import { isActiveTenureRow, classifyRosterAssignment } from './tenure-roles.js';
+import { managementRateChanges, lifelenzRosterRateChanges } from './employee-pay-history.js';
+import { computeVisitReadiness } from './visit-readiness.js';
+import { visitRisk, csatOpportunityAlerts } from './attention-feed.js';
+import { rankCommentOpportunities } from './csat-opportunities.js';
 
 // Rate metrics get metricAvg (mean of daily values — the standard aggregate for a rate).
 // Ratio metrics with a declared numerator/denominator (fobPct, laborPct, cashOSPct) get
@@ -220,4 +227,123 @@ export function topCorrelations(scanResult, max = 5) {
   const sorted = [...results].sort((a, b) =>
     (b.fdrSig ? 1 : 0) - (a.fdrSig ? 1 : 0) || Math.abs(b.r) - Math.abs(a.r));
   return { headline: sorted.slice(0, max), rest: sorted.slice(max) };
+}
+
+// ── Phase 3: Equipment / Layout reference (read-only summary, not the editor) ───────────────────
+// equipment-survey.js already owns the one definition of "current state" for a store
+// (latestEntriesByInstance) and the cross-store rollup math (buildEquipmentStoreSummary) — reused
+// here as-is. `entries` is this ONE store's own equipment_survey_entries rows, loaded by the view
+// via the SAME per-store loader (loadEquipmentEntriesDirect(loc)) the real Layout Planner editor
+// already uses — no new data plumbing, no re-derivation of "how many items does this store have."
+export function dossierEquipmentSummary(entries) {
+  const rows = buildEquipmentStoreSummary(entries || []);
+  return rows[0] || null; // one store's own entries -> at most one row
+}
+
+// Zone breakdown for the Layout reference — a count per placement zone, not the full visual
+// floor-plan (the plan doc's own "do not duplicate the editor" instruction). Placement-zone
+// labels come from equipment-survey.js's own PLACEMENTS catalog, the same labels the real Layout
+// Planner editor renders, so a zone name here can never drift from what the editor calls it.
+export function dossierLayoutZoneCounts(entries) {
+  const current = latestEntriesByInstance(entries || []);
+  const counts = {};
+  for (const e of current) {
+    if (!e.placement_zone) continue;
+    counts[e.placement_zone] = (counts[e.placement_zone] || 0) + 1;
+  }
+  return PLACEMENTS.map(p => ({ zone: p.value, label: p.label, count: counts[p.value] || 0 })).filter(z => z.count > 0);
+}
+
+// ── Phase 3: Personnel summary (owner-resolved PII posture, 2026-11-11 — CLAUDE.md's PII
+// section + memory/finding-dossier-coaching-library-2026-11-11.md §7: names follow this app's
+// EXISTING role/scope gates, never a stricter rule invented just for a report). qsr_employee_
+// tenure's own select list (lib/supabase.js's loadEmployeeTenure) carries `geid`, never a name
+// column — unlike Security findings' crew_token/mgr_token, geid has no name-resolution path
+// anywhere in this app. So this card is headcount-by-role only, never a name roster — a data-
+// availability fact, not a PII decision. Active rows only (isActiveTenureRow's own "Active" +
+// no termination date definition). `hourly_pay_rate` is read here ONLY because
+// classifyRosterAssignment's own existing AM-vs-DM disambiguation needs it — never surfaced as a
+// value; real wage FIGURES stay behind dossierPayRateChanges() below, gated the same way pay-
+// rate-history.js's own nav entry already is (payroll.view) — a deliberately separate function,
+// so a caller can never show wage data by forgetting a flag check inside one bigger function.
+export function dossierPersonnelSummary(tenureRows, loc) {
+  const key = unpadLoc(loc);
+  const mine = (tenureRows || []).filter(r => r && unpadLoc(r.loc) === key && isActiveTenureRow(r));
+  if (!mine.length) return null;
+  const counts = { gm: 0, am: 0, dm: 0, sm: 0, crew: 0 };
+  for (const r of mine) {
+    const c = classifyRosterAssignment(r);
+    const bucket = c?.reviewRole === 'GM' ? 'gm' : c?.reviewRole === 'AM' ? 'am' : c?.reviewRole === 'DM' ? 'dm' : c?.reviewRole === 'SM' ? 'sm' : 'crew';
+    counts[bucket]++;
+  }
+  return { total: mine.length, ...counts };
+}
+
+// Skills Matrix coverage for one store — same "proficient means rating >= 3" convention
+// skills-matrix.js's own coverage column already uses (reused, not re-thresholded).
+// employee_skills DOES carry a plain name field (e.employee), but this summary stays at
+// counts/coverage — the dossier's job here is "is this store covered," not a roster view (the
+// real Skills Matrix panel, same analytics.store gate, is one click away for names).
+export function dossierSkillsSummary(skillsRows, loc) {
+  const key = unpadLoc(loc);
+  const mine = (skillsRows || []).filter(e => e && unpadLoc(e.loc) === key);
+  if (!mine.length) return null;
+  const jobs = new Set();
+  for (const e of mine) for (const j of Object.keys(e.skills || {})) jobs.add(j);
+  const coveredJobs = [...jobs].filter(j => mine.some(e => ((e.skills || {})[j] || 0) >= 3));
+  return { crewCount: mine.length, jobCount: jobs.size, coveredJobCount: coveredJobs.length };
+}
+
+// Pay rate changes — the one genuinely wage-sensitive slice of Personnel. The view gates this
+// behind payroll.view (the exact permission pay-rate-history.js's own nav entry already uses,
+// per the directive's "gated the same way the existing panels already gate it"). Reuses pay-
+// rate-history.js's own two reshapers verbatim — employee_pay_rate_changes IS the change log,
+// nothing here to re-derive.
+export function dossierPayRateChanges(payRateRows, loc, window) {
+  const key = unpadLoc(loc);
+  const all = [...managementRateChanges(payRateRows), ...lifelenzRosterRateChanges(payRateRows)]
+    .filter(r => r && unpadLoc(r.loc) === key);
+  if (!window) return all;
+  return all.filter(r => r.effectiveDate >= window.s && r.effectiveDate <= window.e);
+}
+
+// ── Phase 3: broadened Important Findings (Visit Readiness/EcoSure + Guest Voice) ───────────────
+// topFindings() above only ever drew from a store's finding-rules.js output (Controls/Labor/
+// Speed/Sales) — confirmed via grep that finding-rules.js has zero references to visit
+// readiness, graded visits, EcoSure, or customer complaints. attention-now.js already solved
+// exactly this for the real Attention Now panel via visitRisk()/csatOpportunityAlerts()
+// (attention-feed.js) — reused here AS-IS, scoped to one store via computeVisitReadiness's own
+// opts.locs filter, and normalized onto topFindings()'s {t:'crit'|'watch'|'ok', m:string} shape
+// so both sources merge into ONE strip rather than needing a second UI section. The storeName
+// resolver passed in is blanked (not sNameC) because every title these two functions generate is
+// prefixed "<store> — ...", and this report is already scoped to one store — repeating its own
+// name on every chip would be noise the factual grid/trend charts don't carry either.
+// Security-panel findings (storeHealthList, security-health.js) are deliberately NOT included
+// here — that function needs rulesById/driftContributions/persistenceContributions pre-built
+// elsewhere in security-panel.js's own large pipeline, disproportionate new plumbing for this
+// phase. Flagged as a follow-on in memory/plan-location-dossier-report-2026-11-04.md, not
+// silently dropped.
+const _blankStoreName = () => '';
+function _fromAlert(a) {
+  const title = (a.title || '').replace(/^\s*—\s*/, '');
+  return { t: a.severity === 'crit' ? 'crit' : 'watch', m: title + (a.detail ? ' — ' + a.detail : '') };
+}
+
+// This store's own computeVisitReadiness() object — the same per-store fields the Visit
+// Readiness panel itself shows (band, fsFlag/fsScore/fsSource/fsAsOf/fsEcoSure, lastVisit) — so
+// a "Last Graded Visit" display card and dossierExtraFindings() below can never disagree about
+// what this store's own readiness/food-safety state is.
+export function dossierVisitReadiness(ds, loc) {
+  const stores = computeVisitReadiness({ ...ds, gradedVisits: ds?.gradedVisits || [] }, { locs: [loc] })?.stores || [];
+  return stores.find(s => unpadLoc(s.loc) === unpadLoc(loc)) || null;
+}
+
+export function dossierExtraFindings(ds, loc) {
+  const out = [];
+  const mine = dossierVisitReadiness(ds, loc);
+  if (mine) out.push(...visitRisk([mine], _blankStoreName).map(_fromAlert));
+  const smgMine = (ds?.smgRows || []).filter(r => r && unpadLoc(r.loc) === unpadLoc(loc));
+  const csat = rankCommentOpportunities(smgMine, { storeName: _blankStoreName });
+  out.push(...csatOpportunityAlerts(csat, _blankStoreName).map(_fromAlert));
+  return out;
 }
