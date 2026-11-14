@@ -54,7 +54,14 @@ function accumulateRow(e, r) {
   e._seenDays.add(dateKey(r.date));
   e.totalSales=Math.round((e.totalSales+r.drawerSales)*100)/100;e.totalGC+=r.drawerGC;
   e.drawerOpens+=r.drawerOpens;e.cashOSTotal=Math.round((e.cashOSTotal+(r.cashOSDollar||0))*100)/100;
-  if(r.cashOSDollar!==0)e._cashOSSeenDays.add(dateKey(r.date));
+  // A day is "seen" for cash O/S purposes when a REAL reading exists, whether that reading is
+  // a genuine $0.00 balance or a nonzero variance -- `!=null`, not `!==0`. This used to read
+  // `!==0`, which was backwards once an auto-pulled row can legitimately carry cashOSDollar:null
+  // (the new /data_layer/v1/ Register Audit endpoint doesn't expose this field at all, GH #1314's
+  // endpoint migration): `null !== 0` is true, so a NO-DATA day was being counted as "seen" while
+  // a real, perfectly-balanced $0.00 day was being excluded -- exactly backwards. See
+  // `e.cashOS`/`e.cashOSPctSelf` below, which depend on `cashOSDays` reading correctly.
+  if(r.cashOSDollar!=null)e._cashOSSeenDays.add(dateKey(r.date));
   e.tRedACnt+=r.tRedACnt;e.tRedBCnt+=r.tRedBCnt;
   e.tRedADollar=Math.round((e.tRedADollar+(r.tRedADollar||0))*100)/100;
   e.tRedBDollar=Math.round((e.tRedBDollar+(r.tRedBDollar||0))*100)/100;
@@ -90,7 +97,14 @@ function finalizeGroup(e) {
   // totalSales denominator analyzeRegisterAudit's callers already display) -- null (not 0) when
   // totalSales<=0, so "no sales to divide by" renders distinctly from "genuinely $0 variance."
   const pctOf = dollar => e.totalSales>0 ? Math.round((dollar/e.totalSales)*10000)/10000 : null;
-  e.cashOSPctSelf  = pctOf(e.cashOSTotal);
+  // cashOSDays>0 guard (not just totalSales>0): once an auto-pulled row can carry
+  // cashOSDollar:null (GH #1314's endpoint migration -- this field is genuinely unavailable
+  // from the new Register Audit endpoint), cashOSTotal summing nothing but nulls is
+  // indistinguishable from summing a real $0 unless cashOSDays (now correctly counting only
+  // REAL readings, see accumulateRow above) is checked too -- without this, "no data" would
+  // render as "0.00%, perfectly balanced," a false-clean claim for the one metric named first
+  // in the owner's own "cash +/-, T-Reds before and after, Refunds and Overrings" list.
+  e.cashOSPctSelf  = e.cashOSDays>0 ? pctOf(e.cashOSTotal) : null;
   e.tRedBPctSelf   = pctOf(e.tRedBDollar);
   e.tRedAPctSelf   = pctOf(e.tRedADollar);
   e.posOverPctSelf = pctOf(e.posOverAmt);
@@ -114,7 +128,13 @@ function finalizeGroup(e) {
   if(e.posOver>10){risk+=10;e.flags.push('High POS overrings ('+e.posOver+')');}
   e.riskScore=Math.min(100,risk);
   e.riskLevel=risk>=60?'critical':risk>=30?'high':risk>=15?'watch':'ok';
-  e.cashOS   = e.days>0 ? Math.round((e.cashOSTotal/e.days)*100)/100 : 0;
+  // `e.cashOSDays>0 ? e.avgCashOS : null` -- not `e.days>0 ? cashOSTotal/e.days : 0`. The old
+  // denominator (`e.days`, every day WORKED) silently diluted cashOSTotal by every day with no
+  // real cash O/S reading, same false-clean failure mode as cashOSPctSelf above; `avgCashOS`
+  // (just above) already divides by the correct `cashOSDays` denominator, so this just reuses
+  // it rather than recomputing with the wrong one. `null` (not `0`) when no real reading exists
+  // at all, so a display layer can show "no data" instead of a fabricated "+0.00."
+  e.cashOS   = e.cashOSDays>0 ? e.avgCashOS : null;
   e.voids    = e.tRedACnt;
   e.discPct  = e.promoAmt>0&&e.totalSales>0 ? Math.round(e.promoAmt/e.totalSales*10000)/10000 : 0;
   e.txCount  = e.days;
@@ -254,9 +274,16 @@ function dailyRowTotals(rows) {
   const byDate = {};
   for (const r of rows) {
     const dk = dateKey(r.date);
-    const d = (byDate[dk] ||= { dk, sales: 0, cashOS: 0, tRedB: 0, tRedA: 0, posOver: 0, refund: 0 });
+    // `cashOS` starts `null`, not `0` -- a day with no real cash-O/S reading on any of its rows
+    // (every row, once the auto-pull's GH #1314 endpoint migration lands: that endpoint doesn't
+    // expose this field at all) must stay distinguishable from a day that genuinely balanced at
+    // $0. Summing `cashOSDollar || 0` unconditionally would silently turn "no data" into "a
+    // perfect day," diluting (never inflating) the target-aware flag below into false-clean for
+    // the one metric the owner named first. The other 4 metrics stay plain-summed `0` defaults
+    // since the new endpoint DOES carry real values for all of them, confirmed live.
+    const d = (byDate[dk] ||= { dk, sales: 0, cashOS: null, tRedB: 0, tRedA: 0, posOver: 0, refund: 0 });
     d.sales   += r.drawerSales || 0;
-    d.cashOS  += r.cashOSDollar || 0;
+    if (r.cashOSDollar != null) d.cashOS = (d.cashOS ?? 0) + r.cashOSDollar;
     d.tRedB   += r.tRedBDollar || 0;
     d.tRedA   += r.tRedADollar || 0;
     d.posOver += r.posOverAmt || 0;
@@ -290,8 +317,17 @@ function targetAwareFlagsForEmployee(rows, maxDateStr) {
   for (const m of TARGET_RATIO_METRICS) {
     const targetPct = target[m.targetField];
     if (targetPct == null) { metrics[m.key] = null; continue; }
+    // Per-metric eligible days, not the shared `recentDays` -- a metric whose field is `null`
+    // on a given day (currently only cashOS, since GH #1314's endpoint migration found Cash
+    // O/S genuinely unavailable from the new Register Audit API) must not have that day silently
+    // read as "0, on target." Using the shared `recentDays.length` as every metric's denominator
+    // would dilute cashOS's share/overDays toward "clean" with every no-data day, a false-negative
+    // for exactly the metric the owner named first ("cash +/-, T-Reds before and after, Refunds
+    // and Overrings"). The other 4 metrics are unaffected -- confirmed live, the new endpoint
+    // carries real values for all of them every day.
+    const eligibleDays = recentDays.filter(d => m.day(d) != null);
     let overDays = 0, egregiousDays = 0, worst = null;
-    for (const d of recentDays) {
+    for (const d of eligibleDays) {
       const dayPct = m.day(d) / d.sales;
       const deviation = m.signed ? Math.abs(dayPct - targetPct) : Math.max(0, dayPct - targetPct);
       if (deviation < FLOOR_PCT) continue;
@@ -299,11 +335,15 @@ function targetAwareFlagsForEmployee(rows, maxDateStr) {
       if (!worst || deviation > worst.deviation) worst = { dk: d.dk, dayPct, deviation };
       if (deviation >= Math.max(EGREGIOUS_MULTIPLE * Math.abs(targetPct), EGREGIOUS_MULTIPLE * FLOOR_PCT)) egregiousDays++;
     }
-    const totalRecentDays = recentDays.length;
+    const totalRecentDays = eligibleDays.length;
     const share = totalRecentDays > 0 ? overDays / totalRecentDays : 0;
     const isEgregious  = egregiousDays > 0;
     const isRepetitive = overDays >= REPETITIVE_MIN_DAYS && share >= REPETITIVE_SHARE;
-    metrics[m.key] = { targetPct, overDays, egregiousDays, totalRecentDays, share: Math.round(share * 1000) / 1000, isEgregious, isRepetitive, worst };
+    // `unavailable: true` when this metric had NO real-data days in the window at all (e.g.
+    // cashOS post-#1314) -- distinct from `isEgregious:false, isRepetitive:false`, which would
+    // otherwise read identically to "genuinely clean" even though nothing was actually checked.
+    const unavailable = recentDays.length > 0 && totalRecentDays === 0;
+    metrics[m.key] = { targetPct, overDays, egregiousDays, totalRecentDays, share: Math.round(share * 1000) / 1000, isEgregious, isRepetitive, unavailable, worst };
     if (isEgregious) { risk += 25; flags.push({ metric: m.key, label: m.label, kind: 'egregious',
       detail: worst ? ('worst day ' + worst.dk + ': ' + (worst.dayPct * 100).toFixed(2) + '% vs target ' + (targetPct * 100).toFixed(2) + '%') : '' }); }
     if (isRepetitive) { risk += 15; flags.push({ metric: m.key, label: m.label, kind: 'repetitive',
@@ -315,8 +355,13 @@ function targetAwareFlagsForEmployee(rows, maxDateStr) {
   // window the flags above are driven by. Context, not an action trigger.
   const fullHistoryPct = {};
   for (const m of TARGET_RATIO_METRICS) {
-    const totalSales = days.reduce((a, d) => a + d.sales, 0);
-    const totalVal = days.reduce((a, d) => a + m.day(d), 0);
+    // Same null-exclusion as the recent-window loop above: sum sales and the metric's own value
+    // ONLY over days this metric actually has a real reading for, so a field that's unavailable
+    // on every day (cashOS, post-#1314) resolves to `null` ("no data") rather than `0/totalSales`
+    // ("confirmed $0 variance across the employee's whole history").
+    const daysWithData = days.filter(d => m.day(d) != null);
+    const totalSales = daysWithData.reduce((a, d) => a + d.sales, 0);
+    const totalVal = daysWithData.reduce((a, d) => a + m.day(d), 0);
     fullHistoryPct[m.key] = totalSales > 0 ? totalVal / totalSales : null;
   }
 

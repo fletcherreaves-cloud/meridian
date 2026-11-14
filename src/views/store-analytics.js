@@ -1190,7 +1190,13 @@ function RegisterAuditNarrative({auditData, store, ds}) {
   // Find patterns
   const highRisk = employees.filter(e=>e.riskScore>=40);
   const medRisk  = employees.filter(e=>e.riskScore>=40&&e.riskScore<=70);
-  const topCash  = [...employees].sort((a,b)=>(b.cashOS||0)-(a.cashOS||0)).slice(0,3).filter(e=>Math.abs(e.cashOS||0)>2);
+  // `e.cashOS` is `null` (not `0`) when this employee has no real cash-O/S reading at all (GH
+  // #1314's endpoint migration found the auto-pulled Register Audit source doesn't expose this
+  // field) -- excluded here via `.filter(e=>e.cashOS!=null)` BEFORE sorting/picking "worst," so
+  // an employee with genuinely unknown cash O/S can never be singled out in the narrative below
+  // as having "the most significant cash variance" when the real answer is "no data."
+  const cashKnown = employees.filter(e=>e.cashOS!=null);
+  const topCash  = [...cashKnown].sort((a,b)=>(b.cashOS||0)-(a.cashOS||0)).slice(0,3).filter(e=>Math.abs(e.cashOS||0)>2);
   const topVoids = [...employees].sort((a,b)=>(b.voids||0)-(a.voids||0)).slice(0,3).filter(e=>(e.voids||0)>0);
   const topDisc  = [...employees].sort((a,b)=>(b.discPct||0)-(a.discPct||0)).slice(0,3).filter(e=>(e.discPct||0)>.15);
   const avgDrawer= employees.reduce((a,e)=>a+(e.drawerOpens||0),0)/employees.length;
@@ -1212,11 +1218,16 @@ function RegisterAuditNarrative({auditData, store, ds}) {
         : `Out of ${employees.length} employees reviewed, ${totalRisk} (${riskPct}%) are showing elevated risk indicators that warrant direct attention. ${medRisk.length} more fall in the watch category. The concerns are not distributed randomly — they concentrate in specific individuals and specific patterns, which points toward behavior rather than system error.`
   });
 
-  // Cash O/S narrative
-  if(topCash.length>0) {
+  // Cash O/S narrative. When NO employee has a real cash-O/S reading (GH #1314: the auto-pulled
+  // Register Audit source doesn't expose this field), say so plainly instead of silently
+  // skipping the paragraph -- "no data" and "verified clean" must never look the same.
+  if(employees.length>0 && cashKnown.length===0) {
+    paras.push({ type:'watch', title:'Cash Over/Short',
+      text:'Cash O/S data is not available from the automated Register Audit pull for this period — the underlying QSRSoft report doesn\'t expose this field. No cash-variance read is possible until a manual upload or a different source covers it.' });
+  } else if(topCash.length>0) {
     const worst = topCash[0];
-    const patternNote = employees.filter(e=>Math.abs(e.cashOS||0)>1).length>=3
-      ? `The cash variance pattern is spread across ${employees.filter(e=>Math.abs(e.cashOS||0)>1).length} employees, which can indicate a systemic issue — possibly incorrect change-making procedure, inconsistent counting protocols at shift change, or a manager not catching variances before closeout.`
+    const patternNote = cashKnown.filter(e=>Math.abs(e.cashOS||0)>1).length>=3
+      ? `The cash variance pattern is spread across ${cashKnown.filter(e=>Math.abs(e.cashOS||0)>1).length} employees, which can indicate a systemic issue — possibly incorrect change-making procedure, inconsistent counting protocols at shift change, or a manager not catching variances before closeout.`
       : `The variance is concentrated in 1–2 employees rather than spread across the team, which is more consistent with an individual behavior issue than a process failure.`;
     paras.push({
       type: Math.abs(worst.cashOS||0)>10?'crit':'watch',
@@ -1477,7 +1488,7 @@ function RegisterAuditTab({ds, loc, dateRange}) {
             Cell(et.days,'var(--text3)','right'),
             Cell(et.tRedACnt||0,'var(--text)','right'),
             Cell(et.refundCnt||0,'var(--text)','right'),
-            Cell(((et.cashOS||0)>=0?'+':'')+(et.cashOS||0).toFixed(2),'var(--text)','right'),
+            Cell(et.cashOS==null?'—':((et.cashOS>=0?'+':'')+et.cashOS.toFixed(2)),'var(--text)','right'),
             Cell((et.discPct||0)>0?fP(et.discPct,2):'—','var(--text)','right'),
           );
         }))
@@ -1534,7 +1545,7 @@ function RegisterAuditTab({ds, loc, dateRange}) {
        {l:'Refunds (count)',v:employees.reduce((a,e)=>a+e.refundCnt,0),c:'#f59e0b'},
        {l:'Refunds $ (total)',v:'$'+(employees.reduce((a,e)=>a+(e.refundCash||0)+(e.refundCashless||0),0)).toFixed(2),c:'#f59e0b'},
        {l:'POS Overrings',v:employees.reduce((a,e)=>a+e.posOver,0),c:'#fb923c'},
-       {l:'Avg O/S',v:'$'+(Math.round(employees.reduce((a,e)=>a+Math.abs(e.cashOS||0),0)/Math.max(1,employees.length)*100)/100).toFixed(2),c:'var(--text)'},
+       {l:'Avg O/S',v:(()=>{ const known=employees.filter(e=>e.cashOS!=null); return known.length===0?'—':'$'+(Math.round(known.reduce((a,e)=>a+Math.abs(e.cashOS),0)/known.length*100)/100).toFixed(2); })(),c:'var(--text)'},
       ].map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'6px 10px',textAlign:'center',flex:1,minWidth:70}},
         div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
         div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color:k.c}},k.v)
@@ -1577,7 +1588,7 @@ function RegisterAuditTab({ds, loc, dateRange}) {
             flagsFor(e)?.metrics?.refund?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.refund?.isRepetitive?'var(--warn)':'var(--text)','right'),
           Cell((e.posOverAmt||0)===0?'—':'$'+e.posOverAmt.toFixed(2)+' ('+fP(e.posOverPctSelf,2)+')',
             flagsFor(e)?.metrics?.posOver?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.posOver?.isRepetitive?'var(--warn)':'var(--text)','right'),
-          Cell(((e.cashOSTotal||0)>=0?'+$':'-$')+Math.abs(e.cashOSTotal||0).toFixed(2)+' ('+fPct(e.cashOSPctSelf||0,2)+')',
+          Cell(e.cashOS==null?'—':(((e.cashOSTotal||0)>=0?'+$':'-$')+Math.abs(e.cashOSTotal||0).toFixed(2)+' ('+fPct(e.cashOSPctSelf||0,2)+')'),
             flagsFor(e)?.metrics?.cashOS?.isEgregious?'var(--crit)':flagsFor(e)?.metrics?.cashOS?.isRepetitive?'var(--warn)':'var(--text)','right'),
           Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'var(--crit)':(e.discPct||0)>.1?'var(--warn)':'var(--text)','right')
         ), registerBreakdownRow(e,10)].filter(Boolean);
@@ -1647,8 +1658,8 @@ function RegisterAuditTab({ds, loc, dateRange}) {
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'var(--surf2)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.txCount||'—','var(--text3)','right'),
-          Cell(((e.cashOSTotal||0)>=0?'+':'')+((e.cashOSTotal||0).toFixed(2)), Math.abs(e.cashOSTotal||0)>10?'var(--crit)':Math.abs(e.cashOSTotal||0)>3?'var(--warn)':'var(--text)','right'),
-          Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'var(--crit)':Math.abs(e.cashOS||0)>2?'var(--warn)':'var(--text)','right'),
+          Cell(e.cashOS==null?'—':(((e.cashOSTotal||0)>=0?'+':'')+((e.cashOSTotal||0).toFixed(2))), Math.abs(e.cashOSTotal||0)>10?'var(--crit)':Math.abs(e.cashOSTotal||0)>3?'var(--warn)':'var(--text)','right'),
+          Cell(e.cashOS==null?'—':(((e.cashOS>=0?'+':'')+(e.cashOS.toFixed(2)))), e.cashOS!=null&&Math.abs(e.cashOS)>5?'var(--crit)':e.cashOS!=null&&Math.abs(e.cashOS)>2?'var(--warn)':'var(--text)','right'),
           Cell(e.drawerOpens||0,'var(--text3)','right'),
           Cell(e.avgDrawerOpens>0?e.avgDrawerOpens.toFixed(1):'—', e.avgDrawerOpens>8?'#f59e0b':'var(--text)','right'),
           Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'var(--crit)':(e.discPct||0)>.1?'var(--warn)':'var(--text)','right'),
@@ -1665,7 +1676,7 @@ function RegisterAuditTab({ds, loc, dateRange}) {
         // per dispatch #38 §5's original "deliberately not wired to reveal" note.
         if(!auditData||!auditData.employees||!auditData.employees.length) return 'No audit data.';
         const top3=(auditData.employees||[]).slice(0,3).map(e=>
-          empName(e)+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:$'+(e.cashOS||0).toFixed(2)).join('; ');
+          empName(e)+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:'+(e.cashOS==null?'no data':'$'+e.cashOS.toFixed(2))).join('; ');
         const s=auditData.summary||{};
         return 'McDonald\'s register audit for '+loc+'. Top risk: '+top3+'. District: '+(s.totalVoids||0)+' voids, '+(s.highRisk||0)+' high-risk. Provide coaching talking points for high-risk employees and 2-3 process improvements to reduce cash handling errors.';
       }})
