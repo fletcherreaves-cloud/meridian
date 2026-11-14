@@ -346,6 +346,7 @@ const TrendReportPanel = lazyPanel(() => import('../views/trend-report.js').then
 const YoyTrendsPanel = lazyPanel(() => import('../views/yoy-trends.js').then(m => ({ default: m.YoyTrendsPanel })), 'yoy-trends');
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })), 'forms-completion');
 const FormsReviewsPanel = lazyPanel(() => import('../views/forms-reviews-panel.js').then(m => ({ default: m.FormsReviewsPanel })), 'forms-reviews');
+const SquadleChecklistPanel = lazyPanel(() => import('../views/squadle-checklist-panel.js').then(m => ({ default: m.SquadleChecklistPanel })), 'squadle-checklist');
 const QuickCapturePanel = lazyPanel(() => import('../views/quick-capture.js').then(m => ({ default: m.QuickCapturePanel })), 'quick-capture');
 const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').then(m => ({ default: m.RoleExplainerPanel })), 'role-explainer');
 import { computeInsights } from '../engine/insights.js';
@@ -4121,6 +4122,7 @@ function App() {
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&(setForecastReportsTab('lifelenz-bridge'),goRoute('forecast-reports'));
         if(modal==='dt-sos')         perm('analytics.store')&&goRoute('dt-sos');
         if(modal==='graded-visits')  perm('analytics.store')&&goRoute('graded-visits');
+        if(modal==='squadle-checklist') perm('analytics.store')&&goRoute('squadle-checklist');
         if(modal==='customer-complaints') perm('analytics.store')&&goRoute('customer-complaints');
         if(modal==='store-assessments') perm('analytics.store')&&goRoute('store-assessments');
         if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
@@ -4575,6 +4577,7 @@ function App() {
       routePanel==='daily-review'&&h(DailyReviewPanel,{ds,stores:scopedStores,onClose:()=>goRoute(null)}),
       routePanel==='weekly-count-status'&&h(WeeklyCountStatusPanel,{stores,ds,settings,initialScope:weeklyCountStatusInit,onClose:()=>{goRoute(null);setWeeklyCountStatusInit(null);}}),
       routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='squadle-checklist'&&h(SquadleChecklistPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='customer-complaints'&&h(CustomerComplaintsPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='forms-completion'&&h(RoutePanelShell,{
         title:'✅ Form Completions',

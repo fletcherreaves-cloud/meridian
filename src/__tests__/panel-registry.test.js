@@ -204,7 +204,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the sixty-three panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, Layout Planner, Equipment Results, Curated Home, Launch Planner, YoY Trends (task #90, fifty-nine -> sixty), What You Can Do (fresh-eyes role audit, 2026-11-11, §4 Q11a, sixty -> sixty-one), Daily Review (Notes 75, sixty-one -> sixty-two), and Location Dossier (task #79 Phase 1, 2026-11-13, sixty-two -> sixty-three))', () => {
+  it('is exactly the sixty-four panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer, Customer Complaints, Store Assessments, Weekly Count Status, Pay Rate History, Loss Prevention Summary, Custom Report Builder, the six Reports redesign Phase 5 base reports, Form Completions, Cash Variance Pattern, Access Log, FOB Reference Table, Conversion Efficiency Ratio, Oil Efficiency, Layout Planner, Equipment Results, Curated Home, Launch Planner, YoY Trends (task #90, fifty-nine -> sixty), What You Can Do (fresh-eyes role audit, 2026-11-11, §4 Q11a, sixty -> sixty-one), Daily Review (Notes 75, sixty-one -> sixty-two), Location Dossier (task #79 Phase 1, 2026-11-13, sixty-two -> sixty-three), and Food Safety Checklists (task #105 Phase 2 UI, Squadle, 2026-11-14, sixty-three -> sixty-four))', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -363,12 +363,16 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // ("everything we know about one store" -- factual tier + top findings, across Current/
     // 28-Day/Last Month/L3M/YTD), built on ReportShell like every Phase 5 report, route:true and
     // kind:'nav' from day one (sixty-two -> sixty-three).
+    // 2026-11-14: 'squadle-checklist' (Food Safety Checklists, task #105 Phase 2 UI) is the first
+    // UI consumer of the Squadle tablet food-safety checklist pull that shipped 2026-11-13 with
+    // deliberately no consuming panel yet -- route:true and kind:'test-kitchen' from day one, same
+    // treatment forms-completion/forms-reviews got as new/unproven panels (sixty-three -> sixty-four).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'curated-home', 'custom-reports', 'customer-complaints',
       'daily-review', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'launch-planner', 'loc-intel', 'location-dossier', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
-      'report', 'role-explainer', 'sched-hub', 'security', 'signals', 'smg-voice', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
+      'report', 'role-explainer', 'sched-hub', 'security', 'signals', 'smg-voice', 'squadle-checklist', 'store-assessments', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
       'weather-impact', 'weekly-count-status', 'yoy-trends',
     ]);
   });
