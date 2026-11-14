@@ -1,6 +1,6 @@
 ---
 name: finding-register-audit-preparer-duplicate-2026-11-14
-description: "GH #1314 follow-up -- after the endpoint migration (v5.779) fixed the 403 outage, a live-dispatched verification run hit a SECOND, different Postgres error on the preparer register type: 'ON CONFLICT DO UPDATE command cannot affect row a second time.' Root cause not yet confirmed; resilience fix shipped, root-cause investigation still open."
+description: "GH #1314 follow-up -- after the endpoint migration (v5.779) fixed the 403 outage, a live-dispatched verification run hit a SECOND, different Postgres error on the preparer register type: 'ON CONFLICT DO UPDATE command cannot affect row a second time.' RESOLVED same day (run #108): root cause is QSRSoft's own 'No Preparer' placeholder name colliding across distinct empIds, not a true API duplicate or a real-person name collision. Resilience fix (dedupeAuditRows) shipped and confirmed sufficient; #1314 auto-closed."
 metadata:
   node_type: memory
   type: finding
@@ -84,11 +84,43 @@ and the fix is upstream of this dedup, not the key. **Re-dispatch the workflow a
 job log before acting on either theory** -- per this repo's "measure it, don't reason about it"
 rule, this doc deliberately does not guess which.
 
-## Status
+## Root cause confirmed (run #108, same day)
+
+Re-dispatched the workflow after v5.781 merged (run #108,
+https://github.com/fletcherreaves-cloud/meridian/actions/runs/43628756900, `days_recent:2
+debug:1`). All three register types saved cleanly, no failed units:
+
+```
+[audit-pull] 2026-11-11..2026-11-14:cashier: 522 rows → 522 saved
+[audit-pull] 2026-11-11..2026-11-14:manager: 240 rows → 240 saved
+[audit-pull] duplicate (loc,date,emp,registerType) in one response -- loc=0006972
+  date=2026-11-11 emp="No Preparer" type=preparer empId(A)=0 empId(B)=e7225007 --
+  keeping the later row
+[audit-pull] 2026-11-11..2026-11-14:preparer: 246 rows → 245 saved
+[audit-pull] done — 1007 rows saved.
+```
+
+The new warn log's `empId(A)`/`empId(B)` resolves the open question directly: this is **neither**
+a true API-side duplicate (same empId twice) **nor** two distinct real employees sharing an
+identical name. `empId(A)=0` is QSRSoft's own sentinel for "no preparer was assigned to this
+transaction" -- `empId(B)=e7225007` is a real employee id. **Both get rendered under the same
+literal display string `"No Preparer"`** by QSRSoft's own report, so any store/date with more
+than one "preparer not assigned" transaction collides under the name-based conflict key,
+regardless of which (if any) real employee record each one is actually attached to.
+
+This means `dedupeAuditRows()`'s last-row-wins collapse is the *correct* permanent handling here,
+not a stopgap masking a data-integrity problem -- there is no real "duplicate preparer record" to
+reconcile; `register_type='preparer'` rows literally carrying the placeholder name have no
+individual identity worth preserving distinctly in `audit_rows` (which is keyed by name, not
+`empId`, by design). No further fix is needed unless a FUTURE collision log shows two *different,
+non-zero, non-placeholder* `empId`s under the same name -- that would be a genuine same-real-person
+duplicate or name collision and would warrant revisiting the key shape. Watch future collision
+log lines for that shape; this specific "No Preparer" collision class is closed.
+
+## Status -- RESOLVED
 
 - #1314's 403/endpoint-migration root cause: **fixed and confirmed live** (v5.779).
-- This NEW preparer-duplicate bug: resilience fix shipped (this dispatch), real root cause
-  **still open** -- needs one more live dispatch + job-log read once this ships, or the next
-  natural scheduled run (daily cron, 10:00 UTC).
-- GH issue #1314 will not auto-close until a scheduled/dispatched run of this workflow succeeds
-  end-to-end (all 3 register types, not just 2 of 3).
+- The preparer-duplicate bug: **fully root-caused and confirmed resolved** (v5.781 + run #108,
+  2026-11-14). No further action needed on this specific collision shape.
+- GH issue #1314 **auto-closed** at 2026-11-14T18:51:55Z (`state_reason: completed`), triggered by
+  run #108's end-to-end success (all 3 register types, 1007 rows, 0 failed units).

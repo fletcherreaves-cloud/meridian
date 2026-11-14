@@ -202,6 +202,46 @@ const CURATED_PROVENANCE = {
   complianceCostPenalty:   { label: 'Compliance Cost Penalty ($)', system: 'LifeLenz', report: 'Data Explorer — Compliance Audit', table: 'lifelenz_compliance_audit', composed: true,
     inputs: ['Σ costPenalty per violation event'],
     formula: 'Compliance Cost Penalty ($) = Σ costPenalty across every violation event for that (store, date) (engine/compliance-audit.js)', grain: 'daily · per store' },
+
+  // ── Forecast models — Model Assignment / Forecast Accuracy's 5 model columns (task #152,
+  // 2026-11-14, the single highest-value item this task deliberately deferred twice already —
+  // see memory/plan-metric-reconciliation-2026-11-14.md's "Still deferred from pass 1"). Traced
+  // directly from engine/forecast.js's forecastDay()/forecastSimple()/forecastAdaptiveEnsemble()/
+  // forecastEWMA() branches, cross-checked against this file's own existing owner-facing KB
+  // articles (model_types/forecast_formula/adaptive_ensemble/ewma_model/adaptive_di/
+  // dialed_in_calibration, same file, ~line 1314+) so the two surfaces agree rather than
+  // independently re-deriving the same math and risking drift. DOW and DI share the literal same
+  // "Core Forecast Formula" code path — DI differs only in WHICH parameter values it plugs in
+  // (store-calibrated vs district-default), not in the formula shape; AE and EWMA are genuinely
+  // different formulas that never touch that path at all. Simple is covered too even though it
+  // predates and sits outside the KB's own "four model codes" framing (model_types's KB article
+  // still says "Four codes exist" — DOW/DI/AE/EWMA — which is now stale; Simple shipped later,
+  // v4.532, and was never added there. Not fixed here: that's a KB-content gap, out of this
+  // task's scope, flagged for whoever next touches that article).
+  forecastModelDow: { label: 'DOW Trend (Forecast Model)', system: 'Meridian-derived', report: 'Model Assignment / Forecast Accuracy', table: '(computed)', composed: true,
+    inputs: ['LY same-day sales (lyRaw — ~364-day lookback with DOW-matched fallbacks, or the Ramp Model for a store <365 days old)',
+      'District-DOW-average blend (lyAdj, via lyW — defaults to 1.0 = pure store LY, no blend)',
+      'Holiday correction (holidayLyAdj)', 'YOY trend: t2/t4/t6 (weeks 1–2/3–4/5–6) at default weights .50/.30/.20, blended 65% global + 35% DOW-specific',
+      'Ops factor (OEPE/TPPH/KVS-time/park-rate/staffing-vs-need vs target, calcOpsF)', 'Weather adjustment (wAdj)', 'Tagged event factor', 'Plus-up %'],
+    formula: 'forecast = lyAdjH × opsFactor × (1+wAdj) × (1+trendFactor) × (1+eventFactor) × (1+plusUp) — the "Core Forecast Formula" (engine/forecast.js forecastDay, default/fallthrough branch; full step-by-step in this file\'s own forecast_formula KB article). DOW is this formula run with the DISTRICT DEFAULT parameters — trend weights t2/t4/t6=.50/.30/.20, opsMult=1.0, lyW=1.0 — no per-store calibration. It is the same code path DI uses below, just with uncalibrated defaults; the default/starting assignment before a store has been Dialed-In', grain: 'daily · per store' },
+  forecastModelDi: { label: 'Dialed-In (Forecast Model)', system: 'Meridian-derived', report: 'Model Assignment / Forecast Accuracy', table: '(computed)', composed: true,
+    inputs: ['Same Core Forecast Formula inputs as DOW above',
+      'Per-store calibrated {lyW, t2, t4, t6, opsMult} (settings.dialedIn[loc]) — found by a grid search over ~21,500 combinations minimizing MAPE against the store\'s trailing 42 real days, evaluated through this same formula'],
+    formula: 'Identical Core Forecast Formula to DOW (forecast = lyAdjH × opsFactor × (1+wAdj) × (1+trendFactor) × (1+eventFactor) × (1+plusUp), engine/forecast.js forecastDay) — DI differs only in WHICH values feed lyW/t2/t4/t6/opsMult: this store\'s own Dialed-In-calibrated values (settings.dialedIn[loc]) instead of the district defaults DOW uses. Falls back to the DOW defaults when the store has no calibration on file or is explicitly skipped (DI Skip toggle)', grain: 'daily · per store' },
+  forecastModelAe: { label: 'Adaptive Ensemble (Forecast Model)', system: 'Meridian-derived', report: 'Model Assignment / Forecast Accuracy', table: '(computed)', composed: true,
+    inputs: ['Signal 1 — EWMA-DOW (α=.22 weekday / .30 weekend)',
+      'Signal 2 — LY Adjusted (prior-year same date, ±3-day DOW-matched fallback, ±20%-clamped recent-90d-vs-LY-90d adjustment)',
+      'Signal 3 — Short-term Momentum (recent 2wk vs prior 2wk same-DOW, clamped .85–1.15×)',
+      'Signal 4 — Monthly Seasonality (this-month vs all-time same-DOW average, min 4 data points, clamped .80–1.20×)',
+      'Signal 5 — Adaptive DI (per-store-calibrated 14d/28d/42d EWMA blend — a DIFFERENT thing from DI model mode, see below)'],
+    formula: 'Weighted blend of the 5 signals above, ÷ the sum of whichever signals actually resolved for that store/day (renormalizes when a signal lacks data) — does NOT use the Core Forecast Formula at all (engine/forecast.js forecastAdaptiveEnsemble). Blend weights differ Oklahoma vs the 6 named Florida interstate stores (6178/6838/10034/35242/37566/38609, which lean harder on Signal 2/LY for annual highway-traffic seasonality) and weekday vs weekend — exact weight tables in this file\'s own Adaptive Ensemble KB article. District-validated 9.29% MAPE vs LifeLenz\'s own 9.51% (daily-level backtest, same evaluation window)', grain: 'daily · per store' },
+  forecastModelEwma: { label: 'EWMA (Forecast Model)', system: 'Meridian-derived', report: 'Model Assignment / Forecast Accuracy', table: '(computed)', composed: true,
+    inputs: ['Up to 14 most-recent same-day-of-week actual sales values (S_i)'],
+    formula: 'forecast = Σ(α × (1−α)^i × S_i) ÷ Σ(α × (1−α)^i) over the up-to-14 most-recent same-DOW actuals (i=0 is the most recent, weighted highest); α=0.25 as a standalone model (engine/forecast.js forecastEWMA — the identical function also backs AE\'s Signal 1 at a different α). No LY, no trend, no ops factor — ignores the prior year and operational metrics entirely, which is why it\'s used for stores in active operational change (new GM, remodel, relocation ramp) where the historical/LY anchor can\'t be trusted. Requires ≥3 same-DOW data points or returns null (no forecast)', grain: 'daily · per store' },
+  forecastModelSimple: { label: 'Simple — T3M/T6W/T3W (Forecast Model)', system: 'Meridian-derived', report: 'Model Assignment / Forecast Accuracy', table: '(computed)', composed: true,
+    inputs: ['Trailing daily sales rate — anomaly-excluded mean over trailing 90/42/21-day windows, recency-weighted .2/.3/.5 (weightedRecencyProjection, reused verbatim from smart-targets.js)',
+      'Same-day-of-week shape multiplier — robustBaseline(same-DOW days)÷robustBaseline(all days) over the trailing 90 days, clamped .5–1.8×', 'Holiday multiplier (isHoliday-gated)'],
+    formula: 'forecast = trailing daily rate × same-DOW shape × holiday multiplier (engine/forecast.js forecastSimple/_dowShape). Strictly leak-free — anchors to the START of the forecast day, so trailing windows can never see the target day or anything after it. Requires ≥14 days of real trailing history or falls through to the DOW model (modelUsed then reports "dow", not "simple"). This is the day-level propagation of the T3M/T6W/T3W trailing family that won the original 27-store MONTHLY-TOTAL Smart Targets backtest (v4.483, ~5% MAPE vs 8–14% for the engineered models) — a full month of these sums back to (trailing rate × days), the exact method that won, while any single day still respects its own weekday. A LATER head-to-head specifically on 28-day period TOTALS (the Period-Total Scoreboard) found Adaptive Ensemble actually beats Simple there (AE 2.7% median vs Simple 4.5%) — Simple\'s original monthly-total win and its showing on this later, stricter re-validation are two different, already-reconciled findings (memory/simple-models-propagation.md), not a contradiction; this entry documents what the model computes, not a verdict on which model is "best"', grain: 'daily · per store' },
 };
 
 // ── Auto-generation, straight from METRIC_SOURCES ─────────────────────────────────
