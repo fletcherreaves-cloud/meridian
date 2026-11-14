@@ -126,6 +126,41 @@ describe('humanizeMetricKey', () => {
   });
 });
 
+// Task #152 (2026-11-14) — app-wide metric/formula reconciliation. These 6 keys are composed
+// from MULTIPLE already-resolved metric-source.js values (sumMs lines, Visit Readiness
+// sub-scores) rather than naming a single METRIC_SOURCES chain, so autoProvenanceFor() never
+// generates them — they must stay hand-curated, and this test is what catches it if one is
+// ever accidentally dropped during a future edit to CURATED_PROVENANCE.
+describe('METRIC_PROVENANCE — task #152 curated additions (2026-11-14)', () => {
+  const keys = ['visitReadinessSpeed', 'visitReadinessAccuracy', 'visitReadinessQuality',
+    'visitReadinessLeadership', 'dailyReviewRefundAmt', 'dailyReviewEmplMgrMeal'];
+
+  it('all 6 are present, composed, and Meridian-derived', () => {
+    for (const key of keys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(true);
+      expect(p.system, `${key}.system`).toBe('Meridian-derived');
+    }
+  });
+
+  it('the two sumMs daily-review lines name their real metric-source.js legs', () => {
+    expect(METRIC_PROVENANCE.dailyReviewRefundAmt.inputs.join(' ')).toMatch(/cashRefAmt/);
+    expect(METRIC_PROVENANCE.dailyReviewRefundAmt.inputs.join(' ')).toMatch(/cashlessRefAmt/);
+    expect(METRIC_PROVENANCE.dailyReviewEmplMgrMeal.inputs.join(' ')).toMatch(/empMealAmt/);
+    expect(METRIC_PROVENANCE.dailyReviewEmplMgrMeal.inputs.join(' ')).toMatch(/mgrMealAmt/);
+  });
+
+  it('the 4 visit-readiness sub-scores are a disjoint, real subset of METRIC_PROVENANCE', () => {
+    // None of these 4 keys collide with a real METRIC_SOURCES chain or the pre-existing
+    // composite entry -- confirms they're additive, not accidentally shadowing anything.
+    for (const key of keys.filter(k => k.startsWith('visitReadiness') && k !== 'visitReadiness')) {
+      expect(METRIC_SOURCES[key]).toBeUndefined();
+    }
+    expect(METRIC_PROVENANCE.visitReadiness).toBeTruthy(); // the composite itself, untouched
+  });
+});
+
 describe('provenanceText', () => {
   it('formats system, report, table, formula, and grain into one readable string', () => {
     const text = provenanceText('tpph');

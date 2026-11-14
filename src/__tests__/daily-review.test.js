@@ -172,4 +172,27 @@ describe('buildServiceDaypartBreakdown()', () => {
     expect(result.find(r => r.key === 'r2p')).toBeUndefined();
     expect(result.find(r => r.key === 'kvst')).toBeUndefined();
   });
+
+  // Dispatch 2026-11-14 (task #152) -- DAYPART_FIELDS.r2p/.kvst previously named fields that
+  // don't exist on qsr_daily_activity at all ('fc_untilcloseddrawer' two-d typo; bare
+  // 'mfy_time'/'mfy_trans_cnt' with no side suffix), so every call silently produced ZERO
+  // dayparts for both -- indistinguishable from the "no matching rows" case the test above
+  // covers, which is exactly how this went unnoticed. These rows carry the REAL column names
+  // (fc_untilclosedrawer, mfy1_*/mfy2_*) and assert a real, non-empty, correctly-summed result,
+  // closing the gap the other test's mock-shaped fixtures couldn't catch.
+  it('computes real R2P and KVS dayparts from their actual qsr_daily_activity field names', () => {
+    const rows = [
+      row(LOC, '2026-11-11', '06:00', {
+        fc_untilserve: 5000, fc_untilclosedrawer: 2000, fc_trans_cnt: 10, // R2P = (5000-2000)/10 = 300
+        mfy1_untilserve: 1000, mfy1_trans_cnt: 5, mfy2_untilserve: 1000, mfy2_trans_cnt: 5, // KVS = 2000/10 = 200
+      }),
+    ];
+    const result = buildServiceDaypartBreakdown(rows, LOC, new Date(2026, 10, 11));
+    const r2p = result.find(r => r.key === 'r2p');
+    const kvst = result.find(r => r.key === 'kvst');
+    expect(r2p).toBeTruthy();
+    expect(r2p.dayparts[0].avgSec).toBe(300);
+    expect(kvst).toBeTruthy();
+    expect(kvst.dayparts[0].avgSec).toBe(200);
+  });
 });

@@ -85,6 +85,40 @@ const CURATED_PROVENANCE = {
   visitReadiness: { label: 'Visit Readiness (PACE composite)', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
     inputs: ['Speed sub-score (35%)', 'Accuracy sub-score (30%)', 'Quality sub-score (20%)', 'Leadership sub-score (15%)'],
     formula: 'Visit Readiness % = Speed×0.35 + Accuracy×0.30 + Quality×0.20 + Leadership×0.15 (engine/visit-readiness.js READINESS_WEIGHTS), renormalized over whichever sub-scores have real data for that store. Each sub-score is itself the store\'s own metrics graded against its own DEFAULT_TARGETS, not a fixed scale. Food-safety flag (EcoSure when current, waste/variance proxy as fallback) is tracked independently and deliberately excluded from this composite', grain: 'current · per store' },
+  // The 4 sub-scores feeding visitReadiness above (task #152, 2026-11-14) — each printed on
+  // the Visit Readiness panel on its own, so each needs its own entry, not just the composite.
+  // Every metric below is scored 0-1 via scoreMetric() (engine/visit-readiness.js): 1 = at/better
+  // than target, falling linearly to 0 over a per-metric tolerance band (% of target, or an
+  // absolute tolerance for schedGap), then subScore() takes the plain mean of whichever of a
+  // sub-score's metrics actually resolved for that store that day/month (never silently assumes
+  // full coverage — the panel's own 'missing' list under each sub-score names anything left out
+  // and why). The exact metric list, targets and bands live in SPEED/ACCURACY/QUALITY/LEADERSHIP
+  // in that file — summarized here, not duplicated field-by-field, since the live panel already
+  // shows each metric's own actual/target/score ('drivers').
+  visitReadinessSpeed: { label: 'Visit Readiness — Speed sub-score', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['OEPE (DT total) vs tOepe', 'KVS time vs tKvst', 'DT park rate vs tPark', 'R2P (front counter) vs tR2p'],
+    formula: 'Mean of each metric\'s 0-1 target-grade (engine/visit-readiness.js scoreMetric/subScore, SPEED spec list) × 100, over whichever of the 4 resolved for this store', grain: 'current · per store' },
+  visitReadinessAccuracy: { label: 'Visit Readiness — Accuracy sub-score', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['SMG accuracy (B2B) % vs 95% standard (monthly, manual SMG FullScale upload)', 'SMG problem % vs 10% standard (monthly, manual)', 'T-Red after total % vs tRedAPct'],
+    formula: 'Mean of each metric\'s 0-1 target-grade × 100 (ACCURACY spec list) — the first two are genuinely manual-only (no SMG FullScale API exists), so this sub-score is only as fresh as the last monthly upload', grain: 'current · per store' },
+  visitReadinessQuality: { label: 'Visit Readiness — Quality sub-score', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['Comp waste % vs tCompWaste (monthly)', 'Raw waste % vs tRawWaste (monthly)', 'SMG OSAT (B2B) % vs 90% standard (monthly, manual)'],
+    formula: 'Mean of each metric\'s 0-1 target-grade × 100 (QUALITY spec list) — a waste/holding-discipline + guest-satisfaction proxy, NOT a food-safety score (see the composite\'s own note: cook-temp/pest criticals are a separate, deliberately-excluded gap)', grain: 'current · per store' },
+  visitReadinessLeadership: { label: 'Visit Readiness — Leadership sub-score', system: 'Meridian-derived', report: 'Visit Readiness', table: '(computed)', composed: true,
+    inputs: ['TPPH vs tTpph', 'Labor % of sales vs tCrewLabor', 'Schedule gap vs ideal (LifeLenz schVsIdealDiff) vs 0, ±8hr tolerance'],
+    formula: 'Mean of each metric\'s 0-1 target-grade × 100 (LEADERSHIP spec list) — schedGap reads LifeLenz\'s own auto-synced schedule-vs-ideal diff directly, the other two reuse this app\'s existing TPPH/Labor % chains', grain: 'current · per store' },
+
+  // GM Daily Review (task #152, 2026-11-14) — the review's own two lines that compose MULTIPLE
+  // already-resolved metric-source.js values into one displayed number (sumMs in
+  // engine/daily-review.js's buildLine()), rather than naming a single metric-source key the
+  // way every other line on that panel does (those already get a Metric Lineage entry for free
+  // via METRIC_SOURCES/autoProvenanceFor — only these two composed lines need a hand entry).
+  dailyReviewRefundAmt: { label: 'Daily Review — Refund $', system: 'Meridian-derived', report: 'GM Daily Review', table: '(computed)', composed: true,
+    inputs: ['Cash refund $ (cashRefAmt)', 'Cashless refund $ (cashlessRefAmt)'],
+    formula: 'Refund $ = cashRefAmt + cashlessRefAmt (engine/daily-review.js buildLine(), sumMs) — the panel\'s own single combined-dollar line; metric-source.js has no single key for this, only the two separate legs', grain: 'daily · per store' },
+  dailyReviewEmplMgrMeal: { label: 'Daily Review — Empl/Mgr Meal $', system: 'Meridian-derived', report: 'GM Daily Review', table: '(computed)', composed: true,
+    inputs: ['Employee meal $ (empMealAmt)', 'Manager meal $ (mgrMealAmt)'],
+    formula: 'Empl/Mgr Meal $ = empMealAmt + mgrMealAmt (engine/daily-review.js buildLine(), sumMs) — same single-combined-line reasoning as Refund $ above', grain: 'daily · per store' },
 
   // ── Direct reads (a single source field / count — shown for completeness) ─────
   headcount:  { label: 'Active Headcount', system: 'QSRSoft', report: 'Roster Statistics', table: 'roster_statistics', composed: false,

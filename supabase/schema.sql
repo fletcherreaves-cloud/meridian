@@ -732,6 +732,7 @@ values (
 -- Public read — file contents are CSV business reports (no PII).
 -- Matches the localhost bypass pattern used for pending_reports.
 -- Anyone with the anon key and the exact storage path can download.
+drop policy if exists "qsr-reports: public read" on storage.objects;
 create policy "qsr-reports: public read"
   on storage.objects for select
   using (bucket_id = 'qsr-reports');
@@ -755,10 +756,12 @@ values (
   ]
 ) on conflict (id) do nothing;
 
+drop policy if exists "reports: public read" on storage.objects;
 create policy "reports: public read"
   on storage.objects for select
   using (bucket_id = 'reports');
 
+drop policy if exists "reports: public insert" on storage.objects;
 create policy "reports: public insert"
   on storage.objects for insert
   with check (bucket_id = 'reports');
@@ -781,10 +784,12 @@ alter table public.pending_reports enable row level security;
 
 -- Public read — file metadata only, no sensitive data.
 -- Auto-ingest runs before Supabase auth is established on localhost.
+drop policy if exists "pending_reports: public read" on public.pending_reports;
 create policy "pending_reports: public read" on public.pending_reports
   for select using (true);
 
 -- Public update — auto-ingest marks reports processed before Supabase auth is established on localhost.
+drop policy if exists "pending_reports: public update" on public.pending_reports;
 create policy "pending_reports: public update" on public.pending_reports
   for update using (true);
 
@@ -837,10 +842,12 @@ create table if not exists public.monthly_targets (
 alter table public.monthly_targets enable row level security;
 
 -- Public read — targets are operational data, no PII
+drop policy if exists "monthly_targets: public read" on public.monthly_targets;
 create policy "monthly_targets: public read" on public.monthly_targets
   for select using (true);
 
 -- Public write — localhost bypass has no auth session; tighten after Vercel auth is live
+drop policy if exists "monthly_targets: public write" on public.monthly_targets;
 create policy "monthly_targets: public write" on public.monthly_targets
   for all using (true);
 
@@ -875,10 +882,12 @@ create table if not exists public.smg_fullscale (
 alter table public.smg_fullscale enable row level security;
 
 -- Public read — SMG scores are operational data, no PII
+drop policy if exists "smg_fullscale: public read" on public.smg_fullscale;
 create policy "smg_fullscale: public read" on public.smg_fullscale
   for select using (true);
 
 -- Public write — localhost bypass has no auth session; tighten after Vercel auth is live
+drop policy if exists "smg_fullscale: public write" on public.smg_fullscale;
 create policy "smg_fullscale: public write" on public.smg_fullscale
   for all using (true);
 
@@ -943,9 +952,11 @@ create table if not exists public.qsr_fob (
 
 alter table public.qsr_fob enable row level security;
 
+drop policy if exists "qsr_fob: public read" on public.qsr_fob;
 create policy "qsr_fob: public read" on public.qsr_fob
   for select using (true);
 
+drop policy if exists "qsr_fob: public write" on public.qsr_fob;
 create policy "qsr_fob: public write" on public.qsr_fob
   for all using (true);
 
@@ -987,9 +998,11 @@ create table if not exists public.lifelenz_schedule (
 alter table public.lifelenz_schedule enable row level security;
 
 -- Public read/write — schedule data is operational, no PII; matches localhost bypass pattern
+drop policy if exists "lifelenz_schedule: public read" on public.lifelenz_schedule;
 create policy "lifelenz_schedule: public read" on public.lifelenz_schedule
   for select using (true);
 
+drop policy if exists "lifelenz_schedule: public write" on public.lifelenz_schedule;
 create policy "lifelenz_schedule: public write" on public.lifelenz_schedule
   for all using (true);
 
@@ -1090,9 +1103,11 @@ exception when duplicate_table then null; when duplicate_object then null; end $
 
 alter table public.smg_voice_performance enable row level security;
 
+drop policy if exists "smg_voice_performance: public read" on public.smg_voice_performance;
 create policy "smg_voice_performance: public read" on public.smg_voice_performance
   for select using (true);
 
+drop policy if exists "smg_voice_performance: public write" on public.smg_voice_performance;
 create policy "smg_voice_performance: public write" on public.smg_voice_performance
   for all using (true);
 
@@ -1126,7 +1141,9 @@ create table if not exists public.smg_voice_daypart (
   unique(period, report_type, loc, daypart)
 );
 alter table public.smg_voice_daypart enable row level security;
+drop policy if exists "smg_voice_daypart: public read" on public.smg_voice_daypart;
 create policy "smg_voice_daypart: public read"  on public.smg_voice_daypart for select using (true);
+drop policy if exists "smg_voice_daypart: public write" on public.smg_voice_daypart;
 create policy "smg_voice_daypart: public write" on public.smg_voice_daypart for all using (true);
 create index if not exists smg_voice_daypart_loc_idx on public.smg_voice_daypart (loc, period desc, report_type);
 
@@ -1151,9 +1168,11 @@ create table if not exists public.labor_rows (
 
 alter table public.labor_rows enable row level security;
 
+drop policy if exists "labor_rows: public read" on public.labor_rows;
 create policy "labor_rows: public read" on public.labor_rows
   for select using (true);
 
+drop policy if exists "labor_rows: public write" on public.labor_rows;
 create policy "labor_rows: public write" on public.labor_rows
   for all using (true);
 
@@ -1197,7 +1216,9 @@ create table if not exists public.fob_rows (
 );
 
 alter table public.fob_rows enable row level security;
+drop policy if exists "fob_rows: public read" on public.fob_rows;
 create policy "fob_rows: public read"  on public.fob_rows for select using (true);
+drop policy if exists "fob_rows: public write" on public.fob_rows;
 create policy "fob_rows: public write" on public.fob_rows for all    using (true);
 create index if not exists fob_rows_date_idx on public.fob_rows (date desc);
 
@@ -1217,7 +1238,9 @@ create table if not exists public.ops_rows (
 );
 
 alter table public.ops_rows enable row level security;
+drop policy if exists "ops_rows: public read" on public.ops_rows;
 create policy "ops_rows: public read"  on public.ops_rows for select using (true);
+drop policy if exists "ops_rows: public write" on public.ops_rows;
 create policy "ops_rows: public write" on public.ops_rows for all    using (true);
 create index if not exists ops_rows_date_idx on public.ops_rows (date desc);
 
@@ -1266,7 +1289,9 @@ create table if not exists public.ctrl_rows (
 );
 
 alter table public.ctrl_rows enable row level security;
+drop policy if exists "ctrl_rows: public read" on public.ctrl_rows;
 create policy "ctrl_rows: public read"  on public.ctrl_rows for select using (true);
+drop policy if exists "ctrl_rows: public write" on public.ctrl_rows;
 create policy "ctrl_rows: public write" on public.ctrl_rows for all    using (true);
 create index if not exists ctrl_rows_date_idx on public.ctrl_rows (date desc);
 
@@ -1304,7 +1329,9 @@ create table if not exists public.peaks_rows (
   primary key (loc, date, slice, is_svc)
 );
 alter table public.peaks_rows enable row level security;
+drop policy if exists "peaks_rows: public read" on public.peaks_rows;
 create policy "peaks_rows: public read"  on public.peaks_rows for select using (true);
+drop policy if exists "peaks_rows: public write" on public.peaks_rows;
 create policy "peaks_rows: public write" on public.peaks_rows for all    using (true);
 create index if not exists peaks_rows_date_idx on public.peaks_rows (date desc);
 
@@ -1357,7 +1384,9 @@ create table if not exists public.audit_rows (
   primary key (loc, date, emp, register_type)
 );
 alter table public.audit_rows enable row level security;
+drop policy if exists "audit_rows: public read" on public.audit_rows;
 create policy "audit_rows: public read"  on public.audit_rows for select using (true);
+drop policy if exists "audit_rows: public write" on public.audit_rows;
 create policy "audit_rows: public write" on public.audit_rows for all    using (true);
 create index if not exists audit_rows_date_idx on public.audit_rows (date desc);
 
@@ -1380,7 +1409,9 @@ create table if not exists public.dar_rows (
 );
 
 alter table public.dar_rows enable row level security;
+drop policy if exists "dar_rows: public read" on public.dar_rows;
 create policy "dar_rows: public read"  on public.dar_rows for select using (true);
+drop policy if exists "dar_rows: public write" on public.dar_rows;
 create policy "dar_rows: public write" on public.dar_rows for all    using (true);
 create index if not exists dar_rows_date_idx on public.dar_rows (date desc);
 
@@ -1402,7 +1433,9 @@ create table if not exists public.feature_requests (
 );
 
 alter table public.feature_requests enable row level security;
+drop policy if exists "feature_requests: public read" on public.feature_requests;
 create policy "feature_requests: public read"  on public.feature_requests for select using (true);
+drop policy if exists "feature_requests: public write" on public.feature_requests;
 create policy "feature_requests: public write" on public.feature_requests for all    using (true);
 create index if not exists feature_requests_status_idx on public.feature_requests (status);
 
@@ -1434,7 +1467,9 @@ alter table public.custom_signals add column if not exists x_reference text not 
 alter table public.custom_signals add column if not exists y_condition text not null default 'all';
 alter table public.custom_signals add column if not exists y_reference text not null default 'median';
 alter table public.custom_signals enable row level security;
+drop policy if exists "custom_signals: public read" on public.custom_signals;
 create policy "custom_signals: public read"  on public.custom_signals for select using (true);
+drop policy if exists "custom_signals: public write" on public.custom_signals;
 create policy "custom_signals: public write" on public.custom_signals for all    using (true);
 
 -- ── QSR eBOS Purchases (daily store purchase ledger) ─────────────────────────
@@ -1452,8 +1487,10 @@ create table if not exists public.qsr_ebos_daily (
   primary key (loc, date)
 );
 alter table public.qsr_ebos_daily enable row level security;
+drop policy if exists "qsr_ebos_daily: public read" on public.qsr_ebos_daily;
 create policy "qsr_ebos_daily: public read" on public.qsr_ebos_daily
   for select using (true);
+drop policy if exists "qsr_ebos_daily: public write" on public.qsr_ebos_daily;
 create policy "qsr_ebos_daily: public write" on public.qsr_ebos_daily
   for all using (true);
 create index if not exists qsr_ebos_daily_date_idx
@@ -1476,8 +1513,10 @@ create table if not exists public.forecast_snapshots (
   unique(loc, dt, source)
 );
 alter table public.forecast_snapshots enable row level security;
+drop policy if exists "forecast_snapshots: public read" on public.forecast_snapshots;
 create policy "forecast_snapshots: public read" on public.forecast_snapshots
   for select using (true);
+drop policy if exists "forecast_snapshots: public write" on public.forecast_snapshots;
 create policy "forecast_snapshots: public write" on public.forecast_snapshots
   for all using (true);
 create index if not exists forecast_snapshots_loc_dt_idx
@@ -1497,8 +1536,10 @@ create table if not exists public.qsr_field_definitions (
   unique(page_key, field_label)
 );
 alter table public.qsr_field_definitions enable row level security;
+drop policy if exists "qsr_field_definitions: public read" on public.qsr_field_definitions;
 create policy "qsr_field_definitions: public read" on public.qsr_field_definitions
   for select using (true);
+drop policy if exists "qsr_field_definitions: service write" on public.qsr_field_definitions;
 create policy "qsr_field_definitions: service write" on public.qsr_field_definitions
   for all using (true);
 
@@ -1551,7 +1592,9 @@ create table if not exists public.sales_ledger_daily (
   primary key (loc, date)
 );
 alter table public.sales_ledger_daily enable row level security;
+drop policy if exists "sales_ledger_daily: public read" on public.sales_ledger_daily;
 create policy "sales_ledger_daily: public read"  on public.sales_ledger_daily for select using (true);
+drop policy if exists "sales_ledger_daily: public write" on public.sales_ledger_daily;
 create policy "sales_ledger_daily: public write" on public.sales_ledger_daily for all    using (true);
 create index if not exists sales_ledger_daily_date_idx on public.sales_ledger_daily (date desc);
 
@@ -1595,7 +1638,9 @@ create table if not exists public.daily_glimpse_daily (
   primary key (loc, date)
 );
 alter table public.daily_glimpse_daily enable row level security;
+drop policy if exists "daily_glimpse_daily: public read" on public.daily_glimpse_daily;
 create policy "daily_glimpse_daily: public read"  on public.daily_glimpse_daily for select using (true);
+drop policy if exists "daily_glimpse_daily: public write" on public.daily_glimpse_daily;
 create policy "daily_glimpse_daily: public write" on public.daily_glimpse_daily for all    using (true);
 create index if not exists daily_glimpse_daily_date_idx on public.daily_glimpse_daily (date desc);
 
@@ -1632,7 +1677,9 @@ create table if not exists public.cash_sheet_daily (
   primary key (loc, date)
 );
 alter table public.cash_sheet_daily enable row level security;
+drop policy if exists "cash_sheet_daily: public read" on public.cash_sheet_daily;
 create policy "cash_sheet_daily: public read"  on public.cash_sheet_daily for select using (true);
+drop policy if exists "cash_sheet_daily: public write" on public.cash_sheet_daily;
 create policy "cash_sheet_daily: public write" on public.cash_sheet_daily for all    using (true);
 create index if not exists cash_sheet_daily_date_idx on public.cash_sheet_daily (date desc);
 
@@ -1671,8 +1718,10 @@ create table if not exists public.store_labor_config (
 
 alter table public.store_labor_config enable row level security;
 
+drop policy if exists "store_labor_config: public read" on public.store_labor_config;
 create policy "store_labor_config: public read" on public.store_labor_config
   for select using (true);
+drop policy if exists "store_labor_config: public write" on public.store_labor_config;
 create policy "store_labor_config: public write" on public.store_labor_config
   for all using (true);
 
@@ -1706,8 +1755,10 @@ create table if not exists public.lifelenz_labor_week (
 
 alter table public.lifelenz_labor_week enable row level security;
 
+drop policy if exists "lifelenz_labor_week: public read" on public.lifelenz_labor_week;
 create policy "lifelenz_labor_week: public read" on public.lifelenz_labor_week
   for select using (true);
+drop policy if exists "lifelenz_labor_week: public write" on public.lifelenz_labor_week;
 create policy "lifelenz_labor_week: public write" on public.lifelenz_labor_week
   for all using (true);
 
@@ -1733,8 +1784,10 @@ create table if not exists public.smart_target_adjustments (
 
 alter table public.smart_target_adjustments enable row level security;
 
+drop policy if exists "smart_target_adjustments: public read" on public.smart_target_adjustments;
 create policy "smart_target_adjustments: public read" on public.smart_target_adjustments
   for select using (true);
+drop policy if exists "smart_target_adjustments: public write" on public.smart_target_adjustments;
 create policy "smart_target_adjustments: public write" on public.smart_target_adjustments
   for all using (true);
 
@@ -1767,8 +1820,10 @@ create table if not exists public.sage_prompts (
 
 alter table public.sage_prompts enable row level security;
 
+drop policy if exists "sage_prompts: public read" on public.sage_prompts;
 create policy "sage_prompts: public read" on public.sage_prompts
   for select using (true);
+drop policy if exists "sage_prompts: public write" on public.sage_prompts;
 create policy "sage_prompts: public write" on public.sage_prompts
   for all using (true);
 
@@ -1787,8 +1842,10 @@ create table if not exists public.sage_prompt_runs (
 
 alter table public.sage_prompt_runs enable row level security;
 
+drop policy if exists "sage_prompt_runs: public read" on public.sage_prompt_runs;
 create policy "sage_prompt_runs: public read" on public.sage_prompt_runs
   for select using (true);
+drop policy if exists "sage_prompt_runs: public write" on public.sage_prompt_runs;
 create policy "sage_prompt_runs: public write" on public.sage_prompt_runs
   for all using (true);
 
@@ -1818,7 +1875,9 @@ create table if not exists public.employee_skills (
 
 alter table public.employee_skills enable row level security;
 
+drop policy if exists "employee_skills: public read" on public.employee_skills;
 create policy "employee_skills: public read"  on public.employee_skills for select using (true);
+drop policy if exists "employee_skills: public write" on public.employee_skills;
 create policy "employee_skills: public write" on public.employee_skills for all using (true);
 
 -- ── saved_correlations (v4.540) ─────────────────────────────────────────────
@@ -1853,7 +1912,9 @@ create table if not exists public.saved_correlations (
 );
 
 alter table public.saved_correlations enable row level security;
+drop policy if exists "saved_correlations: public read" on public.saved_correlations;
 create policy "saved_correlations: public read"  on public.saved_correlations for select using (true);
+drop policy if exists "saved_correlations: public write" on public.saved_correlations;
 create policy "saved_correlations: public write" on public.saved_correlations for all using (true);
 
 -- ── smg_comments (v4.546) ───────────────────────────────────────────────────
@@ -1878,7 +1939,9 @@ create table if not exists public.smg_comments (
   created_at         timestamptz default now()
 );
 alter table public.smg_comments enable row level security;
+drop policy if exists "smg_comments: public read" on public.smg_comments;
 create policy "smg_comments: public read"  on public.smg_comments for select using (true);
+drop policy if exists "smg_comments: public write" on public.smg_comments;
 create policy "smg_comments: public write" on public.smg_comments for all using (true);
 create index if not exists smg_comments_loc_date_idx on public.smg_comments (loc, comment_date);
 
@@ -1912,7 +1975,9 @@ create table if not exists public.qsr_onhand (
   primary key (loc, period, wrin)
 );
 alter table public.qsr_onhand enable row level security;
+drop policy if exists "qsr_onhand: public read" on public.qsr_onhand;
 create policy "qsr_onhand: public read"  on public.qsr_onhand for select using (true);
+drop policy if exists "qsr_onhand: public write" on public.qsr_onhand;
 create policy "qsr_onhand: public write" on public.qsr_onhand for all using (true);
 create index if not exists qsr_onhand_period_idx on public.qsr_onhand (period, loc);
 
@@ -1933,7 +1998,9 @@ create table if not exists public.qsr_variance_stat (
   primary key (loc, period, wrin)
 );
 alter table public.qsr_variance_stat enable row level security;
+drop policy if exists "qsr_variance_stat: public read" on public.qsr_variance_stat;
 create policy "qsr_variance_stat: public read"  on public.qsr_variance_stat for select using (true);
+drop policy if exists "qsr_variance_stat: public write" on public.qsr_variance_stat;
 create policy "qsr_variance_stat: public write" on public.qsr_variance_stat for all using (true);
 create index if not exists qsr_variance_stat_period_idx on public.qsr_variance_stat (period, loc);
 
@@ -1958,7 +2025,9 @@ create table if not exists public.qsr_inventory_summary (
   primary key (loc, period, wrin)
 );
 alter table public.qsr_inventory_summary enable row level security;
+drop policy if exists "qsr_inventory_summary: public read" on public.qsr_inventory_summary;
 create policy "qsr_inventory_summary: public read"  on public.qsr_inventory_summary for select using (true);
+drop policy if exists "qsr_inventory_summary: public write" on public.qsr_inventory_summary;
 create policy "qsr_inventory_summary: public write" on public.qsr_inventory_summary for all using (true);
 create index if not exists qsr_inventory_summary_period_idx on public.qsr_inventory_summary (period, loc);
 
@@ -1991,7 +2060,9 @@ create table if not exists public.qsr_waste (
   primary key (loc, event_id)
 );
 alter table public.qsr_waste enable row level security;
+drop policy if exists "qsr_waste: public read" on public.qsr_waste;
 create policy "qsr_waste: public read"  on public.qsr_waste for select using (true);
+drop policy if exists "qsr_waste: public write" on public.qsr_waste;
 create policy "qsr_waste: public write" on public.qsr_waste for all using (true);
 create index if not exists qsr_waste_period_idx on public.qsr_waste (period, loc);
 
@@ -2015,7 +2086,9 @@ create table if not exists public.qsr_transfers (
   primary key (loc, transfer_id, wrin)
 );
 alter table public.qsr_transfers enable row level security;
+drop policy if exists "qsr_transfers: public read" on public.qsr_transfers;
 create policy "qsr_transfers: public read"  on public.qsr_transfers for select using (true);
+drop policy if exists "qsr_transfers: public write" on public.qsr_transfers;
 create policy "qsr_transfers: public write" on public.qsr_transfers for all using (true);
 create index if not exists qsr_transfers_period_idx on public.qsr_transfers (period, loc);
 
@@ -2035,7 +2108,9 @@ create table if not exists public.qsr_raw_item_detail (
   primary key (loc, period, wrin)
 );
 alter table public.qsr_raw_item_detail enable row level security;
+drop policy if exists "qsr_raw_item_detail: public read" on public.qsr_raw_item_detail;
 create policy "qsr_raw_item_detail: public read"  on public.qsr_raw_item_detail for select using (true);
+drop policy if exists "qsr_raw_item_detail: public write" on public.qsr_raw_item_detail;
 create policy "qsr_raw_item_detail: public write" on public.qsr_raw_item_detail for all using (true);
 create index if not exists qsr_raw_item_detail_period_idx on public.qsr_raw_item_detail (period, loc);
 
@@ -2073,7 +2148,9 @@ create table if not exists public.eom_count_status (
   primary key (loc, period)
 );
 alter table public.eom_count_status enable row level security;
+drop policy if exists "eom_count_status: public read" on public.eom_count_status;
 create policy "eom_count_status: public read"  on public.eom_count_status for select using (true);
+drop policy if exists "eom_count_status: public write" on public.eom_count_status;
 create policy "eom_count_status: public write" on public.eom_count_status for all using (true);
 
 -- ── Operations Report auto-pull (owner req 2026-07-30, #37) ───────────────────
@@ -2126,7 +2203,9 @@ create table if not exists public.eom_item_disposition (
   primary key (loc, period, wrin)
 );
 alter table public.eom_item_disposition enable row level security;
+drop policy if exists "eom_item_disposition: public read" on public.eom_item_disposition;
 create policy "eom_item_disposition: public read"  on public.eom_item_disposition for select using (true);
+drop policy if exists "eom_item_disposition: public write" on public.eom_item_disposition;
 create policy "eom_item_disposition: public write" on public.eom_item_disposition for all using (true);
 create index if not exists eom_item_disposition_period_idx on public.eom_item_disposition (period, loc);
 
@@ -2155,7 +2234,9 @@ create table if not exists public.eom_count_progress_log (
 );
 create index if not exists eom_count_progress_log_period_idx on public.eom_count_progress_log (period, loc, snapshot_at);
 alter table public.eom_count_progress_log enable row level security;
+drop policy if exists "eom_count_progress_log: public read" on public.eom_count_progress_log;
 create policy "eom_count_progress_log: public read"  on public.eom_count_progress_log for select using (true);
+drop policy if exists "eom_count_progress_log: public write" on public.eom_count_progress_log;
 create policy "eom_count_progress_log: public write" on public.eom_count_progress_log for all using (true);
 
 -- Flexible notification settings (jsonb — channels, recipients, thresholds).
@@ -2166,7 +2247,9 @@ create table if not exists public.eom_notification_settings (
   updated_at timestamptz default now()
 );
 alter table public.eom_notification_settings enable row level security;
+drop policy if exists "eom_notification_settings: public read" on public.eom_notification_settings;
 create policy "eom_notification_settings: public read"  on public.eom_notification_settings for select using (true);
+drop policy if exists "eom_notification_settings: public write" on public.eom_notification_settings;
 create policy "eom_notification_settings: public write" on public.eom_notification_settings for all using (true);
 
 -- ── EOM baseline lock + day-2 change monitor ────────────────────────────────────
@@ -2191,7 +2274,9 @@ create table if not exists public.eom_snapshots (
 create index if not exists eom_snapshots_period_loc_idx on public.eom_snapshots (period, loc, taken_at desc);
 create index if not exists eom_snapshots_kind_idx        on public.eom_snapshots (period, kind, taken_at desc);
 alter table public.eom_snapshots enable row level security;
+drop policy if exists "eom_snapshots: public read" on public.eom_snapshots;
 create policy "eom_snapshots: public read"  on public.eom_snapshots for select using (true);
+drop policy if exists "eom_snapshots: public write" on public.eom_snapshots;
 create policy "eom_snapshots: public write" on public.eom_snapshots for all using (true);
 
 -- Per-store secondary-review status for day-2 (owner marks stores as re-reviewed with a note).
@@ -2206,7 +2291,9 @@ create table if not exists public.eom_secondary_review (
   primary key (loc, period)
 );
 alter table public.eom_secondary_review enable row level security;
+drop policy if exists "eom_secondary_review: public read" on public.eom_secondary_review;
 create policy "eom_secondary_review: public read"  on public.eom_secondary_review for select using (true);
+drop policy if exists "eom_secondary_review: public write" on public.eom_secondary_review;
 create policy "eom_secondary_review: public write" on public.eom_secondary_review for all using (true);
 
 -- ── QSRSoft Zendesk Knowledge Base (#41) ────────────────────────────────────────
@@ -2229,7 +2316,9 @@ create table if not exists public.qsrsoft_kb (
 );
 create index if not exists qsrsoft_kb_title_idx on public.qsrsoft_kb using gin (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body_text,'')));
 alter table public.qsrsoft_kb enable row level security;
+drop policy if exists "qsrsoft_kb: public read" on public.qsrsoft_kb;
 create policy "qsrsoft_kb: public read"  on public.qsrsoft_kb for select using (true);
+drop policy if exists "qsrsoft_kb: public write" on public.qsrsoft_kb;
 create policy "qsrsoft_kb: public write" on public.qsrsoft_kb for all using (true);
 
 -- ── EOM count-date exceptions (owner 2026-07-31) ────────────────────────────────
@@ -2248,7 +2337,9 @@ create table if not exists public.eom_count_exceptions (
   primary key (loc, period, kind)
 );
 alter table public.eom_count_exceptions enable row level security;
+drop policy if exists "eom_count_exceptions: public read" on public.eom_count_exceptions;
 create policy "eom_count_exceptions: public read"  on public.eom_count_exceptions for select using (true);
+drop policy if exists "eom_count_exceptions: public write" on public.eom_count_exceptions;
 create policy "eom_count_exceptions: public write" on public.eom_count_exceptions for all using (true);
 
 -- ── EOM share links (Phase 1 — opaque, scoped, read-only, no-login access) ───────────────────────
@@ -2277,6 +2368,7 @@ create table if not exists public.eom_share_links (
 create index if not exists eom_share_links_loc_period_idx on public.eom_share_links (loc, period, created_at desc);
 alter table public.eom_share_links enable row level security;
 -- Only signed-in users manage links; anonymous/public access is ONLY via the eom-share edge function.
+drop policy if exists "eom_share_links: authenticated" on public.eom_share_links;
 create policy "eom_share_links: authenticated"  on public.eom_share_links for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
@@ -2299,12 +2391,14 @@ create table if not exists public.eom_integrity_flags (
 );
 create index if not exists eom_integrity_flags_period_idx on public.eom_integrity_flags (period, created_at desc);
 alter table public.eom_integrity_flags enable row level security;
+drop policy if exists "eom_integrity_flags: read scoped" on public.eom_integrity_flags;
 create policy "eom_integrity_flags: read scoped" on public.eom_integrity_flags for select
   using (exists (
     select 1 from public.profiles p
     where p.id = auth.uid()
       and (p.accessible_locs is null or public.eom_integrity_flags.loc = any (p.accessible_locs))
   ));
+drop policy if exists "eom_integrity_flags: service write" on public.eom_integrity_flags;
 create policy "eom_integrity_flags: service write" on public.eom_integrity_flags for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
@@ -2344,11 +2438,13 @@ create table if not exists public.eom_count_status_history (
 );
 create index if not exists eom_count_status_history_period_idx on public.eom_count_status_history (period, captured_at desc);
 alter table public.eom_count_status_history enable row level security;
+drop policy if exists "eom_count_status_history: read scoped" on public.eom_count_status_history;
 create policy "eom_count_status_history: read scoped" on public.eom_count_status_history for select
   using (exists (
     select 1 from public.profiles p
     where p.id = auth.uid()
       and (p.accessible_locs is null or public.eom_count_status_history.loc = any (p.accessible_locs))
   ));
+drop policy if exists "eom_count_status_history: service write" on public.eom_count_status_history;
 create policy "eom_count_status_history: service write" on public.eom_count_status_history for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');

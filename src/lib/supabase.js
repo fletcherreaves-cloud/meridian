@@ -2935,8 +2935,13 @@ export async function loadDtHistory(range = 90) {
     // dt_untilstore/dt_heldtime added (dispatch #128) — dt-speedofservice.js's DT number was
     // summing raw dt_untilserve/dt_trans_cnt directly instead of the shared, reconciled
     // oepeSeconds() (src/utils/oepe.js), which needs these two extra components to subtract
-    // parked/held time. This is the only production call site for loadDtHistory (verified above).
-    select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
+    // parked/held time. fc_untilclosedrawer added 2026-11-14 (task #152) -- engine/daily-review.js's
+    // own r2p daypart breakdown already read this field (under a typo'd name, fixed the same
+    // pass) but it was never in this select list at all, so every R2P daypart read silently
+    // returned zero rows regardless of the typo. Additive-only; dt-speedofservice.js (this
+    // function's other caller) doesn't read fc_untilclosedrawer itself -- its own FC/R2P number
+    // is still the un-subtracted raw total per its own dispatch #128 comment, left as-is here.
+    select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
     gteCol: 'dt', gteVal: startDt,
     extraFilter: q => { const qq = q.gt('dt_trans_cnt', 0); return endDt ? qq.lte('dt', endDt) : qq; },
     orderCol: 'dt', ascending: true, extraOrder: ['loc', 'hour_slot'],
