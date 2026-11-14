@@ -9,12 +9,37 @@
 // confirmed one. Phase 0a of memory/plan-security-loss-prevention.md — rung 2 of the
 // attribution ladder in memory/data-acquisition-shopping-list.md §A.
 //
-// Confirmed endpoint (dispatch #34's live capture):
-//   GET https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit
+// ⚠️ MIGRATED 2026-11-14 (GH issue #1314) — the endpoint below is DEAD. QSRSoft deprecated/
+// denied it (403 "User is not authorized ... explicit deny in an identity-based policy") on
+// every run since 2026-09-21, ~2 months straight, confirmed NOT a token problem (login + token
+// capture both succeeded every time; the deny was on the resource itself). The real, currently
+// live endpoint — found by watching v3.myqsrsoft.com's own network traffic while it successfully
+// rendered this exact report — is documented in the NEW ENDPOINT block directly below. See
+// memory/finding-register-audit-pull-endpoint-migration-2026-11-14.md for the full live
+// verification (every formula below was checked against real on-screen values, not guessed).
+//
+// ── NEW ENDPOINT (confirmed live 2026-11-14) ────────────────────────────────────────────────
+//   GET https://api.reports.myqsrsoft.com/data_layer/v1/cash/register-audit-by-employee
 //       ?nsn=<comma-separated, UNPADDED>&orgId=...&enterpriseName=McDonalds
 //       &startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&dsd=d&weekStart=3&nsd=d
-//       &resultType=byDateEmployee&registerType=cashier
-//   Header: X-Auth-Token: <token>
+//       &registerType=cashier&selectCols=<comma-separated allowlist, REQUIRED -- a 400 names
+//       the missing param if omitted, but an UNRECOGNIZED column name is silently dropped from
+//       the response with no error, confirmed by probing ~25 plausible names for the still-
+//       missing Cash O/S field and getting back rows with only the base identity fields each
+//       time -- so a dropped column looks exactly like one that was never requested; do not
+//       "fix" a missing field by adding a plausible-sounding name to this list without an
+//       independent confirmation the response actually carries it>
+//   Header: x-auth-token: <token>   -- REQUIRED here, unlike the old endpoint. Confirmed this
+//       must be a token captured from a real logged-in browser SESSION (the same Playwright
+//       fallback this script already had); a token minted directly via getFreshToken()
+//       (Cognito, no browser) gets a plain 401 on this endpoint even though it works fine for
+//       several OTHER qsrsoft pulls on this same host (ops-pull, etc. post-#312). The direct
+//       path below is kept (cheap, fails fast) but will reliably hit AUTH_FAILED:401 and fall
+//       through to Playwright -- that is expected, not a regression to chase.
+//   registerType is STILL validated server-side against [cashier, manager, preparer] (confirmed
+//       live: an invalid value gets a real 400 naming the allowlist) -- the existing 3-calls-
+//       per-window architecture (dispatch #59, concatenating cashier+manager+preparer) is
+//       UNCHANGED.
 // ONE call covers a date RANGE across ALL 27 stores (comma-separated nsn) — chunked below into
 // 21-day windows (matching lifelenz-pull.mjs's own chunking convention) so a large backfill
 // doesn't risk one oversized/timing-out response, not because the API requires it.
@@ -34,55 +59,65 @@
 // assumed the old grain: src/utils/register-audit.js's days/cashOSDays/avgCashOS, and
 // src/engine/security-baselines.js's personalBaseline -- both fixed in the same dispatch).
 //
-// mapRow() field mapping — resolved against src/utils/register-audit.js's analyzeRegisterAudit
-// (the actual consumer) and src/parsers/index.js:974's parseRegisterAudit (the manual-upload
-// path's own column semantics), not fabricated:
-//   - emp = empName (NOT empID). Chosen because parseRegisterAudit's manual-upload path has
-//     always keyed audit_rows' PK on the employee NAME string, never an ID -- switching the
-//     auto-pull to empID would split-brain the (loc,date,emp) history for the same real person
-//     across manual vs auto rows, breaking freshest-wins continuity with 5+ months of existing
-//     manually-uploaded data. A same-name collision at one store is an existing, unchanged risk,
-//     not one this dispatch introduces. STILL TRUE under dispatch #51 -- the PK/emp column is
-//     untouched; see empId below.
-//   - empId = empID (dispatch #51, memory/dispatch-51.md), ADDITIVE ONLY, alongside emp. Confirmed
-//     field name from a live DEBUG key-name run (dispatch #49, run 32431369072) -- measured, not
-//     inferred. This exists purely to make dispatch #49's Phase 0 identity-vault-re-key gate
-//     measurable as a repeatable SQL query instead of a bespoke API re-pull: audit_rows.emp_id is
-//     nullable, nothing reads it, and it does NOT feed get_or_create_employee_token() or any token
-//     keying -- Phase 1 (the actual re-key) is explicitly NOT started by this column existing.
-//   - drawerGC = transactions. parseRegisterAudit's own header list calls this column "Drawer
-//     GC"/"GC" (guest count); analyzeRegisterAudit uses it as the denominator for its own
-//     avgCheck computation (totalSales/totalGC) -- transactions is the only response field that
-//     fits that role.
-//   - manualRefAmt = manOverringAmt, NOT folded into posOverAmt. parseRegisterAudit's Excel
-//     column for this is literally "Manual Refund/Overring $" -- a distinct concept from "POS
-//     Overrings $"/"POS Overrings Cnt" (-> posOverAmt/posOverCnt, from overringAmt/overringQty).
-//     The manual Excel export already treats these as two separate columns; manOverringAmt's own
-//     name matches the "Manual Refund/Overring" concept far better than a fold-in.
-//   - manualRefCnt = manOverringQty (dispatch #44). CONFIRMED ABSENT, three independent ways
-//     (memory/finding-cash003-manoverringqty-absent-2026-08-20.md): the field followed the exact
-//     Amt/Qty pairing every other override category in this response has (overringAmt/overringQty,
-//     refundCashAmt/refundCashQty) -- a reasonable inference, but wrong. (1) 0 of 19,985 backfilled
-//     rows carry a value for it. (2) A live DEBUG key-name run (dispatch #49) printed the response's
-//     real top-level keys and manOverringQty is not among them. (3) The owner checked the Register
-//     Audit report in the QSRSoft UI directly -- no manual over-ring COUNT column exists there
-//     either, only the $ one, matching parseRegisterAudit's own Excel header search (no "Manual
-//     Refund/Overring Qty" column to find). CASH-003 was rebuilt around this as an absolute-dollar
-//     threshold on manualRefAmt instead (which DOES carry real data) rather than a count -- see the
-//     finding doc for why a rate/count was the wrong instrument for a rare event either way. This
-//     line is left mapping manOverringQty -> null: harmless (num()'s undefined-safe handling), and
-//     changing it isn't the fix -- there is no live equivalent to map instead.
-//   - avgCheck, cashOSPct, promoPct, tRedBPct/tRedBAvg, tRedAPct/tRedAAvg are NOT present as
-//     pre-computed fields in the API response (parseRegisterAudit's manual path just READS these
-//     from Excel columns QSRSoft pre-computes there -- it doesn't derive them, so "mirror its
-//     derivation logic" isn't literally available). Derived here the way dispatch #34/#35's own
-//     text suggests (rate = qty/denominator, avg = amt/qty, pct = amt/sales) -- confirmed via
-//     analyzeRegisterAudit that NONE of these five are actually consumed by the risk-scoring
-//     engine today (it recomputes its own avgCheck from drawerSales/drawerGC and never reads
-//     r.cashOSPct/tRedBPct/tRedAPct/tRedBAvg/tRedAAvg/promoPct at all) -- populated anyway for
-//     schema completeness/future panels since the derivation is a straightforward, well-defined
-//     ratio, not a fabricated value, and null would be equally defensible; this is the
-//     documented judgment call, not a silent guess.
+// mapRow() field mapping — RE-VERIFIED LIVE 2026-11-14 against the new endpoint (see the
+// migration note above). Every formula marked CONFIRMED below was checked by comparing a
+// computed value against the actual on-screen number for a real employee/date on the live
+// Register Audit report (memory/finding-register-audit-pull-endpoint-migration-2026-11-14.md
+// has the exact rows and arithmetic) -- not inferred from field names that merely sound right,
+// which is exactly the trap dispatch #44's manOverringQty incident (below) already burned this
+// script on once:
+//   - emp = empName (NOT empId). Unchanged reasoning from the original dispatch #35/#51 mapping
+//     (still true): parseRegisterAudit's manual-upload path has always keyed audit_rows' PK on
+//     the employee NAME string, never an ID -- switching the auto-pull to an ID would split-brain
+//     the (loc,date,emp) history across manual vs auto rows.
+//   - empId = empId (same concept as the old empID, just lower-cased on the new endpoint).
+//   - drawerGC = netSalesEatinQty + netSalesTakeoutQty. The old endpoint had one explicit
+//     `transactions` field; the new one splits it into dine-in/takeout counts with no combined
+//     total. CONFIRMED by reproducing Average Check exactly for two real employees (Aaden W:
+//     netSalesAmt 4083.73 / (0+351) = 11.6346 -> displayed $11.63; Abbigail H: 2285.57/(0+210) =
+//     10.883 -> displayed $10.88).
+//   - avgCheck = netSalesAmt / drawerGC. CONFIRMED by the same two rows above.
+//   - tRedBPct/tRedAPct = tredsBeforeAmt/netSalesAmt and tredsAfterAmt/netSalesAmt --
+//     **a REAL correction, not a rename**: the OLD formula (kept from dispatch #34's original,
+//     never actually confirmed) was qty/transactions, a RATE. The new endpoint's displayed
+//     T-Red Before/After Pct is actually a $ SHARE OF SALES. CONFIRMED on Abbigail H's row:
+//     T-Red Before $28.92/qty 10, sales $2285.57 -> 28.92/2285.57 = 1.2655% -> displayed "1.27%";
+//     T-Red After $4.59/qty 1 -> 4.59/2285.57 = 0.2009% -> displayed "0.20%". The qty/transactions
+//     hypothesis was checked and REJECTED first (it does not reproduce either displayed value).
+//     tRedBAvg/tRedAAvg (amt/qty) are unchanged and still confirmed (28.92/10=2.89 -> "$2.89";
+//     4.59/1=4.59 -> "$4.59").
+//   - promoPct = promoAmt/netSalesAmt. CONFIRMED (Aaden W: 76.68/4083.73 = 1.878% -> "1.88%").
+//   - manualRefAmt = manualRefundOverrings. The new endpoint merged what used to be a distinct
+//     "manOverringAmt" field into one `manualRefundOverrings` field -- still kept as its OWN
+//     column, NOT folded into posOverAmt (same reasoning as before: parseRegisterAudit's manual
+//     Excel column is a separate "Manual Refund/Overring $").
+//   - manualRefCnt stays mapped to null. CONFIRMED ABSENT AGAIN on the new endpoint, same as the
+//     original dispatch #44 finding on the old one (memory/finding-cash003-manoverringqty-
+//     absent-2026-08-20.md) -- there is still no Qty sibling for this field on either endpoint
+//     generation, and the live UI's own "Manual Refund/Overring" column is still $-only.
+//   - refundCnt/refundCash/refundCashless = cashRefundsQty+cashlessRefundsQty / cashRefundsAmt /
+//     cashlessRefundsAmt. Same two-pair shape the old endpoint's refundCashAmt/refundCashlessAmt
+//     already had, under new field names -- NOT independently re-verified against a nonzero
+//     on-screen example this pass (every real row sampled during migration happened to have
+//     zero refunds), flagged as a smaller residual judgment call, not a blind guess: the field
+//     names are self-describing and match the existing cash/cashless split 1:1.
+//   - 🔴 cashOSDollar / cashOSPct (Over/Short $ / %) are left mapping to NULL -- CONFIRMED
+//     UNAVAILABLE from this endpoint's selectCols, not a lazy skip. Tried and ruled out: (1) every
+//     arithmetic combination of the available fields (countedCash, closingReading, openingReading,
+//     skimTotal, netSalesAmt, cashlessSalesAmt) against a real displayed value of -$0.16 --
+//     candidates ranged from -$3,090 to +$330, nowhere close; (2) ~25 plausible field-name guesses
+//     (overShortAmt, cashOverShort, expectedCash, cashVariance, startingTill, cashSalesAmt, etc.)
+//     added to selectCols -- every one came back 200 OK but silently absent from the response,
+//     which is this endpoint's documented behavior for ANY unrecognized column name, so a 200
+//     response proves nothing. `closingReading`/`openingReading` are very likely a cumulative
+//     register METER reading spanning more than this one employee's shift (their delta, ~$4,439,
+//     doesn't match this employee's own ~$4,084 in sales either), not a simple per-employee
+//     cash-drawer baseline -- so there is no cheap derivation left to try with the fields exposed
+//     here. This is the SAME "measured, not fabricated" discipline the old manOverringQty finding
+//     already set for this file: do not re-guess a plausible-sounding field/formula for this
+//     without a fresh live confirmation. CASH-003 and any other Cash O/S-dependent consumer logic
+//     should fall back to its existing manual-upload source for this field until/unless a
+//     confirmed derivation surfaces.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, QSRSOFT_USERNAME, QSRSOFT_PASSWORD
 // Optional:     QSRSOFT_AUDIT_DAYS_BACK (first-run history, default 90 -- widen once the report's
@@ -221,40 +256,44 @@ async function getDateRange() {
   return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
 }
 
-// Response row (dispatch #34's captured field names) → the shape saveAuditRows() above expects.
-// Exported for unit testing (no fetch/supabase dependency in this function itself).
+// Response row (new data_layer/v1/cash/register-audit-by-employee field names, confirmed live
+// 2026-11-14) → the shape saveAuditRows() above expects. Exported for unit testing (no
+// fetch/supabase dependency in this function itself).
 // `registerType` (dispatch #59) is NOT read off `r` -- the API returns no such field, since it's
 // the REQUEST filter that produced this exact response (see the header comment). The caller
 // supplies which of the three calls this row came from; defaults to 'cashier' so a caller that
 // doesn't pass it (every pre-#59 test and call site) keeps its exact prior behaviour.
 export function mapRow(r, registerType = 'cashier') {
-  const sales   = num(r.allNetSales);
-  const trans   = num(r.transactions);
-  const tRedB   = num(r.tRedBeforeQty), tRedBAmt = num(r.tRedBeforeAmt);
-  const tRedA   = num(r.tRedAfterQty),  tRedAAmt = num(r.tRedAfterAmt);
+  const sales   = num(r.netSalesAmt);
+  // drawerGC: no single combined-transaction field on this endpoint -- sum the dine-in/takeout
+  // split. null+null stays null (not 0) via num()'s own undefined-safe contract; only sum when
+  // at least one leg resolved, so a genuinely all-missing row doesn't silently become "0 GC".
+  const eatIn = num(r.netSalesEatinQty), takeout = num(r.netSalesTakeoutQty);
+  const trans = (eatIn == null && takeout == null) ? null : (eatIn || 0) + (takeout || 0);
+  const tRedB   = num(r.tredsBeforeQty), tRedBAmt = num(r.tredsBeforeAmt);
+  const tRedA   = num(r.tredsAfterQty),  tRedAAmt = num(r.tredsAfterAmt);
   const promo   = num(r.promoAmt);
-  const overShort = num(r.overShortAmt);
   return {
-    loc:  nsn7(r.nsn),
-    date: r.busnDt,
+    loc:  nsn7(r.storeNum),
+    date: r.date,
     emp:  (r.empName || '').trim(),
     registerType,
-    empId: (r.empID == null ? '' : String(r.empID).trim()) || null,
+    empId: (r.empId == null ? '' : String(r.empId).trim()) || null,
     drawerSales:    sales,
     avgCheck:       ratio(sales, trans),
-    drawerOpens:    num(r.drawerOpens),
+    drawerOpens:    num(r.drawerOpensQty),
     drawerGC:       trans,
-    empMealDisc:    num(r.empMealDiscAmt),
-    empMealCh:      num(r.empMealDiscQty),
-    manualRefAmt:   num(r.manOverringAmt),
-    manualRefCnt:   num(r.manOverringQty),
-    refundCnt:      (num(r.refundCashQty) || 0) + (num(r.refundCashlessQty) || 0),
-    refundCash:     num(r.refundCashAmt),
-    refundCashless: num(r.refundCashlessAmt),
-    mgrMealAmt:     num(r.mgrMealDiscAmt),
-    mgrMealCnt:     num(r.mgrMealDiscQty),
-    cashOSDollar:   overShort,
-    cashOSPct:      ratio(overShort, sales),
+    empMealDisc:    num(r.empMealDiscountAmt),
+    empMealCh:      num(r.empMealDiscountQty),
+    manualRefAmt:   num(r.manualRefundOverrings),
+    manualRefCnt:   null, // confirmed absent on this endpoint too -- see header comment
+    refundCnt:      (num(r.cashRefundsQty) || 0) + (num(r.cashlessRefundsQty) || 0),
+    refundCash:     num(r.cashRefundsAmt),
+    refundCashless: num(r.cashlessRefundsAmt),
+    mgrMealAmt:     num(r.mgrMealDiscountAmt),
+    mgrMealCnt:     num(r.mgrMealDiscountQty),
+    cashOSDollar:   null, // confirmed unavailable from this endpoint -- see header comment
+    cashOSPct:      null,
     posOverAmt:     num(r.overringAmt),
     posOverCnt:     num(r.overringQty),
     promoAmt:       promo,
@@ -262,92 +301,67 @@ export function mapRow(r, registerType = 'cashier') {
     promoPct:       ratio(promo, sales),
     tRedBCnt:       tRedB,
     tRedBDollar:    tRedBAmt,
-    tRedBPct:       ratio(tRedB, trans),
+    tRedBPct:       ratio(tRedBAmt, sales), // $ share of sales, NOT qty/transactions -- see header
     tRedBAvg:       ratio(tRedBAmt, tRedB),
     tRedACnt:       tRedA,
     tRedADollar:    tRedAAmt,
-    tRedAPct:       ratio(tRedA, trans),
+    tRedAPct:       ratio(tRedAAmt, sales), // $ share of sales, NOT qty/transactions -- see header
     tRedAAvg:       ratio(tRedAAmt, tRedA),
   };
 }
 
 // ── Fetch (direct or Playwright in-browser) ──────────────────────────────────────────────────
-// REFERER is the SPECIFIC report page, not the bare site root. This is a real difference from
-// what shipped, and the current best hypothesis for the AUTH_FAILED:403 that has failed every
-// run since 2026-08-20 (memory/dispatch35-register-audit-implementation.md):
-//
-//   qsrsoft-ops-pull.mjs  -- WORKS with a direct minted token against this SAME host --
-//   sends Referer 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', i.e. the report
-//   page the call belongs to. This script shipped with a bare 'https://v3.myqsrsoft.com/'.
-//
-// That fits the observed symptom specifically: a 403 (authenticated but not authorized for THIS
-// request) rather than a 401 (bad/expired credential) -- and the token is known good, since it
-// is freshly minted and re-minted on retry. It also matches how dispatch #34's capture was
-// necessarily made: the owner's DevTools session was ON the regAudit page, so the real working
-// request carried that page as its Referer.
-//
-// NOT yet verified against live QSRSoft -- no session in this build's history has had real
-// credentials. If a workflow_dispatch run still 403s with this in place, the Referer theory is
-// dead and the next candidate is the UI-interaction hypothesis in dispatch35's own writeup
-// (the report may not fire its API until a date range + run/export click). Record whichever way
-// it goes rather than leaving the next session to re-derive it.
-// SETTLED 2026-08-20 by a complete DevTools capture of the WORKING request (200 OK, 51KB JSON,
-// owner-supplied). Its full request-header set is:
-//   :authority/:method/:path/:scheme, Accept: */*, Accept-Encoding, Accept-Language,
-//   Origin: https://v3.myqsrsoft.com, Priority, Referer (below), Sec-Ch-Ua*, Sec-Fetch-*,
-//   User-Agent
-// There is NO x-auth-token, NO cookie, and NO authorization header. This endpoint is not
-// authenticated by a credential we were failing to supply -- it is scoped by the orgId/nsn
-// params and validated against Origin/Referer. Every theory before this one (browser session,
-// wrong Referer value, needs-a-UI-click, cookie jar, header-we-failed-to-capture) was inferring
-// from an ABSENCE; this capture is a presence, and it supersedes all of them.
-//
-// THE UI ROUTE AND THE API PATH DIFFER BY NAME, which is what made this so slippery:
-//   UI page : https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit   <- "registerAudit"
-//   API call: https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit  <- "regAudit"
-// This script previously used the API spelling for BOTH, so viaPlaywright() was navigating to a
-// page that does not exist -- the direct cause of the flaky token capture (run 32396347757 saw
-// the call, run 32397005570 saw "(none)") and of the useless Referer.
+// Everything below this point was rewritten 2026-11-14 for the endpoint migration (GH #1314).
+// The old Referer-only auth theory (no x-auth-token needed) is DEAD on the new endpoint --
+// confirmed live: the new endpoint 401s without a valid x-auth-token, and that token must come
+// from a real browser SESSION (Playwright login), not a bare Cognito mint (getFreshToken() alone
+// gets a plain 401 here even though it works for several other qsrsoft pulls on this host).
 const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit';
 const REFERER = REPORT_PAGE;
 // The Register Audit offers all three; dispatch #59 collects all three (was cashier-only).
+// STILL TRUE on the new endpoint -- registerType is server-validated against this exact list
+// (confirmed live: a bogus value gets a real 400 naming the allowlist).
 export const REGISTER_TYPES = ['cashier', 'manager', 'preparer'];
-export const buildUrl = (startDate, endDate, registerType = 'cashier') => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
-  nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
-  startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
-  resultType: 'byDateEmployee', registerType,
-});
-// Mirrors the captured working request. Deliberately sends NO X-Auth-Token: the browser's own
-// successful call sends none, and sending an unexpected credential is the most likely cause of
-// the 403 we got on every direct attempt (a gateway rejecting a token it cannot validate for
-// this route, which is exactly a 403-not-401 signature). `t` is accepted and ignored so the
-// existing call sites and the re-mint/retry plumbing keep working unchanged; if this endpoint
-// ever does start requiring a token, re-adding it here is a one-line change.
-const HDRS = (_t) => ({
+// The exact set of columns this script needs, confirmed live 2026-11-14 (see the big comment
+// above mapRow() for which displayed UI column each backs and how it was verified). An
+// unrecognized column name is silently DROPPED from the response (no error) -- so adding a new
+// one here is not itself proof it exists; confirm it against a real response first.
+const SELECT_COLS = [
+  'storeNum', 'empId', 'empName', 'date',
+  'netSalesAmt', 'netSalesEatinQty', 'netSalesTakeoutQty', 'drawerOpensQty',
+  'empMealDiscountAmt', 'empMealDiscountQty', 'mgrMealDiscountAmt', 'mgrMealDiscountQty',
+  'manualRefundOverrings',
+  'overringAmt', 'overringQty',
+  'cashRefundsAmt', 'cashRefundsQty', 'cashlessRefundsAmt', 'cashlessRefundsQty',
+  'promoAmt', 'promoQty',
+  'tredsBeforeQty', 'tredsBeforeAmt', 'tredsAfterQty', 'tredsAfterAmt',
+];
+export const buildUrl = (startDate, endDate, registerType = 'cashier') =>
+  `${BASE}/data_layer/v1/cash/register-audit-by-employee?` + new URLSearchParams({
+    nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
+    startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
+    registerType, selectCols: SELECT_COLS.join(','),
+  });
+// Confirmed live 2026-11-14: this endpoint REQUIRES x-auth-token (unlike the old one, which
+// authenticated by Origin/Referer alone). Origin/Referer are still sent -- harmless, and match
+// what the real browser call itself sends.
+const HDRS = (t) => ({
   Accept: '*/*',
   'Accept-Language': 'en-US,en;q=0.9',
   Origin: 'https://v3.myqsrsoft.com',
   Referer: REFERER,
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+  ...(t ? { 'x-auth-token': t } : {}),
 });
 
-// Response envelope shape wasn't captured explicitly in dispatch #34's findings (only the
-// per-row field names were) -- accept bare array, {result:[...]}, or {data:[...]}, matching the
-// exact defensive fallback qsrsoft-ops-pull.mjs's own fetchRows() already uses for the same
-// uncertainty across its own six endpoints.
-// Extracts the row array from whatever envelope the API returns, and -- critically -- SAYS SO
-// when it finds nothing. dispatch #34 captured the per-row field names but never the envelope,
-// so the three shapes below are guesses that have never been confirmed against a real response.
-// Run 32397... proved that matters: the request succeeded, the owner's DevTools capture shows a
-// 51KB JSON body, and this returned zero rows -- a wrong envelope key looks exactly like "no
-// data" and was being swallowed silently. Logs the SHAPE only (top-level keys, array lengths),
-// never values: this payload is employee-attributed and every row is PII.
+// Response envelope, confirmed live 2026-11-14 by direct observation (not guessed): a plain
+// `{ result: [...] }`. Bare array / {data:[...]} kept as defensive fallbacks only, matching the
+// same uncertainty-hedge every other qsrsoft pull in this repo uses for an undocumented API.
+// Logs the SHAPE only (top-level keys, array lengths), never values: this payload is
+// employee-attributed and every row is PII.
 export function extractRows(body, unit) {
   if (Array.isArray(body)) return body;
-  // 'resp' is the real key, MEASURED from run 32399056951's shape log ({resp[3793]}), not guessed
-  // -- three prior guesses at this envelope ([] / result / data) all cost a full round-trip. The
-  // other two are kept because they cost nothing and the API is not documented.
-  const rows = body?.resp || body?.result || body?.data;
+  const rows = body?.result || body?.resp || body?.data;
   if (Array.isArray(rows)) return rows;
   if (body && typeof body === 'object') {
     const shape = Object.entries(body).map(([k, v]) =>
@@ -361,19 +375,11 @@ export function extractRows(body, unit) {
 
 async function fetchChunk(url, token, evalPage) {
   if (evalPage) {
-    // page.request (Playwright's APIRequestContext), NOT page.evaluate(fetch). Two reasons, both
-    // measured rather than assumed (run 32396347757 -- see viaPlaywright's comment):
-    //   1. It sends the browser context's COOKIES. The page's own regAudit call carries no
-    //      x-auth-token, so the app authenticates this endpoint by session -- this reproduces
-    //      how the app itself does it instead of replaying a token the endpoint rejects.
-    //   2. It is not bound by the page's CORS policy. The previous page.evaluate(fetch) failed
-    //      with "Failed to fetch" precisely because v3.myqsrsoft.com -> api.reports.* is
-    //      cross-origin; running the request in Playwright rather than in the page avoids that
-    //      entirely.
-    // The token is still sent when one was captured -- harmless if ignored, and it keeps the
-    // path working unchanged if this endpoint ever does accept one.
+    // page.request (Playwright's APIRequestContext) rather than page.evaluate(fetch) -- NOT
+    // bound by the page's own CORS policy, since v3.myqsrsoft.com -> api.reports.myqsrsoft.com
+    // is cross-origin and a page.evaluate(fetch) would be CORS-blocked in page context.
     const hdrs = { Accept: 'application/json', Referer: REFERER };
-    if (token) hdrs['X-Auth-Token'] = token;
+    if (token) hdrs['x-auth-token'] = token;
     const r = await evalPage.request.get(url, { headers: hdrs, timeout: 30000 });
     if (r.status() === 401 || r.status() === 403) {
       const detail = await r.text().catch(() => '(body unreadable)');
@@ -382,18 +388,12 @@ async function fetchChunk(url, token, evalPage) {
     }
     if (!r.ok()) throw new Error(`HTTP ${r.status()}: ${(await r.text()).slice(0, 200)}`);
     const body = await r.json();
-    return extractRows(body, url.replace(/^.*regAudit\?/, "").slice(0, 60));
+    return extractRows(body, url.replace(/^.*register-audit-by-employee\?/, "").slice(0, 60));
   }
   const resp = await fetch(url, { headers: HDRS(token) });
   if (resp.status === 401 || resp.status === 403) {
-    // Log the response body/headers BEFORE throwing. This was a real diagnostic gap: the line
-    // below already reads the body for every OTHER non-ok status, but 401/403 -- the two that
-    // most need explaining -- discarded it, so three consecutive failed runs (2026-08-20)
-    // produced nothing but the bare status code, and two successive theories (browser-session-
-    // required, then a wrong Referer) were both formed and tested without ever reading what the
-    // server actually said. An API gateway 403 nearly always carries a reason; AWS ones also put
-    // it in x-amzn-errortype. Per CLAUDE.md's standing rule -- once a hypothesis is disproven the
-    // next step is a MEASUREMENT, not another hypothesis -- this is that measurement.
+    // Log the response body/headers BEFORE throwing -- per CLAUDE.md's standing rule, once a
+    // hypothesis is disproven the next step is a MEASUREMENT, not another hypothesis.
     const detail = await resp.text().catch(() => '(body unreadable)');
     const diagHdrs = ['x-amzn-errortype', 'x-amzn-requestid', 'x-amzn-remapped-authorization',
       'www-authenticate', 'x-amzn-apigateway-id', 'apigw-requestid']
@@ -404,7 +404,7 @@ async function fetchChunk(url, token, evalPage) {
   }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   const body = await resp.json();
-  return extractRows(body, url.replace(/^.*regAudit\?/, "").slice(0, 60));
+  return extractRows(body, url.replace(/^.*register-audit-by-employee\?/, "").slice(0, 60));
 }
 
 async function resolveToken(token, forceRemint) {
@@ -477,16 +477,12 @@ async function runAll(token, chunks, evalPage, tracker, coveredStores) {
   return total;
 }
 
-// Two-path auth per CLAUDE.md's standing "new automated pull" rule. Direct-first (getFreshToken,
-// matching qsrsoft-ops-pull.mjs's now-proven pattern for this SAME host after #312), Playwright
-// as fallback -- CLAUDE.md's own DAR-era note that api.reports.myqsrsoft.com needs a browser
-// session predates #312's fix making direct-first work for ops-pull's endpoints on this same
-// host, so both paths are implemented rather than assuming either one alone is sufficient.
-// The intermediate report-page navigation URL below is a plausible-but-unconfirmed guess
-// (mirroring the DAR/ops-pull UI<->API path-naming symmetry: api "controlsCash/regAudit" <->
-// v3 "reports/mcd/controlsCash/regAudit") -- if wrong, this degrades gracefully to the same
-// in-browser-fetch-trigger fallback ops-pull's own viaPlaywright() already relies on when its
-// own navigation heuristic doesn't yield a token.
+// Two-path auth per CLAUDE.md's standing "new automated pull" rule. Direct-first (getFreshToken)
+// will reliably fail on THIS endpoint -- confirmed live 2026-11-14, a bare Cognito mint gets a
+// plain 401 here even on this same api.reports.myqsrsoft.com host where it works for several
+// other pulls -- so Playwright is the real path for this one, kept as a graceful fallback rather
+// than reworked into the primary, so a future change to this endpoint's auth requirement (if
+// QSRSoft ever accepts a direct-minted token here too) needs no structural change to pick up.
 async function viaPlaywright(chunks, tracker, coveredStores) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
@@ -497,41 +493,22 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
   const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
-  // Record EVERY api.reports.* request the page makes, not just token-bearing ones -- mirroring
-  // qsrsoft-ops-pull.mjs's own seenApiUrls log. "token captured: false" alone is ambiguous: it
-  // cannot distinguish "the page fired API calls but none carried x-auth-token" from "the page
-  // fired no API calls at all." Those point at completely different root causes -- a wrong
-  // endpoint vs. a report that doesn't run until a UI interaction (the remaining hypothesis in
-  // dispatch35's writeup) -- and the current logging can't tell them apart. Query string is
-  // stripped: it carries no secret, but it is long and noisy, and the PATH is the diagnostic.
+  // Record EVERY api.reports.* request the page makes, not just token-bearing ones -- a run
+  // that captures no token at all still distinguishes "the page fired API calls but none carried
+  // x-auth-token" from "the page fired no API calls at all" via this log, which point at
+  // completely different root causes. Query string is stripped: it carries no secret, but it is
+  // long and noisy, and the PATH is the diagnostic.
   const seenApiUrls = [];
-  let seenApiHeaderNames = [];
   // async listener: allHeaders() below is async. Playwright allows this -- the handler's promise
-  // is not awaited by the event loop, but the token/header capture only has to complete before
-  // the navigation waits finish, which they comfortably do.
+  // is not awaited by the event loop, but the token capture only has to complete before the
+  // navigation waits finish, which they comfortably do.
   page.on('request', async req => {
     if (!req.url().includes('api.reports.myqsrsoft.com')) return;
     const bare = req.url().replace(/\?.*/, '');
     if (!seenApiUrls.includes(bare)) seenApiUrls.push(bare);
-    // NAMES only -- a Cookie or Authorization VALUE is a live credential and must never be
-    // logged. The names alone answer the open question (how does the app authenticate this
-    // call, given it sends no x-auth-token) without leaking anything.
-    // allHeaders() (async, COMPLETE) rather than headers() (sync, PROVISIONAL). Playwright's
-    // headers() can omit headers the browser attaches after interception, so a negative result
-    // from it is not evidence a header is absent -- which matters, because run 32396347757's
-    // "token captured: false" was read as "the app sends no x-auth-token" and used to conclude
-    // it must authenticate by cookie. A live DevTools capture of the working request
-    // (owner-supplied, 2026-08-20) makes that conclusion doubtful: the response carries
-    // Access-Control-Allow-Origin: *, and a browser will NOT send cookies on a cross-origin
-    // request under a wildcard ACAO. Since this call IS cross-origin (v3.myqsrsoft.com ->
-    // api.reports.*) and the URL carries no token, the credential almost certainly IS a header
-    // that headers() simply did not surface. Same wildcard also explains the old trigger's
-    // "Failed to fetch": credentials:'include' against ACAO '*' is rejected by the browser
-    // outright, which was never an auth failure at all.
+    // allHeaders() (async, COMPLETE) rather than headers() (sync, PROVISIONAL) -- Playwright's
+    // headers() can omit headers the browser attaches after interception.
     const all = await req.allHeaders();
-    if (bare.endsWith('/regAudit') && !seenApiHeaderNames.length) {
-      seenApiHeaderNames = Object.keys(all).sort();
-    }
     const t = all['x-auth-token'];
     if (t && t.length > 20 && !token) token = t;
   });
@@ -552,38 +529,18 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
     console.log('[auth] report page url:', page.url(), '| token captured:', !!token);
     await snap('audit-02-report-page.png');
 
-    // MEASURED 2026-08-20 (run 32396347757), and it changed the whole approach:
-    //   api.reports requests seen during navigation:
-    //     ["https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit"]
-    //   token captured: false
-    // The page DOES call this exact endpoint on load -- so the endpoint is right and the
-    // "report needs a UI interaction first" hypothesis is dead -- but it calls it with NO
-    // x-auth-token header. The app authenticates this endpoint some other way (cookies, almost
-    // certainly, set by the v3 login). That single fact explains every failure to date: the
-    // direct Node path sends a token this endpoint does not accept (403), and the old
-    // page.evaluate(fetch) trigger died with "Failed to fetch" because v3.myqsrsoft.com ->
-    // api.reports.myqsrsoft.com is CROSS-ORIGIN and CORS-blocked in page context.
-    //
-    // So: stop trying to capture and replay a token, and instead issue the request through the
-    // browser CONTEXT (page.request, Playwright's APIRequestContext). It shares the context's
-    // cookie jar -- authenticating the same way the app itself does -- and is NOT subject to the
-    // page's CORS policy, since it runs in Playwright rather than in the page.
+    // The new endpoint (GH #1314 migration) REQUIRES x-auth-token -- if none was captured here,
+    // every subsequent fetchChunk call will 401. Log what the page actually called so a future
+    // failure is diagnosable without another run, same discipline the direct path's 401/403
+    // handler already uses.
     if (!token) {
-      console.log('[auth] no x-auth-token seen on the page\'s own API calls — the app authenticates');
-      console.log('[auth] this endpoint by session instead; proceeding via the browser cookie jar.');
-      console.log('[auth] api.reports requests seen during navigation:',
+      console.log('[auth] ✗ no x-auth-token captured from the page\'s own API calls -- every');
+      console.log('[auth] subsequent request will 401. api.reports requests seen during navigation:',
         seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
-      // Header NAMES only, never values -- a Cookie/Authorization value is a live credential.
-      // This confirms (or refutes) the cookie theory on the next run rather than assuming it.
-      if (seenApiHeaderNames.length) {
-        console.log('[auth] header names on the page\'s own regAudit call:', JSON.stringify(seenApiHeaderNames));
-      }
-      await snap('audit-03-pre-context-request.png');
+      await snap('audit-03-no-token-captured.png');
     } else {
       console.log(`[auth] ✓ token captured (${token.length} chars)`);
     }
-    // Proceed either way. `token` may be null here -- fetchChunk's browser-context branch sends
-    // it only if present, and relies on cookies otherwise.
     console.log(`[auth] pulling ${chunks.length} chunk(s) via the browser context…`);
     // Catch AUTH_FAILED here rather than letting it escape. viaPlaywright() is called from
     // INSIDE main()'s catch block (the direct path's own failure handler), so anything thrown
