@@ -1,6 +1,6 @@
 ---
 name: finding-security-events-reQuery-deny-2026-11-14
-description: "GH #1532 -- QSRSoft Security Events Pull's real root cause, measured not guessed, corrected twice same day: the AWS IAM explicit deny gates re-querying any already-saved DATE, including today re-queried later the same day -- not a 'past day vs today' boundary. QSRSoft support declined to change the IAM mapping. Fixed by never requesting an already-covered date at all, no exemption for today."
+description: "GH #1532 -- QSRSoft Security Events Pull's real root cause, measured not guessed, revised three times same day. The exact mechanism (per-date lifetime lock vs. a daily request budget) is still not fully confirmed, but either way 'today' is always a wasted request at the 11:00 UTC cron's run time. Fixed by never requesting 'today' at all -- the default window now always ends at yesterday, letting the next day's run capture it in full once it's genuinely elapsed. QSRSoft support declined to change the IAM mapping."
 metadata:
   node_type: memory
   type: finding
@@ -107,7 +107,7 @@ entitlement. That's not something a client-side change can fix; it's just the sh
   more the next run -- a one-time false negative, not a crash, and a vast improvement over
   today's "756/756 every single run" shape either way.
 
-## Verification
+## Verification (rounds 1-2, same afternoon)
 
 **Live-verified end to end, in two rounds, on the real self-hosted runner -- not just unit
 tests:**
@@ -115,10 +115,64 @@ tests:**
    from 756 units (3 days) to 252 (today only, since 11-12/11-13 were already covered) -- but
    today's own query, requested unconditionally, was denied 252/252: the finding that triggered
    the correction above.
-2. After the correction, the next live run (normal daily cron or a fresh dispatch on a day that
-   hasn't been queried yet) is the one that actually proves the fix end-to-end -- re-dispatching
-   immediately after a same-day success now correctly returns an empty request list and exits 0,
-   rather than repeating the 252-unit denial.
+2. After the correction, a third dispatch (today already covered from round 1's partial write)
+   correctly returned an EMPTY request list and exited 0 -- zero wasted calls, proving the
+   "skip every already-covered date" logic end to end.
 
 7 unit tests (`datesToRequest`, pure, no Supabase dependency, updated to assert no exemption for
 the last date). Full suite and build pass clean.
+
+## Round 3, same day: the "per-date lock" theory itself doesn't fully hold up
+
+Before calling this closed, checked the actual write TIMESTAMPS (`updated_at`), not just which
+dates have rows -- and the picture is messier than "exactly one successful read per date, ever":
+
+- Every historical date (Oct 6 - Nov 13) has a FULL 24-hour spread of event times (`event_tm`
+  hours 00-23 all represented), not an early-morning sliver -- impossible if a date's only-ever
+  successful read happens at the 11:00 UTC cron, 1-2 hours into that date's own business day.
+- The normal cron run THIS MORNING (~12:09-12:10 UTC) wrote full, complete data for 2026-11-11,
+  11-12, AND 11-13 in one run -- dates that, under the pre-this-morning code, had already been
+  "touched" as "today" on their own respective days.
+- But 2026-11-11 ALSO has 2 rows written on 2026-11-13 (`write_minute` 12:10 UTC that day) before
+  getting ~7,470 MORE rows written on 2026-11-14 (`write_minute` 12:09 UTC) -- i.e. that exact
+  date WAS successfully (if mostly-emptily) queried once, then queried AGAIN successfully two
+  days later and got the real data that time, which a strict "once per date, ever" rule would
+  not predict.
+
+This doesn't cleanly fit "per-date lock, once ever" OR "per-run request volume quota" alone --
+the most consistent read of this specific evidence is something closer to a **daily (or
+otherwise time-windowed) request budget per identity**: the morning's big successful batch used
+up whatever budget existed for that day, and every later request that same day -- regardless of
+which date it names -- gets denied simply because the budget's gone, not because that specific
+date is individually blacklisted. Not fully confirmed (would need a clean test ~24h apart with
+nothing else running in between), and not re-tested further this pass -- CLAUDE.md's "no second
+guesses" rule says the next step from here is a measurement, not a fourth hypothesis in one day.
+
+## What ships regardless of which theory is right
+
+Whichever mechanism this turns out to be, asking for "today" at the 11:00 UTC cron's run time is
+ALWAYS wasted effort: today's business day is only 1-2 hours old at that point, so the read is
+either locked forever at a tiny fraction of the real day (per-date-lock theory) or burns part of
+a scarce daily budget on an incomplete read for no benefit (daily-budget theory) -- in BOTH
+readings, tomorrow's run captures today in full once today has actually elapsed (as that
+tomorrow's "yesterday", confirmed accurate by the very data pattern above -- every real date was
+captured complete the day after it ended, never via its own sliver).
+
+**Fixed**: `getDateRange()`'s default rolling window now ends at **yesterday**, never today --
+`QSRSOFT_SECEVENTS_START_DATE`/`END_DATE` (explicit backfill) is unaffected, since that's a
+deliberate, named request. `checkFreshness()`'s thresholds shifted +24h (54h warn / 78h error,
+was 30h/54h) since `latest` is now intentionally ~2 days old right before a healthy run, not ~1 --
+the old thresholds would warn or error on every single healthy run otherwise.
+
+**Not done this pass, flagged for later**: this stream has no entry in
+`src/engine/stream-freshness.js`'s `STREAMS` array at all -- CLAUDE.md's own "adding a new
+automated pull" checklist requires one (per-stream staleness visibility, not pooled). Pre-existing
+gap, unrelated to today's fix, not touched here to keep this change scoped.
+
+## Verification (round 3)
+
+Full suite re-run clean on the combined change (existing 21 tests unaffected -- `getDateRange()`
+isn't unit-tested directly, same as before, matching this file's own stated convention that its
+live network path is verified by an actual dispatched/scheduled run, not a mock). Live
+verification: the next scheduled cron run (or a dispatch after today has genuinely elapsed) should
+show the window ending at yesterday's date with no "today" unit in the log at all.
