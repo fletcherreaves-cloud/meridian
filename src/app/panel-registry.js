@@ -255,6 +255,13 @@ export const PANELS = [
   // Supabase per store/day. New panel, built route:true from day one (RoutePanelShell already
   // lives inside ChecklistFillPanel), same treatment dispatch #123 gave 'crew-schedule'.
   { id:'checklist-fill', label:'Digital Checklists', icon:'📝', perm:null, kind:'nav', section:'forms', route:true },
+  // Squadle tablet food-safety checklists (task #105 Phase 2 UI, 2026-11-14) -- the pull/loader
+  // shipped 2026-11-13 with deliberately no consuming panel yet (memory/finding-hme-squadle-
+  // integration-2026-11-06.md's own "Phase 2" note); this is that panel. kind:'test-kitchen' for
+  // the same reason forms-completion/forms-reviews started there -- new, unproven panel against a
+  // real pull only 1-2 days old. route:true from day one, same treatment checklist-fill/crew-
+  // schedule got (dispatch #123's convention).
+  { id:'squadle-checklist', label:'Food Safety Checklists', icon:'🍔', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:21, route:true },
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.
