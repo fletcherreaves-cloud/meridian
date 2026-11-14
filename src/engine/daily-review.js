@@ -88,12 +88,9 @@ const FOB_LINES = [
   { key: 'statVar', label: 'Stat Var %', ms: 'statVar', t: 'tStatLoss', unit: 'pct' },
   { key: 'unexplained', label: 'Unexplained %', ms: 'unexplained', t: 'tUnex', unit: 'pct' },
   { key: 'discPct', label: 'Disc Coupon %', ms: 'discPct', t: 'tDiscCoupPct', unit: 'pct' },
-  // Paper Cost %: DEFAULT_TARGETS carries a real target (tPaperCost) but metric-source.js has
-  // no actual-value key for it yet — the one genuine gap found while building this (everything
-  // else the owner named already had both a real source AND a real target). Surfaced as a
-  // target-only line (no actual) rather than silently dropped, so the gap stays visible instead
-  // of invisible.
-  { key: 'paperCost', label: 'Paper Cost %', ms: null, t: 'tPaperCost', unit: 'pct' },
+  // Paper Cost %: closed (2026-11-14) — metric-source.js now has a real 'paperCost' chain
+  // (manual FOB Excel's own pLPaperPct, qsr_fob's P&L paper roll-forward as the auto fallback).
+  { key: 'paperCost', label: 'Paper Cost %', ms: 'paperCost', t: 'tPaperCost', unit: 'pct' },
 ];
 
 const SECTIONS = [

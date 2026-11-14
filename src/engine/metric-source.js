@@ -504,6 +504,28 @@ export const METRIC_SOURCES = {
   empMgrMealsAmt:  { mode: 'any', srcs: [['qsrFobRows', 'empMgrMealsAmt']] },
   unexplainedAmt:  { mode: 'any', srcs: [['qsrFobRows', 'unexplainedAmt']] },
 
+  // Paper Cost % (daily-review.js's own FOB crosswalk flagged this as the one genuine
+  // actual-value gap: DEFAULT_TARGETS carries tPaperCost but no metric-source.js key ever
+  // read the real pLPaperPct/pl_paper_pct data that was already flowing from the manual FOB
+  // Excel (fobRows), and qsr_fob's own P&L paper roll-forward (pnlPaperCost*) had no
+  // metric-source chain either — both exist, neither was wired). The 6 pnlPaperCost* fields
+  // are a physical-count roll-forward (Begin+Purchases+Adjustments+Transfers-Promotions-End),
+  // same shape eom-inventory.js's pLPaperCostFromRow already computes for the EOM panel, not
+  // invented here — they only populate on an actual count day, same as the manual upload, so
+  // metricDaily's "every input non-null" derive gate is the correct behaviour, not a bug: the
+  // auto fallback simply can't fire on a day the roll-forward wasn't captured, exactly like
+  // the manual Excel it's standing in for.
+  pnlPaperCostBegin:      { mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostBegin']] },
+  pnlPaperCostPurchases:  { mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostPurchases']] },
+  pnlPaperCostAdjustments:{ mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostAdjustments']] },
+  pnlPaperCostTransfers:  { mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostTransfers']] },
+  pnlPaperCostPromotions: { mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostPromotions']] },
+  pnlPaperCostEnd:        { mode: 'any', srcs: [['qsrFobRows', 'pnlPaperCostEnd']] },
+  paperCostAmt: { mode: 'any',
+                  derive: { inputs: ['pnlPaperCostBegin', 'pnlPaperCostPurchases', 'pnlPaperCostAdjustments',
+                                      'pnlPaperCostTransfers', 'pnlPaperCostPromotions', 'pnlPaperCostEnd'],
+                            fn: (begin, purch, adj, trans, promo, end) => begin + purch + adj + trans - promo - end } },
+
   // FOB waste/variance %'s — the manual FOB Excel's own precomputed % stays the first
   // source (unchanged behaviour), with the qsr_fob-derived % (amount ÷ sales, above) as
   // the fallback for any day the manual upload doesn't cover. This closes the "auto not
@@ -517,6 +539,11 @@ export const METRIC_SOURCES = {
                derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   statVar:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'statVar']],
                derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
+  // Paper Cost % — same manual-first/auto-fallback shape as its 3 siblings just above.
+  // fobRows.pLPaperPct is the manual FOB Excel's own precomputed %; paperCostAmt (above) is
+  // the qsr_fob roll-forward fallback.
+  paperCost: { mode: 'any', direction: 'lower', srcs: [['fobRows', 'pLPaperPct']],
+               derive: { inputs: ['paperCostAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   // The 3 remaining FOB sub-item %'s named as a follow-on by dispatch #229's own
   // AUTO_FIRST_KEY_MAP comment ("have NO matching METRIC_SOURCES chain today") — closed
   // 2026-09-13. Same pattern as their 3 siblings just above: the manual Excel's own
