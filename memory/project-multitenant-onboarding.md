@@ -200,3 +200,50 @@ second-tenant-profile test already proved the ~70-table phase2 sweep works (set 
 `tenant_id` to something else, confirm these 46 tables' policies correctly resolve via
 `current_tenant_id()` rather than the dead literal) — don't just assume the SQL ran clean from a
 lack of an error message.
+
+## ✅ Owner decision, 2026-11-14 (task #70) — the account model for a new organization
+
+Asked directly: does a new operator get their own admin tier within their org, or does Fletcher
+manage their account for them? Owner's answer, verbatim: *"a new organization would be a separate
+business entirely and therefore would need their own access. I would need to retain access for
+developer purposes if you will, but they should have access to control Admin within an
+organization."*
+
+**What this actually resolves, worked against the real architecture above, not just restated:**
+
+1. **"Their own org, their own admin" is already what the existing model gives them, once the
+   remaining tenant-isolation fixes (items #1/#5 above) are run.** `admin`/`owner` (RBAC level 1)
+   already bypasses every `hasPermission()` app-level check — that's a role property, not scoped to
+   a tenant today, but it never needed to be: the real wall is Supabase RLS's
+   `tenant_id = current_tenant_id()` check on every table, which is a hard DB-layer boundary
+   independent of role. So a new org's own admin user, once their tenant exists and the 46-table
+   hardcode fix + org_config PK fix are both run, already gets full control (every permission,
+   every panel) **strictly within their own tenant's data** — they could never see or touch
+   Fletcher's stores regardless of their role, because RLS blocks it before any app-level
+   permission check even runs. No new role needs inventing for this half.
+2. **"I would need to retain access for developer purposes" is the genuinely open half — this
+   does NOT exist today and needs purpose-built work.** There is currently no user-facing account
+   or role that can see across tenants at all. The only thing that crosses the RLS wall today is
+   the `SUPABASE_SERVICE_ROLE_KEY` (used by pull scripts/edge functions, never tied to a logged-in
+   person, exported to the owner's shell only per CLAUDE.md's PII/credential rules) — that's an
+   infrastructure credential, not a "developer" user Fletcher could log in as to look at a second
+   org's account for support purposes. Building this means one of:
+   - A new boolean (e.g. `profiles.is_platform_developer`) that a small number of RLS policies
+     special-case with an `OR` alongside the `tenant_id = current_tenant_id()` check — narrow,
+     auditable, but means re-touching the same ~120 tables' policies a third time.
+   - A separate "support session" mechanism: Fletcher's own login can explicitly switch its
+     `current_tenant_id()` context to a chosen tenant it's been granted cross-tenant access to,
+     logged every time it's used (who, which tenant, when) — more auditable, but more plumbing
+     (a session-scoped "acting as tenant X" flag the RLS functions read instead of just the JWT's
+     own tenant_id).
+   Neither is built. This is real design/schema work, not a quick flag flip, and it touches every
+   RLS-protected table in the system — **not started without the owner's sign-off on which shape**
+   (special-case boolean vs. an explicit audited "acting as" switch), consistent with this repo's
+   own Tier-C-never-unattended rule for anything touching RLS/tenant isolation.
+
+**Net effect:** nothing changes about what ships for item #1 above (org_config PK + tenant_stores
+plumbing) — that work already assumed per-tenant admins, correctly. What changes is that "developer
+cross-tenant access" is now a named, scoped, *undecided-shape* work item rather than an assumption
+that service-role access would quietly cover it — it won't, because service-role access isn't a
+user login Fletcher could use day-to-day, and isn't audited per-use the way a real support-access
+mechanism should be if other people's business data is on the line.
