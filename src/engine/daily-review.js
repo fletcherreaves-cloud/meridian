@@ -178,10 +178,22 @@ const DAYPART_LIST = [
 
 // us/cnt field pairs per service line — mirrors dt-speedofservice.js's STATION_FIELDS for DT,
 // extended to FC (R2P) and Kitchen (KVS) since this review covers all three, not just DT.
+//
+// Fixed 2026-11-14 (task #152, input from memory/finding-signals-liveops-mislabels-2026-11-13.md
+// #2) — both r2p and kvst named fields that don't exist on qsr_daily_activity, so every call ever
+// silently returned zero dayparts for them (caught by this same file's own 'excludes a metric
+// with no matching rows' test, which only proves the empty-case *handling* works, not that the
+// fields themselves are real — a gap this fix closes). r2p: 'fc_untilcloseddrawer' (two d's) was
+// a typo for the real column 'fc_untilclosedrawer' (one d, per metric-provenance.js's r2p entry
+// and the shared oepe.js-adjacent R2P formula every other panel reconciles against). kvst:
+// 'mfy_time'/'mfy_trans_cnt' are not real qsr_daily_activity columns at all — only the
+// side-suffixed 'mfy1_*'/'mfy2_*' pair exists (confirmed against loadDtHistory's own select
+// list below, which already carries all four). KVS time has no single `sub` leg to subtract;
+// it sums both kitchen sides the same way signals.js's "KVS Time Per GC" does.
 const DAYPART_FIELDS = {
   oepe: { us: ['dt_untilserve'], cnt: ['dt_trans_cnt'], store: ['dt_untilstore'], held: ['dt_heldtime'] },
-  r2p: { us: ['fc_untilserve', 'fc_untilcloseddrawer'], cnt: ['fc_trans_cnt'], sub: true },
-  kvst: { us: ['mfy_time'], cnt: ['mfy_trans_cnt'] },
+  r2p: { us: ['fc_untilserve', 'fc_untilclosedrawer'], cnt: ['fc_trans_cnt'], sub: true },
+  kvst: { us: ['mfy1_untilserve', 'mfy2_untilserve'], cnt: ['mfy1_trans_cnt', 'mfy2_trans_cnt'] },
 };
 
 function daypartAvgFor(rows, loc, date, key) {
