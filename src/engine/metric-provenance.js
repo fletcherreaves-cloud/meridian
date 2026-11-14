@@ -127,6 +127,81 @@ const CURATED_PROVENANCE = {
   opSupplies: { label: 'Operating Supplies $', system: 'QSRSoft', report: 'eBOS Purchases', table: 'qsr_ebos_daily', composed: false,
     inputs: ['operating-supplies purchase lines'],
     formula: 'Σ operating-supplies purchases $', grain: 'daily · per store' },
+
+  // ── signal-registry.js metrics with no METRIC_SOURCES chain (task #152, 2026-11-14) ──────
+  // engine/signal-registry.js's METRIC_CATEGORIES feeds the Signals panel's Scanner/Signal Lab.
+  // Most of its ~90 metric keys already have a real METRIC_SOURCES chain (bridged via that
+  // file's own AUTO_FIRST_KEY_MAP, confirmed by reading it directly) and so already get a
+  // Metric Lineage entry for free via autoProvenanceFor() — no action needed on those. The 4
+  // FOB sub-items + 11 SMG/VOICE metrics below are the real, confirmed exception: signal-
+  // registry.js's own header comment (AUTO_FIRST_KEY_MAP, "Keys NOT listed here... have NO
+  // matching METRIC_SOURCES chain today") already named the FOB four; grep confirmed zero hits
+  // for any of the 11 SMG/VOICE field names in metric-source.js, so that gap was real but
+  // previously unstated.
+  //
+  // FOB sub-items — direct pass-through of the uploaded Monthly Projections/FOB report's own
+  // columns (src/parsers/index.js), same table/report tier as every other fobRows field above
+  // (foodOB). No in-app formula exists because none is computed — the vendor report's own % is
+  // used as-is.
+  baseFoodPct: { label: 'Base Food %', system: 'QSRSoft', report: 'Monthly Projections / FOB', table: 'qsr_fob', composed: false,
+    inputs: ['Base Food % column'], formula: 'Direct from the uploaded Monthly Projections/FOB report\'s own "Base Food %" column', grain: 'monthly · per store' },
+  discCoupon:  { label: 'Disc Coupon %', system: 'QSRSoft', report: 'Monthly Projections / FOB', table: 'qsr_fob', composed: false,
+    inputs: ['Disc Coupon % column'], formula: 'Direct from the uploaded Monthly Projections/FOB report\'s own "Disc Coupon %" column', grain: 'monthly · per store' },
+  pLFoodPct:   { label: 'P&L Food Cost %', system: 'QSRSoft', report: 'Monthly Projections / FOB', table: 'qsr_fob', composed: false,
+    inputs: ['P&L Food Cost % column'], formula: 'Direct from the uploaded Monthly Projections/FOB report\'s own "P&L Food Cost %" column — the vendor\'s own food-cost %, not Meridian\'s primeCostPct/fobPct', grain: 'monthly · per store' },
+  pLPaperPct:  { label: 'P&L Paper Cost %', system: 'QSRSoft', report: 'Monthly Projections / FOB', table: 'qsr_fob', composed: false,
+    inputs: ['P&L Paper Cost % column'], formula: 'Direct from the uploaded Monthly Projections/FOB report\'s own "P&L Paper Cost %" column', grain: 'monthly · per store' },
+
+  // SMG FullScale scorecard — same table/report tier as osat/eap above. osat5/osatB2B/
+  // accuracyB2B/dtProblem/overallProblem are each a single parsed column (src/parsers/index.js);
+  // osatTop2 is the one composed exception (5★ + 4★).
+  osat5:          { label: 'OSAT 5★ %', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['5★ responses % column'], formula: 'Direct from the FullScale report\'s 5★ response %', grain: 'monthly · per store' },
+  osatTop2:       { label: 'OSAT Top-2 Box %', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: true,
+    inputs: ['5★ %', '4★ %'], formula: 'OSAT Top-2 Box % = 5★ % + 4★ %', grain: 'monthly · per store' },
+  osatB2B:        { label: 'B2B % (No Problem)', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['"no problem" B2B % column'], formula: 'Direct from the FullScale report\'s Overall-section B2B (no-problem) %', grain: 'monthly · per store' },
+  accuracyB2B:    { label: 'Accuracy B2B %', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['order-accuracy B2B % column'], formula: 'Direct from the FullScale report\'s order-accuracy-section B2B (no-problem) %', grain: 'monthly · per store' },
+  dtProblem:      { label: 'DT Problem %', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['DT problem % column'], formula: 'Direct from the FullScale report\'s drive-thru-section problem %', grain: 'monthly · per store' },
+  overallProblem: { label: 'Overall Problem %', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['overall problem % column'], formula: 'Direct from the FullScale report\'s Overall-section problem % (the complement EAP uses for its own 1 − value)', grain: 'monthly · per store' },
+
+  // VOICE Performance report (src/lib/supabase.js's smgVoicePerf, src/parsers/index.js's VOICE
+  // parser) — a separate monthly upload from the FullScale scorecard above, richer per-channel
+  // satisfaction splits the FullScale export doesn't carry. All 5 are direct parsed columns.
+  vpDtSat:      { label: 'DT Satisfaction % (VOICE)', system: 'SMG VOICE', report: 'VOICE Performance', table: 'smg_voice_performance', composed: false,
+    inputs: ['Drive Thru Overall Satisfaction column'], formula: 'Direct from the VOICE Performance report\'s "Drive Thru Overall Satisfaction" column', grain: 'monthly · per store' },
+  vpIrSat:      { label: 'In-Restaurant Sat % (VOICE)', system: 'SMG VOICE', report: 'VOICE Performance', table: 'smg_voice_performance', composed: false,
+    inputs: ['In Restaurant Satisfaction column'], formula: 'Direct from the VOICE Performance report\'s "In Restaurant Satisfaction" column', grain: 'monthly · per store' },
+  vpQualityB2B: { label: 'Overall Quality B2B % (VOICE)', system: 'SMG VOICE', report: 'VOICE Performance', table: 'smg_voice_performance', composed: false,
+    inputs: ['Overall Quality B2B column'], formula: 'Direct from the VOICE Performance report\'s "Overall Quality B2B" column', grain: 'monthly · per store' },
+  vpFriesB2B:   { label: 'Fries Quality B2B % (VOICE)', system: 'SMG VOICE', report: 'VOICE Performance', table: 'smg_voice_performance', composed: false,
+    inputs: ['Fries Quality B2B column'], formula: 'Direct from the VOICE Performance report\'s "Fries Quality B2B" column', grain: 'monthly · per store' },
+  vpSnackB2B:   { label: 'Snack Wrap B2B % (VOICE)', system: 'SMG VOICE', report: 'VOICE Performance', table: 'smg_voice_performance', composed: false,
+    inputs: ['Snack Wrap Quality B2B column'], formula: 'Direct from the VOICE Performance report\'s "Snack Wrap Quality B2B" column', grain: 'monthly · per store' },
+
+  // Schedule Discipline (LifeLenz Data Explorer "Schedule Variance") and Compliance Audit
+  // (LifeLenz Data Explorer "Compliance Audit") — both real engines (schedule-discipline.js,
+  // compliance-audit.js), each with its own header explaining the "why" in full; summarized
+  // here rather than restated. schedGap is the one pass-through field (pre-computed upstream by
+  // the LifeLenz pull itself, per engine/insights.js's own comment confirming the formula).
+  schedGap:                { label: 'Schedule Gap vs Ideal (hrs)', system: 'LifeLenz', report: 'Schedule vs Ideal', table: 'lifelenz_schedule', composed: true,
+    inputs: ['Scheduled crew hours (crewHrs)', 'Ideal total hours (idealTotHrs)'],
+    formula: 'Schedule Gap (hrs) = crewHrs − idealTotHrs (engine/insights.js). Negative = under-scheduled vs the ideal; computed upstream in the schedRows pipeline, read here as-is', grain: 'daily · per store' },
+  scheduleEditCount:       { label: 'Schedule Edits (post-publish)', system: 'LifeLenz', report: 'Data Explorer — Schedule Variance', table: 'lifelenz_schedule_variance', composed: true,
+    inputs: ['count of post-publish schedule-edit events'],
+    formula: 'Schedule Edits = count of edit events made to an already-published schedule for that (store, date) (engine/schedule-discipline.js dailyScheduleVariance)', grain: 'daily · per store' },
+  scheduleCostVariance:    { label: 'Schedule Edit Cost Impact ($)', system: 'LifeLenz', report: 'Data Explorer — Schedule Variance', table: 'lifelenz_schedule_variance', composed: true,
+    inputs: ['Σ costVariance per edit event'],
+    formula: 'Schedule Edit Cost Impact ($) = Σ costVariance across every post-publish edit event for that (store, date) — positive means edits kept ADDING cost after publish (engine/schedule-discipline.js dailyScheduleVariance)', grain: 'daily · per store' },
+  complianceViolationCount:{ label: 'Compliance Violations', system: 'LifeLenz', report: 'Data Explorer — Compliance Audit', table: 'lifelenz_compliance_audit', composed: true,
+    inputs: ['count of labor-compliance violation events'],
+    formula: 'Compliance Violations = count of violation events (meal/rest-break, minor-labor-law, etc.) for that (store, date) (engine/compliance-audit.js)', grain: 'daily · per store' },
+  complianceCostPenalty:   { label: 'Compliance Cost Penalty ($)', system: 'LifeLenz', report: 'Data Explorer — Compliance Audit', table: 'lifelenz_compliance_audit', composed: true,
+    inputs: ['Σ costPenalty per violation event'],
+    formula: 'Compliance Cost Penalty ($) = Σ costPenalty across every violation event for that (store, date) (engine/compliance-audit.js)', grain: 'daily · per store' },
 };
 
 // ── Auto-generation, straight from METRIC_SOURCES ─────────────────────────────────
