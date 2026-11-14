@@ -75,20 +75,21 @@ describe('qsrsoft-security-events-pull — date window guard', () => {
   });
 });
 
-// ── datesToRequest (GH #1532 -- never re-query an already-covered day) ────────────────────────
-// Root cause measured 2026-11-14: re-querying a day already fully saved gets a guaranteed AWS
-// IAM AccessDeniedException on this account's non-interactive auth, while a brand-new day
-// succeeds every time. This drops already-covered days from the request list, except the LAST
-// one (today), which is always requested regardless of what's already saved.
+// ── datesToRequest (GH #1532 -- never re-query an already-covered date) ───────────────────────
+// Root cause measured 2026-11-14, then CORRECTED the same day by a second live measurement: the
+// gate is per-DATE, not "past day vs today" -- a dispatch requesting ONLY today, after today had
+// already gotten 127 rows from the normal morning cron, ALSO got denied 252/252 units. So "today"
+// gets no special exemption here: every date already known to have >=1 saved row is dropped,
+// full stop, including the last one in the list.
 describe('datesToRequest (GH #1532)', () => {
   it('drops a day already known to be covered', () => {
     expect(datesToRequest(['2026-11-12', '2026-11-13'], new Set(['2026-11-12'])))
       .toEqual(['2026-11-13']);
   });
 
-  it('always keeps the LAST date even if it is already covered', () => {
+  it('drops the LAST date too if it is already covered -- no exemption for "today"', () => {
     expect(datesToRequest(['2026-11-12', '2026-11-13'], new Set(['2026-11-12', '2026-11-13'])))
-      .toEqual(['2026-11-13']);
+      .toEqual([]);
   });
 
   it('keeps every date when none are covered', () => {
@@ -96,15 +97,19 @@ describe('datesToRequest (GH #1532)', () => {
       .toEqual(['2026-11-12', '2026-11-13', '2026-11-14']);
   });
 
-  it('drops multiple covered days, preserving order, keeping only the last unconditionally', () => {
+  it('drops multiple covered days including the last, preserving order of what remains', () => {
     expect(datesToRequest(
       ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14'],
-      new Set(['2026-11-10', '2026-11-11', '2026-11-12']),
-    )).toEqual(['2026-11-13', '2026-11-14']);
+      new Set(['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-14']),
+    )).toEqual(['2026-11-13']);
   });
 
-  it('handles a single-date list (today only) — always kept', () => {
-    expect(datesToRequest(['2026-11-14'], new Set(['2026-11-14']))).toEqual(['2026-11-14']);
+  it('handles a single-date list (today only) that is already covered -- returns empty, not a forced request', () => {
+    expect(datesToRequest(['2026-11-14'], new Set(['2026-11-14']))).toEqual([]);
+  });
+
+  it('handles a single-date list (today only) that is NOT yet covered -- keeps it', () => {
+    expect(datesToRequest(['2026-11-14'], new Set())).toEqual(['2026-11-14']);
   });
 
   it('handles an empty date list', () => {

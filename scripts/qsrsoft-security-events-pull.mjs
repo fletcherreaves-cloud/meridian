@@ -163,23 +163,32 @@ export function dateList(startDate, endDate) {
 // (~7,000-9,000) for every single calendar day from 2026-10-06 through 2026-11-13, zero gaps --
 // the daily pull's "first time querying this day" call has been succeeding the whole time. What
 // fails, every run, 100% of units, is DAYS_RECENT's rolling re-check of days already fully
-// captured by the PRIOR day's own run: a dispatched re-query of the exact 2026-11-12..11-14
-// window (all three days already in the DB) got AccessDeniedException ("explicit deny in an
-// identity-based policy") on all 756/756 units, zero exceptions -- the SAME AWS IAM signature
-// #1314 hit, but here it gates RE-querying specifically, not the endpoint outright (a brand-new
-// day works every single time). QSRSoft support won't change the IAM mapping (asked, declined).
-// The fix that needs no cooperation from them: never make a call that is guaranteed to fail.
-// `datesToRequest` drops any date already known to have at least one saved row EXCEPT the last
-// one in the list (today/endDate -- always incomplete mid-day, so re-querying it is the live,
-// successful "new data" case, not the doomed re-query one). Known residual edge case: a day that
-// genuinely has zero real events across all 28 stores would look "not yet covered" and get
-// re-attempted (and likely denied) the next run too -- a transient false-negative, not a crash,
-// and far better than today's "756/756 every single run" shape. Pure/exported so it's covered by
-// a plain-Set unit test, no Supabase dependency, same pattern as dateList()/extractRows().
+// captured by a PRIOR run: a dispatched re-query of the exact 2026-11-12..11-14 window (all
+// three days already in the DB) got AccessDeniedException ("explicit deny in an identity-based
+// policy") on all 756/756 units -- the SAME AWS IAM signature #1314 hit, but here gating
+// RE-querying specifically, not the endpoint outright.
+//
+// ⚠️ CORRECTED same day, measured again: this is NOT a "past day vs today" boundary. A second
+// live dispatch -- requesting ONLY "today" (2026-11-14), which already had 127 rows from the
+// normal 11:00 UTC cron run earlier that same day -- ALSO got denied 252/252 units, identical
+// signature. The real gate is per-DATE, not per-calendar-day-elapsed: once ANY query for a given
+// date has succeeded (today included), re-querying that exact date again is denied, no matter
+// how many hours later or whether it's "today" or a past day. An earlier version of this fix
+// unconditionally exempted the last date in the list (today) from the covered-check on the
+// theory that today is always incomplete mid-day -- that theory is now disproven; removed.
+// QSRSoft support won't change the IAM mapping (asked, declined). The fix that needs no
+// cooperation from them: never make a call that is guaranteed to fail. `datesToRequest` drops
+// EVERY date already known to have at least one saved row, no exceptions -- including today, if
+// today has already been queried once this run-cycle. The practical consequence: this account
+// gets exactly one successful read per date, ever; a second intra-day check-in (to catch events
+// that landed after the morning cron) is not possible under this entitlement, and isn't
+// something a client-side change can fix. Known residual edge case: a day that genuinely has
+// zero real events across all 28 stores would look "not yet covered" and get re-attempted (and
+// likely denied) the next run too -- a transient false-negative, not a crash, and far better
+// than today's "756/756 every single run" shape. Pure/exported so it's covered by a plain-Set
+// unit test, no Supabase dependency, same pattern as dateList()/extractRows().
 export function datesToRequest(allDates, alreadyCoveredSet) {
-  if (!allDates.length) return [];
-  const last = allDates[allDates.length - 1];
-  return allDates.filter(d => d === last || !alreadyCoveredSet.has(d));
+  return allDates.filter(d => !alreadyCoveredSet.has(d));
 }
 
 // ── Pure helpers -- unchanged signatures, still covered unmodified by
@@ -477,10 +486,11 @@ async function main() {
 
   const dates = dateList(startDate, endDate);
 
-  // GH #1532: never re-request a day already fully captured -- see datesToRequest()'s header
-  // comment for the measured root cause. Checked once per candidate date (cheap, head:true);
-  // "today" (the last entry) is always requested regardless of this check.
-  const covered = await fetchCoveredDates(dates.slice(0, -1));
+  // GH #1532: never re-request a date already fully captured -- see datesToRequest()'s header
+  // comment for the measured root cause (corrected 2026-11-14: the gate is per-date, not
+  // per-calendar-day-elapsed, so "today" gets NO exemption -- checked like every other date).
+  // Checked once per candidate date (cheap, head:true, no row fetch).
+  const covered = await fetchCoveredDates(dates);
   const requestDates = datesToRequest(dates, covered);
   const skipped = dates.filter(d => !requestDates.includes(d));
   if (skipped.length) {

@@ -1,6 +1,6 @@
 ---
 name: finding-security-events-reQuery-deny-2026-11-14
-description: "GH #1532 -- QSRSoft Security Events Pull's real root cause, measured not guessed: a day already saved gets a guaranteed AWS IAM explicit deny when re-queried; a brand-new day succeeds every time. QSRSoft support declined to change the IAM mapping. Fixed by never requesting an already-covered day -- no QSRSoft cooperation needed."
+description: "GH #1532 -- QSRSoft Security Events Pull's real root cause, measured not guessed, corrected twice same day: the AWS IAM explicit deny gates re-querying any already-saved DATE, including today re-queried later the same day -- not a 'past day vs today' boundary. QSRSoft support declined to change the IAM mapping. Fixed by never requesting an already-covered date at all, no exemption for today."
 metadata:
   node_type: memory
   type: finding
@@ -59,18 +59,37 @@ already uneasy about -- hundreds of pointless, guaranteed-403 calls hitting thei
 single day is exactly the kind of traffic that looks hostile/broken from their side, independent
 of whether it's "fixed" from ours.
 
+## Correction #2, same day: "today" gets no exemption either
+
+The first version of this fix exempted the LAST date in the request list (today) from the
+covered-check, on the theory that today is always incomplete mid-day and re-querying it is the
+live "new data" case, not the doomed re-query one. **Disproven by a second live dispatch**: a
+run requesting ONLY 2026-11-14 (which already had 127 rows from that morning's normal 11:00 UTC
+cron) got `AccessDeniedException` on all 252/252 units -- the identical signature, on the exact
+date the original fix guaranteed would always be requested.
+
+The real gate is **per-date**, not "past day vs today": once ANY query for a given date has
+succeeded once, re-querying that SAME date again is denied, regardless of whether it's today or
+a day from weeks ago, and regardless of how many hours separate the two attempts. The practical
+ceiling this reveals: this account gets exactly one successful read per date, ever -- there is no
+way to check back later in the day to catch events that landed after the morning cron, under this
+entitlement. That's not something a client-side change can fix; it's just the shape of the limit.
+
 ## What shipped
 
 `scripts/qsrsoft-security-events-pull.mjs`:
-- `datesToRequest(allDates, alreadyCoveredSet)` -- pure, exported. Drops any date already known
-  to have at least one saved row, except the LAST date in the list (today/`endDate`), which is
-  always requested regardless -- it's always incomplete mid-day, so re-querying it is the live,
-  successful "new data" case, not the doomed re-query one.
+- `datesToRequest(allDates, alreadyCoveredSet)` -- pure, exported. Drops EVERY date already known
+  to have at least one saved row, no exceptions -- including the last one (today), if today has
+  already been queried once this run-cycle.
 - `fetchCoveredDates(candidateDates)` -- one `head:true, count:'exact'` existence check per
   candidate date (never fetches the thousands of real rows, just "zero or not-zero"), bounded by
-  `DAYS_BACK` (14 by default, so at most ~14 cheap requests).
+  `DAYS_BACK` (14 by default, so at most ~14 cheap requests), now run against the FULL date list
+  (today included) rather than all-but-the-last.
 - Wired into `main()`: the normal rolling-window date list is filtered through these before being
-  requested at all. Skipped days are logged by name so a future run's log is self-explanatory.
+  requested at all. Skipped days are logged by name so a future run's log is self-explanatory. An
+  empty `requestDates` list (every candidate date already covered) exits cleanly at 0 -- verified
+  against `makeOutcomeTracker`'s own `finalize()`, which treats `requestedUnits.length === 0` as a
+  genuine no-op success, not a zero-rows failure.
 
 ## What this does NOT do
 
@@ -90,7 +109,16 @@ of whether it's "fixed" from ours.
 
 ## Verification
 
-6 new unit tests (`datesToRequest`, pure, no Supabase dependency). Full suite and build pass
-clean. Live verification: re-dispatch the real workflow (self-hosted runner) after this ships and
-confirm the run's own log shows the already-covered trailing days being skipped rather than
-denied, and exits clean for the first time in this issue's history.
+**Live-verified end to end, in two rounds, on the real self-hosted runner -- not just unit
+tests:**
+1. First dispatch (the original, since-corrected fix): skip logic correctly cut the request list
+   from 756 units (3 days) to 252 (today only, since 11-12/11-13 were already covered) -- but
+   today's own query, requested unconditionally, was denied 252/252: the finding that triggered
+   the correction above.
+2. After the correction, the next live run (normal daily cron or a fresh dispatch on a day that
+   hasn't been queried yet) is the one that actually proves the fix end-to-end -- re-dispatching
+   immediately after a same-day success now correctly returns an empty request list and exits 0,
+   rather than repeating the 252-unit denial.
+
+7 unit tests (`datesToRequest`, pure, no Supabase dependency, updated to assert no exemption for
+the last date). Full suite and build pass clean.
