@@ -147,17 +147,47 @@ is "the" Sales vs LY metric going forward), not something to resolve unilaterall
   already document what each one is and why, better than a registry entry could. This is a
   judgment call, stated plainly rather than silently skipped, per this task's own standing rule.
 
-## Still deferred from pass 1 — unchanged
+## Pass 3 (2026-11-14) — `forecast.js`'s 5 named models — RESOLVED
 
-- **`forecast.js`'s named models (`simple`/`dow`/`ae`/`ewma`/`di`) — NOT attempted.**
-  These are the Model Assignment / Forecast Accuracy panels' column headers and are heavily
-  user-facing (the owner's own Smart Targets work lives here). Deliberately not rushed: the
-  file is 2918 lines with intricate per-model branches (`forecastDay()`'s `_assignedModel`
-  dispatch, `forecastDayparts()`, the holiday-adjustment paths), and CLAUDE.md's own standing
-  rule is to "cautiously protect" the engineered models — a wrong formula written into a
-  transparency registry is worse than no entry, since it would look authoritative. This needs a
-  dedicated pass with time to trace each branch correctly, not a rushed add at the end of this
-  one. Still the single highest-value remaining item.
+All 5 (`dow`, `di`, `ae`, `ewma`, `simple`) now have `CURATED_PROVENANCE` entries
+(`forecastModelDow`/`forecastModelDi`/`forecastModelAe`/`forecastModelEwma`/`forecastModelSimple`,
+`src/engine/metric-provenance.js`). Traced directly from `engine/forecast.js`'s
+`forecastDay()`/`forecastSimple()`/`forecastAdaptiveEnsemble()`/`forecastEWMA()` branches — **and
+cross-checked against this same file's own pre-existing owner-facing KB articles**
+(`model_types`/`forecast_formula`/`adaptive_ensemble`/`ewma_model`/`adaptive_di`/
+`dialed_in_calibration`, all in the `KB_ARTICLES` object further down `forecast.js`) rather than
+independently re-deriving the same math from scratch and risking the two surfaces disagreeing.
+The two surfaces agreed on every formula checked.
+
+- **DOW and DI are the exact same code path** (the "Core Forecast Formula": `forecast = lyAdjH ×
+  opsFactor × (1+wAdj) × (1+trendFactor) × (1+eventFactor) × (1+plusUp)`) — DI differs only in
+  which parameter VALUES feed `lyW`/`t2`/`t4`/`t6`/`opsMult` (this store's own Dialed-In-calibrated
+  values vs. the district defaults DOW uses), not in the formula shape. Documented as two entries
+  anyway since they're two separately-selectable, separately-displayed model assignments, but each
+  entry says explicitly that they share the formula.
+- **AE (Adaptive Ensemble)** is a genuinely different 5-signal weighted blend that never touches
+  the Core Forecast Formula at all — documented all 5 signals (EWMA-DOW, LY-Adjusted, Momentum,
+  Seasonality, Adaptive DI) and the OK-vs-FL-interstate / weekday-vs-weekend weight variation.
+- **EWMA** is the simplest real formula (`Σ(α×(1−α)^i×S_i) ÷ Σ(α×(1−α)^i)`), no LY/trend/ops at all.
+- **Simple** — the day-level propagation of the T3M/T6W/T3W trailing family, leak-free (anchors to
+  start-of-day). The entry also states the later Period-Total Scoreboard finding (AE beats Simple
+  on 28-day totals, 2.7% vs 4.5% median MAPE, per `memory/simple-models-propagation.md`) so a
+  reader doesn't read Simple's original monthly-total backtest win as the current verdict on which
+  model is "best" — it's descriptive of what the model computes, not a ranking.
+
+**Found, not fixed (out of this task's scope, flagged for whoever next touches it):** this file's
+own `model_types` KB article (owner-facing, different surface than `METRIC_PROVENANCE`) still says
+*"Four codes exist: DOW, DI, AE, EWMA"* — stale since `simple` shipped in v4.532. `simple` has no
+equivalent KB article at all (confirmed: no `simple_model` key in `KB_ARTICLES`). This is the kind
+of doc-content drift this task's own methodology is otherwise built to catch, just on the KB
+surface rather than the Metric Lineage one — recorded here so the next KB-maintenance pass (task
+#75, Knowledge Base expansion) picks it up rather than it being silently re-discovered later.
+
+6 new tests (`src/__tests__/metric-provenance.test.js`'s `'task #152 forecast model additions'`
+block): all 5 present/composed/non-colliding, DOW/DI both cite the Core Formula shape while naming
+which side supplies "district default" vs "calibrated" parameters, AE names all 5 real signals and
+explicitly disclaims the Core Formula, EWMA's decay formula is present with no LY/ops leakage into
+its description, Simple's leak-free/T3M-T6W-T3W/Period-Total-Scoreboard framing is all present.
 - **`paperCost` (FOB_LINES in `daily-review.js`) — a genuine, already-flagged data gap, not a
   documentation gap.** `DEFAULT_TARGETS` carries a real `tPaperCost` target but `metric-source.js`
   has no actual-value key for it at all. The panel already surfaces this honestly (target-only

@@ -221,3 +221,55 @@ describe('provenanceText', () => {
     expect(provenanceText('not-a-real-metric')).toBe('');
   });
 });
+
+// Task #152 — forecast.js's 5 named forecast models (2026-11-14), the single highest-value
+// item the task deliberately deferred twice already (see memory/plan-metric-reconciliation-
+// 2026-11-14.md). DOW and DI share the literal same Core Forecast Formula code path (DI just
+// substitutes calibrated parameters); AE and EWMA are genuinely separate formulas; Simple is
+// the day-level propagation of the T3M/T6W/T3W trailing family.
+describe('METRIC_PROVENANCE — task #152 forecast model additions (2026-11-14)', () => {
+  const modelKeys = ['forecastModelDow', 'forecastModelDi', 'forecastModelAe', 'forecastModelEwma', 'forecastModelSimple'];
+
+  it('all 5 are present, composed, and Meridian-derived', () => {
+    for (const key of modelKeys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(true);
+      expect(p.system, `${key}.system`).toBe('Meridian-derived');
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('DOW and DI both cite the same Core Forecast Formula shape, differing only in whose parameters feed it', () => {
+    const dow = METRIC_PROVENANCE.forecastModelDow.formula;
+    const di = METRIC_PROVENANCE.forecastModelDi.formula;
+    expect(dow).toMatch(/lyAdjH.*opsFactor.*wAdj.*trendFactor.*eventFactor.*plusUp/);
+    expect(di).toMatch(/lyAdjH.*opsFactor.*wAdj.*trendFactor.*eventFactor.*plusUp/);
+    expect(dow).toMatch(/district default/i);
+    expect(di).toMatch(/calibrated/i);
+  });
+
+  it('AE names all 5 of its real signals and does not claim the Core Forecast Formula', () => {
+    const ae = METRIC_PROVENANCE.forecastModelAe;
+    expect(ae.inputs).toHaveLength(5);
+    expect(ae.inputs.join(' ')).toMatch(/EWMA-DOW/);
+    expect(ae.inputs.join(' ')).toMatch(/LY Adjusted/);
+    expect(ae.inputs.join(' ')).toMatch(/Momentum/);
+    expect(ae.inputs.join(' ')).toMatch(/Seasonality/);
+    expect(ae.inputs.join(' ')).toMatch(/Adaptive DI/);
+    expect(ae.formula).toMatch(/does NOT use the Core Forecast Formula/);
+  });
+
+  it('EWMA names its real decay formula and has no LY/ops/trend inputs', () => {
+    const ewma = METRIC_PROVENANCE.forecastModelEwma;
+    expect(ewma.formula).toMatch(/α × \(1−α\)\^i/);
+    expect(ewma.formula).not.toMatch(/lyAdjH/);
+  });
+
+  it('Simple names its leak-free trailing-rate × DOW-shape formula and its backtest history', () => {
+    const simple = METRIC_PROVENANCE.forecastModelSimple;
+    expect(simple.formula).toMatch(/leak-free/i);
+    expect(simple.formula).toMatch(/T3M\/T6W\/T3W/);
+    expect(simple.formula).toMatch(/Adaptive Ensemble/); // the later period-total reconciliation, not omitted
+  });
+});

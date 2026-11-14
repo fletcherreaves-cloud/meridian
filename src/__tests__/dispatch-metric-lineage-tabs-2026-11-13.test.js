@@ -63,7 +63,7 @@ describe('Metric Lineage — Calculated / Direct tabs (2026-11-13)', () => {
     const input = container.querySelector('input');
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'TPPH');
+      setter.call(input, 'actual_punched_hours');
       input.dispatchEvent(new window.Event('input', { bubbles: true }));
     });
     const tbody = container.querySelector('tbody');
