@@ -32,6 +32,7 @@ import {
 import { addD, dKey, lastClosedBusinessDay, dowOf, businessDate } from '../utils/date.js';
 import { DEF_SETTINGS } from '../constants.js';
 import { CoachingModal } from './coaching-modal.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -786,7 +787,7 @@ export function CashControlsCockpitTab({ store, ds, onCoachingSaved, settings })
     div(gridStyle('1.3fr 1fr'),
       Card({ accent: 'var(--amber)' },
         HeroNumber({
-          label: 'Cash Over/Short % — trailing 6 weeks',
+          label: span(null, 'Cash Over/Short % — trailing 6 weeks', h(InfoIcon, { articleKey: 'cash_os' })),
           value: cashOSPct != null ? fP(cashOSPct, 3) : '—',
           valueColor: STATUS_COLOR[cashStatus],
           delta: gapPP != null ? (gapPP >= 0 ? '+' : '') + gapPP.toFixed(3) + 'pp' : null,
@@ -812,7 +813,7 @@ export function CashControlsCockpitTab({ store, ds, onCoachingSaved, settings })
       Card({ title: 'Loss Prevention Signals', sub: 'daily average, trailing 6 weeks' },
         div(null,
           h(DriverRow, {
-            rank: 1, label: 'Drawer Opens/Day',
+            rank: 1, label: span(null, 'Drawer Opens/Day', h(InfoIcon, { articleKey: 'drawer_open' })),
             actualTxt: drawerPerDay != null ? drawerPerDay.toFixed(1) : '—',
             gapTxt: (drawerPerDay != null && drawerTarget != null) ? ((drawerPerDay - drawerTarget) >= 0 ? '+' : '') + (drawerPerDay - drawerTarget).toFixed(1) + '/day' : '',
             actualPct: drawerPerDay != null ? (drawerPerDay / lpMax) * 100 : 0,

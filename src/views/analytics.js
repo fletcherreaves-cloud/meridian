@@ -1914,6 +1914,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           )),
         tab==='overview'&&div(null,
           // Coverage table
+          div({style:{fontSize:'9px',fontWeight:600,color:'var(--text3)',marginBottom:4,letterSpacing:'.5px',display:'flex',alignItems:'center'}},
+            'DATA COVERAGE',h(InfoIcon,{articleKey:'data_collection_bounds'})),
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',marginBottom:14}},
             h('thead',null,h('tr',null,
               ...['Data Type','Rows','Earliest','Latest'].map((l,i)=>

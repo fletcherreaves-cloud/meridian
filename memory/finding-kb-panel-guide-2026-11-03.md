@@ -1762,3 +1762,75 @@ open:** `count_cycle_guide` and `panel_index` (deliberately unwired), `cash_os`/
 `condiment_pct`/`data_collection_bounds` (still need more than mechanical wiring), plus the same
 ~15 Forecast Engine internals this backlog has consistently left cross-referenced rather than
 wired to any one panel.
+
+## Batch 21 (2026-11-14)
+
+Re-measured the real gap FRESH before trusting the "91/119" figure above — a whitespace-tolerant
+regex (`articleKey:\s*['"]<key>['"]`) across every `src/` file, not a brittle literal-string
+grep, which undercounts "wired" by missing the `articleKey: 'key'` (WITH a space after the colon)
+call-site style several files use alongside the no-space style. 119 distinct `KB_ARTICLES` keys,
+25 genuinely unwired — 18 of those are the same permanent Forecast Engine internals exception,
+plus `panel_index` (permanent App-Guide exception), leaving exactly the 5 named candidates
+batch 20/20-follow-up already flagged: `cash_os`, `drawer_open`, `condiment_pct`,
+`data_collection_bounds`, `count_cycle_guide`.
+
+Resolved 3 of the 5:
+
+- **`cash_os`** → `CashControlsCockpitTab`'s `HeroNumber` (`src/views/store-cockpit.js`), the
+  real "Cash Over/Short % — trailing 6 weeks" hero label — confirmed `HeroNumber`'s own `label`
+  prop renders straight into a `div` with no string method applied before passing a composite
+  node (text + `InfoIcon`) instead of a plain string, same safety check every prior Card-title
+  wiring has made.
+- **`drawer_open`** → the same tab's "Drawer Opens/Day" `DriverRow`, inside the Loss Prevention
+  Signals card. `DriverRow`'s `label` prop is the identical safe shape.
+- **`data_collection_bounds`** → Data Manager's Overview-tab per-source coverage table
+  (`src/views/analytics.js`) — this table (Data Type/Rows/Earliest/Latest columns) previously had
+  **no header text of its own** above the raw `<table>`, unlike every other section on this
+  panel. Added one ("DATA COVERAGE"), same "added a subtitle/header where none existed" precedent
+  batch 19 already established for `settings_guide`. `data_manager_guide`'s own article text
+  already points readers to "the Data Collection Bounds article" by name for genuine data floors
+  vs. backfill artifacts — this coverage table (Earliest/Latest per source) is exactly the real UI
+  that article is about, so the two now cross-reference correctly instead of one dangling.
+
+**Deliberately NOT resolved — re-confirmed needing more than mechanical wiring, not oversight:**
+- **`condiment_pct`** — checked a SECOND file beyond `store-cockpit.js`'s own chart-legend-only
+  mention (`at-a-glance.js`'s FOB COMPONENTS grid, `{l:'Condiment',...}`). Condiment only ever
+  renders as one row inside a generic `.map()` over 6 sibling waste components (Unexplained/Comp
+  Waste/Raw Waste/Condiment/Emp Meal/Stat Var) in BOTH files — never with a standalone labeled
+  header of its own. Singling out one of six mapped rows for an icon (without the other five)
+  would read as an arbitrary inconsistency, not a real fix — same conclusion batch 20 reached in
+  `store-cockpit.js` alone, now confirmed in a second file too. Still open for whoever decides
+  this is worth a real UI change (e.g., a small icon column for the whole 6-row grid at once).
+- **`count_cycle_guide`** — re-confirmed a 5th time (batches 16-20 already checked this exact
+  thing): `CountCycleSection` (`src/views/eom-dashboard.js`) is still a body-only component inside
+  a tabbed hub with no dedicated per-tab header of its own to anchor an icon to.
+
+**Also fixed, found while re-measuring the real key count (not a hypothesis — grepped the literal
+key name and found it defined twice, the same "measure it" standard every correction in this file
+has held to):** `KB_ARTICLES` had a genuine **duplicate top-level object key**, `graded_visits_guide`
+— defined once near `performance_reviews_guide` (a thinner, now-dead draft missing the real
+`parseGradedVisit`/`parseEcoSureVisit`/`scripts/import-peak-visit-detail.mjs`/`PeakDetailBlock`
+detail the second copy has) and again near `customer_complaints_guide` (the real, richer,
+currently-displayed one — JS object-literal semantics mean the SECOND definition silently wins at
+runtime, so nothing user-visible was ever broken, but the first was dead weight nobody will ever
+see again). Deleted the dead shadowed copy; the live one is untouched. Same bug CLASS as
+`file_import_guide`'s deletion in batch 20's follow-up (stale/dead content sitting unseen in the
+object literal) — just a duplicate key instead of a stale-but-unique one, and worth remembering:
+**a future batch's own key-count regex should flag any count mismatch between "lines matching the
+key pattern" and "distinct key names" as a signal to go look for this exact bug again.**
+
+3 new tests (`dispatch-kb-panel-guide-batch21-2026-11-14.test.js`, mounting the real
+`CashControlsCockpitTab`/`DataManagerPanel`, clicking the real "?" `InfoIcon`s, asserting the real
+article titles render — reuses the exact disambiguating `clickInfoIcon(near)` helper batch 17
+established for pages with more than one `InfoIcon` mounted at once, since `CashControlsCockpitTab`
+renders both `cash_os` and `drawer_open` simultaneously). Full suite (8042 tests, 880 files) and
+build both pass clean (703.68 KB eager, budget 850 KB).
+
+**Measured running total: 94 of 119 `KB_ARTICLES` keys wired** (91 before this batch + 3 here —
+the duplicate-key deletion doesn't change the denominator since it was already counted as one
+logical key). **Still open:** `count_cycle_guide`, `condiment_pct`, and `panel_index`
+(deliberately unwired), plus the same ~18 Forecast Engine internals this backlog has consistently
+left cross-referenced rather than wired to any one panel. The remaining 3 genuinely open items are
+now down to a short, well-understood list — a future batch's real next step is a product/UI
+decision (does Condiment's 6-row grid get icons for all six, or just this one; does Count Cycle's
+tab get its own header added), not another mechanical sweep.
