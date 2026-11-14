@@ -46,6 +46,20 @@ const DOW_NAMES  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday',
 const DOW_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const LS_KEY     = 'mf_day_records_v1';
 
+// ── Top-3 + Near Misses (Notes 61 item #13, owner 2026-11-14) ──────────────────────────────
+// Owner, verbatim: "Records should be all-time, not limited to the date selection. Wants top 3
+// per category + most recent record broken + near misses." "Most recent record broken" already
+// existed (recentBreakers, above). These two constants are the two genuinely new pieces.
+// TOP_N: how many of the all-time-best days to keep per category (not just #1).
+const TOP_N = 3;
+// NEAR_MISS_BAND: how close a non-record day has to come to the all-time best to count as a
+// "near miss" -- within 5% without beating it. No existing precedent for THIS specific
+// proximity question elsewhere in the codebase (checked: the swing alarm's -10% and the
+// count-completeness 75% threshold are both measured from real distributions for THEIR own
+// questions, not transferable here) -- 5% is a deliberate, named, easily-tuned default per the
+// owner's own "give some ideas here, open to suggestion."
+const NEAR_MISS_BAND = 0.05;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fDate(dk) {
@@ -112,6 +126,29 @@ function mergeDOW(savedDow, nextDow, isLow=false) {
   return out;
 }
 
+// Merge two top-3 lists into the true best-3-overall, de-duped by date -- same defensive
+// purpose mergeVal already serves for the single-best value: a later run with LESS historical
+// data loaded (e.g. a narrower fetch window) must never regress what a fuller prior run already
+// established as the top 3. Entries sharing a `dk` are the same historical day, so the first one
+// seen wins (they carry the same val by construction) rather than being double-counted.
+function mergeTop3(saved, next, isLow=false) {
+  const combined = [...(saved||[]), ...(next||[])].filter(e => e && e.val != null && e.dk);
+  if (!combined.length) return [];
+  const byDk = new Map();
+  for (const e of combined) if (!byDk.has(e.dk)) byDk.set(e.dk, e);
+  const list = [...byDk.values()];
+  list.sort((a,b) => isLow ? a.val - b.val : b.val - a.val);
+  return list.slice(0, TOP_N);
+}
+
+// A day-level category entry (sales.day, gc.day, avgChk.day, bf.day, speed.oepe/kvs/r2p) now
+// carries BOTH the existing single-best `{val,dk}` (every pre-existing reader of `.val`/`.dk`
+// is unaffected) AND a `.top3` array -- merge both halves together rather than letting mergeVal
+// silently drop `.top3` (it only ever read/returned `val`/`dk`).
+function mergeDayCat(sEntry, cEntry, isLow=false) {
+  return { ...mergeVal(sEntry, cEntry, isLow), top3: mergeTop3(sEntry?.top3, cEntry?.top3, isLow) };
+}
+
 function mergeStores(saved, computed) {
   const result = {};
   const locs = new Set([...Object.keys(saved||{}), ...Object.keys(computed||{})]);
@@ -122,23 +159,23 @@ function mergeStores(saved, computed) {
     if (!s) { result[loc] = c; continue; }
     result[loc] = {
       sales: {
-        day:   mergeVal(s.sales?.day,   c.sales?.day),
+        day:   mergeDayCat(s.sales?.day,   c.sales?.day),
         week:  mergeVal(s.sales?.week,  c.sales?.week),
         month: mergeVal(s.sales?.month, c.sales?.month),
         dow:   mergeDOW(s.sales?.dow,   c.sales?.dow),
       },
       gc: {
-        day:   mergeVal(s.gc?.day,   c.gc?.day),
+        day:   mergeDayCat(s.gc?.day,   c.gc?.day),
         week:  mergeVal(s.gc?.week,  c.gc?.week),
         month: mergeVal(s.gc?.month, c.gc?.month),
         dow:   mergeDOW(s.gc?.dow,   c.gc?.dow),
       },
-      avgChk: { day: mergeVal(s.avgChk?.day, c.avgChk?.day) },
-      bf:     { day: mergeVal(s.bf?.day,     c.bf?.day) },
+      avgChk: { day: mergeDayCat(s.avgChk?.day, c.avgChk?.day) },
+      bf:     { day: mergeDayCat(s.bf?.day,     c.bf?.day) },
       speed: {
-        oepe: mergeVal(s.speed?.oepe, c.speed?.oepe, true),
-        kvs:  mergeVal(s.speed?.kvs,  c.speed?.kvs,  true),
-        r2p:  mergeVal(s.speed?.r2p,  c.speed?.r2p,  true),
+        oepe: mergeDayCat(s.speed?.oepe, c.speed?.oepe, true),
+        kvs:  mergeDayCat(s.speed?.kvs,  c.speed?.kvs,  true),
+        r2p:  mergeDayCat(s.speed?.r2p,  c.speed?.r2p,  true),
       },
     };
   }
@@ -253,6 +290,20 @@ function computeRecords(ds, windowDays) {
 
   const computed = {}; // loc → record structure
   const recentBreakers = [];
+  const nearMisses = [];
+
+  // Day-level categories only (owner's ask, scoped deliberately): week/month/DOW-variant
+  // records stay single-best, unchanged -- top-3 and near-miss are added only where a GM
+  // actually watches day-to-day, not every grain this engine tracks.
+  const DAY_CATS = [
+    { field:'sales',  type:'Sales Day',       isLow:false, requireTruthy:false, path:['sales','day'] },
+    { field:'gc',     type:'GC Day',          isLow:false, requireTruthy:false, path:['gc','day'] },
+    { field:'bf',     type:'Breakfast Sales', isLow:false, requireTruthy:false, path:['bf','day'] },
+    { field:'avgChk', type:'Avg Check',       isLow:false, requireTruthy:true,  path:['avgChk','day'] },
+    { field:'oepe',   type:'OEPE',            isLow:true,  requireTruthy:true,  path:['speed','oepe'] },
+    { field:'kvs',    type:'KVS',             isLow:true,  requireTruthy:true,  path:['speed','kvs'] },
+    { field:'r2p',    type:'R2P',             isLow:true,  requireTruthy:true,  path:['speed','r2p'] },
+  ];
 
   function flagRecent(loc, dk, type, val, prev, isLow=false, isProvisional=false) {
     const dt = new Date(dk + 'T00:00:00');
@@ -318,6 +369,46 @@ function computeRecords(ds, windowDays) {
       }
     }
     computed[loc] = rec;
+
+    // ── Top-3 + near-miss, same confirmed (non-provisional) day set `arr` already scanned
+    // above -- a fresh sort, not part of the chronological running-max loop (which only ever
+    // needs the single current best to detect a break the moment it happens).
+    const confirmedDays = arr.filter(d => d.dk < todayKey);
+    for (const cat of DAY_CATS) {
+      const eligible = confirmedDays.filter(d => !cat.requireTruthy || d[cat.field]);
+      if (!eligible.length) continue;
+      const sorted = [...eligible].sort((a,b) => cat.isLow ? a[cat.field]-b[cat.field] : b[cat.field]-a[cat.field]);
+      const top3 = sorted.slice(0, TOP_N).map(d => ({ val:d[cat.field], dk:d.dk }));
+      const recordVal = top3[0].val;
+
+      // Near miss: the MOST RECENT confirmed day within NEAR_MISS_BAND of the record that did
+      // NOT beat (or tie) it -- scan newest-first over the same eligible set.
+      const byDkDesc = [...eligible].sort((a,b)=>b.dk.localeCompare(a.dk));
+      for (const d of byDkDesc) {
+        const v = d[cat.field];
+        const within = cat.isLow
+          ? (v > recordVal && v <= recordVal * (1 + NEAR_MISS_BAND))
+          : (v < recordVal && v >= recordVal * (1 - NEAR_MISS_BAND));
+        if (within) {
+          nearMisses.push({
+            loc, type:cat.type, val:v, dk:d.dk, record:recordVal, isLow:cat.isLow,
+            pctAway: recordVal ? Math.abs(v-recordVal)/recordVal*100 : 0,
+          });
+          break;
+        }
+      }
+
+      // Attach top3 onto the entry the chronological tryRecord loop above already set (same
+      // #1 by construction -- both derive from the identical confirmed-day set). `.top3` is
+      // purely additive; every existing `.val`/`.dk` reader is unaffected. Defensively create
+      // the node if the running-max loop somehow left it null (shouldn't happen given
+      // `eligible.length` is non-zero here).
+      let node = rec;
+      for (let i=0;i<cat.path.length-1;i++) node = node[cat.path[i]];
+      const leafKey = cat.path[cat.path.length-1];
+      if (!node[leafKey]) node[leafKey] = { val:top3[0].val, dk:top3[0].dk };
+      node[leafKey].top3 = top3;
+    }
   }
 
   // Weekly sales+GC records per store
@@ -389,6 +480,11 @@ function computeRecords(ds, windowDays) {
   }
 
   recentBreakers.sort((a,b) => b.dk.localeCompare(a.dk));
+  // Newest-first -- same convention recentBreakers uses. Not window-scoped (unlike
+  // recentBreakers, which only reports breaks within `windowDays`): a near miss isn't an event
+  // with a window, it's "how close does this store currently sit to its own record," so every
+  // store+category with one gets exactly one entry here regardless of when it happened.
+  nearMisses.sort((a,b) => b.dk.localeCompare(a.dk));
 
   // ── Merge with localStorage all-time records ──────────────────────
   const saved    = loadSaved();
@@ -401,6 +497,7 @@ function computeRecords(ds, windowDays) {
   return {
     stores: merged,
     recentBreakers,
+    nearMisses,
     topDays,
     // `days` (every store-day the scan built, unfiltered) is exposed alongside topDays so a
     // location-scoped view (dispatch #136 Part 2) can re-derive a scoped Top Days list -- the
@@ -463,6 +560,7 @@ function scopeRecordData(data, locs) {
     if (locSet.has(String(loc))) stores[loc] = r;
   }
   const recentBreakers = data.recentBreakers.filter(b => locSet.has(String(b.loc)));
+  const nearMisses = (data.nearMisses || []).filter(b => locSet.has(String(b.loc)));
   const topDays = [...(data.days || [])]
     .filter(d => locSet.has(String(d.loc)))
     .sort((a,b) => b.sales - a.sales)
@@ -472,6 +570,7 @@ function scopeRecordData(data, locs) {
     ...data,
     stores,
     recentBreakers,
+    nearMisses,
     topDays,
     ...districtHeroes(stores),
     totalStores: Object.keys(stores).length,
@@ -576,11 +675,21 @@ function chipHtml(show) {
 
 // ── Hero Grid ─────────────────────────────────────────────────────────────────
 
-function HeroCard({ label, val, sub, broken }) {
+// Compact "#2: <val> (<date>) · #3: <val> (<date>)" sub-line for a day-level category's top-3
+// (`districtHeroes` spreads the whole `.day`/`.oepe` entry, so `.top3` rides along for free --
+// no engine-layer change needed here). Only #2/#3 are shown since #1 is already the card's own
+// headline value.
+function top3Sub(top3, fmt) {
+  if (!top3 || top3.length < 2) return '';
+  return top3.slice(1).map((e,i) => `#${i+2}: ${fmt(e.val)} (${fDateShort(e.dk)})`).join(' · ');
+}
+
+function HeroCard({ label, val, sub, top3Line, broken }) {
   return div({ style:S.heroCard },
     div({ style:S.heroLbl }, label),
     div({ style:S.heroVal }, val || '—', h(RecentBreakChip, { show:broken })),
     div({ style:S.heroSub }, sub || ''),
+    top3Line && div({ style:{ ...S.heroSub, marginTop:4, fontSize:10 } }, top3Line),
   );
 }
 
@@ -590,16 +699,16 @@ function HeroGrid({ data, breakIndex }) {
   return div({},
     div({ style:S.sLbl }, 'District All-Time Champions'),
     div({ style:S.heroGrid },
-      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$2(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'', broken:brk(distSalesDay?.loc,'Sales Day',distSalesDay?.dk) }),
+      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$2(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'', top3Line:top3Sub(distSalesDay?.top3,f$2), broken:brk(distSalesDay?.loc,'Sales Day',distSalesDay?.dk) }),
       h(HeroCard,{ label:'📅 Best Week Sales',  val:distSalesWeek?.val?f$2(distSalesWeek.val):'—', sub:distSalesWeek?.loc?`${sName(distSalesWeek.loc)} · ${fWeekLabel(distSalesWeek.wdk)}`:'', broken:brk(distSalesWeek?.loc,'Sales Week',distSalesWeek?.wdk) }),
       h(HeroCard,{ label:'📊 Best Month Sales', val:distSalesMo?.val?f$2(distSalesMo.val):'—',    sub:distSalesMo?.loc?`${sName(distSalesMo.loc)} · ${fMonthLabel(distSalesMo.ym)}`:'', broken:brk(distSalesMo?.loc,'Sales Month',distSalesMo?.ym?distSalesMo.ym+'-01':null) }),
-      h(HeroCard,{ label:'👥 Best GC Day',      val:distGCDay?.val?fGC(distGCDay.val):'—',       sub:distGCDay?.loc?`${sName(distGCDay.loc)} · ${fDate(distGCDay.dk)}`:'', broken:brk(distGCDay?.loc,'GC Day',distGCDay?.dk) }),
+      h(HeroCard,{ label:'👥 Best GC Day',      val:distGCDay?.val?fGC(distGCDay.val):'—',       sub:distGCDay?.loc?`${sName(distGCDay.loc)} · ${fDate(distGCDay.dk)}`:'', top3Line:top3Sub(distGCDay?.top3,fGC), broken:brk(distGCDay?.loc,'GC Day',distGCDay?.dk) }),
     ),
     div({ style:{ ...S.heroGrid, marginTop:12 } },
-      h(HeroCard,{ label:'⚡ Best OEPE',    val:distOepe?.val<Infinity?fSec(distOepe.val):'—',  sub:distOepe?.loc?`${sName(distOepe.loc)} · ${fDate(distOepe.dk)}`:'', broken:brk(distOepe?.loc,'OEPE',distOepe?.dk) }),
-      h(HeroCard,{ label:'🍟 Best KVS',     val:distKvs?.val<Infinity?fSec(distKvs.val):'—',   sub:distKvs?.loc?`${sName(distKvs.loc)} · ${fDate(distKvs.dk)}`:'', broken:brk(distKvs?.loc,'KVS',distKvs?.dk) }),
-      h(HeroCard,{ label:'📦 Best R2P',     val:distR2p?.val<Infinity?fSec(distR2p.val):'—',   sub:distR2p?.loc?`${sName(distR2p.loc)} · ${fDate(distR2p.dk)}`:'', broken:brk(distR2p?.loc,'R2P',distR2p?.dk) }),
-      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$2(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'', broken:brk(distAvgChk?.loc,'Avg Check',distAvgChk?.dk) }),
+      h(HeroCard,{ label:'⚡ Best OEPE',    val:distOepe?.val<Infinity?fSec(distOepe.val):'—',  sub:distOepe?.loc?`${sName(distOepe.loc)} · ${fDate(distOepe.dk)}`:'', top3Line:top3Sub(distOepe?.top3,fSec), broken:brk(distOepe?.loc,'OEPE',distOepe?.dk) }),
+      h(HeroCard,{ label:'🍟 Best KVS',     val:distKvs?.val<Infinity?fSec(distKvs.val):'—',   sub:distKvs?.loc?`${sName(distKvs.loc)} · ${fDate(distKvs.dk)}`:'', top3Line:top3Sub(distKvs?.top3,fSec), broken:brk(distKvs?.loc,'KVS',distKvs?.dk) }),
+      h(HeroCard,{ label:'📦 Best R2P',     val:distR2p?.val<Infinity?fSec(distR2p.val):'—',   sub:distR2p?.loc?`${sName(distR2p.loc)} · ${fDate(distR2p.dk)}`:'', top3Line:top3Sub(distR2p?.top3,fSec), broken:brk(distR2p?.loc,'R2P',distR2p?.dk) }),
+      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$2(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'', top3Line:top3Sub(distAvgChk?.top3,f$2), broken:brk(distAvgChk?.loc,'Avg Check',distAvgChk?.dk) }),
     ),
   );
 }
@@ -621,6 +730,47 @@ function matchFilter(type, filter) {
   if (filter === 'speed') return ['OEPE','KVS','R2P'].some(s=>type.includes(s));
   if (filter === 'dow')   return type.startsWith('DOW');
   return true;
+}
+
+// Near-miss badge -- deliberately distinct from both BADGE_PROVISIONAL (orange, "still
+// accumulating, might not hold up") and the "✓ Confirmed" green used for a real break: this
+// value is real and final, it simply never beat the record. A blue "so close" reads as neither
+// a win nor a caveat on a win.
+const BADGE_NEAR_MISS = () => S.badge('#3b82f6','rgba(59,130,246,.1)');
+
+function NearMissesSection({ data }) {
+  const nearMisses = data.nearMisses || [];
+  return div({},
+    div({ style:S.sLbl }, '📍 Near Misses — All-Time'),
+    nearMisses.length === 0
+      ? div({ style:{ padding:'16px',textAlign:'center',color:'var(--txt3)',fontSize:12.5 } },
+          'No store is currently within 5% of one of its own all-time day records without having broken it.')
+      : div({ style:S.tblWrap },
+          table({ style:S.tbl },
+            thead({},
+              tr({},
+                TH({style:S.th},'Store'), TH({style:S.th},'Date'),
+                TH({style:S.th},'Record Type'),
+                TH({style:S.thR},'That Day'),
+                TH({style:S.thR},'All-Time Record'), TH({style:S.thR},'How Close'),
+              ),
+            ),
+            tbody({},
+              ...nearMisses.map((m,i) => {
+                const fVal = m.isLow ? fSec : m.type.includes('GC') ? fGC : f$2;
+                return tr({ key:i },
+                  td({style:S.td}, sName(m.loc)),
+                  td({style:S.td}, fDate(m.dk)),
+                  td({style:S.td}, span({style:badgeForType(m.type)}, m.type), span({style:{...BADGE_NEAR_MISS(),marginLeft:6}}, '📍 So Close')),
+                  td({style:{...S.tdR,fontWeight:600,color:'var(--txt)'}}, fVal(m.val)),
+                  td({style:S.tdMR}, fVal(m.record)),
+                  td({style:{...S.tdR,color:'#3b82f6'}}, `${m.pctAway.toFixed(2)}% away`),
+                );
+              }),
+            ),
+          ),
+        ),
+  );
 }
 
 function RecentBreakersTab({ data, windowDays, onWindowChange }) {
@@ -685,6 +835,7 @@ function RecentBreakersTab({ data, windowDays, onWindowChange }) {
             ),
           ),
         ),
+    h(NearMissesSection, { data }),
   );
 }
 
@@ -1553,4 +1704,4 @@ export function RecordDayTab({ stores, ds }) {
 // StoreRecordsTab (store-analytics.js) to give the per-store Records tab the same Record Hour
 // section (sort, Current Record/Top 5 All-Time toggle, previous-record column, date) this
 // district-wide panel already has, scoped to scopedLocs:[loc] instead of rebuilding it.
-export { computeRecords, scopeRecordData, fDate, fDateShort, fWeekLabel, fMonthLabel, fSec, fGC, f$2, DOW_SHORT, DOW_NAMES, HourRecordTab, buildBreakIndex };
+export { computeRecords, scopeRecordData, fDate, fDateShort, fWeekLabel, fMonthLabel, fSec, fGC, f$2, DOW_SHORT, DOW_NAMES, HourRecordTab, buildBreakIndex, TOP_N, NEAR_MISS_BAND };
