@@ -90,6 +90,35 @@ describe('mapRow()', () => {
     expect(r.hourlyPayRate).toBeNull();
     expect(r.totalHours).toBeNull();
   });
+
+  // GH #1698 fix (2026-11-14): job_title_code is now part of qsr_employee_pay_period_history's
+  // primary key (schema-pay-history-widen-pk-job-title-2026-11-14.sql), because QSRSoft returns
+  // a genuinely distinct row per job title within one pay period -- an employee working two
+  // titles in the same period used to collide the old 5-column PK and fail the whole batch's
+  // upsert. The DB column is NOT NULL with default '' (a PK column can't be nullable), so mapRow
+  // must never emit a real null for it going forward -- '' is the sentinel, matching the
+  // one-time backfill already applied to pre-existing rows.
+  it('jobTitleCode is a plain passthrough when present', () => {
+    expect(mapRow(REGULAR_ROW, 3708).jobTitleCode).toBe(650);
+  });
+
+  it('jobTitleCode maps a missing/null value to the empty-string sentinel, never a real null', () => {
+    const { jobTitleCode, ...withoutJobTitle } = REGULAR_ROW;
+    expect(mapRow(withoutJobTitle, 3708).jobTitleCode).toBe('');
+    expect(mapRow({ ...REGULAR_ROW, jobTitleCode: null }, 3708).jobTitleCode).toBe('');
+  });
+
+  it('two rows for the same employee/period/payType but DIFFERENT job titles map to different jobTitleCode -- the exact #1698 collision case', () => {
+    const crewRow = mapRow({ ...REGULAR_ROW, jobTitleCode: 650 }, 3708);
+    const shiftMgrRow = mapRow({ ...REGULAR_ROW, jobTitleCode: 710 }, 3708);
+    // Same loc/geid/payType/periodStart as each other -- would have collided on the old 5-column
+    // PK -- but distinct jobTitleCode, so they now form two distinct real rows under the widened PK.
+    expect(crewRow.loc).toBe(shiftMgrRow.loc);
+    expect(crewRow.geid).toBe(shiftMgrRow.geid);
+    expect(crewRow.payType).toBe(shiftMgrRow.payType);
+    expect(crewRow.periodStart).toBe(shiftMgrRow.periodStart);
+    expect(crewRow.jobTitleCode).not.toBe(shiftMgrRow.jobTitleCode);
+  });
 });
 
 describe('extractRows()', () => {
