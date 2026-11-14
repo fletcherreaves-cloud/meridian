@@ -453,6 +453,20 @@ async function fetchCoveredDates(candidateDates) {
   return covered;
 }
 
+// GH #1532, strategy pass: NEVER default-request "today". Measured 2026-11-14: the scheduled
+// run fires at 11:00 UTC (~5-6am local for these stores), 1-2 hours into the 4am business day --
+// "today" is always an incomplete sliver at that moment, never the full day. Whatever the exact
+// shape of the account's limit turns out to be (the evidence that same day pointed first at "a
+// re-query of an already-saved date is denied," then at something closer to a daily request
+// budget -- a second live dispatch showed dates that had JUST succeeded hours earlier in the
+// SAME run getting denied on a same-day repeat, regardless of which dates were asked for),
+// spending any part of it on today's guaranteed-incomplete sliver is pure waste either way:
+// tomorrow's run captures today in full once today has actually finished (as ITS "yesterday",
+// genuinely elapsed) -- a full day of real history (Oct 6 - Nov 13) was captured exactly this
+// way already, every date arriving complete the day after it ended, never via its own sliver.
+// So the default rolling window now ends at YESTERDAY, never today. Explicit backfill
+// (QSRSOFT_SECEVENTS_START_DATE/END_DATE) is an intentional, deliberate request and keeps
+// whatever window the caller actually asked for, "today" included if named explicitly.
 async function getDateRange() {
   const today = new Date();
   if (START_DATE) {
@@ -460,14 +474,15 @@ async function getDateRange() {
     console.log(`[secevents-pull] explicit backfill window ${START_DATE} → ${e}`);
     return { startDate: START_DATE, endDate: e, latestForFreshness: await getLatestDate() };
   }
+  const yesterday = addDay(today, -1);
   const latest = await getLatestDate();
-  const daysSince = latest ? Math.floor((today - latest) / 86400000) : DAYS_BACK;
+  const daysSince = latest ? Math.floor((yesterday - latest) / 86400000) : DAYS_BACK;
   const back = Math.min(Math.max(DAYS_RECENT, daysSince + DAYS_RECENT), DAYS_BACK);
-  const s = fmtDate(addDay(today, -back));
+  const s = fmtDate(addDay(yesterday, -back));
   console.log(latest
-    ? `[secevents-pull] latest in DB: ${fmtDate(latest)} (${daysSince}d ago) — pulling ${back} days back`
-    : `[secevents-pull] no existing data — pulling ${back} days of history`);
-  return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
+    ? `[secevents-pull] latest in DB: ${fmtDate(latest)} (${daysSince}d before yesterday) — pulling ${back} days back from yesterday (never today)`
+    : `[secevents-pull] no existing data — pulling ${back} days of history (never today)`);
+  return { startDate: s, endDate: fmtDate(yesterday), latestForFreshness: latest };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────────────────
@@ -481,7 +496,11 @@ async function main() {
   }
 
   const { startDate, endDate, latestForFreshness } = await getDateRange();
-  const fresh = checkFreshness(latestForFreshness, { warnAfterHours: 30, errorAfterHours: 54, label: 'secevents-pull' });
+  // Thresholds shifted +24h from the original 30h/54h: the strategy fix above means `latest`
+  // is now EXPECTED to be ~2 days old right before a healthy run (yesterday's data, captured
+  // the day after it happened), not ~1 day old -- the old thresholds would warn/error on every
+  // single healthy run otherwise, a false alarm baked into the design change, not a real one.
+  const fresh = checkFreshness(latestForFreshness, { warnAfterHours: 54, errorAfterHours: 78, label: 'secevents-pull' });
   if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
 
   const dates = dateList(startDate, endDate);

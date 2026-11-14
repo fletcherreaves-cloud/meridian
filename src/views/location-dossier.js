@@ -22,9 +22,13 @@ import * as React from 'react';
 import { ReportShell } from '../components/ReportShell.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { f$, fP, fN } from '../utils/fmt.js';
-import { dossierWindows, buildFactualGrid, dossierSparklineSeries, DOSSIER_METRICS, topFindings, dossierStoreContext, dossierTrends, dossierCorrelations, topCorrelations } from '../engine/location-dossier.js';
-import { loadStoreDemographics } from '../lib/supabase.js';
+import {
+  dossierWindows, buildFactualGrid, dossierSparklineSeries, DOSSIER_METRICS, topFindings, dossierStoreContext, dossierTrends, dossierCorrelations, topCorrelations,
+  dossierEquipmentSummary, dossierLayoutZoneCounts, dossierPersonnelSummary, dossierSkillsSummary, dossierPayRateChanges, dossierExtraFindings, dossierVisitReadiness,
+} from '../engine/location-dossier.js';
+import { loadStoreDemographics, loadEquipmentEntriesDirect, loadEmployeeSkills } from '../lib/supabase.js';
 import { callSageOnce } from '../lib/sage-client.js';
+import { hasPermission } from '../engine/permissions.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -36,6 +40,14 @@ const tr = (p, ...c) => h('tr', p, ...c);
 const FINDING_ICON = { crit: '🔴', watch: '🟡', ok: '🟢' };
 const FINDING_COLOR = { crit: 'var(--crit)', watch: 'var(--amber)', ok: '#10b981' };
 const FINDING_BG = { crit: 'rgba(239,68,68,.08)', watch: 'rgba(245,158,11,.08)', ok: 'rgba(16,185,129,.08)' };
+
+// Phase 3 — same plain-date formatter equipment-results.js's own card already uses, for the
+// Last Graded Visit / Equipment / Personnel cards' dates below.
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(+d) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export function fmtDossierVal(v, unit) {
   if (v == null) return '—';
@@ -130,7 +142,7 @@ const TREND_CHART_KEYS = [
   { key: 'tpph', color: '#10b981' },
 ];
 
-export function LocationDossierPanel({ ds, stores, onClose }) {
+export function LocationDossierPanel({ ds, stores, userRole, orgRoles, onClose }) {
   const { useState, useMemo } = React;
   const [selection, setSelection] = useState(null); // {loc, store, windows} -- the picked store, NOT the computed values
   const [narrative, setNarrative] = useState('');
@@ -138,6 +150,12 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
   const [expanded, setExpanded] = useState(false);
   const [correlationsExpanded, setCorrelationsExpanded] = useState(false);
   const [demographicsRows, setDemographicsRows] = useState(null);
+  // Phase 3 — Equipment/Layout reference: this store's own equipment_survey_entries rows, the
+  // SAME per-store loader the real Layout Planner editor uses (loadEquipmentEntriesDirect).
+  const [equipmentEntries, setEquipmentEntries] = useState(null);
+  // Phase 3 — Skills Matrix coverage: loadEmployeeSkills() has no per-store filter server-side
+  // (same as skills-matrix.js's own load), so this loads once and the engine filters by loc.
+  const [skillsRows, setSkillsRows] = useState(null);
 
   const run = async ({ locValue }) => {
     setNarrative(''); setExpanded(false); setCorrelationsExpanded(false);
@@ -149,6 +167,12 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
     if (!demographicsRows) {
       try { setDemographicsRows(await loadStoreDemographics()); }
       catch { setDemographicsRows([]); /* best-effort -- a dossier without demographics is still a dossier */ }
+    }
+    try { setEquipmentEntries(await loadEquipmentEntriesDirect(loc)); }
+    catch { setEquipmentEntries([]); /* best-effort -- same posture as demographics above */ }
+    if (!skillsRows) {
+      try { setSkillsRows(await loadEmployeeSkills()); }
+      catch { setSkillsRows([]); }
     }
   };
 
@@ -181,6 +205,36 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
     return { ...mine, districtAvgIncome };
   }, [selection?.loc, demographicsRows]);
 
+  // Phase 3 — Equipment/Layout: equipment-survey.js's own cross-store rollup math + zone-count
+  // grouping, reused as-is against this one store's already-loaded entries.
+  const equipmentSummary = useMemo(() => dossierEquipmentSummary(equipmentEntries), [equipmentEntries]);
+  const zoneCounts = useMemo(() => dossierLayoutZoneCounts(equipmentEntries), [equipmentEntries]);
+
+  // Phase 3 — Personnel: headcount-by-role (no names -- qsr_employee_tenure has no name-
+  // resolution path, see the engine's own comment) + Skills Matrix coverage. Pay rate changes
+  // are the one wage-sensitive slice -- gated behind payroll.view, the SAME permission pay-rate-
+  // history.js's own nav entry already requires (no stricter rule invented for this report).
+  const personnelSummary = useMemo(() => (selection?.loc ? dossierPersonnelSummary(ds?.tenureRows, selection.loc) : null),
+    [ds?.tenureRows, selection?.loc]);
+  const skillsSummary = useMemo(() => (selection?.loc ? dossierSkillsSummary(skillsRows, selection.loc) : null),
+    [skillsRows, selection?.loc]);
+  const canViewPayroll = hasPermission(userRole, 'payroll.view', orgRoles);
+  const payRateChanges = useMemo(() => {
+    if (!selection?.loc || !canViewPayroll) return [];
+    const l3m = selection.windows.find(w => w.id === 'l3m');
+    return dossierPayRateChanges(ds?.employeePayRateChanges, selection.loc, l3m);
+  }, [ds?.employeePayRateChanges, selection?.loc, selection?.windows, canViewPayroll]);
+
+  // Phase 3 — broadened findings (Visit Readiness/EcoSure + Guest Voice) merged into the SAME
+  // Top Findings strip finding-rules.js's output already renders -- one ranked list, not a
+  // second UI section. visitCtx is also read directly below for the "Last Graded Visit" card.
+  const extraFindings = useMemo(() => (selection?.loc ? dossierExtraFindings(ds, selection.loc) : []),
+    [ds, selection?.loc]);
+  const allFindings = useMemo(() => [...(selection?.store?.findings || []), ...extraFindings],
+    [selection?.store, extraFindings]);
+  const visitCtx = useMemo(() => (selection?.loc ? dossierVisitReadiness(ds, selection.loc) : null),
+    [ds, selection?.loc]);
+
   const getExportData = () => {
     if (!selection?.loc || !grid) return { title: 'Location Dossier', headers: [], rows: [] };
     return {
@@ -195,7 +249,7 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
     setNarrativeLoading(true);
     try {
       const lines = grid.map(g => g.label + ': ' + selection.windows.map(w => w.label + '=' + fmtDossierVal(g.values[w.id], g.unit)).join(', '));
-      const { headline } = topFindings(selection.store.findings || []);
+      const { headline } = topFindings(allFindings);
       const prompt = 'You are a McDonald\'s District Manager writing a one-paragraph plain-language summary of ' +
         'this store\'s current state for a busy operator. Store: ' + (sNameC(selection.loc) || selection.loc) + '.\n\n' +
         'METRICS ACROSS WINDOWS:\n' + lines.join('\n') + '\n\n' +
@@ -244,7 +298,7 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
           div({ style: { marginBottom: 16 } },
             h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🎯 Top Findings'),
             (() => {
-              const { headline, rest } = topFindings(selection.store.findings || []);
+              const { headline, rest } = topFindings(allFindings);
               if (!headline.length) return div({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'No findings flagged for this window.');
               const chip = f => div({
                 key: f.m,
@@ -353,6 +407,71 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
                 bar(avg, 'var(--text3)', 'District avg'),
               );
             })(),
+          ),
+          // ── Phase 3: Last Graded Visit / EcoSure — direct read off computeVisitReadiness(),
+          // the same per-store fields the Visit Readiness panel itself shows ──────────────────
+          visitCtx && (visitCtx.lastVisit || visitCtx.fsEcoSure) && div({
+            style: { marginTop: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 },
+          },
+            h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🎓 Last Graded Visit'),
+            div({ style: { fontSize: 10, color: 'var(--text2)', display: 'flex', gap: 16, flexWrap: 'wrap' } },
+              visitCtx.lastVisit && span(null,
+                visitCtx.lastVisit.type || 'Visit', ': ', fmtDate(visitCtx.lastVisit.dateISO), ' — ',
+                span({ style: { fontWeight: 700, color: visitCtx.lastVisit.pass === false ? 'var(--crit)' : 'var(--text)' } }, Math.round(visitCtx.lastVisit.score)),
+                visitCtx.lastVisit.pass != null && (visitCtx.lastVisit.pass ? ' (Pass)' : ' (Fail)'),
+                visitCtx.lastVisit.criticalFailCount > 0 && span({ style: { color: 'var(--crit)', fontWeight: 700 } }, ' · ', visitCtx.lastVisit.criticalFailCount, ' critical'),
+              ),
+              span(null, 'Food Safety: ',
+                span({ style: { fontWeight: 700, color: visitCtx.fsFlag === 'elevated' ? 'var(--crit)' : visitCtx.fsFlag === 'watch' ? 'var(--amber)' : '#10b981' } },
+                  visitCtx.fsSource === 'ecosure' ? (visitCtx.fsFlag === 'elevated' ? 'EcoSure: CRITICAL' : visitCtx.fsFlag === 'watch' ? 'EcoSure: Watch' : 'EcoSure: Pass')
+                    : visitCtx.fsSource === 'proxy' ? 'Proxy: ' + (visitCtx.fsFlag || '—') : '—'),
+                visitCtx.fsAsOf && span({ style: { color: 'var(--text3)' } }, ' (as of ', fmtDate(visitCtx.fsAsOf), ')'),
+              ),
+            ),
+          ),
+          // ── Phase 3: Equipment & Layout reference — read-only summary of the real survey
+          // data, not a duplicate of the Layout Planner/Equipment Results editors ──────────────
+          equipmentSummary && div({
+            style: { marginTop: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 },
+          },
+            h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🧰 Equipment & Layout'),
+            div({ style: { fontSize: 10, color: 'var(--text2)', display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: zoneCounts.length ? 8 : 0 } },
+              span(null, 'Items logged: ', equipmentSummary.itemCount),
+              span(null, 'PQRG reviewed: ', equipmentSummary.itemCount ? `${equipmentSummary.reviewedCount} of ${equipmentSummary.itemCount}` : '—'),
+              span(null, 'Last activity: ', fmtDate(equipmentSummary.lastSubmittedAt), equipmentSummary.lastSubmittedBy ? ' by ' + equipmentSummary.lastSubmittedBy : ''),
+            ),
+            zoneCounts.length > 0 && div({ style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
+              ...zoneCounts.map(z => span({
+                key: z.zone,
+                style: { fontSize: 9.5, color: 'var(--text2)', padding: '3px 8px', borderRadius: 6, background: 'var(--surf3)', border: '.5px solid var(--bdr)' },
+              }, z.label, ': ', z.count)),
+            ),
+          ),
+          // ── Phase 3: Personnel summary — headcount-by-role + Skills Matrix coverage (no
+          // names: qsr_employee_tenure carries no name column). Pay rate changes are gated
+          // behind payroll.view, the same permission pay-rate-history.js's own nav entry uses ──
+          (personnelSummary || skillsSummary) && div({
+            style: { marginTop: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 },
+          },
+            h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '👥 Personnel'),
+            personnelSummary && div({ style: { fontSize: 10, color: 'var(--text2)', display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 6 } },
+              span(null, 'Active: ', personnelSummary.total),
+              span(null, 'GM: ', personnelSummary.gm),
+              span(null, 'AM/DM: ', personnelSummary.am + personnelSummary.dm),
+              span(null, 'SM: ', personnelSummary.sm),
+              span(null, 'Crew: ', personnelSummary.crew),
+            ),
+            skillsSummary && div({ style: { fontSize: 10, color: 'var(--text2)', marginBottom: canViewPayroll && payRateChanges.length ? 6 : 0 } },
+              'Skills Matrix: ', skillsSummary.crewCount, ' crew logged, ', skillsSummary.coveredJobCount, ' of ', skillsSummary.jobCount, ' jobs have a proficient (≥3) crew member',
+            ),
+            canViewPayroll && payRateChanges.length > 0 && div(null,
+              div({ style: { fontSize: 9.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 } }, 'Pay rate changes (L3M): ', payRateChanges.length),
+              ...payRateChanges.slice(0, 5).map(r => div({
+                key: r.personKey + '|' + r.effectiveDate,
+                style: { fontSize: 9.5, color: 'var(--text2)', display: 'flex', gap: 8 },
+              }, span(null, fmtDate(r.effectiveDate)), span(null, r.name || 'Employee'),
+                span(null, (r.fromRate == null ? '—' : '$' + r.fromRate.toFixed(2)) + ' → ' + (r.toRate == null ? '—' : '$' + r.toRate.toFixed(2))))),
+            ),
           ),
         ),
   );

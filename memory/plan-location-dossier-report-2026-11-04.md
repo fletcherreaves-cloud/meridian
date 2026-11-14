@@ -254,3 +254,67 @@ dossierCorrelations against a real constructed sales↔gc correlation, topCorrel
 ordering) + 1 render test (`location-dossier-panel-2026-11-13.test.js`, appended) confirming both
 new UI sections mount and show a real "improving" judgment from constructed data. Full suite and
 build pass clean before merge.
+
+## ✅ Phase 3 SHIPPED (v5.786, 2026-11-14)
+
+§2C's demographics/Store-KB-notes text above is stale — those shipped in Phase 1/1.5, not here.
+Re-read against the live code before starting: `layout`/`equipment`/`employee_tenure`/
+`skills-matrix`/`graded-visits`/`ecosure` had zero references in either dossier file (confirmed
+by grep) — those were the genuinely unbuilt pieces, and this phase built exactly those four:
+
+1. **Layout + Equipment ("🧰 Equipment & Layout").** `dossierEquipmentSummary(entries)` reuses
+   `equipment-survey.js`'s own cross-store rollup math (`buildEquipmentStoreSummary`) verbatim
+   against this one store's own `equipment_survey_entries` rows (`loadEquipmentEntriesDirect(loc)`
+   — the SAME per-store loader the real Layout Planner editor already uses, loaded once per
+   store-selection, not cached across stores). `dossierLayoutZoneCounts(entries)` groups the
+   current-state entries (`latestEntriesByInstance`) by `placement_zone`, labeled via
+   `equipment-survey.js`'s own `PLACEMENTS` catalog — the same labels the real Layout Planner
+   editor renders, so a zone name here can never drift from what the editor calls it. Read-only
+   reference/summary only (item count, PQRG-reviewed count, last activity, zone counts) — the
+   visual floor-plan editor itself is not duplicated, per this plan's own instruction.
+2. **Personnel ("👥 Personnel").** `dossierPersonnelSummary(tenureRows, loc)` buckets active
+   `qsr_employee_tenure` rows (`ds.tenureRows`, already eagerly loaded by App.js — no new async
+   load) by classified role via `tenure-roles.js`'s own `classifyRosterAssignment`
+   (GM/AM/DM/SM/crew) — **never names**: `loadEmployeeTenure()`'s own select list carries `geid`,
+   never a name column, so there is no name-resolution path for it anywhere in this app (unlike
+   Security findings' `crew_token`/`mgr_token`, which DO resolve via `reveal_employee_identity()`)
+   — a data-availability fact, not a PII decision. `dossierSkillsSummary(skillsRows, loc)` adds
+   Skills Matrix coverage (crew logged / jobs with a proficient ≥3 crew member — the SAME
+   threshold `skills-matrix.js`'s own coverage column already uses). The one genuinely
+   wage-sensitive slice — pay rate changes — is a deliberately SEPARATE function,
+   `dossierPayRateChanges(payRateRows, loc, window)` (reuses `employee-pay-history.js`'s own
+   `managementRateChanges`/`lifelenzRosterRateChanges` verbatim), gated in the view behind
+   `hasPermission(userRole, 'payroll.view', orgRoles)` — the EXACT permission
+   `pay-rate-history.js`'s own nav entry already requires. This follows CLAUDE.md's 2026-11-11
+   resolved PII rule (`memory/finding-dossier-coaching-library-2026-11-11.md` §7): names/figures
+   follow this app's EXISTING role/scope gates, never a stricter rule invented just for a report —
+   so `App.js`'s `LocationDossierPanel` call site now also receives `userRole`/`orgRoles`.
+3. **Broadened Important Findings.** `topFindings()`'s only input used to be `finding-rules.js`'s
+   output (Controls/Labor/Speed/Sales) — confirmed by grep that file has zero references to visit
+   readiness, graded visits, EcoSure, or customer complaints. `dossierExtraFindings(ds, loc)`
+   reuses `attention-now.js`'s own existing detectors (`visitRisk`/`csatOpportunityAlerts`,
+   `attention-feed.js`) AS-IS, scoped to one store via `computeVisitReadiness`'s own `opts.locs`
+   filter, normalized onto `topFindings()`'s `{t,m}` shape (the store-name prefix both detectors
+   generate is blanked — this report is already scoped to one store) and merged into the SAME
+   Top Findings strip — one ranked list, not a second UI section. `dossierVisitReadiness(ds, loc)`
+   is the shared per-store `computeVisitReadiness()` read both `dossierExtraFindings` and the new
+   **"🎓 Last Graded Visit"** direct-read card use, so the card can never disagree with what the
+   real Visit Readiness panel itself would show for this store (score/pass/type/date, and the
+   EcoSure-sourced food-safety flag per the 2026-09-12 real-signal fix). **Security-panel findings
+   (`storeHealthList`, `security-health.js`) are deliberately NOT included** — that function needs
+   `rulesById`/`driftContributions`/`persistenceContributions` pre-built elsewhere in
+   `security-panel.js`'s own large pipeline; disproportionate new plumbing for this phase's scope.
+   **Follow-on, not dropped:** wiring Security-panel findings into the dossier once a
+   proportionate extraction of that pipeline exists.
+
+**Explicitly not touched:** Phase 4 (patch/operator/state rollup views) remains open, not started.
+
+16 engine tests (`location-dossier-phase3-2026-11-14.test.js` — `dossierEquipmentSummary`'s reuse
+of `latestEntriesByInstance`'s removed-row rule, `dossierLayoutZoneCounts`'s zone grouping/label
+mapping, `dossierPersonnelSummary`'s role-bucket classification + no-name-field assertion,
+`dossierSkillsSummary`'s ≥3 threshold, `dossierPayRateChanges`'s two-population merge + window
+filter, `dossierVisitReadiness`/`dossierExtraFindings` against the same `goodRows`/`badRows`
+fixture shape `visit-readiness.test.js` already established, and a Guest Voice finding from
+constructed negative SMG comments). Full suite (8167 tests) and build pass clean; eager payload
+707.51 KB / 850 KB budget (headroom 142.49 KB) — the dossier panel itself stays lazy-loaded
+(20.79 KB / 7.31 KB gzip, not in the eager chunk).

@@ -4470,7 +4470,7 @@ function App() {
       routePanel==='controls-food-cost-link'&&h(ControlsFoodCostLinkPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='weather-impact'&&h(WeatherImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='price-change-impact'&&h(PriceChangeImpactPanel,{ds,stores,onClose:()=>goRoute(null)}),
-      routePanel==='location-dossier'&&h(LocationDossierPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='location-dossier'&&h(LocationDossierPanel,{ds,stores,userRole:effectiveRole,orgRoles,onClose:()=>goRoute(null)}),
       routePanel==='item-velocity'&&h(ItemVelocityPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='channel-mix'&&h(ChannelMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
