@@ -159,6 +159,29 @@ export function dateList(startDate, endDate) {
   return out;
 }
 
+// GH #1532 (measured 2026-11-14, not guessed): qsr_security_events has a FULL day's rows
+// (~7,000-9,000) for every single calendar day from 2026-10-06 through 2026-11-13, zero gaps --
+// the daily pull's "first time querying this day" call has been succeeding the whole time. What
+// fails, every run, 100% of units, is DAYS_RECENT's rolling re-check of days already fully
+// captured by the PRIOR day's own run: a dispatched re-query of the exact 2026-11-12..11-14
+// window (all three days already in the DB) got AccessDeniedException ("explicit deny in an
+// identity-based policy") on all 756/756 units, zero exceptions -- the SAME AWS IAM signature
+// #1314 hit, but here it gates RE-querying specifically, not the endpoint outright (a brand-new
+// day works every single time). QSRSoft support won't change the IAM mapping (asked, declined).
+// The fix that needs no cooperation from them: never make a call that is guaranteed to fail.
+// `datesToRequest` drops any date already known to have at least one saved row EXCEPT the last
+// one in the list (today/endDate -- always incomplete mid-day, so re-querying it is the live,
+// successful "new data" case, not the doomed re-query one). Known residual edge case: a day that
+// genuinely has zero real events across all 28 stores would look "not yet covered" and get
+// re-attempted (and likely denied) the next run too -- a transient false-negative, not a crash,
+// and far better than today's "756/756 every single run" shape. Pure/exported so it's covered by
+// a plain-Set unit test, no Supabase dependency, same pattern as dateList()/extractRows().
+export function datesToRequest(allDates, alreadyCoveredSet) {
+  if (!allDates.length) return [];
+  const last = allDates[allDates.length - 1];
+  return allDates.filter(d => d === last || !alreadyCoveredSet.has(d));
+}
+
 // ── Pure helpers -- unchanged signatures, still covered unmodified by
 // src/__tests__/qsrsoft-security-events-pull.test.js. Only their CALLER changed (in-browser
 // fetch instead of a Node-side one); the URL/body/envelope shape did not.
@@ -405,6 +428,22 @@ async function getLatestDate() {
   return data?.event_dt ? new Date(data.event_dt + 'T12:00:00Z') : null;
 }
 
+// GH #1532: per-date existence check, not a bulk row fetch -- `head: true` returns only the
+// count, never the rows themselves (each date's real row count is thousands; we only need
+// "zero or not zero"). One request per candidate date, bounded by DAYS_BACK (max 14 by default),
+// same cost class as this script's own per-unit fetches. Returns the SET of dates (from
+// `candidateDates`) that already have at least one saved row.
+async function fetchCoveredDates(candidateDates) {
+  const covered = new Set();
+  for (const d of candidateDates) {
+    const { count, error } = await supabase.from('qsr_security_events')
+      .select('event_dt', { count: 'exact', head: true }).eq('event_dt', d);
+    if (error) throw new Error(`[secevents-pull] fetchCoveredDates(${d}) failed -- ${error.code}: ${error.message}`);
+    if ((count || 0) > 0) covered.add(d);
+  }
+  return covered;
+}
+
 async function getDateRange() {
   const today = new Date();
   if (START_DATE) {
@@ -437,16 +476,27 @@ async function main() {
   if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
 
   const dates = dateList(startDate, endDate);
-  console.log(`[secevents-pull] ${dates.length} day(s) × ${STORE_NSNS.length} store(s) × ${EVENT_TOKENS.length} event token(s): ${startDate} → ${endDate}`);
+
+  // GH #1532: never re-request a day already fully captured -- see datesToRequest()'s header
+  // comment for the measured root cause. Checked once per candidate date (cheap, head:true);
+  // "today" (the last entry) is always requested regardless of this check.
+  const covered = await fetchCoveredDates(dates.slice(0, -1));
+  const requestDates = datesToRequest(dates, covered);
+  const skipped = dates.filter(d => !requestDates.includes(d));
+  if (skipped.length) {
+    console.log(`[secevents-pull] skipping ${skipped.length}/${dates.length} already-covered day(s) `
+      + `-- re-querying one is a guaranteed AWS IAM explicit deny, not worth the call: ${skipped.join(',')}`);
+  }
+  console.log(`[secevents-pull] ${requestDates.length} day(s) × ${STORE_NSNS.length} store(s) × ${EVENT_TOKENS.length} event token(s): ${startDate} → ${endDate}`);
 
   const tracker = makeOutcomeTracker('secevents-pull');
-  const requestedUnits = dates.flatMap(d => STORE_LOCS.flatMap(loc => EVENT_TOKENS.map(t => `${d}:${loc}:${t}`)));
+  const requestedUnits = requestDates.flatMap(d => STORE_LOCS.flatMap(loc => EVENT_TOKENS.map(t => `${d}:${loc}:${t}`)));
 
   // Dispatch #83: wall-clock was never measured for this endpoint (#81's estimate was for the
   // now-deleted page.evaluate()-per-request design) and gates putting this on a daily schedule --
   // logged here so the first live run settles it instead of leaving it estimated.
   const t0 = Date.now();
-  const result = await runSecurityEvents(getFreshToken, dates, tracker);
+  const result = await runSecurityEvents(getFreshToken, requestDates, tracker);
   console.log(`[secevents-pull] fetch phase: ${((Date.now() - t0) / 1000).toFixed(1)}s for ${requestedUnits.length} unit(s)`);
 
   const { saved, errors } = await saveSecurityEventRows(result.collected);
