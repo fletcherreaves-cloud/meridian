@@ -3244,7 +3244,10 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
                   {l:'Unexplained',v:fobSec.unexplained,ok:fobSec.okUnexp,fl:fobSec.flUnexp,prior:fobSec.priorUnexplained,tgt:fobSec.tgts&&fobSec.tgts.unexplained,alert:(fobSec.unexplained||0)>.003},
                   {l:'Comp Waste',v:fobSec.compWaste,ok:fobSec.okCompWaste,fl:fobSec.flCompWaste,prior:fobSec.priorCompWaste,tgt:fobSec.tgts&&fobSec.tgts.compWaste},
                   {l:'Raw Waste',v:fobSec.rawWaste,ok:fobSec.okRawWaste,fl:fobSec.flRawWaste,prior:fobSec.priorRawWaste,tgt:fobSec.tgts&&fobSec.tgts.rawWaste},
-                  {l:'Condiment',v:fobSec.condiment,ok:fobSec.okCondiment,fl:fobSec.flCondiment,prior:fobSec.priorCondiment,tgt:fobSec.tgts&&fobSec.tgts.condiment},
+                  // Task #75 -- the only one of these 6 siblings with a written KB article
+                  // (condiment_pct); articleKey is per-item and data-driven, not a visual
+                  // singling-out of this one tile, so the other 5 simply render with no icon.
+                  {l:'Condiment',v:fobSec.condiment,ok:fobSec.okCondiment,fl:fobSec.flCondiment,prior:fobSec.priorCondiment,tgt:fobSec.tgts&&fobSec.tgts.condiment,articleKey:'condiment_pct'},
                   {l:'Emp Meal',v:fobSec.empMeal,ok:fobSec.okEmpMeal,fl:fobSec.flEmpMeal,prior:fobSec.priorEmpMeal,tgt:fobSec.tgts&&fobSec.tgts.empMeal},
                   {l:'Stat Var',v:fobSec.statVar,ok:fobSec.okStatVar,fl:fobSec.flStatVar,prior:fobSec.priorStatVar,tgt:fobSec.tgts&&fobSec.tgts.statVar},
                 ].map((item,i)=>
@@ -3252,7 +3255,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
                     padding:'2px 5px',borderRadius:3,
                     background:item.alert?'rgba(244,63,94,.08)':'var(--surf2)'}},
                     div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-                      span({style:{fontSize:'8px',color:'var(--text3)'}},item.l),
+                      span({style:{fontSize:'8px',color:'var(--text3)',display:'flex',alignItems:'center',gap:2}},item.l,item.articleKey&&h(InfoIcon,{articleKey:item.articleKey})),
                       span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,
                         color:item.alert?'var(--crit)':'var(--text)'}},
                         item.v!=null?((item.v||0)*100).toFixed(2)+'%':'—')

@@ -28,6 +28,7 @@ import { sName } from '../constants.js';
 import { createEomShareLink } from '../lib/supabase.js';
 import { shareOrCopy } from '../utils/share.js';
 import { SpotCheckRulerModal, SpotCheckRulerDigestSettings } from './spot-check-ruler-view.js';
+import { InfoIcon } from '../engine/forecast.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -252,7 +253,12 @@ export function CountCycleSection({ rows, period, newWrinsByLoc = {}, onOpenModa
 
   return div(null,
     div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 } },
-      div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text3,#6b7280)' } },
+        // Task #75 -- this tab (mode==='compliance') bypasses the shared PanelChrome header and
+        // renders its own compact summary line with no title text at all, which left no real
+        // anchor for a Panel Guide icon. Adding the actual label here (not just the icon) fixes
+        // the root cause, not just the symptom.
+        span({ style: { fontWeight: 700, color: 'var(--text2,#9aa4b2)' } }, 'Count Cycle', h(InfoIcon, { articleKey: 'count_cycle_guide' })),
         comp.length ? `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle` : ''),
       shareMsg ? span({ style: { fontSize: 11, color: 'var(--text2,#9aa4b2)' } }, shareMsg) : null,
       // Standalone, printable district roster (owner req, 2026-10-11) — the per-store exceptions
