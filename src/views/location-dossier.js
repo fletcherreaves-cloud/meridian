@@ -22,7 +22,7 @@ import * as React from 'react';
 import { ReportShell } from '../components/ReportShell.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { f$, fP, fN } from '../utils/fmt.js';
-import { dossierWindows, buildFactualGrid, dossierSparklineSeries, DOSSIER_METRICS, topFindings, dossierStoreContext } from '../engine/location-dossier.js';
+import { dossierWindows, buildFactualGrid, dossierSparklineSeries, DOSSIER_METRICS, topFindings, dossierStoreContext, dossierTrends, dossierCorrelations, topCorrelations } from '../engine/location-dossier.js';
 import { loadStoreDemographics } from '../lib/supabase.js';
 import { callSageOnce } from '../lib/sage-client.js';
 
@@ -45,6 +45,22 @@ export function fmtDossierVal(v, unit) {
   if (unit === 'sec') return Math.round(v) + 's';
   if (unit === 'n2') return fN(v, 2);
   return Math.round(v).toLocaleString();
+}
+
+// Phase 2: one plain-language line per metric for engine.metricTrend()'s output — "say the
+// number AND the decision" (CLAUDE.md's standing UI rule) applied to the L3M trend read. `null`
+// (window too short / no data for one half) and 'flat' (inside the 3% materiality floor) both
+// render as neutral/quiet text; only a real up/down gets the improving/worsening color judgment.
+function trendText(trend, spec) {
+  if (!trend) return { text: '—', color: 'var(--text3)' };
+  if (trend.dir === 'flat') return { text: 'Steady over L3M', color: 'var(--text3)' };
+  const arrow = trend.dir === 'up' ? '↑' : '↓';
+  const judgment = trend.better ? 'improving' : 'worsening';
+  const color = trend.better ? '#10b981' : 'var(--crit)';
+  return {
+    text: `${arrow} ${fmtDossierVal(trend.v1, spec.unit)} → ${fmtDossierVal(trend.v2, spec.unit)} (${judgment})`,
+    color,
+  };
 }
 
 // Small inline sparkline, one per factual-grid row — same hand-rolled-SVG shape this codebase
@@ -120,10 +136,11 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
   const [narrative, setNarrative] = useState('');
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [correlationsExpanded, setCorrelationsExpanded] = useState(false);
   const [demographicsRows, setDemographicsRows] = useState(null);
 
   const run = async ({ locValue }) => {
-    setNarrative(''); setExpanded(false);
+    setNarrative(''); setExpanded(false); setCorrelationsExpanded(false);
     if (locValue?.level !== 'store') { setSelection({ loc: null }); return; }
     const loc = locValue.id;
     const store = (stores || []).find(s => s.loc === loc) || { loc };
@@ -145,6 +162,16 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
     for (const spec of DOSSIER_METRICS) out[spec.key] = dossierSparklineSeries(ds, selection.loc, spec, 90);
     return out;
   }, [ds, selection?.loc]);
+  // Phase 2: one L3M trend read per factual-grid metric — same auto-first sourcing the grid's
+  // own cells already use, so a trend read can never disagree with the grid's L3M column.
+  const trends = useMemo(() => (selection?.loc ? dossierTrends(ds, selection.loc, selection.windows) : {}),
+    [ds, selection?.loc, selection?.windows]);
+  // Phase 2: curated cross-metric correlations for this store, via Signals' own Scanner engine
+  // (scanAllPairs) scoped to this one loc — no new correlation math. Computed on-demand at Run
+  // time, same "measure before adding caching" answer Phase 1 already settled for this report.
+  const correlationScan = useMemo(() => (selection?.loc ? dossierCorrelations(ds, selection.loc) : null),
+    [ds, selection?.loc]);
+  const correlations = useMemo(() => topCorrelations(correlationScan), [correlationScan]);
   const demographics = useMemo(() => {
     if (!selection?.loc || !demographicsRows?.length) return null;
     const mine = demographicsRows.find(r => r.loc === selection.loc);
@@ -235,6 +262,41 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
               );
             })(),
           ),
+          // ── What Moves Together — Scanner-curated cross-metric correlations (Phase 2) ───
+          div({ style: { marginBottom: 16 } },
+            h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, '🔗 What Moves Together (this store)'),
+            !correlations.headline.length
+              ? div({ style: { fontSize: 10.5, color: 'var(--text3)' } },
+                  'Nothing cleared Scanner\'s effect-size/FDR floor for this store yet — not enough matched history, or nothing moves together strongly.')
+              : div(null,
+                  div({ style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
+                    ...correlations.headline.map(c => div({
+                      key: c.xKey + '|' + c.yKey,
+                      title: 'Scanner framing: these move together — not a claim that one causes the other.',
+                      style: {
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--text)',
+                        padding: '7px 10px', borderRadius: 8, background: 'var(--surf2)',
+                        border: '.5px solid ' + (c.fdrSig ? 'rgba(16,185,129,.35)' : 'var(--bdr)'),
+                        flex: '1 1 260px', minWidth: 230,
+                      },
+                    },
+                      span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: Math.abs(c.r) >= 0.6 ? '#10b981' : Math.abs(c.r) >= 0.45 ? '#f59e0b' : 'var(--text2)' } },
+                        (c.r >= 0 ? '+' : '') + c.r.toFixed(2)),
+                      span(null, c.xLabel, ' ↔ ', c.yLabel),
+                      c.fdrSig && span({ style: { fontSize: 9, color: '#10b981' } }, '✓ not a fluke'),
+                      c.crossDomain && span({ style: { fontSize: 9, color: 'var(--text3)' } }, '· different areas'),
+                      c.divergent && span({ style: { fontSize: 9, color: '#f59e0b' } }, '· not a straight line'),
+                    )),
+                  ),
+                  correlations.rest.length > 0 && (correlationsExpanded
+                    ? div({ style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 } },
+                        ...correlations.rest.map(c => div({
+                          key: c.xKey + '|' + c.yKey,
+                          style: { fontSize: 10, color: 'var(--text2)', padding: '6px 9px', borderRadius: 8, background: 'var(--surf2)', border: '.5px solid var(--bdr)', flex: '1 1 260px', minWidth: 230 },
+                        }, (c.r >= 0 ? '+' : '') + c.r.toFixed(2) + '  ' + c.xLabel + ' ↔ ' + c.yLabel)))
+                    : btn({ className: 'btn btn-sm', style: { fontSize: 9, marginTop: 8 }, onClick: () => setCorrelationsExpanded(true) }, '+ ' + correlations.rest.length + ' more')),
+                ),
+          ),
           // ── Trend charts — the numbers a GM/Supervisor actually watches daily ───────────
           div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 18 } },
             ...TREND_CHART_KEYS.map(({ key, color }) => {
@@ -250,13 +312,19 @@ export function LocationDossierPanel({ ds, stores, onClose }) {
               h('thead', null, h('tr', null,
                 h('th', { style: { padding: '5px 8px', textAlign: 'left', color: 'var(--text3)', fontWeight: 600 } }, 'Metric'),
                 h('th', { style: { padding: '5px 8px', textAlign: 'left', color: 'var(--text3)', fontWeight: 600 } }, '90-Day Trend'),
+                h('th', { style: { padding: '5px 8px', textAlign: 'left', color: 'var(--text3)', fontWeight: 600 } }, 'L3M Read'),
                 ...selection.windows.map(w => h('th', { key: w.id, style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text3)', fontWeight: 600 } }, w.label)),
               )),
-              h('tbody', null, ...grid.map((g, i) => tr({ key: g.key, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
-                td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, g.label),
-                td({ style: { padding: '5px 8px' } }, h(RowSparkline, { points: sparklines[g.key], color: TREND_CHART_KEYS.find(t => t.key === g.key)?.color || '#9ca3af' })),
-                ...selection.windows.map(w => td({ key: w.id, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, fmtDossierVal(g.values[w.id], g.unit))),
-              ))),
+              h('tbody', null, ...grid.map((g, i) => {
+                const spec = DOSSIER_METRICS.find(m => m.key === g.key);
+                const tt = trendText(trends[g.key], spec);
+                return tr({ key: g.key, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' } },
+                  td({ style: { padding: '5px 8px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' } }, g.label),
+                  td({ style: { padding: '5px 8px' } }, h(RowSparkline, { points: sparklines[g.key], color: TREND_CHART_KEYS.find(t => t.key === g.key)?.color || '#9ca3af' })),
+                  td({ style: { padding: '5px 8px', whiteSpace: 'nowrap', fontSize: 9.5, color: tt.color } }, tt.text),
+                  ...selection.windows.map(w => td({ key: w.id, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text2)' } }, fmtDossierVal(g.values[w.id], g.unit))),
+                );
+              })),
             ),
           ),
           demographics && div({

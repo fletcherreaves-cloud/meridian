@@ -217,3 +217,40 @@ Still not built (unchanged from §6): Phase 2 (Scanner-curated cross-metric corr
 7 new/updated tests (2 engine, 1 render + 1 reactivity regression, 1 top-bottom-performers label,
 1 dispatch-86 label). Full suite (8017 tests) and build pass clean (701.97 KB eager, budget
 850 KB). See `memory/finding-prime-cost-rename-2026-11-13.md` for the rename's full reasoning.
+
+## ✅ Phase 2 SHIPPED (v5.783, 2026-11-14)
+
+Owner, 2026-11-14: *"yes let's begin phase 2."* Built exactly §2B's two pieces, nothing beyond:
+
+1. **Scanner-curated cross-metric correlations ("🔗 What Moves Together").** `src/engine/
+   location-dossier.js`'s `dossierCorrelations(ds, loc, opts)` calls Signals' own `scanAllPairs`
+   (`signal-registry.js`) AS-IS with `scopeLoc: loc` — no new correlation math, no new materiality
+   threshold. `topCorrelations(scanResult, max=5)` is the only new logic: re-sorts the
+   already-|r|≥0.35-and-FDR-floored results so an FDR-significant pair always outranks a
+   merely-large-|r| one (scanAllPairs's own sort is |r| desc only), then cuts to a headline + "+N
+   more" — same shape `topFindings()` already established. Default 5 (not findings' 3) because
+   every candidate here already cleared Scanner's own effect-size+FDR floor before reaching this
+   list. Rendered as a chip strip reusing Signals' own badge language ("not a fluke ✓",
+   "different areas", "not a straight line") rather than inventing new copy.
+2. **Plain-language L3M trend reads ("L3M Read" column).** `metricTrend(ds, loc, l3mWindow,
+   metricSpec)` splits the L3M window into two contiguous halves and compares them via
+   `dossierMetricValue` — the EXACT function the factual grid's own cells already call — so a
+   trend read can never disagree with the grid's own L3M number. A relative-change floor (3%)
+   decides up/down/flat (metric-agnostic, since coaching.js's `trendOf()` uses per-metric absolute
+   thresholds that don't generalize across 9 differently-scaled metrics here); the
+   improving/worsening judgment comes from each metric's own new `lowerIsBetter` flag on
+   `DOSSIER_METRICS` — the SAME good/bad convention `opportunity.js`'s `bestInClass()` and
+   `performance-reviews.js`'s `statusPill()` already use for these same 9 metrics, not a new
+   scheme. `dossierTrends(ds, loc, windows)` wraps this per metric, keyed off whichever `l3m`
+   window is in the `windows[]` already passed around (never re-derives it).
+
+**Explicitly not touched, per §6's own boundaries:** Phase 3 (demographics/layout/equipment/
+personnel — equipment/layout data itself still being collected) and Phase 4 (patch/operator/state
+rollup views). Both remain open, not started.
+
+11 engine tests (`location-dossier-phase2-2026-11-14.test.js` — metricTrend's up/flat/
+direction-vs-judgment-independence/too-short-window/no-data cases, dossierTrends wiring,
+dossierCorrelations against a real constructed sales↔gc correlation, topCorrelations' FDR-first
+ordering) + 1 render test (`location-dossier-panel-2026-11-13.test.js`, appended) confirming both
+new UI sections mount and show a real "improving" judgment from constructed data. Full suite and
+build pass clean before merge.
