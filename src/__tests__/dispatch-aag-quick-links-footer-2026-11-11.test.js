@@ -54,9 +54,12 @@ describe('At A Glance — operational Quick Links footer', () => {
   });
 
   // Notes 74 (owner, 2026-11-11): expanded the same footer with QSRSoft operational deep links
-  // and a separate QSRSoft Food Cost group. These are the plain unscoped URLs the owner supplied
-  // — per-store scoping syntax is a separate, still-in-progress verification (memory/notes-74-queue.md).
-  it('renders the Notes 74 QSRSoft + Food Cost links as real external links', async () => {
+  // and a separate QSRSoft Food Cost group. Per-store scoping syntax was verified live 2026-11-14
+  // (task #156) — `baseProps.stores` is a single store ({loc:'10422'}), so every `locParam:true`
+  // link now gets `?location=<unpadded loc>` appended; QSRSoft Home and Operations Report don't
+  // (Home ignores its own `location=`, Operations Report's effect stayed unconfirmed — see
+  // memory/notes-74-queue.md's dated update block).
+  it('renders the Notes 74 QSRSoft + Food Cost links as real external links, store-scoped where confirmed', async () => {
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     await act(async () => { root.render(React.createElement(AtAGlance, baseProps)); });
 
@@ -69,16 +72,28 @@ describe('At A Glance — operational Quick Links footer', () => {
     expect(qsrHome.getAttribute('target')).toBe('_blank');
 
     const registerAudit = byLabel('Register Audit');
-    expect(registerAudit.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit');
+    expect(registerAudit.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit?location=10422');
 
     const opsReport = byLabel('Operations Report');
     expect(opsReport.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport');
 
     const foodOverBase = byLabel('Food Over Base');
     expect(foodOverBase, 'Food Over Base link not found').toBeTruthy();
-    expect(foodOverBase.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/food-over-base');
+    expect(foodOverBase.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/food-over-base?location=10422');
 
     const variance = byLabel('Variance/Yields');
-    expect(variance.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/stat-variance');
+    expect(variance.getAttribute('href')).toBe('https://v3.myqsrsoft.com/cimt/inventory/stat-variance?location=10422');
+  });
+
+  it('falls back to the plain unscoped URL when more than one store is in view', async () => {
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    const multiStoreProps = { ...baseProps, stores: [{ loc: '10422' }, { loc: '10915' }] };
+    await act(async () => { root.render(React.createElement(AtAGlance, multiStoreProps)); });
+
+    const links = [...container.querySelectorAll('a')];
+    const byLabel = label => links.find(a => a.textContent.trim() === label);
+
+    const registerAudit = byLabel('Register Audit');
+    expect(registerAudit.getAttribute('href')).toBe('https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit');
   });
 });
