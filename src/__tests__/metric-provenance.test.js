@@ -161,6 +161,51 @@ describe('METRIC_PROVENANCE — task #152 curated additions (2026-11-14)', () =>
   });
 });
 
+// Task #152 (2026-11-14, pass 2) — engine/signal-registry.js's METRIC_CATEGORIES feeds the
+// Signals panel's Scanner/Signal Lab. Most of its keys already bridge to a real METRIC_SOURCES
+// chain (auto-covered); these 20 are the confirmed exception -- no METRIC_SOURCES chain at all
+// (verified by grep against metric-source.js before writing), so autoProvenanceFor() never
+// generates them. None collide with a real METRIC_SOURCES key (this would shadow, not add).
+describe('METRIC_PROVENANCE — task #152 signal-registry.js additions (2026-11-14)', () => {
+  const directKeys = ['baseFoodPct', 'discCoupon', 'pLFoodPct', 'pLPaperPct',
+    'osat5', 'osatB2B', 'accuracyB2B', 'dtProblem', 'overallProblem',
+    'vpDtSat', 'vpIrSat', 'vpQualityB2B', 'vpFriesB2B', 'vpSnackB2B'];
+  const composedKeys = ['osatTop2', 'schedGap', 'scheduleEditCount', 'scheduleCostVariance',
+    'complianceViolationCount', 'complianceCostPenalty'];
+
+  it('all 14 direct-read entries are present, non-composed, and real', () => {
+    for (const key of directKeys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(false);
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('all 6 composed entries are present and real', () => {
+    for (const key of composedKeys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(true);
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('the LifeLenz-sourced entries name their real Supabase tables', () => {
+    expect(METRIC_PROVENANCE.schedGap.table).toBe('lifelenz_schedule');
+    expect(METRIC_PROVENANCE.scheduleEditCount.table).toBe('lifelenz_schedule_variance');
+    expect(METRIC_PROVENANCE.scheduleCostVariance.table).toBe('lifelenz_schedule_variance');
+    expect(METRIC_PROVENANCE.complianceViolationCount.table).toBe('lifelenz_compliance_audit');
+    expect(METRIC_PROVENANCE.complianceCostPenalty.table).toBe('lifelenz_compliance_audit');
+  });
+
+  it('the VOICE Performance entries name their real Supabase table', () => {
+    for (const key of ['vpDtSat', 'vpIrSat', 'vpQualityB2B', 'vpFriesB2B', 'vpSnackB2B']) {
+      expect(METRIC_PROVENANCE[key].table).toBe('smg_voice_performance');
+    }
+  });
+});
+
 describe('provenanceText', () => {
   it('formats system, report, table, formula, and grain into one readable string', () => {
     const text = provenanceText('tpph');

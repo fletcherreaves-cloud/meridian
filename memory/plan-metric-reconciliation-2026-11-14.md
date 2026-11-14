@@ -72,9 +72,84 @@ actually displayed, since that resolver is the house standard every panel is sup
    already covered" is itself real progress on a task this broad — otherwise the same ground
    gets re-walked next pass.
 
-## Explicitly deferred — next priority for whoever picks this up
+## Pass 2 (2026-11-14, same day) — `signal-registry.js`
 
-- **`forecast.js`'s named models (`simple`/`dow`/`ae`/`ewma`/`di`) — NOT attempted this pass.**
+The previous pass's "mostly already covered" characterization of `signal-registry.js` was
+**checked directly, not accepted as-is** — it was half right. Read the file end to end (1199
+lines) and classified every `METRIC_CATEGORIES` key:
+
+- **Most ARE already covered**, exactly as the previous pass said — bridged through that file's
+  own `AUTO_FIRST_KEY_MAP` to a real `METRIC_SOURCES` chain, so `autoProvenanceFor()` already
+  generates a Lineage entry. No action needed on these (service/controls categories are 100%
+  covered this way; most of labor/sales too).
+- **But 20 keys genuinely had NO `METRIC_SOURCES` chain at all** (confirmed by `grep` against
+  `metric-source.js` before writing anything — zero hits for every one of them), so they were
+  silently undocumented:
+  - 4 FOB sub-items the file's own `AUTO_FIRST_KEY_MAP` header comment already named as having
+    "NO matching METRIC_SOURCES chain today": `baseFoodPct`, `discCoupon`, `pLFoodPct`,
+    `pLPaperPct`. Direct parser pass-throughs (`src/parsers/index.js`) of the uploaded Monthly
+    Projections/FOB report's own columns — no in-app formula exists because none is computed.
+  - 11 SMG/VOICE customer metrics, previously unflagged by anything: `osat5`, `osatTop2`
+    (composed: 5★+4★), `osatB2B`, `accuracyB2B`, `dtProblem`, `overallProblem` (FullScale
+    scorecard, `smg_fullscale`) and `vpDtSat`/`vpIrSat`/`vpQualityB2B`/`vpFriesB2B`/`vpSnackB2B`
+    (the separate monthly VOICE Performance upload, `smg_voice_performance` — confirmed via
+    `src/lib/supabase.js`'s own `.from('smg_voice_performance')` calls and
+    `src/parsers/index.js`'s VOICE column-name list).
+  - 5 real-formula LifeLenz Data Explorer metrics, also previously unflagged: `schedGap`
+    (`crewHrs − idealTotHrs`, computed upstream, read as-is — table `lifelenz_schedule`),
+    `scheduleEditCount`/`scheduleCostVariance` (`engine/schedule-discipline.js`'s
+    `dailyScheduleVariance()` — count and Σ$ of post-publish schedule edits, table
+    `lifelenz_schedule_variance`), `complianceViolationCount`/`complianceCostPenalty`
+    (`engine/compliance-audit.js` — count and Σ$ of labor-compliance violations, table
+    `lifelenz_compliance_audit`).
+  - All 20 added to `CURATED_PROVENANCE` (`src/engine/metric-provenance.js`), formulas traced
+    directly from the real parser/engine code (not guessed from field names), with 4 new tests
+    (`src/__tests__/metric-provenance.test.js`'s `'task #152 signal-registry.js additions'`
+    block) asserting each is present, correctly marked composed/direct, and doesn't collide with
+    a real `METRIC_SOURCES` key.
+
+### Finding (not fixed): `salesVsLY` is two different, same-named metrics in two unrelated registries
+
+`signal-registry.js`'s `salesVsLY` key (Sales category) reads `fobRows.salesVsLY` directly — a
+raw monthly field, straight from the uploaded Monthly Projections/FOB report, no in-app
+computation. This is a **completely different number** from `metric-provenance.js`'s existing
+curated `salesVsLY` entry, which documents `vs-ly.js`'s `matchedVsLY` — a daily, DAR-sourced,
+matched-day Σcurrent/ΣLY calculation. Same string key, two unrelated real metrics, in two
+registries that don't cross-reference each other.
+
+**Not currently a live bug** — checked directly: `metric-lineage.js`/`metric-provenance.js`
+never import or read `signal-registry.js` at all (confirmed by grep), so a user browsing Metric
+Lineage for "salesVsLY" only ever sees the DAR-matched-day description; `signals.js`'s Signal
+Lab/Scanner never link out to Metric Lineage for any metric today (checked — the panel's only
+`InfoIcon` is one generic `signals_guide` KB link, not per-metric). So the two `salesVsLY`s
+never actually collide in front of a user today. **But the moment anyone wires Signal Lab
+metrics into Metric Lineage lookups** (a natural next step for exactly the kind of
+"what does this represent" transparency this whole task is about), this collision would make
+the FOB-sourced monthly `salesVsLY` silently show the wrong (DAR-matched-day) formula. Flagging
+here rather than renaming anything — renaming either one is a real product decision (which name
+is "the" Sales vs LY metric going forward), not something to resolve unilaterally mid-pass.
+
+### Explicitly deferred from pass 2
+
+- **The ~30 "cloud-leg" direct-read duplicates** (`glSales`, `glGC`, `csCashRefCnt`, `slSales`,
+  `qaSales`, etc. — the `glimpse`/`cash`/`ledger`/`daractivity` categories) are real, separately
+  user-visible Signal Lab picker entries, each a simple single-table/single-field read with no
+  formula. Not added this pass: there are ~30 of them, each mechanically identical in shape
+  (`{table: <one source table>, field: <name>}`), and `METRIC_CONCEPT` in `signal-registry.js`
+  already documents inline which manual-key counterpart each one is the "same underlying
+  quantity, different leg" of. Worth a dedicated bulk pass (genuinely mechanical, low risk,
+  lower value per entry than what's covered above) — next priority for `signal-registry.js`
+  specifically, separate from the `forecast.js` deferral below.
+- Weather/Calendar/Logged-Events/Pricing/Product-Mix-item categories — judged as NOT needing
+  `METRIC_PROVENANCE` entries. These are synthesized Scanner/Signal-Lab correlation inputs with
+  no source table and no panel-displayed KPI number in the traditional sense (a 0/1 day-of-week
+  flag, a per-item dynamic resolver) — `signal-registry.js`'s own extensive inline comments
+  already document what each one is and why, better than a registry entry could. This is a
+  judgment call, stated plainly rather than silently skipped, per this task's own standing rule.
+
+## Still deferred from pass 1 — unchanged
+
+- **`forecast.js`'s named models (`simple`/`dow`/`ae`/`ewma`/`di`) — NOT attempted.**
   These are the Model Assignment / Forecast Accuracy panels' column headers and are heavily
   user-facing (the owner's own Smart Targets work lives here). Deliberately not rushed: the
   file is 2918 lines with intricate per-model branches (`forecastDay()`'s `_assignedModel`
@@ -82,12 +157,7 @@ actually displayed, since that resolver is the house standard every panel is sup
   rule is to "cautiously protect" the engineered models — a wrong formula written into a
   transparency registry is worse than no entry, since it would look authoritative. This needs a
   dedicated pass with time to trace each branch correctly, not a rushed add at the end of this
-  one.
-- **`signal-registry.js`'s metric groups** — lower priority. On inspection most groups either
-  wrap an existing `METRIC_SOURCES` chain directly (already covered) or are raw cloud-stream
-  fields feeding the Scanner correlation engine (a different kind of "metric" — a correlation
-  input, not a displayed KPI with its own formula). Worth a second look once the forecast models
-  are done, but not an obvious gap the way the two items above were.
+  one. Still the single highest-value remaining item.
 - **`paperCost` (FOB_LINES in `daily-review.js`) — a genuine, already-flagged data gap, not a
   documentation gap.** `DEFAULT_TARGETS` carries a real `tPaperCost` target but `metric-source.js`
   has no actual-value key for it at all. The panel already surfaces this honestly (target-only
