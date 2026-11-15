@@ -27,6 +27,22 @@ export function effectiveMonthlyTarget(loc, ym, allMonthlyTargets) {
   return { ...DEFAULT_TARGETS[L], ...override };
 }
 
+// Safely resolves a range boundary (a Date object, or a date-only 'YYYY-MM-DD' string) to a clean
+// LOCAL-MIDNIGHT Date for calendar-day arithmetic. `new Date('2026-11-01')` parses a date-only
+// string as UTC midnight, which in any timezone behind UTC (every US timezone this app serves)
+// reads back as the PREVIOUS calendar day once .getFullYear()/.getMonth()/.getDate() are read --
+// so this parses through local NOON first (no timezone's offset reaches a full 12 hours) and then
+// immediately re-anchors to midnight on that same local calendar day, rather than carrying the
+// noon time-of-day forward. Carrying noon forward is its own trap, found live 2026-11-15 testing
+// the fix above under a real non-UTC timezone: every monthStart/monthEnd boundary elsewhere in
+// this file is built via `new Date(y, m, d)`, which is always local midnight, so a day-count diff
+// against a noon-shifted boundary is skewed by exactly half a day -- which Math.round() rounds UP
+// into a full extra day, silently inflating daysInWindow by one.
+function _localMidnight(v) {
+  const d = v instanceof Date ? v : new Date(String(v) + 'T12:00:00');
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 // Month-end pace projection (owner request 2026-11-15: "for the sales target can you come up
 // with a way to pace it based on what the actual is MTD vs projected"). Not a new method --
 // this is the exact linear run-rate the live Projection Workspace's "Actuals vs Target" pace
@@ -64,9 +80,9 @@ export function monthEndPace(actual, range, targetMonthYm) {
   if (actual == null || !range?.e || !targetMonthYm) return null;
   const [y, m] = String(targetMonthYm).split('-').map(Number);
   if (!y || !m) return null;
-  const endDate = range.e instanceof Date ? range.e : new Date(range.e + 'T12:00:00');
+  const endDate = _localMidnight(range.e);
   if (endDate.getFullYear() !== y || endDate.getMonth() + 1 !== m) return null;
-  const startDate = range.s instanceof Date ? range.s : (range.s ? new Date(range.s + 'T12:00:00') : endDate);
+  const startDate = range.s ? _localMidnight(range.s) : endDate;
   if (startDate.getFullYear() !== y || startDate.getMonth() + 1 !== m) return null;
   const daysInMonth = new Date(y, m, 0).getDate();
   const daysInWindow = Math.round((endDate - startDate) / 86400000) + 1;
@@ -294,9 +310,18 @@ export const YEARLY_TARGET_METRICS = [
 // Resolves how many days of `range` fall in each calendar month it overlaps -- {ym, daysInWindow,
 // daysInMonth} per month, in chronological order. A single-month window (the common case) returns
 // exactly one entry; a 7/14/21/28D window that crosses a month boundary returns two.
+//
+// ⚠️ BUG FIXED 2026-11-15 (owner observation, live): a bare `new Date('2026-11-01')` parses a
+// date-only ISO string as UTC MIDNIGHT, not local midnight -- in any timezone behind UTC (every US
+// timezone this app serves), that lands on the PREVIOUS calendar day locally. A true single-month
+// MTD window (Nov 1 - Nov 14) was landing one tick into October, producing a real-but-meaningless
+// extra month entry ("Blended: 0d Oct + 14d Nov") for what should read as a plain, unblended
+// single-month target. Fixed via _localMidnight() above (not a bare noon-shift -- that alone
+// reintroduces a different, subtler day-count bug against this function's own midnight-built
+// monthStart/monthEnd boundaries; see that helper's own comment).
 function _monthsInRange(range) {
-  const s = range?.s instanceof Date ? range.s : new Date(range?.s);
-  const e = range?.e instanceof Date ? range.e : new Date(range?.e);
+  const s = _localMidnight(range?.s);
+  const e = _localMidnight(range?.e);
   const months = [];
   let cur = new Date(s.getFullYear(), s.getMonth(), 1);
   const lastMonthStart = new Date(e.getFullYear(), e.getMonth(), 1);
@@ -490,7 +515,8 @@ export function targetStatus(target, actual, better) {
 function _yearToDateRange(range, targetYear) {
   const yearStart = new Date(targetYear, 0, 1);
   const yearEnd = new Date(targetYear, 11, 31);
-  const raw = range?.e ? (range.e instanceof Date ? range.e : new Date(range.e)) : new Date();
+  // Same UTC-midnight date-string trap _monthsInRange/monthEndPace guard against -- see _localMidnight().
+  const raw = range?.e ? _localMidnight(range.e) : new Date();
   const e = raw > yearEnd ? yearEnd : (raw < yearStart ? yearStart : raw);
   return { s: yearStart, e };
 }
