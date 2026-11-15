@@ -364,6 +364,24 @@ const SELECT_COLS = [
   'cashRefundsAmt', 'cashRefundsQty', 'cashlessRefundsAmt', 'cashlessRefundsQty',
   'promoAmt', 'promoQty',
   'tredsBeforeQty', 'tredsBeforeAmt', 'tredsAfterQty', 'tredsAfterAmt',
+  // ⚠️ THROWAWAY FIELD-DISCOVERY PROBE (2026-11-15, NOT for merge) -- re-checking Cash O/S
+  // after the owner's own screenshot of this exact report showed real "Over/Short $"/"%"
+  // values, directly contradicting the 2026-11-14 finding's "confirmed unavailable" verdict.
+  // An unrecognized name is silently dropped with no error (documented above), so adding a
+  // wide batch here is safe -- QSRSOFT_AUDIT_DEBUG=1 will print which of these actually come
+  // back as real keys on a real response row. Also probing for a "drawer cash" field and
+  // Over/Short COUNT fields (owner also asked for both). Fields already confirmed real in the
+  // 2026-11-14 finding doc's own arithmetic section (countedCash, closingReading,
+  // openingReading, skimTotal, cashlessSalesAmt) are re-included here as a sanity check that
+  // this probe methodology actually works before trusting any NEW name it reports.
+  'countedCash', 'closingReading', 'openingReading', 'skimTotal', 'cashlessSalesAmt',
+  'overShortDollar', 'overShortPercent', 'overShortCnt', 'overShortQty',
+  'osDollar', 'osPct', 'osAmt', 'osPercent', 'osCnt', 'osQty',
+  'cashOverAmt', 'cashShortAmt', 'overAmt', 'shortAmt',
+  'cashOverShortAmt', 'cashOverShortPercent', 'cashOverShortDollar', 'cashOverShortCnt',
+  'netOverShortAmt', 'registerOverShortAmt', 'drawerOverShortAmt',
+  'cashDiscrepancyAmt', 'discrepancyAmt', 'varianceAmt', 'variancePct',
+  'countedCashAmt', 'drawerCashAmt', 'endingCashAmt', 'beginningCashAmt', 'cashEndAmt', 'cashBeginAmt',
 ];
 export const buildUrl = (startDate, endDate, registerType = 'cashier') =>
   `${BASE}/data_layer/v1/cash/register-audit-by-employee?` + new URLSearchParams({
