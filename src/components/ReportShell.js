@@ -18,7 +18,7 @@ import {
   LocationSelector, buildLocationHierarchy, locationSelectorLocs, ActionMenu,
 } from './PanelControls.js';
 import {
-  buildReportFilename, exportReportCSV, exportReportXLSX, exportReportPDF, printReportHTML,
+  buildReportFilename, exportReportCSV, exportReportXLSX, exportReportPDF, exportReportPDFFromHTML, printReportHTML,
 } from '../utils/report-export.js';
 import { printHtml } from '../utils/print-html.js';
 import { sNameC } from '../constants.js';
@@ -73,11 +73,21 @@ export function ReportShell({
   // should match existing workbook aesthetic") supplies getPrintHTML() to render bespoke HTML
   // instead — printHtml() itself is the same shared same-page overlay every hand-rolled print
   // flow in the app already uses, so this isn't a new print mechanism, just a second way to feed it.
+  //
+  // ⚠️ BUG FIXED 2026-11-15 (owner report, live): PDF used to ALWAYS call exportReportPDF() (the
+  // generic flat {headers,rows} jsPDF+autoTable table), even for a report supplying a bespoke
+  // getPrintHTML() — so Print and PDF were two totally independent renderers, and every fix made
+  // to a report's bespoke print HTML reached Print but silently never reached PDF. Now PDF reuses
+  // the SAME bespoke HTML via exportReportPDFFromHTML() (html2canvas + jsPDF, one PDF page per
+  // `.store-page` section) whenever a report supplies getPrintHTML(), so the two can never again
+  // visually diverge. A report with no getPrintHTML() keeps the unchanged flat-table PDF.
   const exportItems = !hasRun ? [] : [
     { label: '🖨 Print', onClick: () => getPrintHTML ? printHtml(getPrintHTML()) : printReportHTML(getExportData()) },
     { label: '⬇ CSV', onClick: () => exportReportCSV({ filename: filenameFor(), ...getExportData() }) },
     { label: '⬇ Excel', onClick: () => exportReportXLSX({ filename: filenameFor(), sheetName: title, ...getExportData() }) },
-    { label: '⬇ PDF', onClick: () => exportReportPDF({ filename: filenameFor(), ...getExportData() }) },
+    { label: '⬇ PDF', onClick: () => getPrintHTML
+        ? exportReportPDFFromHTML({ filename: filenameFor(), html: getPrintHTML() })
+        : exportReportPDF({ filename: filenameFor(), ...getExportData() }) },
   ];
 
   const subtitleText = (subtitlePrefix ? subtitlePrefix + ' — ' : '') + scope + (range ? ` · ${range.s} to ${range.e}` : '');

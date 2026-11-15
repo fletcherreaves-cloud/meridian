@@ -175,21 +175,54 @@ describe('AssignmentsTab (Roles & Assignments editor, 2026-11-13)', () => {
     window.confirm = origConfirm;
   });
 
-  it('adding a new role row for an existing person calls saveStaffAssignment with the typed target', async () => {
+  // Owner report (2026-11-15): typed "supervisor zukaar" into the old free-text "oversees person"
+  // box, following its own placeholder literally -- resolveScope() does an EXACT string match
+  // against real identities, so that typo silently resolved to nobody and the "Resolved scope"
+  // preview stayed "—" with no error anywhere to say why. Fixed by replacing the free-text input
+  // with a dropdown of knownPeople (the same real names the panel already auto-populates), so a
+  // typo like that is no longer possible -- mirroring exactly how "oversees store" already can't
+  // be mistyped either.
+  it('adding a new role row for an existing person selects the target from a dropdown of known people, not free text', async () => {
     loadMock.mockResolvedValue([]);
     ({ container, root } = await mount());
     const addRoleButtons = [...container.querySelectorAll('button')].filter(b => b.textContent === '+ Add role');
-    const ashleyAddBtn = addRoleButtons[0]; // first known person alphabetically or whichever renders first
-    await act(async () => { ashleyAddBtn.click(); });
-    const targetInput = [...container.querySelectorAll('input')].find(i => i.placeholder?.includes('oversee'));
-    expect(targetInput).toBeTruthy();
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    // Whichever known person's card renders first -- never assumed to be a specific name, since
+    // the real seed map's alphabetical order isn't this test's concern.
+    await act(async () => { addRoleButtons[0].click(); });
+    // No free-text target input exists anymore for the 'person' target type.
+    expect([...container.querySelectorAll('input')].some(i => i.placeholder?.includes('oversee'))).toBe(false);
+    // Matched on the exact placeholder text, not a loose "oversee" substring -- the targetType
+    // select's own options ("oversees person"/"oversees store") also contain that substring.
+    const targetSelect = [...container.querySelectorAll('select')]
+      .find(s => [...s.options].some(o => o.text === 'Select who they oversee…'));
+    expect(targetSelect).toBeTruthy();
+    // Pick whichever real option the dropdown actually offers (excluding the placeholder) --
+    // proves the target comes from a closed list of known people, not typed free text, without
+    // hardcoding which specific name happens to render first in the live seed map.
+    const realOption = [...targetSelect.options].find(o => o.value !== '');
+    expect(realOption).toBeTruthy();
     await act(async () => {
-      setter.call(targetInput, 'Someone Else');
-      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      targetSelect.value = realOption.value;
+      targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
     const addBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Add');
     await act(async () => { addBtn.click(); });
-    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ target: 'Someone Else', target_type: 'person' }));
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ target: realOption.value, target_type: 'person' }));
+  });
+
+  it('the "oversees person" dropdown excludes the person whose own row is being added (no self-reference)', async () => {
+    loadMock.mockResolvedValue([]);
+    ({ container, root } = await mount());
+    // Find the name label rendered as EXACTLY 'Ashley Podroza' (not a startsWith/contains match,
+    // which would false-match an ancestor wrapper whose full textContent happens to begin the
+    // same way) and click the "+ Add role" button in that same header row.
+    const nameDiv = [...container.querySelectorAll('div')].find(d => d.textContent === 'Ashley Podroza');
+    expect(nameDiv).toBeTruthy();
+    const ashleyAddBtn = nameDiv.parentElement.querySelector('button');
+    expect(ashleyAddBtn?.textContent).toBe('+ Add role');
+    await act(async () => { ashleyAddBtn.click(); });
+    const targetSelect = [...container.querySelectorAll('select')]
+      .find(s => [...s.options].some(o => o.text === 'Select who they oversee…'));
+    expect([...targetSelect.options].some(o => o.value === 'Ashley Podroza')).toBe(false);
   });
 });
