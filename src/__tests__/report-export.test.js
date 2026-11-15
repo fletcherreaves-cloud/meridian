@@ -114,6 +114,85 @@ describe('exportReportPDF', () => {
   });
 });
 
+describe('exportReportPDFFromHTML', () => {
+  // ⚠️ BUG FIXED 2026-11-15: "⬇ PDF" always rendered the generic flat {headers,rows} table even
+  // when a report supplied bespoke getPrintHTML() for "🖨 Print", so Print and PDF silently
+  // diverged. This fixes it by rasterizing the SAME print HTML into the PDF instead. html2canvas
+  // needs a real browser paint engine happy-dom doesn't have, so (same as the "📸 Share" button's
+  // own test) it's mocked at the module boundary -- real rasterization fidelity is a browser
+  // concern, not something this suite can meaningfully assert on. jsPDF is mocked too, scoped to
+  // just this block via vi.doMock + vi.resetModules (never a file-level vi.mock), so the
+  // exportReportPDF describe block above keeps exercising the REAL jsPDF and its real PDF bytes.
+  // This block's job is the WIRING the fix is actually about: one PDF page per `.store-page`
+  // section, in document order, falling back to the whole body when a report has none.
+  let capturedNodes, addImageCalls, addPageCalls, savedFilenames;
+
+  beforeEach(() => {
+    capturedNodes = [];
+    addImageCalls = [];
+    addPageCalls = 0;
+    savedFilenames = [];
+    vi.doMock('html2canvas', () => ({
+      default: vi.fn((node) => {
+        capturedNodes.push(node);
+        return Promise.resolve({ width: 800, height: 600, toDataURL: () => 'data:image/png;base64,FAKE' });
+      }),
+    }));
+    vi.doMock('jspdf', () => ({
+      jsPDF: vi.fn().mockImplementation(function () {
+        return {
+          internal: { pageSize: { getWidth: () => 612, getHeight: () => 792 } },
+          addPage: vi.fn(() => { addPageCalls++; }),
+          addImage: vi.fn((...args) => { addImageCalls.push(args); }),
+          save: vi.fn((filename) => { savedFilenames.push(filename); }),
+        };
+      }),
+    }));
+    vi.doMock('jspdf-autotable', () => ({ default: vi.fn() }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('html2canvas');
+    vi.doUnmock('jspdf');
+    vi.doUnmock('jspdf-autotable');
+    vi.resetModules();
+  });
+
+  it('rasterizes one page per .store-page section, in document order, adding a PDF page for every section after the first', async () => {
+    vi.resetModules();
+    const { exportReportPDFFromHTML } = await import('../utils/report-export.js');
+    const html = '<html><body>' +
+      '<div class="store-page" data-store="Freeport">A</div>' +
+      '<div class="store-page" data-store="Chipley">B</div>' +
+      '</body></html>';
+    await exportReportPDFFromHTML({ filename: 'Report', html });
+    expect(capturedNodes.length).toBe(2);
+    expect(capturedNodes[0].getAttribute('data-store')).toBe('Freeport');
+    expect(capturedNodes[1].getAttribute('data-store')).toBe('Chipley');
+    expect(addPageCalls).toBe(1); // first section is the doc's own initial page; the 2nd needs one addPage
+    expect(addImageCalls.length).toBe(2);
+    expect(savedFilenames).toEqual(['Report.pdf']);
+  });
+
+  it('falls back to rasterizing the whole body as a single page when there is no .store-page section', async () => {
+    vi.resetModules();
+    const { exportReportPDFFromHTML } = await import('../utils/report-export.js');
+    await exportReportPDFFromHTML({ filename: 'Flat', html: '<html><body><p>No sections here</p></body></html>' });
+    expect(capturedNodes.length).toBe(1);
+    expect(capturedNodes[0].textContent).toContain('No sections here');
+    expect(addPageCalls).toBe(0);
+    expect(addImageCalls.length).toBe(1);
+    expect(savedFilenames).toEqual(['Flat.pdf']);
+  });
+
+  it('removes the off-screen capture container from the DOM after export', async () => {
+    vi.resetModules();
+    const { exportReportPDFFromHTML } = await import('../utils/report-export.js');
+    await exportReportPDFFromHTML({ filename: 'Report', html: '<html><body><div class="store-page">A</div></body></html>' });
+    expect(document.body.querySelectorAll('[style*="-99999px"]').length).toBe(0);
+  });
+});
+
 describe('printReportHTML', () => {
   it('calls the shared printHtml overlay with an escaped, well-formed HTML document', async () => {
     const printHtmlMock = vi.fn(() => ({ close: () => {}, print: () => {} }));

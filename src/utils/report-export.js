@@ -9,6 +9,7 @@
 // shape NEW reports built on the shell use, not a retrofit.
 import { loadXLSX } from '../lib/xlsx-lazy.js';
 import { loadJsPDF } from '../lib/jspdf-lazy.js';
+import { loadHtml2Canvas } from '../lib/html2canvas-lazy.js';
 import { printHtml } from './print-html.js';
 
 // Matches DateRangeReport's own existing convention (src/views/analytics.js exportCSV) --
@@ -71,6 +72,72 @@ export async function exportReportPDF({ filename, title, subtitle, headers, rows
     headStyles: { fillColor: _PDF_ACCENT_RGB, textColor: [20, 20, 20] },
   });
   doc.save(_withExt(filename, 'pdf'));
+}
+
+// ⚠️ BUG FIXED 2026-11-15 (owner report, live, after two rounds of Print-view fixes that never
+// touched PDF): "⬇ PDF" always called exportReportPDF() above -- a jsPDF+autoTable render of the
+// generic FLAT {headers,rows} contract -- even for a report that supplies a bespoke getPrintHTML()
+// for its "🖨 Print" button. Print and PDF were two completely independent renderers that had
+// never been wired together, so every fix made to a report's bespoke print HTML (the FOB-leg
+// visual grouping, the cross-month "Blended:" label, the corrected Variance column, all landed
+// earlier today) only ever reached Print -- PDF kept rendering the OLD flat-table layout with none
+// of it, which is why the owner kept reporting "print/pdf still not fixed" even after Print itself
+// visibly improved. Fixed by rendering the SAME bespoke HTML a report already built for Print into
+// a real, downloaded PDF -- one PDF page per `.store-page` section (mirroring Print's own
+// one-page-per-store design, driven by the exact same markup, not a second hand-built layout) --
+// via html2canvas (rasterize each section, same library + off-screen-not-display:none technique
+// panel-screenshot.js's proven "📸 Share" button already uses, for the same reason: display:none
+// content cannot be captured) + jsPDF's addImage (fit each page's image into a standard PDF page).
+// Report-level opt-in: a report with no getPrintHTML() (the ReportShell default) is completely
+// unaffected -- this only ever replaces the flat-table PDF for a report that already built bespoke
+// HTML for Print, which is exactly the set of reports where the two could visibly disagree.
+export async function exportReportPDFFromHTML({ filename, html }) {
+  const [{ jsPDF }, html2canvas] = await Promise.all([loadJsPDF(), loadHtml2Canvas()]);
+  const container = document.createElement('div');
+  // Off-screen, not display:none -- html2canvas (like its "📸 Share" sibling) cannot rasterize an
+  // element the browser never actually lays out and paints.
+  container.style.cssText = 'position:fixed;left:-99999px;top:0;z-index:-1;';
+  document.body.appendChild(container);
+  try {
+    // Parse the print HTML's own <style> + body markup into our live container so the SAME rules
+    // buildPrintHTML() wrote (the FOB accent colors, the per-row shading, the table layout) apply
+    // exactly as they do in the real print preview window -- this is the identical document, not
+    // a re-derived approximation of it.
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    for (const styleEl of parsed.querySelectorAll('style')) container.appendChild(styleEl.cloneNode(true));
+    const body = document.createElement('div');
+    body.innerHTML = parsed.body.innerHTML;
+    container.appendChild(body);
+
+    // One PDF page per `.store-page` section (buildPrintHTML's own per-store page-break unit) --
+    // falls back to the whole body as a single page for a report with no such sections, so this
+    // stays general-purpose rather than assuming every bespoke print HTML is per-store.
+    const sections = [...body.querySelectorAll('.store-page')];
+    const pages = sections.length ? sections : [body];
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 24;
+    for (let i = 0; i < pages.length; i++) {
+      const canvas = await html2canvas(pages[i], { backgroundColor: '#ffffff', useCORS: true, scale: 2 });
+      // JPEG, not PNG -- MEASURED live against a real 28-store "All Stores" export (2026-11-15):
+      // PNG produced a 164 MB file (~5.9 MB/page) for a plain white-background table report, an
+      // unusable attachment/download size. The page has no transparency (backgroundColor:
+      // '#ffffff' above guarantees that), so PNG's lossless alpha channel buys nothing here --
+      // JPEG at 0.85 is visually indistinguishable for flat table/text content and cut the same
+      // export to low single-digit MB.
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      const availW = pageW - margin * 2, availH = pageH - margin * 2;
+      const ratio = Math.min(availW / canvas.width, availH / canvas.height, 1);
+      const w = canvas.width * ratio, h = canvas.height * ratio;
+      if (i > 0) doc.addPage();
+      doc.addImage(imgData, 'JPEG', (pageW - w) / 2, margin, w, h);
+    }
+    doc.save(_withExt(filename, 'pdf'));
+  } finally {
+    container.remove();
+  }
 }
 
 function _esc(v) {
