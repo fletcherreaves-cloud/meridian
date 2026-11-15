@@ -58,6 +58,30 @@ function _actualText(m) {
   const base = _fmtVal(m.actual, m.unit);
   return m.pace != null ? `${base} (Pace: ${_fmtVal(m.pace, m.unit)})` : base;
 }
+// Cross-month target blend label (owner request 2026-11-15: a 7/14/21/28D window can cross a
+// month boundary, and the Target must never silently read as a single, ordinary month's number
+// when it's actually a blend). `m.blend` is null for the common single-month case (nothing
+// renders). When populated, every window month is listed — including a missing one, rendered
+// distinctly from an actual blend so the label never implies math happened on data that wasn't
+// there.
+function _monthShort(ym) {
+  const [y, mo] = String(ym).split('-').map(Number);
+  return new Date(y, mo - 1, 1).toLocaleString('en-US', { month: 'short' });
+}
+function _blendLabel(blend) {
+  if (!blend) return null;
+  const present = blend.filter(b => !b.missing);
+  const missing = blend.filter(b => b.missing);
+  if (!missing.length) return 'Blended: ' + present.map(b => `${b.days}d ${_monthShort(b.ym)}`).join(' + ');
+  if (!present.length) return null; // shouldn't happen (caller already checked a value exists), but never fabricate a label
+  return `Covers ${present.map(b => `${b.days}d ${_monthShort(b.ym)}`).join(' + ')} only (${missing.map(b => _monthShort(b.ym)).join('/')} target missing)`;
+}
+// Flat text form of the Target cell for CSV/Excel/PDF, mirroring _actualText's pattern.
+function _targetText(m) {
+  const base = _fmtVal(m.target, m.unit);
+  const label = _blendLabel(m.blend);
+  return label ? `${base} (${label})` : base;
+}
 
 const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 
@@ -85,7 +109,10 @@ function StoreWorkbookCard({ loc, metrics }) {
           key: m.key, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' },
         },
           td({ style: _tdStyle(false) }, m.label),
-          td({ style: _tdStyle(true) }, _fmtVal(m.target, m.unit)),
+          td({ style: _tdStyle(true) },
+            div(null, _fmtVal(m.target, m.unit)),
+            _blendLabel(m.blend) && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, _blendLabel(m.blend)),
+          ),
           td({ style: _tdStyle(true) },
             div(null, _fmtVal(m.actual, m.unit)),
             m.pace != null && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, `Pace: ${_fmtVal(m.pace, m.unit)}`),
@@ -129,7 +156,7 @@ function buildPrintHTML({ title, subtitle, rows }) {
           <tbody>${r.metrics.map(m => `
             <tr>
               <td>${_escHtml(m.label)}</td>
-              <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}</td>
+              <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}${_blendLabel(m.blend) ? `<div class="pace">${_escHtml(_blendLabel(m.blend))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtVal(m.actual, m.unit))}${m.pace != null ? `<div class="pace">Pace: ${_escHtml(_fmtVal(m.pace, m.unit))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtDiff(m.diff, m.unit))}</td>
               <td class="c" style="color:${_PRINT_STATUS_COLOR[m.status]}">${_escHtml(_STATUS_LABEL[m.status])}</td>
@@ -234,7 +261,7 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
     title: _title, subtitle: _subtitle,
     headers: ['Store', 'Metric', 'Target', 'Actual', 'Variance', 'Status'],
     rows: (activeRows || []).flatMap(r => r.metrics.map(m => [
-      sNameC(r.loc) || r.loc, m.label, _fmtVal(m.target, m.unit), _actualText(m),
+      sNameC(r.loc) || r.loc, m.label, _targetText(m), _actualText(m),
       _fmtDiff(m.diff, m.unit), _STATUS_LABEL[m.status],
     ])),
   });
@@ -255,7 +282,7 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
     ),
     div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 12 } },
       tab === 'monthly'
-        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. Sales $ grades against a month-end pace projection (MTD actual ÷ days elapsed × days in month — the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses) whenever the range ends mid-month, not the raw MTD total, so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; the real MTD actual still shows as the small "Pace:" line\'s companion number.'
+        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. When a 7/14/21/28D window crosses a month boundary, the Target is a math blend of both months\' real targets — day-weighted for %/rate/sec metrics, day-prorated-and-summed for $ metrics — never a silent read of just one month\'s number; a small "Blended: Xd Mon + Yd Mon" line under the Target makes this explicit, or "Covers Xd Mon only (… target missing)" if one of the two months has no saved target to blend in. Sales $ grades against a month-end pace projection (MTD actual ÷ days elapsed × days in month — the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses) whenever the range ends mid-month, not the raw MTD total, so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; the real MTD actual still shows as the small "Pace:" line\'s companion number.'
         : tab === 'yearly'
         ? `Target reads the uploaded yearly targets workbook for the selected range's year — no fallback, since not every store/year has one uploaded. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Sales $ sums each completed month's real total plus the current month's own pace projection (shown as a "Pace:" line); Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
         : 'Target is each store\'s standing daily operational target — there is no monthly override for these.'),

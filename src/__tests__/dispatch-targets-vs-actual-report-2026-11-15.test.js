@@ -15,7 +15,7 @@ import { DEFAULT_TARGETS } from '../constants.js';
 import { resolveDatePreset, MTD_PRESET, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 import {
   effectiveMonthlyTarget, effectiveYearlyTarget, targetStatus, computeTargetsVsActual, monthEndPace,
-  MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS, YEARLY_TARGET_METRICS,
+  MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS, YEARLY_TARGET_METRICS, _blendedMonthlyTarget,
 } from '../engine/targets-vs-actual.js';
 import { resolveMetricForRange } from '../engine/fob-reference.js';
 import { TargetsVsActualReportPanel } from '../views/targets-vs-actual-report.js';
@@ -184,6 +184,75 @@ describe('computeTargetsVsActual() — monthly tab', () => {
     expect(byKey.fobBonusBase).toBeDefined();
     expect(byKey.fobBonusBase.target).toBe(DEFAULT_TARGETS[LOC].tFOBBonusBase);
     expect(byKey.fobBonusBase.actual).toBe(byKey.totalFoodCostPct.actual);
+  });
+});
+
+// Owner follow-up (2026-11-15): "Would like suggestions when 7, 14, 21 & 28 day cross months as
+// to how to handle targets... smartly determine, through math, what the aggregated target would
+// be while making it clear targets are blended across multiple periods." A 7-day window of
+// Sep 28 - Oct 4 spans 3 days in September (30-day month) + 4 days in October (31-day month).
+describe('_blendedMonthlyTarget() — cross-month target blending (owner follow-up, 2026-11-15)', () => {
+  const CROSS_RANGE = { s: '2026-09-28', e: '2026-10-04' };
+  const salesDef = MONTHLY_TARGET_METRICS.find(m => m.key === 'salesAmt');
+  const laborDef = MONTHLY_TARGET_METRICS.find(m => m.key === 'crewLaborPct');
+  const allMonthlyTargets = {
+    '2026-9':  { [LOC]: { tProdSales: 300000, tCrewLabor: 0.21 } },
+    '2026-10': { [LOC]: { tProdSales: 310000, tCrewLabor: 0.23 } },
+  };
+
+  it('a single-month window is unaffected — blend is null, value is the plain monthly target', () => {
+    const r = _blendedMonthlyTarget(salesDef, RANGE, allMonthlyTargets, LOC); // RANGE = all of September
+    expect(r.blend).toBeNull();
+    expect(r.value).toBe(300000);
+  });
+
+  it('a dollar target (Sales $) is day-prorated per month then SUMMED across the window', () => {
+    // Sep: 300000 * (3/30) = 30000. Oct: 310000 * (4/31) = 40000. Total = 70000.
+    const r = _blendedMonthlyTarget(salesDef, CROSS_RANGE, allMonthlyTargets, LOC);
+    expect(r.value).toBeCloseTo(70000, 6);
+    expect(r.blend).toEqual([
+      { ym: '2026-9', days: 3, missing: false },
+      { ym: '2026-10', days: 4, missing: false },
+    ]);
+  });
+
+  it('a rate/pct target (Crew Labor %) is day-weighted AVERAGED across the window, never a flat average of the two months', () => {
+    // (0.21*3 + 0.23*4) / 7 = 1.55/7
+    const r = _blendedMonthlyTarget(laborDef, CROSS_RANGE, allMonthlyTargets, LOC);
+    expect(r.value).toBeCloseTo(1.55 / 7, 10);
+    // Proves it's NOT a naive (0.21+0.23)/2 = 0.22 flat average -- the day-weighted real answer
+    // skews toward October (4 of 7 days), which a flat average would miss entirely.
+    expect(r.value).not.toBeCloseTo(0.22, 4);
+  });
+
+  it('one month missing a target is excluded from the blend (not treated as 0) and flagged `missing`', () => {
+    // An unknown loc with no DEFAULT_TARGETS entry and an override for October only -- September
+    // resolves to {} (no DEFAULT_TARGETS fallback for this loc), so tProdSales is genuinely absent.
+    const FAKE_LOC = '99999';
+    const partial = { '2026-10': { [FAKE_LOC]: { tProdSales: 310000 } } };
+    const r = _blendedMonthlyTarget(salesDef, CROSS_RANGE, partial, FAKE_LOC);
+    expect(r.value).toBeCloseTo(310000 * (4 / 31), 6); // October's own prorated share only
+    expect(r.blend).toEqual([
+      { ym: '2026-9', days: 3, missing: true },
+      { ym: '2026-10', days: 4, missing: false },
+    ]);
+  });
+
+  it('both months missing a target resolves to null, same as the existing no-target case', () => {
+    const FAKE_LOC = '99999';
+    const r = _blendedMonthlyTarget(salesDef, CROSS_RANGE, {}, FAKE_LOC);
+    expect(r.value).toBeNull();
+    expect(r.blend).toBeNull();
+  });
+
+  it('computeTargetsVsActual() wires the blend through end-to-end for the monthly tab', () => {
+    const rows = computeTargetsVsActual(buildDs(), [LOC], {
+      which: 'monthly', range: CROSS_RANGE, allMonthlyTargets, targetMonthYm: '2026-10',
+    });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.salesAmt.target).toBeCloseTo(70000, 6);
+    expect(byKey.salesAmt.blend).toHaveLength(2);
+    expect(byKey.crewLaborPct.target).toBeCloseTo(1.55 / 7, 10);
   });
 });
 
