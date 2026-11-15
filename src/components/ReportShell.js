@@ -49,6 +49,18 @@ export function ReportShell({
   const [locValue, setLocValue] = useState({ level: 'all', id: null });
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
+  // pdfStatus: null | 'busy' | 'done' | {error} -- owner report, live, 2026-11-15: "i was able to
+  // successfully run one pdf report, subsequent attempts yield nothing. It will not generate on
+  // screen for me." The PDF path (unlike CSV/Excel/Print) can run for several real seconds on a
+  // multi-store report -- html2canvas rasterizes one store page at a time -- and the click handler
+  // previously gave ZERO visible feedback while that ran or if it failed, so a slow run or a
+  // silently-thrown error both looked identical to "nothing happened." The other strong suspect,
+  // which this can't fix from inside the page at all: Chrome/Edge silently block a page's SECOND+
+  // automatic download in a session without an explicit "Allow multiple downloads" click (no JS
+  // API can detect this), which matches "one worked, then nothing" exactly -- so the done-state
+  // message says to check for that, since a user who doesn't know to look for the address-bar icon
+  // has no way to connect it to this feature.
+  const [pdfStatus, setPdfStatus] = useState(null);
 
   const tree = useMemo(() => buildLocationHierarchy(stores, invOrgCoords, storeNames), [stores, invOrgCoords, storeNames]);
   const locs = useMemo(() => locationSelectorLocs(locValue, tree), [locValue, tree]);
@@ -81,16 +93,39 @@ export function ReportShell({
   // the SAME bespoke HTML via exportReportPDFFromHTML() (html2canvas + jsPDF, one PDF page per
   // `.store-page` section) whenever a report supplies getPrintHTML(), so the two can never again
   // visually diverge. A report with no getPrintHTML() keeps the unchanged flat-table PDF.
+  const handlePdfExport = useCallback(async () => {
+    if (pdfStatus === 'busy') return; // guard a double-click while the first run is still rendering
+    setPdfStatus('busy');
+    try {
+      if (getPrintHTML) await exportReportPDFFromHTML({ filename: filenameFor(), html: getPrintHTML() });
+      else await exportReportPDF({ filename: filenameFor(), ...getExportData() });
+      setPdfStatus('done');
+      setTimeout(() => setPdfStatus(s => (s === 'done' ? null : s)), 8000);
+    } catch (e) {
+      setPdfStatus({ error: e?.message || 'PDF export failed' });
+    }
+  }, [getPrintHTML, getExportData, filenameFor, pdfStatus]);
+
   const exportItems = !hasRun ? [] : [
     { label: '🖨 Print', onClick: () => getPrintHTML ? printHtml(getPrintHTML()) : printReportHTML(getExportData()) },
     { label: '⬇ CSV', onClick: () => exportReportCSV({ filename: filenameFor(), ...getExportData() }) },
     { label: '⬇ Excel', onClick: () => exportReportXLSX({ filename: filenameFor(), sheetName: title, ...getExportData() }) },
-    { label: '⬇ PDF', onClick: () => getPrintHTML
-        ? exportReportPDFFromHTML({ filename: filenameFor(), html: getPrintHTML() })
-        : exportReportPDF({ filename: filenameFor(), ...getExportData() }) },
+    { label: pdfStatus === 'busy' ? 'Generating PDF…' : '⬇ PDF', disabled: pdfStatus === 'busy', onClick: handlePdfExport },
   ];
 
   const subtitleText = (subtitlePrefix ? subtitlePrefix + ' — ' : '') + scope + (range ? ` · ${range.s} to ${range.e}` : '');
+
+  // Visible confirmation/error for the PDF export specifically (see pdfStatus's own comment) --
+  // every other export action here is near-instant and has always relied on the browser's own
+  // download-bar feedback, which is fine for those; PDF is the one that can run for several real
+  // seconds and silently fail, so it's the one that needs its own on-screen word.
+  const pdfStatusNode = pdfStatus === 'busy'
+    ? h('span', { style: { fontSize: '10.5px', color: 'var(--text3)' } }, '⏳ Generating PDF…')
+    : pdfStatus === 'done'
+    ? h('span', { style: { fontSize: '10.5px', color: '#10b981' } }, '✓ PDF ready — check your downloads (if nothing appears, your browser may be blocking repeated downloads from this site; look for an icon in the address bar and choose Allow)')
+    : pdfStatus?.error
+    ? h('span', { style: { fontSize: '10.5px', color: 'var(--crit)' } }, `⚠ ${pdfStatus.error}`)
+    : null;
 
   return h(RoutePanelShell, {
     title, icon, onBack,
@@ -101,6 +136,12 @@ export function ReportShell({
       : subtitleText,
     headerExtra: h(ActionMenu, { label: 'Export ▾', items: exportItems }),
   },
+    // Rendered as its own full-width line in the BODY, not alongside the header's title -- an
+    // earlier version put this next to headerExtra's ActionMenu, inside the header's own flex row,
+    // and the success message's length squeezed the title's `flex:1,minWidth:0` column down to a
+    // sliver, wrapping "Targets vs Actual" into an unreadable single-character-wide column
+    // (caught live, screenshot-verified, before shipping).
+    pdfStatusNode && div({ style: { padding: '6px 18px 0' } }, pdfStatusNode),
     div({ style: { padding: '12px 18px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' } },
       div({ style: { display: 'flex', flexDirection: 'column', gap: 8 } },
         h(DateRangeControl, { presets: datePresets, value: range, onChange: setRange, variant: 'dropdown' }),
