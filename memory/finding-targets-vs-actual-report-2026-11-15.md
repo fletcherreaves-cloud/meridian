@@ -76,3 +76,126 @@ Two monthly_targets fields (`tBonusLabor` — bonus-qualifying crew %, `tFOBBonu
 verified actual-value source anywhere in this codebase — rather than fabricate one, they're left
 out of the Monthly tab. If a real actual-source for either is found later, adding it is a one-line
 addition to `MONTHLY_TARGET_METRICS`.
+
+## Follow-up (2026-11-15, same day): "wire in the Food cost items on monthly" + a Yearly tab
+
+Owner: *"Can we wire in the Food cost items on monthly and add a yearly targets as well for the
+yearly workbook uploaded."*
+
+**Food cost items (Monthly tab):** re-checked every `DEFAULT_TARGETS` field against
+`MONTHLY_TARGET_METRICS` — the only Food-Cost-group field not already wired was `tFOBBonusBase`
+(the one left out above). Read `src/parsers/index.js` (`fobBonusBase` parses the workbook's
+"Bonus Food Over Base Target" column) and `src/views/analytics.js`'s own Monthly Projections
+workbook grid (`PROJ_FIELDS`), which places `tFOBBonusBase` immediately after `tFOBTotal` in the
+same Food Cost group with no actual column of its own. Conclusion: it's not a separate measured
+metric — it's a second, stricter target line graded against the exact same real Total Food Cost %
+actual `tFOBTotal` already uses. Added as a 12th `MONTHLY_TARGET_METRICS` entry
+(`fobBonusBase`), reusing `resolveMetricForRange(ds, loc, 'totalFoodCostPct', range)` verbatim —
+not a new resolver. `tBonusLabor` (the labor-side sibling, same workbook row shape) stays out —
+out of scope for a food-cost ask.
+
+**Yearly tab:** added a third pill tab reading `ds.allYearlyTargets[year]`
+(`loadAllYearlyTargets()`, already loaded into `ds` at startup) via new `YEARLY_TARGET_METRICS` +
+`effectiveYearlyTarget()` exports in `targets-vs-actual.js`. Scoped to the 8 yearly_targets fields
+that already have a verified daily/auto actual resolver reusable at this report's day-range grain
+(Sales $, Labor %, TPPH, OEPE, Parked %, KVS Time, R2P, FOB Target % — the same resolvers the
+Monthly/Daily tabs already use). **Deliberately excludes** the yearly workbook's CSAT
+(OSAT/OSAT B2B/EAD/1-800 Contacts), Digital (App %/GCRD, McDelivery GCRD/Wait/Stars) and People
+(staffing targets, turnover) fields, plus KVS Usage — `src/engine/review-engine.js`'s own
+`REVIEW_METRIC_TARGET_FIELD` mapping (the other real consumer of these same yearly targets)
+already establishes which of these have a real actual source and which don't: some have **no**
+verified actual anywhere yet (McDelivery Stars: *"no actual-data source exists yet, enter
+manually"*; OSAT B2B: *"owner-held pending his own investigation"*; 1-800 Contacts: a rate/count
+unit mismatch never wired), and the rest (OSAT, EAD, headcount, shift-cert, turnover, McDelivery
+wait/GC/R/D, digital GC/R/D) are computed by review-engine's own monthly `byLocMonth()` rollup —
+a real, separate reuse target, but at a different grain (SMG/Roster/Turnover are monthly-cadence
+uploads, not the day-level auto streams metric-source.js resolves) than this report's
+7/14/21/28D/MTD picker fits cleanly. Left for a follow-on pass rather than guessed at here —
+same "don't fabricate an actual" discipline as `tBonusLabor`/`tFOBBonusBase` above, just a bigger
+lift to close correctly. `effectiveYearlyTarget()` deliberately has **no** `DEFAULT_TARGETS`
+fallback (unlike `effectiveMonthlyTarget()`) — a yearly workbook may simply not exist for a given
+store/year, and `DEFAULT_TARGETS` has no year dimension to fall back to.
+
+9 new tests added to the existing dispatch test file (26 total): `fobBonusBase` reusing
+`fobTotal`'s actual, `effectiveYearlyTarget()`'s no-fallback behavior, every
+`YEARLY_TARGET_METRICS` entry's resolver + field-name sanity, a full yearly-tab compute against
+the same proven fixture, the no-workbook-uploaded degrade case, and a Yearly-tab panel render.
+
+## Bug fix, same day: "Also check labor target monthly. It is not right."
+
+Owner flagged the Monthly tab's labor row directly. Root cause: v5.792 shipped a second,
+redundant "Labor % (Overall)" row hardcoded to `targetField: 'tLabor'` — the exact legacy field
+`src/engine/labor-basis.js` exists to retire after issue #153 (*"computeOpsScore graded on
+`tLabor` while the approval cycle only ever populates `tCrewLabor`"*). That file's
+`resolveLaborTarget()`/`DEFAULT_LABOR_BASIS` (`'tCrewLabor'`) is the single resolver every other
+labor-target consumer in the codebase routes through (`morning-brief.js`, `at-a-glance.js`,
+`store-analytics.js`, `labor-tools.js`, `analytics.js`, `store-dash.js`, `pipeline.js`,
+`finding-rules.js`, `insights.js`, `one-pager-data.js`, `eom-supervisor.js`, `scheduling.js`,
+`store-cockpit.js`, `bullseye-tile.js`, `labor-analysis.js`, `review-engine.js`, and more) — this
+report was the one place in the codebase that bypassed it and read the field directly.
+
+Fix: removed the `laborPctOverall` row entirely (it duplicated `crewLaborPct` against the wrong
+field, never added real information); `crewLaborPct`'s target now resolves through
+`resolveLaborTarget(targets)` instead of a hardcoded field read.
+
+**Found the identical bug a second time before it shipped**, in this same commit's own new
+`YEARLY_TARGET_METRICS` (`yLabor`, also hardcoded to `tLabor`) — caught by cross-checking against
+`review-engine.js`'s `REVIEW_METRIC_TARGET_FIELD.labor` comment, which documents that dispatch
+#142 already corrected this exact field to `tCrewLabor` for yearly data too, and that
+`tCrewLabor` is itself a real `yearly_targets` column (`crew_labor_pct`), not monthly-only. Fixed
+the same way: `yLabor` now routes through `resolveLaborTarget()`, relabeled "Crew Labor %" to
+match `LABOR_BASIS_FIELDS.tCrewLabor.label`.
+
+No other `MONTHLY_TARGET_METRICS`/`YEARLY_TARGET_METRICS`/`DAILY_TARGET_METRICS` entry reads a
+labor field, so this was the full extent of it. Test fixtures/assertions updated to set
+`tCrewLabor` instead of `tLabor`; full suite (8204 tests) and build re-verified green after the
+fix, on top of the Food Cost/Yearly additions above.
+
+## Follow-up (2026-11-15, v5.794): print view + Sales $ pacing
+
+Owner: *"Can we make the print view look like the app view, and one page per location. And for
+the sales target can you come up with a way to pace it based on what the actual is MTD vs
+projected."*
+
+**Print:** `ReportShell.js`'s Print action always rendered `printReportHTML()`'s generic flat
+table (title + one wide table), never the report's own on-screen look — every OTHER hand-rolled
+print flow in the codebase (skills-matrix.js, labor-analysis.js, performance-reviews.js, etc.)
+builds bespoke HTML and calls the shared `printHtml()` overlay directly, so ReportShell was the
+one place that couldn't. Added an optional `getPrintHTML` prop to `ReportShell` — when a report
+supplies it, Print calls `printHtml(getPrintHTML())` instead of the generic path; CSV/Excel/PDF
+are untouched (still `getExportData()`'s flat `{headers,rows}` contract) and every other
+ReportShell-based report that doesn't set `getPrintHTML` is unaffected. `targets-vs-actual-
+report.js`'s `buildPrintHTML()` renders the exact same red-accent-band + Metric/Target/Actual/
+Variance/Status table `StoreWorkbookCard` shows on-screen (literal hex colors, since this is a
+standalone printed document, not the themed app shell), one `<section class="store-page">` per
+store with `page-break-before:always` skipped on `:first-child` — the same established
+multi-page-print convention `skills-matrix.js`/`labor-analysis.js` already use, not a new
+mechanism.
+
+**Sales $ pacing:** a flat monthly Sales $ target compared against a partial-month MTD actual
+always reads as a "miss" early in the month, even for a store solidly on pace. Checked for an
+existing pacing convention before writing one (CLAUDE.md's "check whether a helper exists")
+and found `src/views/analytics.js`'s `CurrentMonthPaceSection` — the live Projection Workspace's
+"Actuals vs Target" pace table already does exactly this: `frac = dayOfMonth/daysInMonth; pace =
+actual/frac`. That logic lives inline inside a large stateful component with no exported pure
+function, so rather than import it (not designed for reuse) or silently re-derive it elsewhere
+(the drift risk the "check first" rule exists to prevent), extracted the identical 3-line formula
+as a small, explicitly-cited, standalone `monthEndPace(actual, rangeEndIso, targetMonthYm)` in
+`targets-vs-actual.js` — same math, so this report's pace can never disagree with what the
+Projection Workspace already shows for the same store/month. Returns `null` (no pacing applied)
+whenever the window doesn't qualify: a full prior month, a multi-month span, or no target month
+at all. Wired via a new `paced: true` flag on `MONTHLY_TARGET_METRICS`' `salesAmt` entry only —
+scoped to the one metric the owner asked about, not a blanket change to every monthly row.
+`computeTargetsVsActual` grades `diff`/`diffPct`/`status` off the pace (not the raw actual) when
+`pace != null`, while still carrying the real MTD `actual` on the row so nothing is hidden — the
+UI shows the real actual as the primary number with a small "Pace: $X" companion line underneath
+(same text embedded inline for CSV/Excel/PDF/print, where there's no second line to use).
+
+14 new tests (31 total): `monthEndPace()`'s qualifying/non-qualifying windows, `salesAmt` grading
+off pace vs. a non-paced metric on the identical partial-month window never pacing, the on-screen
+"Pace:" line, and the print HTML containing the page-break convention + the red accent + the pace
+text. Live-verified via Playwright in the running dev server (card layout, tab switching, Print
+overlay producing one `store-page` section per store with the red accent and gold header row);
+this sandboxed dev environment has no live Supabase data, so Actual/Pace read "—" there exactly
+like the original v5.792 live-verification — expected, not a gap, and covered by the fixture-based
+tests above instead.

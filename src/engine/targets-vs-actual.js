@@ -10,6 +10,7 @@ import { DEFAULT_TARGETS } from '../constants.js';
 import { metricAvg, metricSumRatio } from './metric-source.js';
 import { autoFirstTotal } from './vs-ly.js';
 import { resolveMetricForRange, FOB_REFERENCE_METRICS } from './fob-reference.js';
+import { resolveLaborTarget } from './labor-basis.js';
 
 const _normLoc = l => String(parseInt(String(l || '').replace(/\D/g, ''), 10) || '');
 
@@ -24,6 +25,26 @@ export function effectiveMonthlyTarget(loc, ym, allMonthlyTargets) {
   const L = _normLoc(loc);
   const override = (allMonthlyTargets && allMonthlyTargets[ym] && allMonthlyTargets[ym][L]) || {};
   return { ...DEFAULT_TARGETS[L], ...override };
+}
+
+// Month-end pace projection (owner request 2026-11-15: "for the sales target can you come up
+// with a way to pace it based on what the actual is MTD vs projected"). Not a new method --
+// this is the exact linear run-rate the live Projection Workspace's "Actuals vs Target" pace
+// table already uses (analytics.js's CurrentMonthPaceSection: frac = dayOfMonth/daysInMonth;
+// pace = actual/frac), so a store's pace here never disagrees with what that panel already
+// shows for the same month. Only meaningful for a window whose END falls inside the target
+// month (an MTD-style partial month) -- a window that's a complete prior month (or doesn't
+// land in the target month at all) is already a finished total, not a partial one to project
+// forward, so this returns null rather than silently "pacing" a number that needs no pacing.
+export function monthEndPace(actual, rangeEndIso, targetMonthYm) {
+  if (actual == null || !rangeEndIso || !targetMonthYm) return null;
+  const [y, m] = String(targetMonthYm).split('-').map(Number);
+  if (!y || !m) return null;
+  const endDate = new Date(rangeEndIso + 'T12:00:00');
+  if (endDate.getFullYear() !== y || endDate.getMonth() + 1 !== m) return null;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const frac = endDate.getDate() / daysInMonth;
+  return frac > 0 ? actual / frac : null;
 }
 
 // kind -> unit, straight from FOB_REFERENCE_METRICS so this file can never disagree with that
@@ -55,15 +76,23 @@ const _FOB_LEG_MAP = [
 // overall-Labor % the monthly_targets table also carries.
 export const MONTHLY_TARGET_METRICS = [
   {
-    key: 'salesAmt', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher',
+    // `paced: true` — grade this row against a month-end PACE projection (monthEndPace, above)
+    // rather than the raw MTD actual, whenever the window qualifies (see computeTargetsVsActual
+    // below). A flat monthly Sales $ target compared against a partial-month actual always
+    // reads as a "miss" on day 3 of the month — the pace is the number that actually answers
+    // "are we on track," so it (not the raw actual) drives diff/diffPct/status here; the real
+    // MTD actual is still carried on the row under `actual` for the honest supporting number.
+    key: 'salesAmt', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher', paced: true,
     actual: (ds, loc, range) => { const v = autoFirstTotal(ds, loc, range, 'sales'); return v > 0 ? v : null; },
   },
   {
+    // Target resolution MUST go through labor-basis.js's resolveLaborTarget(), not a direct
+    // tCrewLabor/tLabor field read — this is exactly the class of bug issue #153 exists to
+    // prevent (computeOpsScore graded on the legacy tLabor while the approval cycle only ever
+    // populates tCrewLabor). targetField is kept for the metric-definition shape/tests only;
+    // the `target` resolver below is what actually runs.
     key: 'crewLaborPct', label: 'Crew Labor %', targetField: 'tCrewLabor', unit: 'pct', better: 'lower',
-    actual: (ds, loc, range) => { const r = metricSumRatio(ds, [loc], range, 'laborPct'); return r ? r.value : null; },
-  },
-  {
-    key: 'laborPctOverall', label: 'Labor % (Overall)', targetField: 'tLabor', unit: 'pct', better: 'lower',
+    target: (targets) => resolveLaborTarget(targets),
     actual: (ds, loc, range) => { const r = metricSumRatio(ds, [loc], range, 'laborPct'); return r ? r.value : null; },
   },
   {
@@ -78,7 +107,86 @@ export const MONTHLY_TARGET_METRICS = [
       actual: (ds, loc, range) => resolveMetricForRange(ds, loc, fobRefKey, range),
     };
   }),
+  // FOB Bonus Base % (owner request 2026-11-15: "wire in the Food cost items on monthly").
+  // tFOBBonusBase ("Bonus Food Over Base Target" in the uploaded workbook, src/parsers/
+  // index.js) is NOT a separate measured metric — it's a second, stricter target line graded
+  // against the exact same real Total Food Cost % actual as tFOBTotal above. Confirmed from
+  // the owner's own Monthly Projections workbook grid (analytics.js's PROJ_FIELDS), where
+  // tFOBBonusBase sits immediately after tFOBTotal in the same Food Cost group with no actual
+  // column of its own — the two targets, one actual. Reuses resolveMetricForRange('totalFoodCostPct')
+  // verbatim rather than inventing a second "bonus" actual that doesn't exist anywhere in the
+  // data model. tBonusLabor (the labor-side sibling target, same workbook row shape) stays
+  // excluded — out of scope for a food-cost ask, same caveat as before.
+  {
+    key: 'fobBonusBase', label: 'FOB Bonus Food Threshold %', targetField: 'tFOBBonusBase', unit: 'pct', better: 'lower',
+    actual: (ds, loc, range) => resolveMetricForRange(ds, loc, 'totalFoodCostPct', range),
+  },
 ];
+
+// ── Yearly Targets tab — the yearly_targets table's fields (src/lib/supabase.js's
+// save/loadYearlyTargets) that also have a verified, already-proven actual resolver somewhere
+// else in the codebase — reusing metric-source.js's daily auto-first resolvers and
+// fob-reference.js's FOB-leg math exactly like the Monthly/Daily tabs above, never a new one.
+// Deliberately excludes the yearly workbook's CSAT (tOsat/tOsatB2B/tVoiceEAD/t1800Contacts),
+// Digital (tDigAppPct/tDigAppGCRD/tMcdGCRD/tMcdWait/tMcdStars) and People (tCrewStaffing/
+// tShiftLeaders/tManagers/tHeadcount/tToShiftLeader/tToCrew090/tToCrewYTD) fields, plus tKvsu:
+// review-engine.js's own REVIEW_METRIC_TARGET_FIELD mapping (the other real consumer of these
+// same yearly targets) already establishes, field by field, that these are monthly-cadence
+// SMG/Roster/Turnover/Digital snapshots with no metric-source.js daily resolver, that some have
+// NO verified actual source at all yet (tMcdStars: "no actual-data source exists yet, enter
+// manually"; tOsatB2B: "owner-held pending his own investigation"; t1800Contacts: a rate/count
+// unit mismatch that was never wired), and that the rest would need review-engine's own
+// byLocMonth() monthly rollup machinery reused at a different grain than this report's
+// 7/14/21/28D/MTD day-range picker fits — a real follow-on, not a one-line addition like
+// FOB Bonus Base above, so it is left for a separate pass rather than guessed at here.
+export const YEARLY_TARGET_METRICS = [
+  {
+    key: 'yProdSales', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher',
+    actual: (ds, loc, range) => { const v = autoFirstTotal(ds, loc, range, 'sales'); return v > 0 ? v : null; },
+  },
+  {
+    // Same labor-basis.js routing as the monthly tab's crewLaborPct, and for the identical
+    // reason: review-engine.js's own REVIEW_METRIC_TARGET_FIELD.labor comment (dispatch #142)
+    // already corrected this exact field away from the legacy tLabor to tCrewLabor for yearly
+    // data too — tCrewLabor is a real yearly_targets column (crew_labor_pct), not monthly-only.
+    key: 'yLabor', label: 'Crew Labor %', targetField: 'tCrewLabor', unit: 'pct', better: 'lower',
+    target: (targets) => resolveLaborTarget(targets),
+    actual: (ds, loc, range) => { const r = metricSumRatio(ds, [loc], range, 'laborPct'); return r ? r.value : null; },
+  },
+  {
+    key: 'yTpph', label: 'TPPH', targetField: 'tTpph', unit: 'rate', better: 'higher',
+    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'tpph'),
+  },
+  {
+    key: 'yOepe', label: 'OEPE (sec)', targetField: 'tOepe', unit: 'sec', better: 'lower',
+    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'oepe'),
+  },
+  {
+    key: 'yPark', label: 'Parked %', targetField: 'tPark', unit: 'pct', better: 'lower',
+    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'park'),
+  },
+  {
+    key: 'yKvst', label: 'KVS Time (sec)', targetField: 'tKvst', unit: 'sec', better: 'lower',
+    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'kvst'),
+  },
+  {
+    key: 'yR2p', label: 'R2P (sec)', targetField: 'tR2p', unit: 'sec', better: 'lower',
+    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'r2p'),
+  },
+  {
+    key: 'yFobTarget', label: 'FOB Target %', targetField: 'tFOBTarget', unit: 'pct', better: 'lower',
+    actual: (ds, loc, range) => resolveMetricForRange(ds, loc, 'fobTargetPct', range),
+  },
+];
+
+// Effective yearly target: the latest-available yearly_targets row for this store/year, falling
+// straight back to {} (never DEFAULT_TARGETS) if none exists yet — unlike monthly_targets, a
+// yearly workbook may simply not have been uploaded for a given year, and DEFAULT_TARGETS has
+// no year dimension to fall back to anyway.
+export function effectiveYearlyTarget(loc, year, allYearlyTargets) {
+  const L = _normLoc(loc);
+  return (allYearlyTargets && allYearlyTargets[year] && allYearlyTargets[year][L]) || {};
+}
 
 // ── Daily Targets tab — DEFAULT_TARGETS' daily-cadence operational metrics with a verified
 // metric-source.js auto-first resolver, kept deliberately distinct from the Monthly tab's set
@@ -114,24 +222,33 @@ export function targetStatus(target, actual, better) {
 }
 
 // One row per store: { loc, metrics: [{key,label,unit,better,target,actual,diff,diffPct,status}] }
-// `which`: 'monthly' | 'daily'. `targetMonthYm` ('YYYY-M', e.g. from monthly-targets-v2.js's
-// ymKey) is only used for the monthly tab — the daily tab's targets are DEFAULT_TARGETS as-is
+// `which`: 'monthly' | 'daily' | 'yearly'. `targetMonthYm` ('YYYY-M', e.g. from monthly-targets-
+// v2.js's ymKey) is only used for the monthly tab. `targetYear` (a plain number/string year) is
+// only used for the yearly tab, keyed into `allYearlyTargets` exactly as `ds.allYearlyTargets`
+// (loadAllYearlyTargets) already stores it. The daily tab's targets are DEFAULT_TARGETS as-is
 // (no monthly override table exists for those fields).
-export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTargets, targetMonthYm }) {
-  const metricDefs = which === 'daily' ? DAILY_TARGET_METRICS : MONTHLY_TARGET_METRICS;
+export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTargets, targetMonthYm, allYearlyTargets, targetYear }) {
+  const metricDefs = which === 'daily' ? DAILY_TARGET_METRICS : which === 'yearly' ? YEARLY_TARGET_METRICS : MONTHLY_TARGET_METRICS;
   const list = (Array.isArray(locs) ? locs : [locs]).map(_normLoc);
   return list.map(loc => {
-    const targets = which === 'daily'
-      ? (DEFAULT_TARGETS[loc] || {})
+    const targets = which === 'daily' ? (DEFAULT_TARGETS[loc] || {})
+      : which === 'yearly' ? effectiveYearlyTarget(loc, targetYear, allYearlyTargets)
       : effectiveMonthlyTarget(loc, targetMonthYm, allMonthlyTargets);
     const metrics = metricDefs.map(def => {
-      const target = targets[def.targetField] ?? null;
+      const target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
       const actual = def.actual(ds, loc, range);
-      const diff = (target != null && actual != null) ? actual - target : null;
+      // Paced metrics (currently just Monthly Sales $) grade against the month-end pace
+      // projection, not the raw MTD actual, when the window qualifies (monthEndPace returns null
+      // for a non-qualifying window — a full prior month, a multi-month span, or no
+      // targetMonthYm at all — and `graded` falls straight back to the plain actual, so this is
+      // additive, never a regression for a range pacing doesn't apply to).
+      const pace = def.paced ? monthEndPace(actual, range?.e, targetMonthYm) : null;
+      const graded = pace != null ? pace : actual;
+      const diff = (target != null && graded != null) ? graded - target : null;
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,
-        target, actual, diff, diffPct, status: targetStatus(target, actual, def.better),
+        target, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
       };
     });
     return { loc, metrics };
