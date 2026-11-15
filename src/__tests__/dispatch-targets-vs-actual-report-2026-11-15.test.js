@@ -14,9 +14,10 @@ import { act } from 'react';
 import { DEFAULT_TARGETS } from '../constants.js';
 import { resolveDatePreset, MTD_PRESET, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 import {
-  effectiveMonthlyTarget, targetStatus, computeTargetsVsActual,
-  MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS,
+  effectiveMonthlyTarget, effectiveYearlyTarget, targetStatus, computeTargetsVsActual,
+  MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS, YEARLY_TARGET_METRICS,
 } from '../engine/targets-vs-actual.js';
+import { resolveMetricForRange } from '../engine/fob-reference.js';
 import { TargetsVsActualReportPanel } from '../views/targets-vs-actual-report.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -125,6 +126,64 @@ describe('computeTargetsVsActual() — monthly tab', () => {
       expect(DEFAULT_TARGETS[LOC][m.targetField]).not.toBeUndefined();
     }
   });
+
+  // Owner follow-up (2026-11-15): "can we wire in the Food cost items on monthly" — the one
+  // Food Cost field DEFAULT_TARGETS/monthly_targets carries that wasn't already in
+  // MONTHLY_TARGET_METRICS was tFOBBonusBase (Bonus Food Threshold). It's not a separate
+  // measured actual — analytics.js's own Monthly Projections workbook grid (PROJ_FIELDS) shows
+  // it sitting right after tFOBTotal in the same Food Cost group with no actual column of its
+  // own — so it reuses the exact same Total Food Cost % actual as tFOBTotal.
+  it('fobBonusBase reuses the same real Total Food Cost % actual as fobTotal (two targets, one actual)', () => {
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'monthly', range: RANGE, allMonthlyTargets: {}, targetMonthYm: '2026-9' });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.fobBonusBase).toBeDefined();
+    expect(byKey.fobBonusBase.target).toBe(DEFAULT_TARGETS[LOC].tFOBBonusBase);
+    expect(byKey.fobBonusBase.actual).toBe(byKey.totalFoodCostPct.actual);
+  });
+});
+
+describe('YEARLY_TARGET_METRICS / effectiveYearlyTarget() / computeTargetsVsActual() — yearly tab', () => {
+  it('effectiveYearlyTarget() reads the keyed-by-year allYearlyTargets shape loadAllYearlyTargets() produces, with no DEFAULT_TARGETS fallback', () => {
+    expect(effectiveYearlyTarget(LOC, 2026, {})).toEqual({});
+    const t = effectiveYearlyTarget(LOC, 2026, { 2026: { [LOC]: { tProdSales: 4000000 } } });
+    expect(t.tProdSales).toBe(4000000);
+    expect(t.tCrewLabor).toBeUndefined(); // no silent DEFAULT_TARGETS fill-in, unlike the monthly tab
+  });
+
+  it('every YEARLY_TARGET_METRICS entry has a verified actual resolver and a plausible yearly_targets field name', () => {
+    const YEARLY_FIELDS = new Set(['tOepe', 'tPark', 'tKvst', 'tKvsu', 'tR2p', 'tOsat', 'tOsatB2B', 'tVoiceEAD',
+      't1800Contacts', 'tDigAppPct', 'tDigAppGCRD', 'tMcdGCRD', 'tMcdWait', 'tMcdStars', 'tCrewStaffing',
+      'tShiftLeaders', 'tManagers', 'tHeadcount', 'tToShiftLeader', 'tToCrew090', 'tToCrewYTD', 'tTpph',
+      'tLabor', 'tFOBTarget', 'tProdSales', 'tCrewLabor']);
+    for (const m of YEARLY_TARGET_METRICS) {
+      expect(typeof m.actual).toBe('function');
+      expect(YEARLY_FIELDS.has(m.targetField)).toBe(true);
+    }
+  });
+
+  it('computes real target-vs-actual rows for the yearly tab using the same fixture/proven resolvers', () => {
+    const allYearlyTargets = { 2026: { [LOC]: { tProdSales: 3500000, tOepe: 135, tTpph: 6.0, tCrewLabor: 0.20, tFOBTarget: 0.04 } } };
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets, targetYear: 2026 });
+    expect(rows).toHaveLength(1);
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+
+    expect(byKey.yProdSales.target).toBe(3500000);
+    expect(byKey.yProdSales.actual).toBe(300000); // same fixture as the monthly-tab test above
+
+    expect(byKey.yLabor.target).toBe(0.20);
+    expect(byKey.yLabor.actual).toBeCloseTo(0.21, 6);
+    expect(byKey.yLabor.status).toBe('watch'); // 0.01/0.20 = 5% over target, inside the 10% watch band
+
+    // Not hardcoded — proves reuse of the exact same resolver, rather than guessing the number.
+    expect(byKey.yFobTarget.actual).toBe(resolveMetricForRange(buildDs(), LOC, 'fobTargetPct', RANGE));
+  });
+
+  it('with no yearly workbook uploaded for the year, every target is null and every status is none', () => {
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets: {}, targetYear: 2026 });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.yProdSales.target).toBeNull();
+    expect(byKey.yProdSales.status).toBe('none');
+  });
 });
 
 describe('computeTargetsVsActual() — daily tab', () => {
@@ -208,6 +267,23 @@ describe('TargetsVsActualReportPanel', () => {
 
     expect(container.textContent).toContain('OEPE (sec)');
     expect(container.textContent).not.toContain('Sales $');
+  });
+
+  it('switching to the Yearly tab renders the yearly metric set, reading ds.allYearlyTargets for the range\'s year', async () => {
+    const ds = buildDs();
+    ds.allYearlyTargets = { 2026: { [LOC]: { tProdSales: 3500000 } } };
+    ({ container, root } = mount({ ds, stores: STORES, onClose: () => {} }));
+    await setCustomRange(container, '2026-09-01', '2026-09-30');
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    const yearlyTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Yearly Targets'));
+    await act(async () => { yearlyTabBtn.click(); });
+
+    expect(container.textContent).toContain('Sales $');
+    expect(container.textContent).toMatch(/\$3,500,000/);
+    expect(container.textContent).toMatch(/\$300,000/); // the real actual, same fixture as the monthly tab
+    expect(container.textContent).not.toContain('T-Red A %'); // a daily-only metric, confirming the daily rows aren't still rendered
   });
 
   it('after a run, CSV export fires for the active tab', async () => {

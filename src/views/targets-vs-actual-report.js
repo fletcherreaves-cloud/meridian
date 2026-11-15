@@ -11,7 +11,7 @@ import { ReportShell } from '../components/ReportShell.js';
 import { DATE_RANGE_PRESETS, MTD_PRESET } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { ymKey } from '../engine/monthly-targets-v2.js';
-import { computeTargetsVsActual } from '../engine/targets-vs-actual.js';
+import { computeTargetsVsActual, YEARLY_TARGET_METRICS } from '../engine/targets-vs-actual.js';
 import { fP, f$, fN } from '../utils/fmt.js';
 
 const h = React.createElement;
@@ -102,21 +102,26 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
   const [result, setResult] = useState(null); // { monthly: [...], daily: [...] } | null
 
   const run = async ({ range, locs }) => {
+    const rangeEnd = range?.e ? new Date(range.e) : new Date();
     const targetMonthYm = range?.e ? (() => {
       const d = new Date(range.e);
       return d.getFullYear() + '-' + (d.getMonth() + 1);
     })() : ymKey(new Date());
+    const targetYear = rangeEnd.getFullYear();
     const allMonthlyTargets = ds?.allMonthlyTargets || {};
+    const allYearlyTargets = ds?.allYearlyTargets || {};
     setResult({
       monthly: computeTargetsVsActual(ds, locs, { which: 'monthly', range, allMonthlyTargets, targetMonthYm }),
       daily: computeTargetsVsActual(ds, locs, { which: 'daily', range }),
+      yearly: computeTargetsVsActual(ds, locs, { which: 'yearly', range, allYearlyTargets, targetYear }),
     });
   };
 
   const activeRows = result ? result[tab] : null;
+  const _tabTitle = tab === 'daily' ? 'Daily' : tab === 'yearly' ? 'Yearly' : 'Monthly';
 
   const getExportData = () => ({
-    title: (tab === 'daily' ? 'Daily' : 'Monthly') + ' Targets vs Actual',
+    title: _tabTitle + ' Targets vs Actual',
     headers: ['Store', 'Metric', 'Target', 'Actual', 'Variance', 'Status'],
     rows: (activeRows || []).flatMap(r => r.metrics.map(m => [
       sNameC(r.loc) || r.loc, m.label, _fmtVal(m.target, m.unit), _fmtVal(m.actual, m.unit),
@@ -126,19 +131,21 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
 
   return h(ReportShell, {
     title: 'Targets vs Actual', icon: '🎯', onBack: onClose,
-    subtitlePrefix: (tab === 'daily' ? 'Daily' : 'Monthly') + ' targets vs actual results, per store',
+    subtitlePrefix: _tabTitle + ' targets vs actual results, per store',
     stores: (stores && stores.length) ? stores : _allStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
     datePresets: DATE_PRESETS, defaultPresetId: '28d',
     onRun: run, getExportData,
   },
-    div({ style: { display: 'flex', gap: 6, marginBottom: 14 } },
-      ['monthly', 'daily'].map(t => btn({
+    div({ style: { display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' } },
+      ['monthly', 'daily', 'yearly'].map(t => btn({
         key: t, className: 'btn btn-sm' + (tab === t ? ' btn-a' : ''), onClick: () => setTab(t),
-      }, t === 'monthly' ? '📅 Monthly Targets' : '☀️ Daily Targets')),
+      }, t === 'monthly' ? '📅 Monthly Targets' : t === 'daily' ? '☀️ Daily Targets' : '📆 Yearly Targets')),
     ),
     div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 12 } },
       tab === 'monthly'
         ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits.'
+        : tab === 'yearly'
+        ? `Target reads the uploaded yearly targets workbook for the selected range's year — no fallback, since not every store/year has one uploaded. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own.`
         : 'Target is each store\'s standing daily operational target — there is no monthly override for these.'),
     activeRows == null
       ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '11px' } }, 'Choose a date range and location, then Run Report.')
