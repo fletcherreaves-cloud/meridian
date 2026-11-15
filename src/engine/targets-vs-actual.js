@@ -198,7 +198,14 @@ export const YEARLY_TARGET_METRICS = [
     // un-projected sum of what's really posted (every completed month's real total + the
     // current month's real MTD-so-far); `paceFn` completes the current month's pace on top of
     // that, and status grades off the pace — same reasoning, same "nothing hidden" display.
+    // rollupFromMonthly: true -- owner follow-up 2026-11-15 ("fix the targets here as well like
+    // we did for monthly"): the uploaded yearly workbook doesn't carry a standalone annual Sales
+    // $ figure for every store (it's naturally a monthly-cadence number that already lives in
+    // Monthly Targets), so when this store/year has no direct yearly value, _yearlyTarget rolls
+    // one up from Monthly Targets instead of leaving the cell blank. See _yearlyTarget's own
+    // header for why only metrics that opt in here get that fallback.
     key: 'yProdSales', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher', paced: true,
+    rollupFromMonthly: true,
     actual: (ds, loc, range) => _yearlySalesRollup(ds, loc, range.s.getFullYear(), range.e).real,
     paceFn: (ds, loc, range) => _yearlySalesRollup(ds, loc, range.s.getFullYear(), range.e).paced,
   },
@@ -212,6 +219,7 @@ export const YEARLY_TARGET_METRICS = [
     // legs across a year equals summing each month's own $ subtotal, so no separate month loop
     // is needed here the way yProdSales needs one for its pacing.
     key: 'yLabor', label: 'Crew Labor %', targetField: 'tCrewLabor', unit: 'pct', better: 'lower',
+    rollupFromMonthly: true, // same reasoning as yProdSales above -- Crew Labor % is also a Monthly Targets field, not a standalone annual one
     target: (targets) => resolveLaborTarget(targets),
     actual: (ds, loc, range) => { const r = metricSumRatio(ds, [loc], range, 'laborPct'); return r ? r.value : null; },
   },
@@ -335,6 +343,74 @@ export function effectiveYearlyTarget(loc, year, allYearlyTargets) {
   return (allYearlyTargets && allYearlyTargets[year] && allYearlyTargets[year][L]) || {};
 }
 
+// Yearly Targets tab — owner follow-up 2026-11-15: "can we fix the targets here as well like we
+// did for monthly" (Sales $ and Crew Labor % were showing "—" for stores that plainly DO have a
+// yearly_targets row on file, because that workbook only ever carries the annual-cadence
+// OPERATIONAL metrics -- TPPH/OEPE/Parked/KVS/R2P/FOB% -- not a standalone annual $ or % figure
+// for Sales $ / Crew Labor %, which already live month-by-month in the Monthly Targets table the
+// Monthly tab blends from. Rather than requiring a second, redundant manual entry of a number
+// that's already implied by 12 months of real monthly targets, roll those up the same way the
+// Monthly tab's own _blendedMonthlyTarget already proved out for crossing a month boundary —
+// this is that exact function, just handed the widened year-to-date span instead of a 1-2 month
+// window, used ONLY when the yearly workbook itself has no value for this field (a real uploaded
+// annual figure always wins; this never overrides one that exists).
+//
+// One adjustment vs. a straight reuse: _blendedMonthlyTarget prorates a DOLLAR target down by
+// (daysInWindow/daysInMonth) for every contributing month — exactly right for the Monthly tab's
+// narrow sub-month window, where the window never equals a full month's days. At YTD scale every
+// COMPLETED month already has daysInWindow===daysInMonth (ratio 1, no distortion), so the only
+// month that proration actually touches is the current, still-in-progress one. For a PACED metric
+// (today, only Sales $) that's wrong: computeTargetsVsActual grades a paced metric's status
+// against the PACED actual, which already assumes the in-progress month finishes at its current
+// run rate — so its target must count that month's FULL goal too, or the comparison understates
+// the bar the pace is actually being judged against (a store would read as "beating target" on
+// day 3 of the month purely because the target was shrunk to day-3-of-30, not because it's
+// actually ahead). So a paced metric sums each included month's FULL target, never prorated.
+// Every other (non-paced) yearly metric already grades against the plain elapsed-to-date actual
+// (e.g. Crew Labor %'s metricSumRatio, which only sums real $ legs through the days that have
+// actually happened) — for those, _blendedMonthlyTarget's existing day-weighted-average already
+// weights the in-progress month by only its elapsed days, which is already the matching basis, so
+// it's reused completely unmodified.
+function _yearlyTargetFromMonthly(def, range, allMonthlyTargets, loc) {
+  if (!def.paced) return _blendedMonthlyTarget(def, range, allMonthlyTargets, loc);
+  const months = _monthsInRange(range);
+  const resolved = months.map(m => {
+    const targets = effectiveMonthlyTarget(loc, m.ym, allMonthlyTargets);
+    const raw = def.target ? def.target(targets) : targets[def.targetField];
+    const value = (raw == null || raw === '') ? null : Number(raw);
+    return { ...m, value: Number.isFinite(value) ? value : null };
+  });
+  const parts = resolved.filter(p => p.value != null);
+  if (!parts.length) return { value: null, blend: null };
+  const blend = resolved.map(p => ({ ym: p.ym, days: p.daysInWindow, missing: p.value == null }));
+  const value = parts.reduce((a, p) => a + p.value, 0); // full per-month target, never prorated
+  return { value, blend };
+}
+
+// Resolves a Yearly tab target: the uploaded yearly workbook's own value if this store/year has
+// one for this field, else the Monthly-Targets rollup above. `source` tells the UI which path
+// won, so a rolled-up number is never shown as if it were an ordinary on-file annual figure (see
+// targets-vs-actual-report.js's _yearlyRollupLabel).
+//
+// Gated on `def.rollupFromMonthly` -- deliberately NOT applied to every YEARLY_TARGET_METRICS
+// entry. OEPE/Parked %/KVS Time/R2P have no Monthly Targets equivalent to roll up from at all
+// (those are DAILY-tab fields, DEFAULT_TARGETS-only, no month-specific override table exists) --
+// but effectiveMonthlyTarget() unconditionally merges in DEFAULT_TARGETS regardless of which
+// field is asked for, so calling _yearlyTargetFromMonthly for them wouldn't fail, it would
+// silently fall back to the SAME flat DEFAULT_TARGETS number every month, every year, which is
+// not a "rollup" at all and would quietly erase the "no yearly workbook uploaded -> blank, not a
+// guess" behavior those fields are supposed to keep. So only the two fields the owner actually
+// flagged as broken -- Sales $ and Crew Labor %, both genuinely monthly-cadence numbers that
+// already live in Monthly Targets -- opt in via the flag on their own metric def.
+export function _yearlyTarget(def, directTargets, range, allMonthlyTargets, loc) {
+  const raw = def.target ? def.target(directTargets) : (directTargets ? directTargets[def.targetField] : null);
+  const direct = (raw == null || raw === '') ? null : Number(raw);
+  if (Number.isFinite(direct)) return { value: direct, blend: null, source: 'yearly' };
+  if (!def.rollupFromMonthly) return { value: null, blend: null, source: null };
+  const { value, blend } = _yearlyTargetFromMonthly(def, range, allMonthlyTargets, loc);
+  return { value, blend, source: value != null ? 'monthly-rollup' : null };
+}
+
 // ── Daily Targets tab — DEFAULT_TARGETS' daily-cadence operational metrics with a verified
 // metric-source.js auto-first resolver, kept deliberately distinct from the Monthly tab's set
 // above (no field appears in both tabs). metricAvg (mean of each day's own auto-first value,
@@ -402,9 +478,11 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
       : which === 'yearly' ? effectiveYearlyTarget(loc, targetYear, allYearlyTargets)
       : null;
     const metrics = metricDefs.map(def => {
-      let target, blend = null;
+      let target, blend = null, targetSource = null;
       if (which === 'monthly') {
         ({ value: target, blend } = _blendedMonthlyTarget(def, range, allMonthlyTargets, loc));
+      } else if (which === 'yearly') {
+        ({ value: target, blend, source: targetSource } = _yearlyTarget(def, targets, actualRange, allMonthlyTargets, loc));
       } else {
         target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
       }
@@ -423,7 +501,7 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,
-        target, blend, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
+        target, blend, targetSource, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
       };
     });
     return { loc, metrics };
