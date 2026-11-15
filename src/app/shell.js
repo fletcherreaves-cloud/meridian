@@ -1067,14 +1067,17 @@ function DataErrorBanner() {
   const sources = [...new Set(errs.map(x => x.label))];
   return div({
     style: {
-      display: 'flex', alignItems: 'center', gap: 10, padding: '5px 12px',
+      display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '5px 12px',
       background: 'rgba(239,68,68,.14)', borderBottom: '.5px solid rgba(239,68,68,.45)',
       fontSize: 11, color: '#fca5a5', fontFamily: 'var(--mono)',
     },
     title: errs.map(x => `${x.label}: ${x.failed}/${x.total} page(s) failed${x.detail ? ' — ' + x.detail : ''}`).join('\n'),
   },
-    span({ style: { fontWeight: 700 } }, '⚠ DATA INCOMPLETE'),
-    span(null, `${totalFailed} page(s) failed to load across ${sources.length} source(s): ${sources.join(', ')}. Figures from ${sources.length > 1 ? 'these sources' : 'this source'} are UNDERSTATED — reload before acting on them.`),
+    span({ style: { fontWeight: 700, flexShrink: 0 } }, '⚠ DATA INCOMPLETE'),
+    // flex:'1 1 240px'+minWidth:0 — a long source list wraps onto its own line instead of
+    // forcing the row (and, before the html/body overflow-x:hidden fix above, the whole page)
+    // wider than the viewport (owner-reported 2026-11-15).
+    span({ style: { flex: '1 1 240px', minWidth: 0 } }, `${totalFailed} page(s) failed to load across ${sources.length} source(s): ${sources.join(', ')}. Figures from ${sources.length > 1 ? 'these sources' : 'this source'} are UNDERSTATED — reload before acting on them.`),
     h('button', {
       onClick: () => setDismissed(true),
       style: { marginLeft: 'auto', background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 13, lineHeight: 1 },

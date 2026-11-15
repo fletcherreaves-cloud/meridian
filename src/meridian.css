@@ -138,7 +138,13 @@ html[data-theme="refined"][data-mode="light"]{
   --mcdok-accent:#92670A;--ea-accent:#0D9488;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5}
+/* Owner-reported 2026-11-15: a wide child (the DataErrorBanner's failure message, un-wrapped)
+   forced the whole DOCUMENT to scroll sideways, not just itself — nothing here had ever clipped
+   page-level horizontal overflow, so every panel-contract-correct overflowX:'auto' container
+   (shell.js's topbar action group, .tabs, .fc-wrap, etc.) was clipping its OWN content fine while
+   a single misbehaving sibling still dragged the entire page along with it. This is the safety
+   net those containers were always supposed to be able to assume existed. */
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;overflow-x:hidden}
 #root{min-height:100vh}
 button{font-family:var(--sans);cursor:pointer}
 input,select{font-family:var(--sans);color:var(--text)}

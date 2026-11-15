@@ -1987,7 +1987,14 @@ export async function loadAuditRows(daysBack = 400) {
   const data = await _pagedParallel({ table: 'audit_rows', select: '*', gteCol: 'date', gteVal: _cutStr, orderCol: 'date', ascending: false, label: 'audit_rows' });
   if (!data.length) return [];
   return data.map(r => ({
-    loc:            r.loc,
+    // GH register-audit-pull endpoint migration (v5.779, 2026-11-14) writes `loc` NSN-zero-padded
+    // (scripts/qsrsoft-register-audit-pull.mjs's nsn7()), matching qsr_daily_activity/qsr_fob's
+    // own convention -- but this table's OLDER rows (pre-migration) were written unpadded, and
+    // every consumer of this loader (RegisterAuditTab's `r.loc===loc` filter, computeTargetAware-
+    // RegisterFlags) compares against STORE_NAMES' own unpadded keys. Without this, the padded
+    // rows (the only ones with data past 2026-06-30) are silently invisible to every reader.
+    // Same normalization loadQsrSecurityEventsForSubject already applies for the identical reason.
+    loc:            r.loc ? String(parseInt(r.loc, 10)) : r.loc,
     date:           new Date(r.date + 'T00:00:00'),
     emp:            r.emp,
     registerType:   r.register_type || 'cashier',
@@ -2042,7 +2049,8 @@ export async function loadAuditRowsWindow({ start, end }) {
       .select('loc,date,emp,register_type,emp_token,drawer_sales,drawer_gc,cash_os_dollar,pos_over_cnt,pos_over_amt,manual_ref_amt,manual_ref_cnt,refund_cash,refund_cashless,refund_cnt,promo_amt,t_red_a_cnt,t_red_a_dollar,t_red_b_cnt,t_red_b_dollar')
       .gte('date', start).lte('date', end).range(from, to), 1000, 'audit_rows (drill-down)');
   const rows = (data || []).map(r => ({
-    loc: r.loc, date: r.date, emp: r.emp, registerType: r.register_type || 'cashier', empToken: r.emp_token,
+    // Same loc-padding normalization as loadAuditRows() above, same root cause -- see its comment.
+    loc: r.loc ? String(parseInt(r.loc, 10)) : r.loc, date: r.date, emp: r.emp, registerType: r.register_type || 'cashier', empToken: r.emp_token,
     drawerSales: r.drawer_sales, drawerGC: r.drawer_gc, cashOSDollar: r.cash_os_dollar,
     posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
     manualRefAmt: r.manual_ref_amt, manualRefCnt: r.manual_ref_cnt,
