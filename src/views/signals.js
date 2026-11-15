@@ -7,7 +7,7 @@ import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
-import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { lastClosedBusinessDay, businessDate } from '../engine/swing-feed.js';
 import { intradayPace } from '../engine/tracking-to-plan.js';
 import { oepeSeconds } from '../utils/oepe.js';
 import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
@@ -1086,7 +1086,7 @@ function StoreRow({ store, expanded, onToggle }) {
   );
 }
 
-function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
+export function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
   const todayStr = (()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
   const [date, setDate] = uSt(todayStr);
   const [ownRows, setOwnRows] = uSt([]);
@@ -1147,20 +1147,36 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
   // (historical hour-of-day baseline). Surfaces the biggest deviations so an
   // unusually hot rush or a dead hour pops on its own instead of hiding inside
   // a store's daily average. $ mean floor filters tiny-hour noise.
+  //
+  // ⚠️ BUG FIXED 2026-11-15 (owner report, live, screenshot showed every store flagging the
+  // SAME "2p-3p" slot at once): despite the comment above, nothing here actually checked
+  // whether an hour was complete. The CURRENT, still-filling hour already has partial sales
+  // (so it clears the `sales <= 0` filter) but is being compared against a FULL-hour historical
+  // mean -- not apples to apples, and it will ALWAYS read as a huge miss (or, on a fast-ringing
+  // hour, a huge beat) purely because it isn't over yet, for every store at once. Fixed by
+  // excluding the in-progress hour_slot when `date` is TODAY's business date (4am-4am, per
+  // businessDate() -- CLAUDE.md: never re-derive the cutover inline); any other selected date
+  // is already fully elapsed, so nothing is excluded there. `hour_slot`'s own convention
+  // (CLAUDE.md: raw slot = wallClockHour+1, or +1+24 for wall-clock hours 0-3, e.g. "06:00" =
+  // the 5am-6am block) is mirrored exactly to compute the slot we're currently inside.
   const anomalies = uM(() => {
     const HOT = 130, COLD = 70, MIN_MEAN = 300;
+    const isToday = date === businessDate();
+    const h = new Date().getHours();
+    const inProgressSlot = h < 4 ? h + 1 + 24 : h + 1;
     const out = [];
     for (const r of rows) {
       const ms = r.mean_sales || 0;
       const sales = r.product_sales || 0;
       if (ms < MIN_MEAN || sales <= 0) continue;
+      if (isToday && Number(r.hour_slot) >= inProgressSlot) continue; // still filling -- not a completed hour yet
       const pace = sales / ms * 100;
       if (pace >= HOT || pace <= COLD)
         out.push({ loc: r.loc, key: storeLocKey(r.loc), slot: r.hour_slot, pace });
     }
     out.sort((a, b) => Math.abs(b.pace - 100) - Math.abs(a.pace - 100));
     return out.slice(0, 6);
-  }, [rows]);
+  }, [rows, date]);
   // hour_slot can run past 24 for a store still open after midnight (confirmed live 2026-08-09 —
   // see src/engine/projection-accuracy.js) — f(end) must be modulo 24 or a late-night slot
   // mislabels as an afternoon hour (e.g. slot 25 rendered "1pm" instead of "1am").

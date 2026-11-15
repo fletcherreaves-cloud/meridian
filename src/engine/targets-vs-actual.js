@@ -177,6 +177,16 @@ export const MONTHLY_TARGET_METRICS = [
     actual: (ds, loc, range) => { const r = metricSumRatio(ds, [loc], range, 'laborPct'); return r ? r.value : null; },
   },
   {
+    // The one FOB Reference Table field this report was missing (owner follow-up 2026-11-15:
+    // "while we are in there, let's also add com[p] sales line. only one missing" / "comp sales
+    // %"). Same actual resolver the FOB Reference Table itself uses (fob-reference.js's
+    // `compSalesPct` -> matchedVsLY year-over-year sales growth), targeted against
+    // DEFAULT_TARGETS'/monthly_targets' `tGrowth` field -- the same comp-sales-growth target
+    // FOB Reference Table and the Monthly Targets editor already carry for every store.
+    key: 'compSalesPct', label: 'Comp Sales %', targetField: 'tGrowth', unit: 'pct', better: 'higher',
+    actual: (ds, loc, range) => resolveMetricForRange(ds, loc, 'compSalesPct', range),
+  },
+  {
     key: 'tpph', label: 'TPPH', targetField: 'tTpph', unit: 'rate', better: 'higher',
     actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'tpph'),
   },
@@ -561,18 +571,27 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
         : def.paced ? monthEndPace(actual, range, targetMonthYm)
         : null;
       const graded = pace != null ? pace : actual;
-      // Variance is the HONEST actual-vs-target gap (owner follow-up 2026-11-15: "Seems like
-      // actual vs target would be ideal and easy for anyone to understand") -- it must equal
-      // actual minus target, matching the two numbers already shown in the same row. It used to
-      // be graded minus target (the PACED figure for a paced metric), which produced a Variance
-      // wildly larger than what Target/Actual visibly subtract to -- e.g. a $141,763 target and a
-      // $145,872 actual (a real gap of +$4,109) showing a "+$194,864" Variance, because that was
-      // actually $336,628 PACE minus target, a number never shown as the row's own Actual at all.
-      // Status keeps grading off `graded` (the pace) -- that's a deliberate, separate judgment
-      // call ("are we pacing to hit it"), not the same question Variance answers ("how far off is
-      // what's actually posted"), and the two are allowed to read differently (Variance negative
-      // while Status still says On Target mid-month) without being inconsistent with each other.
-      const diff = (target != null && actual != null) ? actual - target : null;
+      // Variance grades off `graded` -- the PACE for a paced metric mid-window, the plain actual
+      // for everything else (unpaced metrics, a fully-elapsed window, or a cross-month blend,
+      // where `_blendedMonthlyTarget` has already scaled Target to match the window's own days
+      // and pacing on top would double-count). This went through two earlier iterations the same
+      // day, in opposite directions, both owner-driven and both worth recording:
+      //   1) ORIGINAL: graded minus target. A $141,763 target and a $145,872 actual (a real gap
+      //      of +$4,109) could show a "+$194,864" Variance -- actually $336,628 PACE minus
+      //      target, a number never shown as the row's own Actual at all. Confusing.
+      //   2) "HONEST" FIX (owner: "Seems like actual vs target would be ideal and easy for
+      //      anyone to understand"): actual minus target, always. But seen live on a real MTD
+      //      window, that produced the inverse confusion -- a real $168,968 Sales $ shortfall
+      //      against the FULL month's target, shown right next to a Status that read "On Target"
+      //      off the PACE. Technically honest, but the two numbers visibly disagreed for anyone
+      //      glancing at the row.
+      //   3) THIS version (owner: "The sales target...should be pace vs actual[vs target]...
+      //      would make sense to anyone seeing it[,] for MTD especially"): back to graded minus
+      //      target, so Variance and Status always agree (same basis, by construction) -- MTD
+      //      pacing is exactly the case this restores. The raw to-date actual stays fully visible
+      //      right next to it (the Actual column's own number, with Pace as its own labeled line)
+      //      so nothing from (2) is hidden, it's just no longer the number Variance itself grades.
+      const diff = (target != null && graded != null) ? graded - target : null;
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,

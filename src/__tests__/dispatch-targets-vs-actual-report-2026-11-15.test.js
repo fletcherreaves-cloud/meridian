@@ -181,11 +181,13 @@ describe('computeTargetsVsActual() — monthly tab', () => {
     const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
     expect(byKey.salesAmt.actual).toBe(50000); // the honest, unpaced MTD number is still exposed
     expect(byKey.salesAmt.pace).toBe(300000); // 50000 / (5/30)
-    // Variance (diff) is the plain actual-minus-target gap (owner follow-up 2026-11-15: "actual
-    // vs target would be ideal and easy for anyone to understand") -- it must match what Target/
-    // Actual visibly show, NOT the hidden pace figure driving Status below.
-    expect(byKey.salesAmt.diff).toBeCloseTo(50000 - DEFAULT_TARGETS[LOC].tProdSales, 2);
-    expect(byKey.salesAmt.status).toBe('ok'); // Status still grades off pace, which clears target even though the raw actual alone would not
+    // Variance (diff) grades off the SAME number Status does -- the pace, for a paced metric mid-
+    // window (owner follow-up 2026-11-15: "The sales target...should be pace vs actual[/target]
+    // ...would make sense to anyone seeing it, for MTD especially") -- so the two can never
+    // disagree. The raw actual stays fully exposed on the row (`actual` above), it's just not
+    // what Variance itself subtracts from Target.
+    expect(byKey.salesAmt.diff).toBeCloseTo(300000 - DEFAULT_TARGETS[LOC].tProdSales, 2);
+    expect(byKey.salesAmt.status).toBe('ok'); // Status grades off pace, which clears target even though the raw actual alone would not
   });
 
   it('a metric not marked `paced` is never pace-graded, even on the same partial-month window', () => {
@@ -202,6 +204,25 @@ describe('computeTargetsVsActual() — monthly tab', () => {
   // differed. See targets-vs-actual.js's MONTHLY_TARGET_METRICS comment for the full removal note.
   it('fobBonusBase is no longer a row on this report', () => {
     expect(MONTHLY_TARGET_METRICS.some(m => m.key === 'fobBonusBase')).toBe(false);
+  });
+
+  // Owner follow-up 2026-11-15: "while we are in there, let's also add com[p] sales line. only
+  // one missing" / "comp sales %" -- the one FOB Reference Table field (fob-reference.js's
+  // `compSalesPct`, a year-over-year sales growth %) this report hadn't picked up yet. Targeted
+  // against DEFAULT_TARGETS' `tGrowth` field, the same comp-sales-growth target the FOB Reference
+  // Table and Monthly Targets editor already carry. Its actual() reuses resolveMetricForRange
+  // verbatim (the same resolver every FOB leg above already goes through), so its own number is
+  // proven correct by fob-reference.js's/vs-ly.js's own test suites, not re-derived here -- this
+  // just confirms the row is wired into the report with the right target field and direction.
+  it('compSalesPct is a real row, targeted against tGrowth', () => {
+    const row = MONTHLY_TARGET_METRICS.find(m => m.key === 'compSalesPct');
+    expect(row, 'compSalesPct row not found').toBeTruthy();
+    expect(row.targetField).toBe('tGrowth');
+    expect(row.unit).toBe('pct');
+    expect(row.better).toBe('higher');
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'monthly', range: RANGE, allMonthlyTargets: {}, targetMonthYm: '2026-9' });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.compSalesPct.target).toBe(DEFAULT_TARGETS[LOC].tGrowth);
   });
 
   // Owner follow-up (2026-11-15): "put an outline or shade differently to denote FOB components
@@ -677,14 +698,14 @@ describe('TargetsVsActualReportPanel', () => {
     expect(container.textContent).toMatch(/Pace: \$300,000/); // the projected month-end run rate
   });
 
-  // ⚠️ BUG FIXED 2026-11-15 (owner report, live): a store 28 days into a 30-day month had a real
-  // $168,968 Sales $ shortfall against its full-month target rendered in GREEN, right next to a
-  // green "✓ On Target" Status -- because Variance's color was borrowed from `m.status`, which for
-  // a paced metric grades the PACE projection, not the plain actual-vs-target gap Variance itself
-  // shows. This fixture reproduces the same shape with the existing 5-day-window numbers: a real
-  // $-61,513 Sales $ shortfall against the full-month target, while the $300,000 pace clears that
-  // target comfortably (Status stays "On Target").
-  it('Sales $ Variance renders its OWN plain actual-vs-target color, even when the paced Status reads On Target', async () => {
+  // Owner follow-up 2026-11-15, after seeing a real-data case where a plain actual-minus-target
+  // Variance (a real $168,968 shortfall) visibly disagreed with a pace-graded Status ("On
+  // Target"): "The sales target, i would think, should be pace vs actual[/target] ... would make
+  // sense to anyone seeing it, for MTD especially." Variance and Status now both grade off the
+  // SAME number (the pace, for a paced metric mid-window) so they can never disagree -- the real
+  // to-date actual stays fully visible as its own number (the "Pace:" line's own base figure),
+  // it's just not what Variance itself subtracts from Target anymore.
+  it('Sales $ Variance grades off the PACE (not the raw to-date actual) for a paced mid-month window, matching Status', async () => {
     ({ container, root } = mount({ ds: buildDs(), stores: STORES, onClose: () => {} }));
     await setCustomRange(container, '2026-09-01', '2026-09-05');
     const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
@@ -693,10 +714,14 @@ describe('TargetsVsActualReportPanel', () => {
     const salesRow = [...container.querySelectorAll('tr')].find(tr => tr.textContent.includes('Sales $'));
     expect(salesRow, 'Sales $ row not found').toBeTruthy();
     const [, , , varianceCell, statusCell] = salesRow.querySelectorAll('td'); // Metric,Target,Actual,Variance,Status
-    expect(statusCell.textContent).toContain('On Target'); // sanity: the PACE still grades 'ok'
-    expect(varianceCell.textContent).toMatch(/\$-61,513/); // the honest, unchanged actual-minus-target gap
-    expect(varianceCell.style.color).not.toBe('#10b981'); // no longer inherits Status's green
-    expect(varianceCell.style.color).toBe('var(--crit)'); // graded on its own plain gap -> a real miss
+    expect(statusCell.textContent).toContain('On Target');
+    // Target $111,513.16, Pace $300,000 -> Variance = 300,000 - 111,513.16 = +$188,487 (NOT the
+    // real $50,000 actual minus target, which would read as a $-61,513 miss).
+    expect(varianceCell.textContent).toMatch(/\+\$188,487/);
+    expect(varianceCell.textContent).not.toMatch(/-61,513/);
+    // Variance's color now matches Status exactly -- same basis, by construction.
+    expect(varianceCell.style.color).toBe(statusCell.style.color);
+    expect(varianceCell.style.color).toBe('#10b981');
   });
 
   it('Print renders one page per store styled like the on-screen card, not the generic flat table', async () => {

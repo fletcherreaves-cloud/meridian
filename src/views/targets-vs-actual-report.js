@@ -11,7 +11,7 @@ import { ReportShell } from '../components/ReportShell.js';
 import { DATE_RANGE_PRESETS, MTD_PRESET } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { ymKey } from '../engine/monthly-targets-v2.js';
-import { computeTargetsVsActual, YEARLY_TARGET_METRICS, FOB_COMPONENT_KEYS, FOB_SUMMARY_KEYS, targetStatus } from '../engine/targets-vs-actual.js';
+import { computeTargetsVsActual, YEARLY_TARGET_METRICS, FOB_COMPONENT_KEYS, FOB_SUMMARY_KEYS } from '../engine/targets-vs-actual.js';
 import { fP, f$, fN } from '../utils/fmt.js';
 
 const h = React.createElement;
@@ -102,22 +102,6 @@ function _targetText(m) {
   const label = _targetLabel(m);
   return label ? `${base} (${label})` : base;
 }
-// Variance's own color (owner report, live, 2026-11-15: a store 28 days into a 30-day month
-// showed "$-168,968" Variance painted GREEN, right next to a green "✓ On Target" Status -- a real,
-// honest $168,968 gap rendered in the one color that reads as "good news"). Root cause: Variance's
-// cell color was borrowed from `m.status`, which for a paced metric (Sales $) grades the PACE
-// projection, not the plain actual-vs-target gap Variance itself displays -- so a paced row's
-// color and its own number could flatly disagree. `m.diff` itself is UNCHANGED (still the honest
-// actual-minus-target this session's earlier "actual vs target would be ideal" fix put in place) --
-// only the color is fixed, by grading it with the same `targetStatus()` the engine already uses
-// everywhere else, fed the plain target/actual/better this row already carries (never the pace).
-// Status keeps its own paced color exactly as before; the two are still allowed to read
-// differently (that's the deliberate, documented design), but each number's color now actually
-// matches what that number says, instead of the Variance number inheriting Status's verdict.
-function _varianceStatus(m) {
-  return targetStatus(m.target, m.actual, m.better);
-}
-
 const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 
 // FOB component/summary visual grouping (owner follow-up 2026-11-15: "put an outline or shade
@@ -175,7 +159,7 @@ function StoreWorkbookCard({ loc, metrics }) {
                 div(null, _fmtVal(m.actual, m.unit)),
                 m.pace != null && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, `Pace: ${_fmtVal(m.pace, m.unit)}`),
               ),
-              td({ style: { ..._tdStyle(true), color: m.diff == null ? 'var(--text3)' : _STATUS_COLOR[_varianceStatus(m)] } }, _fmtDiff(m.diff, m.unit)),
+              td({ style: { ..._tdStyle(true), color: _STATUS_COLOR[m.status] } }, _fmtDiff(m.diff, m.unit)),
               td({ style: { padding: '4px 10px', textAlign: 'center', fontWeight: 700, fontSize: '9.5px', color: _STATUS_COLOR[m.status] } }, _STATUS_LABEL[m.status]),
             );
           });
@@ -227,7 +211,7 @@ function buildPrintHTML({ title, subtitle, rows }) {
               <td${fob?.bold ? ' style="font-weight:700"' : ''}>${_escHtml(m.label)}</td>
               <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}${_targetLabel(m) ? `<div class="pace">${_escHtml(_targetLabel(m))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtVal(m.actual, m.unit))}${m.pace != null ? `<div class="pace">Pace: ${_escHtml(_fmtVal(m.pace, m.unit))}</div>` : ''}</td>
-              <td class="r" style="color:${_PRINT_STATUS_COLOR[_varianceStatus(m)]}">${_escHtml(_fmtDiff(m.diff, m.unit))}</td>
+              <td class="r" style="color:${_PRINT_STATUS_COLOR[m.status]}">${_escHtml(_fmtDiff(m.diff, m.unit))}</td>
               <td class="c" style="color:${_PRINT_STATUS_COLOR[m.status]}">${_escHtml(_STATUS_LABEL[m.status])}</td>
             </tr>`;
             }).join('');
@@ -353,9 +337,9 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
     ),
     div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 12 } },
       tab === 'monthly'
-        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. When a 7/14/21/28D window crosses a month boundary, the Target is a math blend of both months\' real targets — day-weighted for %/rate/sec metrics, day-prorated-and-summed for $ metrics — never a silent read of just one month\'s number; a small "Blended: Xd Mon + Yd Mon" line under the Target makes this explicit, or "Covers Xd Mon only (… target missing)" if one of the two months has no saved target to blend in. Variance is always the plain Actual minus Target, matching the two numbers shown next to it, and its color always reflects that same plain gap — never borrowed from Status. Sales $\'s Status (not Variance) additionally grades against a month-end pace projection — this window\'s own actual scaled up by its own day-span vs. the full month, the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses for a true MTD window — so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; that pace shows as the small "Pace:" line under Actual, and only applies within a single month (a window crossing a month boundary already has its Target scaled to match its own days, so Status there grades off the plain Actual too). Because of this, a paced row can legitimately show a large, red Variance (the real gap against the full month) right next to a green "On Target" Status (the pace says it\'s on track) — that is not a contradiction, it\'s two different, equally honest questions answered side by side.'
+        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. When a 7/14/21/28D window crosses a month boundary, the Target is a math blend of both months\' real targets — day-weighted for %/rate/sec metrics, day-prorated-and-summed for $ metrics — never a silent read of just one month\'s number; a small "Blended: Xd Mon + Yd Mon" line under the Target makes this explicit, or "Covers Xd Mon only (… target missing)" if one of the two months has no saved target to blend in. Variance and Status always grade off the SAME number, so they can never disagree: for Sales $ mid-month, that\'s the month-end pace projection — this window\'s own actual scaled up by its own day-span vs. the full month, the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses for a true MTD window — so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet. The real to-date actual stays fully visible as its own number (with the pace shown as a small "Pace:" line beneath it), it\'s just not what Variance itself subtracts from Target. Pacing only applies within a single month that hasn\'t finished yet — a window crossing a month boundary already has its Target scaled to match its own days, so Variance and Status there both grade off the plain Actual, same as every other metric.'
         : tab === 'yearly'
-        ? `Target reads the uploaded yearly targets workbook for the selected range's year first; Sales $ and Crew Labor % fall back to a roll-up of real Monthly Targets when the yearly workbook has no value for that field (a small "From Monthly Targets (…)" line under the Target makes this explicit) — every other yearly-workbook field has no such fallback, since there's no monthly equivalent to roll up from, and reads as blank rather than a guess. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Variance is always the plain Actual minus Target, and its color always reflects that same plain gap, never Status's. Sales $'s Status (not Variance) additionally grades against a pace projection that sums each completed month's real total plus the current month's own pace (shown as a "Pace:" line); Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
+        ? `Target reads the uploaded yearly targets workbook for the selected range's year first; Sales $ and Crew Labor % fall back to a roll-up of real Monthly Targets when the yearly workbook has no value for that field (a small "From Monthly Targets (…)" line under the Target makes this explicit) — every other yearly-workbook field has no such fallback, since there's no monthly equivalent to roll up from, and reads as blank rather than a guess. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Variance and Status always grade off the same number, so they can never disagree: for Sales $, that's a pace projection that sums each completed month's real total plus the current month's own pace (shown as a "Pace:" line) — the real to-date actual stays fully visible as its own number, it's just not what Variance subtracts from Target. Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
         : 'Target is each store\'s standing daily operational target — there is no monthly override for these.'),
     activeRows == null
       ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '11px' } }, 'Choose a date range and location, then Run Report.')
