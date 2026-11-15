@@ -1,6 +1,6 @@
 ---
 name: finding-public-rls-exposure-2026-11-15
-description: "URGENT, self-inflicted: 47 tables (plus 2 more via a different shape of the same bug) had a stray unconditional 'public read'/'public write' RLS policy that OR'd away the correct tenant-scoped policy sitting right next to it, exposing real business data (sales, labor, cash, FOB, SMG, EOM) to anyone with the publicly-shipped anon key -- no login required. Traced to this session's own prior-day advice to re-run schema.sql in full. Fix written (supabase/schema-fix-public-rls-exposure-2026-11-15.sql), awaiting the owner's go-ahead to run."
+description: "✅ RESOLVED 2026-11-15, same day as discovery -- 47 tables (plus 2 more via a different shape of the same bug) had a stray unconditional 'public read'/'public write' RLS policy that OR'd away the correct tenant-scoped policy sitting right next to it, exposing real business data (sales, labor, cash, FOB, SMG, EOM) to anyone with the publicly-shipped anon key -- no login required. Traced to this session's own prior-day advice to re-run schema.sql in full. Fix (supabase/schema-fix-public-rls-exposure-2026-11-15.sql) run with the owner's explicit go-ahead and verified live from both sides: the public anon key now gets an empty result on lifelenz_schedule/squadle_checklist_records/qsr_fob, while a real authenticated session still sees full data (17,408/62/26,748 rows respectively). Do not re-raise as open."
 metadata:
   node_type: memory
   type: finding
@@ -103,8 +103,25 @@ would silently reintroduce the exact same hole again. Fixing `schema.sql` itself
 separate follow-up, not bundled into this urgent live-database fix so the live fix could ship
 without waiting on a full line-by-line review of a 1000+-line file.
 
-## Status
+## Status: ✅ RESOLVED (same day)
 
-Fix written, NOT applied. Per this repo's own Tier-C "schema/RLS changes are never applied
-unattended" rule, awaiting the owner's explicit go-ahead before running — offered to run it
-directly the moment he says so, from wherever he is, rather than requiring a SQL-editor session.
+Applied with the owner's explicit go-ahead ("You have my permission to run it"), via the same
+Management-API path used to find this — no SQL-editor session needed. Verified from both sides
+immediately after, not just by re-reading `pg_policies`:
+
+- **Anon key only** (`apikey`/`Authorization: Bearer` both the public `sb_publishable_...` key,
+  no login): `lifelenz_schedule`, `squadle_checklist_records`, `qsr_fob` each now return `[]`,
+  HTTP 200 — correctly blocked, not erroring. `qsrsoft_kb` (deliberately public) still returns
+  real rows, confirming the fix didn't over-correct.
+- **Real authenticated session** (simulated via the owner's actual profile id, `role
+  authenticated`): `lifelenz_schedule` 17,408 rows, `squadle_checklist_records` 62 rows, `qsr_fob`
+  26,748 rows — full, correct access, unchanged from before the fix.
+- `pg_policies` re-queried post-fix: zero remaining `qual='true' and roles='{public}'` policies
+  except the two deliberately-public reference tables; `hme_dt_daily`/`squadle_checklist_records`'s
+  tenant-read policy now shows `roles: {authenticated}`.
+
+**Do not re-raise this as an open item or re-run the fix file** — it has already been applied to
+the live database. The one thing still genuinely open is the separate, deliberately-NOT-bundled
+follow-up noted above: `schema.sql`'s own source text still contains the original loose policies,
+so a future full re-run of that file would silently reintroduce this exact hole again. That
+source-level fix is still pending, tracked here, not yet scheduled.
