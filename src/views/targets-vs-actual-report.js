@@ -162,28 +162,68 @@ function buildPrintHTML({ title, subtitle, rows }) {
     </style></head><body>${rows.map(storeHtml).join('')}</body></html>`;
 }
 
+// A cheap fingerprint of ds fields this report's actual-value resolvers read, used only to
+// detect that a background fetch landed late -- never to source a metric value (deliberately
+// excludes the three raw manual-data fields CLAUDE.md's "source data through the shared
+// helpers" ratchet, src/__tests__/ratchet-raw-metric-rows.test.js, specifically guards against
+// a panel reading directly; the fields used below aren't covered by that ratchet and already
+// correlate with the same stream-arrival timing this exists to catch).
+// Owner-reported 2026-11-15: on mobile, switching away from and back to the app commonly
+// reloads the page mid-startup -- if Run Report is clicked before these streams finish their
+// background fetch (FOB's is a slow ~500-day pull), their rows read blank, and nothing ever
+// prompted a re-check once the data landed a few seconds later. This fingerprint lets the panel
+// notice that lull ending and recompute on its own, instead of leaving a stale, part-blank
+// result sitting there until the user happens to run the report again.
+function _dsFingerprint(ds) {
+  return [
+    ds?.opsLaborRows?.length || 0, ds?.qsrFobRows?.length || 0, ds?.ebosRows?.length || 0,
+    ds?.allMonthlyTargets ? Object.keys(ds.allMonthlyTargets).length : 0,
+    ds?.allYearlyTargets ? Object.keys(ds.allYearlyTargets).length : 0,
+  ].join('|');
+}
+
 export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
-  const { useState } = React;
+  const { useState, useEffect, useRef } = React;
   const [tab, setTab] = useState('monthly');
   const [result, setResult] = useState(null); // { monthly: [...], daily: [...] } | null
   const [runInfo, setRunInfo] = useState(null); // { range, scope } from the last Run, for export/print subtitles
+  const lastRunRef = useRef(null); // { range, locs } from the last Run, for the auto-refresh effect below
 
-  const run = async ({ range, locs, scope }) => {
+  const compute = (dsNow, range, locs) => {
     const rangeEnd = range?.e ? new Date(range.e) : new Date();
     const targetMonthYm = range?.e ? (() => {
       const d = new Date(range.e);
       return d.getFullYear() + '-' + (d.getMonth() + 1);
     })() : ymKey(new Date());
     const targetYear = rangeEnd.getFullYear();
-    const allMonthlyTargets = ds?.allMonthlyTargets || {};
-    const allYearlyTargets = ds?.allYearlyTargets || {};
-    setRunInfo({ range, scope });
+    const allMonthlyTargets = dsNow?.allMonthlyTargets || {};
+    const allYearlyTargets = dsNow?.allYearlyTargets || {};
     setResult({
-      monthly: computeTargetsVsActual(ds, locs, { which: 'monthly', range, allMonthlyTargets, targetMonthYm }),
-      daily: computeTargetsVsActual(ds, locs, { which: 'daily', range }),
-      yearly: computeTargetsVsActual(ds, locs, { which: 'yearly', range, allYearlyTargets, targetYear }),
+      monthly: computeTargetsVsActual(dsNow, locs, { which: 'monthly', range, allMonthlyTargets, targetMonthYm }),
+      daily: computeTargetsVsActual(dsNow, locs, { which: 'daily', range }),
+      yearly: computeTargetsVsActual(dsNow, locs, { which: 'yearly', range, allYearlyTargets, targetYear }),
     });
   };
+
+  const run = async ({ range, locs, scope }) => {
+    setRunInfo({ range, scope });
+    lastRunRef.current = { range, locs, fingerprint: _dsFingerprint(ds) };
+    compute(ds, range, locs);
+  };
+
+  // Auto-refresh: if a run already happened and the underlying streams have since grown (a
+  // background fetch that was still in flight at Run time has since landed), silently recompute
+  // with the SAME params rather than leaving the earlier, part-blank result on screen.
+  useEffect(() => {
+    const last = lastRunRef.current;
+    if (!last) return;
+    const fp = _dsFingerprint(ds);
+    if (fp === last.fingerprint) return;
+    lastRunRef.current = { ...last, fingerprint: fp };
+    compute(ds, last.range, last.locs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ds?.opsLaborRows?.length, ds?.qsrFobRows?.length, ds?.ebosRows?.length,
+      ds?.allMonthlyTargets, ds?.allYearlyTargets]);
 
   const activeRows = result ? result[tab] : null;
   const _tabTitle = tab === 'daily' ? 'Daily' : tab === 'yearly' ? 'Yearly' : 'Monthly';
@@ -217,7 +257,7 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
       tab === 'monthly'
         ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. Sales $ grades against a month-end pace projection (MTD actual ÷ days elapsed × days in month — the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses) whenever the range ends mid-month, not the raw MTD total, so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; the real MTD actual still shows as the small "Pace:" line\'s companion number.'
         : tab === 'yearly'
-        ? `Target reads the uploaded yearly targets workbook for the selected range's year — no fallback, since not every store/year has one uploaded. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own.`
+        ? `Target reads the uploaded yearly targets workbook for the selected range's year — no fallback, since not every store/year has one uploaded. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Sales $ sums each completed month's real total plus the current month's own pace projection (shown as a "Pace:" line); Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
         : 'Target is each store\'s standing daily operational target — there is no monthly override for these.'),
     activeRows == null
       ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '11px' } }, 'Choose a date range and location, then Run Report.')

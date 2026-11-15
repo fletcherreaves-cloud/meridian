@@ -199,3 +199,143 @@ overlay producing one `store-page` section per store with the red accent and gol
 this sandboxed dev environment has no live Supabase data, so Actual/Pace read "—" there exactly
 like the original v5.792 live-verification — expected, not a gap, and covered by the fixture-based
 tests above instead.
+
+## Follow-up (2026-11-15, v5.795): FOB load-speed fix + Yearly tab year-to-date rollup
+
+Owner: *"For monthly, the fob eventually loaded previously, but [is] not seeming to [load] now. Is
+there anything we can do to load them faster? On the yearly, for sales[,] add the monthly actuals
+together [to] generate the yearly actual based on that for completed months and pace for any
+current month. For labor and fob, any suggestions on how we could calculate those? Monthly maybe
+with a roll up based on dollars."*
+
+**FOB load-speed fix (measured root cause, not a guess).** `fob-reference.js`'s
+`resolveMetricForRange()` — the public resolver this report's Monthly tab calls once per store
+**per FOB-leg metric** (12 of them: 11 `_FOB_LEG_MAP` entries + `fobBonusBase`) — called
+`fobDailyDeltas(ds)` on every single invocation with **no cache**. `fobDailyDeltas` re-sorts and
+re-reconstructs daily $ deltas for **every store's entire qsr_fob history** from scratch, just to
+read one store's slice. With ~27 stores × 12 metrics = up to 324 full recomputations per report
+run, this is an O(metrics × stores × all-history-rows) blowup that gets slower every month more
+`qsr_fob` history accumulates — exactly matching "eventually loaded previously, but not now." Fix:
+a `WeakMap` cache inside `fobDailyDeltas` itself, keyed on the `ds` object identity. Zero call-site
+changes needed (`computeFobReferenceTable` and `resolveMetricForRange` both benefit automatically).
+Safe because `App.js`'s `setDs` always replaces `ds` with a new object on any data change
+(`setDs(prev => ({...prev, ...patch}))`) — a stale cache entry is simply unreachable (and GC'd) the
+moment new data arrives, and re-renders against the same `ds` (switching this report's tabs
+without re-running) correctly reuse the one computed result. 2 new tests prove reuse-by-reference
+and no cross-`ds` leakage (`fob-reference.test.js`).
+
+**Yearly tab — year-to-date rollup.** Every yearly metric's `actual` used to be computed over
+whatever narrow 7/14/21/28D/MTD window the report's own date picker had selected — comparing a
+few weeks of data against a full ANNUAL target never made sense. `computeTargetsVsActual` now
+widens that window to Jan-1-through-the-picker's-end-date (clamped into the target year) for the
+whole Yearly tab via a new `_yearToDateRange()` helper, and passes that widened range into every
+yearly metric's `actual`/`paceFn` instead of the raw picker window.
+- **Sales $**: a flat day-fraction pace at the YEAR grain would extrapolate an entire year from a
+  handful of real months — far noisier than finishing the one month already in progress. So
+  `_yearlySalesRollup()` sums each **completed** month's real total (Jan .. the month before the
+  current one) plus the **current** month's own `monthEndPace()` projection — the literal "add the
+  monthly actuals together ... for completed months and pace for any current month" the owner
+  asked for. Returns `{real, paced}`: `real` is the honest to-date total (no projection) shown as
+  the row's `actual`; `paced` drives `diff`/`status` via the same `paceFn` mechanism the Monthly
+  tab's `salesAmt` already uses, generalized here since a year-grain pace needed different math
+  than a month-grain one.
+- **Crew Labor % / FOB Target %**: these were already dollar-weighted (`metricSumRatio`'s
+  Σnumerator/Σdenominator, `resolveMetricForRange`'s Σ$-delta/Σsales) — simply handing them the
+  widened YTD range **is** "a monthly rollup based on dollars" in one call, since summing day-level
+  $ amounts across a year is mathematically identical to summing each month's own $ subtotal. No
+  new math needed, just a wider window. A dedicated 3-month test fixture (July/August/September,
+  each a different $ magnitude and %) proves the dollar-weighted result measurably differs from a
+  naive average of monthly percentages (0.2766 dollar-weighted vs. 0.25 naive-average for labor;
+  2.57% vs. 1.79% for FOB) — a single-month fixture can't distinguish the two, which is why the
+  existing fixture alone wasn't enough to prove this correct.
+- **TPPH/OEPE/Parked %/KVS Time/R2P** were left untouched (still graded over the picker's own
+  narrow window) — the owner asked specifically about sales/labor/FOB, and these aren't $-based,
+  so the "never average averages" argument doesn't apply the same way. This is a real, known
+  inconsistency within the same tab (worth asking about as a follow-on), not something fixed
+  silently.
+
+9 new engine tests (45 total in the dispatch file) using a dedicated multi-month fixture
+(`buildYtdDs()`) with deliberately different $ magnitudes per month so a naive-average bug would
+be caught, not masked. Full suite (8219 tests) green, build clean, live-verified in the running
+dev server (Yearly tab renders the updated explanatory copy, no console errors beyond the
+sandbox's known unrelated 429 rate-limit noise).
+
+## Follow-up, same day: auto-refresh after a late-arriving stream ("disappearing on mobile")
+
+Owner, after the above shipped but before it merged: *"Fob loaded finally again. Just see if we
+can make it quicker please. But, oddly enough just clicking back and forth between Meridian and
+here on mobile made them disappear again. Almost seems like running the 28 day view populates it."*
+
+Spawned a research fork (code-review only, no changes) to trace exactly how `ds.qsrFobRows` gets
+into the app, since the symptom (data vanishes, a later run "fixes" it) pointed at something
+beyond the per-call caching bug already fixed above. Findings, confirmed by reading the code
+directly (not guessed):
+- `qsrFobRows` loads **exactly once**, in the tiered startup sequence's T2 stage
+  (`_stQsrsoftFob` → `loadQsrFob({daysBack:500})`, a ~16-month pull across all stores). There is
+  no automatic reload afterward — only a manual Data Manager "↻ Sync" click re-fetches it.
+- The app's one `visibilitychange` listener (`src/app/App.js`) only refreshes DAR rows
+  (`refreshDar`) — it never touches `qsrFobRows`, never clears anything, and no other
+  visibility/focus listener exists anywhere else in the app.
+- `qsrFobRows` has **no IndexedDB/Dexie fallback** — `src/db/index.js`'s `DATA_STORES` list is
+  the *manual*-upload streams only (the manual `fobRows`, distinct from the auto `qsrFobRows`).
+  So after any full page reload, `ds.qsrFobRows` is empty until the T2 network fetch completes
+  again, with nothing to show in the meantime.
+- No on-demand/lazy backfill exists for FOB either (unlike `CurrentMonthPaceSection`'s
+  `dsCoversMonthStart` pattern for sales streams) — FOB is pure "wait for T2."
+
+**Conclusion (code-review level, not reproduced on a live mobile device — this sandbox has no
+real device to test on, so this is the structural explanation, not a measured repro):** mobile
+browsers commonly discard and reload a backgrounded tab. That resets the whole app, including
+`ds`, and restarts the T2 FOB fetch from scratch. `TargetsVsActualReportPanel` is click-to-run
+and doesn't react to `ds` changing after the click — so clicking Run Report immediately after
+reopening the app, before T2's FOB fetch lands, shows blank FOB rows. Trying again a bit later
+(the 28-day run) succeeds simply because, by then, the background fetch had finished — nothing
+about "28 days" specifically triggers anything.
+
+**What was fixed:** the loader itself (`loadQsrFob`'s `_pagedParallel` scheduling) carries its
+own standing comment that two earlier tuning attempts made it *slower*, not faster, and says not
+to re-tune it without a live before/after measurement — not available from this sandbox, so left
+untouched. Instead, fixed the half that's actually under this report's control: added an
+auto-refresh effect (`_dsFingerprint` + a `useEffect` in `targets-vs-actual-report.js`) that
+notices when a stream that was still loading at Run time later lands, and silently recomputes
+with the same params — so a report that was run too early self-corrects instead of sitting on a
+part-blank result until the user happens to run it again. Deliberately fingerprints
+`opsLaborRows`/`qsrFobRows`/`ebosRows`/`allMonthlyTargets`/`allYearlyTargets`, NOT
+`laborRows`/`ctrlRows`/`opsRows` — those three are exactly the raw fields
+`src/__tests__/ratchet-raw-metric-rows.test.js` (CLAUDE.md's "source data through the shared
+helpers" standing rule) guards a panel against reading directly, and the excluded fields already
+correlate with the same stream-arrival timing this exists to catch, so nothing is lost by leaving
+them out. One new test (`buildYtdDs`-adjacent, in the main dispatch file) mounts with an empty
+`ds`, runs, confirms blanks, then re-renders the same instance with real data and confirms the
+report updates itself with no second click.
+
+**What this does NOT fix:** the underlying T2 load time itself, and the "full reload wipes
+React state back to the pre-run empty screen" case — if the whole app genuinely reloads, the
+user still has to click Run Report once; the auto-refresh only prevents that one click from
+landing on a stale, part-blank result if it's clicked impatiently. A faster FOB load (shrinking
+`daysBack`, or re-touching the already-tuned pagination scheduling) would need a live
+before/after measurement against production first, per that file's own standing warning —
+flagged to the owner rather than guessed at.
+
+## Correction, same day: TPPH/OEPE/Parked %/KVS Time/R2P were NOT actually excluded
+
+The Yearly-tab writeup above told the owner these five metrics were "deliberately left on the
+narrow picker window" — **that was wrong, and said without re-reading the code that had just
+been written.** `computeTargetsVsActual`'s own dispatcher computes `actualRange` (the widened
+Jan-1-through-asOf window) once and passes it into **every** `YEARLY_TARGET_METRICS` entry's
+`actual()`, with no exceptions — `yTpph`/`yOepe`/`yPark`/`yKvst`/`yR2p` were already receiving
+the widened range the moment the YTD rollup shipped, same as `yLabor`/`yFobTarget`. They need no
+pacing (same reasoning as the dollar-weighted ratios: a mean-of-daily rate metric's YTD average
+is already the honest, complete "actual" — nothing to project), so there was genuinely nothing
+left to build.
+
+What there WAS a real gap in: no test had ever proven this with real multi-month data — the
+existing fixtures were single-month, so a "narrow window" bug and a "correctly widened window"
+fix would have produced the identical number and passed either way. Extended `buildYtdDs()` with
+per-month `tpph`/`oepe`/`kvst`/`park`/`r2p` values (July/August/Sep-partial, each a different
+number) and added a test asserting all five read the real day-weighted mean across the full
+year-to-date span, not the flat September-only value the narrow window would give. All passed on
+the first run, against the pre-existing code — confirming the fix needed was to the test suite
+and this file's accuracy, not to `targets-vs-actual.js`. CLAUDE.md's own "measure it, don't
+reason about it" rule exists precisely to catch this kind of mistake; this is a case of it being
+violated and then caught, not followed from the start.

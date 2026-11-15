@@ -61,7 +61,26 @@ const _normLoc = l => String(parseInt(String(l || '').replace(/\D/g, ''), 10) ||
 
 // Reconstruct TRUE daily $ deltas per store from qsr_fob's cumulative MTD snapshot.
 // Exported for tests. Returns { [loc]: [{date, sales, legs:{key:$}}, ...] } sorted ascending.
+//
+// Cached per `ds` object identity (owner-reported 2026-11-15: "the fob eventually loaded
+// previously, but not seeming to now" on the Targets vs Actual Monthly tab). Root cause:
+// resolveMetricForRange() below calls this function once per store PER FOB-LEG METRIC (12 of
+// them on that report) — with no cache, every one of those ~12×stores calls re-sorted and
+// re-reconstructed deltas for qsr_fob rows across EVERY store from scratch, just to read one
+// store's slice. As qsr_fob's accumulated history has grown, that O(metrics×stores×allRows)
+// blowup went from "slow" to effectively hanging. App.js's setDs always replaces `ds` with a
+// new object on any data change (`setDs(prev => ({...prev, ...patch}))`), so caching by `ds`
+// identity in a WeakMap is safe — a stale cache entry is simply unreachable (and GC'd) the
+// moment new data arrives, and re-renders against the same `ds` (e.g. switching this report's
+// tabs without re-running) correctly reuse the one computed result.
+const _deltaCache = new WeakMap();
 export function fobDailyDeltas(ds) {
+  if (ds && _deltaCache.has(ds)) return _deltaCache.get(ds);
+  const result = _computeFobDailyDeltas(ds);
+  if (ds) _deltaCache.set(ds, result);
+  return result;
+}
+function _computeFobDailyDeltas(ds) {
   const rows = ds?.qsrFobRows || [];
   const sorted = rows
     .map(r => ({ ...r, _d: _asDate(r.date) }))
