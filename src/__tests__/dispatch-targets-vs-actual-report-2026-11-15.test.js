@@ -677,6 +677,28 @@ describe('TargetsVsActualReportPanel', () => {
     expect(container.textContent).toMatch(/Pace: \$300,000/); // the projected month-end run rate
   });
 
+  // ⚠️ BUG FIXED 2026-11-15 (owner report, live): a store 28 days into a 30-day month had a real
+  // $168,968 Sales $ shortfall against its full-month target rendered in GREEN, right next to a
+  // green "✓ On Target" Status -- because Variance's color was borrowed from `m.status`, which for
+  // a paced metric grades the PACE projection, not the plain actual-vs-target gap Variance itself
+  // shows. This fixture reproduces the same shape with the existing 5-day-window numbers: a real
+  // $-61,513 Sales $ shortfall against the full-month target, while the $300,000 pace clears that
+  // target comfortably (Status stays "On Target").
+  it('Sales $ Variance renders its OWN plain actual-vs-target color, even when the paced Status reads On Target', async () => {
+    ({ container, root } = mount({ ds: buildDs(), stores: STORES, onClose: () => {} }));
+    await setCustomRange(container, '2026-09-01', '2026-09-05');
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    const salesRow = [...container.querySelectorAll('tr')].find(tr => tr.textContent.includes('Sales $'));
+    expect(salesRow, 'Sales $ row not found').toBeTruthy();
+    const [, , , varianceCell, statusCell] = salesRow.querySelectorAll('td'); // Metric,Target,Actual,Variance,Status
+    expect(statusCell.textContent).toContain('On Target'); // sanity: the PACE still grades 'ok'
+    expect(varianceCell.textContent).toMatch(/\$-61,513/); // the honest, unchanged actual-minus-target gap
+    expect(varianceCell.style.color).not.toBe('#10b981'); // no longer inherits Status's green
+    expect(varianceCell.style.color).toBe('var(--crit)'); // graded on its own plain gap -> a real miss
+  });
+
   it('Print renders one page per store styled like the on-screen card, not the generic flat table', async () => {
     const { printHtml } = await import('../utils/print-html.js');
     printHtml.mockClear();
