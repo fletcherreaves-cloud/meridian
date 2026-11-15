@@ -884,9 +884,17 @@ export function AssignmentsTab() {
           opt({value:''},'Select a store…'),
           ...Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
             .map(loc=>opt({value:loc,key:loc},STORE_NAMES[loc])))
-      : inp({value:newTarget,placeholder:'supervisor/OM/DO name they oversee',
-          onChange:e=>setNewTarget(e.target.value),
-          style:{...inputStyle,minWidth:200}}),
+      // A dropdown of knownPeople, not free text (owner report 2026-11-15: typed "supervisor
+      // zukaar" into the old free-text box, following this field's own placeholder literally —
+      // resolveScope() does an EXACT string match against real identities, so that typo silently
+      // resolved to nobody and Ashley's "Resolved scope" stayed "—" with no error anywhere to
+      // say why. A typo here used to be undetectable until someone noticed a scope wasn't
+      // working; a dropdown of real names makes that typo impossible, mirroring exactly how
+      // "oversees store" already can't be mistyped either.
+      : sel({value:newTarget,onChange:e=>setNewTarget(e.target.value),
+          style:{...inputStyle,padding:'5px 6px',minWidth:200}},
+          opt({value:''},'Select who they oversee…'),
+          ...knownPeople.filter(p=>p!==person).map(p=>opt({value:p,key:p},p))),
     btn({onClick:()=>submitAdd(person),disabled:saving||!newTarget.trim(),
       style:{padding:'5px 10px',background:AMBER,color:'#000',border:'none',borderRadius:R,
         fontSize:11,fontWeight:700,cursor:saving?'not-allowed':'pointer'}},
