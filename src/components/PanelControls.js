@@ -41,6 +41,12 @@ const _dstr = (d) => {
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
 };
 
+// Month-to-date preset, additive to the trailing-N-days shape above: {id:'mtd', label:'MTD',
+// mtd:true} instead of {days:N}. A report opts in by including it in its own `presets` array
+// (e.g. targets-vs-actual-report.js's 7/14/21/28/MTD picker) — not added to DATE_RANGE_PRESETS
+// itself, so every existing caller of that shared list is unaffected.
+export const MTD_PRESET = { id: 'mtd', label: 'MTD', mtd: true };
+
 // Pure: preset id -> {s,e} ISO date strings, trailing N days ending on the last CLOSED
 // business day — never a naive "yesterday" (that misses the 4am ABC cutover: between
 // midnight and 4am, yesterday's calendar date is still today's still-filling business day)
@@ -48,10 +54,18 @@ const _dstr = (d) => {
 // CLAUDE.md's data-integrity notes). Uses the one shared lastClosedBusinessDay() helper
 // (utils/date.js, re-exported from engine/swing-feed.js) rather than re-deriving the
 // arithmetic — this bug has already recurred five separate times from hand-copies.
+//
+// A preset with `mtd:true` (MTD_PRESET) resolves to [1st of the current business month, last
+// closed business day] instead of a trailing-N-days window — same lastClosedBusinessDay() end
+// anchor, just a different start.
 export function resolveDatePreset(presetId, presets = DATE_RANGE_PRESETS, today = new Date()) {
   const preset = presets.find((p) => p.id === presetId);
   if (!preset) return null;
   const e = lastClosedBusinessDay(today);
+  if (preset.mtd) {
+    const s = new Date(e.getFullYear(), e.getMonth(), 1);
+    return { id: presetId, s: _dstr(s), e: _dstr(e) };
+  }
   const s = new Date(e);
   s.setDate(s.getDate() - (preset.days - 1));
   return { id: presetId, s: _dstr(s), e: _dstr(e) };

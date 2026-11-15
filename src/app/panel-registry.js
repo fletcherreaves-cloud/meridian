@@ -359,6 +359,11 @@ export const PANELS = [
   // instead of a manual paste. See engine/fob-reference.js's header for the qsr_fob
   // cumulative-MTD-snapshot handling.
   { id:'fob-reference-table', label:'FOB Reference Table', icon:'📋', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-11-15: "a new report that focuses solely on the monthly targets and
+  // daily targets (separate tabs) that shows clearly what the current target is vs the actual
+  // results." See engine/targets-vs-actual.js's header for which metrics live in which tab and
+  // why.
+  { id:'targets-vs-actual', label:'Targets vs Actual', icon:'🎯', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Owner request 2026-10-19: "Conversion Efficiency Ratio" reports from McDonald's corporate
   // Owner Operator Reports (food usage vs. target by raw item). Manual-upload-only for now --
   // no self-service API known to exist for this corporate program; see

@@ -203,6 +203,23 @@ function _computeTrend(ds, loc, metric, asOf, deltasForLoc) {
   return { slope, direction: Math.abs(slope) < 0.02 ? 'flat' : (slope > 0 ? 'up' : 'down') };
 }
 
+// Resolve one metric's ACTUAL value over an ARBITRARY [s,e] range -- not the 4 fixed MTD/L3M/
+// L6W/LM windows fobReferenceWindows() defines above. Same resolver, same FOB delta-
+// reconstruction (never averages qsr_fob's cumulative MTD snapshot -- see this file's header),
+// just a caller-supplied window. Added for src/engine/targets-vs-actual.js's custom date-range
+// picker (7/14/21/28/MTD) so that report never re-derives the FOB-leg math a second time.
+// `range.s`/`range.e` may be Date objects or ISO strings -- normalized to Date here to match
+// every other window this file builds (fobReferenceWindows' own _mStart/_mEnd/_addD all return
+// Date objects, and _fobWindowRatio compares against them directly).
+export function resolveMetricForRange(ds, loc, metricKey, range) {
+  const metric = FOB_REFERENCE_METRICS.find(m => m.key === metricKey);
+  if (!metric) return null;
+  const L = _normLoc(loc);
+  const deltasForLoc = metric.fobLeg ? (fobDailyDeltas(ds)[L] || []) : [];
+  const normRange = { s: _asDate(range.s), e: _asDate(range.e) };
+  return _resolveWindow(ds, L, metric, normRange, deltasForLoc);
+}
+
 // One row per store: { loc, metrics: { [metricKey]: { l3m, l6w, lm, mtd, projected, trend, trendSlope } } }
 export function computeFobReferenceTable(ds, locs, asOf = new Date()) {
   const list = (Array.isArray(locs) ? locs : [locs]).map(_normLoc);
