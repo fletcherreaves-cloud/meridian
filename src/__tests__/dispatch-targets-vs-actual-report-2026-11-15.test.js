@@ -7,7 +7,7 @@
 // Engine tests use the REAL fixture shape proven by fob-reference-table-panel.test.js (same
 // 30-day September data for store 3708) so the FOB-leg delta-reconstruction math is exercised
 // exactly the same way that already-shipped report exercises it, not a re-derived shortcut.
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -209,13 +209,24 @@ describe('computeTargetsVsActual() — monthly tab', () => {
   // membership in FOB_COMPONENT_KEYS/FOB_SUMMARY_KEYS -- this just guards that the two lists stay
   // disjoint and every summary key is a real row, so the view's grouping can never silently point
   // at a key that doesn't exist or double-count a row as both a component and a summary.
+  //
+  // Narrowed same day (owner follow-up): "remove shading from Base Food, Disc Coupon and Total
+  // Food Cost. This will help the stores focus on only what they are tasked or charged to
+  // deliver." Base Food % and Disc Coupon % aren't store-controllable the way the other legs are,
+  // and FOB Target % (w/o Disc Coupon) exists specifically to exclude Disc Coupon from what a
+  // store is held to -- shading it back in would visually contradict that. Total Food Cost %
+  // (which includes both excluded legs) is no longer a "summary" row either; FOB Target % alone is.
   it('FOB_COMPONENT_KEYS and FOB_SUMMARY_KEYS are disjoint and every key is a real monthly-tab row', () => {
     const rowKeys = new Set(MONTHLY_TARGET_METRICS.map(m => m.key));
     for (const k of FOB_COMPONENT_KEYS) expect(rowKeys.has(k)).toBe(true);
     for (const k of FOB_SUMMARY_KEYS) expect(rowKeys.has(k)).toBe(true);
     const overlap = FOB_COMPONENT_KEYS.filter(k => FOB_SUMMARY_KEYS.includes(k));
     expect(overlap).toEqual([]);
-    expect(FOB_COMPONENT_KEYS).toEqual(['baseFoodPct', 'discCouponPct', 'compWastePct', 'rawWastePct', 'condimentPct', 'empFoodPct', 'statLossPct', 'unexDiffPct']);
+    expect(FOB_COMPONENT_KEYS).toEqual(['compWastePct', 'rawWastePct', 'condimentPct', 'empFoodPct', 'statLossPct', 'unexDiffPct']);
+    expect(FOB_SUMMARY_KEYS).toEqual(['fobTargetPct']);
+    expect(FOB_COMPONENT_KEYS).not.toContain('baseFoodPct');
+    expect(FOB_COMPONENT_KEYS).not.toContain('discCouponPct');
+    expect(FOB_SUMMARY_KEYS).not.toContain('totalFoodCostPct');
   });
 });
 
@@ -285,6 +296,67 @@ describe('_blendedMonthlyTarget() — cross-month target blending (owner follow-
     expect(byKey.salesAmt.target).toBeCloseTo(70000, 6);
     expect(byKey.salesAmt.blend).toHaveLength(2);
     expect(byKey.crewLaborPct.target).toBeCloseTo(1.55 / 7, 10);
+  });
+});
+
+// Owner observation (2026-11-15), live, MTD preset: a true single-month window (Nov 1 - Nov 14)
+// showed "Blended: 0d Oct + 14d Nov" -- a blend label for a window that never actually touches
+// October. Root cause: _monthsInRange parsed a bare date-only string ('2026-11-01') with
+// `new Date(...)`, which JS interprets as UTC MIDNIGHT -- in any timezone behind UTC (every US
+// timezone this app serves, including this owner's own), that lands on the PREVIOUS calendar day
+// LOCALLY, and .getFullYear()/.getMonth() read local fields. This sandbox's test runner is UTC
+// (confirmed: `new Date('2026-11-01').getMonth()` reads October here with NO offset), which is
+// exactly why this shipped undetected -- these tests force a real non-UTC zone to reproduce it.
+describe('_monthsInRange() / _yearToDateRange() — UTC-midnight date-string parsing bug (owner observation, 2026-11-15)', () => {
+  const ORIGINAL_TZ = process.env.TZ;
+  beforeEach(() => { process.env.TZ = 'America/Chicago'; }); // Oklahoma/Florida are both behind UTC
+  afterEach(() => { process.env.TZ = ORIGINAL_TZ; });
+
+  it('a true single-month MTD window produces exactly one month entry, not a spurious prior-month one', () => {
+    const salesDef = MONTHLY_TARGET_METRICS.find(m => m.key === 'salesAmt');
+    const mtdWindow = { s: '2026-11-01', e: '2026-11-14' };
+    const r = _blendedMonthlyTarget(salesDef, mtdWindow, {}, LOC);
+    // Before the fix, this produced blend=[{ym:'2026-10',days:0,...},{ym:'2026-11',days:14,...}]
+    // -- a real, visible "Blended: 0d Oct + 14d Nov" line for a window that never touches October.
+    expect(r.blend).toBeNull();
+    expect(r.value).toBe(DEFAULT_TARGETS[LOC].tProdSales); // the plain flat monthly target, unprorated
+  });
+
+  it('a true single-month 7/14/21/28D window (not just MTD) is also unaffected', () => {
+    const salesDef = MONTHLY_TARGET_METRICS.find(m => m.key === 'salesAmt');
+    const sameMonth28d = { s: '2026-11-01', e: '2026-11-28' };
+    const r = _blendedMonthlyTarget(salesDef, sameMonth28d, {}, LOC);
+    expect(r.blend).toBeNull();
+  });
+
+  it('a genuinely cross-month window still blends correctly under a non-UTC timezone', () => {
+    const salesDef = MONTHLY_TARGET_METRICS.find(m => m.key === 'salesAmt');
+    const allMonthlyTargets = { '2026-9': { [LOC]: { tProdSales: 300000 } }, '2026-10': { [LOC]: { tProdSales: 310000 } } };
+    const r = _blendedMonthlyTarget(salesDef, { s: '2026-09-28', e: '2026-10-04' }, allMonthlyTargets, LOC);
+    expect(r.blend).toHaveLength(2);
+    expect(r.blend[0]).toEqual({ ym: '2026-9', days: 3, missing: false });
+    expect(r.blend[1]).toEqual({ ym: '2026-10', days: 4, missing: false });
+  });
+
+  it('computeTargetsVsActual() — yearly tab — the YTD range\'s END boundary includes the full last day under a non-UTC timezone', () => {
+    // _yearToDateRange had the identical UTC-midnight bug on range.e -- a picker end date string
+    // of '2026-11-14' could silently resolve one tick into Nov 13 locally, clipping a real day's
+    // sales out of the YTD sum. Minimal fixture ($1,000 * day for Nov 1-14) isolates exactly this
+    // boundary question: a clipped range reads $91,000 (days 1-13); the correct range reads
+    // $105,000 (days 1-14) -- the missing day 14 is a precise, unmistakable $14,000 gap.
+    const laborRows = [], opsLaborRows = [];
+    for (let day = 1; day <= 14; day++) {
+      const d = new Date(2026, 10, day); // November (0-indexed month 10)
+      laborRows.push({ loc: LOC, date: d, sales: 1000 * day, gc: 10, tpph: 5 });
+      opsLaborRows.push({ loc: LOC, date: d, laborDollar: 200 });
+    }
+    const novDs = { laborRows, opsLaborRows, storeIds: [LOC], allMonthlyTargets: {} };
+    const rows = computeTargetsVsActual(novDs, [LOC], {
+      which: 'yearly', range: { s: '2026-11-01', e: '2026-11-14' }, allYearlyTargets: {}, targetYear: 2026,
+    });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.yProdSales.actual).toBe(105000);
+    expect(byKey.yProdSales.actual).not.toBe(91000); // what the UTC-midnight bug would have produced
   });
 });
 
