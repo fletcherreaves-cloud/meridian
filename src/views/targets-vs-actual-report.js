@@ -76,10 +76,30 @@ function _blendLabel(blend) {
   if (!present.length) return null; // shouldn't happen (caller already checked a value exists), but never fabricate a label
   return `Covers ${present.map(b => `${b.days}d ${_monthShort(b.ym)}`).join(' + ')} only (${missing.map(b => _monthShort(b.ym)).join('/')} target missing)`;
 }
+// Yearly tab rollup label (owner follow-up 2026-11-15, same request as the monthly cross-month
+// blend above: "fix the targets here as well like we did for monthly"). When the yearly workbook
+// itself has no value for a field, targets-vs-actual.js's _yearlyTarget falls back to rolling up
+// the Monthly Targets table instead — a DIFFERENT situation from the monthly tab's blend (a
+// narrow window straddling two months) and worth a visibly different label so a rolled-up number
+// is never mistaken for an on-file annual figure. Deliberately omits day counts (unlike
+// _blendLabel) -- the point here is sourcing, not the exact per-month weighting, which the
+// targets-vs-actual.js header already documents precisely.
+function _yearlyRollupLabel(blend) {
+  if (!blend) return null;
+  const present = blend.filter(b => !b.missing).map(b => _monthShort(b.ym));
+  if (!present.length) return null;
+  const missing = blend.filter(b => b.missing).map(b => _monthShort(b.ym));
+  const span = present.length > 1 ? `${present[0]}–${present[present.length - 1]}` : present[0];
+  return missing.length ? `From Monthly Targets (${span}; ${missing.join('/')} missing)` : `From Monthly Targets (${span})`;
+}
+// Picks the right blend/rollup label for a metric row, whichever tab/path produced it.
+function _targetLabel(m) {
+  return m.targetSource === 'monthly-rollup' ? _yearlyRollupLabel(m.blend) : _blendLabel(m.blend);
+}
 // Flat text form of the Target cell for CSV/Excel/PDF, mirroring _actualText's pattern.
 function _targetText(m) {
   const base = _fmtVal(m.target, m.unit);
-  const label = _blendLabel(m.blend);
+  const label = _targetLabel(m);
   return label ? `${base} (${label})` : base;
 }
 
@@ -111,7 +131,7 @@ function StoreWorkbookCard({ loc, metrics }) {
           td({ style: _tdStyle(false) }, m.label),
           td({ style: _tdStyle(true) },
             div(null, _fmtVal(m.target, m.unit)),
-            _blendLabel(m.blend) && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, _blendLabel(m.blend)),
+            _targetLabel(m) && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, _targetLabel(m)),
           ),
           td({ style: _tdStyle(true) },
             div(null, _fmtVal(m.actual, m.unit)),
@@ -156,7 +176,7 @@ function buildPrintHTML({ title, subtitle, rows }) {
           <tbody>${r.metrics.map(m => `
             <tr>
               <td>${_escHtml(m.label)}</td>
-              <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}${_blendLabel(m.blend) ? `<div class="pace">${_escHtml(_blendLabel(m.blend))}</div>` : ''}</td>
+              <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}${_targetLabel(m) ? `<div class="pace">${_escHtml(_targetLabel(m))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtVal(m.actual, m.unit))}${m.pace != null ? `<div class="pace">Pace: ${_escHtml(_fmtVal(m.pace, m.unit))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtDiff(m.diff, m.unit))}</td>
               <td class="c" style="color:${_PRINT_STATUS_COLOR[m.status]}">${_escHtml(_STATUS_LABEL[m.status])}</td>

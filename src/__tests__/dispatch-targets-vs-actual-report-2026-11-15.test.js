@@ -298,11 +298,60 @@ describe('YEARLY_TARGET_METRICS / effectiveYearlyTarget() / computeTargetsVsActu
     expect(byKey.yFobTarget.actual).toBe(resolveMetricForRange(buildDs(), LOC, 'fobTargetPct', ytdRange));
   });
 
-  it('with no yearly workbook uploaded for the year, every target is null and every status is none', () => {
+  it('with no yearly workbook uploaded for the year, a field with no Monthly-rollup fallback (OEPE) is null/none', () => {
     const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets: {}, targetYear: 2026 });
     const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
-    expect(byKey.yProdSales.target).toBeNull();
-    expect(byKey.yProdSales.status).toBe('none');
+    expect(byKey.yOepe.target).toBeNull();
+    expect(byKey.yOepe.status).toBe('none');
+    expect(byKey.yOepe.targetSource).toBeNull();
+  });
+
+  // Owner follow-up (2026-11-15), same thread: "can we fix the targets here as well like we did
+  // for monthly" -- Sales $ and Crew Labor % showed "—" on real stores because the yearly
+  // workbook never carries a standalone annual figure for either (both are genuinely
+  // month-by-month numbers that already live in Monthly Targets). _yearlyTarget rolls those two
+  // fields up from Monthly Targets instead of leaving them blank -- real uploaded yearly values
+  // still always win; this is a fallback, not an override.
+  describe('_yearlyTarget() — Monthly-rollup fallback for Sales $ / Crew Labor % (owner follow-up, 2026-11-15)', () => {
+    it('a real uploaded yearly value always wins over the Monthly rollup', () => {
+      const allYearlyTargets = { 2026: { [LOC]: { tProdSales: 3500000, tCrewLabor: 0.20 } } };
+      const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets, targetYear: 2026 });
+      const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+      expect(byKey.yProdSales.target).toBe(3500000);
+      expect(byKey.yProdSales.targetSource).toBe('yearly');
+      expect(byKey.yProdSales.blend).toBeNull();
+    });
+
+    it('missing yearly values fall back to a Monthly Targets rollup, summing each month\'s FULL target (never prorated) for a PACED metric', () => {
+      // No monthly_targets override for 2026 either -- effectiveMonthlyTarget() still merges in
+      // DEFAULT_TARGETS['3708'].tProdSales (111513.16) for every month, so the rollup sums that
+      // flat per-month figure across every YTD month through September (9 months).
+      const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets: {}, allMonthlyTargets: {}, targetYear: 2026 });
+      const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+      expect(byKey.yProdSales.targetSource).toBe('monthly-rollup');
+      expect(byKey.yProdSales.target).toBeCloseTo(111513.16 * 9, 2);
+      expect(byKey.yProdSales.blend).toHaveLength(9);
+    });
+
+    it('a real monthly_targets override for a specific month is used in the rollup ahead of DEFAULT_TARGETS', () => {
+      const allMonthlyTargets = { '2026-3': { [LOC]: { tProdSales: 200000 } } };
+      const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets: {}, allMonthlyTargets, targetYear: 2026 });
+      const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+      // March (200000, the real override) + the other 8 YTD months at the DEFAULT_TARGETS flat
+      // figure (111513.16 each).
+      expect(byKey.yProdSales.target).toBeCloseTo(200000 + 111513.16 * 8, 2);
+    });
+
+    it('Crew Labor % (non-paced) rolls up via the day-weighted _blendedMonthlyTarget path unmodified', () => {
+      const allMonthlyTargets = { '2026-9': { [LOC]: { tCrewLabor: 0.25 } } };
+      const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'yearly', range: RANGE, allYearlyTargets: {}, allMonthlyTargets, targetYear: 2026 });
+      const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+      expect(byKey.yLabor.targetSource).toBe('monthly-rollup');
+      // Non-null -- DEFAULT_TARGETS['3708'].tCrewLabor (0.21) fills every other YTD month, so
+      // this is a day-weighted blend across 9 months, not a flat 0.25.
+      expect(byKey.yLabor.target).not.toBeNull();
+      expect(byKey.yLabor.target).not.toBeCloseTo(0.25, 6);
+    });
   });
 });
 
