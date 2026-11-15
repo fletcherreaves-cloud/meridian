@@ -150,3 +150,52 @@ No other `MONTHLY_TARGET_METRICS`/`YEARLY_TARGET_METRICS`/`DAILY_TARGET_METRICS`
 labor field, so this was the full extent of it. Test fixtures/assertions updated to set
 `tCrewLabor` instead of `tLabor`; full suite (8204 tests) and build re-verified green after the
 fix, on top of the Food Cost/Yearly additions above.
+
+## Follow-up (2026-11-15, v5.794): print view + Sales $ pacing
+
+Owner: *"Can we make the print view look like the app view, and one page per location. And for
+the sales target can you come up with a way to pace it based on what the actual is MTD vs
+projected."*
+
+**Print:** `ReportShell.js`'s Print action always rendered `printReportHTML()`'s generic flat
+table (title + one wide table), never the report's own on-screen look — every OTHER hand-rolled
+print flow in the codebase (skills-matrix.js, labor-analysis.js, performance-reviews.js, etc.)
+builds bespoke HTML and calls the shared `printHtml()` overlay directly, so ReportShell was the
+one place that couldn't. Added an optional `getPrintHTML` prop to `ReportShell` — when a report
+supplies it, Print calls `printHtml(getPrintHTML())` instead of the generic path; CSV/Excel/PDF
+are untouched (still `getExportData()`'s flat `{headers,rows}` contract) and every other
+ReportShell-based report that doesn't set `getPrintHTML` is unaffected. `targets-vs-actual-
+report.js`'s `buildPrintHTML()` renders the exact same red-accent-band + Metric/Target/Actual/
+Variance/Status table `StoreWorkbookCard` shows on-screen (literal hex colors, since this is a
+standalone printed document, not the themed app shell), one `<section class="store-page">` per
+store with `page-break-before:always` skipped on `:first-child` — the same established
+multi-page-print convention `skills-matrix.js`/`labor-analysis.js` already use, not a new
+mechanism.
+
+**Sales $ pacing:** a flat monthly Sales $ target compared against a partial-month MTD actual
+always reads as a "miss" early in the month, even for a store solidly on pace. Checked for an
+existing pacing convention before writing one (CLAUDE.md's "check whether a helper exists")
+and found `src/views/analytics.js`'s `CurrentMonthPaceSection` — the live Projection Workspace's
+"Actuals vs Target" pace table already does exactly this: `frac = dayOfMonth/daysInMonth; pace =
+actual/frac`. That logic lives inline inside a large stateful component with no exported pure
+function, so rather than import it (not designed for reuse) or silently re-derive it elsewhere
+(the drift risk the "check first" rule exists to prevent), extracted the identical 3-line formula
+as a small, explicitly-cited, standalone `monthEndPace(actual, rangeEndIso, targetMonthYm)` in
+`targets-vs-actual.js` — same math, so this report's pace can never disagree with what the
+Projection Workspace already shows for the same store/month. Returns `null` (no pacing applied)
+whenever the window doesn't qualify: a full prior month, a multi-month span, or no target month
+at all. Wired via a new `paced: true` flag on `MONTHLY_TARGET_METRICS`' `salesAmt` entry only —
+scoped to the one metric the owner asked about, not a blanket change to every monthly row.
+`computeTargetsVsActual` grades `diff`/`diffPct`/`status` off the pace (not the raw actual) when
+`pace != null`, while still carrying the real MTD `actual` on the row so nothing is hidden — the
+UI shows the real actual as the primary number with a small "Pace: $X" companion line underneath
+(same text embedded inline for CSV/Excel/PDF/print, where there's no second line to use).
+
+14 new tests (31 total): `monthEndPace()`'s qualifying/non-qualifying windows, `salesAmt` grading
+off pace vs. a non-paced metric on the identical partial-month window never pacing, the on-screen
+"Pace:" line, and the print HTML containing the page-break convention + the red accent + the pace
+text. Live-verified via Playwright in the running dev server (card layout, tab switching, Print
+overlay producing one `store-page` section per store with the red accent and gold header row);
+this sandboxed dev environment has no live Supabase data, so Actual/Pace read "—" there exactly
+like the original v5.792 live-verification — expected, not a gap, and covered by the fixture-based
+tests above instead.

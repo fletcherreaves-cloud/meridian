@@ -20,6 +20,7 @@ import {
 import {
   buildReportFilename, exportReportCSV, exportReportXLSX, exportReportPDF, printReportHTML,
 } from '../utils/report-export.js';
+import { printHtml } from '../utils/print-html.js';
 import { sNameC } from '../constants.js';
 import { InfoIcon } from '../engine/forecast.js';
 
@@ -41,7 +42,7 @@ export function reportScopeLabel(value, tree) {
 export function ReportShell({
   title, icon, subtitlePrefix, stores, invOrgCoords, storeNames,
   defaultPresetId = '28d', datePresets = DATE_RANGE_PRESETS, locationMode = 'full',
-  onRun, getExportData, onBack, children, articleKey,
+  onRun, getExportData, getPrintHTML, onBack, children, articleKey,
 }) {
   const { useState, useMemo, useCallback } = React;
   const [range, setRange] = useState(() => resolveDatePreset(defaultPresetId, datePresets));
@@ -66,8 +67,14 @@ export function ReportShell({
 
   const filenameFor = useCallback(() => buildReportFilename({ name: title, start: range?.s, end: range?.e, scope }), [title, range, scope]);
 
+  // getPrintHTML is optional — most reports are fine with the generic flat-table print that
+  // printReportHTML renders straight off the shared CSV/Excel/PDF data contract. A report that
+  // wants Print to look like its own on-screen cards (CLAUDE.md's "Print/PDF export formatting
+  // should match existing workbook aesthetic") supplies getPrintHTML() to render bespoke HTML
+  // instead — printHtml() itself is the same shared same-page overlay every hand-rolled print
+  // flow in the app already uses, so this isn't a new print mechanism, just a second way to feed it.
   const exportItems = !hasRun ? [] : [
-    { label: '🖨 Print', onClick: () => printReportHTML(getExportData()) },
+    { label: '🖨 Print', onClick: () => getPrintHTML ? printHtml(getPrintHTML()) : printReportHTML(getExportData()) },
     { label: '⬇ CSV', onClick: () => exportReportCSV({ filename: filenameFor(), ...getExportData() }) },
     { label: '⬇ Excel', onClick: () => exportReportXLSX({ filename: filenameFor(), sheetName: title, ...getExportData() }) },
     { label: '⬇ PDF', onClick: () => exportReportPDF({ filename: filenameFor(), ...getExportData() }) },

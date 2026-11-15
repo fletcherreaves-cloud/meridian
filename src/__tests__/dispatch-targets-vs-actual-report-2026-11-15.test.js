@@ -7,18 +7,20 @@
 // Engine tests use the REAL fixture shape proven by fob-reference-table-panel.test.js (same
 // 30-day September data for store 3708) so the FOB-leg delta-reconstruction math is exercised
 // exactly the same way that already-shipped report exercises it, not a re-derived shortcut.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { DEFAULT_TARGETS } from '../constants.js';
 import { resolveDatePreset, MTD_PRESET, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 import {
-  effectiveMonthlyTarget, effectiveYearlyTarget, targetStatus, computeTargetsVsActual,
+  effectiveMonthlyTarget, effectiveYearlyTarget, targetStatus, computeTargetsVsActual, monthEndPace,
   MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS, YEARLY_TARGET_METRICS,
 } from '../engine/targets-vs-actual.js';
 import { resolveMetricForRange } from '../engine/fob-reference.js';
 import { TargetsVsActualReportPanel } from '../views/targets-vs-actual-report.js';
+
+vi.mock('../utils/print-html.js', () => ({ printHtml: vi.fn() }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -60,6 +62,26 @@ describe('PanelControls: MTD preset', () => {
 
   it('is additive — the shared DATE_RANGE_PRESETS list is untouched', () => {
     expect(DATE_RANGE_PRESETS.find(p => p.id === 'mtd')).toBeUndefined();
+  });
+});
+
+describe('monthEndPace()', () => {
+  it('projects the month-end total as actual / fraction-of-month-elapsed', () => {
+    // 5 of September's 30 days elapsed -- same run-rate math as the live Projection Workspace's
+    // Actuals-vs-Target pace table (analytics.js's CurrentMonthPaceSection).
+    expect(monthEndPace(50000, '2026-09-05', '2026-9')).toBe(300000);
+  });
+  it('a full-month window (frac=1) paces to exactly the actual', () => {
+    expect(monthEndPace(300000, '2026-09-30', '2026-9')).toBe(300000);
+  });
+  it('returns null when the range end falls outside the target month — nothing to project', () => {
+    expect(monthEndPace(50000, '2026-10-01', '2026-9')).toBeNull(); // next month over
+    expect(monthEndPace(50000, '2026-08-31', '2026-9')).toBeNull(); // prior month
+  });
+  it('returns null on any missing input rather than guessing', () => {
+    expect(monthEndPace(null, '2026-09-05', '2026-9')).toBeNull();
+    expect(monthEndPace(50000, null, '2026-9')).toBeNull();
+    expect(monthEndPace(50000, '2026-09-05', null)).toBeNull();
   });
 });
 
@@ -125,6 +147,29 @@ describe('computeTargetsVsActual() — monthly tab', () => {
     for (const m of MONTHLY_TARGET_METRICS) {
       expect(DEFAULT_TARGETS[LOC][m.targetField]).not.toBeUndefined();
     }
+  });
+
+  // Owner follow-up (2026-11-15), same day: "for the sales target can you come up with a way to
+  // pace it based on what the actual is MTD vs projected." Only 5 of September's 30 days are in
+  // the window -- MTD actual (5*$10,000=$50,000) is well under the $111,513.16 target, which
+  // would read as a 'miss' on a flat actual-vs-target grade even though the store's real run
+  // rate ($300,000/mo, same as the full-month fixture resolves to) clears the target comfortably.
+  it('salesAmt grades against the month-end pace, not the raw partial-month actual', () => {
+    const partial = { s: '2026-09-01', e: '2026-09-05' };
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'monthly', range: partial, allMonthlyTargets: {}, targetMonthYm: '2026-9' });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.salesAmt.actual).toBe(50000); // the honest, unpaced MTD number is still exposed
+    expect(byKey.salesAmt.pace).toBe(300000); // 50000 / (5/30)
+    expect(byKey.salesAmt.diff).toBeCloseTo(300000 - DEFAULT_TARGETS[LOC].tProdSales, 2); // diff is pace-based
+    expect(byKey.salesAmt.status).toBe('ok'); // pace clears target even though the raw actual alone would not
+  });
+
+  it('a metric not marked `paced` is never pace-graded, even on the same partial-month window', () => {
+    const partial = { s: '2026-09-01', e: '2026-09-05' };
+    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'monthly', range: partial, allMonthlyTargets: {}, targetMonthYm: '2026-9' });
+    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
+    expect(byKey.crewLaborPct.pace).toBeNull();
+    expect(byKey.crewLaborPct.diff).toBeCloseTo(byKey.crewLaborPct.actual - byKey.crewLaborPct.target, 6);
   });
 
   // Owner follow-up (2026-11-15): "can we wire in the Food cost items on monthly" — the one
@@ -254,6 +299,37 @@ describe('TargetsVsActualReportPanel', () => {
     expect(container.textContent).toContain('Ardmore-Broadway');
     expect(container.textContent).toContain('Sales $');
     expect(container.textContent).toMatch(/\$300,000/);
+  });
+
+  it('Sales $ shows a "Pace:" line alongside the real MTD actual on a partial-month window', async () => {
+    ({ container, root } = mount({ ds: buildDs(), stores: STORES, onClose: () => {} }));
+    await setCustomRange(container, '2026-09-01', '2026-09-05');
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    expect(container.textContent).toMatch(/\$50,000/); // the honest 5-day MTD actual
+    expect(container.textContent).toMatch(/Pace: \$300,000/); // the projected month-end run rate
+  });
+
+  it('Print renders one page per store styled like the on-screen card, not the generic flat table', async () => {
+    const { printHtml } = await import('../utils/print-html.js');
+    printHtml.mockClear();
+    ({ container, root } = mount({ ds: buildDs(), stores: STORES, onClose: () => {} }));
+    await setCustomRange(container, '2026-09-01', '2026-09-30');
+    const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run Report');
+    await act(async () => { runBtn.click(); await Promise.resolve(); });
+
+    const exportBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Export'));
+    await act(async () => { exportBtn.click(); });
+    const printItem = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Print'));
+    await act(async () => { printItem.click(); });
+
+    expect(printHtml).toHaveBeenCalledTimes(1);
+    const html = printHtml.mock.calls[0][0];
+    expect(html).toContain('Ardmore-Broadway'); // the real store name, not a loc code
+    expect(html).toContain('page-break-before:always'); // one page per store, the established convention
+    expect(html).toContain('#DA291C'); // the McDonald's-red workbook accent, matching the on-screen card
+    expect(html).toContain('Pace: $300,000'); // pace carries through to print, not just the on-screen view
   });
 
   it('switching to the Daily tab renders the daily metric set instead', async () => {

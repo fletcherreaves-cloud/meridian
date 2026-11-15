@@ -27,6 +27,26 @@ export function effectiveMonthlyTarget(loc, ym, allMonthlyTargets) {
   return { ...DEFAULT_TARGETS[L], ...override };
 }
 
+// Month-end pace projection (owner request 2026-11-15: "for the sales target can you come up
+// with a way to pace it based on what the actual is MTD vs projected"). Not a new method --
+// this is the exact linear run-rate the live Projection Workspace's "Actuals vs Target" pace
+// table already uses (analytics.js's CurrentMonthPaceSection: frac = dayOfMonth/daysInMonth;
+// pace = actual/frac), so a store's pace here never disagrees with what that panel already
+// shows for the same month. Only meaningful for a window whose END falls inside the target
+// month (an MTD-style partial month) -- a window that's a complete prior month (or doesn't
+// land in the target month at all) is already a finished total, not a partial one to project
+// forward, so this returns null rather than silently "pacing" a number that needs no pacing.
+export function monthEndPace(actual, rangeEndIso, targetMonthYm) {
+  if (actual == null || !rangeEndIso || !targetMonthYm) return null;
+  const [y, m] = String(targetMonthYm).split('-').map(Number);
+  if (!y || !m) return null;
+  const endDate = new Date(rangeEndIso + 'T12:00:00');
+  if (endDate.getFullYear() !== y || endDate.getMonth() + 1 !== m) return null;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const frac = endDate.getDate() / daysInMonth;
+  return frac > 0 ? actual / frac : null;
+}
+
 // kind -> unit, straight from FOB_REFERENCE_METRICS so this file can never disagree with that
 // one on how a shared metric displays.
 const _KIND_TO_UNIT = { pct: 'pct', dollar: 'dollar', rate: 'rate' };
@@ -56,7 +76,13 @@ const _FOB_LEG_MAP = [
 // overall-Labor % the monthly_targets table also carries.
 export const MONTHLY_TARGET_METRICS = [
   {
-    key: 'salesAmt', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher',
+    // `paced: true` — grade this row against a month-end PACE projection (monthEndPace, above)
+    // rather than the raw MTD actual, whenever the window qualifies (see computeTargetsVsActual
+    // below). A flat monthly Sales $ target compared against a partial-month actual always
+    // reads as a "miss" on day 3 of the month — the pace is the number that actually answers
+    // "are we on track," so it (not the raw actual) drives diff/diffPct/status here; the real
+    // MTD actual is still carried on the row under `actual` for the honest supporting number.
+    key: 'salesAmt', label: 'Sales $', targetField: 'tProdSales', unit: 'dollar', better: 'higher', paced: true,
     actual: (ds, loc, range) => { const v = autoFirstTotal(ds, loc, range, 'sales'); return v > 0 ? v : null; },
   },
   {
@@ -211,11 +237,18 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
     const metrics = metricDefs.map(def => {
       const target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
       const actual = def.actual(ds, loc, range);
-      const diff = (target != null && actual != null) ? actual - target : null;
+      // Paced metrics (currently just Monthly Sales $) grade against the month-end pace
+      // projection, not the raw MTD actual, when the window qualifies (monthEndPace returns null
+      // for a non-qualifying window — a full prior month, a multi-month span, or no
+      // targetMonthYm at all — and `graded` falls straight back to the plain actual, so this is
+      // additive, never a regression for a range pacing doesn't apply to).
+      const pace = def.paced ? monthEndPace(actual, range?.e, targetMonthYm) : null;
+      const graded = pace != null ? pace : actual;
+      const diff = (target != null && graded != null) ? graded - target : null;
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,
-        target, actual, diff, diffPct, status: targetStatus(target, actual, def.better),
+        target, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
       };
     });
     return { loc, metrics };
