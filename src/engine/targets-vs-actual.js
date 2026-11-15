@@ -245,6 +245,87 @@ export const YEARLY_TARGET_METRICS = [
   },
 ];
 
+// Resolves how many days of `range` fall in each calendar month it overlaps -- {ym, daysInWindow,
+// daysInMonth} per month, in chronological order. A single-month window (the common case) returns
+// exactly one entry; a 7/14/21/28D window that crosses a month boundary returns two.
+function _monthsInRange(range) {
+  const s = range?.s instanceof Date ? range.s : new Date(range?.s);
+  const e = range?.e instanceof Date ? range.e : new Date(range?.e);
+  const months = [];
+  let cur = new Date(s.getFullYear(), s.getMonth(), 1);
+  const lastMonthStart = new Date(e.getFullYear(), e.getMonth(), 1);
+  while (cur <= lastMonthStart) {
+    const monthStart = cur;
+    const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0); // last day of this month
+    const overlapStart = s > monthStart ? s : monthStart;
+    const overlapEnd = e < monthEnd ? e : monthEnd;
+    const daysInWindow = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+    months.push({ ym: `${cur.getFullYear()}-${cur.getMonth() + 1}`, daysInWindow, daysInMonth: monthEnd.getDate() });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+// Owner request 2026-11-15: a 7/14/21/28D picker window can cross a month boundary (e.g.
+// Oct 28-Nov 3), and a flat single-month target read (the old effectiveMonthlyTarget(loc,
+// targetMonthYm, ...) call, keyed ONLY off range.e's month) silently compared the WHOLE window's
+// actual against just one of the two months' targets -- a store could show "On Target" or "Miss"
+// against a number that only ever applied to part of the days being graded. Owner's own framing:
+// "smartly determine, through math, what the aggregated target would be while making it clear
+// targets are blended across multiple periods" (the alternative considered and rejected: listing
+// both months' targets as separate rows, which would double this already-dense table's height for
+// a case that's the exception, not the rule).
+//
+// Fixed by resolving each metric's target PER OVERLAPPED MONTH -- so def.target()'s own
+// special-case resolvers (crewLaborPct's resolveLaborTarget(), which walks a fallback chain, not
+// a single field read) run correctly against THAT month's real targets object, never against a
+// pre-blended Frankenstein of two different months' raw fields -- then blending the RESOLVED
+// VALUES: day-prorated-and-summed for a dollar target (a monthly $ figure scaled down to however
+// much of that month the window actually covers, then summed across months -- the natural
+// meaning of "expected $ for these specific days"), day-weighted-averaged for everything else
+// (rate/pct/sec/count -- the window's own day mix of the two months' target levels). A month with
+// no resolvable value (no override and no DEFAULT_TARGETS entry) is excluded from the blend
+// rather than treated as 0, matching this report's existing "missing is null, not zero"
+// discipline elsewhere.
+//
+// Returns `{ value, blend }`. `blend` is null whenever the window sits inside a single month (the
+// common case -- zero behavior change there); otherwise it lists the month(s) that actually
+// contributed a value as `{ym, days}`, so the UI can show a "blended across N days in <month> + M
+// days in <month>" line next to the target rather than ever presenting a cross-month number as if
+// it were an ordinary single-month one. If the window spans two months but only one has a real
+// target, `blend` still has length 1 -- the UI renders that case as "covers Nd of <month> only"
+// rather than claiming a blend that didn't happen, see targets-vs-actual-report.js.
+export function _blendedMonthlyTarget(def, range, allMonthlyTargets, loc) {
+  const months = _monthsInRange(range);
+  const resolved = months.map(m => {
+    const targets = effectiveMonthlyTarget(loc, m.ym, allMonthlyTargets);
+    const raw = def.target ? def.target(targets) : targets[def.targetField];
+    const value = (raw == null || raw === '') ? null : Number(raw);
+    return { ...m, value: Number.isFinite(value) ? value : null };
+  });
+  const parts = resolved.filter(p => p.value != null);
+  if (!parts.length) return { value: null, blend: null };
+  // A true single-month window needs no proration -- the flat monthly target stays exactly as
+  // every existing single-month consumer (including pacing, which only ever applies within one
+  // month) already expects. Only once the WINDOW itself spans more than one month does a flat
+  // monthly $ figure stop meaning anything on its own -- at that point every contributing month's
+  // value must be day-scaled, even if only one month ended up contributing (a lone month's own
+  // FULL target would wildly overstate a partial week drawn from it).
+  if (months.length === 1) return { value: parts[0].value, blend: null };
+  // Every window month is listed here, including one with no resolvable value (`missing: true`)
+  // -- so the UI can be honest that the target doesn't cover the FULL window even in the
+  // single-contributing-month case, not just when two months both had data to blend.
+  const blend = resolved.map(p => ({ ym: p.ym, days: p.daysInWindow, missing: p.value == null }));
+  let value;
+  if (def.unit === 'dollar') {
+    value = parts.reduce((a, p) => a + p.value * (p.daysInWindow / p.daysInMonth), 0);
+  } else {
+    const totalDays = parts.reduce((a, p) => a + p.daysInWindow, 0);
+    value = totalDays > 0 ? parts.reduce((a, p) => a + p.value * p.daysInWindow, 0) / totalDays : null;
+  }
+  return { value, blend };
+}
+
 // Effective yearly target: the latest-available yearly_targets row for this store/year, falling
 // straight back to {} (never DEFAULT_TARGETS) if none exists yet — unlike monthly_targets, a
 // yearly workbook may simply not have been uploaded for a given year, and DEFAULT_TARGETS has
@@ -313,11 +394,20 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
   // of the raw picker window; monthly/daily are untouched.
   const actualRange = which === 'yearly' ? _yearToDateRange(range, targetYear) : range;
   return list.map(loc => {
+    // Monthly targets resolve PER METRIC below (_blendedMonthlyTarget) rather than once here --
+    // a 7/14/21/28D window can cross a month boundary, and each month's own targets object has
+    // to be resolved separately for def.target()'s special-case resolvers (crewLaborPct) to run
+    // correctly. See _blendedMonthlyTarget's own header for the full reasoning.
     const targets = which === 'daily' ? (DEFAULT_TARGETS[loc] || {})
       : which === 'yearly' ? effectiveYearlyTarget(loc, targetYear, allYearlyTargets)
-      : effectiveMonthlyTarget(loc, targetMonthYm, allMonthlyTargets);
+      : null;
     const metrics = metricDefs.map(def => {
-      const target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
+      let target, blend = null;
+      if (which === 'monthly') {
+        ({ value: target, blend } = _blendedMonthlyTarget(def, range, allMonthlyTargets, loc));
+      } else {
+        target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
+      }
       const actual = def.actual(ds, loc, actualRange);
       // Paced metrics grade against a pace projection, not the raw actual, when one applies.
       // Monthly Sales $ uses the generic monthEndPace(); Yearly Sales $ supplies its own
@@ -333,7 +423,7 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,
-        target, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
+        target, blend, actual, pace, diff, diffPct, status: targetStatus(target, graded, def.better),
       };
     });
     return { loc, metrics };
