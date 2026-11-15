@@ -69,4 +69,11 @@ export const PULL_REGISTRY = {
   // out placeholder state (now real STREAMS entries), so the watchdog needs these two now too.
   hmeDt:   { table: 'hme_dt_daily',              dateCol: 'dt', workflowFile: 'hme-cloud-pull.yml' },
   squadle: { table: 'squadle_checklist_records', dateCol: 'dt', workflowFile: 'squadle-pull.yml' },
+  // Added 2026-11-15 -- closes the gap memory/finding-security-events-reQuery-deny-2026-11-14.md
+  // flagged (qsr_security_events had no STREAMS entry at all; see that file's own new entry).
+  // dateCol is event_dt (the real business date, same column the app-side lightweight probe
+  // reads, src/lib/supabase.js's loadQsrSecurityEventsFreshness), not updated_at -- unlike
+  // onHand/variance above, this table IS daily-dated per row, so the real business date is the
+  // more honest freshness signal than whatever incidental write last touched updated_at.
+  securityEvents: { table: 'qsr_security_events', dateCol: 'event_dt', workflowFile: 'qsrsoft-security-events-pull.yml' },
 };

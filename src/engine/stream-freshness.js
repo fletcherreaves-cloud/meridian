@@ -179,6 +179,15 @@ export const STREAMS = [
   // tracked like every other watched stream regardless.
   { key: 'hmeDt', label: 'HME Cloud (DT timer)', dsField: 'hmeDtRows', cadenceDays: 1, group: 'service' },
   { key: 'squadle', label: 'Squadle (food safety checklist)', dsField: 'squadleChecklistRows', cadenceDays: 1, group: 'foodcost' },
+  // Added 2026-11-15 — closes the gap memory/finding-security-events-reQuery-deny-2026-11-14.md
+  // flagged ("this stream has no entry in STREAMS at all"). Lightweight single-{date}-row probe,
+  // same pattern as 'onHand'/'variance' above (App.js's _stSecurityEventsFreshness,
+  // supabase.js's loadQsrSecurityEventsFreshness). The pull deliberately never requests "today"
+  // (same finding doc, round 3), so a healthy latest event_dt sits ~1 day behind `now` — still
+  // well inside cadenceDays:1's WARN_GRACE_DAYS:1 (only warns past 2 days stale), so the standard
+  // threshold is correct as-is for this stream, unlike the bi-weekly-cadence Payroll Readiness
+  // entry commented out above.
+  { key: 'securityEvents', label: 'QSRSoft Security Events', dsField: 'qsrSecurityEventsFreshnessRows', cadenceDays: 1, group: 'controls' },
 ];
 
 // Display metadata for groupFreshness() -- icon/label per group, in the strip's render order.
