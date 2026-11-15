@@ -1,0 +1,35 @@
+-- ── audit_rows: remove the stale unpadded duplicate rows (2026-11-15) ──────────────────────────
+-- Root cause: the Register Audit pull's endpoint migration (v5.779/v5.781, GH #1314, restored a
+-- ~2-month outage) writes `loc` NSN-zero-padded (nsn7() in scripts/qsrsoft-register-audit-pull.mjs),
+-- matching qsr_daily_activity/qsr_fob's own convention. This table's OLDER rows (pre-outage,
+-- through 2026-06-30) were written unpadded by an earlier version of the pull script. Because
+-- `loc` differs in format, the upsert's onConflict ('loc,date,emp,register_type') never matched
+-- the two eras against each other, so the restored pull's backfill (re-pulling from 2026-03-01)
+-- wrote a SECOND, padded copy of the same historical data alongside the original unpadded rows
+-- instead of overwriting them -- real duplicate rows, not just an invisibility bug.
+--
+-- Measured live before writing this (Management API, service-role, not guessed):
+--   - 27 of 27 stores have both an unpadded and a padded loc.
+--   - 21,929 unpadded rows exist; every single one has an exact-matching padded counterpart
+--     (same date/emp/register_type) -- confirmed via a LEFT JOIN anti-join returning 0 orphans.
+--   - A direct value comparison on 10 sample rows showed identical drawer_sales between the
+--     padded and unpadded copy, confirming these are genuine duplicates, not divergent data.
+--
+-- This migration deletes ONLY the unpadded rows (the stale, superseded copy) -- the padded rows
+-- stay untouched and are the ones with real data through the current day (the unpadded copy's
+-- data physically cannot extend past 2026-06-30, since that is when the pre-migration pull script
+-- stopped being able to write at all). Companion app-side fix (same PR): loadAuditRows()/
+-- loadAuditRowsWindow() (src/lib/supabase.js) now strip the padding on read, same as every other
+-- zero-padded-source loader (loadHmeDtRows/loadSquadleChecklistRecords/
+-- loadQsrSecurityEventsForSubject) -- so once this runs, every consumer sees ONE row per
+-- (store, date, emp, register_type), not two.
+--
+-- Safe to run as-is: re-run this SELECT first if you want to see exactly what's about to go,
+-- or just run the DELETE -- it is already proven lossless by the 0-orphans check above, and the
+-- WHERE clause only ever matches the OLD unpadded format, never a padded row.
+
+-- Optional: see what's about to be deleted (store, row count, date range) before running the DELETE.
+-- select loc, count(*) as rows, min(date) as min_d, max(date) as max_d
+-- from audit_rows where loc !~ '^0[0-9]{6}$' group by loc order by loc;
+
+delete from audit_rows where loc !~ '^0[0-9]{6}$';
