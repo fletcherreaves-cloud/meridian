@@ -5629,6 +5629,26 @@ export async function loadQsrVarianceStatFreshness() {
   return [{ date: data[0].updated_at }];
 }
 
+// Same lightweight-probe pattern as loadQsrOnHandFreshness/loadQsrVarianceStatFreshness above,
+// closing the gap memory/finding-security-events-reQuery-deny-2026-11-14.md flagged: this stream
+// (qsr_security_events) had no entry at all in stream-freshness.js's STREAMS array, so it was
+// invisible to At-A-Glance's "Loaded Data" checklist and the home-screen staleness banner.
+// Reads `event_dt` (the real business date of the data), not `updated_at` — `updated_at` is
+// whatever the pull script's last upsert touched, which can be incidental; `event_dt` is the
+// actual most-recent day of security-event data on file, the same thing loadQsrSecurityEvents-
+// Coverage() already reports as its own `max` (src/views/analytics.js's Data Manager panel).
+// Note: the Security Events pull deliberately never requests "today" (same finding, round 3) —
+// so a HEALTHY state's latest event_dt is always ~1 day behind `now`, not same-day like most
+// other streams here. That's still well inside cadenceDays:1's WARN_GRACE_DAYS:1 (warns only
+// past 2 days stale), so no threshold change is needed for this stream specifically.
+export async function loadQsrSecurityEventsFreshness() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('qsr_security_events')
+    .select('event_dt').order('event_dt', { ascending: false }).limit(1);
+  if (error || !data?.length || !data[0].event_dt) return [];
+  return [{ date: data[0].event_dt }];
+}
+
 // ── Per-store EOM status (dashboard + notification + comms verification) ───────
 export async function saveEomCountStatus(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

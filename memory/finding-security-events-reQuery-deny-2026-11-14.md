@@ -169,6 +169,14 @@ the old thresholds would warn or error on every single healthy run otherwise.
 automated pull" checklist requires one (per-stream staleness visibility, not pooled). Pre-existing
 gap, unrelated to today's fix, not touched here to keep this change scoped.
 
+✅ **CLOSED 2026-11-15 (v5.791) — the STREAMS gap above is fixed, do not re-raise.** Added a
+`securityEvents` STREAMS entry off a new lightweight single-{date}-row probe
+(`loadQsrSecurityEventsFreshness()`, reads `event_dt`, same pattern as the On-Hand/Variance
+probes task #137 shipped), wired into App.js's startup background stages, plus the matching
+`scheduled-pull-registry.mjs` entry the standing invariant test requires. GH #1532 (this finding's
+own sync-failure issue) auto-closed 2026-11-14T19:48:13Z after the re-query fix above shipped and
+the next scheduled run succeeded -- confirmed via the GitHub API, not assumed.
+
 ## Verification (round 3)
 
 Full suite re-run clean on the combined change (existing 21 tests unaffected -- `getDateRange()`
