@@ -178,7 +178,14 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
   };
   const reqs = [];
   for (let p = 0; p < pages; p++) reqs.push(buildPage(p));
-  const settled = await Promise.allSettled(reqs.map(f => _limitPage(f)));
+  // Each page gets the same timeout+retry treatment as fetchAll's sequential fallback below
+  // (_fetchPageWithRetry, shared) -- until this fix, a page here that failed (statement
+  // timeout, egress blip, a stalled connection) was never retried at all: one bad page out of
+  // dozens in a parallel fan-out just silently dropped its ~pageSize rows, no second attempt.
+  // Live-reported symptom this fixed: qsr_fob (27 stores x ~500 days, ~33 parallel pages at
+  // pageSize 400) going completely or partially blank on a weak mobile connection, with no
+  // retry and no way to recover short of a full app reload landing on a better connection.
+  const settled = await Promise.allSettled(reqs.map(f => _limitPage(() => _fetchPageWithRetry(f))));
   const data = []; let failed = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
@@ -192,7 +199,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
   let lastFull = !failed && settled.length > 0 && settled[settled.length - 1].status === 'fulfilled'
     && settled[settled.length - 1].value?.data?.length === pageSize;
   while (lastFull) {
-    const res = await _limitPage(buildPage(pages));
+    const res = await _limitPage(() => _fetchPageWithRetry(buildPage(pages)));
     pages++;
     if (res && !res.error && res.data) {
       data.push(...res.data);
@@ -266,6 +273,25 @@ export function _withPageTimeout(promise, ms) {
   });
 }
 
+// Shared by fetchAll (below) and _pagedParallel (above) — one page attempt, with the same
+// timeout + retry-with-backoff treatment either caller needs. Originally lived only inside
+// fetchAll's loop; _pagedParallel's own parallel page-fetch had NO retry and NO timeout at all,
+// so a single transient page failure (statement timeout, egress blip, a stalled connection —
+// all common on a weak mobile connection) just silently dropped that page's rows with no second
+// attempt. Extracted so both callers share one tested implementation rather than drifting.
+async function _fetchPageWithRetry(pageFn) {
+  let result = await _withPageTimeout(pageFn(), PAGE_TIMEOUT_MS);
+  if (result.error && _isRetryablePageError(result.error)) {
+    for (const delay of _RETRY_DELAYS_MS) {
+      await _sleep(delay);
+      const retried = await _withPageTimeout(pageFn(), PAGE_TIMEOUT_MS);
+      result = retried;
+      if (!retried.error || !_isRetryablePageError(retried.error)) break;
+    }
+  }
+  return result;
+}
+
 // A page that fails every retry used to stop pagination FOR GOOD — every page after it, however
 // many, was silently dropped (not just the one bad page). Live-reproduced (owner report, Security
 // panel 2026-10-14): security_findings_latest genuinely times out (57014) on roughly 1 page in
@@ -281,21 +307,13 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0, pageAttempts = 0, failedPages = 0, consecutiveFailures = 0;
   while (true) {
     pageAttempts++;
-    let { data, error } = await _withPageTimeout(builderFn(from, from + pageSize - 1), PAGE_TIMEOUT_MS);
     // Dispatch #218 — a single failed page used to be immediately fatal (see the fallback
     // branch below). Most page failures observed live (statement timeouts under concurrent
     // startup load, egress/throttle blips) are transient — a fresh re-fetch of the SAME page
-    // moments later succeeds. Retry before falling through to the skip-and-continue behavior
-    // below, which only applies once a page's own retries are exhausted.
-    if (error && _isRetryablePageError(error)) {
-      for (const delay of _RETRY_DELAYS_MS) {
-        await _sleep(delay);
-        const retried = await _withPageTimeout(builderFn(from, from + pageSize - 1), PAGE_TIMEOUT_MS);
-        if (!retried.error) { data = retried.data; error = null; break; }
-        error = retried.error;
-        if (!_isRetryablePageError(error)) break; // stop early if it turned out permanent
-      }
-    }
+    // moments later succeeds. _fetchPageWithRetry (shared with _pagedParallel above) retries
+    // before falling through to the skip-and-continue behavior below, which only applies once
+    // a page's own retries are exhausted.
+    let { data, error } = await _fetchPageWithRetry(() => builderFn(from, from + pageSize - 1));
     // A mid-pagination error (e.g. a free-tier egress/throttle cutoff, or one page's worth of
     // rows that genuinely times out on a big table) SKIPS this one page's row range and keeps
     // going, instead of abandoning everything from here on — a bounded, known-size hole (at most
