@@ -46,6 +46,29 @@ describe('fobDailyDeltas — reconstructing true daily $ activity from a cumulat
     expect(deltas['5183']).toBeDefined();
     expect(deltas['0005183']).toBeUndefined();
   });
+
+  // Owner-reported 2026-11-15: "the fob eventually loaded previously, but not seeming to now" on
+  // the Targets vs Actual Monthly tab, which calls resolveMetricForRange() once per store PER
+  // FOB-LEG METRIC (12 of them) -- with no cache, each call re-sorted/re-reconstructed deltas for
+  // EVERY store from scratch just to read one store's slice (an O(metrics×stores×allRows)
+  // blowup that grows worse the more qsr_fob history accumulates). Fixed with a WeakMap cache
+  // keyed on the `ds` object itself.
+  it('caches by `ds` identity — a second call with the SAME ds object reuses the prior result, not a recompute', () => {
+    const ds = { qsrFobRows: [{ loc: '0003708', date: d('2026-10-01'), prodSalesAmt: 10000, compWasteAmt: 50 }] };
+    const first = fobDailyDeltas(ds);
+    const second = fobDailyDeltas(ds);
+    expect(second).toBe(first); // same reference -- proves reuse, not just equal content
+  });
+
+  it('a different `ds` object never reuses another ds\'s cached result', () => {
+    const dsA = { qsrFobRows: [{ loc: '0003708', date: d('2026-10-01'), prodSalesAmt: 10000 }] };
+    const dsB = { qsrFobRows: [{ loc: '0003708', date: d('2026-10-01'), prodSalesAmt: 99999 }] };
+    const a = fobDailyDeltas(dsA);
+    const b = fobDailyDeltas(dsB);
+    expect(a).not.toBe(b);
+    expect(a[LOC][0].sales).toBe(10000);
+    expect(b[LOC][0].sales).toBe(99999);
+  });
 });
 
 describe('computeFobReferenceTable — per-store Loc/L3M/L6W/LM/MTD/Projected/Trend', () => {
