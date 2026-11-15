@@ -33,12 +33,17 @@ describe('LiveOpsTab Baseline Anomalies — current in-progress hour', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-15T14:37:00'));
 
+    // hour_slot is REAL production data a "HH:00" STRING (e.g. "14:00"), never a bare number --
+    // confirmed live via Supabase curl, 2026-11-15. A bare-number fixture here previously let a
+    // `Number(r.hour_slot)` bug ship straight to production (PR #1943): `Number('14:00')` is NaN,
+    // so the exclusion check always evaluated false and silently filtered nothing, while
+    // `Number(14)` happens to equal 14 and masked it in this very test. Fixed to parseInt(...,10).
     const darRows = [
-      // A real, COMPLETED hour (1pm-2pm, hour_slot 14) -- a genuine cold miss. Must still flag.
-      { loc: '1111', hour_slot: 14, mean_sales: 1000, product_sales: 200 },
-      // The CURRENT, still-filling hour (2pm-3pm, hour_slot 15) -- partial sales read far below
+      // A real, COMPLETED hour (1pm-2pm, hour_slot "14:00") -- a genuine cold miss. Must still flag.
+      { loc: '1111', hour_slot: '14:00', mean_sales: 1000, product_sales: 200 },
+      // The CURRENT, still-filling hour (2pm-3pm, hour_slot "15:00") -- partial sales read far below
       // the full-hour mean purely because the hour isn't over yet. Must NOT flag.
-      { loc: '2222', hour_slot: 15, mean_sales: 1000, product_sales: 150 },
+      { loc: '2222', hour_slot: '15:00', mean_sales: 1000, product_sales: 150 },
     ];
 
     const { container, root } = mount({ darRows, refreshDar: () => {}, onExportReady: () => {} });

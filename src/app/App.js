@@ -1640,9 +1640,17 @@ function App() {
     const cache = darFetchRef.current;
     if (cache.date === dt && Date.now() - cache.ts < STALE_MS) return;
     darFetchRef.current = { date: dt, ts: Date.now() }; // claim slot to prevent parallel fetches
+    // Column list must stay in sync with loadDailyActivity() (src/lib/supabase.js) -- that loader
+    // carries the full fc_*/mfy1_*/mfy2_*/dt_carsheld/actual_punched_dollars/prod_sales_scrubbed/
+    // trans_scrubbed set added for Live Ops' R2P/KVS/DT Parked%/Labor $%/TPPH expansion
+    // (owner request, 2026-11-13), but THIS select -- the one actually wired to Signals via
+    // darRows/refreshDar -- was never updated alongside it. Found 2026-11-15: those 5 columns
+    // rendered as "—" for every completed hour of every store, looking exactly like a data-pull
+    // gap, because fc_trans_cnt/mfy1_trans_cnt/mfy2_trans_cnt etc. came back undefined here, not
+    // because the underlying qsr_daily_activity rows were actually missing anything.
     const { data } = await supabase
       .from('qsr_daily_activity')
-      .select('loc,dt,hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
+      .select('loc,dt,hour_slot,product_sales,prod_sales_scrubbed,mean_sales,proj_sales_dollars,ly_product_sales,trans_scrubbed,dt_untilserve,dt_untilstore,dt_heldtime,dt_carsheld,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,actual_punched_hours,actual_punched_dollars,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
       .eq('dt', dt)
       .order('loc').order('hour_slot');
     setDarRows(data || []);

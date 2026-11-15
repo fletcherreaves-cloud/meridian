@@ -946,15 +946,39 @@ export function alertCount(store) {
   return n;
 }
 
-function HourlyDetail({ slots, storeKey }) {
-  const sorted = [...slots].sort((a, b) => a.hour_slot.localeCompare(b.hour_slot));
+// ⚠️ BUG FIXED 2026-11-15 (owner report, live, screenshot of Elgin's hourly table showing R2P/
+// KVS/DT Parked%/Labor%/TPPH blank for "lots" of rows): measured live against Elgin's real
+// qsr_daily_activity rows for today -- every business hour (6am-4pm) had real, populated station
+// data; hour_slot 17 ("4pm" block) onward was the full row zero-filled (CLAUDE.md: the DAR table
+// always carries the full 24-hour_slot shape, with hours that haven't happened yet simply
+// zero-filled, not absent). Rendering those not-yet-elapsed hours as table rows made roughly half
+// a business day's worth of cells read "—" across 6+ columns at once, which looks exactly like
+// "lots of data missing" even though nothing is actually wrong -- the day just hasn't happened
+// yet. Not a pull/parsing bug; a display bug. Fixed by not rendering a row for an hour that
+// hasn't started yet, for TODAY specifically (any other selected date is already fully elapsed,
+// same reasoning as the Baseline Anomalies current-hour fix above -- intentionally NOT sharing
+// that fix's own inline computation again here since this needs the viewed `date`, not `rows`).
+function _currentHourSlot(now = new Date()) {
+  const h = now.getHours();
+  return h < 4 ? h + 1 + 24 : h + 1;
+}
+function HourlyDetail({ slots, storeKey, date }) {
+  const isToday = date === businessDate();
+  const inProgressSlot = _currentHourSlot();
+  const sorted = [...slots]
+    .filter(r => !isToday || parseInt(r.hour_slot, 10) < inProgressSlot) // drop hours that haven't happened yet today
+    .sort((a, b) => a.hour_slot.localeCompare(b.hour_slot));
   const r2pBands = secBands('tR2p', storeKey);
   const kvsBands = secBands('tKvst', storeKey);
   const tgt = DEFAULT_TARGETS[storeKey];
   const cellStyle = { padding: '5px 10px', fontSize: 11, textAlign: 'right' };
   const hdr = { ...cellStyle, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
   const lbl = { ...cellStyle, textAlign: 'left', color: muted };
-  return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}`, overflowX: 'auto' } },
+  const truncated = isToday && slots.length > sorted.length;
+  return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}` } },
+    truncated && h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6 } },
+      'Only hours that have happened so far today are shown — later hours aren\'t data gaps, they just haven\'t occurred yet.'),
+    h('div', { style: { overflowX: 'auto' } },
     h('table', { style: { width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 11 } },
       h('thead', null,
         h('tr', null,
@@ -1023,6 +1047,7 @@ function HourlyDetail({ slots, storeKey }) {
         })
       )
     )
+    )
   );
 }
 
@@ -1041,7 +1066,7 @@ function MetricCell({ label, value, color, bold, title }) {
   );
 }
 
-function StoreRow({ store, expanded, onToggle }) {
+function StoreRow({ store, expanded, onToggle, date }) {
   const alerts = alertCount(store);
   const isExp = expanded === store.loc;
   const r2pBands = secBands('tR2p', store.key);
@@ -1082,7 +1107,7 @@ function StoreRow({ store, expanded, onToggle }) {
       ),
       h('span', { style: { fontSize: 12, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none', flexShrink: 0 } }, '▾'),
     ),
-    isExp && h(HourlyDetail, { slots: store.slots, storeKey: store.key }),
+    isExp && h(HourlyDetail, { slots: store.slots, storeKey: store.key, date }),
   );
 }
 
@@ -1162,14 +1187,13 @@ export function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }
   const anomalies = uM(() => {
     const HOT = 130, COLD = 70, MIN_MEAN = 300;
     const isToday = date === businessDate();
-    const h = new Date().getHours();
-    const inProgressSlot = h < 4 ? h + 1 + 24 : h + 1;
+    const inProgressSlot = _currentHourSlot();
     const out = [];
     for (const r of rows) {
       const ms = r.mean_sales || 0;
       const sales = r.product_sales || 0;
       if (ms < MIN_MEAN || sales <= 0) continue;
-      if (isToday && Number(r.hour_slot) >= inProgressSlot) continue; // still filling -- not a completed hour yet
+      if (isToday && parseInt(r.hour_slot, 10) >= inProgressSlot) continue; // still filling -- not a completed hour yet
       const pace = sales / ms * 100;
       if (pace >= HOT || pace <= COLD)
         out.push({ loc: r.loc, key: storeLocKey(r.loc), slot: r.hour_slot, pace });
@@ -1280,7 +1304,7 @@ export function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }
       ),
       // Sort: alerts-first, then alpha
       [...stores].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName))
-        .map(store => h(StoreRow, { key: store.loc, store, expanded, onToggle: () => setExpanded(expanded === store.loc ? null : store.loc) })),
+        .map(store => h(StoreRow, { key: store.loc, store, expanded, onToggle: () => setExpanded(expanded === store.loc ? null : store.loc), date })),
     ),
 
     !loading && rows.length === 0 && h('div', { style: { textAlign: 'center', padding: '48px 24px', color: muted, fontSize: 13, border: `1px dashed ${bdr}`, borderRadius: 8 } },
