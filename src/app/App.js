@@ -4035,7 +4035,7 @@ function App() {
     h(AppSidebar,{
       view, setView,
       routePanel, goRoute,
-      selStore,
+      selStore, setSelStore,
       stores, ds, settings,
       loadMsg,
       perm,

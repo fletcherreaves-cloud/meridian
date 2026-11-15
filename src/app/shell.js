@@ -93,7 +93,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled, initialCollapsed=false}) {
+function AppSidebar({view, setView, routePanel, goRoute, selStore, setSelStore, stores, ds, settings, onOpenModal, onLoadFiles, loadMsg, perm, betaMode, panelVis, panelEnabled, initialCollapsed=false}) {
   // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
   // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
   // OWN local state — a child's local update should not force the App() parent to re-render at
@@ -567,8 +567,19 @@ function AppSidebar({view, setView, routePanel, goRoute, selStore, stores, ds, s
       // full-page route panel was open -- setView alone doesn't clear routePanel, and every
       // view's render gate in App.js requires !routePanel (see the Escape-key precedent,
       // App.js's `if(routePanel){goRoute(null);return;}`). goRoute?.(null) mirrors that.
+      // Owner-reported bug (2026-11-15): "after clicking into District View first time, after
+      // navigating elsewhere and then reopening it, it fails to load at all. Just blank screen."
+      // District View's own render gate (App.js `view==='district'&&!selStore&&...`) also
+      // requires selStore to be falsy -- but selStore is only ever cleared by StoreDash's own
+      // Back button (App.js's onBack), never by switching views through the nav. So: open a
+      // store from District View (goStore sets selStore + view='store'), then leave via any
+      // OTHER nav item instead of StoreDash's Back arrow, and selStore is left stuck set. The
+      // next click on District View sets view='district' correctly, but !selStore is now false
+      // forever -- nothing renders, no error, just the blank content area the owner saw. Clearing
+      // selStore here (District View is never itself the store view) closes that gap the same
+      // way goRoute?.(null) above closes the routePanel one.
       navItem('Home',              '⌂', ()=>{setView('command'); goRoute?.(null);},         view==='command'&&!routePanel),
-      pi('analytics.district',    'District View',    '⊞', ()=>{setView('district'); goRoute?.(null);},   view==='district'&&!routePanel),
+      pi('analytics.district',    'District View',    '⊞', ()=>{setSelStore?.(null); setView('district'); goRoute?.(null);},   view==='district'&&!routePanel),
 
       // ── Section-driven body (dispatch #54 Job B) ─────────────────────────────
       // Every section except 'admin' renders in SECTIONS order; 'admin' is pulled out and
