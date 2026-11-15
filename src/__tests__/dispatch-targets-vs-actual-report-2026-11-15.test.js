@@ -16,6 +16,7 @@ import { resolveDatePreset, MTD_PRESET, DATE_RANGE_PRESETS } from '../components
 import {
   effectiveMonthlyTarget, effectiveYearlyTarget, targetStatus, computeTargetsVsActual, monthEndPace,
   MONTHLY_TARGET_METRICS, DAILY_TARGET_METRICS, YEARLY_TARGET_METRICS, _blendedMonthlyTarget,
+  FOB_COMPONENT_KEYS, FOB_SUMMARY_KEYS,
 } from '../engine/targets-vs-actual.js';
 import { resolveMetricForRange } from '../engine/fob-reference.js';
 import { TargetsVsActualReportPanel } from '../views/targets-vs-actual-report.js';
@@ -66,22 +67,42 @@ describe('PanelControls: MTD preset', () => {
 });
 
 describe('monthEndPace()', () => {
-  it('projects the month-end total as actual / fraction-of-month-elapsed', () => {
+  it('a true MTD window (range starts day 1) projects the month-end total as actual / fraction-of-month-elapsed', () => {
     // 5 of September's 30 days elapsed -- same run-rate math as the live Projection Workspace's
     // Actuals-vs-Target pace table (analytics.js's CurrentMonthPaceSection).
-    expect(monthEndPace(50000, '2026-09-05', '2026-9')).toBe(300000);
+    expect(monthEndPace(50000, { s: '2026-09-01', e: '2026-09-05' }, '2026-9')).toBe(300000);
   });
   it('a full-month window (frac=1) paces to exactly the actual', () => {
-    expect(monthEndPace(300000, '2026-09-30', '2026-9')).toBe(300000);
+    expect(monthEndPace(300000, { s: '2026-09-01', e: '2026-09-30' }, '2026-9')).toBe(300000);
+  });
+  // Bug fixed 2026-11-15 (owner report, live): a non-MTD window (7/14/21/28D, doesn't start on
+  // day 1) must use its OWN day count, never the end date's calendar day-of-month -- the old
+  // formula divided a 7-day actual by a 14/30 "elapsed" fraction (assuming the actual covered
+  // ALL 14 days through the end date), understating the true pace by roughly half.
+  it('a non-MTD window (does not start on day 1) paces using its own day count, not the end date\'s calendar day-of-month', () => {
+    // 7-day window (Sep 8-14), actual=$70,000 over those 7 days. Correct pace: $70,000 / (7/30)
+    // = $300,000. The OLD (buggy) formula would have used 14/30 (Sep 14's day-of-month) and
+    // produced $150,000 -- half the correct value -- so this also rules out the regression.
+    const paced = monthEndPace(70000, { s: '2026-09-08', e: '2026-09-14' }, '2026-9');
+    expect(paced).toBe(300000);
+    expect(paced).not.toBe(150000);
+  });
+  // Bug fixed 2026-11-15 (owner report, live): a window crossing a month boundary mixes two
+  // months' sales into one `actual` figure -- no single month's day fraction can validly scale
+  // that back into a full-month pace. Observed live: a 28-day window (Oct 18-Nov 14) with a
+  // $322,457 actual produced a $690,979 "pace" (roughly DOUBLE the true run rate) because the
+  // old formula used November's day-of-month (14/30) against an actual that was mostly October.
+  it('returns null when the window crosses a month boundary — actual blends two months, no valid single-month pace', () => {
+    expect(monthEndPace(322457, { s: '2026-10-18', e: '2026-11-14' }, '2026-11')).toBeNull();
   });
   it('returns null when the range end falls outside the target month — nothing to project', () => {
-    expect(monthEndPace(50000, '2026-10-01', '2026-9')).toBeNull(); // next month over
-    expect(monthEndPace(50000, '2026-08-31', '2026-9')).toBeNull(); // prior month
+    expect(monthEndPace(50000, { s: '2026-10-01', e: '2026-10-01' }, '2026-9')).toBeNull(); // next month over
+    expect(monthEndPace(50000, { s: '2026-08-31', e: '2026-08-31' }, '2026-9')).toBeNull(); // prior month
   });
   it('returns null on any missing input rather than guessing', () => {
-    expect(monthEndPace(null, '2026-09-05', '2026-9')).toBeNull();
+    expect(monthEndPace(null, { s: '2026-09-01', e: '2026-09-05' }, '2026-9')).toBeNull();
     expect(monthEndPace(50000, null, '2026-9')).toBeNull();
-    expect(monthEndPace(50000, '2026-09-05', null)).toBeNull();
+    expect(monthEndPace(50000, { s: '2026-09-01', e: '2026-09-05' }, null)).toBeNull();
   });
 });
 
@@ -160,8 +181,11 @@ describe('computeTargetsVsActual() — monthly tab', () => {
     const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
     expect(byKey.salesAmt.actual).toBe(50000); // the honest, unpaced MTD number is still exposed
     expect(byKey.salesAmt.pace).toBe(300000); // 50000 / (5/30)
-    expect(byKey.salesAmt.diff).toBeCloseTo(300000 - DEFAULT_TARGETS[LOC].tProdSales, 2); // diff is pace-based
-    expect(byKey.salesAmt.status).toBe('ok'); // pace clears target even though the raw actual alone would not
+    // Variance (diff) is the plain actual-minus-target gap (owner follow-up 2026-11-15: "actual
+    // vs target would be ideal and easy for anyone to understand") -- it must match what Target/
+    // Actual visibly show, NOT the hidden pace figure driving Status below.
+    expect(byKey.salesAmt.diff).toBeCloseTo(50000 - DEFAULT_TARGETS[LOC].tProdSales, 2);
+    expect(byKey.salesAmt.status).toBe('ok'); // Status still grades off pace, which clears target even though the raw actual alone would not
   });
 
   it('a metric not marked `paced` is never pace-graded, even on the same partial-month window', () => {
@@ -172,18 +196,26 @@ describe('computeTargetsVsActual() — monthly tab', () => {
     expect(byKey.crewLaborPct.diff).toBeCloseTo(byKey.crewLaborPct.actual - byKey.crewLaborPct.target, 6);
   });
 
-  // Owner follow-up (2026-11-15): "can we wire in the Food cost items on monthly" — the one
-  // Food Cost field DEFAULT_TARGETS/monthly_targets carries that wasn't already in
-  // MONTHLY_TARGET_METRICS was tFOBBonusBase (Bonus Food Threshold). It's not a separate
-  // measured actual — analytics.js's own Monthly Projections workbook grid (PROJ_FIELDS) shows
-  // it sitting right after tFOBTotal in the same Food Cost group with no actual column of its
-  // own — so it reuses the exact same Total Food Cost % actual as tFOBTotal.
-  it('fobBonusBase reuses the same real Total Food Cost % actual as fobTotal (two targets, one actual)', () => {
-    const rows = computeTargetsVsActual(buildDs(), [LOC], { which: 'monthly', range: RANGE, allMonthlyTargets: {}, targetMonthYm: '2026-9' });
-    const byKey = Object.fromEntries(rows[0].metrics.map(m => [m.key, m]));
-    expect(byKey.fobBonusBase).toBeDefined();
-    expect(byKey.fobBonusBase.target).toBe(DEFAULT_TARGETS[LOC].tFOBBonusBase);
-    expect(byKey.fobBonusBase.actual).toBe(byKey.totalFoodCostPct.actual);
+  // FOB Bonus Food Threshold % REMOVED (owner follow-up 2026-11-15) -- it graded a stricter
+  // threshold field against the exact same Total Food Cost % actual as fobTotal, with no actual
+  // of its own, producing a nonsensical double-digit "Miss" whenever the two thresholds simply
+  // differed. See targets-vs-actual.js's MONTHLY_TARGET_METRICS comment for the full removal note.
+  it('fobBonusBase is no longer a row on this report', () => {
+    expect(MONTHLY_TARGET_METRICS.some(m => m.key === 'fobBonusBase')).toBe(false);
+  });
+
+  // Owner follow-up (2026-11-15): "put an outline or shade differently to denote FOB components
+  // culminating with an even more visual drawing to the FOB line." The view groups rows by key
+  // membership in FOB_COMPONENT_KEYS/FOB_SUMMARY_KEYS -- this just guards that the two lists stay
+  // disjoint and every summary key is a real row, so the view's grouping can never silently point
+  // at a key that doesn't exist or double-count a row as both a component and a summary.
+  it('FOB_COMPONENT_KEYS and FOB_SUMMARY_KEYS are disjoint and every key is a real monthly-tab row', () => {
+    const rowKeys = new Set(MONTHLY_TARGET_METRICS.map(m => m.key));
+    for (const k of FOB_COMPONENT_KEYS) expect(rowKeys.has(k)).toBe(true);
+    for (const k of FOB_SUMMARY_KEYS) expect(rowKeys.has(k)).toBe(true);
+    const overlap = FOB_COMPONENT_KEYS.filter(k => FOB_SUMMARY_KEYS.includes(k));
+    expect(overlap).toEqual([]);
+    expect(FOB_COMPONENT_KEYS).toEqual(['baseFoodPct', 'discCouponPct', 'compWastePct', 'rawWastePct', 'condimentPct', 'empFoodPct', 'statLossPct', 'unexDiffPct']);
   });
 });
 

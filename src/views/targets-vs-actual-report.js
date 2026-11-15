@@ -11,7 +11,7 @@ import { ReportShell } from '../components/ReportShell.js';
 import { DATE_RANGE_PRESETS, MTD_PRESET } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { ymKey } from '../engine/monthly-targets-v2.js';
-import { computeTargetsVsActual, YEARLY_TARGET_METRICS } from '../engine/targets-vs-actual.js';
+import { computeTargetsVsActual, YEARLY_TARGET_METRICS, FOB_COMPONENT_KEYS, FOB_SUMMARY_KEYS } from '../engine/targets-vs-actual.js';
 import { fP, f$, fN } from '../utils/fmt.js';
 
 const h = React.createElement;
@@ -105,6 +105,19 @@ function _targetText(m) {
 
 const _allStores = Object.keys(STORE_NAMES).map(l => ({ loc: l }));
 
+// FOB component/summary visual grouping (owner follow-up 2026-11-15: "put an outline or shade
+// differently to denote FOB components culminating with an even more visual drawing to the FOB
+// line"). A soft gold accent marks each of the 8 waste/variance/cost-leg rows as one group; the
+// two summary rows they roll up into (FOB Target %, Total Food Cost %) get the full McDonald's-
+// gold accent + a bold label, so the eye is drawn from the detail rows up to where they land.
+// Shared by the on-screen card and the printed/PDF view so the two never drift apart.
+const _FOB_GROUP_KEYS = new Set([...FOB_COMPONENT_KEYS, ...FOB_SUMMARY_KEYS]);
+function _fobRowStyle(key) {
+  if (FOB_SUMMARY_KEYS.includes(key)) return { accent: '#f5bc00', tint: 'rgba(245,188,0,.10)', bold: true };
+  if (FOB_COMPONENT_KEYS.includes(key)) return { accent: 'rgba(245,188,0,.45)', tint: 'rgba(245,188,0,.035)', bold: false };
+  return null;
+}
+
 // One store's workbook card: a McDonald's-red accent band (the owner's own printed workbook's
 // signature touch, meridian.css's now-superseded .proj-print-header skin) over a plain,
 // theme-aware table — never a hardcoded dark/light surface, so it reads correctly in both
@@ -125,21 +138,33 @@ function StoreWorkbookCard({ loc, metrics }) {
           h('th', { style: _thStyle(true) }, 'Variance'),
           h('th', { style: _thStyle(true) }, 'Status'),
         )),
-        h('tbody', null, ...metrics.map((m, i) => tr({
-          key: m.key, style: { borderBottom: '.5px solid var(--bdr)', background: i % 2 ? 'var(--surf2)' : 'transparent' },
-        },
-          td({ style: _tdStyle(false) }, m.label),
-          td({ style: _tdStyle(true) },
-            div(null, _fmtVal(m.target, m.unit)),
-            _targetLabel(m) && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, _targetLabel(m)),
-          ),
-          td({ style: _tdStyle(true) },
-            div(null, _fmtVal(m.actual, m.unit)),
-            m.pace != null && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, `Pace: ${_fmtVal(m.pace, m.unit)}`),
-          ),
-          td({ style: { ..._tdStyle(true), color: m.diff == null ? 'var(--text3)' : (m.status === 'ok' ? '#10b981' : m.status === 'miss' ? 'var(--crit)' : 'var(--text2)') } }, _fmtDiff(m.diff, m.unit)),
-          td({ style: { padding: '4px 10px', textAlign: 'center', fontWeight: 700, fontSize: '9.5px', color: _STATUS_COLOR[m.status] } }, _STATUS_LABEL[m.status]),
-        ))),
+        h('tbody', null, ...(() => {
+          const firstFobIdx = metrics.findIndex(m => _FOB_GROUP_KEYS.has(m.key));
+          return metrics.map((m, i) => {
+            const fob = _fobRowStyle(m.key);
+            return tr({
+              key: m.key,
+              style: {
+                borderBottom: '.5px solid var(--bdr)',
+                background: fob ? fob.tint : (i % 2 ? 'var(--surf2)' : 'transparent'),
+                boxShadow: fob ? `inset 3px 0 0 ${fob.accent}` : undefined,
+                borderTop: i === firstFobIdx ? '1px solid rgba(245,188,0,.45)' : undefined,
+              },
+            },
+              td({ style: { ..._tdStyle(false), fontWeight: fob?.bold ? 700 : 400 } }, m.label),
+              td({ style: _tdStyle(true) },
+                div(null, _fmtVal(m.target, m.unit)),
+                _targetLabel(m) && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, _targetLabel(m)),
+              ),
+              td({ style: _tdStyle(true) },
+                div(null, _fmtVal(m.actual, m.unit)),
+                m.pace != null && div({ style: { fontSize: '8.5px', color: 'var(--text3)', fontFamily: 'var(--sans)' } }, `Pace: ${_fmtVal(m.pace, m.unit)}`),
+              ),
+              td({ style: { ..._tdStyle(true), color: m.diff == null ? 'var(--text3)' : (m.status === 'ok' ? '#10b981' : m.status === 'miss' ? 'var(--crit)' : 'var(--text2)') } }, _fmtDiff(m.diff, m.unit)),
+              td({ style: { padding: '4px 10px', textAlign: 'center', fontWeight: 700, fontSize: '9.5px', color: _STATUS_COLOR[m.status] } }, _STATUS_LABEL[m.status]),
+            );
+          });
+        })()),
       ),
     ),
   );
@@ -173,14 +198,25 @@ function buildPrintHTML({ title, subtitle, rows }) {
         <div class="band"><span class="name">${_escHtml(sNameC(r.loc) || r.loc)}</span><span class="loc">${_escHtml(r.loc)}</span></div>
         <table>
           <thead><tr><th>Metric</th><th class="r">Target</th><th class="r">Actual</th><th class="r">Variance</th><th class="c">Status</th></tr></thead>
-          <tbody>${r.metrics.map(m => `
-            <tr>
-              <td>${_escHtml(m.label)}</td>
+          <tbody>${(() => {
+            const firstFobIdx = r.metrics.findIndex(m => _FOB_GROUP_KEYS.has(m.key));
+            return r.metrics.map((m, i) => {
+              const fob = _fobRowStyle(m.key);
+              const rowStyle = [
+                fob ? `box-shadow:inset 3px 0 0 ${fob.accent}` : '',
+                fob ? `background:${fob.tint}` : '',
+                i === firstFobIdx ? 'border-top:1px solid rgba(245,188,0,.45)' : '',
+              ].filter(Boolean).join(';');
+              return `
+            <tr${rowStyle ? ` style="${rowStyle}"` : ''}>
+              <td${fob?.bold ? ' style="font-weight:700"' : ''}>${_escHtml(m.label)}</td>
               <td class="r">${_escHtml(_fmtVal(m.target, m.unit))}${_targetLabel(m) ? `<div class="pace">${_escHtml(_targetLabel(m))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtVal(m.actual, m.unit))}${m.pace != null ? `<div class="pace">Pace: ${_escHtml(_fmtVal(m.pace, m.unit))}</div>` : ''}</td>
               <td class="r">${_escHtml(_fmtDiff(m.diff, m.unit))}</td>
               <td class="c" style="color:${_PRINT_STATUS_COLOR[m.status]}">${_escHtml(_STATUS_LABEL[m.status])}</td>
-            </tr>`).join('')}
+            </tr>`;
+            }).join('');
+          })()}
           </tbody>
         </table>
       </div>
@@ -248,7 +284,7 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
     setResult({
       monthly: computeTargetsVsActual(dsNow, locs, { which: 'monthly', range, allMonthlyTargets, targetMonthYm }),
       daily: computeTargetsVsActual(dsNow, locs, { which: 'daily', range }),
-      yearly: computeTargetsVsActual(dsNow, locs, { which: 'yearly', range, allYearlyTargets, targetYear }),
+      yearly: computeTargetsVsActual(dsNow, locs, { which: 'yearly', range, allMonthlyTargets, allYearlyTargets, targetYear }),
     });
   };
 
@@ -302,9 +338,9 @@ export function TargetsVsActualReportPanel({ ds, stores, onClose }) {
     ),
     div({ style: { fontSize: '10px', color: 'var(--text3)', marginBottom: 12 } },
       tab === 'monthly'
-        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. When a 7/14/21/28D window crosses a month boundary, the Target is a math blend of both months\' real targets — day-weighted for %/rate/sec metrics, day-prorated-and-summed for $ metrics — never a silent read of just one month\'s number; a small "Blended: Xd Mon + Yd Mon" line under the Target makes this explicit, or "Covers Xd Mon only (… target missing)" if one of the two months has no saved target to blend in. Sales $ grades against a month-end pace projection (MTD actual ÷ days elapsed × days in month — the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses) whenever the range ends mid-month, not the raw MTD total, so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; the real MTD actual still shows as the small "Pace:" line\'s companion number.'
+        ? 'Target reads the real monthly override for the selected range\'s month where one has been saved, falling back to the standing default target otherwise — the same target MonthlyTargetManager edits. When a 7/14/21/28D window crosses a month boundary, the Target is a math blend of both months\' real targets — day-weighted for %/rate/sec metrics, day-prorated-and-summed for $ metrics — never a silent read of just one month\'s number; a small "Blended: Xd Mon + Yd Mon" line under the Target makes this explicit, or "Covers Xd Mon only (… target missing)" if one of the two months has no saved target to blend in. Variance is always the plain Actual minus Target, matching the two numbers shown next to it. Sales $\'s Status (not Variance) additionally grades against a month-end pace projection — this window\'s own actual scaled up by its own day-span vs. the full month, the same run-rate the Projection Workspace\'s Actuals-vs-Target pace table uses for a true MTD window — so a store isn\'t flagged a "miss" on day 3 just because the full-month total hasn\'t arrived yet; that pace shows as the small "Pace:" line under Actual, and only applies within a single month (a window crossing a month boundary already has its Target scaled to match its own days, so Status there grades off the plain Actual too).'
         : tab === 'yearly'
-        ? `Target reads the uploaded yearly targets workbook for the selected range's year — no fallback, since not every store/year has one uploaded. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Sales $ sums each completed month's real total plus the current month's own pace projection (shown as a "Pace:" line); Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
+        ? `Target reads the uploaded yearly targets workbook for the selected range's year first; Sales $ and Crew Labor % fall back to a roll-up of real Monthly Targets when the yearly workbook has no value for that field (a small "From Monthly Targets (…)" line under the Target makes this explicit) — every other yearly-workbook field has no such fallback, since there's no monthly equivalent to roll up from, and reads as blank rather than a guess. Covers the ${YEARLY_TARGET_METRICS.length} yearly-workbook fields with a verified daily/auto actual source; CSAT, Digital, and People (OSAT, turnover, headcount, McDelivery, etc.) aren't wired in yet — see Yearly Projections → Target Categories for those targets on their own. Actual is year-to-date (Jan 1 through the picker's end date), not the narrow 7/14/21/28/MTD window — a flat month's data compared against a full annual target didn't make sense. Variance is always the plain Actual minus Target. Sales $'s Status additionally grades against a pace projection that sums each completed month's real total plus the current month's own pace (shown as a "Pace:" line); Crew Labor % and FOB Target % are dollar-weighted across the whole year-to-date span, never an average of monthly percentages.`
         : 'Target is each store\'s standing daily operational target — there is no monthly override for these.'),
     activeRows == null
       ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: '11px' } }, 'Choose a date range and location, then Run Report.')

@@ -30,25 +30,49 @@ export function effectiveMonthlyTarget(loc, ym, allMonthlyTargets) {
 // Month-end pace projection (owner request 2026-11-15: "for the sales target can you come up
 // with a way to pace it based on what the actual is MTD vs projected"). Not a new method --
 // this is the exact linear run-rate the live Projection Workspace's "Actuals vs Target" pace
-// table already uses (analytics.js's CurrentMonthPaceSection: frac = dayOfMonth/daysInMonth;
-// pace = actual/frac), so a store's pace here never disagrees with what that panel already
-// shows for the same month. Only meaningful for a window whose END falls inside the target
-// month (an MTD-style partial month) -- a window that's a complete prior month (or doesn't
-// land in the target month at all) is already a finished total, not a partial one to project
-// forward, so this returns null rather than silently "pacing" a number that needs no pacing.
-export function monthEndPace(actual, rangeEndIso, targetMonthYm) {
-  if (actual == null || !rangeEndIso || !targetMonthYm) return null;
+// table already uses for a true MTD window (analytics.js's CurrentMonthPaceSection: frac =
+// dayOfMonth/daysInMonth; pace = actual/frac) -- for a window that genuinely starts on day 1 of
+// the target month, `daysInWindow` below reduces to exactly `dayOfMonth`, so a store's pace here
+// never disagrees with what that panel already shows for the same MTD window. Only meaningful for
+// a window whose END falls inside the target month (an MTD-style partial month) -- a window
+// that's a complete prior month (or doesn't land in the target month at all) is already a
+// finished total, not a partial one to project forward, so this returns null rather than
+// silently "pacing" a number that needs no pacing.
+//
+// ⚠️ BUG FIXED 2026-11-15 (owner report, same day as the cross-month blend ship): this used to
+// take only the range's END date and divide `actual` by the CALENDAR day-of-month
+// (endDate.getDate()/daysInMonth) -- correct ONLY when the window happens to start on day 1 (the
+// MTD preset). Every OTHER window shape this report offers (7/14/21/28D) starts mid-month, so
+// `actual` only ever covers the window's own day count, not "day 1 through the end date" -- and
+// dividing a 14-day or 28-day total by a calendar-day-of-month fraction silently produced a wildly
+// wrong pace (observed live: a 28-day window spanning Oct 18-Nov 14 produced a $690K pace for a
+// $322K actual, roughly DOUBLE the true run rate, because frac=14/30 assumed all 14 of November's
+// elapsed days were in `actual` when only 14 of the window's 28 days even WERE in November).
+// Fixed by taking the full `range` (both ends) and using the window's OWN day count
+// (`daysInWindow`) instead of the end date's calendar day-of-month -- a strict generalization: for
+// a true MTD window (range.s = day 1) `daysInWindow` is identical to `endDate.getDate()`, so MTD
+// behavior and the Projection Workspace agreement above are both unchanged.
+// Also now returns null whenever the window's START isn't in the SAME month as its END (crosses a
+// month boundary) -- `actual` there is a blend of two months' sales, so no single month's day
+// fraction can validly scale it back out into a full-month figure without a second, target-month-
+// only query this function doesn't have. That's not a loss: `_blendedMonthlyTarget` already
+// prorates the TARGET to match exactly this window's own days, so the plain (unpaced) actual vs
+// that already-scaled target is already a fair, apples-to-apples comparison for a crossing window
+// -- pacing on top of an already-prorated target would double-count the scaling in opposite
+// directions.
+export function monthEndPace(actual, range, targetMonthYm) {
+  if (actual == null || !range?.e || !targetMonthYm) return null;
   const [y, m] = String(targetMonthYm).split('-').map(Number);
   if (!y || !m) return null;
-  const endDate = new Date(rangeEndIso + 'T12:00:00');
+  const endDate = range.e instanceof Date ? range.e : new Date(range.e + 'T12:00:00');
   if (endDate.getFullYear() !== y || endDate.getMonth() + 1 !== m) return null;
+  const startDate = range.s instanceof Date ? range.s : (range.s ? new Date(range.s + 'T12:00:00') : endDate);
+  if (startDate.getFullYear() !== y || startDate.getMonth() + 1 !== m) return null;
   const daysInMonth = new Date(y, m, 0).getDate();
-  const frac = endDate.getDate() / daysInMonth;
+  const daysInWindow = Math.round((endDate - startDate) / 86400000) + 1;
+  const frac = daysInWindow / daysInMonth;
   return frac > 0 ? actual / frac : null;
 }
-
-const _pad2 = n => String(n).padStart(2, '0');
-const _isoDate = d => `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())}`;
 
 // Year-to-date Sales $ for the Yearly tab (owner request 2026-11-15: "Add the monthly actuals
 // together [to] generate the yearly actual ... for completed months and pace for any current
@@ -79,7 +103,7 @@ function _yearlySalesRollup(ds, loc, targetYear, asOf) {
     any = true;
     real += monthActual;
     if (isCurrentMonth) {
-      const monthPace = monthEndPace(monthActual, _isoDate(monthEndDate), `${targetYear}-${m}`);
+      const monthPace = monthEndPace(monthActual, monthRange, `${targetYear}-${m}`);
       paced += monthPace != null ? monthPace : monthActual;
     } else {
       paced += monthActual;
@@ -148,21 +172,25 @@ export const MONTHLY_TARGET_METRICS = [
       actual: (ds, loc, range) => resolveMetricForRange(ds, loc, fobRefKey, range),
     };
   }),
-  // FOB Bonus Base % (owner request 2026-11-15: "wire in the Food cost items on monthly").
-  // tFOBBonusBase ("Bonus Food Over Base Target" in the uploaded workbook, src/parsers/
-  // index.js) is NOT a separate measured metric — it's a second, stricter target line graded
-  // against the exact same real Total Food Cost % actual as tFOBTotal above. Confirmed from
-  // the owner's own Monthly Projections workbook grid (analytics.js's PROJ_FIELDS), where
-  // tFOBBonusBase sits immediately after tFOBTotal in the same Food Cost group with no actual
-  // column of its own — the two targets, one actual. Reuses resolveMetricForRange('totalFoodCostPct')
-  // verbatim rather than inventing a second "bonus" actual that doesn't exist anywhere in the
-  // data model. tBonusLabor (the labor-side sibling target, same workbook row shape) stays
-  // excluded — out of scope for a food-cost ask, same caveat as before.
-  {
-    key: 'fobBonusBase', label: 'FOB Bonus Food Threshold %', targetField: 'tFOBBonusBase', unit: 'pct', better: 'lower',
-    actual: (ds, loc, range) => resolveMetricForRange(ds, loc, 'totalFoodCostPct', range),
-  },
+  // FOB Bonus Base % REMOVED (owner follow-up 2026-11-15) -- it graded a "Bonus Food Over Base
+  // Target" field against the exact same real Total Food Cost % actual as fobTotal above, with no
+  // actual of its own, which read as a nonsensical double-digit "Miss" whenever the store's real
+  // food cost % simply differed from this much stricter bonus threshold (they're different
+  // thresholds on the SAME number, not two things that should agree). Confirmed unused elsewhere
+  // in this file; DEFAULT_TARGETS/monthly_targets still carry tFOBBonusBase for any other
+  // consumer that wants it (review-engine.js's REVIEW_METRIC_TARGET_FIELD, the Monthly Projections
+  // workbook grid) -- only this report's row is removed.
 ];
+
+// FOB "component" rows (the 8 waste/variance/cost legs that roll up into the FOB summary lines
+// below) vs. the 2 "summary" rows they culminate in -- owner follow-up 2026-11-15: visually group
+// the components and draw the eye toward the line they build to. Derived from _FOB_LEG_MAP (the
+// single source of truth for this report's FOB rows) rather than a second hand-typed key list, so
+// adding/removing a FOB leg there can never silently drift out of sync with the grouping here.
+export const FOB_SUMMARY_KEYS = ['fobTargetPct', 'totalFoodCostPct'];
+export const FOB_COMPONENT_KEYS = _FOB_LEG_MAP
+  .map(m => m.fobRefKey)
+  .filter(k => !FOB_SUMMARY_KEYS.includes(k) && k !== 'paperCostPct' && k !== 'opSupplyTarget');
 
 // ── Yearly Targets tab — the yearly_targets table's fields (src/lib/supabase.js's
 // save/loadYearlyTargets) that also have a verified, already-proven actual resolver somewhere
@@ -487,17 +515,28 @@ export function computeTargetsVsActual(ds, locs, { which, range, allMonthlyTarge
         target = def.target ? def.target(targets) : (targets[def.targetField] ?? null);
       }
       const actual = def.actual(ds, loc, actualRange);
-      // Paced metrics grade against a pace projection, not the raw actual, when one applies.
-      // Monthly Sales $ uses the generic monthEndPace(); Yearly Sales $ supplies its own
+      // Paced metrics grade STATUS against a pace projection, not the raw actual, when one
+      // applies. Monthly Sales $ uses the generic monthEndPace(); Yearly Sales $ supplies its own
       // paceFn (the month-rollup described above) since a year-grain day-fraction pace would
       // extrapolate an entire year from a handful of real months. monthEndPace/paceFn both
       // return null for a non-qualifying window, and `graded` falls straight back to the plain
       // actual, so this is additive, never a regression for a case pacing doesn't apply to.
       const pace = def.paceFn ? def.paceFn(ds, loc, actualRange)
-        : def.paced ? monthEndPace(actual, range?.e, targetMonthYm)
+        : def.paced ? monthEndPace(actual, range, targetMonthYm)
         : null;
       const graded = pace != null ? pace : actual;
-      const diff = (target != null && graded != null) ? graded - target : null;
+      // Variance is the HONEST actual-vs-target gap (owner follow-up 2026-11-15: "Seems like
+      // actual vs target would be ideal and easy for anyone to understand") -- it must equal
+      // actual minus target, matching the two numbers already shown in the same row. It used to
+      // be graded minus target (the PACED figure for a paced metric), which produced a Variance
+      // wildly larger than what Target/Actual visibly subtract to -- e.g. a $141,763 target and a
+      // $145,872 actual (a real gap of +$4,109) showing a "+$194,864" Variance, because that was
+      // actually $336,628 PACE minus target, a number never shown as the row's own Actual at all.
+      // Status keeps grading off `graded` (the pace) -- that's a deliberate, separate judgment
+      // call ("are we pacing to hit it"), not the same question Variance answers ("how far off is
+      // what's actually posted"), and the two are allowed to read differently (Variance negative
+      // while Status still says On Target mid-month) without being inconsistent with each other.
+      const diff = (target != null && actual != null) ? actual - target : null;
       const diffPct = (diff != null && Math.abs(target) > 1e-9) ? diff / Math.abs(target) : null;
       return {
         key: def.key, label: def.label, unit: def.unit, better: def.better,
