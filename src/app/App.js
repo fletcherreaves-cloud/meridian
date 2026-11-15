@@ -254,6 +254,7 @@ const ChannelMixPanel = lazyPanel(() => import('../views/channel-mix.js').then(m
 const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportunity-cost.js').then(m => ({ default: m.LaborOpportunityCostPanel })), 'labor-opportunity-cost');
 const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })), 'cash-variance-pattern');
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })), 'fob-reference-table');
+const TargetsVsActualReportPanel = lazyPanel(() => import('../views/targets-vs-actual-report.js').then(m => ({ default: m.TargetsVsActualReportPanel })), 'targets-vs-actual');
 const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })), 'conversion-efficiency');
 const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })), 'oil-efficiency');
 const EquipmentLayoutPanel = lazyPanel(() => import('../views/equipment-layout.js').then(m => ({ default: m.EquipmentLayoutPanel })), 'equipment-layout');
@@ -4163,6 +4164,7 @@ function App() {
         if(modal==='labor-opportunity-cost') perm('analytics.store')&&goRoute('labor-opportunity-cost');
         if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
+        if(modal==='targets-vs-actual') perm('analytics.store')&&goRoute('targets-vs-actual');
         if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
         if(modal==='oil-efficiency') perm('analytics.store')&&goRoute('oil-efficiency');
         if(modal==='equipment-layout') perm('analytics.store')&&goRoute('equipment-layout');
@@ -4488,6 +4490,7 @@ function App() {
       routePanel==='labor-opportunity-cost'&&h(LaborOpportunityCostPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='targets-vs-actual'&&h(TargetsVsActualReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='oil-efficiency'&&h(OilEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='equipment-layout'&&h(EquipmentLayoutPanel,{stores,onClose:()=>goRoute(null)}),
