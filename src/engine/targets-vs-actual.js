@@ -182,15 +182,25 @@ export const MONTHLY_TARGET_METRICS = [
   // workbook grid) -- only this report's row is removed.
 ];
 
-// FOB "component" rows (the 8 waste/variance/cost legs that roll up into the FOB summary lines
-// below) vs. the 2 "summary" rows they culminate in -- owner follow-up 2026-11-15: visually group
+// FOB "component" rows (the waste/variance/cost legs that roll up into the FOB summary line
+// below) vs. the 1 "summary" row they culminate in -- owner follow-up 2026-11-15: visually group
 // the components and draw the eye toward the line they build to. Derived from _FOB_LEG_MAP (the
 // single source of truth for this report's FOB rows) rather than a second hand-typed key list, so
 // adding/removing a FOB leg there can never silently drift out of sync with the grouping here.
-export const FOB_SUMMARY_KEYS = ['fobTargetPct', 'totalFoodCostPct'];
+//
+// ⚠️ Narrowed same day (owner follow-up): Base Food %, Disc Coupon %, and Total Food Cost % are
+// deliberately left UNSHADED, not grouped with the rest -- "this will help the stores focus on
+// only what they are tasked or charged to deliver." Base Food % (recipe/vendor-set cost) and Disc
+// Coupon % (corporate promo redemptions) aren't store-controllable the way the other legs are, and
+// FOB Target % (w/o Disc Coupon) exists SPECIFICALLY to exclude Disc Coupon from what a store is
+// held to -- grouping it back in via shading would visually contradict the one number whose whole
+// point is excluding it. Total Food Cost % (which includes both excluded legs) stops being the
+// group's "summary" line for the same reason; FOB Target % is the sole summary now.
+export const FOB_SUMMARY_KEYS = ['fobTargetPct'];
+const _FOB_UNSHADED_KEYS = ['baseFoodPct', 'discCouponPct', 'totalFoodCostPct', 'paperCostPct', 'opSupplyTarget'];
 export const FOB_COMPONENT_KEYS = _FOB_LEG_MAP
   .map(m => m.fobRefKey)
-  .filter(k => !FOB_SUMMARY_KEYS.includes(k) && k !== 'paperCostPct' && k !== 'opSupplyTarget');
+  .filter(k => !FOB_SUMMARY_KEYS.includes(k) && !_FOB_UNSHADED_KEYS.includes(k));
 
 // ── Yearly Targets tab — the yearly_targets table's fields (src/lib/supabase.js's
 // save/loadYearlyTargets) that also have a verified, already-proven actual resolver somewhere

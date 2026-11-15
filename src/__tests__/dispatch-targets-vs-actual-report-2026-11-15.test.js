@@ -209,13 +209,24 @@ describe('computeTargetsVsActual() — monthly tab', () => {
   // membership in FOB_COMPONENT_KEYS/FOB_SUMMARY_KEYS -- this just guards that the two lists stay
   // disjoint and every summary key is a real row, so the view's grouping can never silently point
   // at a key that doesn't exist or double-count a row as both a component and a summary.
+  //
+  // Narrowed same day (owner follow-up): "remove shading from Base Food, Disc Coupon and Total
+  // Food Cost. This will help the stores focus on only what they are tasked or charged to
+  // deliver." Base Food % and Disc Coupon % aren't store-controllable the way the other legs are,
+  // and FOB Target % (w/o Disc Coupon) exists specifically to exclude Disc Coupon from what a
+  // store is held to -- shading it back in would visually contradict that. Total Food Cost %
+  // (which includes both excluded legs) is no longer a "summary" row either; FOB Target % alone is.
   it('FOB_COMPONENT_KEYS and FOB_SUMMARY_KEYS are disjoint and every key is a real monthly-tab row', () => {
     const rowKeys = new Set(MONTHLY_TARGET_METRICS.map(m => m.key));
     for (const k of FOB_COMPONENT_KEYS) expect(rowKeys.has(k)).toBe(true);
     for (const k of FOB_SUMMARY_KEYS) expect(rowKeys.has(k)).toBe(true);
     const overlap = FOB_COMPONENT_KEYS.filter(k => FOB_SUMMARY_KEYS.includes(k));
     expect(overlap).toEqual([]);
-    expect(FOB_COMPONENT_KEYS).toEqual(['baseFoodPct', 'discCouponPct', 'compWastePct', 'rawWastePct', 'condimentPct', 'empFoodPct', 'statLossPct', 'unexDiffPct']);
+    expect(FOB_COMPONENT_KEYS).toEqual(['compWastePct', 'rawWastePct', 'condimentPct', 'empFoodPct', 'statLossPct', 'unexDiffPct']);
+    expect(FOB_SUMMARY_KEYS).toEqual(['fobTargetPct']);
+    expect(FOB_COMPONENT_KEYS).not.toContain('baseFoodPct');
+    expect(FOB_COMPONENT_KEYS).not.toContain('discCouponPct');
+    expect(FOB_SUMMARY_KEYS).not.toContain('totalFoodCostPct');
   });
 });
 
