@@ -353,7 +353,7 @@ const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, loadLaborAnalysisDaily, loadLaborExceptionsDaily, mergeFreshRowsByLocDate, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1740,6 +1740,41 @@ function App() {
         const supplemented=supplementLaborWithSched(merged,prev.qsrActSummaryRows);
         if(supplemented===merged&&!fresh.length) return prev;
         return {...prev, laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
+      });
+    }).catch(()=>{});
+    // Labor Analysis / Labor Exceptions (emailed QSRSoft reports, scripts/qsrsoft-email-parse.mjs)
+    // — owner request 2026-11-16 ("go ahead and wire it in its own careful pass"). Deliberately a
+    // SEPARATE effect from the loadLaborRows merge just above (not folded into its .then()), so
+    // this can be reviewed/reverted independently of that already-live, already-documented-
+    // race-condition-prone merge. Same additive semantics: existing rows (manual upload, or the
+    // thin labor_rows table merged above) ALWAYS win on a (loc, date) key already present;
+    // labor_analysis_daily only fills genuinely uncovered days. _mapLaborAnalysisRow (lib/
+    // supabase.js) already shapes each row identically to parseLaborData()'s manual-upload
+    // output, so a merged-in row is indistinguishable to any consumer from a manually uploaded one.
+    loadLaborAnalysisDaily().then(sbRows=>{
+      if(!sbRows||!sbRows.length) return;
+      const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+      setDs(prev=>{
+        if(!prev) return prev;
+        const {fresh,merged}=mergeFreshRowsByLocDate(prev.laborRows,sbRows);
+        if(!fresh.length) return prev;
+        const sorted=[...merged].sort((a,b)=>{
+          const da=a.date instanceof Date?a.date:new Date(a.date+'T00:00:00');
+          const db=b.date instanceof Date?b.date:new Date(b.date+'T00:00:00');
+          return da-db;
+        });
+        console.log(`[labor_analysis_daily] merged ${fresh.length} rows from Supabase`);
+        return {...prev, laborRows:sorted, laborIdx:_mkIdx(sorted), laborByLoc:bLocIdx(sorted), storeIds:[...new Set(sorted.map(r=>r.loc))].sort()};
+      });
+    }).catch(()=>{});
+    loadLaborExceptionsDaily().then(sbRows=>{
+      if(!sbRows||!sbRows.length) return;
+      setDs(prev=>{
+        if(!prev) return prev;
+        const {fresh,merged}=mergeFreshRowsByLocDate(prev.exceptionRows,sbRows);
+        if(!fresh.length) return prev;
+        console.log(`[labor_exceptions_daily] merged ${fresh.length} rows from Supabase`);
+        return {...prev, exceptionRows:merged};
       });
     }).catch(()=>{});
     // New Store Launch Plan (memory/project-new-store-launch-planner.md) -- feeds forecast.js's

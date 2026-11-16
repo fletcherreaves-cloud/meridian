@@ -55,8 +55,18 @@ const ymd = (d) => { const dt = d instanceof Date ? d : new Date(d); return isNa
 // Extract a YYYY-MM-DD hint from a filename/path (QSRSoft names embed the date)
 const dateHintFrom = (s) => { const m = String(s || '').match(/(\d{4}-\d{2}-\d{2})/); return m ? new Date(m[1] + 'T12:00:00Z') : new Date(); };
 const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(v)) ? null : v;
-// camelCase -> snake_case (ageOfReport -> age_of_report)
-const toSnake = (k) => k.replace(/([A-Z])/g, '_$1').toLowerCase();
+// camelCase -> snake_case (ageOfReport -> age_of_report). Matches on a lowercase/digit followed
+// by an uppercase letter, NOT on every uppercase letter — the latter (an earlier version of this
+// function) split consecutive capitals apart (mopGC -> mop_g_c, actualGC -> actual_g_c), which
+// don't match this table's real columns (mop_gc, actual_gc — see schema-labor-analysis-exceptions-
+// email.sql) and made every upsert carrying one of those 9 "...GC" fields fail outright with a
+// 42703 unknown-column error (caught by src/__tests__/labor-analysis-exceptions-ds-merge.test.js,
+// which maps real schema column names back and checks the round trip — not caught by any earlier
+// test because nothing had yet exercised this against the real column list). One field,
+// salesVsLYPct, still can't resolve generically ("LY" is an acronym immediately followed by
+// another capitalized word, "Pct") — handled with an explicit override below.
+const _SNAKE_OVERRIDES = { salesVsLYPct: 'sales_vs_ly_pct' };
+export const toSnake = (k) => _SNAKE_OVERRIDES[k] || k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 // Builds a DB row by snake-casing exactly `keys` from the parser's camelCase output — an
 // explicit allow-list (not a blind spread) so an unexpected/renamed parser field is silently
 // dropped rather than silently reaching a column that doesn't exist, while still avoiding the
@@ -78,7 +88,7 @@ function xlTimeToHHMM(v) {
   return `${hh}:${mm}`;
 }
 
-const LABOR_ANALYSIS_FIELDS = [
+export const LABOR_ANALYSIS_FIELDS = [
   'sales','allNetSales','projSales','gc','actualGC','oppCostPct','oppCostDollar','avgCheck',
   'tpph','spph','actVsNeed','punchLaborPct','crewLaborPct','totalLaborPct','otHrs','otDollar',
   'actHrs','avgRate','salaryMgrHrs','fixedContractHrs','fixedSchedHrs','variableNeeded',
@@ -88,10 +98,10 @@ const LABOR_ANALYSIS_FIELDS = [
   'kioskSales','kioskGC','kioskAvgChk','kioskPctTotal','eatInSales','eatInGC',
   'inStoreSales','inStoreGC','inStorePctTotal','fcSales','fcGC','fcPctTotal',
 ];
-function mapLaborAnalysis(r) {
+export function mapLaborAnalysis(r) {
   return { loc: normLoc(r.loc), date: ymd(r.date), ...pickSnake(r, LABOR_ANALYSIS_FIELDS), updated_at: new Date().toISOString() };
 }
-function mapLaborExceptions(r) {
+export function mapLaborExceptions(r) {
   return {
     loc: normLoc(r.loc), date: ymd(r.date),
     total_exceptions: r.totalExceptions ?? 0, missed_breaks: r.missedBreaks ?? 0,
@@ -296,4 +306,10 @@ async function main() {
   if (failed) console.warn(`⚠ ${failed} of ${pending.length} report(s) failed (partial run).`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+// Guarded (precedent: scripts/qsrsoft-security-events-pull.mjs and others) so toSnake/pickSnake/
+// mapLaborAnalysis can be imported and unit-tested without running the real pull against
+// Supabase — see src/__tests__/labor-analysis-exceptions-ds-merge.test.js's write-side mapping
+// test, added alongside the toSnake GC/LY column-name fix above.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}

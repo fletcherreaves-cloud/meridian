@@ -433,6 +433,80 @@ data, turnover/roster, store config, or intraday/quarter-hour granularity. Those
 adding that report type, or a direct resolution with QSRSoft, not anything sitting unused in the
 owner's inbox.
 
+## ✅ 2026-11-16 (same day, later still) — ds.laborRows/ds.exceptionRows merge wiring + a real bug caught before it compounded
+
+The deferred follow-on named above ("Not merged into `ds.laborRows`/`ds.exceptionRows`... deserves
+a dedicated, careful pass") is now done, per the owner's explicit instruction once the three new
+tables existed: *"Go ahead and wire it in its own careful pass."*
+
+**What shipped:**
+- `src/lib/supabase.js` gained `loadLaborAnalysisDaily(daysBack=400)` and
+  `loadLaborExceptionsDaily(daysBack=400)`, each mapping the real snake_case DB columns back to
+  EXACTLY `parseLaborData()`/`parseLaborExceptions()`'s own camelCase output shape — a row from
+  either source is indistinguishable to any `ds.laborRows`/`ds.exceptionRows` consumer.
+- `src/app/App.js` merges both at startup, in their own effects placed right after the
+  pre-existing `loadLaborRows().then(...)` merge (deliberately separate, so this new wiring can
+  be reviewed/reverted independently of that older, already-documented-race-condition-prone
+  merge). Same additive-by-`(loc,date)` semantics: an existing row (manual upload, or the thinner
+  `labor_rows` table merged just above it) always wins on a day already covered; the new tables
+  only fill genuinely uncovered days.
+- That merge step is pulled out into one shared, exported, directly tested function —
+  `mergeFreshRowsByLocDate(existingRows, freshRows)` in `supabase.js` — rather than duplicated
+  inline in both effects, and both App.js call sites now just call it.
+- `src/__tests__/labor-analysis-exceptions-ds-merge.test.js` — field-mapping correctness for both
+  new loaders (built from a realistic row shaped like the real schema, checked field-by-field
+  across the full width of the table, not just the first few columns) and direct unit tests of
+  `mergeFreshRowsByLocDate`'s additive-wins-existing semantics.
+
+**A real, live bug was caught while writing that test — not a hypothetical.** The test asserted
+the loader's output against a fixture built from the ACTUAL schema column names
+(`supabase/schema-labor-analysis-exceptions-email.sql`), and the first run failed:
+`row.mopGC` came back `null` instead of the fixture's `180`.
+
+Root cause: both the new read-side mapper and the write-side `scripts/qsrsoft-email-parse.mjs`
+(shipped earlier today, v5.804) derive each DB column name from `LABOR_ANALYSIS_FIELDS`' camelCase
+names via a `toSnake()` transform —
+```js
+const toSnake = (k) => k.replace(/([A-Z])/g, '_$1').toLowerCase();
+```
+— which inserts an underscore before **every** uppercase letter, splitting consecutive capitals
+apart: `mopGC` → `mop_g_c`, `actualGC` → `actual_g_c`, `dtGC` → `dt_g_c`, and six more of the same
+shape (`bfGC`, `delivGC`, `kioskGC`, `eatInGC`, `inStoreGC`, `fcGC`) — **9 fields total**. None of
+those match the real columns (`mop_gc`, `actual_gc`, `dt_gc`, …). A tenth field, `salesVsLYPct`,
+has a different failure mode: the acronym `LY` immediately followed by another capitalized word
+(`Pct`) can't be split correctly by any generic capital-boundary regex at all (`sales_vs_lypct`
+vs. the real `sales_vs_ly_pct`).
+
+**Blast radius: this is not a cosmetic read-side-only bug.** The write-side script
+(`scripts/qsrsoft-email-parse.mjs`, already live and scheduled 1pm/4pm CT since v5.804 — today)
+uses the identical broken `toSnake`, so `mapLaborAnalysis()` has been building upsert payloads
+keyed by invented column names (`mop_g_c`, `actual_g_c`, etc.) that don't exist in
+`labor_analysis_daily`. PostgREST rejects an upsert containing an unknown column outright
+(`42703`), and `upsertRows()`'s own error handling (`console.error(...); continue;`) means that
+failure has been **silent except to the script's own console output** — exactly the "quiet
+no-op, not a success" failure shape this same script's own guard comment already warns about one
+layer up (the whole-batch-upserted-zero check), except this failure mode is per-row-shape, not
+per-batch, so it wasn't caught by that guard. Whether any `labor_analysis_daily` row has
+successfully upserted since v5.804 depends on whether the 1pm/4pm CT run has fired yet today —
+**worth checking the Action's own log output once it has**, since every run since v5.804 would
+carry this bug.
+
+**Fix:** switched both files' `toSnake` to match on a lowercase/digit immediately followed by an
+uppercase letter (`/([a-z0-9])([A-Z])/g`), which correctly treats a run of consecutive capitals as
+one unit (verified against the full real column list in node before shipping — this matches
+52 of 53 fields), plus one explicit override object (`{ salesVsLYPct: 'sales_vs_ly_pct' }`) for the
+one acronym case no generic transform resolves. `scripts/qsrsoft-email-parse.mjs`'s `main()` is
+now guarded behind the same `import.meta.url === \`file://${process.argv[1]}\`` pattern already
+used by `qsrsoft-security-events-pull.mjs` and others, and `toSnake`/`LABOR_ANALYSIS_FIELDS`/
+`mapLaborAnalysis`/`mapLaborExceptions` are now exported — purely so this exact bug class is
+unit-testable against the real schema going forward, with zero behavior change to how the script
+runs for real.
+
+This is the "measure it, don't reason about it" rule paying for itself directly: the two sides
+agreeing with each other (both derived the same wrong column name) would have looked like
+confirmation if the test had only compared the read side's output to the write side's own
+field list, instead of to the actual DDL.
+
 ## Draft response letter
 
 A draft reply to Michael Henkel is saved at `memory/draft-letter-qsrsoft-response-2026-11-16.md`
