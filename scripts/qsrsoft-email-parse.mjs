@@ -19,7 +19,7 @@ import * as XLSX from 'xlsx';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { parseSalesLedger, parseDailyGlimpse, parseCashSheet, ensureParsersXLSXReady } from '../src/parsers/index.js';
+import { parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborData, parseLaborExceptions, parseLaborExceptionsDetail, ensureParsersXLSXReady } from '../src/parsers/index.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT  = join(__dir, '..');
@@ -55,12 +55,73 @@ const ymd = (d) => { const dt = d instanceof Date ? d : new Date(d); return isNa
 // Extract a YYYY-MM-DD hint from a filename/path (QSRSoft names embed the date)
 const dateHintFrom = (s) => { const m = String(s || '').match(/(\d{4}-\d{2}-\d{2})/); return m ? new Date(m[1] + 'T12:00:00Z') : new Date(); };
 const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(v)) ? null : v;
+// camelCase -> snake_case (ageOfReport -> age_of_report)
+const toSnake = (k) => k.replace(/([A-Z])/g, '_$1').toLowerCase();
+// Builds a DB row by snake-casing exactly `keys` from the parser's camelCase output — an
+// explicit allow-list (not a blind spread) so an unexpected/renamed parser field is silently
+// dropped rather than silently reaching a column that doesn't exist, while still avoiding the
+// hand-transcription risk mapGlimpse's own comment warns about (a field present in the parser
+// output but forgotten from a hand-written map silently never reaches Supabase).
+function pickSnake(r, keys) {
+  const out = {};
+  for (const k of keys) out[toSnake(k)] = num(r[k] ?? null);
+  return out;
+}
+// Excel time-of-day serial fraction (0-1, where 1 = 24h) -> "HH:MM", for the handful of
+// labor-exceptions-detail fields that arrive as Excel time serials (see parseLaborExceptionsDetail's
+// own header comment on why). null-safe; a non-numeric input (already a string, or absent) passes through.
+function xlTimeToHHMM(v) {
+  if (v === null || v === undefined || typeof v !== 'number') return v ?? null;
+  const totalMin = Math.round(v * 24 * 60);
+  const hh = String(Math.floor(totalMin / 60) % 24).padStart(2, '0');
+  const mm = String(totalMin % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const LABOR_ANALYSIS_FIELDS = [
+  'sales','allNetSales','projSales','gc','actualGC','oppCostPct','oppCostDollar','avgCheck',
+  'tpph','spph','actVsNeed','punchLaborPct','crewLaborPct','totalLaborPct','otHrs','otDollar',
+  'actHrs','avgRate','salaryMgrHrs','fixedContractHrs','fixedSchedHrs','variableNeeded',
+  'floorMgmtNeeded','floorHrsSched','salesVsLYPct',
+  'dtSales','dtGC','dtAvgChk','dtPctTotal','bfSales','bfGC','bfAvgChk','bfPctTotal',
+  'delivSales','delivGC','delivAvgChk','delivPctTotal','mopSales','mopGC','mopAvgChk','mopPctTotal',
+  'kioskSales','kioskGC','kioskAvgChk','kioskPctTotal','eatInSales','eatInGC',
+  'inStoreSales','inStoreGC','inStorePctTotal','fcSales','fcGC','fcPctTotal',
+];
+function mapLaborAnalysis(r) {
+  return { loc: normLoc(r.loc), date: ymd(r.date), ...pickSnake(r, LABOR_ANALYSIS_FIELDS), updated_at: new Date().toISOString() };
+}
+function mapLaborExceptions(r) {
+  return {
+    loc: normLoc(r.loc), date: ymd(r.date),
+    total_exceptions: r.totalExceptions ?? 0, missed_breaks: r.missedBreaks ?? 0,
+    early_out: r.earlyOut ?? 0, late_in: r.lateIn ?? 0,
+    ot_exceptions: r.otExceptions ?? 0, minor_exceptions: r.minorExceptions ?? 0,
+    updated_at: new Date().toISOString(),
+  };
+}
+function mapLaborExceptionsDetail(r) {
+  return {
+    loc: normLoc(r.loc), date: ymd(r.date), geid: r.geid, employee: r.employee || null,
+    exception: r.exception, exception_time: r.exceptionTime ? new Date(r.exceptionTime).toISOString() : null,
+    is_manager_authorized: r.isManagerAuthorized,
+    act_start: xlTimeToHHMM(r.actStart), act_end: xlTimeToHHMM(r.actEnd),
+    sch_start: xlTimeToHHMM(r.schStart), sch_end: xlTimeToHHMM(r.schEnd),
+    shift_length: xlTimeToHHMM(r.shiftLength),
+    updated_at: new Date().toISOString(),
+  };
+}
 
 // report_type (from pending_reports / ingest-report detectReportType) → handler
 const HANDLERS = {
   'sales-ledger':  { table: 'sales_ledger_daily',  parse: (wb, fn) => parseSalesLedger(wb, fn),              map: mapSalesLedger },
   'daily-glimpse': { table: 'daily_glimpse_daily',  parse: (wb, fn) => parseDailyGlimpse(wb, dateHintFrom(fn)), map: mapGlimpse },
   'cash-sheet':    { table: 'cash_sheet_daily',      parse: (wb, fn) => parseCashSheet(wb, fn),                 map: mapCashSheet },
+  // Added 2026-11-16 (QSRSoft Operator Security Notice compliance triage) — these 2 report
+  // types were already arriving (ingest-report's detectReportType already classified them) but
+  // never parsed. See memory/finding-qsrsoft-security-notice-2026-11-16.md.
+  'labor':            { table: 'labor_analysis_daily', parse: (wb, fn) => parseLaborData(wb, undefined, dateHintFrom(fn)), map: mapLaborAnalysis },
+  'labor-exceptions': { table: 'labor_exceptions_daily', parse: (wb, fn) => parseLaborExceptions(wb, fn),     map: mapLaborExceptions },
 };
 
 function mapSalesLedger(r) {
@@ -123,14 +184,14 @@ function mapCashSheet(r) {
   };
 }
 
-async function upsertRows(table, rows) {
+async function upsertRows(table, rows, onConflict = 'loc,date') {
   const clean = rows.filter(r => r.loc && r.date);
   if (!clean.length) return 0;
   const BATCH = 500;
   let total = 0;
   for (let i = 0; i < clean.length; i += BATCH) {
     const slice = clean.slice(i, i + BATCH);
-    const { error } = await sb.from(table).upsert(slice, { onConflict: 'loc,date' });
+    const { error } = await sb.from(table).upsert(slice, { onConflict });
     if (error) { console.error(`  ✗ upsert ${table} batch ${i}: ${error.message}`); continue; }
     total += slice.length;
   }
@@ -185,8 +246,16 @@ async function main() {
     // as a single day — the root cause of the near-total glimpseRows/cashRows
     // cash O/S mismatch against qsr_cash_sheet found in dispatch #165's audit.
     // See memory/finding-cash-handling-discrepancy-2026-08-27.md.
-    if ((p.report_type === 'daily-glimpse' || p.report_type === 'cash-sheet') && /weekly|monthly/i.test(p.filename)) {
-      if (DEBUG) console.log(`  · skip rollup ${p.filename} (${p.report_type} has no per-row date column)`);
+    // Added 2026-11-16 (same compliance triage): 'labor' and 'labor-exceptions' have the
+    // SAME daily/weekly/monthly scheduling options as the 3 streams above (confirmed live —
+    // the owner's own Scheduled Reports admin page lists all 5 report types with the same
+    // frequency choices), and no real sample of their weekly/monthly variant has been checked
+    // for a per-row date column. Skip preventively rather than risk the identical dispatch
+    // #172 corruption (a week's total silently mislabeled as one day) — a skipped rollup just
+    // waits for the next daily file to naturally fill that date; a wrongly-trusted one would
+    // silently corrupt it. Narrow this once a real weekly/monthly sample is actually checked.
+    if (['daily-glimpse', 'cash-sheet', 'labor', 'labor-exceptions'].includes(p.report_type) && /weekly|monthly/i.test(p.filename)) {
+      if (DEBUG) console.log(`  · skip rollup ${p.filename} (${p.report_type} has no confirmed per-row date column)`);
       continue;
     }
     try {
@@ -199,6 +268,15 @@ async function main() {
       const n = await upsertRows(h.table, rows);
       summary[h.table] = (summary[h.table] || 0) + n;
       if (DEBUG) console.log(`  ✓ ${p.filename} → ${h.table}: ${n} row(s)`);
+      // labor-exceptions additionally writes the per-employee compliance detail (GEID,
+      // manager-authorization flag, etc.) that the aggregate above necessarily discards —
+      // from the SAME downloaded file, no second download.
+      if (p.report_type === 'labor-exceptions') {
+        const detailRows = (parseLaborExceptionsDetail(wb, p.filename) || []).map(mapLaborExceptionsDetail);
+        const dn = await upsertRows('labor_exceptions_detail_daily', detailRows, 'loc,geid,date,exception,exception_time');
+        summary.labor_exceptions_detail_daily = (summary.labor_exceptions_detail_daily || 0) + dn;
+        if (DEBUG) console.log(`  ✓ ${p.filename} → labor_exceptions_detail_daily: ${dn} row(s)`);
+      }
     } catch (e) {
       failed++;
       console.error(`  ✗ ${p.filename} (${p.report_type}): ${e.message}`);

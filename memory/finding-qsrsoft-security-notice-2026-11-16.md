@@ -314,6 +314,96 @@ concept. Waiting on the owner for: (1) whether more reports are scheduled below 
 screenshot showed, (2) a sample of the actual Labor Analysis / Labor Exceptions email content so
 a parser can be built against the real shape, not a guess.
 
+## ✅ 2026-11-16 (same day, later still) — Labor Analysis + Labor Exceptions email parsing shipped
+
+Fletcher forwarded real samples (`labor_analysis_daily_2026-11-15.csv`,
+`labor_exceptions_daily_2026-11-15.csv`) from his own QSRSoft Scheduled Reports admin page,
+which also confirmed 5 reports are already scheduled to email daily: Cash Sheet Extract, Daily
+Glimpse, Labor Analysis, Labor Exceptions, Sales Ledger. Only the first 3 were parsed by
+`scripts/qsrsoft-email-parse.mjs`. Investigation found:
+
+- **`ingest-report`'s `detectReportType` (Edge Function) already classifies both filenames
+  correctly** (`'labor'`, `'labor-exceptions'`) — these reports have likely been arriving and
+  sitting in `pending_reports`/the `qsr-reports` bucket for a while already, just never parsed.
+  This was the only missing step, not a new data source or any new QSRSoft access.
+- **`parseLaborData()` (src/parsers/index.js) — already built, unchanged — matches the real
+  "Labor Analysis" CSV field-for-field** (TPPH, SPPH, Act-vs-Need, Opportunity Cost $, OT Hrs/$,
+  Crew/Punch/Total Labor %, full channel-sales split). It was previously only reachable via
+  manual upload (`type:'labor'` in `pipeline.js` → `ds.laborRows`); the SAME parser is now also
+  called server-side on the emailed file, writing to a new table, zero drift.
+- **`parseLaborExceptions()` was a real, latent bug — never exercised against a real file.** It
+  assumed a per-location summary shape with count-per-type columns ("Total Exceptions",
+  "Missed Break", ...). The real emailed file is a PER-EMPLOYEE PER-EXCEPTION detail feed
+  (Loc, GEID, Employee, Act/Sch Start/End, Exception, Exception Time, Is Manager Authorized,
+  Punches 1-6) — the old function's column-name vocabulary turns out to be the real `Exception`
+  field's VALUES, not separate columns. Fixed to parse the real shape and aggregate into the
+  exact same (loc,date) summary field names `src/engine/insights.js`'s
+  `joinDaily(exceptionRows,'totalExceptions',laborRows,'otHrs')` correlation signal and
+  `analytics.js`'s coverage checker already expect — this activates that dormant signal (once a
+  follow-on ds-merge wiring lands, see below) rather than requiring their own edit. A second
+  function, `parseLaborExceptionsDetail`, preserves the per-employee compliance detail (above
+  all the **Is Manager Authorized** flag) the aggregate necessarily discards.
+- **A second real bug found and fixed while building this**: `parseXLDate`'s numeric branch
+  assumes every numeric input is a pure DATE serial and unconditionally adds +12h to anchor it
+  to noon for timezone-safe display. `Exception Time` arrives as an Excel DATETIME serial
+  (confirmed live: `raw:true` still yields a fractional serial like `46341.41667`, not a
+  string) — applying that same +12h shift to a value that already has a real time-of-day
+  silently flipped any exception at/after ~noon into the next calendar day (measured: a 13:00
+  exception time became the next day's date). Fixed with a **narrow, dedicated**
+  `parseExceptionTimestamp()` used only by the two labor-exceptions functions — `parseXLDate`
+  itself is untouched, since many other parsers in this file correctly rely on its existing
+  pure-date behavior.
+
+**Shipped:**
+- `supabase/schema-labor-analysis-exceptions-email.sql` — 3 new tables: `labor_analysis_daily`
+  (full `parseLaborData` output, ~50 columns), `labor_exceptions_daily` (aggregate, matches
+  `ds.exceptionRows`' existing field shape), `labor_exceptions_detail_daily` (per-employee,
+  including the manager-authorization flag). Same tenant_id + `ltrim(loc,'0')` RLS pattern as
+  every sibling emailed-report table (`sales_ledger_daily` etc.) — copied the canonical
+  predicate from `schema-rls-phase2-loc.sql` exactly rather than inventing a variant.
+- `scripts/qsrsoft-email-parse.mjs` — two new `HANDLERS` entries (`'labor'`, `'labor-exceptions'`),
+  plus the detail-table write for `'labor-exceptions'` from the same downloaded file (no second
+  download). The existing weekly/monthly-rollup skip-guard (dispatch #172's lesson) is extended
+  to cover both new report types preventively — their weekly/monthly variant has NOT been
+  checked for a real per-row date column yet, and skipping a rollup only delays that date by
+  one day (the next daily file fills it); trusting a wrongly-shaped rollup risks silently
+  corrupting a whole week onto one day, exactly #172's original incident.
+- `src/__tests__/labor-exceptions-real-shape.test.js` — built from the real file's exact header
+  and two real data rows (not an invented fixture), including a regression test for the
+  `parseExceptionTimestamp` date-flip bug.
+- A generic `camelCase→snake_case` allow-list mapper (`pickSnake`) in the email-parse script for
+  `labor_analysis_daily`'s ~50 fields, rather than hand-transcribing each one — the exact
+  "forgot to list a field" risk `mapGlimpse`'s own pre-existing comment already documents as
+  having happened once.
+
+**Deliberately NOT done this pass (named follow-on, not forgotten):**
+- **Not merged into `ds.laborRows`/`ds.exceptionRows`.** App.js's startup data-merge logic for
+  these two fields is live, already carries documented race-condition history (see its own
+  `loadLaborRows().then(...)` comment block), and deserves a dedicated, careful pass — ideally
+  with the owner's sign-off on the exact by-day-override-without-clobbering-older-manual-history
+  merge strategy, not rushed alongside everything else in this session. The 3 new tables are
+  populated starting with the next `qsrsoft-email-parse.yml` run (1pm/4pm CT, already scheduled,
+  no new workflow needed) and are queryable directly (Data Manager, SAGE, a future panel) even
+  before that wiring lands.
+- **Naming collision note, for whoever does that follow-on:** this codebase's existing
+  `src/views/labor-analysis.js`/`src/engine/labor-analysis.js`/"Labor Analysis" terminology is
+  the **LifeLenz** `labor_analysis_actuals_report` — unrelated vendor, unrelated data. QSRSoft's
+  own "Labor Analysis" report lives in `labor_analysis_daily` here, deliberately not named
+  anything containing a bare `labor_analysis` that could collide.
+- `labor_exceptions_detail_daily` has no panel reading it yet — a future Register
+  Audit/compliance-style panel is the natural home, not built here.
+
+**Owner's own framing, which also answered a question this session had been treating as open**
+(whether LifeLenz already covers the labor/OT gap enough to matter): *"LifeLenz may be
+perfectly fine to use for that data."* Confirmed: `lifelenz_payroll_readiness` already carries
+`overtime_hours`/`overtime_earnings` at the per-employee/per-shift grain (live, automated, a
+different vendor entirely — unaffected by any of this pause). That closes the pure OT-hours/
+OT-$ slice of the gap on its own. What QSRSoft's own Labor Analysis/Exceptions emails add on
+top, that LifeLenz does NOT have: the STORE-level staffing-efficiency metrics tied to QSRSoft's
+own "Need" model (TPPH, SPPH, Act-vs-Need, Opportunity Cost $ — the exact basis of the live
+`query_labor_summary` SAGE tool and Labor Tools panel content, now paused at the source) and the
+manager-authorization compliance flag on individual OT punches.
+
 ## Draft response letter
 
 A draft reply to Michael Henkel is saved at `memory/draft-letter-qsrsoft-response-2026-11-16.md`
