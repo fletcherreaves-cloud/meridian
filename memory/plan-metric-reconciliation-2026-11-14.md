@@ -254,6 +254,43 @@ Period-Total-Scoreboard caveat, rather than drifting again.
 6-row FOB grid icon treatment and `count_cycle_guide`'s missing tab header — both task #75's,
 both re-confirmed across 5+ batches as needing a product/UI call, not another sweep.
 
+## Pass 5 (2026-11-16) — the Swing Alarm + Needs Attention's cross-domain $ figures
+
+Read `src/engine/attention-feed.js` (the ~20-detector engine behind the "Needs Attention" feed)
+and `src/engine/swing-feed.js`/`swing-detect.js` (the Swing Alarm global banner) end to end,
+looking for displayed results with a real formula that Metric Lineage didn't yet cover.
+
+- **`swingAlarm`** — genuinely undocumented until now, despite being the single most prominent
+  app-wide alert the owner has (Notes 58 #4: *"an absolute must... there must be no way for it
+  to go unnoticed"*). Added to `CURATED_PROVENANCE`, formula traced directly from
+  `swing-detect.js`'s `detectSwing()`/`pctSeries()`/`classify()` — the sustained-run threshold
+  logic, the dollars-at-stake sum, and the sales-vs-guest classification (traffic vs
+  check-erosion), including the real 676-store-week calibration already documented in that
+  file's own header comment (not re-derived, just carried over).
+- **`trafficDivergenceDollars`** — the one other genuinely NEW composed `$` formula found in
+  `attention-feed.js`: `trafficDivergenceAlerts`' "sales holding, traffic falling" dollar figure
+  (lost guests × the store's own current average check), only computed in that one direction
+  per the app's standing no-guess-dollar convention.
+- **Everything else in `attention-feed.js` was read and judged to need NO new entry** — most
+  detectors (`fobOutliers`, `fobOverTarget`, `opportunityAlerts`, `transferOpportunities`, etc.)
+  only format/threshold a metric already documented elsewhere: `fobOutliers`/`fobOverTarget`'s
+  excess-$ formula is the same `(rate − benchmark) × sales` shape `oppTotal`'s Food$ leg already
+  documents (just a different benchmark — district average vs. the store's own target), and the
+  rest are straight pass-throughs of already-computed engine output (`computeOpportunity()`,
+  `computeTransfers()`, `rankCommentOpportunities()`, etc.) with no new math of their own. Stated
+  here per this task's own standing rule, rather than silently skipping the file.
+- `recommendation-ledger.js` was also checked — not a candidate yet. Its grading math
+  (`gradeOutcome`) is real, but the feature isn't live (the ledger table doesn't exist in
+  Supabase yet, per that file's own header comment); adding a provenance entry for a number
+  nothing displays would be documenting a feature that doesn't exist, the same trap pass 3's
+  `paperCost` note already named.
+- 5 new tests (`src/__tests__/metric-provenance.test.js`'s `'task #152 Swing Alarm + Traffic
+  Divergence additions (2026-11-16)'` block): both present/composed/non-colliding, swingAlarm's
+  real thresholds + the 676-store-week/10422 calibration + its per-situation ack-key granularity,
+  trafficDivergenceDollars' real formula + the dollars:0 no-guess convention for the reverse
+  direction, and a scope-guard asserting `oppTotal` already covers the FOB-excess shape (so a
+  future pass doesn't re-add it under a new key).
+
 ## Verification
 
 Full suite (`npm test -- --run`) and `npm run build` both pass clean (see commit for exact

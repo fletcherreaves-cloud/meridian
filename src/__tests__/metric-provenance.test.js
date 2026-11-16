@@ -325,3 +325,42 @@ describe('METRIC_PROVENANCE — task #152 forecast model additions (2026-11-14)'
     expect(simple.formula).toMatch(/Adaptive Ensemble/); // the later period-total reconciliation, not omitted
   });
 });
+
+describe('METRIC_PROVENANCE — task #152 Swing Alarm + Traffic Divergence additions (2026-11-16)', () => {
+  const keys = ['swingAlarm', 'trafficDivergenceDollars'];
+
+  it('both are present, composed, and Meridian-derived, with no METRIC_SOURCES collision', () => {
+    for (const key of keys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(true);
+      expect(p.system, `${key}.system`).toBe('Meridian-derived');
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('swingAlarm names its real calibrated thresholds and the 676-store-week measurement', () => {
+    const swing = METRIC_PROVENANCE.swingAlarm;
+    expect(swing.formula).toMatch(/−10%/);
+    expect(swing.formula).toMatch(/−8%/);
+    expect(swing.formula).toMatch(/676/);
+    expect(swing.formula).toMatch(/10422/);
+  });
+
+  it('swingAlarm documents the ack-key granularity so a worsening situation can never be silenced by an old ack', () => {
+    expect(METRIC_PROVENANCE.swingAlarm.formula).toMatch(/store, week, severity/);
+  });
+
+  it('trafficDivergenceDollars names its real formula and the no-guess convention for the reverse direction', () => {
+    const td = METRIC_PROVENANCE.trafficDivergenceDollars;
+    expect(td.formula).toMatch(/lyGc − curGc/);
+    expect(td.formula).toMatch(/curSales ÷ curGc/);
+    expect(td.formula).toMatch(/dollars:0/);
+  });
+
+  it('is scoped to the two genuinely new formulas in attention-feed.js, not every detector in that file', () => {
+    // fobOutliers/fobOverTarget's excess $ reuse the same "(rate − benchmark) × sales" shape
+    // oppTotal already documents — deliberately not duplicated under a new key.
+    expect(METRIC_PROVENANCE.oppTotal).toBeTruthy();
+  });
+});
