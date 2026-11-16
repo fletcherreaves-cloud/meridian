@@ -15,10 +15,10 @@ const mkEntry = (over = {}) => ({
 });
 
 describe('CATALOG_TYPE_GROUPS', () => {
-  it('covers exactly the 15 real equipment_catalog types, no duplicates', () => {
+  it('covers exactly the 23 real equipment_catalog types, no duplicates', () => {
     const ids = CATALOG_TYPE_GROUPS.flatMap(g => g.types.map(t => t.id));
-    expect(ids.length).toBe(15);
-    expect(new Set(ids).size).toBe(15);
+    expect(ids.length).toBe(23);
+    expect(new Set(ids).size).toBe(23);
   });
 });
 
