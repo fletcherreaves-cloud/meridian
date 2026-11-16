@@ -7,6 +7,7 @@ import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 import { computeErrorFingerprint } from '../engine/error-telemetry.js';
 import { buildAppNotification } from '../engine/app-notifications.js';
 import { ownerNotificationTargets } from '../engine/panel-ownership.js';
+import { ALL_DAYPART_HOUR_SLOTS } from '../engine/daypart-peaks.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -2848,6 +2849,28 @@ export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
     .order('hour_slot');
   if (error) { console.error('loadDailyActivity:', error); return []; }
   return data || [];
+}
+
+// ── Daypart (3 Peaks) activity — auto-first replacement for the manual peaks_rows upload ──
+// Dispatch 2026-11-16: the "3 Peaks × Labor Gap" section (Shift Analysis tab) read a manual
+// Excel upload (peaks_rows) that measured 4.5 months stale with TPPH never once non-zero in it.
+// qsr_daily_activity is hourly and already pulled daily — this reads ONLY the specific hour_slots
+// the three fixed daypart windows need (src/engine/daypart-peaks.js's DAYPART_HOUR_SLOTS: 7 of
+// the 24 hour_slots/day), not the full hourly table, so the volume stays small (~7/24 of a normal
+// full-day hourly pull) despite spanning a multi-week trailing window.
+export async function loadDaypartActivity(daysBack = 60) {
+  if (!supabase) return [];
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return _pagedParallel({
+    table: 'qsr_daily_activity',
+    select: 'loc,dt,hour_slot,product_sales,transactions,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,dt_carsheld,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,actual_punched_hours',
+    gteCol: 'dt', gteVal: cutoffStr,
+    inCol: 'hour_slot', inVals: ALL_DAYPART_HOUR_SLOTS,
+    orderCol: 'dt', ascending: false,
+    label: 'daypart activity (3 Peaks auto)',
+  });
 }
 
 export async function loadDailyActivityRange(startDate, endDate) {

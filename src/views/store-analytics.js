@@ -7,7 +7,7 @@ import { analyzeRegisterAudit, registerTypeBreakdown, computeTargetAwareRegister
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { computeOepeDollarGap, computeDaypartErosion, computeParkOptimization } from '../engine/revenue-opportunity.js';
-import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
+import { OpsBarChart, CompareRadarChart, CompareLineChart, autoFirstPeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
 import { LocationIntelligence, liComputeAll, liBuildRoadmap } from '../features/location-intel.js';
@@ -143,8 +143,15 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   }
   const dowMean=(bucket,d)=>{const v=bucket[d];return v&&v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
   const dowN   =(bucket,d)=>(bucket[d]?bucket[d].length:0);
-  const hasPeaks  = ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr);
-  const peaksData = hasPeaks ? analyzePeaks(ds.peaksSvcRows,ds.peaksSalesRows,loc,wb) : null;
+  // Auto-first (dispatch 2026-11-16): prefer the auto-derived daypart activity
+  // (ds.daypartActivityRows, from the already-pulled hourly qsr_daily_activity stream) over the
+  // manual "3 Peaks" upload — see store-dash.js's autoFirstPeaks for why (the manual upload
+  // measured 4.5 months stale with TPPH never once resolving). hasPeaks now also covers the auto
+  // stream so the section no longer silently disappears for a store with fresh auto data but no
+  // manual upload history at all.
+  const hasPeaks  = !!(ds&&((ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr))
+    || (ds.daypartActivityRows&&ds.daypartActivityRows.some(r=>String(r.loc||'').trim()===locStr))));
+  const peaksData = hasPeaks ? autoFirstPeaks(ds,loc,wb) : null;
   const _wkdayVals = [1,2,3,4,5].flatMap(d=>dowMetric.sales[d]||[]);
   const _wkndVals  = [0,6].flatMap(d=>dowMetric.sales[d]||[]);
   const avgDay    = _wkdayVals.length ? _wkdayVals.reduce((a,b)=>a+b,0)/_wkdayVals.length : 0;
