@@ -94,6 +94,28 @@ scripts/               — lifelenz-pull.mjs, qsrsoft-ebos-pull.mjs, qsrsoft-dar
 
 **QSRSoft token:** ⚠️ **Do NOT rotate `QSRSOFT_TOKEN` — it cannot work as a stored secret.** It is a Cognito ID token with a **~1h TTL**, so a value held in a GitHub Secret is expired ~23 of every 24 hours *by construction, no matter how often it is rotated* (#312, 2026-08-15). Every pull reading one falls through to its Playwright fallback every time — expected, not degradation. The fix is `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`, which mints one in-process per run (expiry-aware + reactive re-mint). ✅ **The migration is DONE — do not re-dispatch it** (dispatch #82; re-measured 2026-08-24: **19 scripts call `getFreshToken()`, and exactly one live `process.env.QSRSOFT_TOKEN` read remains**, in `scripts/qsrsoft-explore.mjs`, an ad-hoc probe that is in no workflow). This line previously read "5 scripts use it, 11 still read the dead secret — converting those is the open work"; that was true on 2026-08-23 and #82 closed it the next day. Note when re-measuring that a plain grep for `process.env.QSRSOFT_TOKEN` **undercounts** — `qsrsoft-inventory-history-pull.mjs` was affected only indirectly, through `scripts/lib/ebos-auth.mjs`'s `resolveEbosToken()`, and never appeared in #82's own file count. The obsolete refresh process, kept only because the value is still occasionally useful for a one-off manual probe within the hour: DevTools → Network → any `api.reports.myqsrsoft.com` or `v3.myqsrsoft.com` request → copy `X-Auth-Token` header → update GitHub Secret.
 
+**⚠️ QSRSoft Operator Security Notice (2026-11-16) — standing compliance context, read before
+touching any `qsrsoft-*.mjs` script.** QSRSoft sent a formal letter stating they actively block
+AI-bot/credential-login scraping per their Subscriber Agreement (Section 1's "person"-only
+Service User definition, Section 2.1's internal-use-only license, no credential sharing).
+**All ~33 of Meridian's existing credential-login pull scripts use exactly that pattern and are
+DELIBERATELY RETAINED, untouched — owner decision, do not disable or migrate them wholesale**
+("I do not need to push this too hard and jeopardize losing access altogether"). What DID ship:
+a real OAuth2 connection to QSRSoft's new **Native MCP Server** (`https://mcp.myqsrsoft.com`),
+one of the letter's own sanctioned alternatives, pulling its only 2 exposed report types (Time
+Slice Summary, Service Time Statistics) into new parallel tables (`qsr_mcp_time_slice_summary`/
+`qsr_mcp_service_time_stats`) via `scripts/qsrsoft-mcp-pull.mjs` — **additive, not a
+replacement; nothing in the app reads these tables yet.** Auth is a rotating OAuth refresh
+token cached in Supabase (`qsr_mcp_token_cache`, service-role only — never a GitHub Secret,
+since the token invalidates itself on every use). Full audit, the MCP server's measured
+mechanics (its `structuredContent` carries no row data — only `content[0].text`'s CSV block
+does, in vendor display-label order, not the requested field order — a real trap this already
+caught once), the emailed-vs-MCP-vs-scraping-only gap analysis, and a draft (unsent) response
+letter to QSRSoft are all in `memory/finding-qsrsoft-security-notice-2026-11-16.md`. **Two
+things still needed before the MCP pull runs for real: the owner running
+`supabase/schema-qsrsoft-mcp-reports.sql`, and one more interactive OAuth consent round to mint
+a dedicated refresh token for the vault table** — see that memory file's own checklist.
+
 ---
 
 ## RBAC Roles (most → least access)
