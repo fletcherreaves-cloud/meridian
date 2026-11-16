@@ -47,10 +47,17 @@ few concrete things:
    completion, and product mix. Knowing what's coming — and roughly when — would let me plan a
    real migration instead of guessing.
 
-3. **Could you send me the full list of reports available for Scheduled delivery?** Your letter
-   mentions asking CoachQ directly, and I will, but I'd welcome a written list from your team
-   as well so I can plan around it properly — especially since Scheduled Reports (daily email)
-   would be a reasonable bridge for anything the MCP server doesn't cover yet.
+3. **I did ask CoachQ, per your letter's own suggestion, and got the full list: Sales Ledger,
+   Labor Analysis, Labor Exceptions, Cash Sheet, Daily Glimpse, Birthday/Anniversary, and Adyen
+   Adjustments.** That's genuinely useful — I've already built out parsing for Labor Analysis
+   and Labor Exceptions on my end since getting that list. Two gaps remain that I'd like to
+   formally request: **could eBOS/Purchases and Security Events be added to that schedulable
+   list?** Those are the two pieces of my business — inventory/ordering and register-level
+   loss-prevention — where I currently have no sanctioned automated path at all, and adding them
+   would let me retire the credential-based pulls covering that ground specifically. If a
+   scheduled email isn't feasible for either, I'd also take a bulk, multi-store export view (the
+   way Register Audit and the Operations Report already support exporting every location in one
+   file) — either would solve it.
 
 4. **I'd genuinely like a direct read from you on where my own setup stands.** My pulls are
    scheduled, read-only, and run under my own account for my own internal use — no data
@@ -90,3 +97,11 @@ Owner/Operator
 - I did not commit to a timeline, a full migration, or a specific technical change on your
   behalf anywhere in this letter — nothing here creates new obligations beyond what's already
   true (the MCP connection is live and item 1 just states that fact).
+- **Updated same day (owner, "push forward... update the original response letter to cover
+  additional report coverage"):** item 3 rewritten once the full Scheduled Reports catalog came
+  back from CoachQ (7 reports, confirmed — see
+  `memory/finding-qsrsoft-security-notice-2026-11-16.md`'s "the full Scheduled Reports catalog
+  is now known" section) — it used to just ask for the list; now it states what's on it, what
+  you already built against it (Labor Analysis/Exceptions), and makes the two specific asks
+  (schedule eBOS/Security Events, or failing that a bulk export) a formal part of this letter
+  rather than a separate side request. Still not sent — still entirely your call.
