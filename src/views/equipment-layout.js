@@ -40,7 +40,7 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
-// Display-only metadata for the 27 catalog TYPES (icon + grouping) — the real manufacturer/model
+// Display-only metadata for the 34 catalog TYPES (icon + grouping) — the real manufacturer/model
 // rows for each type come live from equipment_catalog; this is just the palette's visual shape.
 // 8 new types added 2026-11-16 (owner's field equipment-survey checklist, store 44689 walkthrough):
 // ice_machine, refrigeration, pie_merchandiser, fry_dispenser, exhaust_hood, label_maker,
@@ -55,6 +55,13 @@ const btn = (p, ...c) => h('button', p, ...c);
 // unlike the original 15 — some are backed only by general web research or a partial owner
 // statement, clearly marked as such in the catalog's own `source`/`notes` fields, never asserted
 // as a confirmed McDonald's-approved spec until it actually is one).
+// 7 MORE added 2026-11-16, same day, once a real multi-store field export (owner-forwarded
+// Equipment.xlsx, 26 stores) turned up equipment types this catalog had never carried at all —
+// see memory/finding-equipment-catalog-field-export-2026-11-16.md for the full source detail and
+// which store(s) each was seen at: marinator (Wells), coffee_brewer (Bunn), tea_brewer (Bunn),
+// hot_water_tank (State), heated_landing_zone (Frymaster), outdoor_menuboard (Coates),
+// oil_tank_pump (RTI). Real manufacturer, but — same as every other 2026-11-16 addition — no
+// model number was on file for any of these in the export; flagged for owner confirmation.
 export const CATALOG_TYPE_GROUPS = [
   { group: 'Cooking', types: [
     { id: 'grill', label: 'Grill', icon: '🍳' },
@@ -65,11 +72,13 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'uhc', label: 'UHC', icon: '🗄️' },
     { id: 'fry_dispenser', label: 'Fry Dispenser', icon: '🍟' },
     { id: 'qing_oven', label: "Q'ing Oven", icon: '⏱️' },
+    { id: 'heated_landing_zone', label: 'Heated Landing Zone', icon: '🔥' },
   ]},
   { group: 'Prep & Staging', types: [
     { id: 'staging_cabinet', label: 'Staging Cabinet', icon: '📦' },
     { id: 'prep_line', label: 'Prep Line', icon: '🥬' },
     { id: 'pie_merchandiser', label: 'Pie Merchandiser', icon: '🥧' },
+    { id: 'marinator', label: 'Marinator', icon: '🍗' },
   ]},
   { group: 'Beverage', types: [
     { id: 'blended_ice', label: 'Blended Ice', icon: '🧊' },
@@ -80,6 +89,8 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'espresso_2step', label: 'Espresso (2-Step)', icon: '☕' },
     { id: 'shake_sundae', label: 'Shake/Sundae', icon: '🍨' },
     { id: 'fcb', label: 'FCB (Frozen Carbonated Bev.)', icon: '🧋' },
+    { id: 'coffee_brewer', label: 'Coffee Brewer', icon: '☕' },
+    { id: 'tea_brewer', label: 'Tea Brewer', icon: '🍵' },
   ]},
   { group: 'Refrigeration', types: [
     { id: 'ice_machine', label: 'Ice Machine', icon: '🧊' },
@@ -90,10 +101,13 @@ export const CATALOG_TYPE_GROUPS = [
   { group: 'Facilities', types: [
     { id: 'exhaust_hood', label: 'Exhaust Hood', icon: '🌀' },
     { id: 'label_maker', label: 'Label Maker', icon: '🏷️' },
+    { id: 'hot_water_tank', label: 'Hot Water Tank', icon: '🚿' },
+    { id: 'oil_tank_pump', label: 'Oil Tank/Pump', icon: '🛢️' },
   ]},
   { group: 'Technology', types: [
     { id: 'printer', label: 'Printer', icon: '🖨️' },
     { id: 'register', label: 'Register / POS Terminal', icon: '💳' },
+    { id: 'outdoor_menuboard', label: 'Outdoor Digital Menuboard', icon: '🪧' },
   ]},
 ];
 const ALL_TYPES = CATALOG_TYPE_GROUPS.flatMap(g => g.types);

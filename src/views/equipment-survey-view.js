@@ -18,7 +18,7 @@ import {
 } from '../lib/supabase.js';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
-  PLACEMENTS, SIDE_OPTIONS, RELATIVE_OPTIONS, sideLabel, relativeLabel,
+  PLACEMENTS, SIDE_OPTIONS, RELATIVE_OPTIONS, FRIDGE_SUBTYPE_OPTIONS, sideLabel, relativeLabel, fridgeSubtypeLabel,
   describeEquipmentEntry, buildEquipmentRollupRows, buildEquipmentRollupText,
 } from '../engine/equipment-survey.js';
 
@@ -131,6 +131,7 @@ function EquipmentForm({ token, loc, catalog, consumables, settings, submittedBy
   const [placement, setPlacement] = useState(editing?.placementZone || '');
   const [side, setSide] = useState(editing?.positionDetail?.side || '');
   const [relative, setRelative] = useState(editing?.positionDetail?.relative || '');
+  const [fridgeSubtype, setFridgeSubtype] = useState(editing?.refrigerationSubtype || '');
   const [serial, setSerial] = useState(editing?.serialNumber || '');
   const [certDate, setCertDate] = useState(editing?.certDate || '');
   const [photoUrl, setPhotoUrl] = useState(editing?.photoUrl || null);
@@ -154,6 +155,7 @@ function EquipmentForm({ token, loc, catalog, consumables, settings, submittedBy
   const effectiveType = (manualMode ? manualType : (selectedItem?.type || type || '')).toLowerCase();
   const showSide = effectiveType.includes('grill') || effectiveType.includes('fryer');
   const showRelative = effectiveType.includes('fryer');
+  const showFridgeSubtype = effectiveType.includes('refriger') || effectiveType.includes('fridge') || effectiveType.includes('freezer');
 
   const onPhoto = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -200,6 +202,7 @@ function EquipmentForm({ token, loc, catalog, consumables, settings, submittedBy
         loc, instanceId: editing?.instanceId || undefined,
         catalogItemId: finalCatalogItemId, manualEntryText,
         placementZone: placement || null, positionDetail, serialNumber: serial || null, certDate: certDate || null,
+        refrigerationSubtype: fridgeSubtype || null,
         action, submittedBy, photoUrl, aiExtraction,
         settingsReviewed, settingsReviewNotes: settingsReviewNotes || null,
       };
@@ -250,6 +253,10 @@ function EquipmentForm({ token, loc, catalog, consumables, settings, submittedBy
       label('Relative to the grill(s) (optional)'),
       h('select', { style: inputStyle, value: relative, onChange: e => setRelative(e.target.value) },
         h('option', { value: '' }, '— Select —'), ...RELATIVE_OPTIONS.map(o => h('option', { key: o.value, value: o.value }, o.label)))),
+    showFridgeSubtype && div({},
+      label('Refrigerator, Freezer, or Combo? (optional)'),
+      h('select', { style: inputStyle, value: fridgeSubtype, onChange: e => setFridgeSubtype(e.target.value) },
+        h('option', { value: '' }, '— Select —'), ...FRIDGE_SUBTYPE_OPTIONS.map(o => h('option', { key: o.value, value: o.value }, o.label)))),
 
     div({ style: { marginBottom: '12px' } },
       label('Data plate photo (optional — helps fill in the fields below)'),
@@ -410,7 +417,7 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
       h('button', { onClick: () => { setMode('list'); setEditingEntry(null); }, style: { background: 'none', border: 'none', color: colors.dim, fontSize: '13px', cursor: 'pointer', padding: 0, marginBottom: '14px' } }, '← Back'),
       h(EquipmentForm, {
         token, loc, catalog, consumables, settings, submittedBy,
-        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, positionDetail: editingEntry.position_detail, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url, settingsReviewed: editingEntry.settings_reviewed, settingsReviewNotes: editingEntry.settings_review_notes } : null,
+        editing: editingEntry ? { instanceId: editingEntry.instance_id, catalogItemId: editingEntry.catalog_item_id, placementZone: editingEntry.placement_zone, positionDetail: editingEntry.position_detail, refrigerationSubtype: editingEntry.refrigeration_subtype, serialNumber: editingEntry.serial_number, certDate: editingEntry.cert_date, photoUrl: editingEntry.photo_url, settingsReviewed: editingEntry.settings_reviewed, settingsReviewNotes: editingEntry.settings_review_notes } : null,
         onCancel: () => { setMode('list'); setEditingEntry(null); },
         onSaved: () => { setMode('list'); setEditingEntry(null); reload(); },
       }),
@@ -435,11 +442,12 @@ function StoreDetail({ token, loc, submittedBy, onBack }) {
             ...entries.map(e => div({ key: e.instance_id, style: { background: colors.surf, border: `1px solid ${colors.bdr}`, borderRadius: '9px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
               div({},
                 div({ style: { fontWeight: 600, fontSize: '14px' } }, describeEquipmentEntry(e, catalogById)),
-                (e.placement_zone || e.position_detail?.side || e.position_detail?.relative || e.serial_number) && div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
+                (e.placement_zone || e.position_detail?.side || e.position_detail?.relative || e.refrigeration_subtype || e.serial_number) && div({ style: { fontSize: '11.5px', color: colors.dim, marginTop: '2px' } },
                   [
                     e.placement_zone && PLACEMENTS.find(p => p.value === e.placement_zone)?.label,
                     e.position_detail?.side && sideLabel(e.position_detail.side),
                     e.position_detail?.relative && relativeLabel(e.position_detail.relative),
+                    e.refrigeration_subtype && fridgeSubtypeLabel(e.refrigeration_subtype),
                     e.serial_number && `S/N ${e.serial_number}`,
                   ].filter(Boolean).join(' · '))),
               h('button', { onClick: () => setEditingEntry(e), style: { background: 'none', border: `1px solid ${colors.bdr2}`, color: colors.text, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Edit'),

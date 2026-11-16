@@ -45,9 +45,20 @@ export const RELATIVE_OPTIONS = [
   { value: 'same_as_grill', label: 'Same side as grill(s)' },
   { value: 'opposite_of_grill', label: 'Opposite side of grill(s)' },
 ];
+// Owner request 2026-11-16: a `refrigeration`-type item should let the submitter say whether the
+// real unit is a refrigerator, a freezer, or a combo (both in one cabinet) — the catalog's
+// `refrigeration` type covers all three, and the real multi-store field export (see
+// memory/finding-equipment-catalog-field-export-2026-11-16.md) shows real combo units ("2 Drawer
+// Fridge/Freezer") alongside straight fridges and freezers at the same store.
+export const FRIDGE_SUBTYPE_OPTIONS = [
+  { value: 'refrigerator', label: 'Refrigerator' },
+  { value: 'freezer', label: 'Freezer' },
+  { value: 'combo', label: 'Combo (Fridge/Freezer)' },
+];
 export const placementLabel = v => PLACEMENTS.find(o => o.value === v)?.label || '';
 export const sideLabel = v => SIDE_OPTIONS.find(o => o.value === v)?.label || '';
 export const relativeLabel = v => RELATIVE_OPTIONS.find(o => o.value === v)?.label || '';
+export const fridgeSubtypeLabel = v => FRIDGE_SUBTYPE_OPTIONS.find(o => o.value === v)?.label || '';
 
 // One current-state entry -> its display description, e.g. "Grill — Frymaster FPEG30" or, for a
 // crew "type it in" manual entry with no catalog match, the raw manual text. `catalogById` is a
@@ -66,6 +77,7 @@ export function buildEquipmentRollupRows(entries, catalogById) {
     placement: e.placement_zone ? placementLabel(e.placement_zone) : '',
     side: e.position_detail?.side ? sideLabel(e.position_detail.side) : '',
     relative: e.position_detail?.relative ? relativeLabel(e.position_detail.relative) : '',
+    fridgeSubtype: e.refrigeration_subtype ? fridgeSubtypeLabel(e.refrigeration_subtype) : '',
     serial: e.serial_number || '',
     certDate: e.cert_date || '',
     submittedBy: e.submitted_by || '',
@@ -79,7 +91,7 @@ export function buildEquipmentRollupText(storeLabel, rows) {
   const lines = [`Equipment Survey — ${storeLabel}`, ''];
   if (!rows || !rows.length) { lines.push('No equipment logged for this store yet.'); return lines.join('\n'); }
   rows.forEach((r, i) => {
-    const bits = [r.placement, r.side, r.relative, r.serial && `S/N ${r.serial}`, r.certDate && `Cert ${r.certDate}`].filter(Boolean);
+    const bits = [r.placement, r.side, r.relative, r.fridgeSubtype, r.serial && `S/N ${r.serial}`, r.certDate && `Cert ${r.certDate}`].filter(Boolean);
     lines.push(`${i + 1}. ${r.description}${bits.length ? ' — ' + bits.join(' · ') : ''}`);
   });
   lines.push('', `${rows.length} item(s) total.`);

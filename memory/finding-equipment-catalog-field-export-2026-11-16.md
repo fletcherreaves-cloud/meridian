@@ -96,6 +96,47 @@ signage, parking-lot condition items): confirms these are facilities/IT checklis
 branded consumable-gated equipment, consistent with why `register`/`printer` (this catalog's own
 Technology group) only ever had owner-stated brands, never anything from this kind of export.
 
+## Update — owner said "put the discovered types in" (same day)
+
+The 7 new-type candidates listed above are no longer just flagged as an open product decision —
+the owner explicitly said to add them. Shipped in v5.806:
+
+- `CATALOG_TYPE_GROUPS` (`src/views/equipment-layout.js`) grew from 27 to 34 ids: `marinator`
+  (Cooking → actually Prep & Staging), `coffee_brewer`/`tea_brewer` (Beverage), `hot_water_tank`/
+  `oil_tank_pump` (Facilities), `heated_landing_zone` (Cooking), `outdoor_menuboard` (Technology).
+- 7 new live `equipment_catalog` rows, `source: 'field-survey'`, `flagged: true` — same posture as
+  every other 2026-11-16 addition, since the export carries manufacturer but essentially never a
+  model number: `marinator`/Wells, `coffee_brewer`/Bunn, `tea_brewer`/Bunn, `hot_water_tank`/State,
+  `heated_landing_zone`/Frymaster, `outdoor_menuboard`/Coates, `oil_tank_pump`/RTI.
+- `src/__tests__/equipment-layout.test.js`'s type-count assertion updated 27 → 34.
+- Deliberately NOT added: "Satellite Brewers & Dispensers" — its one concrete real-row example in
+  the export was actually a Bunn JDF-2S juice machine, which already matches the existing
+  `juice_dispenser` type; adding a third, overlapping/ambiguous type from that one sample would
+  have been guessing, not field-confirming.
+
+## Update — refrigeration subtype dropdown (owner request, same day)
+
+"While we're at it also for refrigeration ... let's give a drop-down with the option to choose
+refrigerator, freezer, or combo" — on the crew Equipment Survey form (`equipment-survey-view.js`),
+not the in-app Layout Planner. Shipped in v5.806:
+
+- New `equipment_survey_entries.refrigeration_subtype` column (`refrigerator`/`freezer`/`combo`,
+  CHECK-constrained, nullable) — `supabase/schema-equipment-survey.sql`, non-destructive
+  `alter table add column if not exists`, same pattern as the existing `position_detail` column's
+  own migration line. **Owner needs to run this SQL** (same posture as every other DDL in this
+  repo — not run automatically).
+- `supabase/functions/equipment-survey/index.ts`'s `submit` action validates and writes it from
+  `e.refrigerationSubtype`, same whitelist-validation style as the existing `side`/`relative`
+  fields.
+- `EquipmentForm` shows the new dropdown whenever the selected/typed type looks like refrigeration
+  (`'refriger'`/`'fridge'`/`'freezer'` substring match, same fuzzy-match style the existing
+  side/relative conditionals already use) — right alongside the existing side/relative-to-grill
+  fields, same visual treatment.
+- `src/engine/equipment-survey.js` grew a `FRIDGE_SUBTYPE_OPTIONS`/`fridgeSubtypeLabel` pair
+  (same shape as `SIDE_OPTIONS`/`sideLabel`), wired into the rollup rows/text and the entries-list
+  display so a submitted subtype shows up everywhere placement/side/relative already do.
+- Covered by 2 new tests in `src/__tests__/equipment-survey.test.js`.
+
 ## Scope note
 
 `Equipment.xlsx` is a real per-store **physical inventory** (which unit sits in which store,

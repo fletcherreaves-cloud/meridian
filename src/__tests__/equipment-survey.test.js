@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   latestEntriesByInstance, describeEquipmentEntry, buildEquipmentRollupRows,
-  buildEquipmentRollupText, resolveStoreGM, placementLabel, sideLabel, relativeLabel,
+  buildEquipmentRollupText, resolveStoreGM, placementLabel, sideLabel, relativeLabel, fridgeSubtypeLabel,
   buildEquipmentStoreSummary,
 } from '../engine/equipment-survey.js';
 
@@ -107,6 +107,19 @@ describe('buildEquipmentRollupRows / buildEquipmentRollupText', () => {
     const entries = [{ manual_entry_text: 'Protein fryer', position_detail: { relative: 'opposite_of_grill' } }];
     const [row] = buildEquipmentRollupRows(entries, {});
     expect(row.relative).toBe(relativeLabel('opposite_of_grill'));
+  });
+
+  it('resolves refrigeration_subtype to its display label and includes it in the rollup text', () => {
+    const entries = [{ manual_entry_text: 'Prep fridge', refrigeration_subtype: 'combo' }];
+    const [row] = buildEquipmentRollupRows(entries, {});
+    expect(row.fridgeSubtype).toBe(fridgeSubtypeLabel('combo'));
+    const text = buildEquipmentRollupText('Test Store', [row]);
+    expect(text).toContain(fridgeSubtypeLabel('combo'));
+  });
+
+  it('leaves fridgeSubtype blank when refrigeration_subtype is not set', () => {
+    const [row] = buildEquipmentRollupRows([{ manual_entry_text: 'Grill' }], {});
+    expect(row.fridgeSubtype).toBe('');
   });
 
   it('builds readable text including every resolved field, numbered', () => {
