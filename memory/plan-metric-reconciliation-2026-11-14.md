@@ -205,6 +205,55 @@ accurately describe what they compute. **No renames made this pass.** If a futur
 real mislabel, it goes through the same bar: trace the code first, rename only on confirmation,
 write it up the same way `finding-prime-cost-rename-2026-11-13.md` etc. already do.
 
+## Pass 4 (2026-11-16) — signal-registry.js's "cloud-leg" direct reads, RESOLVED
+
+Picked up the item pass 2 explicitly flagged as "next priority... genuinely mechanical, low
+risk" — the `glimpse`/`cash`/`ledger`/`daractivity` `METRIC_CATEGORIES` in `signal-registry.js`,
+each offering a manual/DAR-resolved metric's SAME real-world quantity as a separate, "· cloud"
+labeled Signal Lab/Scanner picker entry, read straight off one emailed/cloud Supabase table.
+
+Re-counted the real list directly against `signal-registry.js`'s own object literals rather than
+trusting the "~30" estimate from pass 2 — **34 keys, not ~30** (a plain grep undercounted several
+differently-spaced entries, e.g. `glTRedVoid`'s label spanning the pattern oddly — the same
+regex-undercount failure class task #75's KB batch 21 already hit once on `KB_ARTICLES` itself,
+worth remembering as a standing caution whenever "count the matches" is the method).
+
+- **15 `glimpseRows` keys** (`daily_glimpse_daily`), **7 `cashRows`** (`cash_sheet_daily`),
+  **7 `salesLedgerRows`** (`sales_ledger_daily`), **5 `qsrActSummaryRows`** (`qsr_daily_activity`)
+  — all added to `CURATED_PROVENANCE`. 32 are bare column reads (`composed: false`); the two
+  vs-LY % entries (`slSalesVsLY`, `qaSalesVsLY`) are `composed: true` since each is itself a
+  ratio against a matched LY figure, and each formula explicitly flags that it is NOT the same
+  calculation as the matched-day DAR `salesVsLY` entry documented earlier in this file — the
+  existing open naming-collision finding, now referenced from both of its new neighbors instead
+  of just the one place.
+- Every entry cross-references `signal-registry.js`'s own `METRIC_CONCEPT` grouping where one
+  exists (e.g. `glSales`/`slSales`/`qaSales` are all "cloud leg of the same net_sales quantity"),
+  and says plainly when a key has no concept-grouped counterpart (e.g. `glTRedVoid`, `cs3poSales`,
+  `qaActHrs`) rather than inventing a relationship that isn't in the registry.
+- 6 new tests (`src/__tests__/metric-provenance.test.js`'s `'task #152 signal-registry.js
+  "cloud-leg" additions (2026-11-16)'` block): exact key-count (34) locked so a future change to
+  either registry is forced to touch this test too, presence + no-METRIC_SOURCES-collision,
+  composed-flag split (only the 2 vs-LY keys), per-category table names, every label ending in
+  "· cloud" (the exact picker text a user sees), and the two vs-LY entries' own
+  not-the-same-calculation disclaimers.
+
+**Also fixed in the same pass (found while re-reading pass 3's own notes, not newly discovered):**
+the `model_types` KB article (`src/engine/forecast.js`'s `KB_ARTICLES`) — pass 3 had already
+flagged this as stale ("Four codes exist", no mention of `simple` at all, despite `simple`
+shipping as a selectable model in v4.532) and explicitly routed the fix to "the next KB-
+maintenance pass (task #75)." Picked up directly rather than waiting, since it's a factual
+correction to already-wired content, not a product/UI judgment call — the two genuinely open
+task #75 items (Condiment's 6-row icon treatment, Count Cycle's missing tab header) are
+unaffected and still need an owner decision, unchanged. Added a `## Simple — Trailing Baseline
+(T3M/T6W/T3W)` section, title/summary updated to "five," cross-checked word-for-word against
+`metric-provenance.js`'s own `forecastModelSimple` entry (written in pass 3, already verified
+against `engine/forecast.js` directly) so the two surfaces state the same formula and the same
+Period-Total-Scoreboard caveat, rather than drifting again.
+
+**Still open, deliberately deferred (not mechanical, needs a decision):** `condiment_pct`'s
+6-row FOB grid icon treatment and `count_cycle_guide`'s missing tab header — both task #75's,
+both re-confirmed across 5+ batches as needing a product/UI call, not another sweep.
+
 ## Verification
 
 Full suite (`npm test -- --run`) and `npm run build` both pass clean (see commit for exact

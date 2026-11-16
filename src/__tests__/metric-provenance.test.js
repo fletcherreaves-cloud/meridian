@@ -206,6 +206,58 @@ describe('METRIC_PROVENANCE — task #152 signal-registry.js additions (2026-11-
   });
 });
 
+// Task #152 pass 4 (2026-11-16) — signal-registry.js's "cloud-leg" direct reads (the glimpse/
+// cash/ledger/daractivity METRIC_CATEGORIES, each a "· cloud" labeled Signal Lab/Scanner entry
+// offering the same real-world quantity as its manual/DAR-resolved counterpart from a different
+// source table). Explicitly deferred in pass 2 as "next priority, genuinely mechanical" — see
+// memory/plan-metric-reconciliation-2026-11-14.md. 34 keys, not the ~30 first estimated (a naive
+// grep undercounted several differently-spaced object-literal entries).
+describe('METRIC_PROVENANCE — task #152 signal-registry.js "cloud-leg" additions (2026-11-16)', () => {
+  const glimpseKeys = ['glSales', 'glGC', 'glLaborPct', 'glPromoPct', 'glPromoAmt', 'glPosOverCnt',
+    'glPosOverAmt', 'glCashOSPct', 'glTRedVoid', 'glTRedDel', 'glOepe', 'glKvst', 'glParkedPct',
+    'glDigitalPct', 'glAppPct'];
+  const cashKeys = ['csCashRefCnt', 'csCashRefAmt', 'csCashlessRefCnt', 'csCashlessRefAmt',
+    'cs3poSales', 'csCashOSPct', 'csPosOverAmt'];
+  const ledgerKeys = ['slSales', 'slSalesVsLY', 'slDtPct', 'slDelivPct', 'slMopPct', 'slKioskPct', 'slFcPct'];
+  const darKeys = ['qaSales', 'qaGC', 'qaSalesVsLY', 'qaActHrs', 'qaNeedHrs'];
+  const allKeys = [...glimpseKeys, ...cashKeys, ...ledgerKeys, ...darKeys];
+  const composedKeys = ['slSalesVsLY', 'qaSalesVsLY']; // the two vs-LY % entries compute a ratio; everything else is a bare column read
+
+  it('is exactly 34 keys, matching every entry in signal-registry.js\'s glimpse/cash/ledger/daractivity categories', () => {
+    expect(allKeys.length).toBe(34);
+  });
+
+  it('all 34 are present and real (no collision with a METRIC_SOURCES chain)', () => {
+    for (const key of allKeys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('only the two vs-LY % entries are marked composed; every bare column read is not', () => {
+    for (const key of allKeys) {
+      expect(METRIC_PROVENANCE[key].composed, `${key}.composed`).toBe(composedKeys.includes(key));
+    }
+  });
+
+  it('each category names its real Supabase table', () => {
+    for (const key of glimpseKeys) expect(METRIC_PROVENANCE[key].table, key).toBe('daily_glimpse_daily');
+    for (const key of cashKeys) expect(METRIC_PROVENANCE[key].table, key).toBe('cash_sheet_daily');
+    for (const key of ledgerKeys) expect(METRIC_PROVENANCE[key].table, key).toBe('sales_ledger_daily');
+    for (const key of darKeys) expect(METRIC_PROVENANCE[key].table, key).toBe('qsr_daily_activity');
+  });
+
+  it('every label ends with "· cloud", matching the exact Signal Lab picker text the user sees', () => {
+    for (const key of allKeys) expect(METRIC_PROVENANCE[key].label, key).toMatch(/· cloud$/);
+  });
+
+  it('the two vs-LY % entries flag that they are NOT the same calculation as the matched-day DAR salesVsLY entry (the open naming-collision finding)', () => {
+    expect(METRIC_PROVENANCE.slSalesVsLY.formula).toMatch(/NOT the same calculation/);
+    expect(METRIC_PROVENANCE.qaSalesVsLY.formula).toMatch(/NOT the matched-day/);
+  });
+});
+
 describe('provenanceText', () => {
   it('formats system, report, table, formula, and grain into one readable string', () => {
     const text = provenanceText('tpph');

@@ -203,6 +203,88 @@ const CURATED_PROVENANCE = {
     inputs: ['Σ costPenalty per violation event'],
     formula: 'Compliance Cost Penalty ($) = Σ costPenalty across every violation event for that (store, date) (engine/compliance-audit.js)', grain: 'daily · per store' },
 
+  // ── signal-registry.js's "cloud-leg" direct reads (task #152 pass 4, 2026-11-16) ─────────
+  // memory/plan-metric-reconciliation-2026-11-14.md's pass 2 explicitly deferred these as "next
+  // priority... genuinely mechanical, low risk": the glimpse/cash/ledger/daractivity categories
+  // in signal-registry.js's METRIC_CATEGORIES are each a single-table/single-field read with a
+  // "· cloud" label suffix, offered as a SEPARATE Signal Lab/Scanner picker entry from its
+  // manual-upload or DAR-resolved counterpart (same underlying real-world quantity, different
+  // source leg) — exactly the metricConcept() groupings METRIC_CONCEPT already encodes in that
+  // file, so the Scanner never pairs a metric against its own cloud-leg twin as a tautology.
+  // None of these compute anything — straight column reads off the named emailed/cloud table,
+  // confirmed against signal-registry.js's own METRIC_CATEGORIES definitions line-by-line
+  // (34 keys total across the 4 categories, not the ~30 estimated when this was first deferred —
+  // a naive grep undercounts several multi-line/differently-spaced entries, the same regex-
+  // undercount class task #75's KB batch 21 already hit once on KB_ARTICLES itself).
+  glSales:      { label: 'Net Sales $ · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['allNetSales column'], formula: 'Direct read of Daily Glimpse\'s own Net Sales $ — cloud leg of the same net-sales quantity as the manual sales / DAR qaSales legs (metricConcept: net_sales)', grain: 'daily · per store' },
+  glGC:         { label: 'Guest Count · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['gc column'], formula: 'Direct read of Daily Glimpse\'s own Guest Count — cloud leg of the same guest-count quantity as manual gc / DAR qaGC (metricConcept: guest_count)', grain: 'daily · per store' },
+  glLaborPct:   { label: 'Labor % · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['laborPct column'], formula: 'Direct read of Daily Glimpse\'s own Labor % — cloud leg of the same labor-% quantity as manual laborPct (metricConcept: labor_pct)', grain: 'daily · per store' },
+  glPromoPct:   { label: 'Promo % · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['promoPct column'], formula: 'Direct read of Daily Glimpse\'s own Promo % — cloud leg of the same promo family as manual promoPct/promoCnt/promoAmt (metricConcept: promo)', grain: 'daily · per store' },
+  glPromoAmt:   { label: 'Promo $ · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['promoAmt column'], formula: 'Direct read of Daily Glimpse\'s own Promo $ — cloud leg of the promo family (metricConcept: promo)', grain: 'daily · per store' },
+  glPosOverCnt: { label: 'POS Override count · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['posOverCnt column'], formula: 'Direct read of Daily Glimpse\'s own POS Override count — cloud leg of the pos_over family (metricConcept: pos_over)', grain: 'daily · per store' },
+  glPosOverAmt: { label: 'POS Override $ · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['posOverAmt column'], formula: 'Direct read of Daily Glimpse\'s own POS Override $ — cloud leg of the pos_over family (metricConcept: pos_over)', grain: 'daily · per store' },
+  glCashOSPct:  { label: 'Cash Over/Short % · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['cashOSPct column'], formula: 'Direct read of Daily Glimpse\'s own Cash Over/Short % — cloud leg of the cash_os family (metricConcept: cash_os)', grain: 'daily · per store' },
+  glTRedVoid:   { label: 'T-Red Voids (count) · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['tRedVoidCnt column'], formula: 'Direct read of Daily Glimpse\'s own T-Red Void count. No concept-grouped manual counterpart today — the Controls T-Red metrics (tRedBPct/tRedACnt etc.) track Before/After %, not a Void sub-count', grain: 'daily · per store' },
+  glTRedDel:    { label: 'T-Red Deletes (count) · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['tRedDeletedCnt column'], formula: 'Direct read of Daily Glimpse\'s own T-Red Delete count. No concept-grouped manual counterpart today, same reasoning as glTRedVoid', grain: 'daily · per store' },
+  glOepe:       { label: 'OEPE (sec) · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['oepe column'], formula: 'Direct read of Daily Glimpse\'s own OEPE (sec) — cloud leg of the same OEPE quantity the oepe entry above documents the DAR formula for (metricConcept: oepe); Glimpse\'s own figure is pre-computed upstream of Meridian, not re-derived here', grain: 'daily · per store' },
+  glKvst:       { label: 'KVS Time (sec) · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['kvst column'], formula: 'Direct read of Daily Glimpse\'s own KVS Time (sec) — cloud leg of the kvst concept (metricConcept: kvst); pre-computed upstream of Meridian', grain: 'daily · per store' },
+  glParkedPct:  { label: 'DT Park Rate % · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['parkedPct column'], formula: 'Direct read of Daily Glimpse\'s own DT Park Rate % — cloud leg of the park_pct concept (metricConcept: park_pct)', grain: 'daily · per store' },
+  glDigitalPct: { label: 'Digital % of Sales · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['digitalPctSales column'], formula: 'Direct read of Daily Glimpse\'s own Digital % of Sales. No concept-grouped manual counterpart today', grain: 'daily · per store' },
+  glAppPct:     { label: 'App % of Sales · cloud', system: 'QSRSoft', report: 'Daily Glimpse (email)', table: 'daily_glimpse_daily', composed: false,
+    inputs: ['appPctSales column'], formula: 'Direct read of Daily Glimpse\'s own App % of Sales. No concept-grouped manual counterpart today', grain: 'daily · per store' },
+  csCashRefCnt:    { label: 'Cash Refund (count) · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['cashRefCnt column'], formula: 'Direct read of Cash Sheet\'s own Cash Refund count — cloud leg of the cash_ref family (metricConcept: cash_ref)', grain: 'daily · per store' },
+  csCashRefAmt:    { label: 'Cash Refund $ · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['cashRefAmt column'], formula: 'Direct read of Cash Sheet\'s own Cash Refund $ — cloud leg of the cash_ref family (metricConcept: cash_ref)', grain: 'daily · per store' },
+  csCashlessRefCnt:{ label: 'Cashless Refund (count) · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['cashlessRefCnt column'], formula: 'Direct read of Cash Sheet\'s own Cashless Refund count — cloud leg of the cashless_ref family (metricConcept: cashless_ref)', grain: 'daily · per store' },
+  csCashlessRefAmt:{ label: 'Cashless Refund $ · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['cashlessRefAmt column'], formula: 'Direct read of Cash Sheet\'s own Cashless Refund $ — cloud leg of the cashless_ref family (metricConcept: cashless_ref)', grain: 'daily · per store' },
+  cs3poSales:      { label: '3PO Sales $ · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['total3poSales column'], formula: 'Direct read of Cash Sheet\'s own 3PO (third-party-order) Sales $. No concept-grouped counterpart today', grain: 'daily · per store' },
+  csCashOSPct:     { label: 'Cash Over/Short % · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['cashOSPct column'], formula: 'Direct read of Cash Sheet\'s own Cash Over/Short % — cloud leg of the cash_os family (metricConcept: cash_os)', grain: 'daily · per store' },
+  csPosOverAmt:    { label: 'POS Override $ · cloud', system: 'QSRSoft', report: 'Cash Sheet (email)', table: 'cash_sheet_daily', composed: false,
+    inputs: ['posOverAmt column'], formula: 'Direct read of Cash Sheet\'s own POS Override $ — cloud leg of the pos_over family (metricConcept: pos_over)', grain: 'daily · per store' },
+  slSales:      { label: 'Net Sales $ · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['allNetSales column'], formula: 'Direct read of Sales Ledger\'s own Net Sales $ — cloud leg of the net_sales family (metricConcept: net_sales)', grain: 'daily · per store' },
+  slSalesVsLY:  { label: 'Sales vs LY % · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: true,
+    inputs: ['current-period allNetSales', 'prior-year allNetSales'], formula: 'Sales Ledger\'s own pre-computed Sales vs LY % (salesVsLYPct column) — cloud leg of the sales_vs_ly family (metricConcept: sales_vs_ly); NOT the same calculation as the matched-day DAR salesVsLY entry above, see the open naming-collision finding in memory/plan-metric-reconciliation-2026-11-14.md', grain: 'daily · per store' },
+  slDtPct:      { label: 'DT % of Sales · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['dtPctTotal column'], formula: 'Direct read of Sales Ledger\'s own DT % of Sales — cloud leg of the dt_pct family (metricConcept: dt_pct)', grain: 'daily · per store' },
+  slDelivPct:   { label: 'Delivery % of Sales · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['delivPctTotal column'], formula: 'Direct read of Sales Ledger\'s own Delivery % of Sales. No concept-grouped counterpart today', grain: 'daily · per store' },
+  slMopPct:     { label: 'MOP % of Sales · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['mopPctTotal column'], formula: 'Direct read of Sales Ledger\'s own Mobile-Order-Pay % of Sales. No concept-grouped counterpart today', grain: 'daily · per store' },
+  slKioskPct:   { label: 'Kiosk % of Sales · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['kioskPctTotal column'], formula: 'Direct read of Sales Ledger\'s own Kiosk % of Sales. No concept-grouped counterpart today', grain: 'daily · per store' },
+  slFcPct:      { label: 'Front Counter % · cloud', system: 'QSRSoft', report: 'Sales Ledger (email)', table: 'sales_ledger_daily', composed: false,
+    inputs: ['fcPctTotal column'], formula: 'Direct read of Sales Ledger\'s own Front Counter % of Sales. No concept-grouped counterpart today', grain: 'daily · per store' },
+  qaSales:      { label: 'Product Sales $ · cloud', system: 'QSRSoft', report: 'Daily Activity (DAR) summary', table: 'qsr_daily_activity', composed: false,
+    inputs: ['sales (Σ product_sales)'], formula: 'Day-summed DAR Product Sales $ — cloud leg of the net_sales family (metricConcept: net_sales); this is the SAME qsrActSummaryRows day-summary the oepe/r2p/tpph entries above are built from, just the raw sales leg instead of a derived ratio', grain: 'daily · per store' },
+  qaGC:         { label: 'Guest Count · cloud', system: 'QSRSoft', report: 'Daily Activity (DAR) summary', table: 'qsr_daily_activity', composed: false,
+    inputs: ['gc (Σ transactions)'], formula: 'Day-summed DAR transaction count used as Guest Count — cloud leg of the guest_count family (metricConcept: guest_count). Transactions and guest counts are treated as the same thing here (owner-confirmed), NOT the near-empty KVS healthy+unhealthy count', grain: 'daily · per store' },
+  qaSalesVsLY:  { label: 'Sales vs LY % · cloud', system: 'QSRSoft', report: 'Daily Activity (DAR) summary', table: 'qsr_daily_activity', composed: true,
+    inputs: ['current-day product sales (sales)', 'LY product sales (lySales)'], formula: 'Sales vs LY % = (sales − lySales) ÷ lySales, from the DAR\'s own same-day LY field — cloud leg of the sales_vs_ly family (metricConcept: sales_vs_ly); a simple same-calendar-day compare, NOT the matched-day business-day-aligned salesVsLY entry above', grain: 'daily · per store' },
+  qaActHrs:     { label: 'Actual Labor Hrs · cloud', system: 'QSRSoft', report: 'Daily Activity (DAR) summary', table: 'qsr_daily_activity', composed: false,
+    inputs: ['actual_punched_hours (Σ)'], formula: 'Day-summed DAR actual_punched_hours. No concept-grouped counterpart today — this is the same leg tpph\'s formula above divides by', grain: 'daily · per store' },
+  qaNeedHrs:    { label: 'Needed Labor Hrs · cloud', system: 'QSRSoft', report: 'Daily Activity (DAR) summary', table: 'qsr_daily_activity', composed: false,
+    inputs: ['total_needed_hours (Σ)'], formula: 'Day-summed DAR total_needed_hours (VLH-guide need). No concept-grouped counterpart today', grain: 'daily · per store' },
+
   // ── Forecast models — Model Assignment / Forecast Accuracy's 5 model columns (task #152,
   // 2026-11-14, the single highest-value item this task deliberately deferred twice already —
   // see memory/plan-metric-reconciliation-2026-11-14.md's "Still deferred from pass 1"). Traced
