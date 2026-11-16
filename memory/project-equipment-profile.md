@@ -343,3 +343,38 @@ confirmed McDonald's spec:
     or a term this session's training data simply doesn't cover.
   - *"FCB"* — searched directly (including as "Front Counter Beverage," by analogy to the real
     `fc_` column prefix already used in `qsr_daily_activity`), found nothing conclusive.
+
+## Follow-up: owner clarified all 3 ambiguous items (same day, 2026-11-16)
+
+The owner answered all three kicked-back items directly, closing most of the loop:
+
+- **Q'ing Oven**: *"It's in there. Look in the PQRG - Amana is the brand. Usually 2-3 models."*
+  Checked `scripts/data/equipment-catalog-settings-seed-pqrg.json` (this app's own PQRG
+  transcription) directly for "Amana" — zero hits. So the owner's real physical/PDF PQRG covers
+  more than what's been transcribed into this app so far; that transcription gap is real but
+  separate from today's ask. Added a new `qing_oven` type with 2 candidate Amana product lines
+  (web-researched, since the owner confirmed the BRAND but not the exact model): `XpressChef 3i
+  (MRX1/MRX2)` and `Menumaster (HDC/MDC rapid-cook series)` — both real Amana commercial
+  rapid-cook/combi lines described in industry listings as popular with "top restaurant chains."
+  `source:'crew-added'` (the brand itself is owner-stated, not a guess), `flagged:true` pending
+  his confirmation of which model(s) this store actually has.
+- **FCB**: *"Frozen Carbonated Beverage machine. I believe the brand is Viper"* (his own
+  qualifier — not stated as certain). Independently corroborated: "Cornelius Viper" (and "Viper
+  2") is a real, documented FCB/ICEE-style dispenser product line (restaurantsupply.com,
+  kingsurplus.com) — Cornelius is the SAME parent manufacturer already seeded under this
+  catalog's `abs` type (ABS 1.0/2.0), just a different product line. Added a new `fcb` type,
+  `Cornelius / Viper`, `source:'crew-added'`, `flagged:true`.
+- **"Consider technology"**: owner gave a partial answer now, more to come later — *"Printers
+  are Epson or Bixolon. Registers are Par, Panasonic or NCR... I will send you a more detailed
+  list when I can find my list."* Added two new types, `printer` (Epson, Bixolon) and `register`
+  (PAR, Panasonic, NCR) — brand-only rows (`model:'Model not yet specified (owner to confirm)'`),
+  `source:'crew-added'`, `flagged:true`, explicitly NOT final since the owner said a fuller list
+  is coming. **Still open — do not consider "consider technology" closed**: watch for the
+  owner's fuller technology list and update/expand these two types (and possibly add others —
+  KDS, kiosks, HME headsets were guessed as candidates earlier but never confirmed) once it
+  arrives.
+- 4 new types added to `equipment-layout.js`'s `CATALOG_TYPE_GROUPS` (23 → 27, new "Technology"
+  group for printer/register, `qing_oven` added to "Cooking," `fcb` added to "Beverage"):
+  `qing_oven`, `fcb`, `printer`, `register`. `equipment-layout.test.js`'s type-count ratchet
+  updated to 27. 8 new `equipment_catalog` rows inserted live via the same direct-insert pattern
+  as the original 11 (checked for existing-row collisions first).

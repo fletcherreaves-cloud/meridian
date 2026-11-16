@@ -40,15 +40,21 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
-// Display-only metadata for the 23 catalog TYPES (icon + grouping) — the real manufacturer/model
+// Display-only metadata for the 27 catalog TYPES (icon + grouping) — the real manufacturer/model
 // rows for each type come live from equipment_catalog; this is just the palette's visual shape.
 // 8 new types added 2026-11-16 (owner's field equipment-survey checklist, store 44689 walkthrough):
 // ice_machine, refrigeration, pie_merchandiser, fry_dispenser, exhaust_hood, label_maker,
-// walk_in_cooler, walk_in_freezer. See memory/project-equipment-profile.md for which of these
-// have a real researched manufacturer/model seeded vs. a type-only placeholder pending field
-// confirmation (no internal McDonald's reference doc exists for most of these, unlike the
-// original 15 — some are backed only by general web research, clearly marked as such in the
-// catalog's own `source`/`notes` fields, never asserted as confirmed McDonald's-approved specs).
+// walk_in_cooler, walk_in_freezer. 4 more added same day once the owner clarified 3 originally-
+// ambiguous list items: qing_oven (Amana — owner confirmed the brand directly, "look in the
+// PQRG"), fcb (Frozen Carbonated Beverage — Cornelius Viper, owner-named brand independently
+// corroborated as a real Cornelius product line), printer (Epson/Bixolon) and register
+// (PAR/Panasonic/NCR) for the "consider technology" item — owner gave brands, exact models still
+// pending his fuller list. See memory/project-equipment-profile.md for which of all 12 new types
+// have a real researched/owner-confirmed manufacturer/model seeded vs. a type-only placeholder
+// pending field confirmation (no internal McDonald's reference doc exists for most of these,
+// unlike the original 15 — some are backed only by general web research or a partial owner
+// statement, clearly marked as such in the catalog's own `source`/`notes` fields, never asserted
+// as a confirmed McDonald's-approved spec until it actually is one).
 export const CATALOG_TYPE_GROUPS = [
   { group: 'Cooking', types: [
     { id: 'grill', label: 'Grill', icon: '🍳' },
@@ -58,6 +64,7 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'combi_oven', label: 'Combi Oven', icon: '🔥' },
     { id: 'uhc', label: 'UHC', icon: '🗄️' },
     { id: 'fry_dispenser', label: 'Fry Dispenser', icon: '🍟' },
+    { id: 'qing_oven', label: "Q'ing Oven", icon: '⏱️' },
   ]},
   { group: 'Prep & Staging', types: [
     { id: 'staging_cabinet', label: 'Staging Cabinet', icon: '📦' },
@@ -72,6 +79,7 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'espresso_1step', label: 'Espresso (1-Step)', icon: '☕' },
     { id: 'espresso_2step', label: 'Espresso (2-Step)', icon: '☕' },
     { id: 'shake_sundae', label: 'Shake/Sundae', icon: '🍨' },
+    { id: 'fcb', label: 'FCB (Frozen Carbonated Bev.)', icon: '🧋' },
   ]},
   { group: 'Refrigeration', types: [
     { id: 'ice_machine', label: 'Ice Machine', icon: '🧊' },
@@ -82,6 +90,10 @@ export const CATALOG_TYPE_GROUPS = [
   { group: 'Facilities', types: [
     { id: 'exhaust_hood', label: 'Exhaust Hood', icon: '🌀' },
     { id: 'label_maker', label: 'Label Maker', icon: '🏷️' },
+  ]},
+  { group: 'Technology', types: [
+    { id: 'printer', label: 'Printer', icon: '🖨️' },
+    { id: 'register', label: 'Register / POS Terminal', icon: '💳' },
   ]},
 ];
 const ALL_TYPES = CATALOG_TYPE_GROUPS.flatMap(g => g.types);
