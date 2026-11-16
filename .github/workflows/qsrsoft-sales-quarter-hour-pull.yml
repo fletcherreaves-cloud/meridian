@@ -1,14 +1,22 @@
 name: QSRSoft Quarter-Hour Sales Pull
 
 on:
-  schedule:
-    # US Central-anchored (GitHub cron is fixed UTC, no DST).
-    # 10:00 UTC = ~5:00 AM CDT — previous day fully closed, feeds Record Hour's
-    # confirmed (non-provisional) all-time records.
-    - cron: '0 10 * * *'
-    # 19:00 UTC = ~2:00 PM CDT — current-day refresh, so today's (provisional) reading
-    # isn't hours stale while the business day is still open.
-    - cron: '0 19 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # US Central-anchored (GitHub cron is fixed UTC, no DST).
+#    # 10:00 UTC = ~5:00 AM CDT — previous day fully closed, feeds Record Hour's
+#    # confirmed (non-provisional) all-time records.
+#    - cron: '0 10 * * *'
+#    # 19:00 UTC = ~2:00 PM CDT — current-day refresh, so today's (provisional) reading
+#    # isn't hours stale while the business day is still open.
+#    - cron: '0 19 * * *'
   workflow_dispatch:
     inputs:
       days_back:

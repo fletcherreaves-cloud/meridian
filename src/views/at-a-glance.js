@@ -32,6 +32,7 @@ import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { worstStream, groupFreshness, streamByKey, severityColor } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
+import { computeManualPullTriggers } from '../engine/manual-pull-triggers.js';
 import { printHtml } from '../utils/print-html.js';
 import { useAttentionFeed } from './attention-now.js';
 import { acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
@@ -334,6 +335,49 @@ function ToleranceRollupTile({ ds, stores, settings }) {
         m.yellow > 0 && h('span', { style: { fontSize: 9.5, fontWeight: 700, color: TOL_STATUS_COLOR.yellow } }, m.yellow + ' yellow')))),
     rollup.storeRows.length > 0 && div({ style: { padding: '8px 14px', fontSize: 9, color: 'var(--text3)', borderTop: '.5px solid var(--bdr)' } },
       'Most out of tolerance: ' + rollup.storeRows.slice(0, 3).map(s => sNameC(s.loc) + ' (' + s.n + ')').join(' · '))
+  );
+}
+
+// Owner request 2026-11-16 ("a tile on glance that explicitly makes it clear what reports
+// need to be uploaded") — the same pattern as ToleranceRollupTile right above: a thin home-
+// screen preview over an existing engine (manual-pull-triggers.js's computeManualPullTriggers),
+// never a second computation. Part of the QSRSoft compliance triage (paused eBOS/Security
+// Events/Forms pulls, memory/finding-qsrsoft-security-notice-2026-11-16.md) — this is where the
+// owner actually sees "go pull X for store Y" instead of it staying buried in Data Manager.
+function ManualPullTriggersTile({ ds, stores }) {
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const triggers = React.useMemo(() => {
+    if (!ds || !allLocs.length) return null;
+    try { return computeManualPullTriggers(ds, { locs: allLocs }); } catch { return []; }
+  }, [ds, allLocs]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '📋'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Manual Pull Needed'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'eBOS/Security Events/Forms — flagged by store, not a blanket weekly pull')));
+  if (!triggers) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (!triggers.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No store currently flags for a manual pull.'));
+
+  const nRed = triggers.filter(t => t.severity === 'red').length;
+  const nYellow = triggers.length - nRed;
+  return card(head,
+    div({ style: { padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      div({ style: { display: 'flex', alignItems: 'baseline', gap: 10 } },
+        nRed > 0 && h('span', { style: { fontSize: 20, fontWeight: 800, color: TOL_STATUS_COLOR.red } }, nRed),
+        nRed > 0 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'red'),
+        nYellow > 0 && h('span', { style: { fontSize: 20, fontWeight: 800, color: TOL_STATUS_COLOR.yellow } }, nYellow),
+        nYellow > 0 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'yellow'),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' } }, triggers.length + ' flag' + (triggers.length === 1 ? '' : 's')))),
+    div(null,
+      ...triggers.slice(0, 6).map((t, i) => div({ key: t.loc + '-' + t.metricId + '-' + i, style: { padding: '7px 14px', borderBottom: '.5px solid var(--bdr)' } },
+        div({ style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h('span', { style: { width: 6, height: 6, borderRadius: '50%', background: t.severity === 'red' ? TOL_STATUS_COLOR.red : TOL_STATUS_COLOR.yellow, flexShrink: 0 } }),
+          h('div', { style: { flex: 1, fontSize: 10.5, color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sNameC(t.loc) + ' — ' + t.report)),
+        h('div', { style: { fontSize: 9.5, color: 'var(--text3)', marginTop: 2, lineHeight: 1.4, paddingLeft: 14 } }, t.reason)))),
+    triggers.length > 6 && div({ style: { padding: '8px 14px', fontSize: 9, color: 'var(--text3)', borderTop: '.5px solid var(--bdr)' } },
+      '+' + (triggers.length - 6) + ' more — see Data Manager for the full list.')
   );
 }
 
@@ -1055,6 +1099,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
     {id:'coaching-loop',label:'Did It Work?',icon:'✓',on:true},
     {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
     {id:'tolerance',label:'Tolerance Status',icon:'🎯',on:true},
+    {id:'manual-pulls',label:'Manual Pull Needed',icon:'📋',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
     {id:'projections',label:'Projections & Forecasting',icon:'📈',on:true},
     {id:'sales',label:'Sales & Guest Counts',icon:'💰',on:true},
@@ -2703,6 +2748,7 @@ function AtAGlance({stores, viewAsAltitude, ds, settings, userEvents, lockedProj
         h(CountFobPulseTile,{key:'count-fob-pulse',ds,onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
         secs.find(s=>s.id==='tolerance'&&s.on)&&h(ToleranceRollupTile,{key:'tolerance',ds,stores,settings}),
+        secs.find(s=>s.id==='manual-pulls'&&s.on)&&h(ManualPullTriggersTile,{key:'manual-pulls',ds,stores}),
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────

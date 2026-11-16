@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
           side: ['side1_right', 'side1_left', 'side2_right', 'side2_left'].includes(e.positionDetail.side) ? e.positionDetail.side : null,
           relative: ['same_as_grill', 'opposite_of_grill'].includes(e.positionDetail.relative) ? e.positionDetail.relative : null,
         } : null,
+        refrigeration_subtype: ['refrigerator', 'freezer', 'combo'].includes(e.refrigerationSubtype) ? e.refrigerationSubtype : null,
       };
       const { data: inserted, error } = await sb.from('equipment_survey_entries').insert(row).select('id,instance_id').single();
       if (error) return json({ error: error.message }, 500);

@@ -1,12 +1,20 @@
 name: QSRSoft Roster Statistics Pull
 
 on:
-  schedule:
-    # Times anchored to US Central. GitHub cron is fixed UTC and does NOT observe
-    # DST, so these land ~1h earlier (Central) during winter (CST).
-    # 11:00 UTC = ~6:00 AM CDT — daily active-headcount snapshot into the current
-    # month's roster_statistics row (upsert overwrites, so re-running is safe).
-    - cron: '0 11 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # Times anchored to US Central. GitHub cron is fixed UTC and does NOT observe
+#    # DST, so these land ~1h earlier (Central) during winter (CST).
+#    # 11:00 UTC = ~6:00 AM CDT — daily active-headcount snapshot into the current
+#    # month's roster_statistics row (upsert overwrites, so re-running is safe).
+#    - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
       period:

@@ -1,21 +1,29 @@
 name: QSRSoft Operations Report Pull
 
 on:
-  schedule:
-    # US Central-anchored (GitHub cron is fixed UTC, no DST). The Operations Report
-    # finalizes overnight, so a morning pull captures the prior full day + LY.
-    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
-    # Intraday current-day refreshes, every 15 min through the operating day (owner
-    # request 2026-11-08 — cash-integrity/T-Red freshness: qsr_cash_sheet is already
-    # the primary auto source for tRedAPct/tRedBPct/drawerOpens, src/engine/metric-
-    # source.js's opsCashRows chain, not the emailed Glimpse/cash-sheet tables — so
-    # this is the actual fix, not a new API to find). Upserts on (loc,dt), so more
-    # frequent runs refresh today's rows rather than add new ones. Covers ~7:00
-    # AM-6:45 PM CDT; continued below for the evening span (UTC date rolls).
-    - cron: '*/15 12-23 * * *'
-    # Same 15-min cadence, continuing ~7:00 PM-10:45 PM CDT. Supersedes the old
-    # standalone ~2:00 PM CDT current-day-refresh run, which this block now covers.
-    - cron: '*/15 0-3 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # US Central-anchored (GitHub cron is fixed UTC, no DST). The Operations Report
+#    # finalizes overnight, so a morning pull captures the prior full day + LY.
+#    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
+#    # Intraday current-day refreshes, every 15 min through the operating day (owner
+#    # request 2026-11-08 — cash-integrity/T-Red freshness: qsr_cash_sheet is already
+#    # the primary auto source for tRedAPct/tRedBPct/drawerOpens, src/engine/metric-
+#    # source.js's opsCashRows chain, not the emailed Glimpse/cash-sheet tables — so
+#    # this is the actual fix, not a new API to find). Upserts on (loc,dt), so more
+#    # frequent runs refresh today's rows rather than add new ones. Covers ~7:00
+#    # AM-6:45 PM CDT; continued below for the evening span (UTC date rolls).
+#    - cron: '*/15 12-23 * * *'
+#    # Same 15-min cadence, continuing ~7:00 PM-10:45 PM CDT. Supersedes the old
+#    # standalone ~2:00 PM CDT current-day-refresh run, which this block now covers.
+#    - cron: '*/15 0-3 * * *'
   workflow_dispatch:
     inputs:
       days_back:

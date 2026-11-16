@@ -303,9 +303,17 @@ function subtractDaysStr(dk, n) {
 // `maxDateStr` is the most recent date across the WHOLE dataset (not just this one employee's own
 // rows), so "recent" means the same calendar window for every employee being compared, not a
 // window that silently slides earlier for someone who hasn't worked in a while.
-function targetAwareFlagsForEmployee(rows, maxDateStr) {
+// `targetsByLoc` (owner request 2026-11-16, same day as the Smart Targets override extension
+// below) is an optional {loc: mergedTargetObject} map -- when a caller supplies one (store-
+// analytics.js now passes tolMergedTarget(ds, loc, settings) per loc), a Smart Targets override
+// for cashOSPct/tRedBPct/tRedAPct/posOverPct/refundPct actually reaches this flagging logic.
+// Before this, `target` was ALWAYS the literal DEFAULT_TARGETS[loc] constant -- the #1221 "a
+// Targets-panel/v2 override was silently ignored" bug class, here specifically, caught before
+// it ever shipped a wrong flag. Omitting targetsByLoc (every existing call site before this
+// change) keeps the exact prior behavior -- DEFAULT_TARGETS[loc] is still the fallback.
+function targetAwareFlagsForEmployee(rows, maxDateStr, targetsByLoc) {
   const loc = rows[0]?.loc;
-  const target = DEFAULT_TARGETS[loc] || {};
+  const target = (targetsByLoc && targetsByLoc[loc]) || DEFAULT_TARGETS[loc] || {};
   const days = dailyRowTotals(rows);
   const cutoff = subtractDaysStr(maxDateStr, RECENT_WINDOW_DAYS);
   const recentDays = days.filter(d => d.dk >= cutoff && d.sales > 0);
@@ -381,14 +389,44 @@ function targetAwareFlagsForEmployee(rows, maxDateStr) {
 // Keyed by the SAME `loc::emp` composite key analyzeRegisterAudit groups by internally (not the
 // empToken -- that falls back to the colliding literal 'Unknown' for pre-backfill rows, see this
 // file's header comment; `loc::emp` never collides between two different real employees).
-function computeTargetAwareRegisterFlags(allRows) {
+// `targetsByLoc` -- see targetAwareFlagsForEmployee's own comment; optional, defaults to
+// DEFAULT_TARGETS per loc exactly as before this parameter existed.
+function computeTargetAwareRegisterFlags(allRows, targetsByLoc) {
   if (!allRows || !allRows.length) return {};
   const maxDateStr = allRows.reduce((m, r) => { const dk = dateKey(r.date); return (!m || dk > m) ? dk : m; }, null);
   const rowsByEmpKey = {};
   for (const r of allRows) { (rowsByEmpKey[r.loc + '::' + r.emp] ||= []).push(r); }
   const out = {};
-  for (const [key, rows] of Object.entries(rowsByEmpKey)) out[key] = targetAwareFlagsForEmployee(rows, maxDateStr);
+  for (const [key, rows] of Object.entries(rowsByEmpKey)) out[key] = targetAwareFlagsForEmployee(rows, maxDateStr, targetsByLoc);
   return out;
+}
+
+// Per-store-day Controls ratios, aggregated across EVERY employee's rows for that store/day --
+// the same raw dollar fields dailyRowTotals() reads per-employee above, rolled up to the whole
+// store instead. Owner request 2026-11-16 ("configure [Controls targets] easier ourselves
+// through smart targets, looking at data we already have on file"): this is the "data we
+// already have on file" -- ds.auditRows, the automated weekly Register Audit pull -- reshaped
+// into the per-day ratio series Smart Targets' trailing-window trimmed-mean logic expects, so
+// posOverPct/refundPct/tRedBPct/tRedAPct get a real cloud fallback without a new manual upload.
+export function auditRowsToStoreDayRatios(auditRows, loc) {
+  const byDate = {};
+  for (const r of (auditRows || [])) {
+    if (loc != null && String(r.loc) !== String(loc)) continue;
+    const dk = dateKey(r.date);
+    const d = (byDate[dk] ||= { dk, date: r.date, sales: 0, cashOS: null, tRedB: 0, tRedA: 0, posOver: 0, refund: 0 });
+    d.sales += r.drawerSales || 0;
+    if (r.cashOSDollar != null) d.cashOS = (d.cashOS ?? 0) + r.cashOSDollar;
+    d.tRedB += r.tRedBDollar || 0;
+    d.tRedA += r.tRedADollar || 0;
+    d.posOver += r.posOverAmt || 0;
+    d.refund += (r.refundCash || 0) + (r.refundCashless || 0);
+  }
+  return Object.values(byDate).filter(d => d.sales > 0).map(d => ({
+    loc, date: d.date,
+    cashOSPct: d.cashOS != null ? d.cashOS / d.sales : null,
+    tRedBPct: d.tRedB / d.sales, tRedAPct: d.tRedA / d.sales,
+    posOverPct: d.posOver / d.sales, refundPct: d.refund / d.sales,
+  }));
 }
 
 export { analyzeRegisterAudit, registerTypeBreakdown, computeTargetAwareRegisterFlags };

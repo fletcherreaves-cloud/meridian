@@ -10,9 +10,17 @@ name: QSRSoft Register Audit Pull
 # 3708 and others) — see memory/dispatch35-register-audit-implementation.md.
 
 on:
-  schedule:
-    # 10:00 UTC — matches the DAR/eBOS cadence (5:00 AM CDT, previous business day fully closed).
-    - cron: '0 10 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # 10:00 UTC — matches the DAR/eBOS cadence (5:00 AM CDT, previous business day fully closed).
+#    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       days_back:

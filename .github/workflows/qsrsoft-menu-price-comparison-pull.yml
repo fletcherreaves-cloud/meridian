@@ -6,8 +6,16 @@ name: QSRSoft Menu Price Comparison Pull
 # took effect. Changes rarely, so a daily pull is cheap and mostly no-ops.
 
 on:
-  schedule:
-    - cron: '30 12 * * *'   # 12:30 UTC daily — well clear of the 10:00-11:40 UTC morning pull pack
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    - cron: '30 12 * * *'   # 12:30 UTC daily — well clear of the 10:00-11:40 UTC morning pull pack
   workflow_dispatch:
     inputs:
       start_date:

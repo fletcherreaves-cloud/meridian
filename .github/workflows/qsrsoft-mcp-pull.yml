@@ -1,0 +1,55 @@
+name: QSRSoft MCP Reports Pull
+
+# Pulls Time Slice Summary + Service Time Statistics via QSRSoft's sanctioned Native MCP Server
+# (https://mcp.myqsrsoft.com), the OAuth2 alternative QSRSoft named in its 2026-11 Operator
+# Security Notice Letter as a replacement for credential-login scraping. This is ADDITIVE —
+# none of the existing ~33 QSRSoft credential-login pull workflows are touched or disabled.
+# See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context, and
+# scripts/qsrsoft-mcp-pull.mjs's header for why only these 2 reports (the only ones the server
+# exposes today) and why there is no Playwright fallback (none needed — see that header).
+#
+# Auth is NOT a GitHub Secret: the OAuth refresh token rotates on every use (every exchange
+# invalidates the old token and issues a new one), so it lives in Supabase
+# (qsr_mcp_token_cache, service-role only) instead, read + rewritten by
+# scripts/lib/qsrsoft-mcp-auth.mjs. Seed that table once via the interactive OAuth consent flow
+# before this workflow's first real run — see the memory file above.
+
+on:
+  schedule:
+    # 11:00 UTC — after the other daily QSRSoft pulls (10:00 UTC slot), both reports are
+    # "completed days only" so once a day is correct cadence, no intraday need.
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Trailing window size in days (default: 4)'
+        required: false
+        default: '4'
+      debug:
+        description: 'Verbose per-day logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run QSRSoft MCP reports pull
+        run: node scripts/qsrsoft-mcp-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_MCP_DAYS_BACK:     ${{ github.event.inputs.days_back || '4' }}
+          QSRSOFT_MCP_DEBUG:         ${{ github.event.inputs.debug || '0' }}

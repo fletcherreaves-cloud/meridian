@@ -1763,6 +1763,85 @@ export async function loadLaborRows(daysBack = 400) {
   }));
 }
 
+// ── Labor Analysis / Labor Exceptions (emailed QSRSoft reports) ────────────────────────────
+// Owner request 2026-11-16 ("go ahead and wire it in its own careful pass"): labor_analysis_daily/
+// labor_exceptions_daily have been populated by scripts/qsrsoft-email-parse.mjs since v5.803/5.804
+// but were deliberately left out of App.js's ds.laborRows/ds.exceptionRows startup merge at the
+// time (see supabase/schema-labor-analysis-exceptions-email.sql's own header — "deserves its own
+// careful pass"). These two loaders are that pass's read side.
+//
+// LABOR_ANALYSIS_FIELDS below is intentionally byte-identical to scripts/qsrsoft-email-parse.mjs's
+// own constant of the same name — both sides derive each DB column from the SAME camelCase name
+// via the SAME toSnake() transform, so there is one authoritative field list, not two hand-typed
+// ones that could silently drift apart. If a field is ever added on the write side, add it here
+// too (src/__tests__ covers this symmetry — see labor-analysis-exceptions-ds-merge test).
+const LABOR_ANALYSIS_FIELDS = [
+  'sales','allNetSales','projSales','gc','actualGC','oppCostPct','oppCostDollar','avgCheck',
+  'tpph','spph','actVsNeed','punchLaborPct','crewLaborPct','totalLaborPct','otHrs','otDollar',
+  'actHrs','avgRate','salaryMgrHrs','fixedContractHrs','fixedSchedHrs','variableNeeded',
+  'floorMgmtNeeded','floorHrsSched','salesVsLYPct',
+  'dtSales','dtGC','dtAvgChk','dtPctTotal','bfSales','bfGC','bfAvgChk','bfPctTotal',
+  'delivSales','delivGC','delivAvgChk','delivPctTotal','mopSales','mopGC','mopAvgChk','mopPctTotal',
+  'kioskSales','kioskGC','kioskAvgChk','kioskPctTotal','eatInSales','eatInGC',
+  'inStoreSales','inStoreGC','inStorePctTotal','fcSales','fcGC','fcPctTotal',
+];
+// Matches on lowercase/digit-then-uppercase, NOT every uppercase letter -- the latter splits
+// consecutive capitals apart (mopGC -> mop_g_c) which doesn't match this table's real columns
+// (mop_gc, actual_gc, ... -- schema-labor-analysis-exceptions-email.sql). Kept byte-identical to
+// scripts/qsrsoft-email-parse.mjs's own toSnake/_SNAKE_OVERRIDES -- see that file's comment for
+// the real bug this replaced (every "...GC" field read back as null; the write-side's matching
+// bug meant every upsert carrying one of those fields failed outright with 42703).
+const _SNAKE_OVERRIDES_LA = { salesVsLYPct: 'sales_vs_ly_pct' };
+const _toSnakeLA = (k) => _SNAKE_OVERRIDES_LA[k] || k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+// Maps a labor_analysis_daily row back to EXACTLY the shape parseLaborData() (src/parsers/
+// index.js, the manual-upload parser) produces, so a row from either source is indistinguishable
+// to any ds.laborRows consumer. isPeriodSummary is always false (this report is daily, never a
+// period aggregate); floorCompliance is derived the same way parseLaborData derives it.
+function _mapLaborAnalysisRow(r) {
+  const out = { loc: r.loc, date: new Date(r.date + 'T00:00:00'), isPeriodSummary: false };
+  for (const k of LABOR_ANALYSIS_FIELDS) out[k] = r[_toSnakeLA(k)] ?? null;
+  out.laborPct = out.punchLaborPct;
+  out.floorCompliance = out.floorMgmtNeeded > 0 ? out.floorHrsSched / out.floorMgmtNeeded : null;
+  return out;
+}
+
+export async function loadLaborAnalysisDaily(daysBack = 400) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const data = await _pagedParallel({ gteCol: 'date', gteVal: _cut.toISOString().slice(0, 10), table: 'labor_analysis_daily', select: '*', orderCol: 'date', ascending: false, label: 'laborAnalysisDaily' });
+  return (data || []).map(_mapLaborAnalysisRow);
+}
+
+// Maps a labor_exceptions_daily row to EXACTLY the aggregate shape parseLaborExceptions()
+// produces (totalExceptions/missedBreaks/earlyOut/lateIn/otExceptions/minorExceptions) — the
+// same field names src/engine/insights.js's joinDaily(exceptionRows, 'totalExceptions', ...)
+// correlation signal and analytics.js's coverage checker already expect (pre-dating this loader).
+export async function loadLaborExceptionsDaily(daysBack = 400) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const data = await _pagedParallel({ gteCol: 'date', gteVal: _cut.toISOString().slice(0, 10), table: 'labor_exceptions_daily', select: '*', orderCol: 'date', ascending: false, label: 'laborExceptionsDaily' });
+  return (data || []).map(r => ({
+    loc: r.loc, date: new Date(r.date + 'T00:00:00'),
+    totalExceptions: r.total_exceptions ?? 0, missedBreaks: r.missed_breaks ?? 0,
+    earlyOut: r.early_out ?? 0, lateIn: r.late_in ?? 0,
+    otExceptions: r.ot_exceptions ?? 0, minorExceptions: r.minor_exceptions ?? 0,
+  }));
+}
+
+// Shared additive-merge-by-(loc,date) step for the two App.js startup effects above: existing
+// rows (manual upload, or an earlier-resolved cloud load) ALWAYS win on a key already present —
+// `fresh` only ever contributes genuinely uncovered (loc,date) pairs. Pulled out as one tested
+// unit rather than duplicated inline in both effects (and rather than re-deriving the key format
+// a third time) — see labor-analysis-exceptions-ds-merge.test.js, which exercises this exact
+// function the same way App.js calls it.
+export function mergeFreshRowsByLocDate(existingRows, freshRows) {
+  const keyOf = r => r.loc + '|' + (r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10));
+  const existing = new Set((existingRows || []).map(keyOf));
+  const fresh = (freshRows || []).filter(r => !existing.has(keyOf(r)));
+  return { fresh, merged: fresh.length ? [...(existingRows || []), ...fresh] : (existingRows || []) };
+}
+
 // ── FOB / Food Over Base rows ────────────────────────────────────────────────
 export async function saveFobRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

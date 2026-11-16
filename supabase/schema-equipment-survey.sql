@@ -53,11 +53,23 @@ create table if not exists public.equipment_survey_entries (
   photo_url        text,             -- equipment-photos storage bucket path, when a data-plate photo was captured
   ai_extraction    jsonb,            -- raw {model,serial,manufacturer,manufactureDate,confidence_notes} from the Claude-vision autofill, kept even when the submitter corrected it -- audit trail for how well extraction is doing
   position_detail  jsonb,            -- owner feedback 2026-10-19: {side: 'side1_right'|'side1_left'|'side2_right'|'side2_left', relative: 'same_as_grill'|'opposite_of_grill'} -- both can be set together ("select both criteria if needed for clarity"); a store's own Side 1/2 numbering isn't standardized, so this is always relative to THAT store, never assumed
+  refrigeration_subtype text,       -- owner request 2026-11-16: for a `refrigeration`-type item, is the real unit a refrigerator, a freezer, or a combo (both in one cabinet)? See CHECK constraint below.
   created_at       timestamptz      not null default now()
 );
 
 -- Migration (safe to re-run): add position_detail to a table created before this column existed.
 alter table public.equipment_survey_entries add column if not exists position_detail jsonb;
+
+-- Migration (safe to re-run): add refrigeration_subtype to a table created before this column
+-- existed. A plain text CHECK, not jsonb like position_detail, since this is one flat value, not
+-- a multi-field struct.
+alter table public.equipment_survey_entries add column if not exists refrigeration_subtype text;
+do $$ begin
+  alter table public.equipment_survey_entries
+    add constraint equipment_survey_entries_refrigeration_subtype_check
+    check (refrigeration_subtype is null or refrigeration_subtype in ('refrigerator', 'freezer', 'combo'));
+exception when duplicate_object then null;
+end $$;
 
 create index if not exists equipment_survey_entries_instance_idx on public.equipment_survey_entries (instance_id, submitted_at desc);
 create index if not exists equipment_survey_entries_loc_idx on public.equipment_survey_entries (loc, submitted_at desc);

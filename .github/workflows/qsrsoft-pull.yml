@@ -1,13 +1,21 @@
 name: QSRSoft FOB Pull
 
 on:
-  schedule:
-    # Pulled 3×/day so an intraday change (e.g. an EOM count finalizing → stat-variance
-    # settling → FOB moving) is reflected within hours, not next morning. The script
-    # re-pulls a recent window each run, so later runs backfill/correct the same days.
-    - cron: '0 11 * * *'   # 06:00 CDT — after QSRSoft ABC completes (~7-8 AM Central)
-    - cron: '0 18 * * *'   # 13:00 CDT — early afternoon
-    - cron: '0 22 * * *'   # 17:00 CDT — late afternoon (catches most same-day count finalizations)
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # Pulled 3×/day so an intraday change (e.g. an EOM count finalizing → stat-variance
+#    # settling → FOB moving) is reflected within hours, not next morning. The script
+#    # re-pulls a recent window each run, so later runs backfill/correct the same days.
+#    - cron: '0 11 * * *'   # 06:00 CDT — after QSRSoft ABC completes (~7-8 AM Central)
+#    - cron: '0 18 * * *'   # 13:00 CDT — early afternoon
+#    - cron: '0 22 * * *'   # 17:00 CDT — late afternoon (catches most same-day count finalizations)
   workflow_dispatch:
     inputs:
       days_back:

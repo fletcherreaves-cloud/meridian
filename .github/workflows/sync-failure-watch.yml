@@ -67,40 +67,20 @@ on:
       - LifeLenz People Skills Sync
       - LifeLenz Schedule Variance Pull
       - Local News RSS Pull
-      - QSRSoft Historical Backfill
-      - QSRSoft Cash Anomaly Check
-      - QSRSoft Daily Activity Pull
-      - QSRSoft Digital App Pull
+      # ⚠️ 32 QSRSoft credential-login pulls REMOVED from this list 2026-11-16 — NOT because
+      # they're gone, but because their `schedule:` triggers are paused for QSRSoft Operator
+      # Security Notice compliance (memory/finding-qsrsoft-security-notice-2026-11-16.md).
+      # `workflow_run` only watches what this test treats as "scheduled" (has a `cron:`), and
+      # src/__tests__/sync-failure-watch.test.js's own "lists no workflow that does not exist"
+      # check correctly flags a name with no cron as phantom — so removing them here, rather
+      # than leaving dead entries, keeps that test honest. The removed names are the full
+      # original list minus QSRSoft Email Report Parse, QSRSoft KB Analyze, and QSRSoft MCP
+      # Reports Pull (below) — none of which use credential login and all three keep running.
+      # RE-ADD every removed name here IN THE SAME PR that re-enables any of their `schedule:`
+      # blocks — do not uncomment a cron line without also restoring its watch entry.
       - QSRSoft Email Report Parse
-      - QSRSoft Employee Pay History Pull
-      - QSRSoft Employee Roster Pull
-      - QSRSoft FOB Pull
-      - QSRSoft Forms Completion Pull
-      - QSRSoft Forms Reviews Pull
-      - QSRSoft Inventory Summary Pull
       - QSRSoft KB Analyze
-      - QSRSoft KB Pull
-      - QSRSoft Live Pulse Capture
-      - QSRSoft McDelivery Pull
-      - QSRSoft Menu Item Activity Pull
-      - QSRSoft Menu Items Catalog Pull
-      - QSRSoft Menu Item Recipe Pull
-      - QSRSoft Menu Price Comparison Pull
-      - QSRSoft On-Hand Pull (EOM count-progress)
-      - QSRSoft Operations Report Pull
-      - QSRSoft Product Mix Pull
-      - QSRSoft Product Outage Pull
-      - QSRSoft Punch Times Pull
-      - QSRSoft Quarter-Hour Sales Pull
-      - QSRSoft Register Audit Pull
-      - QSRSoft Roster Statistics Pull
-      - QSRSoft Security Events Pull
-      - QSRSoft Shift Manager Pull
-      - QSRSoft Store Controls Pull
-      - QSRSoft Store Settings Pull
-      - QSRSoft Turnover Pull
-      - QSRSoft Variance Pull (EOM diagnosis data)
-      - QSRSoft eBOS Purchases Pull
+      - QSRSoft MCP Reports Pull
       - SAGE Scheduled Prompts
       - Scheduled-Run Reliability Watchdog
       - Security Rules Run

@@ -1652,37 +1652,119 @@ function parseCashSheet(wb, filename){
 // ── QSRSoft: Labor Exceptions ────────────────────────────────────────────────
 // 3-sheet workbook: summary by store, summary by exception type, detail by employee.
 // Detail sheet has PII (employee names, GEID, ages) — stored but not surfaced in UI by default.
+// QSRSoft emails a "Labor Exceptions" CSV daily (ingest-report Edge Function already tags it
+// report_type='labor-exceptions' by filename — see detectReportType in supabase/functions/
+// ingest-report/index.ts). The REAL file (confirmed live, 2026-11-16 — owner-forwarded sample,
+// labor_exceptions_daily_2026-11-15.csv) is a PER-EMPLOYEE PER-EXCEPTION detail feed —
+// Loc,GEID,Employee,First Name,Last Name,Age,Act Start,Act End,Sch Start,Sch End,
+// Act Shift Length,Exception,Exception Time,Is Manager Authorized,Punches 1-6 — NOT a
+// per-location daily summary with count columns. This function previously assumed the latter
+// (a "Total Exceptions"/"Missed Break"/etc. column-per-type shape) and was never actually
+// exercised against a real file — the column names it hunted for turn out to be the
+// vocabulary of the real `Exception` field's VALUES (e.g. "Overtime - Time Clock"), not
+// separate summary columns. Fixed here to parse the real per-row shape and aggregate it into
+// the SAME (loc,date) summary shape downstream code already expects (insights.js's
+// `joinDaily(exceptionRows,'totalExceptions',laborRows,'otHrs')` correlation signal,
+// analytics.js's coverage/freshness checker) — so this fix activates that dormant signal
+// rather than requiring their own edit. Per-employee detail (including the compliance-
+// relevant "Is Manager Authorized" flag) is NOT in this return value — see
+// parseLaborExceptionsDetail below for that, used only by the email-parse pipeline so far.
+function classifyLaborException(exc){
+  const s=String(exc||'').toLowerCase();
+  if(s.includes('overtime'))return'ot';
+  if(s.includes('missed break'))return'missed';
+  if(s.includes('early'))return'early';
+  if(s.includes('late'))return'late';
+  if(s.includes('minor'))return'minor';
+  return null;
+}
+// Exception Time carries a real time-of-day (not a pure date), and arrives as an Excel
+// DATETIME serial once XLSX auto-converts a quoted "YYYY-MM-DD HH:MM:SS" CSV cell (confirmed
+// live: raw:true still yields a fractional serial like 46341.41667, not the original string).
+// parseXLDate's own numeric branch is NOT safe to reuse here — it assumes every numeric input
+// is a pure DATE serial (whole number of days) and unconditionally adds +12h to anchor it to
+// noon for timezone-safe display; applied to a value that already HAS a real time-of-day
+// fraction, that +12h shift pushes anything at or past ~12:00 into the next calendar day
+// (confirmed: a 13:00 exception time flips to the next day's date). This is a narrow,
+// dedicated conversion instead of a change to the shared parseXLDate, which many other
+// parsers in this file rely on for pure-date columns where the +12h anchor is correct.
+function parseExceptionTimestamp(v){
+  if(v===null||v===undefined||v==='')return null;
+  if(typeof v==='number')return new Date((v-25569)*86400000); // Excel serial incl. time -> exact UTC instant, no +12h
+  const s=String(v).trim();
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if(m)return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]));
+  const d=new Date(s);return isNaN(d)?null:d;
+}
+function _laborExceptionCols(h){
+  return {
+    loc:        fc(h,'Loc','Location','Store'),
+    geid:       fc(h,'GEID','Geid'),
+    employee:   fc(h,'Employee'),
+    exception:  fc(h,'Exception'),
+    excTime:    fc(h,'Exception Time'),
+    mgrAuth:    fc(h,'Is Manager Authorized'),
+    actStart:   fc(h,'Act Start'), actEnd: fc(h,'Act End'),
+    schStart:   fc(h,'Sch Start'), schEnd: fc(h,'Sch End'),
+    shiftLen:   fc(h,'Act Shift Length'),
+  };
+}
 function parseLaborExceptions(wb, filename){
-  const rows=[];
   const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
   const _dateHint=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
-  // Sheet 1: Summary by location
-  const sumLocSn=wb.SheetNames.find(s=>s.toLowerCase().includes('location')||s.toLowerCase().includes('store')||s.toLowerCase().includes('summary'))
-               ||wb.SheetNames[0];
-  const rawLoc=parseRaw(wb,sumLocSn),hiL=autoHdrRow(rawLoc),hL=rawLoc[hiL]||[];
-  const CL={
-    loc:    fc(hL,'Loc','Location','Store','Business Unit','Restaurant','Str #','Store #','Store Number','Restaurant Number'),
-    date:   fc(hL,'Date','Period','Business Date','Week Ending','Period End','Period Start'),
-    total:  findCol(hL,'Total Exceptions','Total Exc','Exception Count','Exceptions'),
-    missed: findCol(hL,'Missed Break','Missed Breaks'),
-    early:  findCol(hL,'Early Out','Early Punch Out'),
-    late:   findCol(hL,'Late In','Late Punch In'),
-    ot:     findCol(hL,'Overtime','OT Exceptions'),
-    minors: findCol(hL,'Minors','Minor'),
-  };
-  for(let i=hiL+1;i<rawLoc.length;i++){
-    const r=rawLoc[i];if(!r)continue;
-    const rawLoc2=String(r[CL.loc]||'').trim();
-    const loc=rawLoc2.replace(/[^0-9]/g,'');if(!loc)continue;
-    const dt=CL.date>=0?parseXLDate(r[CL.date]):_dateHint;
-    rows.push({loc,date:dt||_dateHint,
-      totalExceptions:parseNum(r[CL.total]),
-      missedBreaks:CL.missed>=0?parseNum(r[CL.missed]):0,
-      earlyOut:CL.early>=0?parseNum(r[CL.early]):0,
-      lateIn:CL.late>=0?parseNum(r[CL.late]):0,
-      otExceptions:CL.ot>=0?parseNum(r[CL.ot]):0,
-      minorExceptions:CL.minors>=0?parseNum(r[CL.minors]):0,
-      _sheet:'summary',
+  const raw=parseRaw(wb,wb.SheetNames[0]),hi=autoHdrRow(raw),h=raw[hi]||[];
+  const C=_laborExceptionCols(h);
+  if(C.loc<0||C.exception<0)return[]; // not the real per-employee shape — bail, don't guess
+  const byKey=new Map();
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];if(!r)continue;
+    const locDigits=String(r[C.loc]||'').trim().replace(/[^0-9]/g,'');if(!locDigits)continue;
+    const loc=String(parseInt(locDigits,10));
+    const dt=C.excTime>=0?(parseExceptionTimestamp(r[C.excTime])||_dateHint):_dateHint;
+    const dKeyStr=dt.toISOString?dt.toISOString().slice(0,10):String(dt);
+    const key=loc+'|'+dKeyStr;
+    // date is the noon-anchored CALENDAR day (dKeyStr), never the raw exception timestamp —
+    // a punch exception's exact time-of-day must not leak into the day-grain `date` field,
+    // the same tz-drift trap this file's own parseXLDate noon-anchoring exists to avoid.
+    if(!byKey.has(key))byKey.set(key,{loc,date:new Date(dKeyStr+'T12:00:00'),totalExceptions:0,missedBreaks:0,earlyOut:0,lateIn:0,otExceptions:0,minorExceptions:0,_sheet:'summary'});
+    const agg=byKey.get(key);
+    agg.totalExceptions++;
+    const cls=classifyLaborException(r[C.exception]);
+    if(cls==='ot')agg.otExceptions++;
+    else if(cls==='missed')agg.missedBreaks++;
+    else if(cls==='early')agg.earlyOut++;
+    else if(cls==='late')agg.lateIn++;
+    else if(cls==='minor')agg.minorExceptions++;
+  }
+  return[...byKey.values()];
+}
+// Per-employee detail from the same real file — preserves the compliance-relevant fields
+// (above all "Is Manager Authorized") that the aggregate above necessarily collapses away.
+// Not wired into ds.exceptionRows/pipeline.js — used only by scripts/qsrsoft-email-parse.mjs
+// so far; a future panel can read it directly from Supabase.
+function parseLaborExceptionsDetail(wb, filename){
+  const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
+  const _dateHint=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
+  const raw=parseRaw(wb,wb.SheetNames[0]),hi=autoHdrRow(raw),h=raw[hi]||[];
+  const C=_laborExceptionCols(h);
+  if(C.loc<0||C.exception<0)return[];
+  const rows=[];
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];if(!r)continue;
+    const locDigits=String(r[C.loc]||'').trim().replace(/[^0-9]/g,'');if(!locDigits)continue;
+    const loc=String(parseInt(locDigits,10));
+    const excTimestamp=C.excTime>=0?parseExceptionTimestamp(r[C.excTime]):null;
+    const dKeyStr=(excTimestamp||_dateHint).toISOString().slice(0,10);
+    const mgrAuthRaw=C.mgrAuth>=0?String(r[C.mgrAuth]||'').trim():'';
+    rows.push({
+      loc,date:new Date(dKeyStr+'T12:00:00'),exceptionTime:excTimestamp,
+      geid:C.geid>=0?String(r[C.geid]||'').trim():'',
+      employee:C.employee>=0?String(r[C.employee]||'').trim():'',
+      exception:C.exception>=0?String(r[C.exception]||'').trim():'',
+      isManagerAuthorized:mgrAuthRaw===''?null:/^y/i.test(mgrAuthRaw),
+      actStart:C.actStart>=0?r[C.actStart]:null, actEnd:C.actEnd>=0?r[C.actEnd]:null,
+      schStart:C.schStart>=0?r[C.schStart]:null, schEnd:C.schEnd>=0?r[C.schEnd]:null,
+      shiftLength:C.shiftLen>=0?r[C.shiftLen]:null,
     });
   }
   return rows;
@@ -2466,6 +2548,6 @@ function parsePeopleSkillsWb(wb){
   return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
 }
 
-export { parseXLDate, findCol, fc, fcx, parseNum, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays };
+export { parseXLDate, findCol, fc, fcx, parseNum, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLaborExceptionsDetail, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays };
 export { parseConversionEfficiencyPDF } from './conversion-efficiency.js';
 export { parseOilEfficiencyPDF } from './oil-efficiency.js';

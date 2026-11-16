@@ -6,8 +6,16 @@ name: QSRSoft Store Settings Pull
 # changes rarely, same cadence as the sibling Store Controls pull.
 
 on:
-  schedule:
-    - cron: '15 13 * * 1'   # Mondays 13:15 UTC — 15 min after Store Controls' own Monday 13:00 slot
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    - cron: '15 13 * * 1'   # Mondays 13:15 UTC — 15 min after Store Controls' own Monday 13:00 slot
   workflow_dispatch:
     inputs:
       stores:

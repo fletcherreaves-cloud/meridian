@@ -1,15 +1,23 @@
 name: QSRSoft Cash Anomaly Check
 
 on:
-  schedule:
-    # US Central-anchored (GitHub cron is fixed UTC, no DST). Hourly from ~6:00 AM to
-    # ~2:00 PM CDT — matches the existing ops-pull "current-day refresh" cutoff (owner ask,
-    # Notes 54: re-pull hourly while a Cash anomaly is still unsettled, stop by 2pm CST so it
-    # doesn't run all day; if still anomalous by then it resolves on tomorrow's pull, or the
-    # owner can trigger a manual sync). Each run's cheap check (one Supabase read) always
-    # runs; only escalates to a live QSRSoft pull when something's actually flagged, so idle
-    # hours cost nothing against their site.
-    - cron: '0 11-19 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # US Central-anchored (GitHub cron is fixed UTC, no DST). Hourly from ~6:00 AM to
+#    # ~2:00 PM CDT — matches the existing ops-pull "current-day refresh" cutoff (owner ask,
+#    # Notes 54: re-pull hourly while a Cash anomaly is still unsettled, stop by 2pm CST so it
+#    # doesn't run all day; if still anomalous by then it resolves on tomorrow's pull, or the
+#    # owner can trigger a manual sync). Each run's cheap check (one Supabase read) always
+#    # runs; only escalates to a live QSRSoft pull when something's actually flagged, so idle
+#    # hours cost nothing against their site.
+#    - cron: '0 11-19 * * *'
   workflow_dispatch: {}
 
 jobs:
