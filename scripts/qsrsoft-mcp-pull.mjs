@@ -29,7 +29,7 @@
 // Optional: QSRSOFT_MCP_DAYS_BACK (default 4 — a short trailing window; these are completed-day
 // summary reports, not a backfill-heavy stream), QSRSOFT_MCP_DEBUG=1.
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshAccessToken } from './lib/qsrsoft-mcp-auth.mjs';
 import { callTool } from './lib/qsrsoft-mcp-client.mjs';
@@ -42,7 +42,13 @@ const STORE_NSNS = [
 const DAYS_BACK = parseInt(process.env.QSRSOFT_MCP_DAYS_BACK || '4', 10);
 const DEBUG = process.env.QSRSOFT_MCP_DEBUG === '1';
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) rather than createClient() directly —
+// CI's qsrsoft-mcp-pull.test.js imports this file's pure parseReportCsv() for unit testing
+// (2026-11-16) without either env var set, and an unguarded createClient(undefined, undefined)
+// throws at module-load time, failing that import before any test can even run. Resolves to
+// null instead when the env vars are missing; the real scheduled pull always has both set, so
+// production behavior is unchanged.
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const nsn7 = n => String(n).padStart(7, '0');
 const num = v => (v == null || v === '' || v === 'null' || isNaN(Number(v))) ? null : Number(v);
