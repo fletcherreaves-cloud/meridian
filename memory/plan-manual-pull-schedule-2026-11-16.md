@@ -158,3 +158,22 @@ Tests: `src/__tests__/manual-pull-triggers.test.js` (engine, 7 cases) +
 `src/__tests__/manual-pull-triggers-data-manager.test.js` (renders the real `DataManagerPanel`,
 not just the engine — per "would this verification still pass if reverted," a revert of the
 panel's wiring fails here even though the engine's own tests would still pass unchanged).
+
+## Also surfaced on At A Glance (owner: "a tile on glance that explicitly makes it clear what
+## reports need to be uploaded")
+
+Same engine (`computeManualPullTriggers`), a second thin tile — `ManualPullTriggersTile` in
+`src/views/at-a-glance.js`, registered in `DEF_SECS` as `manual-pulls` (toggleable like every
+other home-screen section). This is deliberately NOT a separate computation from the Data
+Manager card — both call the same function, so they can never disagree. Tested by rendering the
+real `AtAGlance` component (`src/__tests__/manual-pull-triggers-at-a-glance.test.js`).
+
+**Left open, not done in this pass:** the owner's broader "rewire anything else that hasn't been
+[wired] yet" also points at the deferred `labor_analysis_daily`/`labor_exceptions_daily`/
+`labor_exceptions_detail_daily` → `ds.laborRows`/`ds.exceptionRows` merge (named in
+`memory/finding-qsrsoft-security-notice-2026-11-16.md`'s Labor Analysis section as a deliberate
+follow-on, not done at the time). Did not attempt it in this same pass — it touches App.js's
+core startup data-loading flow in ~6 places (`loadLaborRows()`'s own effect, the DAR-sales
+supplement, `_stCloudEmailReport`, `saveLaborRows`'s upsert) with a documented history of real
+race conditions (see that effect's own comments). Worth a dedicated, careful pass with its own
+testing — not something to rush in alongside unrelated work on a core, widely-read data path.
