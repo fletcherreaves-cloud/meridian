@@ -119,20 +119,48 @@ work against this server:**
 - **No manual-upload fallback UI.** The existing scraping pipeline, deliberately kept running
   in parallel, already covers this exact ground — it IS the fallback.
 
-## ⚠️ Two things Fletcher needs to do before this pull can run for real
+## ✅ RESOLVED 2026-11-16 (same day) — both pending items are done; the pull is live
 
-1. **Run `supabase/schema-qsrsoft-mcp-reports.sql`** in the Supabase SQL editor (this agent's
-   attempt to apply it directly via the Management API was blocked by the sandbox's own
-   safety classifier as a live-database write — same as prior DDL in this repo, e.g. the
-   Recommendation Ledger migration, which the owner ran manually).
-2. **One more "Connect" + paste-the-redirect-URL round** in QSRSoft (same flow as the first
-   connection) is needed to mint a **dedicated** refresh token for `qsr_mcp_token_cache` — see
-   "A mistake made during this session's own development" below for why the one already
-   established can't be reused.
+1. **`supabase/schema-qsrsoft-mcp-reports.sql` — owner ran it.** Confirmed by direct measurement
+   (service-role `Range: 0-0` probe): all 3 tables (`qsr_mcp_token_cache`,
+   `qsr_mcp_time_slice_summary`, `qsr_mcp_service_time_stats`) returned `content-range: */0` —
+   real, empty tables, not a missing-table error.
+2. **A dedicated refresh token was minted and seeded.** Fletcher disconnected the stale "Claude
+   Code" MCP connection in QSRSoft's settings UI, this agent re-initiated the OAuth flow (same
+   pseudo-TTY/FIFO technique as the first connection, this time fixed per the note below), and
+   the resulting refresh token + client ID were `upsert`ed into `qsr_mcp_token_cache` — the
+   value itself was never printed, logged, or committed anywhere; only field *presence* was
+   confirmed (`has refreshToken: True`, `has clientId: True`) before the write.
 
-Once both are done, tell this agent (or whichever session is live) the refresh token + client
-ID (from the resulting redirect URL / this agent's own session credentials) so it can be seeded
-into `qsr_mcp_token_cache` — a one-time `upsert`, never typed into a repo file or commit.
+**Then the real pull was run end-to-end and measured against ground truth** (not just "it
+didn't error" — see this file's own "measure it" standing rule):
+- `QSRSOFT_MCP_DAYS_BACK=2 node scripts/qsrsoft-mcp-pull.mjs` → `time_slice_summary: 52 row(s)
+  saved; service_time_stats: 52 row(s) saved, across 2/2 day(s)` (26 stores × 2 days each).
+- Spot-check: `qsr_mcp_time_slice_summary` for loc `0003708`, `dt=2026-11-14` returned
+  `stw_gc:1033, all_net_sales:12517.79, total_dt_sales:8903.64, total_dt_transactions:798,
+  total_instore_sales:3614.15, total_instore_transactions:235` — an **exact match** to the live
+  MCP query run by hand earlier the same session against the same store/date.
+- `qsr_mcp_token_cache.updated_at` advanced after the run (confirmed via a second read), proving
+  the refresh-token rotation fix actually rotates-and-persists correctly in the real pull path,
+  not just in isolation — the exact mechanism that broke during this feature's own development
+  (see below) is now proven working end to end.
+
+**The scheduled workflow needs no further action** — `.github/workflows/qsrsoft-mcp-pull.yml`
+(11:00 UTC daily) will pick up from here on its own schedule, already registered in
+`sync-failure-watch.yml`.
+
+**One fine point on the pseudo-TTY/FIFO technique, fixed on this second use (useful if it's
+needed a third time):** the first attempt this round tried `setsid nohup tail -f /dev/null >
+fifo &` as a standalone "holder" process to keep the FIFO's write end open across Bash tool
+calls — but opening a FIFO for either read or write alone BLOCKS until the other end is also
+opened, and since nothing was reading yet, the holder itself never finished starting (confirmed
+via `bash -x` trace: execution hung at the `tail` line forever). The fix: open the FIFO
+**read-write on one fd** in the SAME process that then backgrounds the real reader
+(`exec 3<>fifo` then `... <&3 ... &`) — opening a FIFO read-write never blocks, and the
+backgrounded child inherits that already-open fd, so a later writer to the FIFO path (a
+separate Bash tool call, `printf '...' > fifo`) succeeds immediately with no race. See
+`scripts/qsrsoft-mcp-auth.mjs`'s own persist-before-use discipline for the other half of this
+lesson (never consume a rotating refresh token without immediately saving its replacement).
 
 ## A mistake made during this session's own development (recorded so it isn't repeated)
 

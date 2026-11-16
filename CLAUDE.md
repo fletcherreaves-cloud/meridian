@@ -111,10 +111,12 @@ since the token invalidates itself on every use). Full audit, the MCP server's m
 mechanics (its `structuredContent` carries no row data — only `content[0].text`'s CSV block
 does, in vendor display-label order, not the requested field order — a real trap this already
 caught once), the emailed-vs-MCP-vs-scraping-only gap analysis, and a draft (unsent) response
-letter to QSRSoft are all in `memory/finding-qsrsoft-security-notice-2026-11-16.md`. **Two
-things still needed before the MCP pull runs for real: the owner running
-`supabase/schema-qsrsoft-mcp-reports.sql`, and one more interactive OAuth consent round to mint
-a dedicated refresh token for the vault table** — see that memory file's own checklist.
+letter to QSRSoft are all in `memory/finding-qsrsoft-security-notice-2026-11-16.md`. ✅ **RESOLVED same day — the pull is
+LIVE, do not re-raise either pending item.** The owner ran the schema SQL and a dedicated
+refresh token was seeded into `qsr_mcp_token_cache`; the real pull was then run end-to-end and
+measured against ground truth (store `0003708`/`2026-11-14` exact match to a live hand-run MCP
+query), and the refresh-token rotation itself was confirmed working (`updated_at` advanced
+after the run). Full verification detail in that memory file's "RESOLVED" section.
 
 ---
 
