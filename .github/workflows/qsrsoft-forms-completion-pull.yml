@@ -1,12 +1,20 @@
 name: QSRSoft Forms Completion Pull
 
 on:
-  schedule:
-    # US Central-anchored (GitHub cron is fixed UTC, no DST). completionDetail rows finalize
-    # as forms get filed through the day, so a morning pull captures the prior day fully +
-    # a same-day refresh catches anything filed since.
-    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
-    - cron: '0 19 * * *'   # ~2:00 PM CDT — current-day refresh
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # US Central-anchored (GitHub cron is fixed UTC, no DST). completionDetail rows finalize
+#    # as forms get filed through the day, so a morning pull captures the prior day fully +
+#    # a same-day refresh catches anything filed since.
+#    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
+#    - cron: '0 19 * * *'   # ~2:00 PM CDT — current-day refresh
   workflow_dispatch:
     inputs:
       days_back:

@@ -1,13 +1,21 @@
 name: QSRSoft Live Pulse Capture
 
 on:
-  schedule:
-    # Hourly during business hours, US Central-anchored (GitHub cron is fixed UTC, no DST).
-    # Notes 54 P1 (owner ask, 2026-08-04): capture TODAY's cash/labor/sales-mix/FOB every
-    # hour so a future "Live Pulse" panel can show same-day trend — something QSRSoft's own
-    # UI can't show since its date picker blocks selecting today. Capture-only for now, no
-    # UI reads this yet; see memory/finding-live-intraday-operations-report-data.md.
-    - cron: '0 11-23 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # Hourly during business hours, US Central-anchored (GitHub cron is fixed UTC, no DST).
+#    # Notes 54 P1 (owner ask, 2026-08-04): capture TODAY's cash/labor/sales-mix/FOB every
+#    # hour so a future "Live Pulse" panel can show same-day trend — something QSRSoft's own
+#    # UI can't show since its date picker blocks selecting today. Capture-only for now, no
+#    # UI reads this yet; see memory/finding-live-intraday-operations-report-data.md.
+#    - cron: '0 11-23 * * *'
   workflow_dispatch: {}
 
 jobs:

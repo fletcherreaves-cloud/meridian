@@ -7,8 +7,16 @@ name: QSRSoft Product Outage Pull
 # stream must not be built forward-only.
 
 on:
-  schedule:
-    - cron: '20 11 * * *'   # 11:20 UTC daily — after ops-pull (10:00) and the recipe pull (11:10), before the 11:30 baseline lock
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    - cron: '20 11 * * *'   # 11:20 UTC daily — after ops-pull (10:00) and the recipe pull (11:10), before the 11:30 baseline lock
   workflow_dispatch:
     inputs:
       start_date:

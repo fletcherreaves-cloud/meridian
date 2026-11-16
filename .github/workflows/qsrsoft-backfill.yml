@@ -6,13 +6,21 @@ name: QSRSoft Historical Backfill
 # scripts/qsrsoft-backfill-driver.mjs's header and memory/finding-qsrsoft-retention-2026-10-17.md.
 
 on:
-  schedule:
-    # Daily, staggered well clear of the live daily pulls' 08:00/10:00 UTC windows
-    # (qsrsoft-dar-pull.yml, qsrsoft-ops-pull.yml, qsrsoft-ebos-pull.yml) so this never competes
-    # with them for a freshly-minted Cognito token mid-run. Owner: "meter the data in" — one
-    # ~90-day chunk per report type per day is deliberately conservative; see
-    # scripts/qsrsoft-backfill-driver.mjs's own header for why.
-    - cron: '0 12 * * *'
+# ⚠️ SCHEDULE PAUSED 2026-11-16 — QSRSoft Operator Security Notice compliance triage
+# (owner directive: "if that means we need to, minimally, pause the violating pulls, then
+# do so"). This workflow's credential-login pull (QSRSOFT_USERNAME/PASSWORD or the
+# Cognito/eBOS token helpers) is exactly the automated-bot-with-a-valid-login pattern
+# QSRSoft's letter targets. The cron trigger is commented out below -- the script, the
+# Supabase table, and workflow_dispatch (manual/emergency run) are all left intact and
+# unchanged. See memory/finding-qsrsoft-security-notice-2026-11-16.md for the full context,
+# what covers this data in the meantime, and how to re-enable once the owner decides to.
+#  schedule:
+#    # Daily, staggered well clear of the live daily pulls' 08:00/10:00 UTC windows
+#    # (qsrsoft-dar-pull.yml, qsrsoft-ops-pull.yml, qsrsoft-ebos-pull.yml) so this never competes
+#    # with them for a freshly-minted Cognito token mid-run. Owner: "meter the data in" — one
+#    # ~90-day chunk per report type per day is deliberately conservative; see
+#    # scripts/qsrsoft-backfill-driver.mjs's own header for why.
+#    - cron: '0 12 * * *'
   workflow_dispatch:
     inputs:
       only:

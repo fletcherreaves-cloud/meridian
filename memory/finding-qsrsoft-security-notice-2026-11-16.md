@@ -224,6 +224,96 @@ scraping" decision, and why the owner's own instinct (retain everything, migrate
 sanctioned-and-covered, don't push the relationship) is the right call right now, not just the
 cautious one.
 
+## ⚠️ 2026-11-16 (same day, later) — owner escalated to an actual pause, not just retention
+
+Owner's own words, verbatim: *"I do not want to jeopardize anything at all, so if that means we
+need to, minimally, pause the violating pulls, then do so and offer me up grounded solutions to
+overcome it for now... Let's dig in and figure out how to triage this situation while staying
+compliant. Let's fix this first, then I will determine when to send a response back."* This
+**supersedes** the earlier "retain everything, don't touch scripts" framing — the owner now
+wants the automated credential-login pattern itself paused while a triage plan is built, with
+the response letter deliberately held until after the triage, on his own timeline.
+
+**Correction to this file's own earlier count, found while auditing which workflows to pause**
+(measure, don't trust a prior "not implicated" claim — exactly the standing rule this file cites
+elsewhere): the original "~33 scripts" figure and NOT-implicated list were based on a shallow
+grep that only caught `getFreshToken` directly, the same undercount pattern CLAUDE.md's own
+QSRSoft-token paragraph already warns about ("a plain grep... undercounts"). A real per-file
+import audit found **3 scripts previously marked NOT implicated are actually implicated**
+via `scripts/lib/ebos-auth.mjs`'s `resolveEbosToken()`: `qsrsoft-menu-item-activity-pull.mjs`,
+`qsrsoft-variance-pull.mjs`, and `qsrsoft-backfill-driver.mjs` (which spawns the other
+credential-login scripts as subprocesses — pausing it is required even though the driver file
+itself has no auth import). `qsrsoft-kb-pull.mjs` was also found implicated (Playwright login
+with `QSRSOFT_USERNAME`/`PASSWORD` even to reach the vendor's own public Help Center, confirmed
+by reading its body, not just its imports — the KB pull body literally has a "Login to
+QSRSoft" step with `page.fill('input[type="password"]'...)`).
+
+**32 scheduled GitHub Actions workflows had their `schedule:` trigger commented out** (cron
+removed, `workflow_dispatch:` — manual/emergency run — left intact, scripts and Supabase tables
+untouched):
+`qsrsoft-dar-pull.yml`, `qsrsoft-digital-app-pull.yml`, `qsrsoft-ebos-pull.yml`,
+`qsrsoft-employee-roster-pull.yml`, `qsrsoft-forms-completion-pull.yml`,
+`qsrsoft-forms-reviews-pull.yml`, `qsrsoft-inventory-summary-pull.yml`, `qsrsoft-kb-pull.yml`,
+`qsrsoft-mcdelivery-pull.yml`, `qsrsoft-menu-item-activity-pull.yml`,
+`qsrsoft-menu-item-recipe-pull.yml`, `qsrsoft-menu-items-pull.yml`,
+`qsrsoft-menu-price-comparison-pull.yml`, `qsrsoft-onhand-pull.yml`, `qsrsoft-ops-pull.yml`,
+`qsrsoft-pay-history-pull.yml`, `qsrsoft-pmix-pull.yml`, `qsrsoft-product-outage-pull.yml`,
+`qsrsoft-pull.yml` (FOB), `qsrsoft-punch-times-pull.yml`, `qsrsoft-register-audit-pull.yml`,
+`qsrsoft-roster-stats-pull.yml`, `qsrsoft-sales-quarter-hour-pull.yml`,
+`qsrsoft-security-events-pull.yml`, `qsrsoft-shift-manager-pull.yml`,
+`qsrsoft-store-controls-pull.yml`, `qsrsoft-store-settings-pull.yml`, `qsrsoft-turnover-pull.yml`,
+`qsrsoft-variance-pull.yml`, `qsrsoft-backfill.yml`, `qsrsoft-cash-anomaly-check.yml`,
+`qsrsoft-live-pulse.yml` (the last two run `qsrsoft-ops-pull.mjs`/`qsrsoft-pull.mjs` on separate
+intraday schedules — real invocations confirmed by reading their `run:` step, not just a
+filename match in a comment).
+
+**Explicitly NOT paused — confirmed by reading each file's actual auth path, not assumed:**
+`qsrsoft-email-parse.yml` (no login — parses QSRSoft's own emailed reports, one of the letter's
+own sanctioned paths), `qsrsoft-kb-analyze.yml` (Supabase-only, analyzes already-pulled KB rows,
+no live QSRSoft call), `qsrsoft-mcp-pull.yml` (the sanctioned OAuth connection, this file's own
+first migration slice). `eom-digest-send.yml` was never a QSRSoft pull at all — it only
+*mentions* `qsrsoft-onhand-pull.mjs` in a comment; it sends email from already-stored data.
+
+**`sync-failure-watch.yml` updated to match**: the 32 paused names were removed from its
+watched `workflows:` list — `src/__tests__/sync-failure-watch.test.js`'s own "lists no workflow
+that does not exist" check correctly flags a watched name with no `cron:` as phantom, so leaving
+them in would have failed that test, not just been inert. A comment block at the removal site
+names exactly what to do when any of these are re-enabled: restore the `cron:` lines AND the
+watch entry in the SAME PR — never one without the other.
+
+**Verified, not assumed:** `npx vitest run src/__tests__/sync-failure-watch.test.js` (4/4 pass),
+`src/__tests__/qsrsoft-onhand-pull-fob-nudge.test.js` + `scheduled-pull-watchdog.test.js`
+(15/15 pass, both reference these specific workflow files), every one of the 32 transformed
+YAML files re-parsed with `yaml.safe_load` to confirm `schedule` is gone and `workflow_dispatch`
+survived, and `npm run build` (clean, within payload budget — these are backend-only workflow
+files, zero client-bundle impact anyway).
+
+**Not scheduled, but still use credential-login (don't invoke manually during this pause,
+though there's no automated schedule to disable for these):** `qsrsoft-inventory-history-pull.mjs`
+(`resolveEbosToken`), `qsrsoft-event-details-probe.mjs`, `qsrsoft-field-scraper.mjs`,
+`qsrsoft-security-events-new-fields-probe-2026-11-08.mjs`, `qsrsoft-store-transition-probe.mjs`,
+`qsrsoft-explore.mjs`. `qsrsoft-ops-gap-report.mjs` is NOT implicated (Supabase-only gap report,
+no live QSRSoft call).
+
+**New lead, not yet actioned — owner's QSRSoft account has reports already emailing that
+Meridian never parses.** A screenshot of the owner's live "Scheduled Reports" admin page shows
+5 currently-scheduled reports: Cash Sheet Extract, Daily Glimpse, Labor Analysis, Labor
+Exceptions, Sales Ledger (list may continue past what the screenshot showed — unconfirmed).
+Three of these (Cash Sheet Extract, Daily Glimpse, Sales Ledger) already feed
+`cash_sheet_daily`/`daily_glimpse_daily`/`sales_ledger_daily` via `qsrsoft-email-parse.mjs`.
+**"Labor Analysis" and "Labor Exceptions" are NOT parsed by that script at all** — these emails
+may already be landing in the owner's inbox daily with zero ingestion, which if true closes part
+of the labor/OT gap (Track D's Group C) with no new QSRSoft access, no new scraping, and no
+compliance exposure at all — just a new parser for mail Meridian already receives. **Naming
+collision warning:** this codebase's existing `src/views/labor-analysis.js` /
+`src/engine/labor-analysis.js` / "Labor Analysis" terminology throughout `memory/` is the
+**LifeLenz** labor_analysis_actuals_report — completely unrelated to QSRSoft's own "Labor
+Analysis" scheduled report. Any new table/parser for QSRSoft's version must be named distinctly
+(e.g. `qsr_labor_analysis_email` or similar) to avoid colliding with the existing LifeLenz-sourced
+concept. Waiting on the owner for: (1) whether more reports are scheduled below what the
+screenshot showed, (2) a sample of the actual Labor Analysis / Labor Exceptions email content so
+a parser can be built against the real shape, not a guess.
+
 ## Draft response letter
 
 A draft reply to Michael Henkel is saved at `memory/draft-letter-qsrsoft-response-2026-11-16.md`
