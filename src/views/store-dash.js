@@ -18,6 +18,7 @@ import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../u
 import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
 import { lastPriceChangeByStore } from '../engine/price-events.js';
 import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
+import { aggregateAutoPeaks } from '../engine/daypart-peaks.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { DateRangeControl, DATE_RANGE_PRESETS, isValidCustomRange } from '../components/PanelControls.js';
 import { printHtml } from '../utils/print-html.js';
@@ -209,6 +210,36 @@ function analyzePeaks(peakSvcRows, peakSalesRows, loc, wb, explicitRange) {
     };
   }
   return result;
+}
+
+// Auto-first wrapper around analyzePeaks (dispatch 2026-11-16) — prefers the auto-derived
+// daypart activity (src/engine/daypart-peaks.js, sourced from the already-pulled HOURLY
+// qsr_daily_activity stream) over the manual "3 Peaks" Excel upload (peaksSvcRows/
+// peaksSalesRows), per-daypart, per-field. Falls back to the manual data only where the auto
+// side has no coverage for this store/daypart (count===0) -- e.g. a store whose hourly stream
+// hasn't been pulled far enough back yet. analyzePeaks itself is untouched (same manual-only
+// behavior, same existing tests) so this is purely additive.
+function autoFirstPeaks(ds, loc, wb, explicitRange) {
+  const manual = analyzePeaks(ds?.peaksSvcRows||[], ds?.peaksSalesRows||[], loc, wb, explicitRange);
+  let range;
+  if (explicitRange && explicitRange.s && explicitRange.e) {
+    range = { s: explicitRange.s, e: explicitRange.e };
+  } else {
+    range = { s: new Date(Date.now()-(wb||6)*7*86400000), e: new Date() };
+  }
+  const auto = aggregateAutoPeaks(ds?.daypartActivityRows||[], loc, range);
+  const hasAuto = Object.values(auto).some(d=>d.count>0);
+  if (!hasAuto) return manual;
+  const out = {};
+  for (const sl of ['breakfast','lunch','dinner']) {
+    const a = auto[sl], m = manual[sl];
+    out[sl] = a.count>0
+      ? { oepe:a.oepe||m.oepe, r2p:a.r2p||m.r2p, kvst:a.kvst||m.kvst, parkPct:a.parkPct||m.parkPct,
+          dtGC:a.dtGC||m.dtGC, netSales:a.netSales||m.netSales, gc:a.gc||m.gc,
+          avgCheck:a.avgCheck||m.avgCheck, tpph:a.tpph||m.tpph, count:a.count }
+      : m;
+  }
+  return out;
 }
 
 function mdToNodes(text){
@@ -1492,12 +1523,16 @@ function PeaksTab({ds, loc, tgt, settings}) {
   const locStr = String(loc||'').trim();
   // Debug: check what locs are in peaks data
   const allPeakLocs = ds&&ds.peaksSvcRows ? [...new Set(ds.peaksSvcRows.map(r=>String(r.loc||'').trim()))] : [];
+  // Auto-first (dispatch 2026-11-16): hasPeaks now also covers ds.daypartActivityRows (the
+  // auto-derived replacement for the stale manual "3 Peaks" upload) — see store-analytics.js's
+  // ShiftAnalysisTab for the full rationale and autoFirstPeaks for the merge logic.
   const hasPeaks = allPeakLocs.includes(locStr) ||
-    (ds&&ds.peaksSalesRows&&ds.peaksSalesRows.some(r=>String(r.loc||'').trim()===locStr));
+    (ds&&ds.peaksSalesRows&&ds.peaksSalesRows.some(r=>String(r.loc||'').trim()===locStr)) ||
+    (ds&&ds.daypartActivityRows&&ds.daypartActivityRows.some(r=>String(r.loc||'').trim()===locStr));
   const record = ds&&ds.records&&ds.records[loc];
   const wb = settings.weeksBack||6;
   const [dateRange, setDateRange] = useState(null);
-  const peaks = hasPeaks ? analyzePeaks(ds.peaksSvcRows||[],ds.peaksSalesRows||[],loc,wb,dateRange) : null;
+  const peaks = hasPeaks ? autoFirstPeaks(ds,loc,wb,dateRange) : null;
   const sliceInfo = {
     breakfast:{label:'Breakfast',time:'7:00 AM – 9:00 AM',color:'#f59e0b',bg:'rgba(245,158,11,.08)',bdr:'rgba(245,158,11,.25)'},
     lunch:    {label:'Lunch',    time:'11:00 AM – 2:00 PM',color:'#10b981',bg:'rgba(16,185,129,.08)',bdr:'rgba(16,185,129,.25)'},
@@ -4038,7 +4073,7 @@ export {
   fetchForecastWeather,
   getMonthTargets, getTargetsForDate, setMonthTargets,
   copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths,
-  PEAK_SLICES, normSlice, analyzePeaks,
+  PEAK_SLICES, normSlice, analyzePeaks, autoFirstPeaks,
   mdToNodes,
   useChart, TT, AX, LEG, SalesChart, lifeLenzSeries, OpsRadar, TrendChart,
   computeBacktestStats, lifeLenzBacktestRows,

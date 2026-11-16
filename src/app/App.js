@@ -353,7 +353,7 @@ const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1590,7 +1590,7 @@ function App() {
         // loaded:false is correct — file-based data gates still show "no data" state.
         setDs({
           laborRows:[], opsRows:[], ctrlRows:[], fobRows:[], auditRows:[],
-          peaksSvcRows:[], peaksSalesRows:[], darRows:[],
+          peaksSvcRows:[], peaksSalesRows:[], daypartActivityRows:[], darRows:[],
           pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
           glimpseRows:[], cashRows:[], exceptionRows:[],
           targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
@@ -1607,7 +1607,7 @@ function App() {
       // Also initialize empty shell on error so Supabase loads can still run.
       setDs({
         laborRows:[], opsRows:[], ctrlRows:[], fobRows:[], auditRows:[],
-        peaksSvcRows:[], peaksSalesRows:[], darRows:[],
+        peaksSvcRows:[], peaksSalesRows:[], daypartActivityRows:[], darRows:[],
         pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
         glimpseRows:[], cashRows:[], exceptionRows:[],
         targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{},
@@ -2430,6 +2430,19 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${sbPeaks.length} peaks rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);} };
+      // Auto-first "3 Peaks" daypart activity (dispatch 2026-11-16) — derives the same
+      // breakfast/lunch/dinner OEPE/R2P/KVS/TPPH the manual peaks_rows upload was supposed to
+      // keep current, from the already-pulled HOURLY qsr_daily_activity stream instead. Replaces
+      // a manual upload measured 4.5 months stale (last upload 2026-06-30) whose TPPH column had
+      // never once resolved to a non-zero value. See src/engine/daypart-peaks.js.
+      const _stDaypartActivity = async () => {
+      try{
+        const daypartActivityRows=await loadDaypartActivity(60);
+        if(daypartActivityRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,daypartActivityRows};});
+          console.log(`[Meridian] ✓ Loaded ${daypartActivityRows.length} daypart (3 Peaks auto) activity rows`);
+        }
+      }catch(e){console.warn('[Meridian] Daypart activity load failed:',e);} };
       // _stAuditRows removed (#191, 2026-08-11) — audit_rows was the highest-volume manual-
       // fallback stream (21,929 of ~42,500 T3 rows) and this eager stage loaded it unconditionally
       // on every login even on days the cloud streams already covered everything. It's no longer
@@ -2944,6 +2957,7 @@ function App() {
         _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
         _timedStage('T2 peaksRows', _stPeaksRows, _t2Start),
+        _timedStage('T2 daypartActivity', _stDaypartActivity, _t2Start),
         _timedStage('T2 darRows', _stDarRows, _t2Start),
         _timedStage('T2 customSignals', _stCustomSignals, _t2Start),
         _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
