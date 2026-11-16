@@ -246,3 +246,34 @@ ratchet updates for the new nav entry.
   (`equipment-layout.test.js`'s own header comment), the network-loading component itself is not
   rendered in tests — the pure logic it depends on is, the same scope split every other panel of
   this shape in the repo already uses.
+
+## Field-discovered manufacturer: Moffat combi oven (owner field photo, 2026-11-16)
+
+Owner spotted a Moffat-brand combi oven during an equipment walkthrough at store 44689 and sent a
+photo of its manufacturer QR-code label — not previously in `equipment_catalog`'s `combi_oven`
+type (only `Blodgett` and the two `Convotherm` generations existed). Added directly to live
+Supabase via the "type it in, flag for review" escape hatch this table's schema already supports
+(`supabase/schema-equipment-catalog.sql`'s own spec — a crew/owner-observed row is immediately
+selectable, `flagged=true` for later admin review, not blocked on an official reference doc).
+
+- Decoded all 3 QR codes on the label (`zbarimg`, after installing `libzbar0t64`/`zbar-tools` —
+  not pre-installed in this session's environment): `doc.moffat.com.au/mcdmanuals`,
+  `doc.moffat.com.au/productregistration`, `doc.moffat.com.au/servicerequest`. These confirm
+  Moffat genuinely sells to McDonald's (brand-level manual/registration/service links), but the
+  `mcdmanuals` link 301-redirects to an auth-gated Moffat-internal SharePoint folder
+  (`salesnz` tenant) — could not be read without a Moffat login, so no McDonald's-specific model
+  list was recoverable from it.
+- The label's printed code `2S1653` could **not** be confirmed as a model number — searched
+  Moffat's own AU product catalog (moffat.com.au's combi-steamer category: Turbofan EC40
+  manual/touch series, Convotherm `CMINIPRO10.10`/`CMAXX6.10`, Blue Seal Sapiens) and general web
+  search; nothing matches `2S1653`. It is stored as a `model_aliases` entry, not asserted as the
+  model, per this task's "measure, don't reason" standing rule — inventing a model name from an
+  unconfirmed code would be exactly the guess that rule forbids.
+- **Inserted row**: `type:'combi_oven', manufacturer:'Moffat', model:'Unknown model (asset/QR
+  label code 2S1653) — pending data-plate confirmation', flagged:true, source:'crew-added'`.
+  Real catalog id: `2e09972b-31ba-4d4e-ad0d-70b5af7730ef`.
+- **Still open**: the real model name/number lives on the unit's own data plate (a different
+  sticker, usually inside the door or on the back — not the QR label photographed), not
+  recoverable remotely. Next time someone is at store 44689, read that plate and update this row
+  (`model`/`model_aliases`) directly — a one-line `UPDATE equipment_catalog SET model = ...
+  WHERE id = '2e09972b-31ba-4d4e-ad0d-70b5af7730ef'`, not a new row.
