@@ -507,6 +507,62 @@ agreeing with each other (both derived the same wrong column name) would have lo
 confirmation if the test had only compared the read side's output to the write side's own
 field list, instead of to the actual DDL.
 
+## 🔴 2026-11-16 (same day, later still) — the pause was incomplete: an external heartbeat kept DAR + Ops running after it
+
+Fletcher pasted the live Data Manager coverage view and asked directly: *"are we good on not auto
+pulling the qsrsoft data."* Measured, not assumed — and the honest answer was **no**.
+
+**What was actually true at the time he asked:**
+
+- The "Pause 32 QSRSoft credential-login pull schedules" commit (065db415, ~20:17 UTC) correctly
+  commented out each paused workflow's in-repo `schedule:` block, with `workflow_dispatch` left
+  enabled on purpose "for manual/emergency runs." That part worked — eBOS Purchases and QSRSoft
+  FOB Pull's last `event:"schedule"` runs both landed **before** PR #1966 (which carried the pause
+  commit) actually merged into `main` (~22:54 UTC); once the pause reached `main`, their schedules
+  genuinely stopped.
+- **`qsrsoft-dar-pull.yml` and `qsrsoft-ops-pull.yml` never stopped**, because
+  `memory/finding-github-schedule-unreliable-external-heartbeat-2026-11-11.md`'s own fix from five
+  days earlier — three `pg_cron` jobs that call `workflow_dispatch` directly via the GitHub REST
+  API, built to route around GitHub's own schedule queue silently dropping runs — calls that exact
+  trigger every 15 minutes, completely independent of the YAML `schedule:` block the pause commit
+  edited. `workflow_dispatch` was deliberately left enabled on every paused workflow for *manual*
+  runs; nobody had connected that an *automated* external caller was already hitting that same
+  trigger on its own clock.
+- **Confirmed live via the GitHub Actions API, not inferred**: both workflows' most recent runs at
+  the time of the question were `event:"workflow_dispatch"`, landing every 15 minutes on the dot
+  (22:30, 22:45, 23:00, 23:15, 23:30, 23:45 UTC) — including **23:45 UTC, nearly an hour after the
+  pause had already landed on `main`**. The two sides agreeing with each other (pause commit says
+  "paused," task list says "done") would have looked like confirmation; only checking the real,
+  external-facing GitHub Actions run history against wall-clock time caught that the credential-
+  login DAR and Ops Report pulls were still actively running.
+- Scope-checked directly (`grep` across `supabase/` + `memory/` + `.github/workflows/` for
+  `pg_cron`/`net.http_post`/`external.heartbeat`): no other paused workflow has an external
+  heartbeat. The gap was exactly these two, not the other 30.
+
+**Fix:** Fletcher ran, in the Supabase SQL editor (this session has no SQL execution path to
+Supabase — the same constraint that required his hands for the original heartbeat setup):
+```sql
+select cron.unschedule('external-heartbeat-dar-pull');
+select cron.unschedule('external-heartbeat-ops-pull');
+```
+Confirmed by the query result (`unschedule: true`). `external-heartbeat-pull-watchdog` was
+deliberately left alone — it only polls the GitHub Actions API for staleness on
+`scheduled-pull-watchdog.yml`, never touches QSRSoft, and isn't implicated.
+
+**Net effect:** as of ~23:57 UTC 2026-11-16, all 32 paused QSRSoft credential-login pull schedules
+are now actually stopped — the in-repo YAML pause for 30 of them, plus this SQL fix closing the
+external-heartbeat bypass for the other 2 (DAR, Ops). `scheduled-pull-watchdog.yml`'s own cadence
+is unaffected and will now correctly flag DAR/Ops as stale going forward — **expected, not a
+regression** — since that's exactly what a genuinely-paused credential-login pull should look
+like; see this file's manual-pull-triggers feature for the surfaced-in-app equivalent.
+
+**Lesson for next time a scheduled workflow needs pausing:** commenting out a workflow's
+`schedule:` block is NOT sufficient on its own if anything else — a pg_cron job, another
+workflow's `workflow_run` trigger, a webhook, a third-party scheduler — might also call
+`workflow_dispatch` on it. Grep for `workflow_dispatch` callers (not just the workflow's own YAML)
+before considering a pause complete, and treat "I committed the pause" and "the pause is live on
+main and nothing else can still trigger it" as two separate things to verify.
+
 ## Draft response letter
 
 A draft reply to Michael Henkel is saved at `memory/draft-letter-qsrsoft-response-2026-11-16.md`
