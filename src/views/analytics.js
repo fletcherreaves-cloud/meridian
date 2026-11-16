@@ -39,6 +39,7 @@ import { callSageOnce } from '../lib/sage-client.js';
 import { computeOwnerSalesForecast } from '../engine/owner-sales-forecast.js';
 import { computeLaborTpphForecast } from '../engine/owner-labor-tpph-forecast.js';
 import { altitudeForRole } from '../engine/curated-home.js';
+import { computeManualPullTriggers } from '../engine/manual-pull-triggers.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1423,6 +1424,14 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
     };
   },[ds&&ds.peaksSvcRows,ds&&ds.peaksSalesRows]);
 
+  // Manual Pull Triggers (owner request 2026-11-16, QSRSoft compliance pause follow-up) —
+  // which store + which Tier-2 report is actually worth a manual pull right now, driven by the
+  // signals that survived the pause (FOB tolerance, graded-visit cadence), not a blanket weekly
+  // pull across all stores. See engine/manual-pull-triggers.js's own header for the full why.
+  const manualPullTriggers = React.useMemo(()=>{
+    try { return computeManualPullTriggers(ds||{}); } catch { return []; }
+  },[ds]);
+
   // Coverage for session/pipeline data sources (not in idbCoverage)
   const sessionCov = React.useMemo(()=>({
     schedRows:    calcCov(ds&&ds.schedRows||[]),
@@ -1950,6 +1959,28 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
             ...eomFileRows
           )  // tbody
           ),  // table
+          // Manual Pull Triggers (owner request 2026-11-16) — per-store flags for the Tier-2
+          // reports that are paused and have no bulk export (eBOS Purchases) or are worth a
+          // look ahead of a visit (Forms Completion Report), driven by signals that survived the
+          // compliance pause rather than a blanket weekly pull across every store.
+          manualPullTriggers.length>0 && div({style:{marginBottom:14}},
+            div({style:{fontSize:'9px',fontWeight:600,color:'var(--text3)',marginBottom:6,letterSpacing:'.5px'}},
+              '📋 MANUAL PULL NEEDED · '+manualPullTriggers.length+' flag'+(manualPullTriggers.length!==1?'s':'')),
+            div({style:{display:'flex',flexDirection:'column',gap:6}},
+              ...manualPullTriggers.map((t,i)=>{
+                const red=t.severity==='red';
+                return div({key:i,style:{display:'flex',gap:8,alignItems:'flex-start',
+                  padding:'7px 10px',borderRadius:'var(--r)',
+                  background:red?'rgba(239,68,68,.08)':'rgba(245,158,11,.08)',
+                  border:'.5px solid '+(red?'rgba(239,68,68,.25)':'rgba(245,158,11,.25)')}},
+                  span({style:{fontSize:'12px',marginTop:1}},red?'🔴':'🟡'),
+                  div({style:{flex:1,minWidth:0}},
+                    div({style:{fontSize:'9.5px',fontWeight:700,color:'var(--text)'}},
+                      sName(t.loc)||t.locName,' — ',span({style:{color:red?'#ef4444':'#f59e0b'}},t.report)),
+                    div({style:{fontSize:'8.5px',color:'var(--text3)',marginTop:1}},t.reason)));
+              })
+            )
+          ),
           // Info box
           div({style:{padding:'10px 14px',background:'rgba(16,185,129,.07)',
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,

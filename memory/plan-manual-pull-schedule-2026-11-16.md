@@ -95,3 +95,66 @@ store and *when*, instead of blanket-pulling all 27 on a fixed day. Brainstorm, 
 firing (a panel, a SAGE scheduled prompt, a manual glance at Signals), and whether this is worth
 formalizing into a Meridian feature (a "needs a Tier-2 manual pull" flag surfaced somewhere) versus
 staying a personal habit. This is the open part the owner wants to keep thinking through.
+
+## CoachQ's answer (same day) — closes the "can these be scheduled/bulk-exported" question
+
+Pasted the drafted ask above into CoachQ. Answer, verbatim gist:
+- **eBOS/Purchases, Security Events, and Forms/Checklist Completion are NOT on the schedulable
+  email list** and the KB documents no way to add one — a report shows the calendar icon or it
+  doesn't. **To request this as a feature, contact QSRSoft Support directly** (not something
+  CoachQ's KB-grounded answer can resolve on its own).
+- **Forms Completion Report is ALREADY an above-store, multi-store report** (Reports > Forms >
+  Forms Completion Report — Completion Summary + Completion Details tabs). This changes its
+  classification: it is NOT one-store-at-a-time like eBOS/Security Events. Moved out of the
+  "expensive Tier 2" bucket below.
+- **eBOS/Purchases and Security Events: no documented bulk export found for either.** Still
+  genuinely one-store-at-a-time per the KB.
+- **Security Events partially overlaps Register Audit** (already a Tier-1 weekly pull) — for
+  Security subscribers, Register Audit offers drawer-level drill-down. Worth checking next
+  Register Audit pull for how much of Security Events' own ground it already covers before
+  treating a separate Security Events pull as mandatory.
+
+Revised bucketing:
+- **Still genuinely 1-store-at-a-time, no bulk path**: eBOS/Purchases, Security Events (though
+  Register Audit may cover a meaningful slice of the latter already).
+- **No longer "expensive"**: Forms Completion Report — it's a normal above-store report, just add
+  it to the regular rotation like any Tier 1 item, no event-triggering needed.
+- **Open, owner's call**: whether to actually file an enhancement request with QSRSoft Support to
+  get eBOS/Security Events onto the schedulable list.
+
+## Built, same day — Manual Pull Triggers (owner: "we need to build this in to the app... flag
+## ... the very specifics for what needs to be pulled")
+
+Shipped a real in-app feature rather than leaving this as a personal habit. `src/engine/
+manual-pull-triggers.js`'s `computeManualPullTriggers(ds, opts)` composes two EXISTING single-
+sources-of-truth — never re-derives either:
+- `tolerance-status.js`'s `tolStatusesDistrict` (the same red/yellow/green FOB comparison
+  UnifiedTargetsPanel/the rollup tile/coaching findings already use) → flags **eBOS Purchases**
+  for a store whose FOB-category metric is red/yellow against its own official target.
+- `visit-readiness.js`'s `computeVisitReadiness`/`overdueThresholdDays` (the Visit Readiness
+  panel's own overdue-visit tracking) → flags **Forms Completion Report** for a store within 14
+  days of (or already past) its own graded-visit cadence threshold.
+
+Surfaced as a "📋 MANUAL PULL NEEDED" card in Data Manager's overview tab (`src/views/
+analytics.js`'s `DataManagerPanel`), red/yellow per flag, naming the exact store and report.
+
+**A real gap, caught by measuring rather than assuming (this repo's own standing rule): there is
+no Security Events trigger.** Checked `TOL_METRICS` directly — all 4 `cat:'pos'` entries
+(cashOS/tRedB/tRedA/discP) have `offKey: null`, meaning none of them has an official-target
+workbook column, so `TOL_ROLLUP_METRICS` (which requires both `offKey` and `tol`) excludes every
+one of them and `tolStatusesForStore` can **never** emit a `'pos'` status — confirmed empirically
+with a one-line node probe before writing a single line of the trigger logic, not assumed from
+reading the array. A first draft of this module had a `pos → Security Events` mapping that would
+have been silent dead code. **Left as an explicit open item, not guessed at**, since closing it
+means a real threshold/product decision (one of: add official target columns for those 4
+metrics so they get a real tol status like everything else; a fixed absolute threshold specific
+to this trigger; or a dedicated anomaly signal — Signals' Scanner already does correlation/
+z-score work on these same Controls metrics, but on data this trigger exists to help REPLACE, so
+it can't be the input here). Documented in the module's own header comment and guarded by a test
+(`src/__tests__/manual-pull-triggers.test.js`) that fails loudly if the gap is ever silently
+closed without updating this file.
+
+Tests: `src/__tests__/manual-pull-triggers.test.js` (engine, 7 cases) +
+`src/__tests__/manual-pull-triggers-data-manager.test.js` (renders the real `DataManagerPanel`,
+not just the engine — per "would this verification still pass if reverted," a revert of the
+panel's wiring fails here even though the engine's own tests would still pass unchanged).
