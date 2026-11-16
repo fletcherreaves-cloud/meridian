@@ -26,26 +26,76 @@
 // Security Events also partly overlaps the Register Audit report (already a Tier-1 weekly pull,
 // Security-subscriber drawer-level drill-down) — the flag says so rather than implying a wholly
 // separate pull is always required.
-import { tolStatusesDistrict } from './tolerance-status.js';
+import { tolStatusesDistrict, tolMergedTarget } from './tolerance-status.js';
 import { computeVisitReadiness, overdueThresholdDays } from './visit-readiness.js';
+import { computeTargetAwareRegisterFlags } from '../utils/register-audit.js';
 import { STORE_NAMES } from '../constants.js';
 
-// Only the FOB category maps to a Tier-2 manual-pull trigger today (eBOS Purchases) — verified
-// empirically (not assumed) that the POS-Controls category CANNOT produce a tolerance signal at
-// all: every one of TOL_METRICS' 4 'pos' entries (cashOS/tRedB/tRedA/discP) has `offKey: null` —
-// there is no official-target workbook column for any of them, so TOL_ROLLUP_METRICS (which
-// requires both offKey and tol) excludes all 4 and tolStatusesForStore can never emit a 'pos'
-// status. A Security Events trigger is a real gap, not wired here — closing it means picking one
-// of: (a) add official target columns for Cash O/S/T-Red/Discount so they get a real tol status
-// like every other metric, (b) a fixed absolute threshold specific to this trigger (a product/
-// threshold call, not something to invent unilaterally inside this module), or (c) a dedicated
-// anomaly signal (Signals' Scanner already does correlation/z-score work on these same Controls
-// metrics, but on data this trigger set exists to help replace, so it can't be the input here).
-// Left as an explicit open item (see this module's test file + memory/plan-manual-pull-schedule-
-// 2026-11-16.md) rather than guessed at.
+// Only the FOB category maps to a Tier-2 manual-pull trigger via tolStatusesDistrict (eBOS
+// Purchases) — verified empirically (not assumed) that tolerance-status.js's own 'pos' category
+// CANNOT produce a tolerance signal at all: every one of TOL_METRICS' 4 'pos' entries
+// (cashOS/tRedB/tRedA/discP) has `offKey: null`, so TOL_ROLLUP_METRICS excludes all 4 and
+// tolStatusesForStore can never emit a 'pos' status.
+//
+// RESOLVED 2026-11-16 (owner follow-up, same day): that is NOT the same as "no target exists"
+// for these metrics -- DEFAULT_TARGETS already carries real per-store values for all 5
+// (tCashOSPct/tRedBPct/tRedAPct/tPosOverPct/tRefundPct), and register-audit.js's
+// computeTargetAwareRegisterFlags already flags egregious/repetitive deviations against them
+// (Notes 61 #10/#11, memory/finding-register-audit-target-flags-2026-11-14.md) -- that function
+// IS the "already using it to flag potential issues" mechanism the owner recalled. The Security
+// Events trigger below reuses it directly (same calibrated 42-day window/egregious-3x/
+// repetitive-3days-50% thresholds that engine already ships with) rather than inventing a new
+// threshold -- see computeSecurityEventsTrigger below.
 const REPORT_BY_CAT = {
   fob: { report: 'eBOS Purchases', why: 'a food-cost/FOB metric' },
 };
+
+// Register Audit employee-level riskLevel -> this trigger's store-level severity. 'critical'/
+// 'high' both read red (same ≥30 threshold register-audit.js's own riskLevel bucketing uses for
+// "high" and above); 'watch' reads yellow; 'ok' never triggers.
+const RISK_TO_SEVERITY = { critical: 'red', high: 'red', watch: 'yellow' };
+
+// Rolls computeTargetAwareRegisterFlags' per-employee output up to one flag per STORE (this
+// trigger set decides whether to pull Security Events for a whole store, not per employee).
+// `targetsByLoc` lets an override (Monthly/Yearly Targets workbook, or any future scope-cascade
+// override) actually reach this flagging -- see register-audit.js's own comment on the bug this
+// closed (it used to read the literal DEFAULT_TARGETS constant only, ignoring any override).
+function computeSecurityEventsTrigger(ds, locs) {
+  const auditRows = ds?.auditRows || [];
+  if (!auditRows.length) return [];
+  const targetsByLoc = {};
+  for (const loc of locs) targetsByLoc[loc] = tolMergedTarget(ds, loc);
+  const flagsByEmpKey = computeTargetAwareRegisterFlags(auditRows, targetsByLoc);
+
+  const byLoc = {};
+  for (const [key, flags] of Object.entries(flagsByEmpKey)) {
+    const loc = key.split('::')[0];
+    if (!locs.includes(loc)) continue;
+    (byLoc[loc] ||= []).push(flags);
+  }
+
+  const SEVERITY_RANK = { red: 2, yellow: 1 };
+  const out = [];
+  for (const [loc, employees] of Object.entries(byLoc)) {
+    let severity = null, flaggedEmployees = 0;
+    const metricLabels = new Set();
+    for (const e of employees) {
+      if (e.riskLevel === 'ok') continue;
+      flaggedEmployees++;
+      const sev = RISK_TO_SEVERITY[e.riskLevel];
+      if (sev && (!severity || SEVERITY_RANK[sev] > SEVERITY_RANK[severity])) severity = sev;
+      for (const f of e.flags) metricLabels.add(`${f.label} (${f.kind})`);
+    }
+    if (!severity) continue;
+    out.push({
+      loc, locName: STORE_NAMES[loc] || loc, report: 'Security Events (and/or this week\'s Register Audit drawer-level detail)',
+      severity,
+      reason: `${flaggedEmployees} employee(s) with an egregious or repetitive Register Audit flag in the last 6 weeks — ${[...metricLabels].join(', ')}`,
+      metricId: 'register_audit_flags', metricLabel: 'Register Audit target-aware flags', source: 'register-audit',
+    });
+  }
+  return out;
+}
 
 // A graded visit counts as "coming up soon" once within this many days of its own
 // overdue threshold (overdueThresholdDays, visit-readiness.js) — early enough to pull Forms
@@ -80,6 +130,8 @@ export function computeManualPullTriggers(ds, opts = {}) {
       });
     }
   }
+
+  triggers.push(...computeSecurityEventsTrigger(ds, locs));
 
   const readiness = computeVisitReadiness(ds, { locs });
   for (const store of (readiness.stores || [])) {

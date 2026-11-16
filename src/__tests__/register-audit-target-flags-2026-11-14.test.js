@@ -12,7 +12,7 @@
 // numbers fails this test loudly instead of silently changing what "egregious"/"repetitive"
 // mean without anyone noticing.
 import { describe, it, expect } from 'vitest';
-import { analyzeRegisterAudit, computeTargetAwareRegisterFlags } from '../utils/register-audit.js';
+import { analyzeRegisterAudit, computeTargetAwareRegisterFlags, auditRowsToStoreDayRatios } from '../utils/register-audit.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 const LOC = '43380';
@@ -174,5 +174,58 @@ describe('computeTargetAwareRegisterFlags -- grouping and edge cases', () => {
     expect(f.riskScore).toBe(0);
     expect(f.flags).toEqual([]);
     expect(Object.values(f.metrics).every(v => v === null)).toBe(true);
+  });
+});
+
+// Owner request 2026-11-16: "give me an opportunity to override [these targets]". Found while
+// wiring a Manual Pull Trigger off this engine: targetAwareFlagsForEmployee always read the
+// literal DEFAULT_TARGETS[loc] constant, so an override set anywhere else in the app (Monthly/
+// Yearly Targets workbook, a future scope-cascade override) was silently ignored by this
+// flagging logic even though it visibly won everywhere else that reads a merged target (the
+// #1221 "Targets-panel override silently ignored" bug class, here specifically). Fixed via an
+// optional `targetsByLoc` param -- every test above calls with ONE argument and is unaffected,
+// proving the fix is additive, not a behavior change for existing callers.
+describe('computeTargetAwareRegisterFlags -- optional targetsByLoc override (2026-11-16)', () => {
+  it('an override in targetsByLoc replaces DEFAULT_TARGETS for that metric', () => {
+    const t = DEFAULT_TARGETS[LOC];
+    const dayPct = t.tRedAPct + 0.02; // egregious against the real DEFAULT_TARGETS value
+    const rows = [row('2026-10-25', { tRedADollar: 1000 * dayPct })];
+    expect(computeTargetAwareRegisterFlags(rows)[LOC + '::E1'].metrics.tRedA.isEgregious).toBe(true);
+    const overridden = computeTargetAwareRegisterFlags(rows, { [LOC]: { ...t, tRedAPct: dayPct } });
+    expect(overridden[LOC + '::E1'].metrics.tRedA.isEgregious).toBe(false);
+  });
+
+  it('a loc with no entry in targetsByLoc falls back to DEFAULT_TARGETS unchanged', () => {
+    const rows = [row('2026-10-25', { cashOSDollar: -9999 })];
+    const withEmptyMap = computeTargetAwareRegisterFlags(rows, {});
+    const withNoMap = computeTargetAwareRegisterFlags(rows);
+    expect(withEmptyMap[LOC + '::E1'].riskScore).toBe(withNoMap[LOC + '::E1'].riskScore);
+  });
+});
+
+describe('auditRowsToStoreDayRatios -- per-store-day Controls ratios for Smart Targets\' cloud fallback', () => {
+  it('sums every employee\'s dollar amounts for the same store/day before dividing by total sales', () => {
+    const rows = [
+      row('2026-10-25', { emp: 'Alice', drawerSales: 600, tRedADollar: 6, posOverAmt: 3 }),
+      row('2026-10-25', { emp: 'Bob', drawerSales: 400, tRedADollar: 4, posOverAmt: 1 }),
+    ];
+    const [d] = auditRowsToStoreDayRatios(rows, LOC);
+    expect(d.tRedAPct).toBeCloseTo(10 / 1000, 6);
+    expect(d.posOverPct).toBeCloseTo(4 / 1000, 6);
+  });
+
+  it('cashOSPct stays null on a day where no row carried a real cashOSDollar reading', () => {
+    const rows = [{ ...row('2026-10-25'), cashOSDollar: null }];
+    const [d] = auditRowsToStoreDayRatios(rows, LOC);
+    expect(d.cashOSPct).toBeNull();
+  });
+
+  it('filters to the requested loc and excludes a sales-less day', () => {
+    const rows = [
+      row('2026-10-25', { loc: LOC }),
+      row('2026-10-25', { loc: '99999999' }),
+      row('2026-10-26', { loc: LOC, drawerSales: 0 }),
+    ];
+    expect(auditRowsToStoreDayRatios(rows, LOC)).toHaveLength(1);
   });
 });

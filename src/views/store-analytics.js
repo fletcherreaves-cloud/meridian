@@ -4,6 +4,7 @@ import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COOR
 import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo, businessDate } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync, InfoIcon } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown, computeTargetAwareRegisterFlags } from '../utils/register-audit.js';
+import { tolMergedTarget } from '../engine/tolerance-status.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { computeOepeDollarGap, computeDaypartErosion, computeParkOptimization } from '../engine/revenue-opportunity.js';
@@ -1394,7 +1395,16 @@ function RegisterAuditTab({ds, loc, dateRange}) {
   // period-scoped totals) so "recent window" flags and "full history" reference stats both mean
   // what they say regardless of which date range happens to be selected. See register-audit.js's
   // own header on computeTargetAwareRegisterFlags for the full design + the thresholds chosen.
-  const targetFlags = allLocRows.length>0 ? computeTargetAwareRegisterFlags(allLocRows) : {};
+  // Owner request 2026-11-16 ("aren't we computing targets... give me an opportunity to
+  // override them"): tolMergedTarget already resolves DEFAULT_TARGETS <- ds.targets <-
+  // ds.monthlyTargets (yearly/monthly workbook upload already captures tCashOSPct/tRedBPct/
+  // tRedAPct/tPosOverPct/tRefundPct, confirmed in parsers/index.js) for this one store -- same
+  // merge UnifiedTargetsPanel/Smart Targets already use. Passing it through closes a real bug:
+  // targetAwareFlagsForEmployee used to read the literal DEFAULT_TARGETS[loc] constant only, so
+  // a workbook override for any of these 5 fields was silently ignored by this flagging engine
+  // even though it visibly won everywhere else.
+  const mergedTargets = {[loc]: tolMergedTarget(ds, loc)};
+  const targetFlags = allLocRows.length>0 ? computeTargetAwareRegisterFlags(allLocRows, mergedTargets) : {};
   const flagsFor = e => targetFlags[e.loc+'::'+e.empName] || null;
   // Breakdown is always computed against the FULL (unfiltered) rows -- an employee's "blended"
   // status and per-type split shouldn't disappear just because the filter narrowed the table.

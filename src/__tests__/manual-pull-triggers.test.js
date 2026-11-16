@@ -74,16 +74,61 @@ describe('computeManualPullTriggers — visit readiness (Forms Completion Report
   });
 });
 
-describe('computeManualPullTriggers — known gap: no POS-Controls trigger yet', () => {
-  it('never emits a Security Events trigger, because no pos-category TOL_METRICS entry has an official target', () => {
-    // Documents the real constraint this module's own header comment explains: all 4 'pos'
-    // metrics (cashOS/tRedB/tRedA/discP) have offKey:null, so TOL_ROLLUP_METRICS excludes them
-    // and tolStatusesForStore can never emit a 'pos' status. If this ever starts failing, the
-    // gap has been closed upstream — update this module's REPORT_BY_CAT to add it back in.
+describe('computeManualPullTriggers — Security Events (register-audit.js target-aware flags)', () => {
+  // RESOLVED 2026-11-16 (owner follow-up): tolerance-status.js's own 'pos' category still can
+  // never produce a tol status (every TOL_METRICS 'pos' entry has offKey:null — still true,
+  // asserted below so a future edit there is caught) — but that was never the only path. This
+  // trigger reuses register-audit.js's computeTargetAwareRegisterFlags directly instead, which
+  // already flags egregious/repetitive Cash O/S/T-Red/POS-Over/Refund deviations against the
+  // real per-store DEFAULT_TARGETS values.
+  it('tolerance-status.js pos category still has no official target (sanity check for the comment above)', () => {
     const posMetrics = TOL_METRICS.filter(m => m.cat === 'pos');
     expect(posMetrics.every(m => m.offKey == null)).toBe(true);
-    const ds = baseDs();
-    expect(computeManualPullTriggers(ds, { locs: [LOC] }).some(x => x.report?.includes('Security Events'))).toBe(false);
+  });
+
+  it('flags red when an employee racks up 2+ egregious Register Audit metrics in the recent window', () => {
+    const t = DEFAULT_TARGETS[LOC];
+    expect(t.tRedAPct).not.toBeNull();
+    const auditRows = [{
+      emp: 'Test Employee', loc: LOC, date: recentDate(), drawerSales: 1000,
+      tRedADollar: 1000 * (t.tRedAPct + 0.02), // ~2pp over target -- comfortably past the egregious floor
+      cashOSDollar: 1000 * ((t.tCashOSPct || 0) + 0.02),
+      tRedBDollar: 0, posOverAmt: 0, refundCash: 0, refundCashless: 0,
+    }];
+    const ds = baseDs({ auditRows });
+    const hit = computeManualPullTriggers(ds, { locs: [LOC] }).find(x => x.metricId === 'register_audit_flags');
+    expect(hit).toBeTruthy();
+    expect(hit.severity).toBe('red');
+    expect(hit.report).toContain('Security Events');
+    expect(hit.reason).toContain('1 employee(s)');
+  });
+
+  it('does not flag a store whose Register Audit rows are all comfortably on target', () => {
+    const t = DEFAULT_TARGETS[LOC];
+    const auditRows = [{
+      emp: 'Test Employee', loc: LOC, date: recentDate(), drawerSales: 1000,
+      tRedADollar: 1000 * t.tRedAPct, cashOSDollar: 1000 * (t.tCashOSPct || 0),
+      tRedBDollar: 1000 * t.tRedBPct, posOverAmt: 1000 * t.tPosOverPct, refundCash: 1000 * t.tRefundPct, refundCashless: 0,
+    }];
+    const ds = baseDs({ auditRows });
+    expect(computeManualPullTriggers(ds, { locs: [LOC] }).find(x => x.metricId === 'register_audit_flags')).toBeUndefined();
+  });
+
+  it('an official-target override actually changes the outcome (the bug register-audit.js fixed, exercised end-to-end)', () => {
+    const t = DEFAULT_TARGETS[LOC];
+    const dayPct = t.tRedAPct + 0.02; // would be egregious against the real DEFAULT_TARGETS value
+    const auditRows = [{
+      emp: 'Test Employee', loc: LOC, date: recentDate(), drawerSales: 1000,
+      tRedADollar: 1000 * dayPct, cashOSDollar: 0, tRedBDollar: 0, posOverAmt: 0, refundCash: 0, refundCashless: 0,
+    }];
+    // Without an override: egregious, flags.
+    const dsNoOverride = baseDs({ auditRows });
+    expect(computeManualPullTriggers(dsNoOverride, { locs: [LOC] }).find(x => x.metricId === 'register_audit_flags')).toBeTruthy();
+    // ds.targets[loc] override raises the T-Red After target to match the actual day -- same
+    // merge chain tolMergedTarget already gives every other consumer (UnifiedTargetsPanel, Smart
+    // Targets); register-audit.js used to ignore this entirely before the 2026-11-16 fix.
+    const dsWithOverride = baseDs({ auditRows, targets: { [LOC]: { tRedAPct: dayPct } } });
+    expect(computeManualPullTriggers(dsWithOverride, { locs: [LOC] }).find(x => x.metricId === 'register_audit_flags')).toBeUndefined();
   });
 });
 
