@@ -404,6 +404,35 @@ own "Need" model (TPPH, SPPH, Act-vs-Need, Opportunity Cost $ — the exact basi
 `query_labor_summary` SAGE tool and Labor Tools panel content, now paused at the source) and the
 manager-authorization compliance flag on individual OT punches.
 
+## ✅ 2026-11-16 (same day, later still) — the full Scheduled Reports catalog is now known
+
+Owner asked CoachQ directly (the letter's own suggested step) for the complete list of reports
+that CAN be scheduled for email delivery. Full answer: **Sales Ledger, Labor Analysis, Labor
+Exceptions, Cash Sheet, Daily Glimpse, Birthday/Anniversary Report, Adyen Adjustments** — 7
+total, no more, no hidden catalog beyond this.
+
+**5 of 7 are already scheduled and now fully parsed** (Sales Ledger/Cash Sheet/Daily Glimpse
+since the original email pipeline; Labor Analysis/Labor Exceptions as of this same session, see
+above). **The remaining 2 are not worth chasing for this gap:**
+- **Birthday/Anniversary Report** — HR recognition data (employee birthdays/anniversaries), no
+  connection to any of the Group C operational gaps below.
+- **Adyen Adjustments** — Adyen is a payment processor; this is almost certainly card-payment-
+  level adjustments/chargebacks, a real but narrow slice that might overlap the cash-O/S/refund
+  ground `daily_glimpse_daily`/`cash_sheet_daily` already cover reasonably well. Nobody has
+  looked at a real sample — if the owner wants to check, turning it on costs nothing (same
+  calendar-icon toggle as the others) and a sample could be parsed the same way the last two
+  were, but it's not assumed to close anything major.
+
+**This settles the question this file's "Track D" gap analysis raised as open ("ask CoachQ for
+the list").** It is now closed: the Scheduled Reports lever has been fully pulled. **None of the
+7 reports cover any of Track D's Group C domains** — labor/punch detail beyond what Labor
+Analysis/Exceptions now give (punch times, employee tenure, pay-period history), FOB/food cost,
+eBOS/purchases, register-level controls/security events, forms/checklists, product mix, menu
+data, turnover/roster, store config, or intraday/quarter-hour granularity. Those genuinely have
+**no emailable path at all** — the only remaining levers for them are the MCP server eventually
+adding that report type, or a direct resolution with QSRSoft, not anything sitting unused in the
+owner's inbox.
+
 ## Draft response letter
 
 A draft reply to Michael Henkel is saved at `memory/draft-letter-qsrsoft-response-2026-11-16.md`
