@@ -40,8 +40,15 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
-// Display-only metadata for the 14 catalog TYPES (icon + grouping) — the real manufacturer/model
+// Display-only metadata for the 23 catalog TYPES (icon + grouping) — the real manufacturer/model
 // rows for each type come live from equipment_catalog; this is just the palette's visual shape.
+// 8 new types added 2026-11-16 (owner's field equipment-survey checklist, store 44689 walkthrough):
+// ice_machine, refrigeration, pie_merchandiser, fry_dispenser, exhaust_hood, label_maker,
+// walk_in_cooler, walk_in_freezer. See memory/project-equipment-profile.md for which of these
+// have a real researched manufacturer/model seeded vs. a type-only placeholder pending field
+// confirmation (no internal McDonald's reference doc exists for most of these, unlike the
+// original 15 — some are backed only by general web research, clearly marked as such in the
+// catalog's own `source`/`notes` fields, never asserted as confirmed McDonald's-approved specs).
 export const CATALOG_TYPE_GROUPS = [
   { group: 'Cooking', types: [
     { id: 'grill', label: 'Grill', icon: '🍳' },
@@ -50,10 +57,12 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'steamer', label: 'Steamer', icon: '♨️' },
     { id: 'combi_oven', label: 'Combi Oven', icon: '🔥' },
     { id: 'uhc', label: 'UHC', icon: '🗄️' },
+    { id: 'fry_dispenser', label: 'Fry Dispenser', icon: '🍟' },
   ]},
   { group: 'Prep & Staging', types: [
     { id: 'staging_cabinet', label: 'Staging Cabinet', icon: '📦' },
     { id: 'prep_line', label: 'Prep Line', icon: '🥬' },
+    { id: 'pie_merchandiser', label: 'Pie Merchandiser', icon: '🥧' },
   ]},
   { group: 'Beverage', types: [
     { id: 'blended_ice', label: 'Blended Ice', icon: '🧊' },
@@ -63,6 +72,16 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'espresso_1step', label: 'Espresso (1-Step)', icon: '☕' },
     { id: 'espresso_2step', label: 'Espresso (2-Step)', icon: '☕' },
     { id: 'shake_sundae', label: 'Shake/Sundae', icon: '🍨' },
+  ]},
+  { group: 'Refrigeration', types: [
+    { id: 'ice_machine', label: 'Ice Machine', icon: '🧊' },
+    { id: 'refrigeration', label: 'Refrigeration (Reach-In)', icon: '🥶' },
+    { id: 'walk_in_cooler', label: 'Walk-In Cooler', icon: '🚪' },
+    { id: 'walk_in_freezer', label: 'Walk-In Freezer', icon: '🧊' },
+  ]},
+  { group: 'Facilities', types: [
+    { id: 'exhaust_hood', label: 'Exhaust Hood', icon: '🌀' },
+    { id: 'label_maker', label: 'Label Maker', icon: '🏷️' },
   ]},
 ];
 const ALL_TYPES = CATALOG_TYPE_GROUPS.flatMap(g => g.types);

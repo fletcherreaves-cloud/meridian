@@ -277,3 +277,69 @@ selectable, `flagged=true` for later admin review, not blocked on an official re
   recoverable remotely. Next time someone is at store 44689, read that plate and update this row
   (`model`/`model_aliases`) directly — a one-line `UPDATE equipment_catalog SET model = ...
   WHERE id = '2e09972b-31ba-4d4e-ad0d-70b5af7730ef'`, not a new row.
+
+## 8 new equipment categories added (owner's field checklist, 2026-11-16)
+
+Owner's exact field request, from the same store 44689 walkthrough: *"Add the following equipment.
+Research and find models where possible: Ice machines, Refrigeration, Pie merchandiser, Fry
+dispenser, Hoods, Label Maker for dates and times, Multiplex, Walk in cooler and freezer - 2
+units"* (3 other list items — "Consider technology," "Q'ing Ovens," "FCB" — couldn't be resolved
+and were kicked back to the owner for clarification rather than guessed; "Consider taking a
+picture of the actual equipment to log also" needed no action — `photo_url`/AI extraction already
+exist and are already in live use, confirmed working on the Moffat entry above).
+
+**8 new catalog TYPES added** to `equipment-layout.js`'s `CATALOG_TYPE_GROUPS` (15 → 23, new
+"Refrigeration" and "Facilities" groups) so they're selectable on both the field survey form and
+the Layout Planner: `ice_machine`, `refrigeration` (reach-in, distinct from the two walk-in types
+below), `pie_merchandiser`, `fry_dispenser`, `walk_in_cooler`, `walk_in_freezer`, `exhaust_hood`,
+`label_maker`. `equipment-layout.test.js`'s type-count ratchet updated to 23 (was 15).
+
+**Critical difference from every prior equipment-catalog pass**: none of these 8 categories have
+an internal McDonald's reference PDF on file in `data/equipment-survey/Help Files/` (checked
+directly — that directory only covers Grills/Fryers/Toasters-Steamers/Combi Ovens/UHC/Prep
+Lines/Blended Ice/Beverage-McCafé/Shake-Sundae/Simplified Breakfast Staging Cabinet; nothing for
+ice machines, refrigeration, pie merchandisers, fry dispensers, hoods, or label makers specifically
+— the "Ice Machine" and "Equip Side Refrigeration" PM cards that DO exist are generic Ecolab/Kay
+cleaning-procedure cards with zero manufacturer/model info, confirmed by reading them directly with
+`pdftotext`). So unlike the original 15 types (and unlike `shake_sundae`'s Taylor C602, which
+already covers the owner's separately-listed "McFlurry Mixer" — no action needed there, it's
+already in), every row added here is **web-researched, not document-backed** — a materially lower
+confidence tier, and each row's `source`/`notes` say so explicitly rather than reading like a
+confirmed McDonald's spec:
+
+- **Genuinely confirmed as McDonald's-specific** (a real manual/document with "McDonald's" in its
+  own title, not just a generic industry product): `fry_dispenser` → Frymaster SinBaD (Single
+  Basket Dispenser) and Automated Equipment DF22; `pie_merchandiser` → Prince Castle 524 Series
+  (factory-preset 165°F for baked pies). All 3 confirmed via real manuals found on manuals.online/
+  hagarparts.com/manualmachine.com, not claimed from memory.
+- **Brand relationship confirmed, specific model not**: `refrigeration` → Beverage-Air, per an Ali
+  Group press page stating a 30-year McDonald's USA supplier relationship (150,000+ units) — dated
+  2013, so flagged as possibly outdated, and no specific reach-in model number was found anywhere.
+- **Real industry brand, McDonald's tie NOT confirmed**: `pie_merchandiser` → Carter-Hoffmann
+  MDPM2/MDPM4 (the dominant general-QSR pie merchandiser, included as the likelier alternative but
+  explicitly NOT asserted as McDonald's-specific the way Prince Castle 524 is); `abs` → Multiplex
+  (owner's own list item, interpreted as the beverage-dispensing-tower manufacturer — a real,
+  well-known brand in that exact product category — added as a candidate under the EXISTING `abs`
+  type rather than a new one, since Multiplex towers and the already-seeded Cornelius/Marmon ABS
+  units are the same functional category; no source ties Multiplex to McDonald's specifically).
+- **No credible brand found at all** (`ice_machine`, `walk_in_cooler`, `walk_in_freezer`,
+  `exhaust_hood`, `label_maker`): each searched directly (Manitowoc/Scotsman/Hoshizaki for ice;
+  Kolpak/Master-Bilt/Bally for walk-ins; CaptiveAire/Gaylord for hoods; DayMark/Monarch for label
+  makers) — every search came back with only generic industry descriptions, nothing McDonald's-
+  specific. Per this task's own standing "measure, don't reason" rule, **no manufacturer name was
+  invented** — each got a type-only placeholder row (`manufacturer:'(Unconfirmed)',
+  model:'Pending field identification...'`) so the TYPE is selectable today, with the real
+  brand/model to be filled in the next time someone reads the actual unit's nameplate (same
+  one-line `UPDATE` pattern as the Moffat entry above, not a new row).
+- All 11 new rows: `flagged:true`, `source:'web-researched'` (a new, more honest third value
+  alongside the existing `official`/`crew-added` — nothing in the app's code branches on `source`'s
+  value, confirmed by grep, so this doesn't touch any UI logic; it exists purely so a future reader
+  of this table doesn't mistake desk research for either a real McDonald's document or a real
+  person standing at the unit).
+- **Not added, kicked back to the owner for clarification rather than guessed:**
+  - *"Consider technology"* — too vague to turn into a concrete equipment type (could mean POS,
+    KDS screens, kiosks, drive-thru timer boards, HME headsets...).
+  - *"Q'ing Ovens"* — searched directly, found nothing. Could be a typo, a store-specific nickname,
+    or a term this session's training data simply doesn't cover.
+  - *"FCB"* — searched directly (including as "Front Counter Beverage," by analogy to the real
+    `fc_` column prefix already used in `qsr_daily_activity`), found nothing conclusive.
