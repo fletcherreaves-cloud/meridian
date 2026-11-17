@@ -32,3 +32,16 @@ ordering gets fixed. No action item exists in this repo to track that re-registr
 becomes relevant to a future data reconciliation (e.g. "why is 3PO channel mix off for 44689"),
 check with the owner for current status before assuming either is still broken; this note is a
 point-in-time snapshot from 2026-11-16, not a standing config fact.
+
+## Update 2026-11-17 — Grand Opening is a separate, later date (2026-11-18)
+
+Owner, in conversation: *"I will be in Lindsay tomorrow for their Grand Opening, albeit, likely
+without Drive Thru open or mobile ordering (DoorDash)."* So 2026-11-16 (above) was a dine-in-only
+soft open, not the public Grand Opening — that's **2026-11-18**, a separate milestone. As of this
+note, **Drive Thru is still expected closed on Grand Opening day too**, which is new: DT wasn't
+mentioned as a broken channel in the 2026-11-16 entry above at all (only mobile app + DoorDash
+were). If 44689's DT-channel metrics (dtSales/dtGC/dtPct) read nothing or near-zero through at
+least 2026-11-18, that's this same expected-launch-ramp pattern, not an anomaly — don't flag it.
+Treat 11-16's per-channel facts (mobile broken, DoorDash off/Uber Eats fine) as still the
+baseline assumption for 11-17/11-18 too, unless told otherwise — nothing here suggests either
+was resolved in the interim.
