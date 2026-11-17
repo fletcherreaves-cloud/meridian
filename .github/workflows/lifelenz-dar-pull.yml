@@ -1,0 +1,59 @@
+name: LifeLenz DAR Pull
+
+# LifeLenz's own hourly Daily Activity Report, standing in for QSRSoft's own DAR pull while that
+# one is paused for compliance reasons (memory/finding-qsrsoft-security-notice-2026-11-16.md).
+# Real schema confirmed via scripts/lifelenz-dar-probe.mjs's live introspection (2026-11-17) --
+# see scripts/lifelenz-dar-pull.mjs's header and memory/finding-lifelenz-dar-schema-2026-11-17.md.
+#
+# Runs at :05 past every hour (owner request: "hourly for now at say about 5 minutes after each
+# hour completed"), re-pulling a trailing LOOKBACK_HOURS window so a late-settling or missed hour
+# self-heals on the next run rather than needing a separate backfill.
+
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Trailing window size in hours (default: 6)'
+        required: false
+        default: '6'
+      start:
+        description: 'Override window start (ISO datetime) -- requires end too'
+        required: false
+      end:
+        description: 'Override window end (ISO datetime) -- requires start too'
+        required: false
+      debug:
+        description: 'Verbose per-store logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run LifeLenz DAR pull
+        run: node scripts/lifelenz-dar-pull.mjs
+        env:
+          LIFELENZ_TOKEN:               ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_USERNAME:            ${{ secrets.LIFELENZ_USERNAME }}
+          LIFELENZ_PASSWORD:            ${{ secrets.LIFELENZ_PASSWORD }}
+          VITE_SUPABASE_URL:            ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LIFELENZ_DAR_LOOKBACK_HOURS:  ${{ github.event.inputs.lookback_hours || '6' }}
+          LIFELENZ_DAR_START:           ${{ github.event.inputs.start || '' }}
+          LIFELENZ_DAR_END:             ${{ github.event.inputs.end || '' }}
+          LIFELENZ_DEBUG:               ${{ github.event.inputs.debug || '0' }}
