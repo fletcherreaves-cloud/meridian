@@ -400,6 +400,7 @@ import { dailyComplianceAudit } from '../engine/compliance-audit.js';
 import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
+import { QuickUploadView } from '../views/quick-upload-view.js';
 // #232 Finding 3: store-dash.js (145 KB raw, plus the chart.js/auto runtime it imports at module
 // scope) used to be statically imported here for 47 exports. Investigation found only 3 were ever
 // used unconditionally (the migrate-on-mount effect + mergedTargets memo below) — moved to their
@@ -4080,6 +4081,31 @@ function App() {
     routePanel,
     routePanelLabel: routePanel ? (PANEL_BY_ID[routePanel]?.label||null) : null,
   };
+
+  // ?quickupload=1 — see the QuickUploadView import's comment + the early-return block below.
+  const quickUploadMode = new URLSearchParams(typeof location!=='undefined'?location.search:'').get('quickupload')==='1';
+
+  // Quick Upload (?quickupload=1) — a dedicated, low-chrome screen meant to be pinned to an
+  // iPhone home screen (Share → Add to Home Screen) for one-tap-after-launch uploads, since iOS
+  // Safari has no Web Share Target API to hook into (v5.816's finding). Still goes through the
+  // normal AuthGate login above — this is the SAME handleFiles pipeline and SAME
+  // UploadSummaryModal confirmation the full dashboard's sidebar "Load" button uses, just
+  // without the rest of the dashboard mounted. Checked after every hook above is declared, so
+  // this early return never skips a hook.
+  if (quickUploadMode) {
+    return React.createElement(React.Fragment, null,
+      h(QuickUploadView, {
+        loadMsg,
+        onFiles: handleFiles,
+        onExitToFullApp: () => {
+          const u = new URL(location.href);
+          u.searchParams.delete('quickupload');
+          location.href = u.toString();
+        },
+      }),
+      uploadReport && h(UploadSummaryModal, { report: uploadReport, onClose: () => setUploadReport(null) }),
+    );
+  }
 
   return div({className:'mf-app-root',style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
 
