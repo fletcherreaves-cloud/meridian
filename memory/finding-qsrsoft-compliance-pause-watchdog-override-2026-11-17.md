@@ -1,8 +1,8 @@
 # Finding: the QSRSoft compliance pause was being silently un-paused — watchdog + pg_cron
 
 **Date:** 2026-11-17. **Reported by:** owner, from a Data Manager screenshot ("looks like
-autosync still pulling data as well. Am i wrong here"). **Status: fixed in code; two pg_cron
-jobs still need the owner to run SQL (see "What the owner still needs to do" below).**
+autosync still pulling data as well. Am i wrong here"). **Status: fully resolved — see the
+2026-11-17 correction at the bottom. Do not re-raise the pg_cron item below as still open.**
 
 ## Context
 
@@ -93,3 +93,33 @@ it again" — is why this went beyond the first mechanism found (the watchdog) t
 jobs, which otherwise would have kept silently undoing the pause even after the watchdog was
 fixed. A single found-and-fixed mechanism is not the same as "the pause now holds" when a repo
 has more than one way to re-trigger a workflow; the whole set has to be checked.
+
+## ✅ CORRECTED 2026-11-17 (same day) — "two still-live pg_cron jobs" was WRONG; do not re-raise it
+
+The "What the owner still needs to do" `cron.unschedule(...)` SQL above was written from reading
+`supabase/schema-external-heartbeat-pgcron-2026-11-11.sql` — the **seed SQL**, not the live
+scheduler state. That is exactly the "state the observation, not the file" mistake CLAUDE.md's
+"measure it, don't reason about it" rule exists to catch, and it happened here despite the rule.
+
+The owner ran the unschedule call and got `ERROR: XX000: could not find valid entry for job
+'external-heartbeat-onhand-pull'` — the job doesn't exist. Querying live:
+
+```sql
+select jobid, jobname, schedule, active from cron.job where jobname like 'external-heartbeat%';
+```
+
+returned **exactly one row**: `external-heartbeat-pull-watchdog` (id 5, `*/30 * * * *`, active).
+None of `external-heartbeat-onhand-pull`, `external-heartbeat-live-pulse`,
+`external-heartbeat-dar-pull`, or `external-heartbeat-ops-pull` exist in `cron.job` at all —
+whether they were never actually deployed from the seed file, or removed before this session
+checked, is unknown and no longer matters.
+
+**The one job that IS live is not a bypass.** `external-heartbeat-pull-watchdog` only fires
+`scheduled-pull-watchdog.yml` every 30 minutes — it does not call any QSRSoft pull workflow's
+`workflow_dispatch` directly. And `scheduled-pull-watchdog.mjs`'s `checkStream()` already got the
+paused-stream short-circuit in this same dispatch (see "The fix (code side)" above), so this job
+now just triggers logic that correctly no-ops on every paused stream.
+
+**Net: no SQL action is or was needed.** The compliance pause already holds end-to-end through
+the code fix alone. Do not ask the owner to run `cron.unschedule` on either of those two names
+again — rerun the `cron.job` query above if this needs re-verifying, never the seed-SQL file.
