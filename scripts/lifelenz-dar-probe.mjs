@@ -20,9 +20,11 @@
 // different project's pattern, not something this repo's other pull scripts actually do.
 
 const BASE        = 'https://us01-connect.lifelenz.com';
+const IDM_BASE    = 'https://idm.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';
 const GQL_URL      = `${BASE}/manager/graphql`;
 const PROBE_STORE  = process.env.PROBE_STORE || '3708'; // same store the Nov-5 finding used
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
 function apiHeaders(token, scheduleId = null) {
   const h = {
@@ -35,6 +37,55 @@ function apiHeaders(token, scheduleId = null) {
   };
   if (scheduleId) h['X-Schedule-Id'] = scheduleId;
   return h;
+}
+
+function isSessionExpired(status, body) {
+  if (status === 401 || status === 403 || status === 422) return true;
+  const b = (body || '').toLowerCase();
+  return b.includes('invalid_session_error') || b.includes('sign in again');
+}
+
+// Same direct REST login lifelenz-pull.mjs's reauth() uses -- a GraphQL SignIn mutation against
+// idm.lifelenz.com, no Playwright needed. Ported here because LIFELENZ_TOKEN turned out to be
+// expired when this probe first ran for real (measured: the real daily sync's own token
+// validation logs "LIFELENZ_TOKEN rejected (422, expired?)" on every run right now -- it only
+// keeps working because of this exact fallback, never because the stored secret is still good).
+async function getAuthTokenDirect() {
+  const u = process.env.LIFELENZ_USERNAME;
+  const p = process.env.LIFELENZ_PASSWORD;
+  const query = `mutation SignIn($username: String!, $credential: String!) {
+    signIn(email: $username, credential: $credential) { authToken }
+  }`;
+  const credential = Buffer.from(p || '', 'utf8').toString('base64');
+  const r = await fetch(`${IDM_BASE}/external/graphql?SignIn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA, 'Accept': '*/*', 'X-Lifelenz-Device': 'webadmin', 'X-Version': '1.78.11' },
+    body: JSON.stringify({ operationName: 'SignIn', variables: { username: u, credential }, query }),
+  });
+  console.log('[auth-direct] SignIn →', r.status);
+  const data = await r.json().catch(() => null);
+  if (data?.errors) { console.log('[auth-direct] SignIn error:', JSON.stringify(data.errors).slice(0, 300)); return null; }
+  const tok = data?.data?.signIn?.authToken;
+  if (tok) console.log('[auth-direct] got authToken via SignIn mutation');
+  return tok || null;
+}
+
+async function resolveToken() {
+  let token = process.env.LIFELENZ_TOKEN || null;
+  if (token) {
+    const check = await fetch(`${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`, { headers: apiHeaders(token) });
+    console.log('[auth] LIFELENZ_TOKEN validation →', check.status);
+    if (!check.ok) {
+      const body = await check.text().catch(() => '');
+      if (isSessionExpired(check.status, body)) {
+        console.warn('[auth] LIFELENZ_TOKEN rejected, falling back to SignIn mutation');
+        token = null;
+      }
+    }
+  }
+  if (!token) token = await getAuthTokenDirect();
+  if (!token) throw new Error('Could not resolve a LifeLenz auth token via LIFELENZ_TOKEN or LIFELENZ_USERNAME/PASSWORD SignIn.');
+  return token;
 }
 
 async function gql(token, scheduleId, operationName, query, variables) {
@@ -64,10 +115,10 @@ async function getStoreSchedules(token) {
 }
 
 async function main() {
-  const token = process.env.LIFELENZ_TOKEN;
-  if (!token) { console.error('[auth] LIFELENZ_TOKEN required'); process.exit(1); }
+  console.log('=== Resolving auth token ===');
+  const token = await resolveToken();
 
-  console.log('=== Resolving schedules ===');
+  console.log('\n=== Resolving schedules ===');
   const schedules = await getStoreSchedules(token);
   console.log(`[schedules] ${schedules.length} total`);
   const match = schedules.find(s => JSON.stringify(s).includes(PROBE_STORE));
