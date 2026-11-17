@@ -33,5 +33,7 @@ jobs:
       - name: Probe LifeLenz darData shape
         run: node scripts/lifelenz-dar-probe.mjs
         env:
-          LIFELENZ_TOKEN: ${{ secrets.LIFELENZ_TOKEN }}
-          PROBE_STORE:    ${{ github.event.inputs.store }}
+          LIFELENZ_TOKEN:    ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_USERNAME: ${{ secrets.LIFELENZ_USERNAME }}
+          LIFELENZ_PASSWORD: ${{ secrets.LIFELENZ_PASSWORD }}
+          PROBE_STORE:       ${{ github.event.inputs.store }}
