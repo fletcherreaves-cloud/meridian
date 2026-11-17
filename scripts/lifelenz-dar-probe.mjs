@@ -129,56 +129,67 @@ async function main() {
   console.log('[schedules] matched record:', JSON.stringify(match, null, 2));
   const scheduleId = match.id;
 
-  console.log('\n=== Introspecting darData return type ===');
-  const introspectQuery = `query IntrospectDarData {
-    __schema {
-      queryType {
-        fields(includeDeprecated: true) {
-          name
-          args { name type { name kind ofType { name kind } } }
-          type { name kind ofType { name kind ofType { name kind } } }
-        }
+  // 2026-11-17 re-run: first pass (introspecting Query.darData -> DarData) already confirmed
+  // DarData has exactly 2 fields -- dar: [X!]! and totals: [FieldValue!]! -- and that every
+  // field-name guess from the 2026-11-05 finding's write-up ("netSales", "transactions", etc.)
+  // is WRONG: totals is a generic FieldValue list, not an object with named scalar properties.
+  // This pass goes one level deeper: introspect FieldValue itself, dar's real list-element type,
+  // and DarGranularityEnum's real enum values (my first guess, 'quarter_hour', was also wrong --
+  // GraphQL enum values are conventionally UPPER_CASE) -- then build the real query from
+  // whatever field names actually come back, rather than guessing again.
+  async function introspectType(name) {
+    const q = `query IntrospectType($name: String!) {
+      __type(name: $name) {
+        name kind
+        enumValues { name }
+        fields { name type { name kind ofType { name kind ofType { name kind ofType { name kind } } } } }
       }
-    }
-  }`;
-  const introspectResp = await gql(token, scheduleId, 'IntrospectDarData', introspectQuery, {});
-  console.log('[introspect] status', introspectResp.status);
-  if (introspectResp.json?.data?.__schema) {
-    const darField = introspectResp.json.data.__schema.queryType.fields.find(f => /dar/i.test(f.name));
-    console.log('[introspect] fields matching /dar/i on Query type:', JSON.stringify(darField, null, 2));
-  } else {
-    console.log('[introspect] no usable schema (likely disabled in prod):', JSON.stringify(introspectResp.json).slice(0, 1000));
-  }
-
-  // If darData's return type name was found above, introspect ITS fields too.
-  const typeName = introspectResp.json?.data?.__schema?.queryType?.fields
-    ?.find(f => /dar/i.test(f.name))?.type?.ofType?.name
-    || introspectResp.json?.data?.__schema?.queryType?.fields?.find(f => /dar/i.test(f.name))?.type?.name;
-  if (typeName) {
-    console.log(`\n=== Introspecting type ${typeName} ===`);
-    const typeQuery = `query IntrospectType($name: String!) {
-      __type(name: $name) { name kind fields { name type { name kind ofType { name kind ofType { name kind } } } } }
     }`;
-    const typeResp = await gql(token, scheduleId, 'IntrospectType', typeQuery, { name: typeName });
-    console.log('[introspect-type] status', typeResp.status, JSON.stringify(typeResp.json, null, 2));
+    const r = await gql(token, scheduleId, 'IntrospectType', q, { name });
+    return r.json?.data?.__type || null;
   }
 
-  console.log('\n=== Direct darData query (best-effort field guess from the 2026-11-05 finding) ===');
+  console.log('\n=== Introspecting DarData ===');
+  const darDataType = await introspectType('DarData');
+  console.log(JSON.stringify(darDataType, null, 2));
+  const darField = darDataType?.fields?.find(f => f.name === 'dar');
+  const darElementType = darField?.type?.ofType?.ofType?.name || darField?.type?.ofType?.name;
+
+  console.log('\n=== Introspecting FieldValue ===');
+  const fieldValueType = await introspectType('FieldValue');
+  console.log(JSON.stringify(fieldValueType, null, 2));
+  const fieldValueFields = (fieldValueType?.fields || []).map(f => f.name);
+
+  if (darElementType && darElementType !== 'FieldValue') {
+    console.log(`\n=== Introspecting dar's list element type: ${darElementType} ===`);
+    console.log(JSON.stringify(await introspectType(darElementType), null, 2));
+  }
+
+  console.log('\n=== Introspecting DarGranularityEnum ===');
+  const granEnum = await introspectType('DarGranularityEnum');
+  console.log(JSON.stringify(granEnum, null, 2));
+  const granValue = granEnum?.enumValues?.[0]?.name || null;
+  console.log('[probe] using first real enum value for granularity:', granValue);
+
+  console.log('\n=== Direct darData query (built from real introspected field names) ===');
   const now = new Date();
   const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate() - 2; // a day definitely closed
   const start = new Date(Date.UTC(y, m, d, 10, 0, 0)); // 4am CT ≈ 10:00 UTC (CST) -- rough, just need A closed day
   const end = new Date(Date.UTC(y, m, d + 1, 10, 0, 0));
-  const darQuery = `query GetDARData($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!, $granularity: DarGranularity) {
-    darData(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, granularity: $granularity) {
-      totals { netSales transactions actualPunchHours avgDtServiceTime }
-      intervals { startDateTime missingActuals netSales transactions actualPunchHours avgDtServiceTime }
+  const fvSelection = fieldValueFields.length ? fieldValueFields.join(' ') : '__typename';
+  const darQuery = `query GetDARData($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!${granValue ? ', $granularity: DarGranularityEnum' : ''}) {
+    darData(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime${granValue ? ', granularity: $granularity' : ''}) {
+      totals { ${fvSelection} }
+      dar { __typename }
     }
   }`;
-  const darResp = await gql(token, scheduleId, 'GetDARData', darQuery, {
+  const darVars = {
     businessId: BUSINESS_ID, scheduleId,
     startDateTime: start.toISOString(), endDateTime: end.toISOString(),
-    granularity: 'quarter_hour',
-  });
+  };
+  if (granValue) darVars.granularity = granValue;
+  const darResp = await gql(token, scheduleId, 'GetDARData', darQuery, darVars);
+  console.log('[dar-direct] query:', darQuery);
   console.log('[dar-direct] status', darResp.status);
   console.log('[dar-direct] full response:', JSON.stringify(darResp.json, null, 2));
 }
