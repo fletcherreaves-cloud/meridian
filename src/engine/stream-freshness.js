@@ -188,17 +188,22 @@ export const STREAMS = [
   // threshold is correct as-is for this stream, unlike the bi-weekly-cadence Payroll Readiness
   // entry commented out above.
   { key: 'securityEvents', label: 'QSRSoft Security Events', dsField: 'qsrSecurityEventsFreshnessRows', cadenceDays: 1, group: 'controls' },
-  // Added 2026-11-17 — owner asked directly whether every tile fed by a paused stream (the
-  // 32 credential-login QSRSoft pulls, memory/finding-qsrsoft-security-notice-2026-11-16.md)
-  // shows its real age rather than silently reading as current. audit_rows (Register Audit —
-  // cash handling/loss prevention, the owner's own #1-ranked manual upload) was a real gap:
-  // it already has a per-row freshness dot in Data Manager's own coverage table (calcCov over
-  // ds.auditRows, src/views/analytics.js), which is NOT silently stale — but it had no entry
-  // here, so it never reached At-A-Glance's "Loaded Data" strip (groupFreshness()) or
-  // scheduled-pull-watchdog.mjs's coverage. loadAuditRows (lib/supabase.js) already populates
-  // ds.auditRows with a plain `date` field (table audit_rows), daily cadence, same shape every
-  // other entry here expects — no dateField override needed.
-  { key: 'registerAudit', label: 'Register Audit', dsField: 'auditRows', cadenceDays: 1, group: 'controls' },
+  // ⚠️ Register Audit (audit_rows) was ADDED here 2026-11-17 during the paused-stream freshness
+  // audit, then REVERTED the same day once the full suite caught what the audit itself missed:
+  // every STREAMS entry is required (scheduled-pull-registry.test.js's own two-directional guard)
+  // to have a matching PULL_REGISTRY entry naming a real GitHub Actions workflow file, because
+  // that registry exists specifically so scheduled-pull-watchdog.mjs can re-dispatch a dead
+  // AUTOMATED pull. Register Audit has no automated pull at all — it is a manual Excel/CSV
+  // upload (SRC_INFO.auditRows = 'Register Audit export', src/views/analytics.js) — so there is
+  // no workflow to name and forcing an entry in here would either fabricate one (the watchdog
+  // would 404 trying to re-dispatch it) or require loosening scheduled-pull-registry.test.js's
+  // invariant unilaterally, neither of which is the right fix for a manual stream. Register
+  // Audit's real, correct freshness visibility is Data Manager's own per-row coverage table
+  // (calcCov over ds.auditRows) — already live, already accurate — not this file. Same
+  // "don't force a stream that doesn't fit the shape" precedent as the commented-out
+  // payrollReadiness/payHistory entries above, just discovered the hard way instead of in
+  // advance. See memory/finding-freshness-audit-paused-streams-2026-11-17.md for the corrected
+  // writeup.
 ];
 
 // Display metadata for groupFreshness() -- icon/label per group, in the strip's render order.

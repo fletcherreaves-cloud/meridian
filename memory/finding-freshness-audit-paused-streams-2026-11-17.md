@@ -31,24 +31,38 @@ creates is narrower than "silently stale" — it means the tile's staleness is i
 you specifically open Data Manager**, because it never surfaces on the home-screen strip or to the
 automated watchdog.
 
-## Fixed: Register Audit (`audit_rows`)
+## Register Audit (`audit_rows`) — attempted fix, REVERTED same day, correct state is "no change needed"
 
-**The one genuine, high-priority gap.** Confirmed via direct read of `src/views/analytics.js`:
-`audit_rows` → `ds.auditRows` already has a real coverage row in Data Manager (`SRC_INFO.auditRows
-= 'Register Audit export'`, with its own count/from/to/staleness-dot via `calcCov`) — so it was
-never silently stale there. But it had **zero entry in `STREAMS`**, confirmed by reading the full
-29-entry array directly rather than grepping for "audit" (which can miss an entry using a
-different key naming convention) — meaning it never reached At-A-Glance's home-screen freshness
-strip or the scheduled watchdog. This is the owner's own **#1-ranked** item on the Upload Calendar
-(`memory/` — see the artifact delivered 2026-11-17), so its absence from the glance-level warning
-mattered more than most.
+**First pass found a real-looking gap, second pass (the full suite) found the first pass was
+itself wrong.** Confirmed via direct read of `src/views/analytics.js`: `audit_rows` →
+`ds.auditRows` already has a real coverage row in Data Manager (`SRC_INFO.auditRows = 'Register
+Audit export'`, with its own count/from/to/staleness-dot via `calcCov`) — so it was never silently
+stale there. It also had zero entry in `STREAMS`, so it never reached At-A-Glance's home-screen
+freshness strip or the scheduled watchdog — this is still true and is the accurate description of
+the gap.
 
-**Fix:** added `{ key: 'registerAudit', label: 'Register Audit', dsField: 'auditRows',
-cadenceDays: 1, group: 'controls' }` to `STREAMS` — `loadAuditRows` (`src/lib/supabase.js`)
-already populates `ds.auditRows` with a plain `date` field (table `audit_rows`), so no `dateField`
-override was needed, matching the registry's default convention exactly. 2 new tests in
-`src/__tests__/stream-freshness.test.js` (presence/shape + a staleness-naming test, same pattern
-every other entry's own addition used) — 29/29 passing. Full suite + build still pass clean.
+**What was wrong: I added it to `STREAMS` anyway, and that broke `scheduled-pull-registry.test.js`
+(caught by the full local suite before merge, not by the owner, not in production).** `STREAMS`
+isn't just "things the freshness strip should show" — `scheduled-pull-registry.mjs`'s own header
+comment and its test file's two-directional guard require every `STREAMS` key to have a matching
+`PULL_REGISTRY` entry naming a real `.github/workflows/*.yml` file, because that registry exists
+specifically so `scheduled-pull-watchdog.mjs` can re-dispatch a dead **automated** pull. Register
+Audit has no automated pull — it's a manual Excel/CSV upload, full stop — so there is no workflow
+to name. Forcing an entry in anyway would have meant either fabricating a `workflowFile` the
+watchdog would 404 trying to call, or weakening `scheduled-pull-registry.test.js`'s own invariant
+unilaterally — neither is the right fix for a stream that structurally isn't an automated pull.
+
+**Corrected conclusion: Register Audit needs no STREAMS fix at all, because STREAMS is the wrong
+mechanism for a manual-only stream.** Its real, correct freshness signal is Data Manager's own
+per-row coverage table — already live, already accurate, already checked in this same audit pass
+— exactly the "worth doing somewhere, not necessarily here" case. This is the same shape of
+decision already on record for `payrollReadiness`/`payHistory` (commented-out `STREAMS` entries,
+bi-weekly cadence that doesn't fit the daily/monthly binary) — a stream that doesn't fit the
+mechanism's shape stays out of it rather than being forced in, just discovered here by a broken
+test instead of in advance.
+
+**Reverted:** the `STREAMS` entry, its two new tests in `src/__tests__/stream-freshness.test.js`,
+and the v5.811 changelog claim. Full suite (8342 tests) passes clean on the reverted state.
 
 ## Not fixed — listed, not auto-added (needs a cadence/priority call, not a blind add)
 

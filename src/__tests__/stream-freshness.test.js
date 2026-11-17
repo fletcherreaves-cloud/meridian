@@ -264,29 +264,3 @@ describe('coverage audit additions (2026-09-16) -- eBOS, Forecast Week Cache, an
     }
   });
 });
-
-describe('Register Audit freshness (added 2026-11-17 -- was a real gap)', () => {
-  // Register Audit already had a per-row freshness dot in Data Manager's own coverage table
-  // (calcCov over ds.auditRows, src/views/analytics.js) -- so it was never silently stale
-  // THERE. But it had no entry in STREAMS at all, so it never reached At-A-Glance's "Loaded
-  // Data" strip or scheduled-pull-watchdog.mjs -- invisible everywhere except Data Manager
-  // specifically. Found while auditing every paused-stream tile for honest staleness per the
-  // owner's own standing transparency request.
-  it('is present in STREAMS, checked the same as every other auto stream', () => {
-    const s = STREAMS.find(x => x.key === 'registerAudit');
-    expect(s).toBeTruthy();
-    expect(s.dsField).toBe('auditRows');
-    expect(s.cadenceDays).toBe(1);
-    expect(s.group).toBe('controls');
-  });
-
-  it('names Register Audit specifically when it goes stale while siblings are current', () => {
-    const ds = freshDs(day(16));
-    ds.auditRows = rowsAt(day(9)); // the pull went silent 7 days
-    const w = worstStream(ds, day(16));
-    expect(w).toBeTruthy();
-    expect(w.key).toBe('registerAudit');
-    expect(w.label).toBe('Register Audit');
-    expect(w.staleDays).toBe(7);
-  });
-});
