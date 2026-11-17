@@ -169,6 +169,9 @@ export async function checkStream(key, deps) {
   const streamMeta = STREAMS.find(s => s.key === key);
   const reg = PULL_REGISTRY[key];
   if (!streamMeta || !reg) return { key, action: 'unknown-stream' };
+  if (streamMeta.paused || reg.paused) {
+    return { key, label: streamMeta.label, action: 'paused', pausedReason: streamMeta.pausedReason || reg.pausedReason };
+  }
 
   const latest = await fetchLatest(reg, now);
   const { staleHours, isStale, thresholdHours } = computeStaleness(latest, streamMeta.cadenceDays, now);
@@ -225,6 +228,10 @@ async function main() {
   let staleCount = 0, retriggered = 0, escalated = 0;
   for (const key of Object.keys(PULL_REGISTRY)) {
     const result = await checkStream(key, { fetchLatest, now, token, owner, repo });
+    if (result.action === 'paused') {
+      if (DEBUG) console.log(`[watchdog] ${key}: paused (${result.pausedReason})`);
+      continue;
+    }
     if (result.action === 'ok') {
       if (DEBUG) console.log(`[watchdog] ${key}: ok (${result.staleHours.toFixed(1)}h, threshold ${result.thresholdHours}h)`);
       await closeIfRecovered(key, { fetchLatest, now, token, owner, repo }); // no-op if nothing was open

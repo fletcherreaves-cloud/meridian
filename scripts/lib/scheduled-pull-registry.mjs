@@ -19,16 +19,24 @@
 // future-dated row as "fresh" straight through an outage — the same skew
 // stream-freshness.js's own `_latestDateOf` already guards against for the app-side
 // check (see that file's comment on schedRows).
+// QSRSoft Operator Security Notice compliance pause (2026-11-16) -- mirrors
+// src/engine/stream-freshness.js's own QSR_COMPLIANCE_PAUSE constant/comment. STREAMS'
+// `paused` flag is the one checkStream() actually reads (so the watchdog stops retriggering
+// these even if this file's own flag were somehow missing), but this mirror keeps the fact
+// discoverable from this file too, and src/__tests__/scheduled-pull-registry.test.js asserts
+// the two never disagree per key -- see memory/finding-qsrsoft-security-notice-2026-11-16.md.
+const QSR_COMPLIANCE_PAUSE = 'QSRSoft Operator Security Notice compliance pause (2026-11-16) — see memory/finding-qsrsoft-security-notice-2026-11-16.md';
+
 export const PULL_REGISTRY = {
-  dar:         { table: 'qsr_daily_activity_rollup', dateCol: 'dt',   workflowFile: 'qsrsoft-dar-pull.yml' },
-  fob:         { table: 'qsr_fob',                   dateCol: 'date', workflowFile: 'qsrsoft-pull.yml' },
+  dar:         { table: 'qsr_daily_activity_rollup', dateCol: 'dt',   workflowFile: 'qsrsoft-dar-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  fob:         { table: 'qsr_fob',                   dateCol: 'date', workflowFile: 'qsrsoft-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   glimpse:     { table: 'daily_glimpse_daily',       dateCol: 'date', workflowFile: 'qsrsoft-email-parse.yml' },
   cashSheet:   { table: 'cash_sheet_daily',          dateCol: 'date', workflowFile: 'qsrsoft-email-parse.yml' },
   salesLedger: { table: 'sales_ledger_daily',        dateCol: 'date', workflowFile: 'qsrsoft-email-parse.yml' },
-  opsCash:     { table: 'qsr_cash_sheet',            dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
-  opsLabor:    { table: 'qsr_labor_summary',         dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
-  opsService:  { table: 'qsr_service_stats',         dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
-  opsSalesMix: { table: 'qsr_sales_mix',             dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml' },
+  opsCash:     { table: 'qsr_cash_sheet',            dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  opsLabor:    { table: 'qsr_labor_summary',         dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  opsService:  { table: 'qsr_service_stats',         dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  opsSalesMix: { table: 'qsr_sales_mix',             dateCol: 'dt',   workflowFile: 'qsrsoft-ops-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   lifelenz:    { table: 'lifelenz_schedule',         dateCol: 'date', workflowFile: 'lifelenz-pull.yml', clampToToday: true },
   lifelenzAttendance: { table: 'lifelenz_attendance_summary', dateCol: 'period_end', workflowFile: 'lifelenz-attendance-pull.yml' },
   scheduleVariance: { table: 'lifelenz_schedule_variance', dateCol: 'occurred_at', workflowFile: 'lifelenz-schedule-variance-pull.yml' },
@@ -41,30 +49,30 @@ export const PULL_REGISTRY = {
   // per-row. Measured live 2026-09-13: the whole daily batch shares one updated_at value and
   // it moves forward with each day's pull, so `order by updated_at desc limit 1` works
   // identically to every dateCol entry above.
-  inventorySummary: { table: 'qsr_inventory_summary', dateCol: 'updated_at', workflowFile: 'qsrsoft-inventory-summary-pull.yml' },
+  inventorySummary: { table: 'qsr_inventory_summary', dateCol: 'updated_at', workflowFile: 'qsrsoft-inventory-summary-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Added 2026-11-10 (task #137, On-Hand/Variance freshness badges) -- same reasoning as
   // inventorySummary just above: qsr_onhand/qsr_variance_stat are period-keyed, not daily-dated,
   // so dateCol is the updated_at timestamptz both tables' pull scripts set on every batch upsert
   // (same signal the app-side lightweight freshness probes read, src/lib/supabase.js's
   // loadQsrOnHandFreshness/loadQsrVarianceStatFreshness).
-  onHand:   { table: 'qsr_onhand',       dateCol: 'updated_at', workflowFile: 'qsrsoft-onhand-pull.yml' },
-  variance: { table: 'qsr_variance_stat', dateCol: 'updated_at', workflowFile: 'qsrsoft-variance-pull.yml' },
+  onHand:   { table: 'qsr_onhand',       dateCol: 'updated_at', workflowFile: 'qsrsoft-onhand-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  variance: { table: 'qsr_variance_stat', dateCol: 'updated_at', workflowFile: 'qsrsoft-variance-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Added 2026-09-16 (coverage audit) -- see stream-freshness.js's own comment on these same 8
   // keys for why the 6 monthly ones use period_month as dateCol, not a daily date column.
-  ebos:              { table: 'qsr_ebos_daily',       dateCol: 'date',         workflowFile: 'qsrsoft-ebos-pull.yml' },
+  ebos:              { table: 'qsr_ebos_daily',       dateCol: 'date',         workflowFile: 'qsrsoft-ebos-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   forecastWeekCache: { table: 'forecast_week_cache',  dateCol: 'dt',           workflowFile: 'forecast-week-precompute.yml' },
-  rosterStats:       { table: 'roster_statistics',    dateCol: 'period_month', workflowFile: 'qsrsoft-roster-stats-pull.yml' },
-  rosterRoleCounts:  { table: 'roster_role_counts',   dateCol: 'period_month', workflowFile: 'qsrsoft-employee-roster-pull.yml' },
-  turnover:          { table: 'turnover_monthly',     dateCol: 'period_month', workflowFile: 'qsrsoft-turnover-pull.yml' },
-  digitalApp:        { table: 'digital_app_monthly',  dateCol: 'period_month', workflowFile: 'qsrsoft-digital-app-pull.yml' },
-  mcdelivery:        { table: 'mcdelivery_monthly',   dateCol: 'period_month', workflowFile: 'qsrsoft-mcdelivery-pull.yml' },
-  shiftManager:      { table: 'shift_manager_monthly',dateCol: 'period_month', workflowFile: 'qsrsoft-shift-manager-pull.yml' },
+  rosterStats:       { table: 'roster_statistics',    dateCol: 'period_month', workflowFile: 'qsrsoft-roster-stats-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  rosterRoleCounts:  { table: 'roster_role_counts',   dateCol: 'period_month', workflowFile: 'qsrsoft-employee-roster-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  turnover:          { table: 'turnover_monthly',     dateCol: 'period_month', workflowFile: 'qsrsoft-turnover-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  digitalApp:        { table: 'digital_app_monthly',  dateCol: 'period_month', workflowFile: 'qsrsoft-digital-app-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  mcdelivery:        { table: 'mcdelivery_monthly',   dateCol: 'period_month', workflowFile: 'qsrsoft-mcdelivery-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  shiftManager:      { table: 'shift_manager_monthly',dateCol: 'period_month', workflowFile: 'qsrsoft-shift-manager-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Added 2026-10-13 after a real measured incident: this workflow's very first scheduled
   // cron opportunity (10:00 UTC, 2026-10-13) silently never fired -- confirmed live via the
   // GitHub Actions API (zero event:"schedule" runs in its history), the exact "should have
   // run by now, silently didn't" failure mode this watchdog exists to catch. No clampToToday
   // needed -- unlike lifelenz, this table never carries a future-dated row.
-  qsrSalesQtrHour: { table: 'qsr_sales_quarter_hour', dateCol: 'dt', workflowFile: 'qsrsoft-sales-quarter-hour-pull.yml' },
+  qsrSalesQtrHour: { table: 'qsr_sales_quarter_hour', dateCol: 'dt', workflowFile: 'qsrsoft-sales-quarter-hour-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // task #105 Phase 2 (2026-11-13) -- hmeDt/squadle just left stream-freshness.js's commented-
   // out placeholder state (now real STREAMS entries), so the watchdog needs these two now too.
   hmeDt:   { table: 'hme_dt_daily',              dateCol: 'dt', workflowFile: 'hme-cloud-pull.yml' },
@@ -75,5 +83,5 @@ export const PULL_REGISTRY = {
   // reads, src/lib/supabase.js's loadQsrSecurityEventsFreshness), not updated_at -- unlike
   // onHand/variance above, this table IS daily-dated per row, so the real business date is the
   // more honest freshness signal than whatever incidental write last touched updated_at.
-  securityEvents: { table: 'qsr_security_events', dateCol: 'event_dt', workflowFile: 'qsrsoft-security-events-pull.yml' },
+  securityEvents: { table: 'qsr_security_events', dateCol: 'event_dt', workflowFile: 'qsrsoft-security-events-pull.yml', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
 };

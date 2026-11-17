@@ -48,22 +48,27 @@ describe('eom-dashboard.js freshBadge() — Change Monitor\'s Variance subtitle 
     expect(freshBadge({}, 'variance', 'Variance Stat pull')).toBeNull();
   });
 
-  it('a fresh probe renders the label + "today" with the ok (green) dot color', () => {
+  // variance is one of the 18 streams the 2026-11-16 QSRSoft Operator Security Notice
+  // compliance pause marks `paused:true` in STREAMS, so severityColor() now always renders the
+  // gray "paused" dot (#64748b) here regardless of real staleness -- see
+  // memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md. The age TEXT is
+  // unaffected (still computed from the real date), which is what these two tests actually guard.
+  it('a fresh probe renders the label + "today" with the paused (gray, compliance pause) dot color', () => {
     const el = freshBadge({ qsrVarianceFreshnessRows: [{ date: new Date().toISOString() }] }, 'variance', 'Variance Stat pull');
     expect(el).toBeTruthy();
     ({ container, root } = renderInto(el));
     expect(container.textContent).toContain('Variance Stat pull: today');
     const dot = container.querySelector('span span');
-    expect(dot.style.background).toBe('#10b981');
+    expect(dot.style.background).toBe('#64748b');
   });
 
-  it('a stale probe (5 days behind) surfaces its real age and the crit (red) dot color', () => {
+  it('a stale probe (5 days behind) surfaces its real age, still paused (gray) not crit', () => {
     const stale = new Date(); stale.setDate(stale.getDate() - 5);
     const el = freshBadge({ qsrVarianceFreshnessRows: [{ date: stale.toISOString() }] }, 'variance', 'Variance Stat pull');
     ({ container, root } = renderInto(el));
     expect(container.textContent).toContain('Variance Stat pull: 5d ago');
     const dot = container.querySelector('span span');
-    expect(dot.style.background).toBe('#ef4444');
+    expect(dot.style.background).toBe('#64748b');
   });
 
   it('an empty-but-loaded probe reads as "no usable date", not silently blank', () => {

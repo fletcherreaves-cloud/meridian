@@ -6564,7 +6564,16 @@ export async function saveEquipmentEntryDirect(row) {
   const user = (await supabase.auth.getUser())?.data?.user;
   const submittedBy = user?.user_metadata?.name || user?.email || null;
   const insertRow = {
-    instance_id: row.instance_id || undefined, // undefined -> DB default (gen_random_uuid()) = new item
+    // `equipment_survey_entries.instance_id` is `uuid not null` with NO column default
+    // (supabase/schema-equipment-survey.sql) -- only `id` gets `default gen_random_uuid()`.
+    // Omitting it (as the old `row.instance_id || undefined` did) sent no value at all for a
+    // NOT NULL column with nothing to fall back on, which is exactly the "null value in column
+    // 'instance_id'" error a fresh palette drop hit. The public equipment-survey edge function
+    // (supabase/functions/equipment-survey/index.ts) already generates a fresh crypto.randomUUID()
+    // client-side for a new item for this exact reason -- this mirrors that, so a NEW item (no
+    // instance_id passed in) gets a real UUID here instead of relying on a DB default that was
+    // never created.
+    instance_id: row.instance_id || crypto.randomUUID(),
     loc: String(row.loc),
     catalog_item_id: row.catalog_item_id ?? null,
     manual_entry_text: row.manual_entry_text ?? null,

@@ -17,18 +17,25 @@ describe('STREAMS registry carries a real QSRSoft Security Events entry', () => 
     });
   });
 
-  it('a healthy ~1-day-behind latest (this pull deliberately never requests "today") reads ok, not stale', () => {
+  // securityEvents is one of the 18 streams the 2026-11-16 QSRSoft Operator Security Notice
+  // compliance pause marks `paused:true` in STREAMS (added the day after this test file was
+  // written), so severity is now always 'paused' regardless of staleness -- see
+  // memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md. staleDays is still
+  // computed correctly from the real date, which these two tests now assert directly.
+  it('a healthy ~1-day-behind latest (this pull deliberately never requests "today") computes staleDays:1, reported as paused (compliance pause)', () => {
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
     const ds = { qsrSecurityEventsFreshnessRows: [{ date: yesterday.toISOString() }] };
     const entry = streamFreshness(ds).find(s => s.key === 'securityEvents');
-    expect(entry.severity).toBe('ok');
+    expect(entry.staleDays).toBe(1);
+    expect(entry.severity).toBe('paused');
   });
 
-  it('a genuinely stale latest (5 days behind) is flagged critical', () => {
+  it('a genuinely stale latest (5 days behind) still computes staleDays:5, but is reported as paused, not crit', () => {
     const stale = new Date(); stale.setDate(stale.getDate() - 5);
     const ds = { qsrSecurityEventsFreshnessRows: [{ date: stale.toISOString() }] };
     const entry = streamFreshness(ds).find(s => s.key === 'securityEvents');
-    expect(entry.severity).toBe('crit');
+    expect(entry.staleDays).toBe(5);
+    expect(entry.severity).toBe('paused');
   });
 
   it('not yet loaded into ds this session reads as no verdict, not a false stale', () => {

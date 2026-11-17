@@ -40,6 +40,7 @@ import { computeOwnerSalesForecast } from '../engine/owner-sales-forecast.js';
 import { computeLaborTpphForecast } from '../engine/owner-labor-tpph-forecast.js';
 import { altitudeForRole } from '../engine/curated-home.js';
 import { computeManualPullTriggers } from '../engine/manual-pull-triggers.js';
+import { STREAMS } from '../engine/stream-freshness.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1594,6 +1595,21 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
       mcdeliveryRows:   'QSRSoft McDelivery (auto-pulled monthly)',
       shiftManagerRows: 'QSRSoft Shift Manager (auto-pulled monthly)',
     };
+  // QSRSoft Operator Security Notice compliance pause (2026-11-16) -- these streams' SCHEDULES
+  // are paused (STREAMS[].paused, see stream-freshness.js), but every retrigger failsafe that
+  // could silently undo the pause (scheduled-pull-watchdog.mjs, the two still-live pg_cron
+  // "external heartbeat" jobs) has now also been found and accounted for -- see
+  // memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md. This badge
+  // replaces the misleading "AUTO · no action needed" treatment for exactly those streams so
+  // the panel never again implies a pull is running when its schedule has been deliberately
+  // silenced. Keyed by dsField (STREAMS' own join key), not a hand-maintained key list, so this
+  // can't drift from STREAMS the way #171's duplicated stream lists once did.
+  const PAUSED_DSFIELDS = new Set(STREAMS.filter(s=>s.paused).map(s=>s.dsField));
+  const pausedBadge = h('span',{style:{fontSize:'7px',fontWeight:700,padding:'1px 5px',borderRadius:3,
+    marginLeft:6,background:'rgba(100,116,139,.18)',color:'#94a3b8',
+    border:'.5px solid rgba(100,116,139,.35)',letterSpacing:'.3px',verticalAlign:'middle',cursor:'help'},
+    title:'Schedule paused — QSRSoft Operator Security Notice compliance pause (2026-11-16)'},'⏸ PAUSED');
+
   const dataRow = (key, label, c, colorVar, altIdx, badges) => {
     const hasData = c.count>0;
     const sd = hasData ? staleDays(c) : null;
@@ -1707,7 +1723,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
     ['digitalAppRows',   'Digital App',          extAutoCov.digitalAppRows],
     ['mcdeliveryRows',   'McDelivery',           extAutoCov.mcdeliveryRows],
     ['shiftManagerRows', 'Shift Manager',        extAutoCov.shiftManagerRows],
-  ].map(([k,label,c],i)=>dataRow(k, label, c||{count:0}, '#10b981', i%2));
+  ].map(([k,label,c],i)=>dataRow(k, label, c||{count:0}, '#10b981', i%2, PAUSED_DSFIELDS.has(k)?pausedBadge:null));
 
   const vpPeriods = supabaseCov.smgVoicePerfPeriods||[];
 
@@ -1750,9 +1766,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           hasData?staleDot(c):null,
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft FOB Daily',
-            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},'QSRSoft FOB · auto-pull daily — daily food-cost actuals'),
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},
+              PAUSED_DSFIELDS.has('qsrFobRows')
+                ? 'QSRSoft FOB · schedule paused (compliance) — manual sync only'
+                : 'QSRSoft FOB · auto-pull daily — daily food-cost actuals'),
             syncLabel(syncTimes.fob)),
-          autoTag,syncBtn('fob')),
+          PAUSED_DSFIELDS.has('qsrFobRows')?pausedBadge:autoTag,syncBtn('fob')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1765,9 +1784,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           hasData?staleDot(c):null,
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft eBOS Purchases',
-            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},'QSRSoft eBOS · auto-pull daily 10:00 UTC — purchases by store'),
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},
+              PAUSED_DSFIELDS.has('ebosRows')
+                ? 'QSRSoft eBOS · schedule paused (compliance) — manual sync only'
+                : 'QSRSoft eBOS · auto-pull daily 10:00 UTC — purchases by store'),
             syncLabel(syncTimes.ebos)),
-          autoTag,syncBtn('ebos')),
+          PAUSED_DSFIELDS.has('ebosRows')?pausedBadge:autoTag,syncBtn('ebos')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' store-days':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1780,9 +1802,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           hasData?staleDot(c):null,
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft Daily Activity',
-            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},'QSRSoft DAR · auto-pull daily + intraday — hourly sales / DT speed / labor'),
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},
+              PAUSED_DSFIELDS.has('qsrActSummaryRows')
+                ? 'QSRSoft DAR · schedule paused (compliance) — manual sync only'
+                : 'QSRSoft DAR · auto-pull daily + intraday — hourly sales / DT speed / labor'),
             syncLabel(syncTimes.dar)),
-          autoTag,syncBtn('dar')),
+          PAUSED_DSFIELDS.has('qsrActSummaryRows')?pausedBadge:autoTag,syncBtn('dar')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' hour-slots':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1802,9 +1827,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',background:covColor,marginRight:4,flexShrink:0}}),
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft Security Events',
-            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},`event_details · self-hosted runner, unreliable upstream (dispatch #95) -- ${c.coveredDays}/${c.windowDays}d covered in the rolling window, not just latest-run pass/fail`),
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},
+              PAUSED_DSFIELDS.has('qsrSecurityEventsFreshnessRows')
+                ? 'event_details · schedule paused (compliance) — manual sync only'
+                : `event_details · self-hosted runner, unreliable upstream (dispatch #95) -- ${c.coveredDays}/${c.windowDays}d covered in the rolling window, not just latest-run pass/fail`),
             syncLabel(c.latestSync)),
-          autoTag,syncBtn('secevents')),
+          PAUSED_DSFIELDS.has('qsrSecurityEventsFreshnessRows')?pausedBadge:autoTag,syncBtn('secevents')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:covColor,fontWeight:700}},
           `${c.coveredDays}/${c.windowDays}d`),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1867,7 +1895,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
           div({style:{display:'flex',alignItems:'center'}},
             div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
             h(InfoIcon,{articleKey:'data_manager_guide'})),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz · QSRSoft FOB · eBOS Purchases · Daily Activity auto-sync · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz auto-sync · QSRSoft pulls paused (compliance) · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
@@ -2004,8 +2032,22 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,
             fontSize:'9px',color:'#34d399',lineHeight:1.7}},
             span({style:{fontWeight:700}},'⚡ Auto-synced daily (~5am CDT): '),
-            'LifeLenz schedule, QSRSoft FOB, eBOS Purchases, and Daily Activity (hourly for all '+Object.keys(STORE_NAMES).length+' stores) pull automatically via GitHub Actions — no action needed. ',
+            'LifeLenz schedule pulls automatically via GitHub Actions — no action needed. ',
             span({style:{color:'var(--text3)'}},'Manual uploads (Ops, Controls, SMG, etc.) persist to Supabase and load on any device without re-uploading.')
+          ),
+          // QSRSoft compliance-pause notice (owner request 2026-11-17, following up on the
+          // 2026-11-16 Operator Security Notice pause) -- replaces the above box's old claim
+          // that QSRSoft FOB/eBOS/Daily Activity still pull "no action needed." Every stream
+          // flagged ⏸ PAUSED above has had its schedule silenced, and every retrigger failsafe
+          // (scheduled-pull-watchdog.mjs's auto-heal + the two still-live pg_cron "external
+          // heartbeat" jobs) that could have silently undone that pause has been found and
+          // disarmed -- see memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md.
+          div({style:{padding:'10px 14px',background:'rgba(100,116,139,.1)',
+            borderRadius:'var(--r)',border:'.5px solid rgba(100,116,139,.3)',marginBottom:14,
+            fontSize:'9px',color:'#94a3b8',lineHeight:1.7}},
+            span({style:{fontWeight:700}},'⏸ QSRSoft pulls paused (compliance): '),
+            'FOB, eBOS Purchases, Daily Activity, and 15 other QSRSoft credential-login streams are deliberately paused per the 2026-11-16 Operator Security Notice — their GitHub Actions schedules are off, and every mechanism that could silently retrigger them has been checked and disarmed. ',
+            span({style:{color:'var(--text3)'}},'Use the ↻ Sync buttons above for a one-off manual pull when you need fresh data.')
           ),
           // EOM Supervisor auto-population note
           div({style:{padding:'9px 14px',background:'rgba(96,165,250,.06)',

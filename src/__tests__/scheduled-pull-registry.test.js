@@ -49,4 +49,17 @@ describe('scheduled-pull-registry.mjs stays in step with stream-freshness.js STR
     expect(STREAMS.length).toBeGreaterThanOrEqual(9);
     expect(Object.keys(PULL_REGISTRY).length).toBe(STREAMS.length);
   });
+
+  // QSRSoft Operator Security Notice compliance pause (2026-11-16) -- STREAMS' `paused` flag
+  // is the one scheduled-pull-watchdog.mjs's checkStream() actually reads, but
+  // PULL_REGISTRY mirrors it too (see that file's own comment), and the two must never
+  // disagree -- a key paused in one file but not the other means either the watchdog still
+  // retriggers a workflow the owner deliberately silenced, or a live stream is wrongly
+  // hidden as paused. See memory/finding-qsrsoft-security-notice-2026-11-16.md.
+  it('every STREAMS/PULL_REGISTRY pair agrees on `paused`', () => {
+    const disagreements = STREAMS
+      .filter(s => Boolean(s.paused) !== Boolean(PULL_REGISTRY[s.key]?.paused))
+      .map(s => `${s.key}: STREAMS.paused=${Boolean(s.paused)} vs PULL_REGISTRY.paused=${Boolean(PULL_REGISTRY[s.key]?.paused)}`);
+    expect(disagreements).toEqual([]);
+  });
 });

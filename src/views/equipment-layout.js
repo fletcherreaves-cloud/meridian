@@ -141,6 +141,10 @@ const ZONE_GRID_AREA = {
   production_area: '3 / 1 / 5 / 5',
   prep_area:       '5 / 1 / 6 / 3',
   back_of_house:   '5 / 3 / 6 / 5',
+  // Owner request 2026-11-17 — see equipment-survey.js's PLACEMENTS comment on the same entry.
+  // Full-width row below the interior floor plan, since rooftop equipment isn't really "on" the
+  // same floor as everything above it.
+  rooftop:         '6 / 1 / 7 / 5',
 };
 
 // Pure: current-state entries (already latest-per-instance, non-removed) -> placed items with

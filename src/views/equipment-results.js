@@ -19,7 +19,7 @@ import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { InfoIcon } from '../engine/forecast.js';
 import { LocationSelector, locationSelectorLocs, buildLocationHierarchy } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
-import { buildEquipmentStoreSummary } from '../engine/equipment-survey.js';
+import { buildEquipmentStoreSummary, buildEquipmentStoreDetail } from '../engine/equipment-survey.js';
 import {
   loadEquipmentCatalogDirect, loadAllEquipmentEntriesDirect,
   createEquipmentSurveyLink, loadEquipmentSurveyLinks, revokeEquipmentSurveyLink,
@@ -130,6 +130,45 @@ function ManageLinksModal({ onClose, onLinksChanged }) {
 const _thStyle = { textAlign: 'left', padding: '5px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.03em' };
 const _tdStyle = { padding: '7px 10px', verticalAlign: 'middle' };
 
+// ── Store Detail modal (owner request 2026-11-17) — "make the location selectable and open up
+// to a table listing all the equipment on file for that location... by area of restaurant if
+// known or assumed" — every item currently logged for ONE store, grouped by its floor-plan area
+// (placement_zone), in the same PLACEMENTS order the Layout Planner's own zone grid uses, with a
+// trailing group for anything logged without an area yet (equipment-layout.js's own "unplaced"
+// concept — the crew form lets placement_zone go unset). Reuses buildEquipmentRollupRows (same
+// row-shape the crew review screen and the email rollup already use) rather than re-deriving
+// description/placement/side/etc. a third time.
+function EquipmentStoreDetailModal({ loc, entries, catalogById, onClose }) {
+  const { rows, groups } = useMemo(() => buildEquipmentStoreDetail(entries, loc, catalogById), [entries, loc, catalogById]);
+
+  return h(ModalShell, {
+    title: `📋 ${sNameC(loc) || loc} — Equipment on File`, onClose, maxWidth: 820, closeOnBackdrop: true,
+  },
+    rows.length === 0
+      ? div({ style: { color: 'var(--text3)', fontSize: 12, textAlign: 'center', padding: 20 } }, 'No equipment logged for this store yet.')
+      : div({ style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+        ...groups.map(g => div({ key: g.label },
+          div({ style: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--accent)', fontWeight: 700, marginBottom: 6 } }, `${g.label} (${g.rows.length})`),
+          div({ style: { overflowX: 'auto' } },
+            table({ style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 } },
+              thead({}, tr({},
+                th({ style: _thStyle }, 'Equipment'), th({ style: _thStyle }, 'Serial #'),
+                th({ style: _thStyle }, 'Cert Date'), th({ style: _thStyle }, 'Logged By'))),
+              h('tbody', {},
+                ...g.rows.map((r, i) => tr({ key: i, style: { borderTop: '1px solid var(--bdr)' } },
+                  td({ style: _tdStyle }, r.description + (r.fridgeSubtype ? ` (${r.fridgeSubtype})` : '')),
+                  td({ style: _tdStyle }, r.serial || '—'),
+                  td({ style: _tdStyle }, fmtDate(r.certDate)),
+                  td({ style: _tdStyle }, r.submittedBy || '—'),
+                )),
+              ),
+            ),
+          ),
+        )),
+      ),
+  );
+}
+
 // ── Main panel ───────────────────────────────────────────────────────────────────────────────
 export function EquipmentResultsPanel({ stores, onClose }) {
   const [locValue, setLocValue] = useState({ level: 'all', id: null });
@@ -138,6 +177,7 @@ export function EquipmentResultsPanel({ stores, onClose }) {
   const [links, setLinks] = useState([]);
   const [manageOpen, setManageOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [detailLoc, setDetailLoc] = useState(null);
 
   const refreshEntries = useCallback(() => {
     loadAllEquipmentEntriesDirect().then(setEntries).catch(() => setEntries([]));
@@ -145,6 +185,12 @@ export function EquipmentResultsPanel({ stores, onClose }) {
   useEffect(() => { loadEquipmentCatalogDirect().then(setCatalog).catch(() => setCatalog([])); }, []);
   useEffect(() => { refreshEntries(); }, [refreshEntries]);
   useEffect(() => { loadEquipmentSurveyLinks().then(setLinks).catch(() => setLinks([])); }, [manageOpen]);
+
+  const catalogById = useMemo(() => {
+    const m = {};
+    for (const c of (catalog || [])) m[c.id] = c;
+    return m;
+  }, [catalog]);
 
   const storeList = (stores && stores.length) ? stores : Object.keys(STORE_NAMES).map(l => ({ loc: l }));
   const tree = useMemo(() => buildLocationHierarchy(storeList, INV_ORG_COORDS, STORE_NAMES), [storeList]);
@@ -178,6 +224,7 @@ export function EquipmentResultsPanel({ stores, onClose }) {
     ),
   },
     manageOpen && h(ManageLinksModal, { onClose: () => setManageOpen(false), onLinksChanged: refreshEntries }),
+    detailLoc && h(EquipmentStoreDetailModal, { loc: detailLoc, entries, catalogById, onClose: () => setDetailLoc(null) }),
 
     loading
       ? div({ style: { textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: 11 } }, 'Loading…')
@@ -189,6 +236,7 @@ export function EquipmentResultsPanel({ stores, onClose }) {
         ),
         noDataLocs.length > 0 && div({ style: { fontSize: 11.5, color: 'var(--warn,#fb923c)', marginBottom: 12, background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: 7, padding: '8px 10px' } },
           `No equipment logged yet: ${noDataLocs.map(l => sNameC(l) || l).join(', ')}`),
+        rows.length > 0 && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginBottom: 6 } }, 'Click a store name to see every item logged for it, grouped by area.'),
         div({ style: { overflowX: 'auto' } },
           table({ style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12.5 } },
             thead({}, tr({},
@@ -196,7 +244,11 @@ export function EquipmentResultsPanel({ stores, onClose }) {
               th({ style: _thStyle }, 'PQRG Reviewed'), th({ style: _thStyle }, 'Last Activity'), th({ style: _thStyle }, 'By'))),
             h('tbody', {},
               ...rows.map(r => tr({ key: r.loc, style: { borderTop: '1px solid var(--bdr)' } },
-                td({ style: _tdStyle }, sNameC(r.loc) || r.loc),
+                td({
+                  style: { ..._tdStyle, cursor: 'pointer', color: 'var(--accent)', fontWeight: 600 },
+                  onClick: () => setDetailLoc(r.loc),
+                  title: 'View all equipment on file for this store',
+                }, sNameC(r.loc) || r.loc),
                 td({ style: _tdStyle }, r.itemCount),
                 td({ style: _tdStyle }, r.itemCount ? `${r.reviewedCount} / ${r.itemCount}` : '—'),
                 td({ style: _tdStyle }, fmtDate(r.lastSubmittedAt)),
