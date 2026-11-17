@@ -150,20 +150,29 @@ async function main() {
   }
 
   console.log('\n=== Introspecting DarData ===');
-  const darDataType = await introspectType('DarData');
-  console.log(JSON.stringify(darDataType, null, 2));
-  const darField = darDataType?.fields?.find(f => f.name === 'dar');
-  const darElementType = darField?.type?.ofType?.ofType?.name || darField?.type?.ofType?.name;
+  console.log(JSON.stringify(await introspectType('DarData'), null, 2));
 
   console.log('\n=== Introspecting FieldValue ===');
   const fieldValueType = await introspectType('FieldValue');
   console.log(JSON.stringify(fieldValueType, null, 2));
   const fieldValueFields = (fieldValueType?.fields || []).map(f => f.name);
 
-  if (darElementType && darElementType !== 'FieldValue') {
-    console.log(`\n=== Introspecting dar's list element type: ${darElementType} ===`);
-    console.log(JSON.stringify(await introspectType(darElementType), null, 2));
-  }
+  // 2026-11-17 second re-run: the previous pass's own extraction of dar's list-element type
+  // name was ITSELF one ofType level too shallow (the same depth-counting mistake the first
+  // pass made for the granularity enum name) -- the raw DarData dump in that run's own log
+  // plainly showed "name": "Dar" one level deeper than the code was reading, so the
+  // conditional Dar-introspection branch silently never ran. The type name is now known with
+  // certainty from that raw dump, so introspect it directly rather than re-deriving it.
+  console.log('\n=== Introspecting Dar ===');
+  const darType = await introspectType('Dar');
+  console.log(JSON.stringify(darType, null, 2));
+  // Dar's own fields may themselves be [FieldValue!]! (same shape as totals) or plain scalars --
+  // build a selection that handles either: select FieldValue sub-selection only on fields whose
+  // own type resolves to FieldValue, plain selection otherwise.
+  const darSelection = (darType?.fields || []).map(f => {
+    const resolvesToFieldValue = JSON.stringify(f.type).includes('"FieldValue"');
+    return resolvesToFieldValue ? `${f.name} { ${fieldValueFields.join(' ')} }` : f.name;
+  }).join(' ') || '__typename';
 
   console.log('\n=== Introspecting DarGranularityEnum ===');
   const granEnum = await introspectType('DarGranularityEnum');
@@ -180,7 +189,7 @@ async function main() {
   const darQuery = `query GetDARData($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!${granValue ? ', $granularity: DarGranularityEnum' : ''}) {
     darData(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime${granValue ? ', granularity: $granularity' : ''}) {
       totals { ${fvSelection} }
-      dar { __typename }
+      dar { ${darSelection} }
     }
   }`;
   const darVars = {
