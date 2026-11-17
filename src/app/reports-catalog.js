@@ -102,6 +102,12 @@ const DIRECT_PANELS = [
   // reference table.
   { id: 'fob-reference-table', category: 'Financial & Promotions',
     desc: 'Rolling L3M / L6W / LM / MTD / Projected / Trend for Sales, Comp Sales %, Crew Labor %, TPPH and every FOB component, by store.' },
+  // Owner request 2026-11-17 -- see panel-registry.js's own comment on this id.
+  { id: 'dt-oepe-report', category: 'Daily & Operations',
+    desc: 'Drive-thru OEPE with parked/held time excluded, by store, across MTD / LM / Last 30 / Last 45 / Last 90 Days / YTD.' },
+  // Owner request 2026-11-17 -- see panel-registry.js's own comment on this id.
+  { id: 'spot-check-ruler-report', category: 'Financial & Promotions',
+    desc: "Pick a store, open its most recent qualifying weekly or EOM count, run the 7-question Spot-Check Ruler follow-up on demand." },
   // Owner request 2026-10-19 -- see panel-registry.js's own comment on this id.
   { id: 'conversion-efficiency', category: 'Financial & Promotions',
     desc: 'Food usage vs. target by raw item (French Fries, beef, fish, cheese, etc.) and the $ opportunity each one represents, from McDonald’s corporate Owner Operator Reports.' },

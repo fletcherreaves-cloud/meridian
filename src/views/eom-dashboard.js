@@ -100,8 +100,10 @@ export function freshBadge(ds, key, label) {
 }
 
 // Last `n` period keys up to and including `period` (oldest→newest) — the look-back window
-// for Action-Items provenance (per-item month-over-month variance history).
-function lastPeriods(period, n = 6) {
+// for Action-Items provenance (per-item month-over-month variance history). Exported so other
+// reports needing "the period before this one" (e.g. spot-check-ruler-report.js's newWrinsByLoc
+// diff) reuse this month-math instead of re-deriving it a second time.
+export function lastPeriods(period, n = 6) {
   const m = /^(\d{4})-(\d{2})$/.exec(period || '');
   if (!m) return period ? [period] : [];
   let y = +m[1], mo = +m[2] - 1; // 0-based month of the current period
