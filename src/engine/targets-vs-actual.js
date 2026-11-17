@@ -7,7 +7,7 @@
 // (that file's own header explains why qsr_fob's cumulative MTD snapshot can't be averaged
 // directly; getting it wrong silently understates every food-cost %).
 import { DEFAULT_TARGETS } from '../constants.js';
-import { metricAvg, metricSumRatio } from './metric-source.js';
+import { metricAvg, metricSumRatio, metricRate } from './metric-source.js';
 import { autoFirstTotal } from './vs-ly.js';
 import { resolveMetricForRange, FOB_REFERENCE_METRICS } from './fob-reference.js';
 import { resolveLaborTarget } from './labor-basis.js';
@@ -188,7 +188,15 @@ export const MONTHLY_TARGET_METRICS = [
   },
   {
     key: 'tpph', label: 'TPPH', targetField: 'tTpph', unit: 'rate', better: 'higher',
-    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'tpph'),
+    // [sweep:data-sourcing] metricRate (sum-of-legs ÷ sum-of-legs, falling back to metricAvg only
+    // when metricSumRatio has nothing) -- same fix as crewLaborPct right above, just missed here.
+    // This tab's range can include the current, still-open month (owner's own MTD requirement),
+    // so metricAvg blended an in-progress business day into the month average at full weight --
+    // the same completeness artifact CLAUDE.md's DAR/hour_slot section documents and that
+    // dispatches #153/#155/#221 already fixed for every other tpph/oepe/kvst/r2p call site in
+    // the app. metricRate never shows LESS than metricAvg used to (same fallback), only a more
+    // accurate number when the raw legs resolve.
+    actual: (ds, loc, range) => metricRate(ds, [loc], range, 'tpph'),
   },
   ..._FOB_LEG_MAP.map(({ fobRefKey, targetField, label }) => {
     const ref = FOB_REFERENCE_METRICS.find(m => m.key === fobRefKey);
@@ -289,23 +297,31 @@ export const YEARLY_TARGET_METRICS = [
   },
   {
     key: 'yTpph', label: 'TPPH', targetField: 'tTpph', unit: 'rate', better: 'higher',
-    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'tpph'),
+    // [sweep:data-sourcing] metricRate, same reasoning as the Monthly tab's tpph row above --
+    // this YTD range always includes the current, in-progress month (see this file's own
+    // 2026-11-15 comment on YEARLY_TARGET_METRICS above). metricAvg blended that open month in
+    // at full weight; metricRate sums the raw legs instead, falling back to the old metricAvg
+    // figure only when the legs can't resolve, so no number that displayed before goes blank.
+    actual: (ds, loc, range) => metricRate(ds, [loc], range, 'tpph'),
   },
   {
     key: 'yOepe', label: 'OEPE (sec)', targetField: 'tOepe', unit: 'sec', better: 'lower',
-    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'oepe'),
+    actual: (ds, loc, range) => metricRate(ds, [loc], range, 'oepe'),
   },
   {
     key: 'yPark', label: 'Parked %', targetField: 'tPark', unit: 'pct', better: 'lower',
+    // 'park' has no declared ratio numerator/denominator in METRIC_SOURCES (not in
+    // rollupCapableMetricKeys()) -- metricSumRatio would unconditionally return null for it, so
+    // metricAvg stays correct here; left unchanged, not an oversight.
     actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'park'),
   },
   {
     key: 'yKvst', label: 'KVS Time (sec)', targetField: 'tKvst', unit: 'sec', better: 'lower',
-    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'kvst'),
+    actual: (ds, loc, range) => metricRate(ds, [loc], range, 'kvst'),
   },
   {
     key: 'yR2p', label: 'R2P (sec)', targetField: 'tR2p', unit: 'sec', better: 'lower',
-    actual: (ds, loc, range) => metricAvg(ds, [loc], range, 'r2p'),
+    actual: (ds, loc, range) => metricRate(ds, [loc], range, 'r2p'),
   },
   {
     // Same dollar-rollup equivalence as yLabor above: resolveMetricForRange sums fob-reference.js's
