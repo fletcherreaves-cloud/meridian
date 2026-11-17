@@ -213,11 +213,12 @@ function renderNavTexts(permFn) {
 // section:'scheduling' -- no visible effect here, since kind:'hub-tab' already rendered nowhere
 // in this snapshot either way.
 // 2026-11-10 (task #90): 'YoY Trends' (new kind:'test-kitchen', perm:'analytics.district',
-// tkOrder:19) lands LAST in the Test Kitchen list, right after 'Layout Planner' (tkOrder:18).
+// tkOrder:19) landed in the Test Kitchen list by tkOrder. ('Layout Planner', tkOrder:18, sat
+// right before it until its own 2026-11-17 promotion out of Test Kitchen into main nav.)
 // Its calendar icon already has another owner (the perm:null 'Date-Range Report' entry, which
 // renders regardless of any permission denial) -- see HIDDEN_WHEN_DENIED's 'analytics.district'
 // entry below, which only gains the new label, not the icon.
-const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','🧭','Curated Home','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','📋','Location Dossier','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🎯','Targets vs Actual','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','🚀','Launch Planner','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People & HR','🗓','Crew Schedule','💰','Pay Rate History','📋','Performance Reviews','🔒','Security','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','‼','Log Something','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forecasting and Labor Projections','◎','DI Calibration','▦','Projections','◑','Proj vs Actuals','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','🧭','What You Can Do','⚗ TEST KITCHEN','🎯','Forecast Models','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','🗺️','Layout Planner','📅','YoY Trends','🧭','Daily Review','🍔','Food Safety Checklists','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
+const EXPECTED =['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','🧭','Curated Home','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📄','Above-Store One-Pager','🛡️','Loss Prevention Summary','🧩','Custom Report Builder','🔗','Controls ↔ Food Cost Linkage','🌦️','Weather Impact','🎚️','Price Change Impact','📋','Location Dossier','🔥','Item Velocity','🔀','Channel Mix','⏱️','Labor Opportunity Cost','🧾','Cash Variance Pattern','📋','FOB Reference Table','🎯','Targets vs Actual','🍟','Conversion Efficiency Ratio','🛢️','Oil Efficiency','🗂','Reports Hub','📄','Store One-Pager','📊','Org Summary','🏆','Leaderboards','🗓','Weekly Count Status','Planning','🎯','Planning','◷','Events','🚀','Launch Planner','Operations','🛵','3PO Delivery','📋','Graded Visits','📮','Customer Complaints','🗺️','Layout Planner','📋','Equipment Results','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People & HR','🗓','Crew Schedule','💰','Pay Rate History','📋','Performance Reviews','🔒','Security','Analytics','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','‼','Log Something','🧠','SAGE','📡','Signals','⚡','Task Queue','📈','Trend Explorer','Forecasting and Labor Projections','◎','DI Calibration','▦','Projections','◑','Proj vs Actuals','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','🧭','What You Can Do','⚗ TEST KITCHEN','🎯','Forecast Models','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','🗒️','Store Assessments','📊','Performance Trends','⭐','Review Forms','🪪','Access Log','📅','YoY Trends','🧭','Daily Review','🍔','Food Safety Checklists','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -564,8 +565,10 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // added 'daily-review' (Daily Review, Notes 75) as a new kind:'test-kitchen' panel --
     // 14 + 1 = 15, a deliberate growth, not drift. 2026-11-14 added 'squadle-checklist' (Food
     // Safety Checklists, task #105 Phase 2 UI) as a new kind:'test-kitchen' panel -- 15 + 1 = 16,
-    // a deliberate growth, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (proj/pvsa/dialedin promoted 2026-11-07; yoy-trends added 2026-11-10; daily-review added 2026-11-12; squadle-checklist added 2026-11-14), the CENSUS must not drift silently').toBe(16);
+    // a deliberate growth, not drift. 2026-11-17 promoted 'equipment-layout' (Layout Planner)
+    // OUT of Test Kitchen into main nav (owner request, alongside fixing its manual-entry and
+    // new-catalog-item gaps) -- 16 - 1 = 15, a deliberate shrink, not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (proj/pvsa/dialedin promoted 2026-11-07; yoy-trends added 2026-11-10; daily-review added 2026-11-12; squadle-checklist added 2026-11-14; equipment-layout promoted 2026-11-17), the CENSUS must not drift silently').toBe(15);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -639,7 +642,8 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
     // 13 -> 14: 2026-11-10 added 'yoy-trends' (YoY Trends, task #90).
     // 14 -> 15: 2026-11-12 added 'daily-review' (Daily Review, Notes 75).
     // 15 -> 16: 2026-11-14 added 'squadle-checklist' (Food Safety Checklists, task #105 Phase 2 UI).
-    expect(testKitchenPanels.length).toBe(16);
+    // 16 -> 15: 2026-11-17 promoted 'equipment-layout' (Layout Planner) OUT of Test Kitchen.
+    expect(testKitchenPanels.length).toBe(15);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {

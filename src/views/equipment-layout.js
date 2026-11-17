@@ -31,7 +31,7 @@ import {
 } from '../engine/equipment-survey.js';
 import {
   loadEquipmentCatalogDirect, loadEquipmentEntriesDirect, saveEquipmentEntryDirect,
-  equipmentCatalogPhotoUrl,
+  addEquipmentCatalogItemDirect, equipmentCatalogPhotoUrl,
 } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -109,6 +109,14 @@ export const CATALOG_TYPE_GROUPS = [
     { id: 'register', label: 'Register / POS Terminal', icon: '💳' },
     { id: 'outdoor_menuboard', label: 'Outdoor Digital Menuboard', icon: '🪧' },
   ]},
+  // Owner request 2026-11-17: a catch-all for anything that doesn't fit one of the groups
+  // above, rather than blocking on a code change every time a store has something genuinely
+  // new. Has no real manufacturer/model list of its own -- the inspector's manual-description
+  // field (always visible, see editField below) is the intended way to describe one of these,
+  // not the Manufacturer/Model dropdown.
+  { group: 'Other', types: [
+    { id: 'other', label: 'Other / Not Listed', icon: '❓' },
+  ]},
 ];
 const ALL_TYPES = CATALOG_TYPE_GROUPS.flatMap(g => g.types);
 const typeMeta = (id) => ALL_TYPES.find(t => t.id === id) || { id, label: id, icon: '❓' };
@@ -181,6 +189,30 @@ export function EquipmentLayoutPanel({ stores, onClose }) {
     return m;
   }, [catalog]);
 
+  // A fresh drop from the palette has no manufacturer/model yet, but equipment_survey_entries
+  // has no raw `type` column of its own -- buildPlacedItems' typeId comes ONLY from the
+  // catalog row a catalog_item_id points to (`catalogById[id]?.type`). Leaving catalog_item_id
+  // null on a new item therefore lost its type the instant it landed on the floor: reopening it
+  // showed a blank Manufacturer/Model list and a "❓" icon, with no way back (the bug the owner
+  // suspected, 2026-11-17). Fix: every drop resolves (or creates once, then reuses) a per-type
+  // placeholder catalog row, so typeId always survives via the normal catalog_item_id path and
+  // the user can refine it later -- pick a real model from the dropdown, or describe it in the
+  // always-visible manual-text field for a type (like the new "Other") that doesn't really have
+  // a manufacturer/model list of its own.
+  const placeholderIdByType = useRef({});
+  const ensurePlaceholderCatalogItem = useCallback(async (typeId) => {
+    const existing = (catalogByType[typeId] || []).find(c => c.manufacturer === '(unspecified)');
+    if (existing) return existing.id;
+    if (placeholderIdByType.current[typeId]) return placeholderIdByType.current[typeId];
+    const { item, error } = await addEquipmentCatalogItemDirect({
+      type: typeId, manufacturer: '(unspecified)', model: 'Not yet specified — set below',
+    });
+    if (error || !item) { console.warn('[equipment-layout] placeholder catalog item failed:', error); return null; }
+    placeholderIdByType.current[typeId] = item.id;
+    setCatalog(prev => [...(prev || []), item]);
+    return item.id;
+  }, [catalogByType]);
+
   const current = useMemo(() => latestEntriesByInstance(
     (entries || []).slice().sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || '')),
   ), [entries]);
@@ -245,14 +277,15 @@ export function EquipmentLayoutPanel({ stores, onClose }) {
       if (!zoneEl) return;
       const zone = zoneEl.dataset.zone;
       if (info.fromPalette) {
-        await commitPlacement({ instanceId: null, catalogItemId: null, zone, side: 'side1_right', relative: '' });
+        const catalogItemId = await ensurePlaceholderCatalogItem(info.typeId);
+        await commitPlacement({ instanceId: null, catalogItemId, zone, side: 'side1_right', relative: '' });
       } else {
         await commitPlacement({ instanceId: info.instanceId, zone });
       }
     }
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  }, [commitPlacement]);
+  }, [commitPlacement, ensurePlaceholderCatalogItem]);
 
   const removeItem = useCallback(async (instanceId) => {
     const prior = current.find(e => e.instance_id === instanceId);
@@ -278,7 +311,7 @@ export function EquipmentLayoutPanel({ stores, onClose }) {
     const { entry, error } = await saveEquipmentEntryDirect({
       instance_id: instanceId, loc,
       catalog_item_id: patch.catalog_item_id !== undefined ? patch.catalog_item_id : prior.catalog_item_id,
-      manual_entry_text: prior.manual_entry_text,
+      manual_entry_text: patch.manual_entry_text !== undefined ? patch.manual_entry_text : prior.manual_entry_text,
       placement_zone: prior.placement_zone,
       serial_number: patch.serial_number !== undefined ? patch.serial_number : prior.serial_number,
       cert_date: patch.cert_date !== undefined ? patch.cert_date : prior.cert_date,
@@ -292,6 +325,25 @@ export function EquipmentLayoutPanel({ stores, onClose }) {
     if (error) { alert('Could not save: ' + error); return; }
     setEntries(prev => [entry, ...(prev || [])]);
   }, [current, loc]);
+
+  // Owner request 2026-11-17: the Manufacturer/Model dropdown only ever listed catalog items
+  // that were already there -- no way to add a real manufacturer/model Meridian hasn't seen yet
+  // without going back to the public survey form. Same table, same flagged/crew-added
+  // provenance that form already uses (addEquipmentCatalogItemDirect's own header), just a
+  // second front door onto it. Two prompts rather than a modal, matching this file's own
+  // existing confirm()/alert() dialog style (removeItem above).
+  const addNewModel = useCallback(async (typeId, instanceId) => {
+    const manufacturer = prompt('Manufacturer name:');
+    if (!manufacturer) return;
+    const model = prompt('Model (as you\'d want it to read on the list):');
+    if (!model) return;
+    setSaving(true);
+    const { item, error } = await addEquipmentCatalogItemDirect({ type: typeId, manufacturer, model });
+    setSaving(false);
+    if (error || !item) { alert('Could not add: ' + (error || 'unknown error')); return; }
+    setCatalog(prev => [...(prev || []), item]);
+    await editField(instanceId, { catalog_item_id: item.id });
+  }, [editField]);
 
   // ── Render ────────────────────────────────────────────────────────────────────────────────
   const zoneItems = (zoneId) => placed.filter(p => p.zone === zoneId);
@@ -380,13 +432,28 @@ export function EquipmentLayoutPanel({ stores, onClose }) {
               ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'Click a placed item to view or edit its logged data.')
               : div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: 8, padding: 12 } },
                 div({ style: { fontSize: '13px', fontWeight: 700, marginBottom: 8 } }, typeMeta(selected.typeId).icon + ' ' + selected.description),
-                h(InspectorField, { label: 'Manufacturer / Model', children: h('select', {
-                  value: selected.catalogItemId || '', style: _selStyle,
-                  onChange: (e) => editField(selected.instanceId, { catalog_item_id: e.target.value || null }),
-                },
-                  h('option', { value: '' }, 'Type it in instead'),
-                  ...(catalogByType[selected.typeId] || []).map(c => h('option', { key: c.id, value: c.id }, `${c.manufacturer} ${c.model}`)),
+                h(InspectorField, { label: 'Manufacturer / Model', children: div({ style: { display: 'flex', gap: 6, alignItems: 'center' } },
+                  h('select', {
+                    value: selected.catalogItemId || '', style: { ..._selStyle, flex: 1 },
+                    onChange: (e) => editField(selected.instanceId, { catalog_item_id: e.target.value || null }),
+                  },
+                    h('option', { value: '' }, '— none selected —'),
+                    ...(catalogByType[selected.typeId] || []).map(c => h('option', { key: c.id, value: c.id }, `${c.manufacturer} ${c.model}`)),
+                  ),
+                  btn({
+                    className: 'btn btn-sm', title: 'Add a manufacturer/model not in the list yet',
+                    onClick: () => addNewModel(selected.typeId, selected.instanceId),
+                  }, '+ New'),
                 )}),
+                // Always visible (not routed through the dropdown above) -- the right place to
+                // describe an item whose real manufacturer/model isn't worth adding to the
+                // shared catalog, or anything under the "Other / Not Listed" type, which has no
+                // real manufacturer/model list of its own.
+                h(InspectorField, { label: 'Manual description (optional)', children: h('input', {
+                  type: 'text', defaultValue: selected.manualText || '', style: _selStyle,
+                  placeholder: 'e.g. "half-size reach-in, no brand sticker"',
+                  onBlur: (e) => { if (e.target.value !== (selected.manualText || '')) editField(selected.instanceId, { manual_entry_text: e.target.value || null }); },
+                })}),
                 h(InspectorField, { label: 'Side', children: h('select', {
                   value: selected.side, style: _selStyle, onChange: (e) => editField(selected.instanceId, { side: e.target.value }),
                 },

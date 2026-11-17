@@ -374,10 +374,11 @@ export const PANELS = [
   { id:'oil-efficiency', label:'Oil Efficiency', icon:'🛢️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Owner request 2026-10-21: real, in-app, read/write visual floor-plan view of a store's
   // Equipment Profile survey data (src/views/equipment-layout.js's own header has the full
-  // design rationale, incl. why it's single-store-only for v1). Test-kitchen for now -- first
-  // real use hasn't happened yet; section is 'operations' (its real future home) from day one
-  // per this file's own promotion-is-a-one-field-flip convention.
-  { id:'equipment-layout', label:'Layout Planner', icon:'🗺️', perm:'analytics.store', kind:'test-kitchen', section:'operations', route:true, tkOrder:18 },
+  // design rationale, incl. why it's single-store-only for v1). Promoted to nav 2026-11-17
+  // (owner request) alongside fixing the dead-end "Type it in instead" manual-entry path and
+  // adding in-app new-catalog-item support -- the one-field flip this file's own promotion
+  // convention always intended.
+  { id:'equipment-layout', label:'Layout Planner', icon:'🗺️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   // Owner request 2026-11-02: "add a link to the equipment survey as well as build out a landing
   // panel for the results in the app" -- the crew-walkthrough share link (create/list/revoke) plus
   // a cross-store rollup of what's been logged (src/views/equipment-results.js). kind:'nav' (not
