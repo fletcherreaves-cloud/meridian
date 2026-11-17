@@ -1922,6 +1922,24 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
             )
           )),
         tab==='overview'&&div(null,
+          // Quick Upload pin tip (owner request, 2026-11-17) — iOS Safari has no Web Share
+          // Target API (v5.816's finding), so there's no way to make Meridian show up in the
+          // native Share Sheet on iPhone the way it already does on Android. This is the
+          // zero-setup fallback that scales to every future user: pin a low-chrome upload-only
+          // screen to the home screen once, then tap it after downloading a report.
+          div({style:{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',marginBottom:12,
+            borderRadius:8,background:'rgba(245,188,0,.07)',border:'.5px solid rgba(245,188,0,.25)'}},
+            span({style:{fontSize:16}},'📱'),
+            div({style:{flex:1,fontSize:'10px',color:'var(--text2)',lineHeight:1.4}},
+              h('b',null,'Faster mobile uploads: '),
+              'open ',h('code',{style:{fontSize:'10px'}},location.origin+'/?quickupload=1'),' on your phone and ',
+              h('b',null,'Share → Add to Home Screen'),'. That icon opens straight to a one-tap upload ' +
+              'screen — no need to navigate the full dashboard first.'),
+            btn({className:'btn btn-sm',style:{fontSize:'9px',whiteSpace:'nowrap'},onClick:()=>{
+              const url=location.origin+'/?quickupload=1';
+              if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).catch(()=>{});
+            }},'Copy link')
+          ),
           // Coverage table
           div({style:{fontSize:'9px',fontWeight:600,color:'var(--text3)',marginBottom:4,letterSpacing:'.5px',display:'flex',alignItems:'center'}},
             'DATA COVERAGE',h(InfoIcon,{articleKey:'data_collection_bounds'})),

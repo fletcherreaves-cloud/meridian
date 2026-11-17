@@ -61,6 +61,7 @@ on:
       - Hourly Projection Accuracy
       - LifeLenz Attendance Pull
       - LifeLenz Compliance Audit Pull
+      - LifeLenz DAR Pull
       - LifeLenz Daily Sync
       - LifeLenz Employee Performance Pull
       - LifeLenz Payroll Readiness Pull
