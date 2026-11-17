@@ -1,0 +1,33 @@
+name: LifeLenz DAR Data Probe
+
+# Owner idea (2026-11-17) — with QSRSoft's own DAR pull paused for compliance reasons, pull
+# LifeLenz's own `darData` GraphQL query hourly instead to fill the gap. Read-only,
+# workflow_dispatch-only probe to discover the real field names (via introspection) and the
+# full response shape for one store/one day before building the real pull. Makes no writes to
+# Supabase or anywhere else. See scripts/lifelenz-dar-probe.mjs's own header for full context.
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: 'Store number to probe (must appear in a schedule record)'
+        required: false
+        default: '3708'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probe LifeLenz darData shape
+        run: node scripts/lifelenz-dar-probe.mjs
+        env:
+          LIFELENZ_TOKEN: ${{ secrets.LIFELENZ_TOKEN }}
+          PROBE_STORE:    ${{ github.event.inputs.store }}
