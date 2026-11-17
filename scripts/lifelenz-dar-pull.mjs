@@ -23,11 +23,18 @@
 // LifeLenz has settled it, without needing a separate backfill pass. LIFELENZ_DAR_START/
 // LIFELENZ_DAR_END (ISO datetimes) override the window entirely for a manual backfill.
 //
-// Scope note (see supabase/schema-lifelenz-dar.sql's table comment): this pull writes
-// lifelenz_dar and is watched by sync-failure-watch.yml, but the app does not read it yet —
-// wiring into stream-freshness.js/metric-source.js/App.js's ds is a deliberate follow-on,
-// pending a second live measurement against a Florida (Eastern-time) store schedule to confirm
-// whether LifeLenz buckets darData's hourly intervals in each store's own local timezone.
+// Scope note (see supabase/schema-lifelenz-dar.sql's table comment): as of 2026-11-17 this pull
+// writes a derived `dt` business-date column (4am Central cutover — see businessDateChicago()
+// below), is watched by sync-failure-watch.yml, is freshness-visible in stream-freshness.js, and
+// is loaded into the app as ds.lifelenzDarRows (App.js). The original blocker for `dt` — whether
+// LifeLenz buckets darData's hourly intervals in each store's OWN local timezone, which would
+// matter if a Florida store ran Eastern — is moot: the owner confirmed every Meridian store, OK
+// and FL alike, is Central time. Still NOT done: wiring these rows into metric-source.js's
+// DISPLAYED auto-first chains (sales/gc/laborPct/oepe/etc.) wherever qsrActSummaryRows
+// (qsr_daily_activity_rollup) currently feeds them — that needs its own field-level, real-vs-real
+// validation pass (net_sales vs this app's product_sales-based `sales`; avg_dt_service_time vs
+// `oepe`'s parked/held-time exclusion) before it can safely change a displayed number, per
+// memory/finding-lifelenz-dar-schema-2026-11-17.md.
 //
 // Required env vars: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN
 // Optional: LIFELENZ_USERNAME/LIFELENZ_PASSWORD (SignIn fallback), LIFELENZ_DAR_LOOKBACK_HOURS
@@ -171,6 +178,31 @@ async function fetchDarData(token, scheduleId, startDateTime, endDateTime) {
   return data?.darData?.dar || [];
 }
 
+// Business-date derivation (4am Central cutover) — owner-confirmed 2026-11-17: every Meridian
+// store, OK and FL alike, runs on CENTRAL time (the FL panhandle stores sit west of the
+// Apalachicola River, in Central, not Eastern), so there is no per-store-timezone bucketing
+// question the way a Florida/Eastern store would have raised — this resolves the one open item
+// memory/finding-lifelenz-dar-schema-2026-11-17.md's original "Phase 2" section was waiting on.
+// Uses Intl.DateTimeFormat against the real 'America/Chicago' IANA zone (not a fixed UTC
+// offset) so a DST transition is handled correctly regardless of the GitHub Actions runner's
+// own TZ (always UTC) — never re-derive this inline elsewhere; import it if another script
+// needs the same cutover (mirrors src/utils/date.js's businessDate(), which assumes the caller's
+// own local wall clock and can't be reused as-is from a UTC-TZ'd Node process).
+export function businessDateChicago(isoUtc) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(isoUtc));
+  const m = {};
+  for (const p of parts) m[p.type] = p.value;
+  let y = parseInt(m.year, 10), mo = parseInt(m.month, 10), da = parseInt(m.day, 10);
+  if (parseInt(m.hour, 10) < 4) {
+    const prev = new Date(Date.UTC(y, mo - 1, da));
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    y = prev.getUTCFullYear(); mo = prev.getUTCMonth() + 1; da = prev.getUTCDate();
+  }
+  return `${y}-${String(mo).padStart(2, '0')}-${String(da).padStart(2, '0')}`;
+}
+
 // Pure, exported for tests: one Dar{} element (real FieldValue shape) → one lifelenz_dar row.
 // value arrives as a bare String on every FieldValue regardless of the metric's logical type
 // (count vs rate) — stored as numeric throughout, never coerced to integer, since that's the
@@ -179,6 +211,7 @@ export function darIntervalToRow(loc, interval) {
   const row = {
     loc,
     start_time: interval.startTime,
+    dt: businessDateChicago(interval.startTime),
     missing_actuals: interval.missingActuals ?? null,
   };
   const byCode = new Map((interval.data || []).map(fv => [fv.fieldCode, fv.value]));
