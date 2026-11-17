@@ -188,6 +188,17 @@ export const STREAMS = [
   // threshold is correct as-is for this stream, unlike the bi-weekly-cadence Payroll Readiness
   // entry commented out above.
   { key: 'securityEvents', label: 'QSRSoft Security Events', dsField: 'qsrSecurityEventsFreshnessRows', cadenceDays: 1, group: 'controls' },
+  // Added 2026-11-17 — owner asked directly whether every tile fed by a paused stream (the
+  // 32 credential-login QSRSoft pulls, memory/finding-qsrsoft-security-notice-2026-11-16.md)
+  // shows its real age rather than silently reading as current. audit_rows (Register Audit —
+  // cash handling/loss prevention, the owner's own #1-ranked manual upload) was a real gap:
+  // it already has a per-row freshness dot in Data Manager's own coverage table (calcCov over
+  // ds.auditRows, src/views/analytics.js), which is NOT silently stale — but it had no entry
+  // here, so it never reached At-A-Glance's "Loaded Data" strip (groupFreshness()) or
+  // scheduled-pull-watchdog.mjs's coverage. loadAuditRows (lib/supabase.js) already populates
+  // ds.auditRows with a plain `date` field (table audit_rows), daily cadence, same shape every
+  // other entry here expects — no dateField override needed.
+  { key: 'registerAudit', label: 'Register Audit', dsField: 'auditRows', cadenceDays: 1, group: 'controls' },
 ];
 
 // Display metadata for groupFreshness() -- icon/label per group, in the strip's render order.
