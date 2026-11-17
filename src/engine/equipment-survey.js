@@ -104,6 +104,36 @@ export function buildEquipmentRollupText(storeLabel, rows) {
   return lines.join('\n');
 }
 
+// One store's full equipment list, grouped by floor-plan area (owner request 2026-11-17: "make
+// the location selectable and open up to a table listing all the equipment on file for that
+// location... by area of restaurant if known or assumed"). `allEntriesAnyOrder` is the same
+// cross-store, any-order fetch buildEquipmentStoreSummary() above takes -- this filters to one
+// loc, resolves current (non-removed) state via latestEntriesByInstance(), then groups the
+// resolved rollup rows by their already-resolved placement LABEL (buildEquipmentRollupRows calls
+// placementLabel() internally), in the same order PLACEMENTS lists them so this groups in the
+// same order the Layout Planner's own zone grid renders in. Items with no area set yet land in a
+// trailing 'Area not yet set' group rather than being dropped. Pure/exported so the view (the
+// networked EquipmentStoreDetailModal) stays a thin render of this, matching equipment-layout.js's
+// own buildPlacedItems() precedent.
+export function buildEquipmentStoreDetail(allEntriesAnyOrder, loc, catalogById) {
+  const forLoc = (allEntriesAnyOrder || []).filter(e => e && String(e.loc) === String(loc));
+  const sorted = forLoc.slice().sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''));
+  const current = latestEntriesByInstance(sorted);
+  const rows = buildEquipmentRollupRows(current, catalogById);
+
+  const byLabel = new Map();
+  for (const r of rows) {
+    const key = r.placement || '';
+    if (!byLabel.has(key)) byLabel.set(key, []);
+    byLabel.get(key).push(r);
+  }
+  const groups = [...PLACEMENTS.map(p => p.label), '']
+    .map(label => ({ label: label || 'Area not yet set', rows: byLabel.get(label) || [] }))
+    .filter(g => g.rows.length > 0);
+
+  return { rows, groups };
+}
+
 // Multi-store rollup for the authenticated Equipment Results panel (2026-11-02 owner request:
 // "build out a landing panel for the results in the app"). Input is every equipment_survey_entries
 // row across every store, in ANY order (unlike latestEntriesByInstance, which needs newest-first

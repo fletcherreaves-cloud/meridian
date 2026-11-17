@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   latestEntriesByInstance, describeEquipmentEntry, buildEquipmentRollupRows,
   buildEquipmentRollupText, resolveStoreGM, placementLabel, sideLabel, relativeLabel, fridgeSubtypeLabel,
-  buildEquipmentStoreSummary,
+  buildEquipmentStoreSummary, buildEquipmentStoreDetail, PLACEMENTS,
 } from '../engine/equipment-survey.js';
 
 const row = (instanceId, action, submittedAt, extra = {}) =>
@@ -219,5 +219,50 @@ describe('buildEquipmentStoreSummary', () => {
   it('returns an empty array for no rows', () => {
     expect(buildEquipmentStoreSummary([])).toEqual([]);
     expect(buildEquipmentStoreSummary(null)).toEqual([]);
+  });
+});
+
+describe('buildEquipmentStoreDetail', () => {
+  const catalogById = { cat1: { id: 'cat1', type: 'grill', manufacturer: 'Taylor', model: 'C602' } };
+
+  it('filters to the one requested store, ignoring other stores\' rows', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1', placement_zone: 'production_area' }),
+      row('b', 'added', '2026-10-01T00:00:00Z', { loc: '5183', catalog_item_id: 'cat1', placement_zone: 'production_area' }),
+    ];
+    const { rows: out } = buildEquipmentStoreDetail(rows, '3708', catalogById);
+    expect(out).toHaveLength(1);
+  });
+
+  it('groups by area in PLACEMENTS order, with a trailing group for items with no area set', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1', placement_zone: 'back_of_house' }),
+      row('b', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1', placement_zone: 'front_counter' }),
+      row('c', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1' }), // no placement_zone
+    ];
+    const { groups } = buildEquipmentStoreDetail(rows, '3708', catalogById);
+    expect(groups.map(g => g.label)).toEqual(['Front Counter', 'Back of House', 'Area not yet set']);
+    expect(groups.every(g => g.rows.length > 0)).toBe(true);
+  });
+
+  it('only includes current (non-removed, latest-per-instance) state, same as every other consumer', () => {
+    const rows = [
+      row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1', placement_zone: 'rooftop' }),
+      row('a', 'removed', '2026-10-10T00:00:00Z', { loc: '3708', placement_zone: 'rooftop' }),
+    ];
+    const { rows: out } = buildEquipmentStoreDetail(rows, '3708', catalogById);
+    expect(out).toEqual([]);
+  });
+
+  it('includes the rooftop area (2026-11-17) in PLACEMENTS and groups it correctly', () => {
+    expect(PLACEMENTS.find(p => p.value === 'rooftop')?.label).toBe('Rooftop');
+    const rows = [row('a', 'added', '2026-10-01T00:00:00Z', { loc: '3708', catalog_item_id: 'cat1', placement_zone: 'rooftop' })];
+    const { groups } = buildEquipmentStoreDetail(rows, '3708', catalogById);
+    expect(groups).toEqual([{ label: 'Rooftop', rows: expect.any(Array) }]);
+    expect(groups[0].rows).toHaveLength(1);
+  });
+
+  it('returns empty rows/groups for a store with nothing logged', () => {
+    expect(buildEquipmentStoreDetail([], '3708', catalogById)).toEqual({ rows: [], groups: [] });
   });
 });
