@@ -6508,6 +6508,30 @@ export async function loadEquipmentCatalogDirect() {
     .select('*').order('type', { ascending: true }).range(from, to), 1000, 'equipment_catalog');
   return data || [];
 }
+// In-app equivalent of the public survey form's addEquipmentCatalogItem (edge-function path) --
+// owner request 2026-11-17: Layout Planner's Manufacturer/Model dropdown only ever showed
+// EXISTING catalog items for the selected type, with no way to add a new manufacturer/model
+// when the real unit isn't in there yet (its "Type it in instead" option didn't even render a
+// text box -- a dead end). Same table, same RLS posture as every other direct-write function in
+// this section (equipment_catalog grants "authenticated: for all"), same flagged/crew-added
+// provenance the public form already uses so a signed-in admin's addition is visually
+// distinguishable from an official, vendor-doc-seeded row and still surfaces for the owner's own
+// review later -- adding it here doesn't bypass that review step, it just adds a second front
+// door to the same table. `type` is deliberately NOT restricted to CATALOG_TYPE_GROUPS' existing
+// list (equipment_catalog.type is free text by design, per this table's own schema comment) --
+// a genuinely new TYPE still needs its palette icon/group added in code (equipment-layout.js),
+// but the catalog row itself can exist already, flagged for review, the moment someone adds it.
+export async function addEquipmentCatalogItemDirect({ type, manufacturer, model, needsSerial = false, needsCertDate = false }) {
+  if (!supabase || !type || !manufacturer || !model) return { error: 'type, manufacturer, and model are required' };
+  const user = (await supabase.auth.getUser())?.data?.user;
+  const createdBy = user?.user_metadata?.name || user?.email || null;
+  const { data, error } = await supabase.from('equipment_catalog').insert({
+    type: String(type), manufacturer: String(manufacturer), model: String(model),
+    needs_serial: !!needsSerial, needs_cert_date: !!needsCertDate,
+    flagged: true, source: 'crew-added', created_by: createdBy,
+  }).select('*').single();
+  return { item: data || null, error: error?.message || null };
+}
 // PQRG reference settings per catalog item (2026-11-02) — same direct-read posture as the
 // catalog/entries functions above; equipment_catalog_settings carries the same "authenticated:
 // tenant read" RLS policy as equipment_catalog_consumables.
