@@ -64,16 +64,34 @@ describe('groupFreshness (task #94)', () => {
   });
 
   it('a genuinely new group ("people") is covered -- the old strip had no bucket for it at all', () => {
+    // rosterStats is now one of the 18 QSRSoft Operator Security Notice compliance-paused
+    // streams (STREAMS[].paused, added 2026-11-16/17 -- the day after this test was written),
+    // so a freshly-dated row here now reports 'paused', not 'ok'. See
+    // memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md.
     const thisMonth = `${ASOF.getFullYear()}-${String(ASOF.getMonth() + 1).padStart(2, '0')}`;
     const ds = { rosterStatsRows: [{ loc: '3708', month: thisMonth }] };
     const people = groupFreshness(ds, ASOF).find(g => g.group === 'people');
     expect(people, 'people group missing -- these streams were invisible in the old 5-bucket strip').toBeTruthy();
-    expect(people.worstSeverity).toBe('ok');
+    expect(people.worstSeverity).toBe('paused');
   });
 
-  it('all-ok group reports worstSeverity "ok"', () => {
+  it('a group whose only loaded member is paused reports worstSeverity "paused", not "ok"', () => {
+    // dar (qsrActSummaryRows) is also compliance-paused -- same reasoning as the 'people' test
+    // just above. A paused member never masks a real sibling severity (the _SEV_RANK fix next
+    // to this test's sibling above), but when it's the ONLY loaded member, its own severity is
+    // the group's real verdict.
     const ds = { qsrActSummaryRows: [{ loc: '3708', date: D(0) }] };
     const sales = groupFreshness(ds, ASOF).find(g => g.group === 'sales');
-    expect(sales.worstSeverity).toBe('ok');
+    expect(sales.worstSeverity).toBe('paused');
+  });
+
+  it('an all-fresh group with no paused members reports worstSeverity "ok"', () => {
+    // glimpse (Daily Glimpse, email-ingested) is unaffected by the QSRSoft compliance pause --
+    // this is the real "all-ok" case the removed test above used to cover with dar, which is
+    // no longer a valid fixture for it now that dar is paused.
+    const ds = { glimpseRows: [{ loc: '3708', date: D(0) }] };
+    const service = groupFreshness(ds, ASOF).find(g => g.group === 'service');
+    expect(service, 'service group missing').toBeTruthy();
+    expect(service.worstSeverity).toBe('ok');
   });
 });

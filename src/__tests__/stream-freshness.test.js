@@ -22,10 +22,14 @@ describe('streamFreshness — per-stream, not pooled', () => {
   });
 
   it('a stream fresh as of today is ok', () => {
-    const ds = { qsrFobRows: rowsAt(day(16)) };
+    // lifelenz, not fob -- fob is one of the 18 streams the 2026-11-16 QSRSoft Operator
+    // Security Notice compliance pause marks `paused:true` (see the dedicated describe block
+    // below), so its severity is now always 'paused' regardless of staleness. lifelenz is
+    // LifeLenz, not QSRSoft, and is unaffected -- it still exercises the plain ok/stale math.
+    const ds = { schedRows: rowsAt(day(16)) };
     const res = streamFreshness(ds, day(16));
-    expect(res.find(r => r.key === 'fob').severity).toBe('ok');
-    expect(res.find(r => r.key === 'fob').staleDays).toBe(0);
+    expect(res.find(r => r.key === 'lifelenz').severity).toBe('ok');
+    expect(res.find(r => r.key === 'lifelenz').staleDays).toBe(0);
   });
 
   it('clamps to asOf — a future-dated row (LifeLenz\'s forward schedule) cannot read as fresher than it is', () => {
@@ -36,10 +40,10 @@ describe('streamFreshness — per-stream, not pooled', () => {
   });
 
   it('a stream with rows but every date unusable (NaN) reports Infinity staleDays, not a false ok', () => {
-    const ds = { qsrFobRows: [{ loc: '1', date: 'not-a-date' }] };
+    const ds = { schedRows: [{ loc: '1', date: 'not-a-date' }] };
     const res = streamFreshness(ds, day(16));
-    expect(res.find(r => r.key === 'fob').staleDays).toBe(Infinity);
-    expect(res.find(r => r.key === 'fob').severity).toBe('crit');
+    expect(res.find(r => r.key === 'lifelenz').staleDays).toBe(Infinity);
+    expect(res.find(r => r.key === 'lifelenz').severity).toBe('crit');
   });
 
   it('thresholds are per-stream cadence + grace, not the old hardcoded 14 days', () => {
@@ -148,14 +152,20 @@ describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a document
     expect(s.cadenceDays).toBe(1);
   });
 
-  it('names Inventory Summary specifically when its lightweight freshness probe is stale while siblings are current', () => {
+  // QSRSoft Operator Security Notice compliance pause (2026-11-16) -- inventorySummary is one
+  // of the 18 streams STREAMS now marks `paused:true`. staleDays math is unaffected (still
+  // computed from the real rows), but severity is now always 'paused', so a paused stream
+  // correctly never gets promoted to worstStream() regardless of how stale it reads -- staleness
+  // is meaningless for a stream whose schedule was deliberately silenced. See
+  // memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md.
+  it('inventorySummary staleDays is still computed correctly, but a paused stream never gets promoted to worstStream', () => {
     const ds = freshDs(day(16));
-    ds.qsrInventorySummaryRows = rowsAt(day(10)); // the pull went silent 6 days
-    const w = worstStream(ds, day(16));
-    expect(w).toBeTruthy();
-    expect(w.key).toBe('inventorySummary');
-    expect(w.label).toBe('Inventory Summary/Usage');
-    expect(w.staleDays).toBe(6);
+    ds.qsrInventorySummaryRows = rowsAt(day(10)); // the pull went silent 6 days -- irrelevant now, it's paused
+    const direct = streamFreshness(ds, day(16)).find(r => r.key === 'inventorySummary');
+    expect(direct.staleDays).toBe(6);
+    expect(direct.severity).toBe('paused');
+    const w = worstStream(ds, day(16)); // every OTHER stream in freshDs is fresh, so nothing should surface
+    expect(w).toBeFalsy();
   });
 
   it('a probe field never populated in ds (App.js load failed/still pending) is skipped, not reported as an incident -- same "not loaded" contract as every other stream', () => {
@@ -163,11 +173,11 @@ describe('Inventory Summary/Usage freshness (closed 2026-09-13 -- was a document
     expect(res.find(r => r.key === 'inventorySummary')).toBeUndefined();
   });
 
-  it('an empty-but-loaded probe (loadQsrInventorySummaryFreshness resolved to []) reads as critically stale, not silently skipped -- same as any other stream with an array present but no usable date', () => {
+  it('an empty-but-loaded probe (loadQsrInventorySummaryFreshness resolved to []) reads as paused (compliance pause), not silently skipped -- same as any other paused stream with an array present but no usable date', () => {
     const res = streamFreshness({ qsrInventorySummaryRows: [] }, day(16));
     const s = res.find(r => r.key === 'inventorySummary');
     expect(s.staleDays).toBe(Infinity);
-    expect(s.severity).toBe('crit');
+    expect(s.severity).toBe('paused');
   });
 });
 
@@ -179,22 +189,28 @@ describe('On-Hand / Variance Stat freshness (task #137 -- previously a documente
     expect(variance).toMatchObject({ dsField: 'qsrVarianceFreshnessRows', cadenceDays: 1 });
   });
 
-  it('names On-Hand specifically when its probe is stale while siblings are current', () => {
+  // QSRSoft Operator Security Notice compliance pause (2026-11-16) -- onHand and variance are
+  // both among the 18 streams STREAMS now marks `paused:true`. Same reasoning as the
+  // inventorySummary block above: staleDays still computes correctly, but severity is always
+  // 'paused', so neither can be promoted to worstStream() regardless of staleness.
+  it('onHand staleDays is still computed correctly, but a paused stream never gets promoted to worstStream', () => {
     const ds = freshDs(day(16));
-    ds.qsrOnHandFreshnessRows = rowsAt(day(10)); // the pull went silent 6 days
+    ds.qsrOnHandFreshnessRows = rowsAt(day(10)); // the pull went silent 6 days -- irrelevant now, it's paused
+    const direct = streamFreshness(ds, day(16)).find(r => r.key === 'onHand');
+    expect(direct.staleDays).toBe(6);
+    expect(direct.severity).toBe('paused');
     const w = worstStream(ds, day(16));
-    expect(w).toBeTruthy();
-    expect(w.key).toBe('onHand');
-    expect(w.staleDays).toBe(6);
+    expect(w).toBeFalsy();
   });
 
-  it('names Variance Stat specifically when its probe is stale while siblings are current', () => {
+  it('variance staleDays is still computed correctly, but a paused stream never gets promoted to worstStream', () => {
     const ds = freshDs(day(16));
     ds.qsrVarianceFreshnessRows = rowsAt(day(10));
+    const direct = streamFreshness(ds, day(16)).find(r => r.key === 'variance');
+    expect(direct.staleDays).toBe(6);
+    expect(direct.severity).toBe('paused');
     const w = worstStream(ds, day(16));
-    expect(w).toBeTruthy();
-    expect(w.key).toBe('variance');
-    expect(w.staleDays).toBe(6);
+    expect(w).toBeFalsy();
   });
 
   it('a probe field never populated in ds (App.js load failed/still pending) is skipped, not reported as an incident', () => {
@@ -203,10 +219,10 @@ describe('On-Hand / Variance Stat freshness (task #137 -- previously a documente
     expect(res.find(r => r.key === 'variance')).toBeUndefined();
   });
 
-  it('an empty-but-loaded probe reads as critically stale, not silently skipped', () => {
+  it('an empty-but-loaded probe reads as paused (compliance pause), not silently skipped', () => {
     const res = streamFreshness({ qsrOnHandFreshnessRows: [], qsrVarianceFreshnessRows: [] }, day(16));
-    expect(res.find(r => r.key === 'onHand')).toMatchObject({ staleDays: Infinity, severity: 'crit' });
-    expect(res.find(r => r.key === 'variance')).toMatchObject({ staleDays: Infinity, severity: 'crit' });
+    expect(res.find(r => r.key === 'onHand')).toMatchObject({ staleDays: Infinity, severity: 'paused' });
+    expect(res.find(r => r.key === 'variance')).toMatchObject({ staleDays: Infinity, severity: 'paused' });
   });
 });
 
@@ -218,8 +234,10 @@ describe('severityColor() / streamByKey() -- shared primitives for per-panel fre
   });
 
   it('streamByKey returns the one named entry, or null when not loaded this session', () => {
+    // onHand is one of the 18 compliance-paused streams, so its severity is always 'paused'
+    // regardless of freshness -- see the On-Hand / Variance Stat describe block above.
     const ds = { qsrOnHandFreshnessRows: rowsAt(day(16)) };
-    expect(streamByKey(ds, 'onHand', day(16))).toMatchObject({ key: 'onHand', severity: 'ok' });
+    expect(streamByKey(ds, 'onHand', day(16))).toMatchObject({ key: 'onHand', severity: 'paused' });
     expect(streamByKey(ds, 'variance', day(16))).toBeNull();
     expect(streamByKey({}, 'onHand', day(16))).toBeNull();
   });
@@ -236,12 +254,16 @@ describe('coverage audit additions (2026-09-16) -- eBOS, Forecast Week Cache, an
   });
 
   it('the 6 month-keyed streams read their own `month` field (YYYY-MM), not `date`', () => {
+    // rosterStats is also one of the 18 compliance-paused streams (all 6 month-keyed streams
+    // are -- every one is a QSRSoft monthly pull), so severity is always 'paused' regardless of
+    // the well-within-threshold staleDays. The staleDays math itself (the thing this test is
+    // really about -- the `month` field override) is unaffected and still asserted below.
     const s = STREAMS.find(x => x.key === 'rosterStats');
     const ds = { rosterStatsRows: [{ loc: '1', month: '2026-08' }] };
     const res = streamFreshness(ds, day(16)); // Aug 16 2026
     const found = res.find(r => r.key === 'rosterStats');
     expect(found.staleDays).toBe(15); // Aug 16 - Aug 1 (month parses as the 1st)
-    expect(found.severity).toBe('ok'); // well within cadenceDays:31 + grace
+    expect(found.severity).toBe('paused'); // compliance pause, not a staleness verdict
   });
 
   it('THE BUG THIS PREVENTS: a month-keyed row has no `date` field at all -- without the dateField override, every one of these 6 streams would read Infinity-stale permanently, even on a fully healthy daily pull', () => {
@@ -250,11 +272,12 @@ describe('coverage audit additions (2026-09-16) -- eBOS, Forecast Week Cache, an
     expect(STREAMS.find(x => x.key === 'rosterStats').dateField).toBe('month'); // the real entry overrides it
   });
 
-  it('a real dead pull (month value frozen from over a month ago) IS flagged, not masked by the coarser threshold', () => {
+  it('a real dead pull (month value frozen from over a month ago) still computes real staleDays, even though the compliance pause now reports it as paused rather than crit', () => {
     const ds = { rosterStatsRows: [{ loc: '1', month: '2026-06' }] }; // frozen at June, asOf is Aug 16
     const res = streamFreshness(ds, day(16));
     const found = res.find(r => r.key === 'rosterStats');
-    expect(found.severity).toBe('crit'); // >34 days since Jun 1
+    expect(found.staleDays).toBeGreaterThan(34); // the underlying math this test exists to guard
+    expect(found.severity).toBe('paused'); // rosterStats is compliance-paused -- see STREAMS[].paused
   });
 
   it('all 8 new streams are skipped (not an incident) when not yet loaded into ds this session', () => {

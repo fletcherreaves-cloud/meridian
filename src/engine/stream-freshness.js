@@ -70,23 +70,42 @@ export const CRIT_GRACE_DAYS = 3;
 // stream behind a fresh sibling within the same bucket — see groupFreshness()'s own header).
 // Adding a new STREAMS entry should set a real `group`, not leave it undefined — an ungrouped
 // stream is invisible to the strip, same silent-gap failure mode this field exists to close.
+//
+// `paused`/`pausedReason` (added 2026-11-17) — every stream below marked `paused:true` is fed
+// by a QSRSoft credential-login pull whose `schedule:` cron was deliberately commented out
+// 2026-11-16 for Operator Security Notice compliance (memory/finding-qsrsoft-security-notice-
+// 2026-11-16.md). Found the hard way: scheduled-pull-watchdog.mjs (this file's own STREAMS/
+// PULL_REGISTRY as its source of truth) had NO awareness that a stream's silence was
+// deliberate, so it kept treating every one of these as "should have run by now, didn't" and
+// auto-retriggering the underlying workflow via workflow_dispatch — repeatedly undoing the
+// pause on its own 30-min cadence (confirmed live: eBOS Purchases Pull's run history showed a
+// workflow_dispatch by github-actions[bot] on 2026-11-17, with zero human involved). This flag
+// is read two places: streamFreshness() below reports `severity:'paused'` instead of computing
+// crit/warn/ok off staleDays (a deliberately silent stream isn't a staleness INCIDENT), and
+// scheduled-pull-watchdog.mjs skips retriggering a paused stream entirely. Keep this list in
+// sync with scripts/lib/scheduled-pull-registry.mjs's matching `paused` flags — src/__tests__/
+// scheduled-pull-registry.test.js's cross-file guard enforces it both ways. RE-ADD none of
+// these flags in the same PR that re-enables a workflow's `schedule:` block without ALSO
+// removing them here — a stream whose pull is live again but still flagged `paused` would
+// silently stop alerting on a REAL future outage.
+const QSR_COMPLIANCE_PAUSE = 'QSRSoft Operator Security Notice compliance pause (2026-11-16) — see memory/finding-qsrsoft-security-notice-2026-11-16.md';
 export const STREAMS = [
-  { key: 'dar',         label: 'DAR (QSRSoft daily activity)', dsField: 'qsrActSummaryRows', cadenceDays: 1, group: 'sales' },
-  { key: 'fob',          label: 'FOB',                          dsField: 'qsrFobRows',        cadenceDays: 1, group: 'foodcost' },
+  { key: 'dar',         label: 'DAR (QSRSoft daily activity)', dsField: 'qsrActSummaryRows', cadenceDays: 1, group: 'sales', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'fob',          label: 'FOB',                          dsField: 'qsrFobRows',        cadenceDays: 1, group: 'foodcost', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Task #137 — lightweight {date}-only probes (see this file's header comment above), the
   // same pattern as 'inventorySummary' below. On-Hand pulls hourly during the count window
   // (qsrsoft-onhand-pull.yml, gated to ~8a-10p CT) and at least once daily outside it; Variance
   // pulls on a daily 10:30 UTC slot (qsrsoft-variance-pull.yml) — both genuinely daily-cadence,
   // same cadenceDays:1 as every other daily stream here.
-  { key: 'onHand',       label: 'QSRSoft On-Hand (EOM count progress)', dsField: 'qsrOnHandFreshnessRows', cadenceDays: 1, group: 'foodcost' },
-  { key: 'variance',     label: 'QSRSoft Variance Stat (EOM diagnosis)', dsField: 'qsrVarianceFreshnessRows', cadenceDays: 1, group: 'foodcost' },
+  { key: 'onHand',       label: 'QSRSoft On-Hand (EOM count progress)', dsField: 'qsrOnHandFreshnessRows', cadenceDays: 1, group: 'foodcost', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'variance',     label: 'QSRSoft Variance Stat (EOM diagnosis)', dsField: 'qsrVarianceFreshnessRows', cadenceDays: 1, group: 'foodcost', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   { key: 'glimpse',      label: 'Daily Glimpse (email)',        dsField: 'glimpseRows',       cadenceDays: 1, group: 'service' },
   { key: 'cashSheet',    label: 'Cash Sheet (email)',           dsField: 'cashRows',          cadenceDays: 1, group: 'controls' },
   { key: 'salesLedger',  label: 'Sales Ledger (email)',         dsField: 'salesLedgerRows',   cadenceDays: 1, group: 'sales' },
-  { key: 'opsCash',      label: 'Ops Cash Sheet',               dsField: 'opsCashRows',       cadenceDays: 1, group: 'controls' },
-  { key: 'opsLabor',     label: 'Ops Labor Summary',            dsField: 'opsLaborRows',      cadenceDays: 1, group: 'scheduling' },
-  { key: 'opsService',   label: 'Ops Service Stats',            dsField: 'opsServiceRows',    cadenceDays: 1, group: 'service' },
-  { key: 'opsSalesMix',  label: 'Ops Sales Mix',                dsField: 'opsSalesMixRows',   cadenceDays: 1, group: 'sales' },
+  { key: 'opsCash',      label: 'Ops Cash Sheet',               dsField: 'opsCashRows',       cadenceDays: 1, group: 'controls', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'opsLabor',     label: 'Ops Labor Summary',            dsField: 'opsLaborRows',      cadenceDays: 1, group: 'scheduling', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'opsService',   label: 'Ops Service Stats',            dsField: 'opsServiceRows',    cadenceDays: 1, group: 'service', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'opsSalesMix',  label: 'Ops Sales Mix',                dsField: 'opsSalesMixRows',   cadenceDays: 1, group: 'sales', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // LifeLenz publishes a FORWARD schedule too, so an unfiltered max reads as "fresh"
   // right through an outage — the exact skew that got it dropped from the old pooled
   // array entirely rather than fixed. _latestDateOf clamps every stream to <=asOf, which
@@ -137,12 +156,12 @@ export const STREAMS = [
   // is now populated by a dedicated lightweight freshness probe (App.js's
   // _stInventorySummaryFreshness / supabase.js's loadQsrInventorySummaryFreshness) -- a single
   // {date} row, not the full ~10.5k-row table, since this check only needs the newest sync time.
-  { key: 'inventorySummary', label: 'Inventory Summary/Usage',  dsField: 'qsrInventorySummaryRows', cadenceDays: 1, group: 'foodcost' },
+  { key: 'inventorySummary', label: 'Inventory Summary/Usage',  dsField: 'qsrInventorySummaryRows', cadenceDays: 1, group: 'foodcost', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // ── Added 2026-09-16 (coverage audit) — 8 streams already eager-loaded into ds and consumed
   // by a live panel (Performance Reviews' auto-populate, One Pager, At-A-Glance's forecast) but
   // never covered here. Confirmed via a dedicated agent pass before adding, per this file's own
   // standing pattern of citing why each entry is safe to check, not just that a workflow exists.
-  { key: 'ebos', label: 'eBOS Purchases', dsField: 'ebosRows', cadenceDays: 1, group: 'foodcost' },
+  { key: 'ebos', label: 'eBOS Purchases', dsField: 'ebosRows', cadenceDays: 1, group: 'foodcost', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Derived precompute artifact (computed FROM already-covered streams like labor/DAR), not a
   // raw external pull -- "stale" here means a stale forecast cache, still a real thing to catch
   // (At-A-Glance's weekProjections uses it as the PRIMARY current-week source, falling back to
@@ -159,17 +178,17 @@ export const STREAMS = [
   // "hasn't updated today" (which this row shape can't distinguish from "updated today, same
   // month as yesterday"). A coarser, monthly-grained signal, not a daily one -- correct for what
   // these rows actually are.
-  { key: 'rosterStats', label: 'Roster Statistics', dsField: 'rosterStatsRows', dateField: 'month', cadenceDays: 31, group: 'people' },
-  { key: 'rosterRoleCounts', label: 'Employee Roster', dsField: 'rosterRoleCounts', dateField: 'month', cadenceDays: 31, group: 'people' },
-  { key: 'turnover', label: 'Turnover', dsField: 'turnoverRows', dateField: 'month', cadenceDays: 31, group: 'people' },
-  { key: 'digitalApp', label: 'Digital App', dsField: 'digitalAppRows', dateField: 'month', cadenceDays: 31, group: 'sales' },
-  { key: 'mcdelivery', label: 'McDelivery', dsField: 'mcdeliveryRows', dateField: 'month', cadenceDays: 31, group: 'sales' },
-  { key: 'shiftManager', label: 'Shift Manager', dsField: 'shiftManagerRows', dateField: 'month', cadenceDays: 31, group: 'scheduling' },
+  { key: 'rosterStats', label: 'Roster Statistics', dsField: 'rosterStatsRows', dateField: 'month', cadenceDays: 31, group: 'people', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'rosterRoleCounts', label: 'Employee Roster', dsField: 'rosterRoleCounts', dateField: 'month', cadenceDays: 31, group: 'people', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'turnover', label: 'Turnover', dsField: 'turnoverRows', dateField: 'month', cadenceDays: 31, group: 'people', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'digitalApp', label: 'Digital App', dsField: 'digitalAppRows', dateField: 'month', cadenceDays: 31, group: 'sales', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'mcdelivery', label: 'McDelivery', dsField: 'mcdeliveryRows', dateField: 'month', cadenceDays: 31, group: 'sales', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
+  { key: 'shiftManager', label: 'Shift Manager', dsField: 'shiftManagerRows', dateField: 'month', cadenceDays: 31, group: 'scheduling', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // Added 2026-10-13 so scheduled-pull-watchdog.mjs can cover this cron -- see this file's
   // own comment above (near the pmixRows/auditRows/wasteRows exclusion note) for why this
   // is safe for the client checklist too. dateField defaults to 'date', which already
   // matches loadQsrSalesQuarterHour's row shape (src/lib/supabase.js) -- no override needed.
-  { key: 'qsrSalesQtrHour', label: 'Record Hour (Quarter-Hour Sales)', dsField: 'qsrSalesQtrHourRows', cadenceDays: 1, group: 'sales' },
+  { key: 'qsrSalesQtrHour', label: 'Record Hour (Quarter-Hour Sales)', dsField: 'qsrSalesQtrHourRows', cadenceDays: 1, group: 'sales', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
 
   // ✅ Uncommented 2026-11-13 (task #105 Phase 2) — both client-side loaders now exist
   // (loadHmeDtRows/loadSquadleChecklistRecords, src/lib/supabase.js), wired into ds via
@@ -187,7 +206,7 @@ export const STREAMS = [
   // well inside cadenceDays:1's WARN_GRACE_DAYS:1 (only warns past 2 days stale), so the standard
   // threshold is correct as-is for this stream, unlike the bi-weekly-cadence Payroll Readiness
   // entry commented out above.
-  { key: 'securityEvents', label: 'QSRSoft Security Events', dsField: 'qsrSecurityEventsFreshnessRows', cadenceDays: 1, group: 'controls' },
+  { key: 'securityEvents', label: 'QSRSoft Security Events', dsField: 'qsrSecurityEventsFreshnessRows', cadenceDays: 1, group: 'controls', paused: true, pausedReason: QSR_COMPLIANCE_PAUSE },
   // ⚠️ Register Audit (audit_rows) was ADDED here 2026-11-17 during the paused-stream freshness
   // audit, then REVERTED the same day once the full suite caught what the audit itself missed:
   // every STREAMS entry is required (scheduled-pull-registry.test.js's own two-directional guard)
@@ -243,12 +262,17 @@ function _latestDateOf(rows, asOfMs, dateField = 'date') {
 /**
  * Per-stream freshness as of `asOf` (Date, defaults to now).
  * Returns one entry per STREAMS row: { key, label, latestDate, staleDays, severity }.
- *   severity: 'ok' | 'warn' | 'crit'
+ *   severity: 'ok' | 'warn' | 'crit' | 'paused'
  *   staleDays: Infinity when the stream has never resolved a date in `ds` at all —
  *              distinguished from "ds[dsField] isn't loaded yet" by only counting a
  *              stream that HAS an array present (even if every row's date is unusable);
  *              a field that's simply absent from ds (not yet loaded this session) is
  *              skipped, not reported as an incident.
+ *   'paused' (added 2026-11-17): a STREAMS entry with `paused:true` is deliberately silent
+ *   (QSRSoft compliance pause, see this file's STREAMS comment) — staleDays is still
+ *   computed and returned for display ("last real data: Nov 16"), but severity is always
+ *   'paused', never crit/warn/ok, since a deliberately silent stream is not a staleness
+ *   INCIDENT. worstStream() below treats 'paused' the same as 'ok' (never the worst stream).
  */
 export function streamFreshness(ds, asOf = new Date()) {
   const asOfMs = asOf.getTime();
@@ -258,10 +282,15 @@ export function streamFreshness(ds, asOf = new Date()) {
     if (!Array.isArray(rows)) continue; // not loaded into ds this session — no verdict
     const latestDate = _latestDateOf(rows, asOfMs, s.dateField);
     const staleDays = latestDate ? Math.floor((asOfMs - latestDate.getTime()) / 864e5) : Infinity;
-    const warnAt = s.cadenceDays + WARN_GRACE_DAYS;
-    const critAt = s.cadenceDays + CRIT_GRACE_DAYS;
-    const severity = staleDays > critAt ? 'crit' : staleDays > warnAt ? 'warn' : 'ok';
-    out.push({ key: s.key, label: s.label, latestDate, staleDays, severity });
+    let severity;
+    if (s.paused) {
+      severity = 'paused';
+    } else {
+      const warnAt = s.cadenceDays + WARN_GRACE_DAYS;
+      const critAt = s.cadenceDays + CRIT_GRACE_DAYS;
+      severity = staleDays > critAt ? 'crit' : staleDays > warnAt ? 'warn' : 'ok';
+    }
+    out.push({ key: s.key, label: s.label, latestDate, staleDays, severity, pausedReason: s.paused ? s.pausedReason : null });
   }
   return out;
 }
@@ -270,12 +299,21 @@ export function streamFreshness(ds, asOf = new Date()) {
 // staleDot in analytics.js, At-A-Glance's "Loaded Data" strip, and task #137's new per-panel
 // On-Hand/Variance badges) so a new badge never invents its own color scale. Same three hex
 // values analytics.js's staleDays-based stalenessColor() already used (≤3d/≤10d/>10d) — this
-// just makes the mapping reusable off a STREAMS severity instead of a raw day count.
+// just makes the mapping reusable off a STREAMS severity instead of a raw day count. 'paused'
+// is a neutral slate blue, distinct from ok/warn/crit's green/amber/red — it is not a severity
+// ranking, just a different state entirely (added 2026-11-17, QSRSoft compliance pause).
 export function severityColor(severity) {
+  if (severity === 'paused') return '#64748b';
   return severity === 'crit' ? '#ef4444' : severity === 'warn' ? '#f59e0b' : '#10b981';
 }
 
-const _SEV_RANK = { crit: 2, warn: 1, ok: 0 };
+// 'paused' ranks BELOW 'ok' (not absent from the map) so groupFreshness()'s per-group worst-of
+// scan below can never have a paused sibling mask a real crit/warn/ok verdict from an unpaused
+// one in the same group -- an undefined rank (from a severity missing off this map entirely)
+// would make every `_SEV_RANK[sev] > _SEV_RANK[worstSeverity]` comparison involving it NaN,
+// i.e. always false, letting whichever severity happened to be seen first "win" regardless of
+// real priority. See memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md.
+const _SEV_RANK = { crit: 2, warn: 1, ok: 0, paused: -1 };
 
 /**
  * The single worst stream, or null if every loaded stream is 'ok' (or none are loaded
@@ -297,7 +335,7 @@ export function worstStream(ds, asOf = new Date()) {
   const all = streamFreshness(ds, asOf);
   let worst = null;
   for (const s of all) {
-    if (s.severity === 'ok') continue;
+    if (s.severity === 'ok' || s.severity === 'paused') continue;
     if (!worst || _SEV_RANK[s.severity] > _SEV_RANK[worst.severity] ||
         (_SEV_RANK[s.severity] === _SEV_RANK[worst.severity] && s.staleDays > worst.staleDays)) {
       worst = s;

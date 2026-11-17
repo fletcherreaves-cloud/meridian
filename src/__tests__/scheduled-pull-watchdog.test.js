@@ -56,10 +56,16 @@ describe('computeStaleness — pure math', () => {
 });
 
 describe('checkStream() — real detection + retrigger against a mocked GitHub API', () => {
+  // These generic detection/retrigger tests use 'lifelenz', not 'dar' -- dar is one of the 18
+  // streams the 2026-11-16 QSRSoft Operator Security Notice compliance pause marks
+  // `paused:true` in STREAMS (see the dedicated describe block below), so checkStream() now
+  // short-circuits for it before ever calling fetchLatest. lifelenz is LifeLenz, not QSRSoft,
+  // and is unaffected, so it still exercises the plain stale/fresh/escalate math this block is
+  // actually about. See memory/finding-qsrsoft-compliance-pause-watchdog-override-2026-11-17.md.
   it('a fresh stream makes NO GitHub API calls at all', async () => {
     const { impl, calls } = makeFetchImpl();
     const fetchLatest = vi.fn(async () => '2026-08-29');
-    const result = await checkStream('dar', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
+    const result = await checkStream('lifelenz', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
     expect(result.action).toBe('ok');
     expect(calls.length).toBe(0);
   });
@@ -67,7 +73,7 @@ describe('checkStream() — real detection + retrigger against a mocked GitHub A
   it('a genuinely stale stream (no prior issue) issues a workflow_dispatch call AND opens an issue', async () => {
     const { impl, calls } = makeFetchImpl({ openIssue: null });
     const fetchLatest = vi.fn(async () => '2026-08-26'); // 3 days stale
-    const result = await checkStream('dar', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
+    const result = await checkStream('lifelenz', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
 
     expect(result.action).toBe('retriggered');
     expect(result.isStale).toBe(true);
@@ -75,9 +81,9 @@ describe('checkStream() — real detection + retrigger against a mocked GitHub A
     const dispatchCall = calls.find(c => c.url.includes('/dispatches'));
     expect(dispatchCall, 'expected a workflow_dispatch POST').toBeTruthy();
     expect(dispatchCall.method).toBe('POST');
-    // dar's registry entry owns qsrsoft-dar-pull.yml -- assert the RIGHT workflow was hit.
+    // lifelenz's registry entry owns lifelenz-pull.yml -- assert the RIGHT workflow was hit.
     expect(dispatchCall.url).toBe(
-      `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/qsrsoft-dar-pull.yml/dispatches`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/lifelenz-pull.yml/dispatches`,
     );
     expect(dispatchCall.body).toEqual({ ref: 'main' });
 
@@ -87,10 +93,10 @@ describe('checkStream() — real detection + retrigger against a mocked GitHub A
   });
 
   it('a stream STILL stale with an issue already open escalates (comments) but does NOT dispatch again', async () => {
-    const existing = { number: 7, title: '🟡 Scheduled pull may be stale: DAR (QSRSoft daily activity)' };
+    const existing = { number: 7, title: '🟡 Scheduled pull may be stale: LifeLenz labor/schedule' };
     const { impl, calls } = makeFetchImpl({ openIssue: existing });
     const fetchLatest = vi.fn(async () => '2026-08-26');
-    const result = await checkStream('dar', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
+    const result = await checkStream('lifelenz', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
 
     expect(result.action).toBe('escalated');
     expect(result.issueNumber).toBe(7);
@@ -106,7 +112,7 @@ describe('checkStream() — real detection + retrigger against a mocked GitHub A
   it('dryRun computes the verdict but makes no GitHub API calls even when stale', async () => {
     const { impl, calls } = makeFetchImpl();
     const fetchLatest = vi.fn(async () => '2026-08-26');
-    const result = await checkStream('dar', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl, dryRun: true });
+    const result = await checkStream('lifelenz', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl, dryRun: true });
     expect(result.action).toBe('would-check-issue');
     expect(calls.length).toBe(0);
   });
@@ -115,6 +121,36 @@ describe('checkStream() — real detection + retrigger against a mocked GitHub A
     const { impl } = makeFetchImpl();
     const result = await checkStream('not-a-real-stream', { fetchLatest: vi.fn(), now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
     expect(result.action).toBe('unknown-stream');
+  });
+});
+
+describe('checkStream() — QSRSoft Operator Security Notice compliance pause (2026-11-16)', () => {
+  // The owner's own follow-up instruction was "make sure there are no other failsafes that
+  // will override it again" -- this is the watchdog half of that: a paused stream must never
+  // reach fetchLatest, dispatchWorkflow, or issue creation, no matter how stale it looks.
+  it('a paused stream (dar) short-circuits before fetchLatest is even called -- no GitHub API calls, regardless of staleness', async () => {
+    const { impl, calls } = makeFetchImpl();
+    const fetchLatest = vi.fn(async () => '2000-01-01'); // maximally stale, if it were ever checked
+    const result = await checkStream('dar', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
+    expect(result.action).toBe('paused');
+    expect(result.pausedReason).toBeTruthy();
+    expect(fetchLatest).not.toHaveBeenCalled();
+    expect(calls.length).toBe(0);
+  });
+
+  it('a paused stream short-circuits the same way even in dryRun mode', async () => {
+    const fetchLatest = vi.fn(async () => '2000-01-01');
+    const result = await checkStream('ebos', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, dryRun: true });
+    expect(result.action).toBe('paused');
+    expect(fetchLatest).not.toHaveBeenCalled();
+  });
+
+  it('an unpaused stream (lifelenz) is unaffected by the compliance pause', async () => {
+    const { impl } = makeFetchImpl();
+    const fetchLatest = vi.fn(async () => '2026-08-29');
+    const result = await checkStream('lifelenz', { fetchLatest, now: NOW, token: TOKEN, owner: OWNER, repo: REPO, fetchImpl: impl });
+    expect(result.action).toBe('ok');
+    expect(fetchLatest).toHaveBeenCalled();
   });
 });
 
