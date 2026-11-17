@@ -13,7 +13,11 @@
 //      guess at the real GraphQL names, since that write-up's snake_case keys were almost
 //      certainly re-labeled for readability, not copied verbatim from the query).
 // Prints everything to stdout -- read via the Actions job log, nothing written to Supabase.
-import 'dotenv/config';
+// No dotenv import -- unlike a local dev run, GitHub Actions injects LIFELENZ_TOKEN/PROBE_STORE
+// directly via the workflow's own `env:` block, and `dotenv` isn't a declared dependency
+// anywhere else in this repo (confirmed: no other scripts/*.mjs imports it, and it's absent
+// from package.json/package-lock.json) -- importing it here was a mistaken copy from a
+// different project's pattern, not something this repo's other pull scripts actually do.
 
 const BASE        = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';

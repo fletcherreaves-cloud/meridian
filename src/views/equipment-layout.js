@@ -94,12 +94,21 @@ export const CATALOG_TYPE_GROUPS = [
   ]},
   { group: 'Refrigeration', types: [
     { id: 'ice_machine', label: 'Ice Machine', icon: '🧊' },
+    // Owner request 2026-11-17: the rooftop condensing unit for a split/remote ice machine is a
+    // physically separate, separately-serviced component from the ice-machine head itself.
+    { id: 'remote_condenser', label: 'Remote Condenser (Rooftop)', icon: '❄️' },
     { id: 'refrigeration', label: 'Refrigeration (Reach-In)', icon: '🥶' },
     { id: 'walk_in_cooler', label: 'Walk-In Cooler', icon: '🚪' },
     { id: 'walk_in_freezer', label: 'Walk-In Freezer', icon: '🧊' },
   ]},
   { group: 'Facilities', types: [
     { id: 'exhaust_hood', label: 'Exhaust Hood', icon: '🌀' },
+    // Owner request 2026-11-17: the cooking-line exhaust FAN (rooftop, pulls air through the
+    // hood above) and a restroom's own small ceiling exhaust fan are distinct, separately
+    // serviced equipment from the hood/canopy itself and from each other.
+    { id: 'exhaust_fan_cooking', label: 'Exhaust Fan (Grills/Fryers)', icon: '💨' },
+    { id: 'exhaust_fan_restroom', label: 'Restroom Exhaust Fan', icon: '🚻' },
+    { id: 'hvac', label: 'HVAC (Rooftop Unit)', icon: '🌡️' },
     { id: 'label_maker', label: 'Label Maker', icon: '🏷️' },
     { id: 'hot_water_tank', label: 'Hot Water Tank', icon: '🚿' },
     { id: 'oil_tank_pump', label: 'Oil Tank/Pump', icon: '🛢️' },
