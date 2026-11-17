@@ -7,7 +7,7 @@
 // (that file's own header explains why qsr_fob's cumulative MTD snapshot can't be averaged
 // directly; getting it wrong silently understates every food-cost %).
 import { DEFAULT_TARGETS } from '../constants.js';
-import { metricAvg, metricSumRatio, metricRate } from './metric-source.js';
+import { metricAvg, metricSumRatio, metricRate, rollupCapableMetricKeys } from './metric-source.js';
 import { autoFirstTotal } from './vs-ly.js';
 import { resolveMetricForRange, FOB_REFERENCE_METRICS } from './fob-reference.js';
 import { resolveLaborTarget } from './labor-basis.js';
@@ -502,9 +502,27 @@ export function _yearlyTarget(def, directTargets, range, allMonthlyTargets, loc)
 
 // ── Daily Targets tab — DEFAULT_TARGETS' daily-cadence operational metrics with a verified
 // metric-source.js auto-first resolver, kept deliberately distinct from the Monthly tab's set
-// above (no field appears in both tabs). metricAvg (mean of each day's own auto-first value,
-// never a mean-of-averages) is the right aggregate for all of these — none are a cumulative
-// MTD-snapshot source the way the FOB legs are.
+// above (no field appears in both tabs).
+//
+// ⚠️ CORRECTED 2026-11-17 (sweep:data-sourcing follow-up, owner-requested after the Monthly/
+// Yearly tab fix in v5.812) — this header used to claim "metricAvg is the right aggregate for
+// all of these... none are a cumulative MTD-snapshot source," which answers a DIFFERENT question
+// (double-averaging) than the one that actually matters here: does this tab's range ever include
+// the current, still-open business day? It can. The 5 built-in presets (7/14/21/28D, MTD) are
+// genuinely safe — PanelControls.js's resolveDatePreset anchors every one of them to
+// lastClosedBusinessDay(), never literal "today" — but ReportShell's DateRangeControl also
+// offers a "Custom…" option with a real <input type="date">, and nothing stops a user picking
+// today as the end date. A custom range ending today hits the exact completeness artifact
+// (CLAUDE.md's DAR/hour_slot section; dispatches #153/#155/#221; v5.812's own fix to this file's
+// Monthly/Yearly tabs) for every metric below with a real numerator/denominator.
+//
+// Fixed the same way as the Monthly/Yearly tabs, but future-proofed: rather than hand-picking
+// which of these 10 keys are ratio-capable (oepe/kvst/avgCheck/tRedAPct/tRedBPct/posOverPct/
+// cashOSPct, confirmed via rollupCapableMetricKeys() as of this writing — park/drawerOpens/
+// promoPct are not), `_ratioCapable` is computed from that same registry function once, so a
+// metric that gains a `derive:{kind:'ratio'}` chain later is covered automatically and this
+// comment can't go stale the way the old one did.
+const _ratioCapable = new Set(rollupCapableMetricKeys());
 export const DAILY_TARGET_METRICS = [
   { key: 'oepe',        label: 'OEPE (sec)',       targetField: 'tOepe',       unit: 'sec',    better: 'lower' },
   { key: 'kvst',        label: 'KVS Time (sec)',   targetField: 'tKvst',       unit: 'sec',    better: 'lower' },
@@ -516,7 +534,10 @@ export const DAILY_TARGET_METRICS = [
   { key: 'cashOSPct',   label: 'Cash O/S %',       targetField: 'tCashOSPct',  unit: 'pct',    better: 'lower' },
   { key: 'drawerOpens', label: 'Drawer Opens',     targetField: 'tDrawer',     unit: 'count',  better: 'lower' },
   { key: 'promoPct',    label: 'Promo %',          targetField: 'tPromoPct',   unit: 'pct',    better: 'lower' },
-].map(m => ({ ...m, actual: (ds, loc, range) => metricAvg(ds, [loc], range, m.key) }));
+].map(m => ({
+  ...m,
+  actual: (ds, loc, range) => (_ratioCapable.has(m.key) ? metricRate : metricAvg)(ds, [loc], range, m.key),
+}));
 
 // target/actual -> 'ok' | 'watch' | 'miss' | 'none'. A metric is 'ok' the moment actual is on
 // the goal side of target (at or past it in the `better` direction) — a store beating its target

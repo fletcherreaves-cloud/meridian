@@ -8,7 +8,7 @@
 // this verification still pass if the change were reverted" rule, this exercises the REAL
 // CONSUMER (computeTargetsVsActual), not metricRate/metricSumRatio in isolation.
 import { describe, it, expect } from 'vitest';
-import { computeTargetsVsActual, MONTHLY_TARGET_METRICS, YEARLY_TARGET_METRICS } from '../engine/targets-vs-actual.js';
+import { computeTargetsVsActual, MONTHLY_TARGET_METRICS, YEARLY_TARGET_METRICS, DAILY_TARGET_METRICS } from '../engine/targets-vs-actual.js';
 
 // Same completeness-artifact fixture shape as dispatch-155-metric-rate-call-sites.test.js: 5
 // "complete" days at a plausible rate, plus TODAY as a low-volume in-progress day whose per-
@@ -88,5 +88,50 @@ describe('targets-vs-actual.js Yearly tab: tpph/oepe/kvst/r2p use the Σ/Σ roll
     for (const k of ['yTpph', 'yOepe', 'yKvst', 'yR2p']) {
       expect(YEARLY_TARGET_METRICS.some(m => m.key === k)).toBe(true);
     }
+  });
+});
+
+// The Daily tab's 5 built-in presets (7/14/21/28D, MTD) are anchored to lastClosedBusinessDay()
+// (PanelControls.js's resolveDatePreset) and never include an in-progress day by construction --
+// but ReportShell's date picker also offers a "Custom…" option with a real date input, and
+// nothing stops a user picking today as the end date. This exercises exactly that scenario,
+// which the Monthly/Yearly tests above don't cover (they always use a range built the same way
+// the app itself would for a current-period view, not a user-entered custom range).
+describe('targets-vs-actual.js Daily tab: ratio-capable metrics use Σ/Σ even on a custom range ending today (sweep 2026-11-17 follow-up)', () => {
+  it('oepe/kvst diverge from mean-of-daily on a custom range whose end date is today', () => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth() + 1;
+    const ds = buildDs(y, m);
+    // A user-entered custom range, same shape DateRangeControl's "Custom…" option produces --
+    // not one of the 5 built-in presets, and its end date IS today (the in-progress day).
+    const range = { id: 'custom', s: new Date(y, m - 1, 1), e: now };
+    const row = computeTargetsVsActual(ds, '3708', { which: 'daily', range })[0];
+    const oepe = row.metrics.find(x => x.key === 'oepe');
+    const kvst = row.metrics.find(x => x.key === 'kvst');
+    const sumOepe = (50000000 * 5 + 20000000) / (1000 * 5 + 100) / 1000;
+    const sumKvst = (40000000 * 5 + 25000000) / (1000 * 5 + 100) / 1000;
+    const meanOepe = (50 * 5 + 200) / 6;
+    const meanKvst = (40 * 5 + 250) / 6;
+    expect(oepe.actual).toBeCloseTo(sumOepe, 4);
+    expect(oepe.actual).not.toBeCloseTo(meanOepe, 1);
+    expect(kvst.actual).toBeCloseTo(sumKvst, 4);
+    expect(kvst.actual).not.toBeCloseTo(meanKvst, 1);
+  });
+
+  it('park (no declared ratio legs) still resolves via plain metricAvg -- not a regression', () => {
+    expect(DAILY_TARGET_METRICS.find(m => m.key === 'park')).toBeTruthy();
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth() + 1;
+    const ds = buildDs(y, m);
+    const range = { id: 'custom', s: new Date(y, m - 1, 1), e: now };
+    // park has no rows in this fixture at all -- just confirm the call doesn't throw and
+    // returns null (metricSumRatio has nothing to compute for a non-ratio key by design).
+    const row = computeTargetsVsActual(ds, '3708', { which: 'daily', range })[0];
+    expect(row.metrics.find(x => x.key === 'park')).toBeTruthy();
+  });
+
+  it('all 10 Daily tab keys are still present (sanity against a broken refactor)', () => {
+    const keys = DAILY_TARGET_METRICS.map(m => m.key);
+    expect(keys).toEqual(['oepe', 'kvst', 'park', 'avgCheck', 'tRedAPct', 'tRedBPct', 'posOverPct', 'cashOSPct', 'drawerOpens', 'promoPct']);
   });
 });
