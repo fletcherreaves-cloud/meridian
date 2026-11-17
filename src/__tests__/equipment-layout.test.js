@@ -15,11 +15,13 @@ const mkEntry = (over = {}) => ({
 });
 
 describe('CATALOG_TYPE_GROUPS', () => {
-  it('covers exactly the 35 real equipment_catalog types, no duplicates', () => {
-    // 34 real catalog types + the owner-requested 'other' catch-all (2026-11-17).
+  it('covers exactly the 39 real equipment_catalog types, no duplicates', () => {
+    // 34 real catalog types + the owner-requested 'other' catch-all (2026-11-17) + 4 more
+    // owner-requested mechanical types the same day (hvac, remote_condenser,
+    // exhaust_fan_cooking, exhaust_fan_restroom) = 39.
     const ids = CATALOG_TYPE_GROUPS.flatMap(g => g.types.map(t => t.id));
-    expect(ids.length).toBe(35);
-    expect(new Set(ids).size).toBe(35);
+    expect(ids.length).toBe(39);
+    expect(new Set(ids).size).toBe(39);
   });
 });
 
