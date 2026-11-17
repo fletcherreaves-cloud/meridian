@@ -34,6 +34,12 @@ export const PLACEMENTS = [
   { value: 'production_area', label: 'Production Area (Kitchen)' },
   { value: 'prep_area', label: 'Prep Area' },
   { value: 'back_of_house', label: 'Back of House' },
+  // Owner request 2026-11-17: rooftop equipment (remote condensers, exhaust fans, HVAC units —
+  // several of which already exist as catalog TYPES, see equipment-layout.js's CATALOG_TYPE_GROUPS)
+  // has nowhere to be logically placed among the interior floor areas above. A real area, not a
+  // catalog type, so it goes here (the single source of truth both the crew form's dropdown and
+  // the Layout Planner's floor-plan grid read from).
+  { value: 'rooftop', label: 'Rooftop' },
 ];
 export const SIDE_OPTIONS = [
   { value: 'side1_right', label: 'Side 1 — Right' },
