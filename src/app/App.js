@@ -3909,10 +3909,15 @@ function App() {
     };
   },[handleFiles]);
 
-  // Web Share Target — pick up files stashed by the service worker after a mobile share
+  // Web Share Target — pick up files stashed by the service worker after a mobile share.
+  // This cache name is a cross-file CONTRACT with public/sw.js's own SHARE_CACHE constant --
+  // they must match exactly. Fixed 2026-11-17 after a 4-month silent break: sw.js's cache got
+  // renamed ('mf-share-v1' -> 'mf-share-v4276') to force an unrelated SW re-install, and this
+  // line was never updated to match, so every mobile share silently vanished with no error.
+  // Both sides now use a version-free name specifically so this can't recur.
   useEffect(()=>{
     if(!('caches' in window)) return;
-    caches.open('mf-share-v1').then(async cache=>{
+    caches.open('mf-share-target').then(async cache=>{
       const keys=await cache.keys();
       if(!keys.length) return;
       const files=await Promise.all(keys.map(async req=>{

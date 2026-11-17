@@ -1,4 +1,4 @@
-// Meridian Service Worker — v5.256
+// Meridian Service Worker — v5.816
 // Handles Web Share Target API so files can be shared directly from
 // QSRSoft (or any app) to Meridian on mobile without opening a file picker.
 // Stashes shared files in Cache API; App.js picks them up on next render.
@@ -7,8 +7,17 @@
 // OS-level device alerts (lock-screen/banner) — same file, same registration
 // (src/meridian.js already registers this SW on every page load; no new registration call
 // needed). The share-target fetch handler above/below is UNCHANGED.
-
-const SHARE_CACHE = 'mf-share-v4276';
+//
+// 2026-11-17: SHARE_CACHE used to be 'mf-share-v1', then got bumped to 'mf-share-v4276' in
+// v4.276 purely to force browsers to re-install the SW and drop a stale JS bundle -- an
+// unrelated fix that didn't realize this name is a cross-file CONTRACT with App.js's pickup
+// code, not just a version label. That silently broke every mobile share into Meridian from
+// 2026-07-03 until today: App.js kept reading the old 'mf-share-v1' cache, which the SW had
+// stopped writing to, so shared files vanished with no error. Fixed by giving this its own
+// name with NO version digits, so a future "just bump the SW version" edit can't collide with
+// it again -- if the SW itself ever needs a real cache-bust, add a *different* versioned cache
+// for that purpose; never reuse this name for anything else.
+const SHARE_CACHE = 'mf-share-target';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
