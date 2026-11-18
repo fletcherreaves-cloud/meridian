@@ -2994,26 +2994,25 @@ export async function loadDaypartActivity(daysBack = 60) {
   });
 }
 
-// ── Night OEPE w/o Parked report (owner request, 2026-11-18) — separate from "DT OEPE w/o
-// Parked" (dt-oepe-report.js), which is whole-day only. Needs the full night hour_slot range
-// ('17:00' = the 4pm-5pm block through '28:00' = the 3am-4am block, the last slot before the
-// 4am ABC cutover — see daypart-peaks.js's header: hour_slot is the END of its hour block) PLUS
-// the complete dt_untilserve/dt_untilstore/dt_heldtime/dt_trans_cnt leg set the w/o-parked
-// formula needs (src/utils/oepe.js's oepeSeconds()). No existing loader has both:
-// loadDaypartActivity has the right OEPE columns but filters to breakfast/lunch/dinner
-// hour_slots only (ALL_DAYPART_HOUR_SLOTS, too narrow); loadDailyActivityRange has every
-// hour_slot but is missing dt_untilstore/dt_heldtime entirely. hour_slot values are always
-// zero-padded two-digit-hour strings ('05:00'..'28:00'), so a plain string .gte comparison
-// against '17:00' is a correct, cheap filter — no need to enumerate the slot list by hand.
-export async function loadNightOepeActivity(startDate, endDate) {
+// ── OEPE w/o Parked by Daypart report (owner request, 2026-11-18) — separate from "DT OEPE w/o
+// Parked" (dt-oepe-report.js), which is whole-day only. First ask was nights only; the owner's
+// same-day follow-up ("adding multiple dayparts would be helpful... even a start time and end
+// time selector") widened it to any daypart/custom range, so this pulls the FULL day's hour_slot
+// range (no lower bound) rather than just the night slots. Needs that full range PLUS the
+// complete dt_untilserve/dt_untilstore/dt_heldtime/dt_trans_cnt leg set the w/o-parked formula
+// needs (src/utils/oepe.js's oepeSeconds()). No existing loader has both: loadDaypartActivity
+// has the right OEPE columns but filters to breakfast/lunch/dinner hour_slots only
+// (ALL_DAYPART_HOUR_SLOTS, too narrow for a custom range); loadDailyActivityRange has every
+// hour_slot but is missing dt_untilstore/dt_heldtime entirely.
+export async function loadOepeHourlyActivity(startDate, endDate) {
   if (!supabase) return [];
   return _pagedParallel({
     table: 'qsr_daily_activity',
     select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt',
     gteCol: 'dt', gteVal: startDate,
-    extraFilter: q => q.lte('dt', endDate).gte('hour_slot', '17:00'),
+    extraFilter: q => q.lte('dt', endDate),
     orderCol: 'dt', ascending: false,
-    label: 'night OEPE w/o parked activity',
+    label: 'OEPE w/o parked hourly activity',
   });
 }
 

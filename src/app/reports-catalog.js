@@ -106,8 +106,8 @@ const DIRECT_PANELS = [
   { id: 'dt-oepe-report', category: 'Daily & Operations',
     desc: 'Drive-thru OEPE with parked/held time excluded, by store, across MTD / LM / Last 30 / Last 45 / Last 90 Days / YTD.' },
   // Owner request 2026-11-18 -- see panel-registry.js's own comment on this id.
-  { id: 'night-oepe-report', category: 'Daily & Operations',
-    desc: 'Drive-thru OEPE with parked/held time excluded, nights only (4pm-close / 5pm-7pm / 7pm-close), by store, across MTD / LM / Last 30 / Last 45 / Last 90 Days / YTD.' },
+  { id: 'daypart-oepe-report', category: 'Daily & Operations',
+    desc: 'Drive-thru OEPE with parked/held time excluded, by daypart (Breakfast / Lunch / Dinner / 4pm-Close / 7pm-Close, or a custom time range) and store, across MTD / LM / Last 30 / Last 45 / Last 90 Days / YTD.' },
   // Owner request 2026-11-17 -- see panel-registry.js's own comment on this id.
   { id: 'spot-check-ruler-report', category: 'Financial & Promotions',
     desc: "Pick a store, open its most recent qualifying weekly or EOM count, run the 7-question Spot-Check Ruler follow-up on demand." },

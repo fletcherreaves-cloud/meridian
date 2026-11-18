@@ -256,7 +256,7 @@ const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })), 'fob-reference-table');
 const TargetsVsActualReportPanel = lazyPanel(() => import('../views/targets-vs-actual-report.js').then(m => ({ default: m.TargetsVsActualReportPanel })), 'targets-vs-actual');
 const DtOepeReportPanel = lazyPanel(() => import('../views/dt-oepe-report.js').then(m => ({ default: m.DtOepeReportPanel })), 'dt-oepe-report');
-const NightOepeReportPanel = lazyPanel(() => import('../views/night-oepe-report.js').then(m => ({ default: m.NightOepeReportPanel })), 'night-oepe-report');
+const DaypartOepeReportPanel = lazyPanel(() => import('../views/daypart-oepe-report.js').then(m => ({ default: m.DaypartOepeReportPanel })), 'daypart-oepe-report');
 const SpotCheckRulerReportPanel = lazyPanel(() => import('../views/spot-check-ruler-report.js').then(m => ({ default: m.SpotCheckRulerReportPanel })), 'spot-check-ruler-report');
 const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })), 'conversion-efficiency');
 const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })), 'oil-efficiency');
@@ -4279,7 +4279,7 @@ function App() {
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
         if(modal==='targets-vs-actual') perm('analytics.store')&&goRoute('targets-vs-actual');
         if(modal==='dt-oepe-report') perm('analytics.store')&&goRoute('dt-oepe-report');
-        if(modal==='night-oepe-report') perm('analytics.store')&&goRoute('night-oepe-report');
+        if(modal==='daypart-oepe-report') perm('analytics.store')&&goRoute('daypart-oepe-report');
         if(modal==='spot-check-ruler-report') perm('analytics.store')&&goRoute('spot-check-ruler-report');
         if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
         if(modal==='oil-efficiency') perm('analytics.store')&&goRoute('oil-efficiency');
@@ -4608,7 +4608,7 @@ function App() {
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='targets-vs-actual'&&h(TargetsVsActualReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='dt-oepe-report'&&h(DtOepeReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
-      routePanel==='night-oepe-report'&&h(NightOepeReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='daypart-oepe-report'&&h(DaypartOepeReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='spot-check-ruler-report'&&h(SpotCheckRulerReportPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='oil-efficiency'&&h(OilEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
