@@ -364,6 +364,16 @@ export const PANELS = [
   // results." See engine/targets-vs-actual.js's header for which metrics live in which tab and
   // why.
   { id:'targets-vs-actual', label:'Targets vs Actual', icon:'🎯', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-11-17: "give a report that shows specifically DT OEPE w/o parked for the
+  // following periods for each location: MTD, LM, Last 30 Days, Last 45 Days, Last 90 days and
+  // YTD." See engine/dt-oepe-report.js's header -- METRIC_SOURCES.oepe already IS the w/o-parked
+  // formula, only the 6 period windows needed building.
+  { id:'dt-oepe-report', label:'DT OEPE w/o Parked', icon:'⏱️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-11-17: "That's the Spot-Check Ruler — Thank you, can we add that to
+  // reports?" The worksheet (task #129) already existed but only opened reactively from Count
+  // Cycle/Curated Home; this gives it an always-available, store-pickable Reports entry. See
+  // views/spot-check-ruler-report.js's header.
+  { id:'spot-check-ruler-report', label:'Spot-Check Ruler', icon:'📋', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Owner request 2026-10-19: "Conversion Efficiency Ratio" reports from McDonald's corporate
   // Owner Operator Reports (food usage vs. target by raw item). Manual-upload-only for now --
   // no self-service API known to exist for this corporate program; see

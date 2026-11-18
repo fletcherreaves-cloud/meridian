@@ -255,6 +255,8 @@ const LaborOpportunityCostPanel = lazyPanel(() => import('../views/labor-opportu
 const CashVariancePatternPanel = lazyPanel(() => import('../views/cash-variance-pattern.js').then(m => ({ default: m.CashVariancePatternPanel })), 'cash-variance-pattern');
 const FobReferenceTablePanel = lazyPanel(() => import('../views/fob-reference-table.js').then(m => ({ default: m.FobReferenceTablePanel })), 'fob-reference-table');
 const TargetsVsActualReportPanel = lazyPanel(() => import('../views/targets-vs-actual-report.js').then(m => ({ default: m.TargetsVsActualReportPanel })), 'targets-vs-actual');
+const DtOepeReportPanel = lazyPanel(() => import('../views/dt-oepe-report.js').then(m => ({ default: m.DtOepeReportPanel })), 'dt-oepe-report');
+const SpotCheckRulerReportPanel = lazyPanel(() => import('../views/spot-check-ruler-report.js').then(m => ({ default: m.SpotCheckRulerReportPanel })), 'spot-check-ruler-report');
 const ConversionEfficiencyPanel = lazyPanel(() => import('../views/conversion-efficiency.js').then(m => ({ default: m.ConversionEfficiencyPanel })), 'conversion-efficiency');
 const OilEfficiencyPanel = lazyPanel(() => import('../views/oil-efficiency.js').then(m => ({ default: m.OilEfficiencyPanel })), 'oil-efficiency');
 const EquipmentLayoutPanel = lazyPanel(() => import('../views/equipment-layout.js').then(m => ({ default: m.EquipmentLayoutPanel })), 'equipment-layout');
@@ -353,7 +355,7 @@ const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, loadLaborAnalysisDaily, loadLaborExceptionsDaily, mergeFreshRowsByLocDate, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadLifeLenzDar, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, loadLaborAnalysisDaily, loadLaborExceptionsDaily, mergeFreshRowsByLocDate, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -2396,6 +2398,20 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${prRows.length} LifeLenz payroll-readiness rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz payroll-readiness load failed:',e);} };
+      const _stLifelenzDar = async () => {
+      try{
+        // LifeLenz's own hourly Daily Activity Report (task: "let's get the dar from lifelenz
+        // and wire it in"), standing in for QSRSoft's own DAR pull (qsr_daily_activity_rollup)
+        // while that one is paused for compliance reasons — see
+        // scripts/lifelenz-dar-pull.mjs / supabase/schema-lifelenz-dar.sql /
+        // memory/finding-lifelenz-dar-schema-2026-11-17.md. Raw hourly rows only — NOT yet
+        // wired into metric-source.js's displayed auto-first chains (see that file's scope note).
+        const ldRows = await loadLifeLenzDar();
+        if(ldRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev, lifelenzDarRows: ldRows};});
+          console.log(`[Meridian] ✓ Loaded ${ldRows.length} LifeLenz DAR rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz DAR load failed:',e);} };
       const _stHmeDt = async () => {
       try{
         // HME Cloud drive-thru timer (task #105 Phase 2) — see scripts/hme-cloud-pull.mjs /
@@ -2987,6 +3003,7 @@ function App() {
         _timedStage('T2 complianceAudit', _stComplianceAudit, _t2Start),
         _timedStage('T2 employeePerformance', _stEmployeePerformance, _t2Start),
         _timedStage('T2 payrollReadiness', _stPayrollReadiness, _t2Start),
+        _timedStage('T2 lifelenzDar', _stLifelenzDar, _t2Start),
         _timedStage('T2 hmeDt', _stHmeDt, _t2Start),
         _timedStage('T2 squadle', _stSquadle, _t2Start),
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
@@ -4253,6 +4270,8 @@ function App() {
         if(modal==='cash-variance-pattern') perm('analytics.store')&&goRoute('cash-variance-pattern');
         if(modal==='fob-reference-table') perm('analytics.store')&&goRoute('fob-reference-table');
         if(modal==='targets-vs-actual') perm('analytics.store')&&goRoute('targets-vs-actual');
+        if(modal==='dt-oepe-report') perm('analytics.store')&&goRoute('dt-oepe-report');
+        if(modal==='spot-check-ruler-report') perm('analytics.store')&&goRoute('spot-check-ruler-report');
         if(modal==='conversion-efficiency') perm('analytics.store')&&goRoute('conversion-efficiency');
         if(modal==='oil-efficiency') perm('analytics.store')&&goRoute('oil-efficiency');
         if(modal==='equipment-layout') perm('analytics.store')&&goRoute('equipment-layout');
@@ -4579,6 +4598,8 @@ function App() {
       routePanel==='cash-variance-pattern'&&h(CashVariancePatternPanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-reference-table'&&h(FobReferenceTablePanel,{ds,stores,onClose:()=>goRoute(null)}),
       routePanel==='targets-vs-actual'&&h(TargetsVsActualReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='dt-oepe-report'&&h(DtOepeReportPanel,{ds,stores,onClose:()=>goRoute(null)}),
+      routePanel==='spot-check-ruler-report'&&h(SpotCheckRulerReportPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='conversion-efficiency'&&h(ConversionEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='oil-efficiency'&&h(OilEfficiencyPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='equipment-layout'&&h(EquipmentLayoutPanel,{stores,onClose:()=>goRoute(null)}),

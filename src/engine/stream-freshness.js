@@ -124,6 +124,13 @@ export const STREAMS = [
   { key: 'scheduleVariance', label: 'LifeLenz Schedule Variance', dsField: 'scheduleVarianceRows', dateField: 'occurredAt', cadenceDays: 1, group: 'scheduling' },
   { key: 'complianceAudit', label: 'LifeLenz Compliance Audit', dsField: 'complianceAuditRows', dateField: 'shiftDate', cadenceDays: 1, group: 'people' },
   { key: 'employeePerformance', label: 'LifeLenz Employee Performance', dsField: 'employeePerformanceRows', dateField: 'periodEnd', cadenceDays: 1, group: 'people' },
+  // LifeLenz's own hourly Daily Activity Report (2026-11-17) -- standing in for the 'dar' entry
+  // above (qsr_daily_activity_rollup, PAUSED for compliance) while that pull stays paused. Rows
+  // carry a derived `dt` business-date (4am Central cutover), hence the dateField override --
+  // same shape as scheduleVariance/complianceAudit above. Same `group:'sales'` as the paused
+  // QSRSoft 'dar' entry so this stream's own freshness is checked independently (CLAUDE.md's
+  // per-stream, not pooled, staleness rule) without masking or being masked by it.
+  { key: 'lifelenzDar', label: 'LifeLenz DAR', dsField: 'lifelenzDarRows', dateField: 'dt', cadenceDays: 1, group: 'sales' },
   // ⚠️ LifeLenz Payroll Readiness (task #85, 2026-11-04) is DELIBERATELY NOT added to this
   // array yet. This file's own standing invariant test (stream-freshness.test.js's "thresholds
   // are per-stream cadence + grace, not the old hardcoded 14 days") requires cadenceDays to be

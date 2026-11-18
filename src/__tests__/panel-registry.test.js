@@ -372,10 +372,10 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // report -- route:true and kind:'nav' from day one (sixty-four -> sixty-five).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'access-log', 'attention', 'brief', 'cash-variance-pattern', 'channel-mix', 'checklist-fill', 'controls-food-cost-link', 'conversion-efficiency', 'crew-schedule', 'curated-home', 'custom-reports', 'customer-complaints',
-      'daily-review', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
+      'daily-review', 'delivery-mix', 'dicompare', 'dt-oepe-report', 'dt-sos', 'eom-dashboard', 'equipment-layout', 'equipment-results', 'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'fob-reference-table', 'forecast-reports', 'forms-completion', 'graded-visits',
       'inventory', 'item-velocity', 'labor-opportunity-cost', 'launch-planner', 'loc-intel', 'location-dossier', 'loss-prevention', 'morning-brief', 'my-reports', 'news', 'oil-efficiency', 'one-pager',
       'operator-summary', 'pay-rate-history', 'perf-reviews', 'planning', 'price-change-impact', 'pricing-engine', 'proj', 'promo-roi', 'ranking',
-      'report', 'role-explainer', 'sched-hub', 'security', 'signals', 'smg-voice', 'squadle-checklist', 'store-assessments', 'targets-vs-actual', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
+      'report', 'role-explainer', 'sched-hub', 'security', 'signals', 'smg-voice', 'spot-check-ruler-report', 'squadle-checklist', 'store-assessments', 'targets-vs-actual', 'task-queue', 'trend-report', 'trends', 'visit-readiness',
       'weather-impact', 'weekly-count-status', 'yoy-trends',
     ]);
   });

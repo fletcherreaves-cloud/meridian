@@ -1569,6 +1569,48 @@ export async function loadLifeLenzPayrollReadiness({ start, end, locs } = {}) {
   }));
 }
 
+// LifeLenz's own hourly Daily Activity Report (darData) — standing in for QSRSoft's own DAR
+// pull (qsr_daily_activity_rollup) while that one is paused for compliance reasons. One row per
+// (loc, start_time) hourly interval; `dt` is the derived business date (4am Central cutover —
+// see scripts/lifelenz-dar-pull.mjs's businessDateChicago()). See
+// supabase/schema-lifelenz-dar.sql / memory/finding-lifelenz-dar-schema-2026-11-17.md.
+// Deliberately NOT yet read by metric-source.js's displayed auto-first chains — see that file's
+// scope note for why (field-level equivalence against qsr_daily_activity_rollup is unmeasured).
+export async function loadLifeLenzDar({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_dar').select('*').order('start_time', { ascending: false }).range(from, to);
+    if (start) q = q.gte('dt', start);
+    if (end) q = q.lte('dt', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_dar');
+  return (data || []).map(r => ({
+    // Strip zero-padding — same normalization every other LifeLenz loader applies on the way out.
+    loc:                               String(parseInt(r.loc, 10)),
+    dt:                                r.dt,
+    startTime:                        r.start_time,
+    missingActuals:                   r.missing_actuals,
+    netSales:                         r.net_sales,
+    transactions:                     r.transactions,
+    totalTransactionsVariation:       r.total_transactions_variation,
+    driveThroughTransactionsVariation: r.drive_through_transactions_variation,
+    windowTransactionsVariation:      r.window_transactions_variation,
+    sandwiches:                       r.sandwiches,
+    sandwichCountVariation:           r.sandwich_count_variation,
+    avgDtServiceTime:                 r.avg_dt_service_time,
+    avgFcServiceTime:                 r.avg_fc_service_time,
+    avgMfyServiceTime:                r.avg_mfy_service_time,
+    actualPunchHours:                 r.actual_punch_hours,
+    totalHoursDiff:                   r.total_hours_diff,
+    totalHoursIdealVariation:         r.total_hours_ideal_variation,
+    transactionsPerPunchHour:         r.transactions_per_punch_hour,
+    salesPerPunchHour:                r.sales_per_punch_hour,
+    labourPercentageOfSales:          r.labour_percentage_of_sales,
+    updatedAt:                        r.updated_at,
+  }));
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's

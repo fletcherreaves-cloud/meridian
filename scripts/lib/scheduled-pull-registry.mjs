@@ -42,6 +42,10 @@ export const PULL_REGISTRY = {
   scheduleVariance: { table: 'lifelenz_schedule_variance', dateCol: 'occurred_at', workflowFile: 'lifelenz-schedule-variance-pull.yml' },
   complianceAudit: { table: 'lifelenz_compliance_audit', dateCol: 'shift_date', workflowFile: 'lifelenz-compliance-audit-pull.yml' },
   employeePerformance: { table: 'lifelenz_employee_performance', dateCol: 'period_end', workflowFile: 'lifelenz-employee-performance-pull.yml' },
+  // LifeLenz's own hourly DAR (2026-11-17), standing in for the paused 'dar' entry above while
+  // QSRSoft's own DAR pull stays paused for compliance. dateCol is the derived `dt` business
+  // date (4am Central cutover), not start_time, matching STREAMS' dateField override.
+  lifelenzDar: { table: 'lifelenz_dar', dateCol: 'dt', workflowFile: 'lifelenz-dar-pull.yml' },
   // dateCol is updated_at (a timestamptz), not a DATE column -- qsr_inventory_summary's rows
   // are period(month)-keyed, not daily-dated (see stream-freshness.js's own comment on this
   // key), so the app-side freshness probe and this watchdog entry both read the same "when

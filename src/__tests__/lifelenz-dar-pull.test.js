@@ -12,8 +12,26 @@ import {
   darIntervalToRow,
   locFromName,
   mostRecentlyCompletedHour,
+  businessDateChicago,
   FIELD_CODES,
 } from '../../scripts/lifelenz-dar-pull.mjs';
+
+describe('lifelenz-dar-pull: businessDateChicago', () => {
+  it('keeps the same calendar date for an hour at/after 4am Central (CST, winter)', () => {
+    // 10:00Z = 4:00am CST (UTC-6) — the first hour of the 2026-11-15 business day, matching
+    // the live-measured window boundary in memory/finding-lifelenz-dar-schema-2026-11-17.md.
+    expect(businessDateChicago('2026-11-15T10:00:00Z')).toBe('2026-11-15');
+  });
+  it('rolls back to the PRIOR calendar date for an hour before 4am Central', () => {
+    // 09:00Z = 3:00am CST — still the tail of the 2026-11-15 business day, not 2026-11-16.
+    expect(businessDateChicago('2026-11-16T09:00:00Z')).toBe('2026-11-15');
+  });
+  it('handles the CDT (summer, UTC-5) offset correctly, not just CST', () => {
+    // 09:00Z = 4:00am CDT -- same 4am-local cutover, different UTC offset.
+    expect(businessDateChicago('2026-07-15T09:00:00Z')).toBe('2026-07-15');
+    expect(businessDateChicago('2026-07-15T08:00:00Z')).toBe('2026-07-14');
+  });
+});
 
 describe('lifelenz-dar-pull: locFromName', () => {
   it('extracts and zero-pads a store number from a schedule name', () => {
@@ -63,10 +81,12 @@ describe('lifelenz-dar-pull: darIntervalToRow', () => {
     ],
   };
 
-  it('promotes every real fieldCode into its own numeric column', () => {
+  it('promotes every real fieldCode into its own numeric column, plus a derived dt', () => {
     const row = darIntervalToRow('0003708', REAL_INTERVAL);
     expect(row.loc).toBe('0003708');
     expect(row.start_time).toBe('2026-11-16T04:00:00Z');
+    // 04:00Z - 6h (CST) = 2026-11-15T22:00 local -> same-day, hour 22 >= 4.
+    expect(row.dt).toBe('2026-11-15');
     expect(row.missing_actuals).toBe(false);
     expect(row.net_sales).toBe(1247.33);
     expect(row.transactions).toBe(103);
