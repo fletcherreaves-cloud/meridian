@@ -2997,19 +2997,31 @@ export async function loadDaypartActivity(daysBack = 60) {
 // ── OEPE w/o Parked by Daypart report (owner request, 2026-11-18) — separate from "DT OEPE w/o
 // Parked" (dt-oepe-report.js), which is whole-day only. First ask was nights only; the owner's
 // same-day follow-up ("adding multiple dayparts would be helpful... even a start time and end
-// time selector") widened it to any daypart/custom range, so this pulls the FULL day's hour_slot
-// range (no lower bound) rather than just the night slots. Needs that full range PLUS the
+// time selector") widened it to any daypart/custom range. Needs a wide hour_slot range PLUS the
 // complete dt_untilserve/dt_untilstore/dt_heldtime/dt_trans_cnt leg set the w/o-parked formula
 // needs (src/utils/oepe.js's oepeSeconds()). No existing loader has both: loadDaypartActivity
 // has the right OEPE columns but filters to breakfast/lunch/dinner hour_slots only
 // (ALL_DAYPART_HOUR_SLOTS, too narrow for a custom range); loadDailyActivityRange has every
 // hour_slot but is missing dt_untilstore/dt_heldtime entirely.
-export async function loadOepeHourlyActivity(startDate, endDate) {
+//
+// ⚠️ MUST be called with `hourSlots` scoped to only the daypart actually being viewed (dispatch
+// 2026-11-18, live production failure) — a first version of this loader dropped the hour_slot
+// filter entirely to let one fetch cover every daypart tab instantly. Pulling the FULL day's
+// hour_slots × the full YTD date range × all 27 stores unfiltered is ~209 pages against
+// qsr_daily_activity, a table CLAUDE.md already documents as prone to 57014 statement timeouts
+// under a broad scan — measured live: 137 of ~209 pages failed, surfacing the
+// "DATA INCOMPLETE... figures UNDERSTATED" banner and an all-dash table. Filtering to the
+// handful of hour_slots the active segment needs (2-12, not 24) cuts the page count by the same
+// factor and keeps this loader in the same proven range as loadDaypartActivity's own
+// inCol/inVals pattern below.
+export async function loadOepeHourlyActivity(startDate, endDate, hourSlots) {
   if (!supabase) return [];
+  if (!hourSlots || !hourSlots.length) return [];
   return _pagedParallel({
     table: 'qsr_daily_activity',
     select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt',
     gteCol: 'dt', gteVal: startDate,
+    inCol: 'hour_slot', inVals: hourSlots,
     extraFilter: q => q.lte('dt', endDate),
     orderCol: 'dt', ascending: false,
     label: 'OEPE w/o parked hourly activity',
