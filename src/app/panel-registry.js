@@ -369,6 +369,11 @@ export const PANELS = [
   // YTD." See engine/dt-oepe-report.js's header -- METRIC_SOURCES.oepe already IS the w/o-parked
   // formula, only the 6 period windows needed building.
   { id:'dt-oepe-report', label:'DT OEPE w/o Parked', icon:'⏱️', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // Owner request 2026-11-18, explicitly "separate from previous work" (the whole-day DT OEPE
+  // w/o Parked report above): same w/o-parked formula, broken out by 3 night segments (4pm-close
+  // / 5pm-7pm / 7pm-close) across the same 6 period windows. See engine/night-oepe-report.js's
+  // header for the hour_slot mapping.
+  { id:'night-oepe-report', label:'Night OEPE w/o Parked', icon:'🌙', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   // Owner request 2026-11-17: "That's the Spot-Check Ruler — Thank you, can we add that to
   // reports?" The worksheet (task #129) already existed but only opened reactively from Count
   // Cycle/Curated Home; this gives it an always-available, store-pickable Reports entry. See
