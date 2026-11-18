@@ -2994,6 +2994,28 @@ export async function loadDaypartActivity(daysBack = 60) {
   });
 }
 
+// ── OEPE w/o Parked by Daypart report (owner request, 2026-11-18) — separate from "DT OEPE w/o
+// Parked" (dt-oepe-report.js), which is whole-day only. First ask was nights only; the owner's
+// same-day follow-up ("adding multiple dayparts would be helpful... even a start time and end
+// time selector") widened it to any daypart/custom range, so this pulls the FULL day's hour_slot
+// range (no lower bound) rather than just the night slots. Needs that full range PLUS the
+// complete dt_untilserve/dt_untilstore/dt_heldtime/dt_trans_cnt leg set the w/o-parked formula
+// needs (src/utils/oepe.js's oepeSeconds()). No existing loader has both: loadDaypartActivity
+// has the right OEPE columns but filters to breakfast/lunch/dinner hour_slots only
+// (ALL_DAYPART_HOUR_SLOTS, too narrow for a custom range); loadDailyActivityRange has every
+// hour_slot but is missing dt_untilstore/dt_heldtime entirely.
+export async function loadOepeHourlyActivity(startDate, endDate) {
+  if (!supabase) return [];
+  return _pagedParallel({
+    table: 'qsr_daily_activity',
+    select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt',
+    gteCol: 'dt', gteVal: startDate,
+    extraFilter: q => q.lte('dt', endDate),
+    orderCol: 'dt', ascending: false,
+    label: 'OEPE w/o parked hourly activity',
+  });
+}
+
 export async function loadDailyActivityRange(startDate, endDate) {
   if (!supabase) return [];
   // Paginate — 27 stores × ~25 hour slots exceeds the 1000-row cap after ~1.5 days,

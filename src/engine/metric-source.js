@@ -95,7 +95,11 @@ export const METRIC_SOURCES = {
   // Ordered after qsrActSummaryRows (the longer-standing, richer auto source) and before
   // laborRows (manual, last-resort) per the standing auto-before-manual rule.
   sales:     { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['lifelenzDarDailyRows', 'netSales'], ['laborRows', 'sales']] },
-  gc:        { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
+  // lifelenzDarDailyRows.transactions added 2026-11-18 — owner decision: use LifeLenz DAR for
+  // the metrics it covers as-is (practicality over a full per-field reconciliation project,
+  // unlike `sales` above which got the real measurement first). A UI disclaimer covers the
+  // resulting small variance against QSRSoft. See memory/finding-lifelenz-dar-schema-2026-11-17.md.
+  gc:        { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['lifelenzDarDailyRows', 'transactions'], ['laborRows', 'gc']] },
   // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
   // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
   // One-Pager GC/sales-to-plan opportunity ($ shortfall vs plan — bounded + sane).
@@ -158,7 +162,13 @@ export const METRIC_SOURCES = {
   // see comment above), so metricSumRatio can compute the true Σnum/Σden period rollup instead
   // of metricAvg's mean-of-daily. The derive.fn is also a same-shape fallback for a day with raw
   // DAR components but no precomputed source, mirroring tpph's existing pattern — srcs still win.
-  oepe:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']],
+  // lifelenzDarDailyRows.avgDtServiceTime added 2026-11-18 (owner decision, practicality —
+  // see the `gc` comment above). Unlike qsrActSummaryRows's oepe, this is NOT confirmed to
+  // exclude parked/held time the way #183's definition does — LifeLenz exposes a plain
+  // transaction-weighted daily average (lifelenz-dar-daily.js), not the raw dt_heldtime leg
+  // needed to subtract it. May run slightly high on days with real parked cars; covered by
+  // the same UI disclaimer, not a silent redefinition.
+  oepe:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['lifelenzDarDailyRows', 'avgDtServiceTime'], ['opsRows', 'oepe']],
                derive: { inputs: ['oepeNumSec', 'dtTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
@@ -167,7 +177,9 @@ export const METRIC_SOURCES = {
   // kvstTransCnt are the confirmed real numerator/denominator legs (see the comment on those
   // chains above for the scaling decision). srcs still win — derive is the Sum/Sum basis plus
   // a same-shape fallback for a day with raw DAR components but no precomputed source.
-  kvst:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']],
+  // lifelenzDarDailyRows.avgMfyServiceTime added 2026-11-18 (owner decision, practicality —
+  // see the `gc` comment above).
+  kvst:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['lifelenzDarDailyRows', 'avgMfyServiceTime'], ['opsRows', 'kvst']],
                derive: { inputs: ['kvstNumSec', 'kvstTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
@@ -185,7 +197,9 @@ export const METRIC_SOURCES = {
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
   // derive/kind:'ratio' (dispatch #153) — same rationale as oepe just above; r2pNumSec/
   // fcTransCnt are the confirmed real numerator/denominator legs.
-  r2p:       { mode: 'pos', direction: 'lower', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']],
+  // lifelenzDarDailyRows.avgFcServiceTime added 2026-11-18 (owner decision, practicality —
+  // see the `gc` comment above).
+  r2p:       { mode: 'pos', direction: 'lower', srcs: [['qsrActSummaryRows', 'r2p'], ['lifelenzDarDailyRows', 'avgFcServiceTime'], ['opsRows', 'r2p']],
                derive: { inputs: ['r2pNumSec', 'fcTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
   // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
@@ -293,7 +307,11 @@ export const METRIC_SOURCES = {
   // rather than here, so this derive stays at the exactly-2-inputs shape every `kind:'ratio'`
   // metric is required to have — `laborDollar` resolving null (stale, vetoed) flows through this
   // derive's own `d > 0` check exactly like any other missing numerator.
-  laborPct:  { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
+  // lifelenzDarDailyRows.labourPercentageOfSales added 2026-11-18 (owner decision, practicality
+  // — see the `gc` comment above). This one is an exact sales-weighted daily ratio, not an
+  // approximation (lifelenz-dar-daily.js), and is already converted from LifeLenz's wire
+  // percent to this app's fraction convention at the source.
+  laborPct:  { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'laborPct'], ['lifelenzDarDailyRows', 'labourPercentageOfSales'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
                derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null), kind: 'ratio' } },
   tpph:      { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
                     derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null), kind: 'ratio' } },
@@ -482,7 +500,11 @@ export const METRIC_SOURCES = {
   // ctrlRows.actHrs (supabase.js maps act_hrs) then the auto DAR rollup
   // (actual_punched_hours). laborRows is NOT in this chain — its loader emits only
   // loc/date/sales/laborPct/tpph/otHrs/otDollar, and the chain test caught that.
-  actHrs:         { mode: 'pos', srcs: [['qsrActSummaryRows', 'actHrs'], ['ctrlRows', 'actHrs']] },
+  // lifelenzDarDailyRows.actualPunchHours added 2026-11-18 (owner decision, practicality — see
+  // metric-source.js's `gc` comment above). Also feeds `tpph`'s derive (gc ÷ actHrs) below once
+  // both legs resolve from LifeLenz, without needing LifeLenz's own transactions_per_punch_hour
+  // field directly.
+  actHrs:         { mode: 'pos', srcs: [['qsrActSummaryRows', 'actHrs'], ['lifelenzDarDailyRows', 'actualPunchHours'], ['ctrlRows', 'actHrs']] },
 
   // Actual vs needed hours — a SIGNED HOUR DIFFERENCE (actual − needed), not a percent.
   // mode:'any' is load-bearing: 'pos' would discard every NEGATIVE reading, i.e. exactly

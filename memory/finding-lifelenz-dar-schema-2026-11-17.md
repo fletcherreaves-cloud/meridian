@@ -190,16 +190,62 @@ Not a data-quality problem with the field itself.
 
 **Transactions do NOT reconcile as cleanly** (measured same day/stores: LifeLenz total 27,981 vs
 QSRSoft 27,470, **+1.86%**, LifeLenz consistently HIGHER — opposite direction and larger
-magnitude than the sales comparison) — `gc`/`transactions` is explicitly NOT wired anywhere
-pending its own separate investigation. Labor hours (`actual_punch_hours`) and the OEPE
-parked-time-exclusion question are likewise untouched by this measurement.
+magnitude than the sales comparison) — flagged at the time as needing its own separate
+investigation before wiring. **Superseded by Phase 4 below** — the owner decided not to hold
+`gc` (or anything else) to that bar.
 
 **What shipped on this measurement:** `src/engine/lifelenz-dar-daily.js`'s
 `aggregateLifelenzDarDaily()` (pure, rolls LifeLenz's hourly rows up to one row per (loc,dt) —
 straight sums only, no rate math) → `ds.lifelenzDarDailyRows` (App.js) → added as a new `srcs`
 entry on `metric-source.js`'s `sales` chain, ordered after `qsrActSummaryRows` (the richer,
 longer-standing auto source) and before `laborRows` (manual, last resort), per the standing
-auto-before-manual rule. `gc`, `laborPct`, `oepe`, `kvst`, `r2p` remain untouched.
+auto-before-manual rule.
+
+## ✅ Phase 4 (2026-11-18) — owner decision: use LifeLenz DAR as-is for the rest, disclaimer instead of per-field proof
+
+Owner, verbatim: *"for practicality purposes, just use LifeLenz as is for the metrics and put a
+disclaimer somewhere that explains that the DAR we are reporting is from LifeLenz and may vary
+slightly from QSRSoft data if the same."* This is an explicit, deliberate product decision that
+overrides Phase 3's "transactions/OEPE need their own measurement first" caution — not a
+shortcut taken without sign-off.
+
+**Wired in, all via `lifelenzDarDailyRows` as an additional `srcs` fallback (auto-before-manual
+order preserved in every chain):**
+- `gc` ← `transactions` (straight sum)
+- `actHrs` ← `actualPunchHours` (straight sum; also feeds `tpph`'s existing `derive` — gc÷actHrs
+  — for free once both legs resolve from LifeLenz, no separate TPPH wiring needed)
+- `oepe` ← `avgDtServiceTime`, `r2p` ← `avgFcServiceTime`, `kvst` ← `avgMfyServiceTime`
+- `laborPct` ← `labourPercentageOfSales`
+
+**Still not "average an average" even under "use it as-is"** — `aggregateLifelenzDarDaily()`
+(`src/engine/lifelenz-dar-daily.js`) computes correct daily values, not naive means of the
+hourly readings:
+- `avgDtServiceTime`/`avgFcServiceTime`/`avgMfyServiceTime`: **transaction-weighted** daily
+  average (Σ(hourly_avg × hourly_transactions) ÷ Σhourly_transactions). This is an
+  *approximation* — LifeLenz exposes no per-station (DT/FC/MFY) transaction count to weight by
+  exactly, only overall hourly `transactions` — but it's a real weighted average, not a mean of
+  hours, and the approximation is exactly the kind of thing the new disclaimer covers.
+- `labourPercentageOfSales`: **sales-weighted** daily average, which is mathematically *exact*,
+  not an approximation — weighting a per-hour %-of-sales by that hour's sales recovers
+  Σ(laborDollar)÷Σ(sales) for the day exactly, since laborDollar_hour = pct_hour × sales_hour.
+  Also converted from LifeLenz's wire units (percent, e.g. 45.5) to this app's `laborPct`
+  convention (fraction, 0.455) at the source — getting this backwards would have shipped a
+  number 100× too large.
+
+**The disclaimer:** lives in the existing Metric Lineage / KPI-ⓘ transparency system
+(`src/engine/metric-provenance.js`), not a new UI element — that system already exists
+specifically so every metric is traceable to its source, and already auto-generates a
+provenance entry from `metric-source.js`'s `srcs` for anything not hand-curated. `autoProvenanceFor()`
+now appends `LIFELENZ_DAR_DISCLAIMER` to any metric whose `srcs` include `lifelenzDarDailyRows`
+(covers `gc`/`laborPct`/`actHrs`/`kvst` automatically); `oepe`/`r2p` are hand-curated entries
+(their formula text documents the real DT/FC-specific math) and got the same disclaimer sentence
+added by hand, referencing the same constant so the wording can't drift between the two paths.
+Surfaced everywhere the app already shows metric provenance: the KPI ⓘ tooltip and the Metric
+Lineage panel — no separate banner needed.
+Tests: `src/__tests__/lifelenz-dar-daily.test.js` (weighted-average correctness, including a
+case that would fail under naive averaging) and a new describe block in
+`src/__tests__/metric-provenance.test.js` asserting every one of the 7 wired metrics actually
+carries the disclaimer text and that an unrelated metric (`tpph`) does not (no false positives).
 
 ## ⚠️ Hiccups found while wiring this in (2026-11-17) — flagging per the owner's ask
 
