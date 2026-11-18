@@ -30,6 +30,16 @@ import { METRIC_SOURCES } from './metric-source.js';
 // metrics through (`engine/metric-source.js`) — so a metric added there (one line, per
 // that file's own standing rule) gets a Metric Lineage entry for free, not as a second
 // manual step someone has to remember. Curated entries always win on a key collision.
+// Owner decision 2026-11-18: wire LifeLenz DAR into sales/gc/oepe/r2p/kvst/laborPct/actHrs as a
+// real fallback source, as-is, rather than holding every field to the same field-by-field
+// real-vs-real reconciliation `sales` itself got (memory/finding-lifelenz-dar-schema-2026-11-17.md)
+// — practicality, covered by a disclaimer instead. This is that disclaimer: appended to the
+// auto-generated formula of any metric whose srcs include lifelenzDarDailyRows (below), AND
+// referenced verbatim by the two hand-curated entries (oepe/r2p) that also gained this fallback
+// — one string, so a future edit to the wording can't update one path and miss the other.
+const LIFELENZ_DAR_DISCLAIMER = 'LifeLenz\'s own Daily Activity Report is one of the fallback '
+  + 'sources for this metric; it may vary slightly from QSRSoft\'s figure for the same day when both exist.';
+
 const CURATED_PROVENANCE = {
   // ── Composed / derived (calculated from other metrics or raw fields) ──────────
   digitalGC:  { label: 'Digital App GC/day', system: 'QSRSoft', report: 'Digital App (mobileApp report)', table: 'digital_app_monthly', composed: true,
@@ -40,10 +50,12 @@ const CURATED_PROVENANCE = {
     formula: '3PO GC ÷ rest-days (Combined Vendors: DoorDash / GrubHub / PostMates / UberEats)', grain: 'monthly · per store' },
   oepe:       { label: 'OEPE (Order-to-Exit)', system: 'QSRSoft', report: 'Daily Activity (DAR) — drive-thru', table: 'qsr_daily_activity', composed: true,
     inputs: ['dt_untilserve', 'dt_untilstore', 'dt_heldtime', 'dt_trans_cnt'],
-    formula: 'OEPE (sec) = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt ÷ 1000, count-weighted across the day — excludes parked/held time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11). Manual Ops Report / emailed Glimpse win first; DAR fallback is cloud-fresh (current-day)', grain: 'daily · per store' },
+    formula: 'OEPE (sec) = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt ÷ 1000, count-weighted across the day — excludes parked/held time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11). Manual Ops Report / emailed Glimpse win first; DAR fallback is cloud-fresh (current-day). '
+      + `LifeLenz's own DT service time is a further fallback (owner decision 2026-11-18, practicality), NOT confirmed to exclude parked/held time the way the figure above does. ${LIFELENZ_DAR_DISCLAIMER}`, grain: 'daily · per store' },
   r2p:        { label: 'R2P (Receipt to Print)', system: 'QSRSoft', report: 'Daily Activity (DAR) — front counter', table: 'qsr_daily_activity', composed: true,
     inputs: ['fc_untilserve', 'fc_untilclosedrawer', 'fc_trans_cnt'],
-    formula: 'R2P (sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000, count-weighted across the day. Reconciled exactly to the DAR R2P column. Manual Ops Report wins first if uploaded; DAR fallback is cloud-fresh (current-day)', grain: 'daily · per store' },
+    formula: 'R2P (sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000, count-weighted across the day. Reconciled exactly to the DAR R2P column. Manual Ops Report wins first if uploaded; DAR fallback is cloud-fresh (current-day). '
+      + `LifeLenz's own front-counter service time is a further fallback (owner decision 2026-11-18, practicality). ${LIFELENZ_DAR_DISCLAIMER}`, grain: 'daily · per store' },
   tpph:       { label: 'TPPH (Transactions/Punched Hr)', system: 'QSRSoft', report: 'Daily Activity (DAR) — labor', table: 'qsr_daily_activity', composed: true,
     inputs: ['transactions', 'actual_punched_hours'],
     formula: 'TPPH = Σ transactions ÷ Σ actual_punched_hours (day). Uses the DAR true transactions count — NOT healthy+unhealthy (a KVS order-health count that understated it ~0.1 vs ~5 target). Matches the Shift Manager Summary transPerPunchedHour', grain: 'daily · per store' },
@@ -366,6 +378,7 @@ const DS_FIELD_META = {
   ctrlRows:          { system: 'QSRSoft', table: 'ctrl_rows', report: 'DAR / Controls (manual upload)' },
   auditRows:         { system: 'QSRSoft', table: 'audit_rows', report: 'Register Audit (manual upload)' },
   fobRows:           { system: 'QSRSoft', table: 'fob_rows', report: 'FOB / Food Cost Excel (manual upload)' },
+  lifelenzDarDailyRows: { system: 'LifeLenz', table: 'lifelenz_dar', report: 'LifeLenz Daily Activity Report (DAR)' },
 };
 
 // A small set of recurring QSR abbreviations this codebase already uses fluently (DT/OEPE/
@@ -426,6 +439,10 @@ function autoProvenanceFor(key, def) {
       + `— first source with a value for the day wins.`;
   } else {
     formula = `Direct read: ${_rawField(srcs[0][0], srcs[0][1])}.`;
+  }
+
+  if (srcs.some(([dsField]) => dsField === 'lifelenzDarDailyRows')) {
+    formula += ` ${LIFELENZ_DAR_DISCLAIMER}`;
   }
 
   return {

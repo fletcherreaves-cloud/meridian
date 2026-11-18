@@ -364,3 +364,37 @@ describe('METRIC_PROVENANCE — task #152 Swing Alarm + Traffic Divergence addit
     expect(METRIC_PROVENANCE.oppTotal).toBeTruthy();
   });
 });
+
+// Owner decision 2026-11-18: use LifeLenz DAR as a real fallback for sales/gc/oepe/r2p/kvst/
+// laborPct/actHrs as-is, covered by a disclaimer rather than a per-field reconciliation project.
+// This locks in that the disclaimer actually reaches every metric that reads from
+// lifelenzDarDailyRows — both the auto-generated path (gc/laborPct/actHrs/kvst) and the
+// hand-curated path (oepe/r2p, whose formula text is NOT auto-regenerated and so needed its
+// own manual edit) — so a future metric added with this fallback, or a curated entry someone
+// edits later, can't silently drop the caveat.
+describe('LifeLenz DAR fallback disclaimer (owner decision 2026-11-18)', () => {
+  const LIFELENZ_FALLBACK_KEYS = ['sales', 'gc', 'oepe', 'r2p', 'kvst', 'laborPct', 'actHrs'];
+
+  it('every metric whose METRIC_SOURCES chain reads lifelenzDarDailyRows carries the disclaimer', () => {
+    for (const key of LIFELENZ_FALLBACK_KEYS) {
+      const srcs = METRIC_SOURCES[key].srcs || [];
+      expect(srcs.some(([dsField]) => dsField === 'lifelenzDarDailyRows'), `${key}.srcs`).toBe(true);
+      expect(METRIC_PROVENANCE[key].formula, `${key}.formula`).toMatch(/vary slightly from QSRSoft/i);
+    }
+  });
+
+  it('a metric with no LifeLenz fallback does NOT carry the disclaimer (no false positives)', () => {
+    expect(METRIC_SOURCES.tpph.srcs.some(([dsField]) => dsField === 'lifelenzDarDailyRows')).toBe(false);
+    expect(METRIC_PROVENANCE.tpph.formula).not.toMatch(/vary slightly from QSRSoft/i);
+  });
+
+  it('lifelenzDarDailyRows resolves to LifeLenz in DS_FIELD_META, not a blank/Meridian-derived fallback', () => {
+    // gc/laborPct/actHrs are auto-generated and name their FIRST source's system as the
+    // metric's own `system` — all three lead with a QSRSoft source, so this instead checks the
+    // auto-generated formula names the real table (lifelenz_dar), proving DS_FIELD_META has a
+    // real entry rather than falling through to the dsField's own key as a fallback label.
+    expect(METRIC_PROVENANCE.gc.formula).toMatch(/lifelenz_dar\.transactions/);
+    expect(METRIC_PROVENANCE.laborPct.formula).toMatch(/lifelenz_dar\.labourPercentageOfSales/);
+    expect(METRIC_PROVENANCE.actHrs.formula).toMatch(/lifelenz_dar\.actualPunchHours/);
+  });
+});

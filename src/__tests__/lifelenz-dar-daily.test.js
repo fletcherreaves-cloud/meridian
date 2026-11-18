@@ -36,4 +36,44 @@ describe('aggregateLifelenzDarDaily', () => {
     expect(aggregateLifelenzDarDaily(null)).toEqual([]);
     expect(aggregateLifelenzDarDaily([{ loc: '0003708', netSales: 5 }, { dt: '2026-11-16', netSales: 5 }])).toEqual([]);
   });
+
+  it('weights service-time averages by transactions, not a naive mean of hours', () => {
+    const rows = [
+      // Low-volume hour with a long time, high-volume hour with a short time -- a naive
+      // (168+30)/2=99 mean would be wrong; the transaction-weighted true average is ~34.8.
+      { loc: '0003708', dt: '2026-11-16', netSales: 0, transactions: 2, avgDtServiceTime: 168 },
+      { loc: '0003708', dt: '2026-11-16', netSales: 0, transactions: 100, avgDtServiceTime: 30 },
+    ];
+    const out = aggregateLifelenzDarDaily(rows);
+    const expected = (168 * 2 + 30 * 100) / (2 + 100);
+    expect(out[0].avgDtServiceTime).toBeCloseTo(expected, 5);
+    expect(expected).toBeLessThan(99); // sanity: weighting pulls it toward the high-volume hour
+  });
+
+  it('ignores a null service-time reading instead of treating it as 0', () => {
+    const rows = [
+      { loc: '0003708', dt: '2026-11-16', transactions: 10, avgDtServiceTime: null },
+      { loc: '0003708', dt: '2026-11-16', transactions: 10, avgDtServiceTime: 40 },
+    ];
+    const out = aggregateLifelenzDarDaily(rows);
+    expect(out[0].avgDtServiceTime).toBe(40); // not (0+40)/2=20
+  });
+
+  it('is null for a service-time field when no hour has a usable reading', () => {
+    const out = aggregateLifelenzDarDaily([{ loc: '0003708', dt: '2026-11-16', transactions: 10 }]);
+    expect(out[0].avgDtServiceTime).toBeNull();
+    expect(out[0].avgFcServiceTime).toBeNull();
+    expect(out[0].avgMfyServiceTime).toBeNull();
+    expect(out[0].labourPercentageOfSales).toBeNull();
+  });
+
+  it('labourPercentageOfSales: sales-weighted average, converted from percent (45.5) to fraction (0.455)', () => {
+    const rows = [
+      { loc: '0003708', dt: '2026-11-16', netSales: 100, labourPercentageOfSales: 20 },  // $20 labor
+      { loc: '0003708', dt: '2026-11-16', netSales: 300, labourPercentageOfSales: 40 },  // $120 labor
+    ];
+    const out = aggregateLifelenzDarDaily(rows);
+    // True daily ratio: (20 + 120) / (100 + 300) = 0.35, as a FRACTION not a percent.
+    expect(out[0].labourPercentageOfSales).toBeCloseTo(0.35, 10);
+  });
 });
