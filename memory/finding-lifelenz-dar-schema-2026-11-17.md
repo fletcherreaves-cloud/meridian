@@ -129,32 +129,77 @@ re-checking, but that is a "down the road" owner-flagged contingency, not a pres
   (same lazy-load pattern as every sibling LifeLenz stream), backed by a new
   `loadLifeLenzDar()` in `src/lib/supabase.js`.
 - **Deliberately NOT done in this pass: wiring `lifelenzDarRows` into `metric-source.js`'s
-  DISPLAYED auto-first chains** (sales/gc/laborPct/oepe/kvst/r2p). Two real, specific gaps make
-  this unsafe to do blind, found while reading the exact chains that would need it:
-  - `sales` in this app resolves `qsrActSummaryRows.sales` → DAR's `product_sales` — and this
-    same file's `laborPct` derive comment already measured that `product_sales` reconciles with
-    crew labor $ while `net_sales` does NOT (~0.2–0.3pp systematic low bias). `lifelenz_dar` only
-    exposes `net_sales`. Wiring it in as `sales`'s next fallback would silently swap the basis on
-    every day the DAR stream is down, not just fill a gap.
+  DISPLAYED auto-first chains** (sales/gc/laborPct/oepe/kvst/r2p). Two real, specific gaps made
+  this unsafe to do blind, found while reading the exact chains that would need it — **the
+  `sales` one was WRONG and got corrected the same day; see Phase 3 below. The `oepe` one still
+  stands.**
+  - ~~`sales` in this app resolves `qsrActSummaryRows.sales` → DAR's `product_sales`... `net_sales`
+    does NOT [reconcile with product_sales]... Wiring it in as `sales`'s next fallback would
+    silently swap the basis.~~ **Refuted by measurement — see Phase 3.** This reasoning compared
+    the wrong pair of fields (QSRSoft's OWN product_sales-vs-net_sales gap, a real and permanent
+    one, is not the same question as "does LifeLenz's net_sales agree with QSRSoft's
+    product_sales").
   - `oepe` is specifically `(dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt` —
     i.e. DT service time with parked/held time EXCLUDED (dispatch #183). `lifelenz_dar`'s
     `avg_dt_service_time` is a plain average with no stated parked-time exclusion; conflating the
     two would quietly redefine OEPE for every panel that reads it. (This is the same distinction
-    the owner's own "DT OEPE w/o parked" report request turns on.)
-  - The 2026-11-05 finding's "near-perfect agreement on net sales/transactions/punch
-    hours/DT service time" was a real-value comparison for ONE store/day using a manually
-    captured token, before the real field names were even known — useful as a sanity check that
-    LifeLenz's numbers are in the right ballpark, not as proof any one LifeLenz field is a safe
-    drop-in replacement for a specifically-defined Meridian metric.
-  **Next step, concretely:** once the owner runs the schema SQL below and a few days of real
-  parallel data exist (QSRSoft's own DAR, `qsr_daily_activity_rollup`, is still live and current
-  as of this writing — see the hiccup below — so a same-day comparison is possible immediately,
-  not something to wait weeks for), run a real field-by-field reconciliation
-  (`lifelenz_dar.net_sales` vs `qsr_daily_activity_rollup.product_sales`/`dt_allNetSales`,
-  `avg_dt_service_time` vs the `oepe`/raw-leg chain, `actual_punch_hours` vs `qsrActSummaryRows.actHrs`,
-  `labour_percentage_of_sales` vs the derived `laborPct`) before adding any of them to
-  `METRIC_SOURCES`, the same discipline the 2026-08-16/08-27 labor% investigations above already
-  used on this exact pair of streams.
+    the owner's own "DT OEPE w/o parked" report request turns on.) **Still unresolved** — not
+    reachable by the kind of real-value measurement that settled `sales` below, since this is a
+    definitional gap (a field LifeLenz may simply not expose), not an offset to measure.
+
+## ✅ Phase 3 (2026-11-18) — real measurement: LifeLenz net_sales IS this app's `sales`; wired in
+
+Owner pushback, verbatim, on the Phase 2 framing above: *"I may have always misread this. There
+will always be a gap in Net Sales vs Prod Sales."* Correct, and it exposed a real mistake in
+Phase 2's reasoning: I had compared LifeLenz's `net_sales` against this app's `sales` metric
+(`qsrActSummaryRows.sales` = DAR's `product_sales`) and called it unreconciled, reasoning from
+the PRE-EXISTING, unrelated finding that QSRSoft's own `product_sales` and `net_sales` don't
+match each other. That unrelated gap is real and permanent — but it says nothing about whether
+LifeLenz's `net_sales` matches QSRSoft's `product_sales`, which is the actual question for this
+metric chain. I had never measured that pair directly.
+
+**Measured directly, 2026-11-18, 28 stores, full business day 2026-11-16** (owner ran the schema
+SQL; `lifelenz-dar-pull.mjs` backfilled the day via `LIFELENZ_DAR_START`/`END`; both sides pulled
+live via service-role REST, `lifelenz_dar.net_sales` summed hourly vs. `qsr_daily_activity.net_sales`
+AND `.product_sales` summed from the same table's hourly rows — QSRSoft's DAILY ROLLUP table,
+`qsr_daily_activity_rollup`, turns out to carry `product_sales` only, no `net_sales` column at
+all, so the hourly table is the only place to read QSRSoft's real net_sales for comparison):
+
+| Comparison | Aggregate diff (28 stores, 1 day) | Per-store spread |
+|---|---|---|
+| LifeLenz `net_sales` vs. QSRSoft `product_sales` | **-0.04%** ($271,160.80 vs $271,271.07) | -0.00% to +0.14% on 27/28 stores |
+| LifeLenz `net_sales` vs. QSRSoft's OWN `net_sales` | **-0.92%** ($271,160.80 vs $273,686.21) | -0.23% to -1.62%, every single store same direction |
+
+**Conclusion: LifeLenz's `net_sales` field is, functionally, the same quantity as QSRSoft's
+`product_sales` — not the same quantity as QSRSoft's own `net_sales`, despite the identical
+field name.** This is a vendor terminology collision, not an accounting discrepancy: whatever
+LifeLenz's backend actually sums into `net_sales` lines up almost exactly with QSRSoft's
+`productSales`/`prodSalesScrubbed`, while QSRSoft's own `allNetSales` is a distinctly different,
+consistently ~0.2-1.6% HIGHER number (the real, permanent product-vs-net gap the owner was
+pointing at — it's real, it just isn't the pair that matters here). Since this app's `sales`
+metric is explicitly DEFINED as the product_sales basis (see the pre-existing `laborPct` derive
+comment elsewhere in this file's history), LifeLenz's `net_sales` is a safe, same-basis fallback
+for it.
+
+One store (0044689) showed a -4.79%/-4.02% outlier in the first pass — investigated, not a
+reconciliation failure: several of its LifeLenz hours had `missing_actuals: true` (the API
+hadn't settled those hours yet at backfill time) and summed as 0. This is the documented,
+intentional self-healing behavior (`lifelenz-dar-pull.mjs`'s trailing-window re-pull corrects a
+`missingActuals` hour on a LATER run) — it just never got a second run in this one-shot backfill.
+Not a data-quality problem with the field itself.
+
+**Transactions do NOT reconcile as cleanly** (measured same day/stores: LifeLenz total 27,981 vs
+QSRSoft 27,470, **+1.86%**, LifeLenz consistently HIGHER — opposite direction and larger
+magnitude than the sales comparison) — `gc`/`transactions` is explicitly NOT wired anywhere
+pending its own separate investigation. Labor hours (`actual_punch_hours`) and the OEPE
+parked-time-exclusion question are likewise untouched by this measurement.
+
+**What shipped on this measurement:** `src/engine/lifelenz-dar-daily.js`'s
+`aggregateLifelenzDarDaily()` (pure, rolls LifeLenz's hourly rows up to one row per (loc,dt) —
+straight sums only, no rate math) → `ds.lifelenzDarDailyRows` (App.js) → added as a new `srcs`
+entry on `metric-source.js`'s `sales` chain, ordered after `qsrActSummaryRows` (the richer,
+longer-standing auto source) and before `laborRows` (manual, last resort), per the standing
+auto-before-manual rule. `gc`, `laborPct`, `oepe`, `kvst`, `r2p` remain untouched.
 
 ## ⚠️ Hiccups found while wiring this in (2026-11-17) — flagging per the owner's ask
 

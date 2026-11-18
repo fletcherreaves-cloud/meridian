@@ -85,7 +85,16 @@ const _dk = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10
 // srcs are tried in order; first source with a usable value for that day wins.
 export const METRIC_SOURCES = {
   // Sales / guests — sales & gc also flow through vs-ly.js for the matched-day comparison.
-  sales:     { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['laborRows', 'sales']] },
+  // lifelenzDarDailyRows.netSales added 2026-11-18 (real measurement, not a guess): LifeLenz's
+  // own net_sales reconciles against QSRSoft's product_sales to -0.04% in aggregate (28 stores,
+  // one full day, missing_actuals-settled hours only) — i.e. LifeLenz's "net sales" field is
+  // actually the same quantity this app's `sales` metric already means, despite the name
+  // mismatch across vendors (QSRSoft's OWN net_sales field is a different, consistently
+  // ~0.5-1.6% HIGHER number that does NOT reconcile the same way — see
+  // memory/finding-lifelenz-dar-schema-2026-11-17.md's Phase 3 section for the full table).
+  // Ordered after qsrActSummaryRows (the longer-standing, richer auto source) and before
+  // laborRows (manual, last-resort) per the standing auto-before-manual rule.
+  sales:     { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['lifelenzDarDailyRows', 'netSales'], ['laborRows', 'sales']] },
   gc:        { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
   // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
   // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
