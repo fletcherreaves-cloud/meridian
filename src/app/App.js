@@ -355,6 +355,7 @@ const RoleExplainerPanel = lazyPanel(() => import('../views/role-explainer.js').
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
+import { aggregateLifelenzDarDaily } from '../engine/lifelenz-dar-daily.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, loadLifeLenzAttendance, loadLifeLenzScheduleVariance, loadLifeLenzComplianceAudit, loadLifeLenzEmployeePerformance, loadLifeLenzPayrollReadiness, loadLifeLenzDar, loadHmeDtRows, loadSquadleChecklistRecords, saveLaborRows, loadLaborRows, loadLaborAnalysisDaily, loadLaborExceptionsDaily, mergeFreshRowsByLocDate, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, loadDaypartActivity, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, loadQsrSalesQuarterHour, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadUserSettings, loadOrgConfigs, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, loadCustomerComplaints, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, saveConversionEfficiency, saveOilEfficiency, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadCoachingCycleNotes, loadPayEvents, loadEmployeePayRateChanges, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides, loadQsrInventorySummaryFreshness, loadQsrOnHandFreshness, loadQsrVarianceStatFreshness, loadQsrSecurityEventsFreshness, logAppAccess, saveOrgConfig, loadOrgConfig, loadPanelOwnerGrants, grantPanelOwnership, revokePanelOwnership, notifyPanelOwners, loadAllNewStoreLaunchPlans, loadAllCommits } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
@@ -2404,11 +2405,17 @@ function App() {
         // and wire it in"), standing in for QSRSoft's own DAR pull (qsr_daily_activity_rollup)
         // while that one is paused for compliance reasons — see
         // scripts/lifelenz-dar-pull.mjs / supabase/schema-lifelenz-dar.sql /
-        // memory/finding-lifelenz-dar-schema-2026-11-17.md. Raw hourly rows only — NOT yet
-        // wired into metric-source.js's displayed auto-first chains (see that file's scope note).
+        // memory/finding-lifelenz-dar-schema-2026-11-17.md. Raw hourly rows (lifelenzDarRows)
+        // plus a per-(loc,dt) daily rollup (lifelenzDarDailyRows, aggregateLifelenzDarDaily())
+        // — the shape metric-source.js's 'sales' chain reads net_sales from (2026-11-18
+        // reconciliation: LifeLenz net_sales matches QSRSoft's product_sales almost exactly,
+        // -0.04% aggregate across 28 stores/1 day — see the memory file's Phase 3 section).
+        // transactions/labor hours are NOT wired into any metric chain yet — transactions alone
+        // showed a real +1.9% gap in that same measurement, not clean enough to trust blind.
         const ldRows = await loadLifeLenzDar();
         if(ldRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev, lifelenzDarRows: ldRows};});
+          const ldDaily = aggregateLifelenzDarDaily(ldRows);
+          setDs(prev=>{if(!prev)return prev;return {...prev, lifelenzDarRows: ldRows, lifelenzDarDailyRows: ldDaily};});
           console.log(`[Meridian] ✓ Loaded ${ldRows.length} LifeLenz DAR rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz DAR load failed:',e);} };

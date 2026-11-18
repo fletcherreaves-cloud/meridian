@@ -44,7 +44,7 @@ describe('METRIC_SOURCES — auto-first ordering', () => {
     const KNOWN_AUTO = [
       'qsrActSummaryRows', 'glimpseRows', 'cashRows', 'salesLedgerRows',
       'opsCashRows', 'opsLaborRows', 'opsServiceRows', 'opsSalesMixRows', 'schedRows',
-      'qsrFobRows',
+      'qsrFobRows', 'lifelenzDarDailyRows',
     ];
     const classified = new Set([...KNOWN_AUTO, ...MANUAL_FED_SOURCES]);
 
