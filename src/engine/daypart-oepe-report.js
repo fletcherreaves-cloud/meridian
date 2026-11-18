@@ -38,6 +38,7 @@
 // never average a day's or hour's already-divided OEPE value (CLAUDE.md's ROLLUP CAVEAT).
 import { oepeSeconds } from '../utils/oepe.js';
 import { DT_OEPE_WINDOW_COLS, dtOepeReportWindows } from './dt-oepe-report.js';
+import { unpadLoc } from '../constants.js';
 
 export const DAYPART_PRESETS = [
   { key: 'breakfast', label: 'Breakfast (7–9am)', test: slot => slot === '08:00' || slot === '09:00' },
@@ -95,7 +96,11 @@ export function computeDaypartOepeReport(rows, locs, asOf, segments = DAYPART_PR
 
   for (const r of (rows || [])) {
     if (!r || !r.loc || !r.dt || !r.hour_slot) continue;
-    const loc = String(r.loc).trim();
+    // Row loc is the raw qsr_daily_activity value, zero-padded to 7 chars ('0003708'); caller-
+    // supplied locs (from STORE_NAMES/LocationSelector, e.g. '3708') are not. Bucket and look up
+    // by the same canonical unpadded form (constants.js's unpadLoc) or every lookup below misses
+    // and the whole report renders blank -- this was a live production bug (dispatch 2026-11-18).
+    const loc = unpadLoc(r.loc);
     const dt = r.dt instanceof Date ? r.dt : new Date(String(r.dt) + 'T00:00:00');
     if (isNaN(dt)) continue;
     for (const seg of activeSegments) {
@@ -113,7 +118,7 @@ export function computeDaypartOepeReport(rows, locs, asOf, segments = DAYPART_PR
   }
 
   return (locs || []).map(loc => {
-    const locStr = String(loc).trim();
+    const locStr = unpadLoc(loc);
     const byLoc = acc.get(locStr);
     const segmentsOut = {};
     for (const seg of activeSegments) {

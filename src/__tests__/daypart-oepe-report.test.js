@@ -157,4 +157,23 @@ describe('computeDaypartOepeReport', () => {
     expect(result.map(r => r.loc)).toEqual(['3708', '5183']);
     for (const r of result) expect(Object.keys(r.segments).sort()).toEqual(DAYPART_PRESETS.map(s => s.key).sort());
   });
+
+  // Live production bug (dispatch 2026-11-18, "still blank" after the page-load fix merged):
+  // qsr_daily_activity rows carry loc zero-padded to 7 chars ('0003708'), but the view's caller
+  // (STORE_NAMES / LocationSelector) supplies the short, un-padded form ('3708'). Before this
+  // fix, rows were bucketed under the padded key and looked up under the short key -- acc.get()
+  // missed on every store, rendering every cell null with no error. Real rows, caller's real loc
+  // format: this is the exact mismatch, not a contrived one.
+  it('matches a zero-padded row loc (real qsr_daily_activity shape) against a short caller loc', () => {
+    const rows = [_row('0003708', new Date(2026, 10, 1), '18:00', 200, 10)];
+    const result = computeDaypartOepeReport(rows, ['3708'], asOf);
+    expect(result[0].segments.dinner.mtd).toBe(200);
+  });
+
+  it('also matches when the caller loc itself is zero-padded', () => {
+    const rows = [_row('3708', new Date(2026, 10, 1), '18:00', 200, 10)];
+    const result = computeDaypartOepeReport(rows, ['0003708'], asOf);
+    expect(result[0].loc).toBe('3708');
+    expect(result[0].segments.dinner.mtd).toBe(200);
+  });
 });
