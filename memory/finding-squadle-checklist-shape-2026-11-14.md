@@ -107,18 +107,18 @@ Measured directly against production (`squadle_checklist_records?select=loc,dt`)
 across 7 straight days (2026-11-12 → 2026-11-18)**, 20-21 distinct stores every single day — a
 stable, complete daily pull, no gaps, no single-day dips. Pull health itself is not a concern.
 
-**New observation, not yet explained: all 21 distinct locs across all 7 days are Oklahoma
-stores — zero Florida locs have ever appeared.** The 21 match the OK roster exactly (3708,
-5183, 5985, 6972, 10422, 10915, 11657, 13113, 18213, 20475, 24471, 29760, 31357, 32525, 33109,
-33222, 33704, 34222, 35064, 43380, 44689 — the same set `constants.js`'s `INV_ORG_COORDS`
-`state:'OK'` filter returns). The panel itself handles this honestly already (an empty-state
-message, "No Squadle checklist data loaded yet," never a false claim), so this is not a live
-bug — but it's not yet known WHY: either Florida's 7 stores genuinely don't use Squadle
-operationally (a real, OK-only tool today, nothing to fix), or they do and the pull/auth is
-silently missing them. **This is an owner question, not a code question** — only the owner
-knows whether Florida stores run Squadle day-to-day. If they do, the fix is almost certainly on
-the pull/auth side (`scripts/` — not inspected this pass, since the question needs answering
-first); if they don't, this line should move to a settled fact in `CLAUDE.md` or this file so a
-future pass doesn't re-measure the same question. Not escalated further this pass since it is
-squarely a product-knowledge question, not a technical one — flagging it here per this task's
-own standing practice rather than silently filing it away.
+**New observation at the time: all 21 distinct locs across all 7 days were Oklahoma stores —
+zero Florida locs had ever appeared.** The 21 matched the OK roster exactly (3708, 5183, 5985,
+6972, 10422, 10915, 11657, 13113, 18213, 20475, 24471, 29760, 31357, 32525, 33109, 33222, 33704,
+34222, 35064, 43380, 44689 — the same set `constants.js`'s `INV_ORG_COORDS` `state:'OK'` filter
+returns). The panel itself handled this honestly already (an empty-state message, "No Squadle
+checklist data loaded yet," never a false claim), so this was never a live bug.
+
+**✅ RESOLVED (owner, 2026-11-19) — not a gap, a different vendor.** Florida stores use **Jolt**,
+a separate third-party checklist platform, not Squadle at all — so `squadle_checklist_records`
+genuinely has no FL rows to pull, by design, not by pull failure. Owner's own framing: *"We will
+cross that bridge when I get a login"* — a Jolt integration is a real, deliberately deferred
+future item, blocked on the owner obtaining Jolt credentials, not something to build or guess at
+now. **Do not re-raise the "why no FL" question** — it's answered. If/when Jolt credentials exist,
+a Jolt pull is new work (new vendor, new API, likely its own `jolt_checklist_records` table and
+pull script), not an extension of the existing Squadle pull.
