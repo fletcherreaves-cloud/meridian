@@ -291,6 +291,35 @@ looking for displayed results with a real formula that Metric Lineage didn't yet
   direction, and a scope-guard asserting `oppTotal` already covers the FOB-excess shape (so a
   future pass doesn't re-add it under a new key).
 
+## Pass 6 (2026-11-19) — Promo/Discount ROI, RESOLVED
+
+Read `src/engine/promo-roi.js` end to end (the matched-day lift engine behind the Promo/Discount
+ROI panel and SAGE's `query_promo_roi` tool) — a genuinely new, substantial, previously
+undocumented formula. `metric-provenance.js` only had the raw cloud-leg column reads
+(`glPromoPct`/`glPromoAmt`); the actual ROI computation (lift %, give-away $, gross-profit Δ,
+verdict) had no entry at all.
+
+- Added one `promoDiscountRoi` entry to `CURATED_PROVENANCE` — modeled on `swingAlarm`'s "one
+  entity, several displayed facets" shape rather than one entry per column, since all of the
+  panel's displayed figures (Sales lift/day, Give-away/day, Gross-profit Δ/day, Lift %, Verdict —
+  both per-store and district) come out of the same single `matchedLift()` pass. Documents the
+  file's own central methodology in full: why the exogenous promo-calendar-tag split (org_events
+  `event_type:'promo'`, `orgSourced:true` only — the national OPNAD calendar) replaced two prior
+  same-day-intensity splits that each measured biased in opposite directions at a true effect of
+  zero (dispatch-113.md / `finding-promo-roi-denominator-bias-2026-08-23.md`), the real verdict
+  thresholds (pays/costs/neutral/n-a, the `$5`/`2%` floor), and the discount lever's honest
+  "no_signal_exists" limit — a structural data-model gap, not a temporary coverage hole the promo
+  lever's own "missing calendar data for the loaded window" case is.
+- **Deliberately left out `extraGcPerDay`** — the engine computes it but the panel never renders
+  it anywhere (confirmed by grep against `src/views/promo-roi.js`), and this task's own scope is
+  documented DISPLAYED results only, not every intermediate the engine happens to calculate.
+- 5 new tests (`src/__tests__/metric-provenance.test.js`'s `'task #152 Promo/Discount ROI
+  addition (2026-11-19)'` block): presence/composed/non-collision, the exogenous-split language
+  + dispatch-113 citation, the real verdict thresholds + district weighting, the discount
+  lever's no-signal-exists/structural-limit framing, and a negative assertion that
+  `extraGcPerDay` never appears (guards against a future edit silently promoting it to a
+  "displayed" field without updating this entry).
+
 ## Verification
 
 Full suite (`npm test -- --run`) and `npm run build` both pass clean (see commit for exact
