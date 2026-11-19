@@ -60,3 +60,35 @@ is under unusually heavy concurrent load (e.g., a second user logged in, or a sc
 running at the same moment) before assuming a regression. If it recurs even on Small, the next
 step is Medium, or reducing the app's own login-time query concurrency (`_MAX_INFLIGHT` in
 `src/lib/supabase.js`) — not yet needed, not attempted this pass.
+
+## Re-verification (2026-11-19) — tier has NOT reverted; this is a bigger burst on the same tier
+
+A new DATA INCOMPLETE incident hit **11 sources** (daypart activity, `squadle_checklist_records`,
+`smg_comments`, `customer_complaints`, `qsr_onhand`, `lifelenz_job_hours`,
+`lifelenz_compliance_audit`, `lifelenz_schedule`, `lifelenz_employee_performance`,
+`lifelenz_payroll_readiness`, `smg_voice_daypart`) — more than double the original 5. Owner's own
+first instinct, correctly, was to ask whether the fix had un-stuck itself: *"I thought we fixed
+this by upgrading."*
+
+Checked directly via the Supabase Management API (`GET
+/v1/projects/{ref}/billing/addons`, `SUPABASE_ACCESS_TOKEN`/`SUPABASE_PROJECT_REF` — a credential
+pair not used earlier in this session; the prior `max_connections`/`shared_buffers` measurement
+above came from Postgres settings directly, this one from the billing/addon record instead, so
+it's an independent corroboration, not a re-read of the same number) — `selected_addons` shows
+exactly one `compute_instance`, variant `ci_small` ("Small"): 2 cores, 2 GB RAM, 90 direct
+connections / 400 pooler connections. **This matches the 2026-11-15 fix exactly — the Small tier
+is still active, nothing reverted, nothing downgraded.**
+
+So this is not a regression of the known fix — it's the same tier meeting a larger burst than it
+saw on 2026-11-15 (11 starved sources vs. 5). Two straightforward next steps if this keeps
+recurring at this scale, neither attempted yet: **(1)** Medium tier (4 GB RAM, 120 direct / 600
+pooler connections) is the next lever, same Dashboard → Settings → Infrastructure path as the
+Micro→Small move; **(2)** independent of tier, the app's own login-burst concurrency
+(`_MAX_INFLIGHT` in `src/lib/supabase.js`) is the other side of the same ceiling — now ~21 cloud
+streams being requested in parallel at login (this list has grown since 2026-11-15) against a
+fixed connection budget. Neither was needed to answer the owner's question, which is answered:
+**the fix held; the ceiling just got a bigger wave than before.**
+
+The MacBook-vs-other-device question the owner raised in the same conversation is a dead end —
+this is a server-side connection-pool ceiling, not a client/device-side cause, so which device hit
+it is coincidental, not causal.
