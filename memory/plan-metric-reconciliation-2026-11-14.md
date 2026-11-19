@@ -320,6 +320,30 @@ verdict) had no entry at all.
   `extraGcPerDay` never appears (guards against a future edit silently promoting it to a
   "displayed" field without updating this entry).
 
+## Pass 7 (2026-11-19) — FOB Root-Cause Analysis (Recount Impact + FOB Consistency), RESOLVED
+
+Read `src/engine/fob-recount-analysis.js` end to end — the engine behind the "🔬 FOB Root-Cause
+Analysis" modal (`eom-dashboard.js`, Notes 41) and SAGE's `query_eom_recount_impact` tool.
+Genuinely undocumented: no "recount" hit anywhere in `metric-provenance.js` before this pass.
+
+- Added **two** entries (`fobRecountImpact`, `fobConsistency`), not one — unlike `swingAlarm`'s
+  "one entity, many facets" shape, this file's two outputs are genuinely separate displayed
+  tables with their own heading, own columns, and the panel's own already-written inline
+  methodology blurb (which the two new entries were checked word-for-word against, not
+  independently re-derived, so the two surfaces can't drift from day one):
+  - `fobRecountImpact` — Toward $0 / Away / Net / # recounted, from `recountImpactByStore()`:
+    per repeatedly-counted item, `eff = |base $ variance| − |final $ variance|`; positive sums
+    into `toward` (the recount helped), negative into `away` (it hurt); `net = toward − away`,
+    net-negative stores sorted first as the coaching list.
+  - `fobConsistency` — Mean FOB% / Std dev (pp) / # months, from `fobConsistencyByStore()`: each
+    store's MONTH-FINAL (last day of month) dollar-weighted FOB% per month, then the mean and
+    population std-dev across all months in scope. Explicitly noted that low sd measures
+    repeatability, not quality — a store can be consistently over target.
+- 4 new tests (`src/__tests__/metric-provenance.test.js`'s `'task #152 FOB Root-Cause Analysis
+  additions (2026-11-19)'` block): presence/composed/non-collision for both, the real
+  toward/away/base/final language, the dollar-weighted month-final formula + the
+  consistency-is-not-a-quality-verdict caveat, and both citing the same real engine file.
+
 ## Verification
 
 Full suite (`npm test -- --run`) and `npm run build` both pass clean (see commit for exact

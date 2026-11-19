@@ -401,6 +401,40 @@ describe('METRIC_PROVENANCE — task #152 Promo/Discount ROI addition (2026-11-1
   });
 });
 
+describe('METRIC_PROVENANCE — task #152 FOB Root-Cause Analysis additions (2026-11-19)', () => {
+  const keys = ['fobRecountImpact', 'fobConsistency'];
+
+  it('both are present, composed, Meridian-derived, with no METRIC_SOURCES collision', () => {
+    for (const key of keys) {
+      const p = METRIC_PROVENANCE[key];
+      expect(p, key).toBeTruthy();
+      expect(p.composed, `${key}.composed`).toBe(true);
+      expect(p.system, `${key}.system`).toBe('Meridian-derived');
+      expect(METRIC_SOURCES[key], `${key} should not collide with a real METRIC_SOURCES chain`).toBeUndefined();
+    }
+  });
+
+  it('fobRecountImpact names the real toward/away/net formula and the base-vs-final comparison', () => {
+    const f = METRIC_PROVENANCE.fobRecountImpact.formula;
+    expect(f).toMatch(/toward/);
+    expect(f).toMatch(/away/);
+    expect(f).toMatch(/base count/);
+    expect(f).toMatch(/final \(last\) count/);
+  });
+
+  it('fobConsistency names the dollar-weighted month-final formula and that low sd is not itself a verdict on level', () => {
+    const f = METRIC_PROVENANCE.fobConsistency.formula;
+    expect(f).toMatch(/MONTH-FINAL/);
+    expect(f).toMatch(/dollar-weighted/);
+    expect(f).toMatch(/consistently over target/);
+  });
+
+  it('both cite the same engine file, confirming they are the two real displayed tables, not a guess', () => {
+    expect(METRIC_PROVENANCE.fobRecountImpact.formula).toMatch(/fob-recount-analysis\.js/);
+    expect(METRIC_PROVENANCE.fobConsistency.formula).toMatch(/fob-recount-analysis\.js/);
+  });
+});
+
 // Owner decision 2026-11-18: use LifeLenz DAR as a real fallback for sales/gc/oepe/r2p/kvst/
 // laborPct/actHrs as-is, covered by a disclaimer rather than a per-field reconciliation project.
 // This locks in that the disclaimer actually reaches every metric that reads from
