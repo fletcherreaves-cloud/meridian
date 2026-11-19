@@ -1,5 +1,13 @@
 # Overnight Performance: Findings & Recommendations
 
+> ⚠️ **SUPERSEDED 2026-11-18 — this snapshot is the PRE-REWRITE state of the doc, kept for
+> history only.** The live doc at the same URL was renamed to "Night Shift Performance: Findings
+> & Recommendations", rescoped to **Oklahoma only** (the Florida section and the cross-state
+> section below were deleted from the live doc, not from this archive), and rebuilt around 6
+> named metrics (OEPE w/o parked, KVS, Sales, Labor %, GC, TPPH) per the owner's 2026-11-18
+> request. See `finding-night-shift-performance-ok-rewrite-2026-11-18.md` for what the doc says
+> now. This file's content below is **stale** — do not quote it as the doc's current findings.
+>
 > Saved to the repo 2026-11-17 so this analysis survives session cleanup — it originated as a
 > Claude Docs artifact, not a repo file. Source doc: https://claude.ai/artifact/JHP576VyiLd3NK3scTwLtD
 > (the later revision, with the GM/DM reframing and restyled visuals; see
