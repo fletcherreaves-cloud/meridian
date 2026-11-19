@@ -365,6 +365,42 @@ describe('METRIC_PROVENANCE — task #152 Swing Alarm + Traffic Divergence addit
   });
 });
 
+describe('METRIC_PROVENANCE — task #152 Promo/Discount ROI addition (2026-11-19)', () => {
+  it('is present, composed, Meridian-derived, with no METRIC_SOURCES collision', () => {
+    const p = METRIC_PROVENANCE.promoDiscountRoi;
+    expect(p).toBeTruthy();
+    expect(p.composed).toBe(true);
+    expect(p.system).toBe('Meridian-derived');
+    expect(METRIC_SOURCES.promoDiscountRoi).toBeUndefined();
+  });
+
+  it('names the exogenous-tag split and explicitly rules out a same-day intensity split', () => {
+    const f = METRIC_PROVENANCE.promoDiscountRoi.formula;
+    expect(f).toMatch(/exogenous/i);
+    expect(f).toMatch(/dispatch-113/);
+    expect(f).toMatch(/NOT by same-day/);
+  });
+
+  it('names the real verdict thresholds and the district day-count weighting', () => {
+    const f = METRIC_PROVENANCE.promoDiscountRoi.formula;
+    expect(f).toMatch(/grossProfitDelta/);
+    expect(f).toMatch(/\$5/);
+    expect(f).toMatch(/day-count-weighted/);
+  });
+
+  it("documents the discount lever's honest no-signal-exists limit, distinct from a mere coverage gap", () => {
+    const f = METRIC_PROVENANCE.promoDiscountRoi.formula;
+    expect(f).toMatch(/no_signal_exists/);
+    expect(f).toMatch(/structural limit/);
+  });
+
+  it('does not claim extraGcPerDay, which the engine computes but the panel never displays', () => {
+    const p = METRIC_PROVENANCE.promoDiscountRoi;
+    expect(p.inputs.join(' ')).not.toMatch(/extraGcPerDay/);
+    expect(p.formula).not.toMatch(/extraGcPerDay/);
+  });
+});
+
 // Owner decision 2026-11-18: use LifeLenz DAR as a real fallback for sales/gc/oepe/r2p/kvst/
 // laborPct/actHrs as-is, covered by a disclaimer rather than a per-field reconciliation project.
 // This locks in that the disclaimer actually reaches every metric that reads from
