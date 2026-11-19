@@ -100,3 +100,25 @@ scope-creep the Squadle build.
   If that reads as too strict once real managers are looking at this panel's completion numbers,
   it's a one-line change (`evaluateActionFlag`'s/`flattenSquadleRecord`'s `optional === true`
   check) — flagged here rather than silently guessed at.
+
+## Follow-up (2026-11-19) — one week of real history, pull is healthy; one open question
+
+Measured directly against production (`squadle_checklist_records?select=loc,dt`): **144 rows
+across 7 straight days (2026-11-12 → 2026-11-18)**, 20-21 distinct stores every single day — a
+stable, complete daily pull, no gaps, no single-day dips. Pull health itself is not a concern.
+
+**New observation, not yet explained: all 21 distinct locs across all 7 days are Oklahoma
+stores — zero Florida locs have ever appeared.** The 21 match the OK roster exactly (3708,
+5183, 5985, 6972, 10422, 10915, 11657, 13113, 18213, 20475, 24471, 29760, 31357, 32525, 33109,
+33222, 33704, 34222, 35064, 43380, 44689 — the same set `constants.js`'s `INV_ORG_COORDS`
+`state:'OK'` filter returns). The panel itself handles this honestly already (an empty-state
+message, "No Squadle checklist data loaded yet," never a false claim), so this is not a live
+bug — but it's not yet known WHY: either Florida's 7 stores genuinely don't use Squadle
+operationally (a real, OK-only tool today, nothing to fix), or they do and the pull/auth is
+silently missing them. **This is an owner question, not a code question** — only the owner
+knows whether Florida stores run Squadle day-to-day. If they do, the fix is almost certainly on
+the pull/auth side (`scripts/` — not inspected this pass, since the question needs answering
+first); if they don't, this line should move to a settled fact in `CLAUDE.md` or this file so a
+future pass doesn't re-measure the same question. Not escalated further this pass since it is
+squarely a product-knowledge question, not a technical one — flagging it here per this task's
+own standing practice rather than silently filing it away.
