@@ -49,6 +49,8 @@ jobs:
         run: node scripts/lifelenz-payroll-readiness-pull.mjs
         env:
           LIFELENZ_TOKEN:                           ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_USERNAME:                        ${{ secrets.LIFELENZ_USERNAME }}
+          LIFELENZ_PASSWORD:                        ${{ secrets.LIFELENZ_PASSWORD }}
           VITE_SUPABASE_URL:                         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY:                 ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           LIFELENZ_PAYROLL_READINESS_WINDOW_DAYS:    ${{ github.event.inputs.window_days || '60' }}

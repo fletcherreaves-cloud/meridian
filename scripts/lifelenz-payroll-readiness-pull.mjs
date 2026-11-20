@@ -23,12 +23,16 @@
 // finding doc above for the full measurement.
 //
 // Required env vars: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN
+// Optional: LIFELENZ_USERNAME/LIFELENZ_PASSWORD — SignIn fallback if LIFELENZ_TOKEN has
+// expired (see scripts/lib/lifelenz-auth.mjs, added 2026-11-20 so this self-heals instead of
+// going dark until someone manually refreshes the secret)
 // Optional: LIFELENZ_PAYROLL_READINESS_WINDOW_DAYS (default 60 — wide enough to span 2-4 pay
 // periods so a late-posting period still gets captured), LIFELENZ_DEBUG (1 = verbose)
 
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
+import { resolveLifelenzToken } from './lib/lifelenz-auth.mjs';
 
 const BASE          = 'https://us01-connect.lifelenz.com';
 const GRAPHQL_URL   = `${BASE}/manager/graphql`;
@@ -431,8 +435,7 @@ async function getLatestPayPeriodStart() {
 }
 
 async function main() {
-  const token = process.env.LIFELENZ_TOKEN;
-  if (!token) { console.error('[auth] LIFELENZ_TOKEN required (no Playwright fallback in this pull — matches the other Data Explorer pulls\' precedent).'); process.exit(1); }
+  const token = await resolveLifelenzToken(BUSINESS_ID);
 
   const latestPayPeriodStart = await getLatestPayPeriodStart();
   // Pay periods post less often than a daily shift log, so a looser freshness window than the
