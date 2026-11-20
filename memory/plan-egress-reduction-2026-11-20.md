@@ -99,3 +99,26 @@ Extend `LAZY_FILL_SOURCES`-style prioritization from 4 streams to the full eager
 ## 6. Suggested sequencing
 
 Start with Phase 0 now — it's pure measurement plus some safe constant changes, delivers real savings on the single biggest number found tonight, and needs nothing from the owner except a nod to proceed. Phase 1 is the next real project (bigger, still solo-doable, delivers the speed win). Phase 2 is the piece that actually bends the egress curve long-term, gated on the owner's DDL decision once Phase 0/1 surface exactly which tables need it.
+
+## 7. Phase 0 — done (2026-11-20, v5.834)
+
+`loadLifeLenzSchedule`'s default `daysBack` cut from 455 to 180 after auditing every `ds.schedRows`
+consumer (`insights.js`, `metric-source.js`'s schedRows-sourced chains, `smart-targets.js`/
+`projections.js`/`one-pager-data.js`'s `computeScheduleRollup` callers, `visit-readiness.js`,
+`schedule-retention.js`) — none needs more than its own selected date range; the one no-filter
+reader (Schedule Retention's `computeStoreWeeks`) degrades to "fewer weeks visible," not broken.
+Measured: 12,212 rows (~6.9MB uncompressed) → 5,292 rows (~57% cut), on every single login.
+`daysBack` stays overridable for a future caller that needs deeper history on demand. Full
+suite (8450 tests) + build both clean. See `src/app/changelog/5.834.js`.
+
+**Checked and deliberately left alone:** `loadEbosDaily(400)` — its 400-day window has a real,
+named rationale (`"so a full review year is covered on any device"`, tied to the Performance
+Review "Op Supplies vs Budget" feature, Notes 32 #4) unlike `lifelenz_schedule`'s vaguer "YoY +
+trends" comment. Not touched without the same kind of consumer audit this pass gave
+`lifelenz_schedule` — flagged here as the next Phase 0 candidate, not done yet.
+
+**Not yet audited:** the rest of the ~30 `_st*()` eager loaders in `App.js` (people reports,
+digital/delivery/shift-manager monthlies, forecast week cache, employee tenure, custom signals,
+etc.). `lifelenz_schedule` was the single largest number measured and the only one with prior
+"someone already tried to fix this once" history, so it went first. A second pass through the
+rest is real remaining work, not assumed-fine.
