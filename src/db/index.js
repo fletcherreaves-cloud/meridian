@@ -297,7 +297,12 @@ async function opfsSave(ds) {
       return { ...rest, _d };
     };
     const data = {
-      v: 3,
+      // v4 (egress Phase 1, 2026-11-20): added `sched` — the first cloud-first stream to join
+      // this snapshot. Previously this blob only ever carried manual-upload-era streams; see
+      // memory/plan-egress-reduction-2026-11-20.md Section 3/4. Additive-only: a v3 reader that
+      // never sees `sched` just gets `[]` for it (opfsLoad defaults the field), so this is not a
+      // breaking format change for anything that might still be running an older build.
+      v: 4,
       labor:   (ds.laborRows   || []).map(strip),
       ops:     (ds.opsRows     || []).map(strip),
       ctrl:    (ds.ctrlRows    || []).map(strip),
@@ -305,6 +310,10 @@ async function opfsSave(ds) {
       audit:   (ds.auditRows   || []).map(strip),
       peaks:   [...(ds.peaksSvcRows||[]),...(ds.peaksSalesRows||[])].map(strip),
       dar:     (ds.darRows     || []).map(strip),
+      // Cloud-first stream cache pilot — see opfsLoad()/loadDsFromIDB() for the read side and
+      // App.js's _stLifelenz for the write trigger (fires after every live refetch, not just on
+      // manual upload like every other field in this blob).
+      sched:   (ds.schedRows   || []).map(strip),
       pmix:    ds.pmixData || {},
       weather: (ds.weatherRows || []).map(strip),
       records: ds.records || {},
@@ -344,7 +353,7 @@ function opfsLoad() {
       setTimeout(() => {
         try {
           const raw = JSON.parse(new TextDecoder().decode(buf));
-          if (!raw || (raw.v !== 2 && raw.v !== 3)) { resolve(null); return; }
+          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4)) { resolve(null); return; }
           const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
           const restoreRecs = recs => {
             if (!recs || typeof recs !== 'object') return {};
@@ -367,6 +376,7 @@ function opfsLoad() {
             audit:      (raw.audit  ||[]).map(toRow),
             peaks:      (raw.peaks  ||[]).map(toRow),
             dar:        (raw.dar    ||[]).map(toRow),
+            sched:      (raw.sched  ||[]).map(toRow),
             pmix:       raw.pmix || {},
             weather:    (raw.weather||[]).map(toRow),
             records:    restoreRecs(raw.records),
@@ -440,6 +450,7 @@ async function loadDsFromIDB() {
     return {
       labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
       audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,
+      sched:      opfs.sched      || [],
       weather,
       pmix:       opfs.pmix,
       records:    opfs.records    || {},
