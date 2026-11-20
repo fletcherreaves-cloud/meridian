@@ -107,6 +107,11 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const wb = settings.weeksBack||6;
   const cut = new Date(Date.now()-wb*7*86400000);
   const locStr = String(loc||'').trim();
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20). Trigger here, not
+  // just inside autoFirstPeaks -- hasPeaks (below) reads ds.peaksSvcRows directly to decide
+  // whether to call autoFirstPeaks at all, same chicken-egg gating store-dash.js's PeaksTab has.
+  ensureLazyFill('peaksSvcRows');
+  ensureLazyFill('peaksSalesRows');
   // #178 item 2 (extended 2026-09-07, backlog `labor_rows` sweep): tpph/labor/ot were already
   // routed through metricSeries (auto-first across every stream) instead of a raw filter over
   // the manual Labor Excel upload's rows; sales + the 5 channel-mix percentages below them were
@@ -803,6 +808,13 @@ function computeRevenueOpportunity(store, ds, settings) {
 }
 
 function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, onClose}) {
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20) -- this panel's
+  // empty-state message below reads peaksSvcRows directly to tell "file loaded, store not in
+  // it" apart from "no file loaded at all", and computeRevenueOpportunity (just below) feeds
+  // engine/revenue-opportunity.js's computeDaypartErosion, which reads both. Trigger here so
+  // neither is stuck reading the pre-load state.
+  ensureLazyFill('peaksSvcRows');
+  ensureLazyFill('peaksSalesRows');
   const [selStore, setSelStore] = useState(stores[0]?.loc||'');
   const store = stores.find(s=>s.loc===selStore)||stores[0];
   const [modelDate, setModelDate] = useState(fmtDI(addD(new Date(),1)));

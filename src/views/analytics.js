@@ -1122,6 +1122,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig, 
     const id = setInterval(() => { if (!isLazyFillPending('auditRows')) { setAuditPending(false); clearInterval(id); } }, 300);
     return () => clearInterval(id);
   }, []);
+  // peaksSvcRows/peaksSalesRows added to the lazy-fill set alongside auditRows (egress audit,
+  // 2026-11-20) -- same reasoning: this panel's coverage tiles (peaksRows/peaksSalesRows below)
+  // report row COUNTS, and a naive 0 here would misreport "no data" during the brief window
+  // before the on-open trigger resolves.
+  uE(() => { ensureLazyFill('peaksSvcRows'); ensureLazyFill('peaksSalesRows'); }, []);
   // On-demand pull triggers (dispatch GitHub Actions via trigger-dar-sync fn)
   const [syncBusy, setSyncBusy] = uSt(null);   // workflow key currently dispatching
   const [syncNote, setSyncNote] = uSt(null);   // { wf, msg, err }

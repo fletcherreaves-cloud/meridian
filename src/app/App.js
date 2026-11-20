@@ -1004,9 +1004,19 @@ function App() {
   // number, so "since 2022" stays accurate as today's date moves forward.
   React.useEffect(() => {
     const daysBackTo = isoDate => Math.ceil((Date.now() - Date.parse(isoDate + 'T00:00:00')) / 86400000) + 5;
+    // peaksSvcRows/peaksSalesRows share ONE loadPeaksRows() fetch (same underlying
+    // `peaks_rows` table, split by `_peakSvc`) -- a module-level memoized promise so
+    // triggering either lazy source doesn't double-fetch when both resolve close together
+    // (e.g. graded-visits.js's contextData() reads both on the same render).
+    let _peaksRowsPromise = null;
+    const _loadPeaksOnce = () => _peaksRowsPromise || (_peaksRowsPromise = loadPeaksRows());
     configureLazyFill({
       setDs,
-      loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows, qsrSalesQtrHourRows: loadQsrSalesQuarterHour },
+      loaders: {
+        auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows, qsrSalesQtrHourRows: loadQsrSalesQuarterHour,
+        peaksSvcRows: () => _loadPeaksOnce().then(rows => rows.filter(r => r._peakSvc === true)),
+        peaksSalesRows: () => _loadPeaksOnce().then(rows => rows.filter(r => r._peakSvc === false)),
+      },
       wideLoaders: {
         pmixRows: () => loadPmixRows(400),
         laborRows: () => loadLaborRows(daysBackTo('2022-01-01')),
@@ -2480,16 +2490,20 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${res.count} QSRSoft FOB rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);} };
-      const _stPeaksRows = async () => {
-      try{
-        const sbPeaks=await loadPeaksRows();
-        if(sbPeaks.length>0){
-          const peaksSvcRows  =sbPeaks.filter(r=>r._peakSvc===true);
-          const peaksSalesRows=sbPeaks.filter(r=>r._peakSvc===false);
-          setDs(prev=>{if(!prev)return prev;return {...prev,peaksSvcRows,peaksSalesRows};});
-          console.log(`[Meridian] ✓ Loaded ${sbPeaks.length} peaks rows from Supabase`);
-        }
-      }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);} };
+      // _stPeaksRows removed (egress audit, 2026-11-20) — same shape as the #191 auditRows
+      // removal above. Measured: 15,612 rows fetched unconditionally on every login, ZERO of
+      // them less than 90 days old (last manual "3 Peaks" upload was 2026-06-30, ~4.7 months
+      // stale as of this writing) — the comment on `_stDaypartActivity` just below already
+      // documents that its auto replacement supersedes this upload's original purpose. The
+      // eager fetch was pure dead weight for every recency-filtered consumer (morning-brief.js's
+      // 8-week norms, revenue-opportunity.js's cut12) — their own date filters already return
+      // empty against data this old, so removing the eager load changes nothing for them.
+      // peaksSvcRows/peaksSalesRows are now LAZY_FILL_SOURCES (metric-source.js), sharing one
+      // loadPeaksRows() fetch (see configureLazyFill below) — a consumer that does a non-recency
+      // "any row for this loc/date" lookup (graded-visits.js, store-dash.js, store-analytics.js)
+      // calls ensureLazyFill() on open, same pattern as RegisterAuditTab's auditRows reference
+      // implementation, so a real historical lookup still resolves; it just isn't paid for by
+      // every login regardless of whether anything ever asks for it.
       // Auto-first "3 Peaks" daypart activity (dispatch 2026-11-16) — derives the same
       // breakfast/lunch/dinner OEPE/R2P/KVS/TPPH the manual peaks_rows upload was supposed to
       // keep current, from the already-pulled HOURLY qsr_daily_activity stream instead. Replaces
@@ -3017,7 +3031,6 @@ function App() {
         _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
         _timedStage('T2 complaintCases', _stComplaintCases, _t2Start),
         _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
-        _timedStage('T2 peaksRows', _stPeaksRows, _t2Start),
         _timedStage('T2 daypartActivity', _stDaypartActivity, _t2Start),
         _timedStage('T2 darRows', _stDarRows, _t2Start),
         _timedStage('T2 customSignals', _stCustomSignals, _t2Start),

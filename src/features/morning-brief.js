@@ -4,7 +4,7 @@ import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES,
 import { CONTACTS, STORE_STAFF, setLiveStoreStaff, setLiveContacts, getReportRecipients, seedGmAssignmentsFromStaff, setLiveGmAssignments, gmAssignments, whoIsGM } from '../engine/contact-directory.js';
 import { dKey, addD } from '../utils/date.js';
 import { supabase, loadLifeLenzShiftAssignments } from '../lib/supabase.js';
-import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
+import { metricDaily, metricAvg, metricSeries, ensureLazyFill } from '../engine/metric-source.js';
 import { autoFirstDaily } from '../engine/vs-ly.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -235,6 +235,11 @@ const MORNING_RULES = [
 // permanently null for such stores, silently disabling every correlation rule below that
 // depends on them (they all early-return on `!oepeNorm`).
 function computeStoreNorms(loc, ds){
+  // peaksSvcRows is lazy-loaded (egress audit, 2026-11-20) -- the manual "3 Peaks" upload
+  // stopped 2026-06-30, so this 8-week recency filter already returns empty against it today
+  // regardless; trigger defensively so this starts working again on its own, with no further
+  // code change, the day uploads resume.
+  ensureLazyFill('peaksSvcRows');
   // Ends on the last CLOSED business day, not literal "now" (signature #4) — low-risk on an
   // 8-week average, but this feeds oepeNorm/kvstNorm that every correlation rule below
   // depends on, and a known-contaminated window left in place is how this recurs again.
@@ -917,6 +922,11 @@ export function worstOepeSlot(dar, {minTrans = 3, worst = true} = {}){
 
 function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar, effectiveRole}){
   const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20) -- trigger once here
+  // so every downstream read in this panel (computeStoreNorms, getLatestBriefDate's date
+  // collection, the Data Source Coverage strip's "3 Peaks" count) eventually sees real rows
+  // instead of being permanently stuck on the pre-load empty array.
+  uE(()=>{ ensureLazyFill('peaksSvcRows'); ensureLazyFill('peaksSalesRows'); },[]);
   const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
   const [expanded, setExpanded] = uSt(null);
   const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN

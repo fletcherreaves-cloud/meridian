@@ -854,7 +854,14 @@ export const MANUAL_ONLY_METRICS = {
 // to the real resolved rows once the loader finishes, so streamFreshness()'s own
 // Array.isArray guard already treats "not yet loaded" as "no verdict," not "stale." See
 // stream-freshness.js's own comment on this key for the full correction.
-export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows', 'qsrSalesQtrHourRows']);
+// peaksSvcRows/peaksSalesRows added (egress audit, 2026-11-20) — the manual "3 Peaks" upload
+// stopped 2026-06-30 and its eager load (15,612 rows, 400 days back) was pure dead weight for
+// every recency-filtered consumer (their own date filters already return empty against data
+// this stale); a non-recency "any row for this loc/date" consumer (graded-visits.js, store-
+// dash.js, store-analytics.js) calls ensureLazyFill() on open instead, same reference pattern
+// auditRows already established. Both share one loadPeaksRows() fetch — see App.js's
+// configureLazyFill wiring.
+export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows', 'qsrSalesQtrHourRows', 'peaksSvcRows', 'peaksSalesRows']);
 
 let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }
 const _lazyState = {};                    // src -> 'pending' | 'loaded' | 'error'

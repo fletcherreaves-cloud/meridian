@@ -13,7 +13,7 @@ function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase(
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
-import { metricDaily, metricAvg, metricSeries } from './metric-source.js';
+import { metricDaily, metricAvg, metricSeries, ensureLazyFill } from './metric-source.js';
 import { weightedRecencyProjection, robustBaseline, median, mad, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
@@ -752,6 +752,12 @@ function calibrateWeather(ds) {
 // When 3 Peaks data is loaded, compute separate trend per daypart
 // Returns {breakfast, lunch, dinner} forecast objects or null
 function forecastDayparts(loc, date, ds, settings) {
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20) -- trigger here so
+  // this engine starts seeing real rows once they resolve instead of being stuck reading the
+  // pre-load empty array forever (ensureLazyFill is idempotent/cheap; safe to call from a hot
+  // per-store per-date path like this one).
+  ensureLazyFill('peaksSvcRows');
+  ensureLazyFill('peaksSalesRows');
   if(!ds||!ds.peaksSvcRows||!ds.peaksSvcRows.length) return null;
   if(!ds.peaksSalesRows||!ds.peaksSalesRows.length) return null;
 
