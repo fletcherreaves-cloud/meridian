@@ -26,7 +26,15 @@ name: Scheduled-Run Reliability Watchdog
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 min
+    # Dialed back from every 30 min to every 2h (owner request, 2026-11-20 — containing
+    # Supabase usage while on a tight budget: this is 21+ freshness-check queries every
+    # run, 48x/day -> 12x/day). Safe because every stream's staleness threshold is
+    # cadenceDays*24h + GRACE_HOURS (16h) -- the tightest real threshold anywhere in
+    # STREAMS is 40h (a daily stream). Checking every 2h instead of every 30 min adds at
+    # most ~90 minutes of extra detection latency against a 40+ hour bar -- a rounding
+    # error on the threshold, not a meaningful tradeoff. No stream has an intraday
+    # (<24h) cadence that this change could actually miss.
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       debug:
