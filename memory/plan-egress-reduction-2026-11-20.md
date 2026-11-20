@@ -122,3 +122,48 @@ digital/delivery/shift-manager monthlies, forecast week cache, employee tenure, 
 etc.). `lifelenz_schedule` was the single largest number measured and the only one with prior
 "someone already tried to fix this once" history, so it went first. A second pass through the
 rest is real remaining work, not assumed-fine.
+
+## 8. Second pass (2026-11-20) — eBOS confirmed-needed, job-hours no-op, two real findings
+
+Audited 4 more candidates the same way: `loadEbosDaily(400)`, `loadLifeLenzJobHours({weeksBack:60})`,
+`loadPeaksRows(400)`, `loadOpsRows(400)`/`loadCtrlRows(400)`.
+
+- **eBOS (400d): confirmed, not a guess this time.** `review-engine.js`'s Performance Review
+  genuinely buckets a full calendar year of eBOS by month (`byMonth`, no date filter) — the
+  comment's "full review year" claim checked out. Left alone.
+- **`lifelenz_job_hours` (60 weeks): no savings available today.** Measured 26 weeks back and 60
+  weeks back return the identical 7,752 rows — nothing in the table is older than 26 weeks yet
+  (a newer automated stream still growing into its own window). Not worth a PR until it has more
+  history to trim.
+- **`peaks_rows` (400d): real dead-weight finding, spun off as a suggested task
+  (`task_d8a2e97c`), not fixed here.** Measured **zero rows in the last 90 days** — this manual
+  upload has been stale since 2026-06-30 (the app's own code comment already says so) and is
+  fully superseded by the auto-pulled "3 Peaks" daypart stream next to it. Every login still
+  pulls all 15,612 rows of acknowledged-dead data. Needs a real consumer check before touching
+  (same rigor this file demands), not a blind cut — see the spawned task for the full brief.
+- **`ops_rows`/`ctrl_rows` (400d each): real lazy-fill candidate, NOT a window shrink — proposed,
+  not yet built.** Owner input that triggered the recheck: LifeLenz/QSRSoft data only goes back
+  ~3 years total (2 years at onboarding + ~1 since), and the production-winning sales model
+  (`forecast.js`'s `'simple'` trailing family, v4.532 — needs as little as 14 days, typically
+  ≤~90) doesn't need deep history at all, which raised the right question: does anything on the
+  *eager, every-login* path actually need these tables' full 400-day depth? Checked every real
+  consumer (not just the index-building noise in `pipeline.js`/`session.js`):
+  - `morning-brief.js` only does a same-day/nearby lookup — needs today's row, not history.
+  - `promo-roi.js` (Promo/Discount ROI panel) and `location-intel.js` (`liOpsCorr`'s TPPH/OEPE
+    correlation, which requires `tpphPairs.length>=20` for statistical validity) are the two
+    consumers that genuinely want deep history — and both are **deliberately-opened drill-down
+    panels, not the default home/login view.**
+  - That's the same shape `auditRows`/`wasteRows`/`pmixRows`/`qsrSalesQtrHourRows` already solved
+    via `metric-source.js`'s `LAZY_FILL_SOURCES`: default eager load stays short (enough for
+    `morning-brief.js`'s recent-context need), and Promo ROI / Location Intel trigger
+    `ensureLazyFill('ctrlRows')`/`ensureLazyFill('opsRows')` themselves when actually opened, the
+    same way `RegisterAuditTab` does today for `auditRows`.
+  - **Not done yet** — this is real Phase 1 wiring (new lazy-fill entries, two panel call sites,
+    verifying `promo-roi.js`'s bias-corrected DOW-matched methodology still gets its full window
+    when it actually runs), not a Phase-0 constant tweak, and it touches a hard-won analysis
+    engine (`promo-roi.js` — see `finding-promo-roi-denominator-bias-2026-08-23.md`). Proposed to
+    the owner; pending go-ahead before implementing.
+  - **This also validates Phase 2's framing independently**, via the owner's own observation:
+    pull deep history once (onboarding, or an explicit backfill) to establish trends/seasonality,
+    then stop re-pulling that depth on every regular visit and sync deltas instead. That's exactly
+    the watermark-cursor design already in Section 3-4 above, not a new direction.

@@ -94,9 +94,14 @@ describe('Game Plan — "Your Week So Far" tells a story (owner feedback 2026-11
 
 describe('Game Plan — week card fallback when the trailing week itself has no real days (owner feedback 2026-11-11: "that would imply a day or two of Nothing to show yet... Maybe a rolling monthly or last 7 days")', () => {
   it('rolls up a wider real lookback instead of a blank card when the trailing week has no sales', async () => {
+    // Relative to LAST_CLOSED, not absolute calendar dates -- -20/-15 days sit outside the
+    // trailing-7-day window (so `bars` comes back empty and the fallback branch fires) but
+    // inside the 30-day fallback lookback (FALLBACK_LOOKBACK_DAYS in game-plan.js), on whatever
+    // day this suite actually runs. Fixed absolute dates rolled out of the real window after a
+    // few weeks, exactly the flakiness the top-of-file comment already fixed for the other test.
     const wideWindowRows = [
-      { loc: '3708', date: new Date('2026-10-20T12:00:00'), sales: 9000, projSales: 10000, lySales: 8000 },
-      { loc: '3708', date: new Date('2026-10-25T12:00:00'), sales: 11000, projSales: 10000, lySales: 9000 },
+      { loc: '3708', date: addD(LAST_CLOSED, -20), sales: 9000, projSales: 10000, lySales: 8000 },
+      { loc: '3708', date: addD(LAST_CLOSED, -15), sales: 11000, projSales: 10000, lySales: 9000 },
     ];
     await mount({ ds: { loaded: true, qsrActSummaryRows: wideWindowRows } });
     const text = container.textContent;
