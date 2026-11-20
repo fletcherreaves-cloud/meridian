@@ -218,3 +218,58 @@ to need opposite verdicts once someone actually tried to build the smaller one �
 "wider than expected" consumer set was still small enough to wire safely; `ops_rows`/`ctrl_rows`'
 was not. The difference only showed up at implementation time, which is exactly why Section 8
 flagged both as "proposed, not yet built" rather than claiming either was done.
+
+## 10. Phase 1 — first pilot shipped (2026-11-20, v5.839): schedRows cache-first render
+
+Owner go-ahead: *"let's continue the egress phases."* Phase 0 (window right-sizing) was
+essentially done per Sections 7-9; this moves to Phase 1 ("cache-first render" — Section 3 item
+1 / Section 4's Phase 1 description). Rather than attempt the full "generalize OPFS to every
+cloud-first stream" rewrite in one pass — real risk on a live production app, and Section 9's own
+lesson that scope estimates are unreliable until implementation is actually attempted — this
+ships ONE real stream as a vertical slice: `lifelenz_schedule` (`ds.schedRows`), chosen because
+it's the best-measured table in this whole plan (Section 1a) and Phase 0 already worked on it.
+
+**What shipped:** `src/db/index.js`'s OPFS snapshot blob (previously manual-upload-era streams
+only — labor/ops/ctrl/fob/audit/peaks/dar/pmix/weather/glimpse/cash/exceptions/targets) gained a
+`sched` field, bumped v3→v4, backward-compatible (a v3 reader/writer missing the field just gets
+`[]`). `App.js`'s cold-start restore now seeds `ds.schedRows` from that cache in BOTH restore
+paths — the normal "manual-upload history exists" branch and the empty-shell "no manual-upload
+history at all" branch, so a cloud-only user (no legacy labor/ops/ctrl uploads) still gets the
+benefit, not just a legacy one. `_stLifelenz`'s existing live T2 fetch is unchanged in what it
+fetches or how it wins — it still runs every login and still overwrites the cached render once it
+lands — but now also writes its result back into the same OPFS snapshot, so each login's cache
+is the previous login's live data, not a one-time snapshot that goes stale forever.
+
+**What this does NOT do, stated plainly so it isn't mistaken for more than it is:**
+- **No delta sync.** `_stLifelenz` still does a full 180-day-window re-fetch every login (Phase
+  0's number, unchanged). This pilot only moves WHEN the user sees data (instantly, from cache)
+  relative to WHEN the network call completes — it does not reduce what that network call costs.
+  That reduction is still Phase 2, still not started, still gated on the owner's DDL-column
+  decision per Section 4.
+- **Not generalized.** Only `schedRows` joined the cache. The other ~29 eager `_st*()` loaders
+  in `App.js` are untouched. `ops_rows`/`ctrl_rows` specifically were already found NOT safely
+  convertible to even a lazy-fill treatment (Section 9) — they'd need the same kind of
+  stream-specific pilot this section describes, individually, and some (the dozen-plus raw
+  `ds.opsRows`/`ds.ctrlRows` readers) need the larger `metric-source.js` migration first regardless.
+- **Net egress effect of this pilot alone: ~zero.** The bytes crossing the wire per login are
+  unchanged — same 180-day window, same full re-fetch. The win is purely user-perceived speed
+  (the "offer a speed load improvement" half of the owner's original ask) and establishing the
+  cache-write plumbing that Phase 2's delta-sync will build on top of for this one stream.
+
+**Verification:** 5 new tests (`src/__tests__/dispatch-egress-phase1-sched-cache-2026-11-20.test.js`)
+exercise the REAL `opfsSave`→`loadDsFromIDB` round-trip — not a hand-built object shape — by
+faking the two browser-only primitives this mechanism depends on (`navigator.storage`'s OPFS
+directory handle, and the dedicated Worker), since this repo's test suite runs in Vitest's `node`
+environment where neither exists natively. Confirmed the test actually catches a regression (not
+just passing vacuously) by temporarily reverting the `sched` threading in `loadDsFromIDB` and
+watching it fail, per this file's own "measure it" standing rule. **This is also the first test
+coverage this OPFS-snapshot mechanism has ever had** — none of its other 9 cached fields
+(glimpse/cash/exceptions/pmix/records/monthlyTargets/etc.) had a direct round-trip test before
+this pass either; that gap is pre-existing and not fixed here beyond the one field this pilot
+touched. Full suite + build both clean.
+
+**Next candidate for the same per-stream pilot treatment, if the owner wants to keep going:**
+`qsrActSummaryRows` or `salesLedgerRows` — both named in Section 3/4 as cloud-first streams the
+current cache excludes, and both render on the default At-A-Glance home screen (unlike schedRows,
+which is mostly a Labor Tools/Projections dependency) — so a cache-first win there would be felt
+on every single login, not just on panels a user has to navigate into.

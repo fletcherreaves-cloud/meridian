@@ -1540,7 +1540,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -1558,6 +1558,12 @@ function App() {
           fobRows:fob, auditRows:audit,
           peaksSvcRows:peaks.filter(r=>r._peakSvc===true||(r._peakSvc==null&&r.oepe!==undefined)), peaksSalesRows:peaks.filter(r=>r._peakSvc===false||(r._peakSvc==null&&r.netSales!==undefined)),
           darRows:dar,
+          // Cache-first pilot (egress Phase 1, 2026-11-20): render last session's LifeLenz
+          // schedule rows immediately from the OPFS snapshot — _stLifelenz's live T2 fetch
+          // below still runs and replaces this with fresh data; this just removes the "blank
+          // until the network call lands" gap on a returning login. See
+          // memory/plan-egress-reduction-2026-11-20.md Section 3/4.
+          schedRows:sched||[],
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, allYearlyTargets:{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
@@ -1606,6 +1612,12 @@ function App() {
         setDs({
           laborRows:[], opsRows:[], ctrlRows:[], fobRows:[], auditRows:[],
           peaksSvcRows:[], peaksSalesRows:[], daypartActivityRows:[], darRows:[],
+          // Cache-first pilot (egress Phase 1, 2026-11-20): this branch means the LEGACY
+          // manual-upload streams (labor/ops/ctrl) have no cached data — but schedRows is a
+          // cloud-first stream cached independently of those, so a user with no manual-upload
+          // history still gets a non-blank Labor Tools/Projections render pending _stLifelenz's
+          // live refetch below. See memory/plan-egress-reduction-2026-11-20.md Section 3/4.
+          schedRows:sched||[],
           pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
           glimpseRows:[], cashRows:[], exceptionRows:[],
           targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
@@ -2316,7 +2328,16 @@ function App() {
       try{
         const res = await STREAM_RELOADERS.lifelenz();
         if(res){
-          setDs(prev => prev ? {...prev, ...res.patch} : prev);
+          setDs(prev => {
+            if (!prev) return prev;
+            const next = {...prev, ...res.patch};
+            // Cache-first pilot (egress Phase 1, 2026-11-20): persist the freshly-fetched
+            // schedule rows to the OPFS snapshot so the NEXT login renders them immediately
+            // instead of blanking until this same live fetch runs again. Fire-and-forget —
+            // a failed write just means next login falls back to today's behavior.
+            opfsSave(next).catch(()=>{});
+            return next;
+          });
           console.log(`[Meridian] ✓ Loaded ${res.count} LifeLenz schedule rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);} };
