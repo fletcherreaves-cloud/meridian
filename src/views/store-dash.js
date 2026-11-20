@@ -10,7 +10,7 @@ import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache 
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
 import { matchedVsLY, lyQuality } from '../engine/vs-ly.js';
-import { metricAvg, metricRate, metricSeries as _msSeries } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries as _msSeries, ensureLazyFill } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent, CauseLinks } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
@@ -220,6 +220,12 @@ function analyzePeaks(peakSvcRows, peakSalesRows, loc, wb, explicitRange) {
 // hasn't been pulled far enough back yet. analyzePeaks itself is untouched (same manual-only
 // behavior, same existing tests) so this is purely additive.
 function autoFirstPeaks(ds, loc, wb, explicitRange) {
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20) -- this is the
+  // single chokepoint every manual-fallback read of them already goes through, so triggering
+  // here (idempotent, metric-source.js dedupes repeat calls) covers every caller without
+  // hunting down each one individually.
+  ensureLazyFill('peaksSvcRows');
+  ensureLazyFill('peaksSalesRows');
   const manual = analyzePeaks(ds?.peaksSvcRows||[], ds?.peaksSalesRows||[], loc, wb, explicitRange);
   let range;
   if (explicitRange && explicitRange.s && explicitRange.e) {
@@ -1521,6 +1527,13 @@ const PEAKS_DATE_PRESETS = DATE_RANGE_PRESETS.filter(p => ['28d','60d','90d','18
 
 function PeaksTab({ds, loc, tgt, settings}) {
   const locStr = String(loc||'').trim();
+  // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20). Trigger here, not
+  // just inside autoFirstPeaks below -- hasPeaks (next line) reads ds.peaksSvcRows/
+  // peaksSalesRows directly to decide whether to call autoFirstPeaks at all, so gating the
+  // trigger behind that same check would never fire it for a store the (not-yet-loaded) manual
+  // data covers but the auto daypartActivityRows stream doesn't.
+  ensureLazyFill('peaksSvcRows');
+  ensureLazyFill('peaksSalesRows');
   // Debug: check what locs are in peaks data
   const allPeakLocs = ds&&ds.peaksSvcRows ? [...new Set(ds.peaksSvcRows.map(r=>String(r.loc||'').trim()))] : [];
   // Auto-first (dispatch 2026-11-16): hasPeaks now also covers ds.daypartActivityRows (the

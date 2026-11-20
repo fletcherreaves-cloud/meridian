@@ -167,3 +167,54 @@ Audited 4 more candidates the same way: `loadEbosDaily(400)`, `loadLifeLenzJobHo
     pull deep history once (onboarding, or an explicit backfill) to establish trends/seasonality,
     then stop re-pulling that depth on every regular visit and sync deltas instead. That's exactly
     the watermark-cursor design already in Section 3-4 above, not a new direction.
+
+## 9. Both items closed (2026-11-20, same day) — one shipped as scoped, one scoped wrong and corrected before writing code
+
+Owner go-ahead: *"Go ahead with the ops_rows/ctrl_rows lazy-fill, you can pick up peaks_rows as
+well."* Re-auditing `ops_rows`/`ctrl_rows` for the actual implementation (not just the earlier
+3-file consumer check) surfaced that Section 8's consumer list was **wrong by an order of
+magnitude** — caught before any code was touched, per this file's own "measure it, don't reason
+about it" rule, not after.
+
+**`ops_rows`/`ctrl_rows`: NOT implemented — the real consumer count invalidates the plan.**
+A full `grep -rn "ds\.opsRows\|ds\.ctrlRows"` across `src/` (not just the three files Section 8
+checked) finds at least a dozen direct readers, not two drill-down panels:
+`at-a-glance.js` (the **login-time default home screen** — `coreStreamsLoading`, `opsInRange`/
+`ctrlInRange` filtered by the toolbar's own user-selected date range, which can be widened to any
+historical window), `smart-targets.js` (`cutLY = mk(Math.max(104, lookbackWeeks))` — up to **104
+weeks / 2 years** back, deliberately wider than the current 400-day eager window already),
+`labor-tools.js` (user-selected date range, not a fixed recent window), `signals.js`, `graded-visits.js`
+(historical visit context, same non-recency "any row" shape `peaks_rows` has), `store-analytics.js`,
+`store-dash.js`, `scheduling.js`'s Opportunity Report, `sage.js`, `projections.js`. A safe two-tier
+lazy-fill (bounded default + `ensureLazyFillWide` for deep consumers, the pattern Section 8
+proposed) would need EVERY one of those call sites individually migrated and wired with its own
+trigger first — not two files, a dozen-plus, several of them on the app's own default view and its
+production Smart Targets model. Shipping the original 2-file-scoped plan as the 2026-11-20
+go-ahead actually authorized would have silently broken At-A-Glance or starved Smart Targets of
+up to 2 years of real history until each caller got its own fix — exactly the "would this
+verification still pass if reverted" trap this file's own Dev Rules section warns about, just
+pointed at a plan instead of a diff. **Verdict: left eager, unchanged.** The real fix is the
+standing CLAUDE.md rule these dozen+ files already violate — route through `metric-source.js`'s
+resolver instead of reading `ds.opsRows`/`ds.ctrlRows` raw — and that migration is its own
+separate, larger project, not a corollary of an egress pass. No PR for this half.
+
+**`peaks_rows`: implemented as a lazy-fill conversion, not a blind delete.** This one's consumer
+set (7 files) was ALSO wider than Section 8's "needs a real consumer check" flagged it to be, but
+every one of those 7 splits cleanly into two shapes: a pure-recency filter (`morning-brief.js`'s
+8-week norms, `revenue-opportunity.js`'s daypart erosion, `forecast.js`'s daypart engine) that
+already reads as empty against data stale since 2026-06-30 — zero behavior change either way —
+or a non-recency "does this loc have any row at all" check (`graded-visits.js`'s historical visit
+context, `store-dash.js`/`store-analytics.js`'s 3-Peaks tab + "file loaded but store not found"
+messaging) where outright deletion WOULD have been real, silent data loss for a historical lookup.
+That shape is small enough (one shared `loadPeaksRows()` fetch split by `_peakSvc`, triggered from
+each real call site) to do safely in one pass — unlike `ops_rows`/`ctrl_rows`'s dozen-plus raw
+readers, none of which can be migrated without first routing through `metric-source.js`.
+`peaksSvcRows`/`peaksSalesRows` now join `LAZY_FILL_SOURCES`; eager T2 stage removed from
+`App.js`. See `src/app/changelog/5.835.js` for the full consumer-by-consumer list. Full suite
+(8450 tests) + build both clean.
+
+**The lesson, stated plainly:** two findings that read as similarly-scoped in Section 8 turned out
+to need opposite verdicts once someone actually tried to build the smaller one — `peaks_rows`'
+"wider than expected" consumer set was still small enough to wire safely; `ops_rows`/`ctrl_rows`'
+was not. The difference only showed up at implementation time, which is exactly why Section 8
+flagged both as "proposed, not yet built" rather than claiming either was done.

@@ -4,6 +4,7 @@ import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, INV_ORG_COORD
 import { parseGradedVisit, parseEcoSureVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
+import { ensureLazyFill } from '../engine/metric-source.js';
 import { oepeSeconds } from '../utils/oepe.js';
 import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
@@ -202,6 +203,13 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const toggleContext = (v) => {
     if (expanded === v.id) { setExpanded(null); return; }
     setExpanded(v.id);
+    // peaksSvcRows/peaksSalesRows are lazy-loaded (egress audit, 2026-11-20) — contextData()
+    // below reads them directly, not through metric-source.js's resolver, so nothing else
+    // will ever trigger the fetch. ds updates in place once it resolves (configureLazyFill's
+    // setDs), which re-renders this panel with the real rows -- no local pending state needed,
+    // same brief flicker the old eager load already had while T2 was still in flight.
+    ensureLazyFill('peaksSvcRows');
+    ensureLazyFill('peaksSalesRows');
     if (!ctx[v.id]) {
       setCtx(c => ({ ...c, [v.id]: { loading: true } }));
       loadVisitDAR(v.store, v.dateISO).then(r => setCtx(c => ({ ...c, [v.id]: { loading: false, ...r } })))
