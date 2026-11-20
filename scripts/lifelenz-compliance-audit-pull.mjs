@@ -37,11 +37,15 @@
 // to diagnose either guess being wrong on the first real run.
 //
 // Required env vars: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN
+// Optional: LIFELENZ_USERNAME/LIFELENZ_PASSWORD — SignIn fallback if LIFELENZ_TOKEN has
+// expired (see scripts/lib/lifelenz-auth.mjs, added 2026-11-20 so this self-heals instead of
+// going dark until someone manually refreshes the secret)
 // Optional: LIFELENZ_COMPLIANCE_AUDIT_WINDOW_DAYS (default 14), LIFELENZ_DEBUG (1 = verbose)
 
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
+import { resolveLifelenzToken } from './lib/lifelenz-auth.mjs';
 
 const BASE          = 'https://us01-connect.lifelenz.com';
 const GRAPHQL_URL   = `${BASE}/manager/graphql`;
@@ -396,8 +400,7 @@ async function getLatestShiftDate() {
 }
 
 async function main() {
-  const token = process.env.LIFELENZ_TOKEN;
-  if (!token) { console.error('[auth] LIFELENZ_TOKEN required (no Playwright fallback in this pull — matches lifelenz-schedule-variance-pull.mjs/lifelenz-attendance-pull.mjs precedent).'); process.exit(1); }
+  const token = await resolveLifelenzToken(BUSINESS_ID);
 
   const latestShiftDate = await getLatestShiftDate();
   const fresh = checkFreshness(latestShiftDate, { warnAfterHours: 30, errorAfterHours: 54, label: 'lifelenz-compliance-audit-pull' });

@@ -61,6 +61,20 @@ metadata:
 
 Token lifespan: unknown, but observed to last multiple days. The sync only fails if the token fully expires — GraphQL returning 200 does NOT guarantee the report endpoint will accept it (report endpoint may be stricter).
 
+**✅ 2026-11-20 — manual refresh is no longer the only fix for 5 of the 7 LifeLenz pulls.**
+`lifelenz-pull.mjs` (Daily Sync) and `lifelenz-dar-pull.mjs` have always self-healed on token
+expiry via a direct GraphQL SignIn mutation against `idm.lifelenz.com` (no Playwright, no
+browser — LifeLenz's own SPA authenticates this way). The other 5 — Schedule Variance,
+Attendance, Compliance Audit, Payroll Readiness, Employee Performance — did NOT have this
+fallback and went dark for days on the 2026-11-16 token expiry (confirmed via each one's job
+log: `"Session expired"` / `INVALID_SESSION_ERROR` on every report). That fallback is now
+extracted to `scripts/lib/lifelenz-auth.mjs` (`resolveLifelenzToken()`) and wired into all 5, so
+**all 7 LifeLenz pulls now self-heal on a plain token expiry** — the manual steps above are
+needed only if `LIFELENZ_USERNAME`/`LIFELENZ_PASSWORD` themselves stop working too (an actual
+password change, not just the token rotating). Don't re-diagnose a future "LifeLenz pull is
+failing" report as "go refresh `LIFELENZ_TOKEN`" without first checking the job log for which
+failure mode it actually is.
+
 ---
 
 ## Inactivity Timeout (for manual/local use)

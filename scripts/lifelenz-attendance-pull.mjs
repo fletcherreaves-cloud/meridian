@@ -33,6 +33,9 @@
 // Required env vars:
 //   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN
 // Optional:
+//   LIFELENZ_USERNAME/LIFELENZ_PASSWORD — SignIn fallback if LIFELENZ_TOKEN has expired (see
+//     scripts/lib/lifelenz-auth.mjs, added 2026-11-20 so this self-heals instead of going dark
+//     until someone manually refreshes the secret)
 //   LIFELENZ_ATTENDANCE_WINDOW_DAYS — rolling window size (default: 28, matching the original
 //     hand-entered TA_DATA's ~4-week cadence)
 //   LIFELENZ_DEBUG — set to '1' to log raw per-store row counts
@@ -40,6 +43,7 @@
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
+import { resolveLifelenzToken } from './lib/lifelenz-auth.mjs';
 
 const BASE          = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID   = '01979dbf-a166-759b-8702-aba9915c578e';
@@ -213,8 +217,7 @@ async function upsertSummary(row) {
 }
 
 async function main() {
-  const token = process.env.LIFELENZ_TOKEN;
-  if (!token) { console.error('[auth] LIFELENZ_TOKEN required (no Playwright fallback in this pull yet).'); process.exit(1); }
+  const token = await resolveLifelenzToken(BUSINESS_ID);
 
   const latestPeriodEnd = await getLatestPeriodEnd();
   const fresh = checkFreshness(latestPeriodEnd, { warnAfterHours: 30, errorAfterHours: 54, label: 'lifelenz-attendance-pull' });
