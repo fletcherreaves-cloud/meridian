@@ -1258,8 +1258,22 @@ export async function saveLifeLenzSchedule(rows) {
   return { saved: upsert.length, errors: [] };
 }
 
-// Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
-export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}) {   // was 1825 (5yr) — egress guard, ~15 months back covers YoY + trends
+// Load LifeLenz schedule rows — defaults to last 180 days + next 30 days.
+// Egress guard, round 2 (owner request, 2026-11-20 — budget pressure on Supabase usage):
+// was 1825 (5yr) -> 455 (~15mo, "covers YoY + trends") -> 180. The 455-day cut was itself
+// never checked against real consumers; this one was. Audited every ds.schedRows reader
+// (src/engine/insights.js, metric-source.js's schedRows-sourced metric chains, smart-targets.js/
+// projections.js/one-pager-data.js's computeScheduleRollup callers, visit-readiness.js) -- none
+// filters or requires history older than the panel's own selected date range; the one genuine
+// "show me everything loaded" consumer is schedule-retention.js's computeStoreWeeks(rows, loc, {})
+// (an intentional no-filter call), which just shows fewer weeks with a shorter window, not a
+// broken feature. Measured live 2026-11-20: 455-day window = 12,212 rows (~6.9MB uncompressed
+// JSON) pulled on every single login; 180-day window = 5,292 rows (~57% cut). No test or
+// consumer pins the specific number -- this function's own `daysBack` param stays overridable
+// for any caller that later needs deeper history (e.g. a future "load more" affordance on
+// Schedule Retention) without changing this shared default. See
+// memory/plan-egress-reduction-2026-11-20.md for the full audit.
+export async function loadLifeLenzSchedule({ daysBack = 180, daysFwd = 30 } = {}) {
   if (!supabase) return [];
   const start = new Date(); start.setDate(start.getDate() - daysBack);
   const end   = new Date(); end.setDate(end.getDate() + daysFwd);
