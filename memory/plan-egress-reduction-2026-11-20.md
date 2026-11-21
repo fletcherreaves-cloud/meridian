@@ -314,3 +314,72 @@ resolver already falls through to `lifelenzDarDailyRows` on its own, cache or no
 **Next candidate, if the owner wants to keep going on cache-first pilots:** `salesLedgerRows`
 (Section 3/4's other named T1-adjacent candidate) — or, separately, actually fixing the LiveOps
 DAR→LifeLenz-fallback gap just found, which is unrelated to the egress plan but a real live bug.
+
+(The LiveOps DAR fallback was built and shipped separately, same session — v5.841, owner-approved
+scope — see `memory/finding-liveops-lifelenz-dar-fallback-2026-11-21.md`. Not part of this plan;
+noted here only because it was found while working this plan.)
+
+## 12. Phase 1 pilot #3 shipped (2026-11-21, v5.842): salesLedgerRows cache-first render +
+glimpse/cash write-back-gap fix
+
+Owner: *"You can keep going in the egress plan... Have a goodnight."* — continued autonomously
+per that sign-off. Picked `salesLedgerRows` (`sales_ledger_daily`), the last of the three
+`_stCloudEmailReport` T1 email-report streams (alongside glimpse/cash) named as a candidate in
+Section 11.
+
+**Same mechanism as pilots #1/#2**, no new wrinkle this time: confirmed by reading
+`loadSalesLedger`/`loadGlimpse`/`loadCash` (`src/lib/supabase.js`) that each emits exactly one
+Date field (`date`) — no `refreshedAt`-style second field like pilot #2's `qsrActSummaryRows` had
+— so the existing plain `strip()`/`toRow()` pair is sufficient; no dedicated wrapper needed.
+OPFS blob bumped v5→v6 (additive, same backward-compat guarantee as every prior bump).
+
+**Real bug found and fixed in the same pass, not a new feature:** `glimpseRows`/`cashRows` were
+already part of this OPFS blob — added back at the Dexie v7 "QSRSoft email report types"
+migration, long before this egress plan existed — but the cache-first *pattern* this plan has
+been applying (seed-on-restore + write-back-on-live-fetch) had only ever been half-built for
+them:
+1. **App.js's empty-shell restore branch** (a user with no legacy manual-upload history at all —
+   i.e. anyone who signed up after the cloud-first architecture, never touched a manual upload)
+   had `glimpseRows:[], cashRows:[], exceptionRows:[]` hardcoded — never actually read from the
+   cache, unlike every other stream in that same branch.
+2. **`_stCloudEmailReport`** (the live T1 fetch stage that loads glimpse/cash/salesLedger from
+   Supabase on every login) never called `opfsSave()` at all — only the OLD manual-upload code
+   path wrote to this cache.
+Combined, any user who has never done a manual upload has had an effectively **permanently-empty**
+glimpse/cash cache since Dexie v7 shipped — cold-starting from zero every single session, cache or
+no cache, for those two streams specifically. Fixed both: the empty-shell branch now seeds
+`glimpseRows:glimpse||[], cashRows:cash||[], salesLedgerRows:salesLedger||[]` from the cache same
+as the legacy-history branch already did, and `_stCloudEmailReport`'s `setDs` updater now captures
+`next` and fires `opfsSave(next).catch(()=>{})`, same fire-and-forget pattern as
+`_stLifelenz`/`_stQsrsoftActSummary`.
+
+**Verification:** 5 new tests
+(`src/__tests__/dispatch-egress-phase1-salesledger-cache-2026-11-21.test.js`) — the real
+`opfsSave`→`loadDsFromIDB` round-trip for `salesLedgerRows`, a joint round-trip proving
+glimpse/cash restore correctly too (confirming the write-back-gap fix actually reaches the cache,
+not just that it compiles), a v5-blob backward-compat check, and an unrecognized-version-number
+guard. Confirmed the salesLedgerRows test actually catches a regression: temporarily reverted the
+`opfsSave` write-back line to `salesLedger: []`, watched the restore test fail with the exact
+wrong empty array, restored the file, and re-ran clean before trusting it as real coverage — same
+discipline as pilots #1/#2. Full suite + build both clean.
+
+**Discovered along the way, noted but NOT fixed (same "measure it" rule — don't fix what wasn't
+asked, name it instead):** `loadDsFromIDB`'s OPFS branch only trusts the cached snapshot at all
+when `opfs.labor.length > 0` — its own sentinel for "this is a real, valid snapshot," inherited
+from the original manual-upload-era design where `laborRows` was the first (and for a long time,
+only) stream. A user whose ONLY cloud-first data is glimpse/cash/salesLedger/sched/qsrAct with
+zero `laborRows` ever (plausible for a brand-new cloud-only user who has genuinely never touched
+a manual upload) would fail that sentinel check and fall through to the empty IDB-migration cold
+path instead of using their real OPFS cache — a pre-existing design assumption this plan hasn't
+touched, surfaced by writing a direct test against it, not a regression this pilot introduced.
+Worth a dedicated look if/when Phase 1 finishes migrating every stream off the manual-upload-era
+assumptions, not scoped into this one.
+
+**Phase 1 cache-first-render status after pilot #3:** schedRows, qsrActSummaryRows, salesLedgerRows,
+glimpseRows, cashRows all now correctly cache-first (6 of the streams originally named in Section
+3/4, plus the two-stream glimpse/cash bonus fix). `exceptionRows` rides along with glimpse/cash in
+the same OPFS fields and `_stCloudEmailReport` call, so it was never actually broken the way
+glimpse/cash were — confirmed by this pilot's round-trip test covering it implicitly (it's part of
+the same `exceptions` OPFS field, unchanged this pass). No further named candidates remain from
+Section 3/4's original list — the next egress work is either Phase 2 (delta sync, gated on the
+owner's DDL decision) or a fresh sweep for any other T1/T2 stream not yet covered.
