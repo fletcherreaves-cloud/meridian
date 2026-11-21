@@ -1625,6 +1625,54 @@ export async function loadLifeLenzDar({ start, end, locs } = {}) {
   }));
 }
 
+// Converts a loadLifeLenzDar() hourly row's UTC start_time into qsr_daily_activity's own
+// hour_slot convention (CLAUDE.md: hour_slot = endQtrHourTime, e.g. "06:00" = the 5am-6am block;
+// the business day runs 4am-4am, so a 0-3am wall-clock hour's slot runs 25-28, not 1-4 -- matches
+// _currentHourSlot()'s own h<4 branch in signals.js). DST-aware via Intl (every store is
+// America/Chicago -- constants.js's INV_ORG_COORDS, no per-store variance to handle) rather than
+// a fixed UTC offset, and hourCycle is pinned per this repo's own standing Node-ICU-version
+// warning (CLAUDE.md Dev Rules -- an unpinned hour12:false already broke main once, same trap).
+function _lifelenzDarHourSlot(startTimeIso) {
+  const d = new Date(startTimeIso);
+  const centralHour = parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hourCycle: 'h23' }).format(d),
+    10
+  );
+  const slot = centralHour < 4 ? centralHour + 1 + 24 : centralHour + 1;
+  return String(slot).padStart(2, '0') + ':00';
+}
+
+// Converts LifeLenz DAR's coarser hourly shape into the qsr_daily_activity darRows shape Signals'
+// LiveOps tab (and Morning Brief/Curated Home, via the same shared darRows state) already expect
+// -- QSRSoft's own DAR pull has been schedule-paused since 2026-11-16 (compliance triage) with no
+// backfill since, so this is the stand-in loadDailyActivity()/App.js's refreshDar() fall back to
+// when the primary query comes back empty. Maps ONLY fields with a genuine equivalent (sales,
+// transactions, punched hours, and an EXACT algebraic recovery of labor $ from LifeLenz's own
+// already-computed labor% -- laborDollar = netSales x laborPct, not an approximation). Deliberately
+// does NOT fabricate the raw station components (dt_untilserve, fc_trans_cnt, healthy/unhealthy
+// counts, needed/scheduled hours, mean_sales, proj_sales_dollars) LifeLenz doesn't track at all --
+// those stay undefined, which every `>0`-guarded calculation already reading this shape
+// (signals.js's HourlyDetail/aggregateByStore) treats as "no data", not a fabricated zero. The
+// three fields LifeLenz DOES give as already-finished numbers (avg*ServiceTime -- a true
+// substitute for OEPE/R2P/KVS seconds, not a raw component to re-derive from) ride along as
+// `_ll*`-prefixed fields instead of being forced through dt_untilserve-shaped math; see
+// signals.js's own `_src === 'lifelenz'` branches for where those get used.
+export function lifelenzDarToDailyActivityShape(rows) {
+  return (rows || []).map(r => {
+    const laborDollars = (r.netSales != null && r.labourPercentageOfSales != null)
+      ? r.netSales * (r.labourPercentageOfSales / 100) : null;
+    return {
+      _src: 'lifelenz',
+      loc: r.loc, dt: r.dt, hour_slot: _lifelenzDarHourSlot(r.startTime),
+      product_sales: r.netSales, prod_sales_scrubbed: r.netSales,
+      trans_scrubbed: r.transactions,
+      actual_punched_hours: r.actualPunchHours,
+      actual_punched_dollars: laborDollars,
+      _llOepeSec: r.avgDtServiceTime, _llR2pSec: r.avgFcServiceTime, _llKvsSec: r.avgMfyServiceTime,
+    };
+  });
+}
+
 // ── Pay-rate history (owner request 2026-10-15) ───────────────────────────────────────────────
 // Both tables below are role-gated at the RLS layer (get_my_role() in ('admin','owner','do') --
 // schema-lifelenz-shift-pay.sql / schema-employee-pay-rate-changes.sql), NOT just by the app's
@@ -2983,7 +3031,16 @@ export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
     .order('loc')
     .order('hour_slot');
   if (error) { console.error('loadDailyActivity:', error); return []; }
-  return data || [];
+  if (data && data.length) return data;
+  // QSRSoft's DAR pull has been schedule-paused since 2026-11-16 (compliance triage) with no
+  // backfill since (CLAUDE.md) — qsr_daily_activity has nothing for any date after 2026-11-17, so
+  // an empty result here is now the expected case for any recent date, not a transient gap. Fall
+  // back to LifeLenz DAR, the vendor's own stand-in pull for exactly this (App.js's
+  // _stLifelenzDar), so Live Ops/Morning Brief/Curated Home aren't just silently blank for every
+  // day since the pause. See lifelenzDarToDailyActivityShape's own comment for what this can and
+  // can't honestly reconstruct.
+  const llRows = await loadLifeLenzDar({ start: target, end: target });
+  return lifelenzDarToDailyActivityShape(llRows);
 }
 
 // ── Daypart (3 Peaks) activity — auto-first replacement for the manual peaks_rows upload ──
