@@ -932,6 +932,42 @@ export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour })
 // loader+merge shape is directly testable without mounting all of App() — a revert of a single
 // stream's merge shape (e.g. darByLoc dropped from the dar patch) has to fail a real test here,
 // not just "the tiered startup stage still calls SOMETHING."
+// ── Watermark delta-sync merge (egress Phase 2 pilot #1, 2026-11-21) ──────────────────────────
+// localStorage, not the OPFS blob/React state — see _stLifelenz's own comment for why.
+export const LIFELENZ_SCHED_WATERMARK_KEY = 'mf_sched_watermark';
+// Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
+// unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
+// date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
+// `deltaRows` overwrite matching keys and add new ones; nothing is ever removed based on absence
+// from a delta response — lifelenz_schedule rows are never hard-deleted (grepped every pull
+// script and app write path; confirmed upsert-only), so "not in this delta" never means "deleted
+// server-side," only "unchanged since the watermark." The one thing that DOES need active
+// pruning is a row that's simply aged out of the current [daysBack,daysFwd] window since it was
+// cached — a merge-only scheme would otherwise grow the cache forever, so every call re-filters
+// to the current window regardless of whether this was a delta or a first-ever full sync.
+export function mergeLifelenzScheduleDelta(prevRows, deltaRows, { daysBack = 180, daysFwd = 30 } = {}) {
+  const keyOf = r => r.loc + '|' + r.date.toISOString().slice(0, 10);
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const winStart = new Date(); winStart.setDate(winStart.getDate() - daysBack); winStart.setHours(0,0,0,0);
+  const winEnd   = new Date(); winEnd.setDate(winEnd.getDate() + daysFwd);     winEnd.setHours(23,59,59,999);
+  return [...byKey.values()].filter(r => r.date >= winStart && r.date <= winEnd);
+}
+
+// Newest `updatedAt` across a batch of rows, never older than `since` — a pure function of the
+// SERVER's own timestamps (never the client clock), so clock skew between this device and
+// Supabase can't cause a row to be silently skipped on the next sync. An empty/all-null batch
+// (nothing changed) correctly returns `since` unchanged, which is already the correct behavior:
+// `updated_at > since` will just match nothing again next time until real new data arrives.
+export function maxUpdatedAt(rows, since) {
+  let max = since || null;
+  for (const r of (rows || [])) {
+    if (r.updatedAt && (!max || r.updatedAt > max)) max = r.updatedAt;
+  }
+  return max;
+}
+
 export const STREAM_RELOADERS = {
   lifelenz: async () => {
     const rows = await loadLifeLenzSchedule();
@@ -2349,20 +2385,43 @@ function App() {
       }catch(e){console.warn('[Meridian] SMG comments load failed:',e);} };
       const _stLifelenz = async () => {
       try{
-        const res = await STREAM_RELOADERS.lifelenz();
-        if(res){
-          setDs(prev => {
-            if (!prev) return prev;
-            const next = {...prev, ...res.patch};
-            // Cache-first pilot (egress Phase 1, 2026-11-20): persist the freshly-fetched
-            // schedule rows to the OPFS snapshot so the NEXT login renders them immediately
-            // instead of blanking until this same live fetch runs again. Fire-and-forget —
-            // a failed write just means next login falls back to today's behavior.
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${res.count} LifeLenz schedule rows from Supabase`);
+        // Watermark delta-sync (egress Phase 2 pilot #1, 2026-11-21): this startup stage does
+        // NOT use STREAM_RELOADERS.lifelenz (that stays a full-window fetch + full replace —
+        // correct for its OTHER caller, the Data Manager "↻ Sync" button, which is rare,
+        // user-initiated, and wants everything current right now). This stage runs on every
+        // single login, so it's the one that benefits from asking for only what changed.
+        // Watermark lives in localStorage (LIFELENZ_SCHED_WATERMARK_KEY), NOT threaded through
+        // the OPFS blob/React state — this stage and performFullIDBRestore's OPFS restore fire
+        // from two SEPARATE top-level useEffects with no guaranteed ordering between their async
+        // completions (confirmed the hard way: a first attempt tried reading the restored value
+        // via closure, assuming this stage was nested inside performFullIDBRestore — it isn't;
+        // ESLint's own no-undef check caught it immediately). localStorage is synchronous, has
+        // no such race, and is the same mechanism this file already uses for other small
+        // per-device bits (mf_beta_mode, mf_email_report_ids). Missing/null on a device's first
+        // run (or before this pilot existed), which makes loadLifeLenzSchedule's `since` a no-op
+        // and this behaves exactly like the old full fetch.
+        const since = localStorage.getItem(LIFELENZ_SCHED_WATERMARK_KEY) || null;
+        const rows = await loadLifeLenzSchedule({ since });
+        // `since && !rows.length` means a real prior sync found nothing new — cache is already
+        // current, nothing to merge or re-save. A first-ever sync (`!since`) always proceeds,
+        // even with 0 rows, so the window-prune in the merge still runs against a stale cache.
+        if (since && !rows.length) return;
+        const newWatermark = maxUpdatedAt(rows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_SCHED_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev => {
+          if (!prev) return prev;
+          const merged = mergeLifelenzScheduleDelta(prev.schedRows, rows, {});
+          const next = {...prev, schedRows: merged};
+          // Cache-first pilot (egress Phase 1, 2026-11-20): persist the freshly-fetched
+          // schedule rows to the OPFS snapshot so the NEXT login renders them immediately
+          // instead of blanking until this same live fetch runs again. Fire-and-forget —
+          // a failed write just means next login falls back to today's behavior.
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${rows.length} LifeLenz schedule rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);} };
       const _stLifelenzJobHours = async () => {
       try{

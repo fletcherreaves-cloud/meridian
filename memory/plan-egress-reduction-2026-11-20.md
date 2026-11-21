@@ -383,3 +383,182 @@ glimpse/cash were — confirmed by this pilot's round-trip test covering it impl
 the same `exceptions` OPFS field, unchanged this pass). No further named candidates remain from
 Section 3/4's original list — the next egress work is either Phase 2 (delta sync, gated on the
 owner's DDL decision) or a fresh sweep for any other T1/T2 stream not yet covered.
+
+## 13. Phase 2 column audit (2026-11-21) — corrects this plan's own framing, work still open
+
+Owner: "Keep going on egress Phase 2." Started the audit Section 4/5 called for — "which of the
+~30 eager tables already have a reliable modified-at column, which don't" — against the real
+schema, not a guess.
+
+**Methodology, and a real gap in it found along the way.** Mapped every one of App.js's 52 `_st*`
+eager-loader functions to the `load*()` function it calls (`src/lib/supabase.js`), then to that
+function's real table(s) — 56 distinct tables, not ~30; the plan's original estimate undercounted.
+First pass used service-role REST probes (`?select=<candidate_col>&limit=1` — a `42703` error means
+the column doesn't exist, a 200 means it does; same calibration CLAUDE.md's own "measure it" rule
+uses for anon-key reads) against 8 candidate names (`updated_at`/`refreshed_at`/`pulled_at`/
+`synced_at`/`modified_at`/`last_updated`/`ingested_at`/`created_at`). **Confirmed this service-role
+key is live and tenant-reading before trusting any result** (`lifelenz_schedule` → `content-range:
+0-0/17576`, a real row, real count — this session's own measurement, not inherited from an earlier
+one, per CLAUDE.md's standing per-session-credential warning).
+
+That first pass found 45/56 tables with one of the 8 candidate names, 7 with only `created_at`, and
+4 with none of the 8. **The 4-with-none result was itself wrong** — a plain `select=*` on each
+showed `employee_pay_rate_changes` has `detected_at` and `forecast_week_cache` has `computed_at`,
+neither in the candidate list. Same undercounting trap CLAUDE.md's QSRSoft-token paragraph already
+warns about ("a plain grep... undercounts") — a fixed candidate-name list can't see a domain-named
+column (`committed_at`, `entered_at`, `detected_at`, `computed_at` all turned up this session alone).
+**So table-level "does it have A column" is the wrong question; the real one, per-table, is "does
+its actual write path put a fresh timestamp on a row EVERY time that row changes."**
+
+**That second question has a sharp trap this schema doesn't guard against at all: zero tables in
+`supabase/*.sql` have an `updated_at`-bumping trigger (`moddatetime`, `trigger_set_timestamp`, or
+any hand-rolled equivalent — grepped every schema file, zero hits).** Every `updated_at timestamptz
+default now()` column in this schema only gets that default applied on INSERT; Postgres does NOT
+re-apply a column default on the UPDATE half of an upsert. So a column's mere existence proves
+nothing about whether a row that gets corrected (re-upserted into an existing `(loc,date)`-keyed
+row, the exact shape `lifelenz_schedule`/`qsr_*`/`sales_ledger_daily`/etc. all use) actually bumps
+it — that depends entirely on whether the WRITING CODE explicitly sets the column in its own
+upsert payload. Get this wrong and a watermark delta-sync would silently stop seeing corrections
+forever after the first pull, with no error, no mismatch anyone would notice until a number looked
+wrong weeks later — exactly the kind of bug CLAUDE.md's "measure it" rule exists to prevent, and
+far worse than Phase 1's cache-first risk (which only ever shows briefly-stale data, never
+silently-wrong-forever data).
+
+**Verified for the Phase 2 Pilot #1 candidate, `lifelenz_schedule`, by reading the real write path
+(not inferring from the column's existence):** `scripts/lifelenz-pull.mjs`'s row-builder explicitly
+sets `updated_at: new Date().toISOString()` on every row before `.upsert(rows, {onConflict:
+'loc,date'})` (line ~613) — real, write-time-bumped, safe to build a watermark on. Also spot-checked
+and confirmed safe: `forecast_commits.committed_at` (set explicitly in `saveCommit()`'s upsert
+payload, `src/lib/supabase.js`) and `forecast_week_cache.computed_at` (set explicitly in
+`scripts/forecast-week-precompute.mjs` before its upsert). The 7 `created_at`-only tables
+(`coaching_cycle_notes`, `pay_events`, `smg_comments`, `smg_voice_daypart`, `smg_voice_performance`,
+`custom_signals`, `staff_assignments`) split in two: `coaching_cycle_notes`/`pay_events`/
+`smg_comments` are genuinely insert-only (grepped every `.from(...)` call site across `src/` and
+`scripts/` — no `.update()`/`.upsert()` anywhere), so `created_at` alone is a safe watermark for
+them; `custom_signals`/`staff_assignments` DO have real `.update()` call sites and would need a
+real bumped-on-every-write column added — a genuine, narrow DDL candidate, not resolved yet.
+`org_event_exceptions` and `forecast_commits`'s companion `org_event_exceptions` table has no write
+path at all in the live app (confirmed by the existing 5.336 changelog note — not re-investigated
+from scratch), so it's moot either way.
+
+**So this plan's own framing in Sections 4/5 ("Phase 2... needs an owner DDL decision", "the column
+audit will very likely surface at least one table that needs a new column") was PARTLY backwards —
+not because no DDL is ever needed, but because the real blocking question was never "does a column
+exist," it was "is this specific write path trustworthy," which needs reading actual upsert code
+table by table, not a schema probe. Narrowed the open DDL candidates from "likely several of ~30"
+to two confirmed-mutable, timestamp-less tables (`custom_signals`, `staff_assignments`) — small
+enough to bring to the owner as a specific, named ask once (not yet done) — plus a standing
+per-table verification requirement for any future watermark pilot on a table not already checked
+above.
+
+**Status: audit methodology established and the Pilot #1 candidate (`lifelenz_schedule`) is
+write-path-verified safe. The remaining ~54 tables' write paths have NOT all been individually
+read for this same explicit-set-on-every-write guarantee** — this session verified a representative
+sample (schedule, forecast commits, forecast week cache, the three genuinely-insert-only
+`created_at` tables, the two confirmed-mutable gaps) but did not open every one of the 56 tables'
+pull scripts to confirm the same discipline. That full per-table verification, the actual
+watermark-delta-sync mechanism (per-stream last-synced cursor storage + `WHERE <col> > watermark`
+query + merge-not-replace into the cached array), and the two-table DDL ask are the next concrete
+pieces of Phase 2 — reported to the owner rather than silently built, since the delta-merge
+mechanism is the single most correctness-sensitive piece of this whole plan and deserves a nod on
+scope before code, same posture as the LiveOps DAR fix (Section 11) got.
+
+## 14. Phase 2 pilot #1 shipped (2026-11-21, v5.843): DDL + lifelenz_schedule delta-sync
+
+Owner: "Go ahead with both — add the DDL and build pilot #1," approving both items Section 13
+surfaced. Both done in the same pass.
+
+**DDL — `supabase/schema-egress-phase2-watermarks.sql`.** Added `updated_at timestamptz default
+now()` to `custom_signals` and `staff_assignments` (the two confirmed-mutable, timestamp-less
+tables), backfilled every existing row (`updated_at = created_at`, 19/19 and 10/10 at run time),
+and updated the three real `.update()` call sites
+(`updateCustomSignal`/`appendCustomSignalHistory`/`setPrimaryStaffAssignment`,
+`src/lib/supabase.js`) to set it explicitly on every write — this schema has zero triggers
+anywhere, so a column only stays trustworthy if the application code sets it.
+
+**Run mechanism — the Supabase Management API, not psql.** This agent session has no
+`DATABASE_URL`/direct Postgres connection (same as every prior session that checked), but it DOES
+have `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_REF`, and the Management API's
+`POST /v1/projects/{ref}/database/query` endpoint executes arbitrary SQL authenticated with that
+token. Confirmed live before trusting it (`select now(), current_database()` returned a real
+result, not an error), then used for the two `alter table` + two `update ... backfill` statements,
+then re-verified via `information_schema.columns` + a row-count read that both columns exist and
+every existing row has a non-null value. **This is a capability worth remembering for future DDL
+asks in this repo** — it may let a future session run an owner-approved migration directly
+instead of only ever writing a SQL file for the owner to run by hand. Still never run unattended
+or without an explicit, specific owner approval, per CLAUDE.md's standing DDL rule — the
+capability changes WHO can execute an approved change, not whether approval is still required
+first.
+
+**The delta-sync itself.** `_stLifelenz` (the T2 login-time startup stage) no longer calls
+`STREAM_RELOADERS.lifelenz()` (which stays exactly as it was — a full-window fetch + full
+replace, correct for its OTHER caller, the Data Manager "↻ Sync" button). It calls
+`loadLifeLenzSchedule({ since: watermark })` and merges the result into `prev.schedRows` via the
+new exported `mergeLifelenzScheduleDelta`/`maxUpdatedAt` helpers (`App.js`) instead of replacing
+the array outright.
+
+**Where the watermark lives — a real design error caught and fixed mid-build, not a clean first
+pass.** First attempt threaded it through the OPFS blob as a new `watermarks` field (bumping the
+version 6→7, exactly Phase 1's established pattern), assuming `_stLifelenz` ran nested inside
+`performFullIDBRestore()` and could read the destructured `watermarks` value by plain closure —
+the same assumption that made `sched`/`qsrAct`/etc. available to the Phase 1 pilots' own `_st*`
+stages. **That assumption was wrong, and `src/__tests__/src-no-undef.test.js` caught it
+immediately** (`'watermarks' is not defined` — a real ESLint no-undef failure, not a flake):
+`performFullIDBRestore()` is only 133 lines (it restores the OPFS cache into `ds` and returns),
+fired from its own `React.useEffect(()=>{ performFullIDBRestore(); },[])`. The tiered loader's
+`_st*` stages — `_stLifelenz` among them — live in a COMPLETELY SEPARATE top-level `useEffect`
+with no shared function scope and no guaranteed completion ordering between the two effects'
+async work. Reading `dsRef.current` (a ref some other code in this file already uses) would have
+worked but makes correctness depend on effect-commit timing between two independent effects —
+fragile and hard to reason about. **Fixed by storing the watermark in `localStorage`** under
+`mf_sched_watermark` (`App.js`'s exported `LIFELENZ_SCHED_WATERMARK_KEY`) instead — synchronous,
+no cross-effect race at all, and the same mechanism this file already uses for other small
+per-device bits (`mf_beta_mode`, `mf_email_report_ids`). The OPFS blob was reverted to exactly its
+pilot-#3 state (`db/index.js` back to `v: 6`, no `watermarks` field) — this pilot needed no OPFS
+schema change after all. **Lesson for any future cross-stage state in this tiered loader: don't
+assume two `_st*`-looking functions share a closure just because they're textually close in the
+file — check which `useEffect` actually encloses each one before designing around "it's already
+in scope."**
+
+**Design decisions, and why each one was checked against the real system rather than assumed:**
+- **Merge key** is `loc|YYYY-MM-DD`, both sides already normalized the same way by
+  `loadLifeLenzSchedule` (unpadded loc, date always built as `new Date(r.date + 'T12:00:00')`), so
+  re-deriving the ISO date string from either a cached or fresh row is collision-free.
+- **Deletions are a non-issue for this specific table** — grepped every pull script and app write
+  path for `lifelenz_schedule`; it is upsert-only, never hard-deleted. A merge-only scheme that
+  never removes a row based on its absence from a delta response would be WRONG for a table that
+  gets real deletes; it's correct here only because this one doesn't.
+- **Window pruning still runs on every call, delta or full**, so a row that's simply aged out of
+  the current `[daysBack,daysFwd]` bounds since it was cached gets dropped — otherwise a
+  merge-only scheme would grow the cache forever instead of tracking the window like a full fetch
+  naturally does.
+- **The watermark advances only from the SERVER's own `updated_at` values on returned rows, never
+  the client clock.** An empty delta (nothing changed) correctly leaves the watermark unchanged —
+  `updated_at > since` just matches nothing again next time, no special "advance anyway" logic
+  needed, and no clock-skew risk from ever comparing two different machines' clocks.
+- **The real egress win is ~79%, not ~100%, and the commit/changelog say so.** Read
+  `scripts/lifelenz-pull.mjs`'s actual defaults (`LIFELENZ_DAYS_BACK=30`/`DAYS_FWD=14`, daily
+  cron) before claiming any number — the pull script's own refresh window is narrower than the
+  client's 180/30 read window, so roughly the most-recent-44-days slice gets its `updated_at`
+  bumped on every single pull run regardless of whether the underlying numbers actually changed,
+  and a delta sync still re-fetches that slice every login. Only the ~79% of the window outside
+  that active zone genuinely stops being re-fetched once its `updated_at` stabilizes. Overclaiming
+  "near-zero egress" here would have been exactly the kind of unmeasured, load-bearing claim
+  CLAUDE.md's "measure it" rule and dispatch #89's own correction exist to prevent.
+
+**Verification:** 10 new tests
+(`src/__tests__/dispatch-egress-phase2-pilot1-watermark-sync-2026-11-21.test.js`) on the two pure
+functions — merge-overwrite-by-key, merge-add-new-key, empty-delta-is-a-no-op,
+aged-out-row-gets-pruned-even-with-an-empty-delta, distinct-stores-same-date-stay-distinct, and
+`maxUpdatedAt`'s never-regress/ignore-null/empty-batch-keeps-prior-watermark behavior. Confirmed
+the merge-key test actually catches a regression: temporarily collapsed the key to date-only
+(dropping the store), watched the "distinct stores, same date" test fail with the exact wrong
+collapsed count, restored, re-verified clean — same discipline as every prior pilot. Full suite +
+build both clean.
+
+**Status after this pilot:** Phase 2's only shipped delta-sync is `lifelenz_schedule`. The other
+45+ tables confirmed to have a reliable watermark column (Section 13) are NOT yet wired for
+delta-sync — each would need the same per-stream work (reading its real write path, choosing a
+merge key, deciding whether deletes are possible for that table) that this pilot did for
+schedule rows. That is the next candidate if the owner wants to keep going, not an automatic
+follow-on — Section 13's own caveat stands: a column's existence was never the hard part.

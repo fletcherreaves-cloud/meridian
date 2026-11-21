@@ -236,8 +236,12 @@ create table if not exists public.staff_assignments (
   end_date    date,                         -- advisory only — NOT consulted by resolution, see header
   notes       text,
   created_at  timestamptz default now(),
+  updated_at  timestamptz default now(),   -- egress Phase 2 (2026-11-21) — set explicitly on every write (setPrimaryStaffAssignment), no DB trigger bumps it
   constraint staff_assignments_unique unique (person, role, target_type, target, start_date)
 );
+-- Migration: add updated_at to existing table (safe to re-run) — supabase/schema-egress-phase2-watermarks.sql
+alter table public.staff_assignments add column if not exists updated_at timestamptz default now();
+update public.staff_assignments set updated_at = created_at where updated_at is null and created_at is not null;
 
 -- Dispatch #150 (2026-08-26): the ALTER path for the LIVE production table — `create table if
 -- not exists` above is a no-op once the table already exists (same lesson dispatch #148 already
@@ -1459,13 +1463,17 @@ create table if not exists public.custom_signals (
   y_condition  text not null default 'all',
   y_reference  text not null default 'median',
   created_by   uuid references auth.users(id),
-  created_at   timestamptz default now()
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()   -- egress Phase 2 (2026-11-21) — set explicitly on every write (updateCustomSignal/appendCustomSignalHistory), no DB trigger bumps it
 );
 -- Migration: add condition columns to existing table (safe to re-run)
 alter table public.custom_signals add column if not exists x_condition text not null default 'all';
 alter table public.custom_signals add column if not exists x_reference text not null default 'median';
 alter table public.custom_signals add column if not exists y_condition text not null default 'all';
 alter table public.custom_signals add column if not exists y_reference text not null default 'median';
+-- Migration: add updated_at to existing table (safe to re-run) — supabase/schema-egress-phase2-watermarks.sql
+alter table public.custom_signals add column if not exists updated_at timestamptz default now();
+update public.custom_signals set updated_at = created_at where updated_at is null and created_at is not null;
 alter table public.custom_signals enable row level security;
 drop policy if exists "custom_signals: public read" on public.custom_signals;
 create policy "custom_signals: public read"  on public.custom_signals for select using (true);

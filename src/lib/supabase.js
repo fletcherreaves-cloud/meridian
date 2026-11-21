@@ -1273,20 +1273,36 @@ export async function saveLifeLenzSchedule(rows) {
 // for any caller that later needs deeper history (e.g. a future "load more" affordance on
 // Schedule Retention) without changing this shared default. See
 // memory/plan-egress-reduction-2026-11-20.md for the full audit.
-export async function loadLifeLenzSchedule({ daysBack = 180, daysFwd = 30 } = {}) {
+// `since` (egress Phase 2 pilot #1, 2026-11-21): optional ISO watermark — when given, adds
+// `updated_at > since` so a caller that already has a cached window only pays for rows that
+// actually changed since its last sync, instead of re-fetching the whole window every time.
+// Omitting it (every pre-existing call site) is byte-identical to today's behavior — purely
+// additive. Verified safe to build a watermark on: scripts/lifelenz-pull.mjs's row-builder
+// explicitly sets `updated_at: new Date().toISOString()` on every row before upsert (this schema
+// has zero DB-level triggers anywhere that would do it automatically — see
+// memory/plan-egress-reduction-2026-11-20.md Section 13). Honest limit, not hidden: the pull
+// script's OWN refresh window (LIFELENZ_DAYS_BACK=30/DAYS_FWD=14, daily) is narrower than this
+// function's 180/30 read window, so the ~44 most-recent/near-future days get `updated_at` bumped
+// on every pull run regardless of real content change — a watermark sync still re-pulls those
+// every day, same as today. The real win is the other ~79% of the window (anything the pull
+// script's own refresh has already moved past): those rows' `updated_at` stabilizes after their
+// first pull and a watermark sync correctly stops re-fetching them at all.
+export async function loadLifeLenzSchedule({ daysBack = 180, daysFwd = 30, since } = {}) {
   if (!supabase) return [];
   const start = new Date(); start.setDate(start.getDate() - daysBack);
   const end   = new Date(); end.setDate(end.getDate() + daysFwd);
   const fmt  = d => d.toISOString().slice(0, 10);
   // Paginate — a multi-year window across 27 stores far exceeds Supabase's 1000-row
   // cap; a single select silently returned only the newest ~1000 rows (~37 days).
-  const data = await fetchAll((lo, hi) => supabase
-    .from('lifelenz_schedule')
-    .select('*')
-    .gte('date', fmt(start))
-    .lte('date', fmt(end))
-    .order('date', { ascending: false })
-    .range(lo, hi), 1000, 'lifelenz_schedule');
+  const data = await fetchAll((lo, hi) => {
+    let q = supabase
+      .from('lifelenz_schedule')
+      .select('*')
+      .gte('date', fmt(start))
+      .lte('date', fmt(end));
+    if (since) q = q.gt('updated_at', since);
+    return q.order('date', { ascending: false }).range(lo, hi);
+  }, 1000, 'lifelenz_schedule');
   if (!data || !data.length) return [];
   return data.map(r => ({
     // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary/
@@ -1325,6 +1341,10 @@ export async function loadLifeLenzSchedule({ daysBack = 180, daysFwd = 30 } = {}
     // Re-derive computed fields
     schVsIdealDiff: (r.crew_hrs > 0 && r.ideal_tot_hrs > 0) ? r.crew_hrs - (r.ideal_tot_hrs + r.sch_fix_hrs) : 0,
     schVLHOverNeed: (r.sch_vlh > 0 && r.need_vlh > 0) ? r.sch_vlh - r.need_vlh : 0,
+    // updatedAt (egress Phase 2 pilot #1): the raw DB timestamp, carried through so a watermark
+    // delta-sync caller can compute "max updated_at seen" without a second query. Not read by any
+    // existing metric chain — purely additive, same convention as pilot #2's `refreshedAt`.
+    updatedAt:     r.updated_at || null,
   }));
 }
 
@@ -2787,11 +2807,14 @@ export async function saveCustomSignal(def) {
   return data;
 }
 
+// updated_at (egress Phase 2, 2026-11-21): explicitly set on every write — this schema has no
+// trigger that bumps it automatically (see schema-egress-phase2-watermarks.sql), same convention
+// every other verified watermark column in this repo already follows.
 export async function updateCustomSignal(id, updates) {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('custom_signals')
-    .update(updates)
+    .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
@@ -2805,7 +2828,7 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
   const entry = { date: new Date().toISOString().slice(0,10), r, n };
   const history = [...(existingHistory || []), entry].slice(-50); // keep last 50
   await supabase.from('custom_signals').update({
-    latest_r: r, latest_n: n, history,
+    latest_r: r, latest_n: n, history, updated_at: new Date().toISOString(),
   }).eq('id', id);
 }
 
@@ -7907,13 +7930,15 @@ export async function deleteStaffAssignment({ person, role, target_type, target,
 // Marks exactly one row primary for a person: clears every other row's flag first (two
 // statements — a UI-level invariant, not a DB constraint; see schema.sql's own comment on
 // is_primary for why a partial unique index isn't worth it here), then sets the chosen one.
+// updated_at (egress Phase 2, 2026-11-21): explicitly set on both writes — this schema has no
+// trigger that bumps it automatically (see schema-egress-phase2-watermarks.sql).
 export async function setPrimaryStaffAssignment({ person, role, target_type, target, start }) {
   if (!supabase) return { error: 'Supabase not configured' };
   const { error: clearErr } = await supabase.from('staff_assignments')
-    .update({ is_primary: false }).eq('person', person);
+    .update({ is_primary: false, updated_at: new Date().toISOString() }).eq('person', person);
   if (clearErr) return { error: clearErr.message };
   const { error } = await supabase.from('staff_assignments')
-    .update({ is_primary: true }).match({ person, role, target_type, target, start_date: start });
+    .update({ is_primary: true, updated_at: new Date().toISOString() }).match({ person, role, target_type, target, start_date: start });
   return { error: error ? error.message : null };
 }
 
