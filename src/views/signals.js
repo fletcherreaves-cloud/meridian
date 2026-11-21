@@ -858,6 +858,13 @@ export function aggregateByStore(rows) {
       mfy1UntilServe: 0, mfy1TransCnt: 0, mfy2UntilServe: 0, mfy2TransCnt: 0,
       punched: 0, needed: 0, healthy: 0, unhealthy: 0,
       prodSalesScrubbed: 0, transScrubbed: 0, actualPunchedDollars: 0,
+      // LifeLenz-sourced days (QSRSoft's DAR pull schedule-paused since 2026-11-16 — see
+      // lifelenzDarToDailyActivityShape in lib/supabase.js) carry no raw dt_*/fc_*/mfy*_* station
+      // components to sum — only already-averaged per-hour service times (_llOepeSec/_llR2pSec/
+      // _llKvsSec). Transaction-weighted here, same methodology engine/lifelenz-dar-daily.js's
+      // aggregateLifelenzDarDaily() already uses for the daily metric-source.js chains, so this
+      // isn't a second way to average the same data.
+      llOepeW: 0, llOepeWt: 0, llR2pW: 0, llR2pWt: 0, llKvsW: 0, llKvsWt: 0,
       slots: [],
     };
     const s = map[r.loc];
@@ -880,6 +887,12 @@ export function aggregateByStore(rows) {
     s.prodSalesScrubbed    += r.prod_sales_scrubbed    || 0;
     s.transScrubbed        += r.trans_scrubbed         || 0;
     s.actualPunchedDollars += r.actual_punched_dollars || 0;
+    if (r._src === 'lifelenz') {
+      const trans = r.trans_scrubbed || 0;
+      if (r._llOepeSec != null && trans > 0) { s.llOepeW += r._llOepeSec * trans; s.llOepeWt += trans; }
+      if (r._llR2pSec  != null && trans > 0) { s.llR2pW  += r._llR2pSec  * trans; s.llR2pWt  += trans; }
+      if (r._llKvsSec  != null && trans > 0) { s.llKvsW  += r._llKvsSec  * trans; s.llKvsWt  += trans; }
+    }
     s.slots.push(r);
   }
   return Object.values(map).map(s => {
@@ -899,13 +912,20 @@ export function aggregateByStore(rows) {
       // reconciled oepeSeconds() (r=0.9958 against a real QSRSoft report). This REPLACES the old
       // dt_untilserve/dt_trans_cnt/1000 "DT TTL" formula, which never subtracted dt_untilstore or
       // dt_heldtime and so was reporting a different, longer metric under the "DT Speed" label.
-      oepeSec: oepeSeconds({ dt_untilserve: s.dtUntilServe, dt_untilstore: s.dtUntilStore, dt_heldtime: s.dtHeldTime, dt_trans_cnt: s.dtTransCnt }),
+      // Falls back to the LifeLenz transaction-weighted average (above) only when there are
+      // literally zero raw QSRSoft components to sum for this store's slots -- a day/store mix
+      // of real QSRSoft hours and LifeLenz-fallback hours still prefers the real components.
+      oepeSec: s.dtTransCnt > 0
+        ? oepeSeconds({ dt_untilserve: s.dtUntilServe, dt_untilstore: s.dtUntilStore, dt_heldtime: s.dtHeldTime, dt_trans_cnt: s.dtTransCnt })
+        : (s.llOepeWt > 0 ? s.llOepeW / s.llOepeWt : null),
       // R2P (Receipt-to-Present, Front Counter) -- QSRSoft's own formula
       // (memory/project-qsrsoft-dar-columns.md): (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt.
-      r2pSec: s.fcTransCnt > 0 ? ((s.fcUntilServe - s.fcUntilClosedDrawer) / s.fcTransCnt / 1000) : null,
+      r2pSec: s.fcTransCnt > 0
+        ? ((s.fcUntilServe - s.fcUntilClosedDrawer) / s.fcTransCnt / 1000)
+        : (s.llR2pWt > 0 ? s.llR2pW / s.llR2pWt : null),
       // KVS Time Per GC (Kitchen/MFY) -- both prep-table sides summed, divided once; mirrors
       // dt-speedofservice.js's own (already-correct) Kitchen station.
-      kvsSec: mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : null,
+      kvsSec: mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : (s.llKvsWt > 0 ? s.llKvsW / s.llKvsWt : null),
       // DT Pull Forward % ("DT Parked %") -- cars held/parked as a % of DT transactions.
       parkPct: s.dtTransCnt > 0 ? (s.dtCarsHeld / s.dtTransCnt * 100) : null,
       // Punch Labor % -- cost-based ($ labor ÷ product sales). Deliberately a SEPARATE field from
@@ -975,9 +995,13 @@ function HourlyDetail({ slots, storeKey, date }) {
   const hdr = { ...cellStyle, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
   const lbl = { ...cellStyle, textAlign: 'left', color: muted };
   const truncated = isToday && slots.length > sorted.length;
+  const hasLifelenz = sorted.some(r => r._src === 'lifelenz');
   return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}` } },
     truncated && h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6 } },
       'Only hours that have happened so far today are shown — later hours aren\'t data gaps, they just haven\'t occurred yet.'),
+    hasLifelenz && h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6 } },
+      'QSRSoft\'s own DAR pull has been paused since 2026-11-16 — these hours are sourced from LifeLenz DAR instead. ' +
+      'Product Sales, OEPE, R2P, KVS, Labor %, and TPPH are real; vs Mean, DT Parked%, Punch/Need, Gap vs Need/Sched, and 2nd Side Usage aren\'t tracked by LifeLenz and show as "—".'),
     h('div', { style: { overflowX: 'auto' } },
     h('table', { style: { width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 11 } },
       h('thead', null,
@@ -999,12 +1023,17 @@ function HourlyDetail({ slots, storeKey, date }) {
       ),
       h('tbody', null,
         sorted.map(r => {
+          const isLL = r._src === 'lifelenz';
           const pace = r.mean_sales > 0 ? (r.product_sales / r.mean_sales * 100) : null;
-          const oepe = oepeSeconds(r);
-          const r2p  = r.fc_trans_cnt > 0 ? ((r.fc_untilserve - r.fc_untilclosedrawer) / r.fc_trans_cnt / 1000) : null;
+          // LifeLenz DAR gives OEPE/R2P/KVS as already-finished per-hour averages, not the raw
+          // station components (dt_untilserve/fc_trans_cnt/mfy*_untilserve) QSRSoft rows carry --
+          // use them directly rather than fabricating components that would just reproduce the
+          // same number (lib/supabase.js's lifelenzDarToDailyActivityShape).
+          const oepe = isLL ? (r._llOepeSec ?? null) : oepeSeconds(r);
+          const r2p  = isLL ? (r._llR2pSec ?? null) : (r.fc_trans_cnt > 0 ? ((r.fc_untilserve - r.fc_untilclosedrawer) / r.fc_trans_cnt / 1000) : null);
           const mfyServe = (r.mfy1_untilserve || 0) + (r.mfy2_untilserve || 0);
           const mfyCnt   = (r.mfy1_trans_cnt   || 0) + (r.mfy2_trans_cnt   || 0);
-          const kvs  = mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : null;
+          const kvs  = isLL ? (r._llKvsSec ?? null) : (mfyCnt > 0 ? (mfyServe / mfyCnt / 1000) : null);
           const park = r.dt_trans_cnt > 0 ? (r.dt_carsheld / r.dt_trans_cnt * 100) : null;
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
           const laborCost = r.prod_sales_scrubbed > 0 ? (r.actual_punched_dollars / r.prod_sales_scrubbed * 100) : null;
