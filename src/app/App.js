@@ -1540,7 +1540,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,qsrAct,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -1564,6 +1564,11 @@ function App() {
           // until the network call lands" gap on a returning login. See
           // memory/plan-egress-reduction-2026-11-20.md Section 3/4.
           schedRows:sched||[],
+          // Cache-first pilot #2 (egress Phase 1, 2026-11-21): same idea for qsrActSummaryRows —
+          // the T1-tier stream behind At-A-Glance's Sales/vs-LY/Guest-Count/TPPH tiles. This is
+          // the stream actually on the "app usable" critical path; _stQsrsoftActSummary's T1
+          // fetch still runs and wins once it lands. See plan Section 3/4/10.
+          qsrActSummaryRows:qsrAct||[],
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, allYearlyTargets:{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
@@ -1618,6 +1623,9 @@ function App() {
           // history still gets a non-blank Labor Tools/Projections render pending _stLifelenz's
           // live refetch below. See memory/plan-egress-reduction-2026-11-20.md Section 3/4.
           schedRows:sched||[],
+          // Cache-first pilot #2 (egress Phase 1, 2026-11-21) — same reasoning for
+          // qsrActSummaryRows, the T1-tier stream behind At-A-Glance's home-screen tiles.
+          qsrActSummaryRows:qsrAct||[],
           pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
           glimpseRows:[], cashRows:[], exceptionRows:[],
           targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
@@ -2676,7 +2684,13 @@ function App() {
             const supplemented=supplementLaborWithSched(prev.laborRows,qsrActSummaryRows);
             const laborPatch=supplemented===prev.laborRows?{}:
               {laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
-            return{...prev,qsrActSummaryRows,...laborPatch};
+            const next={...prev,qsrActSummaryRows,...laborPatch};
+            // Cache-first pilot #2 (egress Phase 1, 2026-11-21): persist the freshly-fetched
+            // rollup rows to the OPFS snapshot so the NEXT login renders them immediately
+            // instead of waiting on this same T1 fetch again. Fire-and-forget, same as
+            // _stLifelenz's write-back.
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }

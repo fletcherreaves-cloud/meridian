@@ -299,10 +299,13 @@ async function opfsSave(ds) {
     const data = {
       // v4 (egress Phase 1, 2026-11-20): added `sched` — the first cloud-first stream to join
       // this snapshot. Previously this blob only ever carried manual-upload-era streams; see
-      // memory/plan-egress-reduction-2026-11-20.md Section 3/4. Additive-only: a v3 reader that
-      // never sees `sched` just gets `[]` for it (opfsLoad defaults the field), so this is not a
-      // breaking format change for anything that might still be running an older build.
-      v: 4,
+      // memory/plan-egress-reduction-2026-11-20.md Section 3/4/10.
+      // v5 (egress Phase 1, 2026-11-21): added `qsrAct` — the T1-tier stream (At-A-Glance's
+      // Sales/vs-LY/Guest-Count/TPPH tiles, Scheduling's QSR labor columns), chosen because it's
+      // on the critical "app usable" path the owner explicitly watches, not a background stage
+      // like schedRows was. Both additions are additive-only: a reader on an older version just
+      // gets `[]` for whichever field it doesn't recognize, not a breaking format change.
+      v: 5,
       labor:   (ds.laborRows   || []).map(strip),
       ops:     (ds.opsRows     || []).map(strip),
       ctrl:    (ds.ctrlRows    || []).map(strip),
@@ -311,9 +314,15 @@ async function opfsSave(ds) {
       peaks:   [...(ds.peaksSvcRows||[]),...(ds.peaksSalesRows||[])].map(strip),
       dar:     (ds.darRows     || []).map(strip),
       // Cloud-first stream cache pilot — see opfsLoad()/loadDsFromIDB() for the read side and
-      // App.js's _stLifelenz for the write trigger (fires after every live refetch, not just on
-      // manual upload like every other field in this blob).
+      // App.js's _stLifelenz/_stQsrsoftActSummary for the write trigger (fires after every live
+      // refetch, not just on manual upload like every other field in this blob).
       sched:   (ds.schedRows   || []).map(strip),
+      // qsrAct's rows carry a SECOND Date field (`refreshedAt`, used by At-A-Glance's Movers
+      // strip) beyond the `date` field strip()/toRow() already handle — see opfsLoad()'s
+      // toQsrActRow for the matching read-side reconstruction. Writing needs no special case:
+      // JSON.stringify already serializes a Date via its own .toJSON() (ISO string), same as
+      // `date` would if strip() didn't rename it to `_d` first.
+      qsrAct:  (ds.qsrActSummaryRows || []).map(strip),
       pmix:    ds.pmixData || {},
       weather: (ds.weatherRows || []).map(strip),
       records: ds.records || {},
@@ -353,8 +362,14 @@ function opfsLoad() {
       setTimeout(() => {
         try {
           const raw = JSON.parse(new TextDecoder().decode(buf));
-          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4)) { resolve(null); return; }
+          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5)) { resolve(null); return; }
           const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
+          // qsrAct rows carry a second Date field (refreshedAt) that toRow() above doesn't
+          // know about — JSON round-trips a Date as an ISO string, so without this it would
+          // stay a string on the cached copy, and at-a-glance.js's Movers strip calls
+          // .getTime() on it unconditionally. The live T1 fetch overwrites this cached copy
+          // within seconds either way, but that window is real, so reconstruct it properly.
+          const toQsrActRow = r => { const row = toRow(r); return { ...row, refreshedAt: r.refreshedAt ? new Date(r.refreshedAt) : null }; };
           const restoreRecs = recs => {
             if (!recs || typeof recs !== 'object') return {};
             const out = {};
@@ -377,6 +392,7 @@ function opfsLoad() {
             peaks:      (raw.peaks  ||[]).map(toRow),
             dar:        (raw.dar    ||[]).map(toRow),
             sched:      (raw.sched  ||[]).map(toRow),
+            qsrAct:     (raw.qsrAct ||[]).map(toQsrActRow),
             pmix:       raw.pmix || {},
             weather:    (raw.weather||[]).map(toRow),
             records:    restoreRecs(raw.records),
@@ -451,6 +467,7 @@ async function loadDsFromIDB() {
       labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
       audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,
       sched:      opfs.sched      || [],
+      qsrAct:     opfs.qsrAct     || [],
       weather,
       pmix:       opfs.pmix,
       records:    opfs.records    || {},

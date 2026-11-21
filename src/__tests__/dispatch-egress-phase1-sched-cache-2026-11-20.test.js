@@ -65,10 +65,13 @@ beforeEach(() => { fakeFiles.clear(); });
 describe('egress Phase 1: schedRows joins the OPFS snapshot', () => {
   const schedDate = new Date('2026-11-18T12:00:00');
 
-  it('opfsSave writes schedRows into the blob as v4, stripped to _d like every other stream', async () => {
+  it('opfsSave writes schedRows into the blob, stripped to _d like every other stream', async () => {
     await opfsSave({ laborRows: [], schedRows: [{ loc: '3708', date: schedDate, fcstSales: 5000 }] });
     const raw = JSON.parse(fakeFiles.get('meridian-data.json'));
-    expect(raw.v).toBe(4);
+    // v bumped again (v5, egress Phase 1 pilot #2, qsrAct) after this test was first written at
+    // v4 — assert only that it's current-or-newer, not a fixed number, so the NEXT stream added
+    // to this blob doesn't have to hunt down and edit this unrelated assertion too.
+    expect(raw.v).toBeGreaterThanOrEqual(4);
     expect(raw.sched).toHaveLength(1);
     expect(raw.sched[0]._d).toBe('2026-11-18');
     expect(raw.sched[0].date).toBeUndefined();
