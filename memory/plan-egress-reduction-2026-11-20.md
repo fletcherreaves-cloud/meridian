@@ -562,3 +562,79 @@ delta-sync — each would need the same per-stream work (reading its real write 
 merge key, deciding whether deletes are possible for that table) that this pilot did for
 schedule rows. That is the next candidate if the owner wants to keep going, not an automatic
 follow-on — Section 13's own caveat stands: a column's existence was never the hard part.
+
+## 15. Discovered mid-sweep (2026-11-21, v5.844): six LifeLenz loaders were fetching their ENTIRE
+table history on every login — a bigger, separate problem from delta-sync itself
+
+Owner: "Keep going and wire up the rest of the tables" (continuing Section 14's authorization).
+Classifying the ~48 remaining eager-loaded tables into Wave 1 (safe for delta-sync)/Wave 2
+(write-path gap, needs a prerequisite fix)/Excluded (real deletes) surfaced something more urgent
+than delta-sync itself: the five LifeLenz Data Explorer startup stages in App.js
+(`_stScheduleVariance`/`_stComplianceAudit`/`_stEmployeePerformance`/`_stPayrollReadiness`/
+`_stLifelenzDar`) call their loaders with **no arguments at all**, and each loader's
+`{start, end, locs} = {}` signature had **no internal default** — so `start`/`end` stayed
+`undefined`, the `.gte`/`.lte` filters in the query builder were never applied, and the loader
+fetched the WHOLE table, every single login. `loadLifeLenzAttendance` had the same bug class (no
+`start` param to even pass).
+
+**Measured live** (service-role REST recipe, CLAUDE.md's "measure it" rule):
+
+| Table | Rows (unbounded) | Real consumer |
+|---|---|---|
+| `lifelenz_schedule_variance` | 6,227 | labor-tools.js's ScheduleDisciplinePanel, 7/14/30d window selector |
+| `lifelenz_compliance_audit` | 9,727 | same panel family, same window selectors |
+| `lifelenz_employee_performance` | 21,073 | per-period (monthly-ish) employee performance views |
+| `lifelenz_payroll_readiness` | **83,595** | **ZERO** — confirmed by grep across src/views + src/features; only stream-freshness.js reads it, for a liveness check |
+| `lifelenz_dar` | 2,884 | Signals LiveOps fallback (already bounded there — see below) |
+| `lifelenz_attendance_summary` | 1,640 | smaller scale, same bug class |
+
+Fixed by adding a `daysBack` default to each loader (45d for scheduleVariance/complianceAudit/
+dar/attendance, 60d for employeePerformance, 14d for payrollReadiness — the tightest, since
+nothing consumes it but a freshness check) that only kicks in when the caller doesn't supply
+`start`. Verified via grep that no other call site in the repo relies on the unbounded behavior —
+`loadLifeLenzDar`'s two existing `{start,end}` callers (`refreshDar`, and the LiveOps DAR fallback
+inside `loadDailyActivity`) are byte-identical in behavior since they already pass an explicit
+`start`.
+
+**A real mock bug surfaced while writing the verifying test, worth recording:** the first version
+of the mock Supabase query builder made `.range(from, to)` return an actual `Promise` immediately,
+which broke chaining `.gte()`/`.lte()`/`.in()` AFTER `.range()` — and several of these loaders'
+real code calls `.order(...).range(from, to)` and THEN applies `.gte()`. That's legal in real
+supabase-js because its query builder is "thenable", not a real Promise: every filter method,
+`.range()` included, returns the SAME chainable builder, and only `.then()` (i.e. awaiting it)
+executes the query. The mock's bug (`q.gte is not a function`) looked exactly like a production
+bug until traced to the mock itself — fixed by making `.range()` mutate-and-return-builder like
+every other filter method, with execution deferred to a `.then()` implementation, matching real
+supabase-js semantics. 7 tests
+(`src/__tests__/finding-lifelenz-unbounded-eager-fetch-2026-11-21.test.js`), verified to catch a
+reverted default (temporarily removed one loader's `if (!start)` guard, watched its test fail with
+the exact expected "no gte call at all" symptom, restored, re-verified clean).
+
+**Separately found + fixed in the same pass (owner request, mid-session):** Signals Live Ops's
+"⟳ Sync Now" button (`signals.js`'s `handleSync` → `triggerDarSync`, `src/lib/supabase.js`) was
+dispatching the `dar` workflow (`qsrsoft-dar-pull.yml`) via the `trigger-dar-sync` Edge Function —
+but that workflow has been schedule-paused since 2026-11-16 for compliance reasons (CLAUDE.md's
+QSRSoft Operator Security Notice), so every click dispatched a pull that would never run, with no
+error surfaced (the Edge Function happily dispatches a workflow that then sits paused). This is
+the SAME problem Section 11 (task #187) already fixed on the READ side — `loadDailyActivity`
+falls back to LifeLenz's own DAR when `qsr_daily_activity` is empty — just never carried over to
+the manual sync button. Fixed by adding a `lifelenz_dar` entry to the Edge Function's `WORKFLOWS`
+allowlist (backed by the existing hourly `lifelenz-dar-pull.yml`) and repointing `triggerDarSync`
+at it; `daysRecent` (days) converts to that workflow's `lookback_hours` input, floored at 24h so a
+same-day click always covers the full current business day. Data Manager's own "QSRSoft Daily
+Activity" row (`analytics.js`'s `SYNC_LABEL.dar`) is deliberately left alone — it is honestly
+labeled as QSRSoft and paused, which is correct, not broken; only the Signals button (which never
+claimed to be QSRSoft-specific) needed the swap. 3 tests
+(`src/__tests__/dispatch-liveops-sync-now-lifelenz-dar-2026-11-21.test.js`), same
+break-confirm-restore discipline.
+
+**Not yet started:** the actual Wave 1 delta-sync build for the ~21 tables Section 13 classified
+as safe, which (discovered this same pass) needs Phase-1-style OPFS cache-first-render added to
+each LifeLenz `_st*` startup stage FIRST — none of them currently persist to OPFS at all, they do
+a bare `setDs(prev=>({...prev, field: rows}))` full-replace with no `opfsSave` call. Delta-sync
+without a persisted cache to merge into doesn't reduce login-time egress, since a fresh page load
+starts from zero regardless of the watermark. Wave 2's ~11 tables (write-path gaps — `ops_rows`,
+`ctrl_rows`, the `qsrsoft-ops-pull.mjs` upsert family, `smg_voice_performance`/`smg_voice_daypart`,
+`qsr_employee_tenure`, `qsr_field_definitions`) still need their `updated_at`/timestamp set
+explicitly on write before they can be delta-synced at all. `staff_assignments`/`org_events`/
+`target_overrides` stay excluded (real delete paths, no alternative strategy designed).

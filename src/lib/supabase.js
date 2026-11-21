@@ -1426,8 +1426,16 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
 // Aggregated daily/per-editor rollups for Signals + the Schedule Discipline panel are computed
 // client-side from these raw rows by src/engine/schedule-discipline.js, not pre-aggregated here
 // — the raw rows themselves are also what the panel's drill-down table shows.
-export async function loadLifeLenzScheduleVariance({ start, end, locs } = {}) {
+// `daysBack` (egress finding 2026-11-21): this loader's eager startup call
+// (App.js's _stScheduleVariance) passed no `start`/`end` at all, which fetched the table's ENTIRE
+// history on every single login (measured live: 6,227 rows, unbounded and growing) — the real
+// consumer, labor-tools.js's ScheduleDisciplinePanel, only ever shows a 7/14/30-day window
+// selector. Defaulting `start` from `daysBack` when the caller doesn't supply one closes that gap
+// for every current and future no-bound caller; a caller that already passes an explicit `start`
+// is unaffected. See memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack = 45 } = {}) {
   if (!supabase) return [];
+  if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_schedule_variance').select('*').order('occurred_at', { ascending: false }).range(from, to);
     if (start) q = q.gte('occurred_at', start);
@@ -1461,8 +1469,12 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs } = {}) {
 // Compliance Audit panel are computed client-side from these raw rows by
 // src/engine/compliance-audit.js, not pre-aggregated here — the raw rows themselves are also
 // what the panel's drill-down table shows.
-export async function loadLifeLenzComplianceAudit({ start, end, locs } = {}) {
+// `daysBack` — same unbounded-eager-fetch finding as loadLifeLenzScheduleVariance just above
+// (measured live: 9,727 rows fetched in full on every login). ComplianceAuditPanel's own window
+// selector also maxes at 30 days. See memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack = 45 } = {}) {
   if (!supabase) return [];
+  if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_compliance_audit').select('*').order('shift_date', { ascending: false }).range(from, to);
     if (start) q = q.gte('shift_date', start);
@@ -1502,8 +1514,14 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs } = {}) {
 // visible" tenant+loc RLS precedent as those two. Aggregated store/employee rollups for Signals
 // + the Employee Performance panel are computed client-side from these raw rows by
 // src/engine/employee-performance.js, not pre-aggregated here.
-export async function loadLifeLenzEmployeePerformance({ start, end, locs } = {}) {
+// `daysBack` — same unbounded-eager-fetch finding (measured live: 21,073 rows fetched in full on
+// every login). Every real consumer (src/engine/employee-performance.js's storePerformanceSummary/
+// lowAttendanceEmployees, via latestPeriodRows()) only ever reads the MOST RECENT rolling period
+// per employee — 60 days is generous headroom over any realistic rolling-window cadence, not a
+// tight fit. See memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzEmployeePerformance({ start, end, locs, daysBack = 60 } = {}) {
   if (!supabase) return [];
+  if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_employee_performance').select('*').order('period_end', { ascending: false }).range(from, to);
     if (start) q = q.gte('period_end', start);
@@ -1556,8 +1574,17 @@ export async function loadLifeLenzEmployeePerformance({ start, end, locs } = {})
 // never live-confirmed before this pull was written (no LIFELENZ_TOKEN in the session that
 // built it) -- see the pull script's own header for the full caveat. Fails soft to [] if the
 // table isn't created yet, same pattern as every other LifeLenz loader.
-export async function loadLifeLenzPayrollReadiness({ start, end, locs } = {}) {
+// `daysBack` — by far the worst instance of this finding: measured live, this table has
+// **83,595 rows**, fetched in FULL on every single login via App.js's eager _stPayrollReadiness
+// stage — and that stage's own result (`ds.payrollReadinessRows`) has ZERO consuming panel today
+// (grepped every src/views/ and src/features/ file; only stream-freshness.js reads it, for a
+// freshness-checklist tick). 14 days is already generous for a pure liveness check. The bigger
+// the real feature built on this data eventually gets, the more this default is worth revisiting
+// — but today it is pure egress with no offsetting benefit. See
+// memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack = 14 } = {}) {
   if (!supabase) return [];
+  if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_payroll_readiness').select('*').order('pay_period_start', { ascending: false }).range(from, to);
     if (start) q = q.gte('pay_period_start', start);
@@ -1610,8 +1637,13 @@ export async function loadLifeLenzPayrollReadiness({ start, end, locs } = {}) {
 // supabase/schema-lifelenz-dar.sql / memory/finding-lifelenz-dar-schema-2026-11-17.md.
 // Deliberately NOT yet read by metric-source.js's displayed auto-first chains — see that file's
 // scope note for why (field-level equivalence against qsr_daily_activity_rollup is unmeasured).
-export async function loadLifeLenzDar({ start, end, locs } = {}) {
+// `daysBack` — same unbounded-eager-fetch finding (measured live: 2,884 rows fetched in full on
+// every login via App.js's _stLifelenzDar stage). The OTHER call site, App.js's refreshDar()
+// LiveOps fallback, already passes an explicit `{start,end}` for a single date and is unaffected
+// by this default. See memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzDar({ start, end, locs, daysBack = 45 } = {}) {
   if (!supabase) return [];
+  if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_dar').select('*').order('start_time', { ascending: false }).range(from, to);
     if (start) q = q.gte('dt', start);
@@ -1750,10 +1782,15 @@ export async function loadEmployeePayRateChanges({ locs } = {}) {
 // scripts/lifelenz-attendance-pull.mjs's service-role key. `date` maps to `period_end` (not a
 // separate column) so this fits stream-freshness.js's generic "every row has a `date`" contract
 // the same way every other STREAMS entry does.
-export async function loadLifeLenzAttendance({ locs } = {}) {
+// `daysBack` — same unbounded-eager-fetch finding, smaller scale here (measured live: 1,640
+// rows — a rolling 28-day rollup naturally caps its own growth rate), but the same bug class and
+// equally trivial to fix. 45 days covers one full 28-day rolling period with margin. See
+// memory/plan-egress-reduction-2026-11-20.md Section 15.
+export async function loadLifeLenzAttendance({ locs, daysBack = 45 } = {}) {
   if (!supabase) return [];
+  const start = (() => { const d = new Date(); d.setDate(d.getDate() - daysBack); return d.toISOString().slice(0, 10); })();
   const data = await fetchAll((from, to) => {
-    let q = supabase.from('lifelenz_attendance_summary').select('*').order('period_end', { ascending: false }).range(from, to);
+    let q = supabase.from('lifelenz_attendance_summary').select('*').gte('period_end', start).order('period_end', { ascending: false }).range(from, to);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
     return q;
   }, 1000, 'lifelenz_attendance_summary');
@@ -3007,8 +3044,8 @@ export async function getAuthToken() {
 
 // ── On-demand sync triggers ───────────────────────────────────────────────────
 // Dispatch any data-pull workflow from the app. `workflow` is one of
-// 'dar' | 'ebos' | 'fob' | 'lifelenz'; `inputs` optionally overrides that
-// workflow's dispatch inputs (e.g. { days_recent: 1 }). Backed by the
+// 'dar' | 'ebos' | 'fob' | 'lifelenz' | 'lifelenz_dar'; `inputs` optionally overrides
+// that workflow's dispatch inputs (e.g. { days_recent: 1 }). Backed by the
 // trigger-dar-sync Edge Function, which owns the workflow allowlist + defaults.
 export async function triggerSync(workflow = 'dar', inputs = {}) {
   if (!supabase) return { error: 'No Supabase client' };
@@ -3033,9 +3070,19 @@ export async function triggerSync(workflow = 'dar', inputs = {}) {
   }
 }
 
-// Back-compat wrapper for the existing Live Ops DAR button.
+// Back-compat wrapper for the existing Live Ops DAR button (signals.js's handleSync,
+// "⟳ Sync Now" on the LiveOps tab). Updated 2026-11-21 (owner request): used to dispatch
+// the 'dar' workflow (QSRSoft's own DAR pull, qsrsoft-dar-pull.yml), but that pull has been
+// schedule-paused since 2026-11-16 for compliance reasons (CLAUDE.md) — clicking the button
+// was dispatching a workflow that would never run. qsr_daily_activity's own read path
+// (loadDailyActivity, above) already falls back to LifeLenz's DAR when QSRSoft's is empty
+// (task #187), so the manual button now refreshes that SAME stand-in source instead of a
+// dead one. `daysRecent` (days, the caller's existing param) converts to
+// lifelenz-dar-pull.yml's own `lookback_hours` input — kept at least 24h so a same-day click
+// always covers the full current business day, not just a few trailing hours.
 export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
-  return triggerSync('dar', { days_back: String(daysBack), days_recent: String(daysRecent) });
+  const lookbackHours = Math.max(24, Math.round(daysRecent * 24));
+  return triggerSync('lifelenz_dar', { lookback_hours: String(lookbackHours) });
 }
 
 // ── qsr_daily_activity ────────────────────────────────────────────────────────

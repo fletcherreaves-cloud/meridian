@@ -1,7 +1,7 @@
 // trigger-dar-sync — dispatches a data-pull GitHub Actions workflow on demand so
 // operators can pull fresh data straight from the app (Data Manager / Live Ops).
 //
-// Body: { workflow?: 'dar'|'ebos'|'fob'|'lifelenz', inputs?: {...},
+// Body: { workflow?: 'dar'|'ebos'|'fob'|'lifelenz'|'lifelenz_dar', inputs?: {...},
 //         days_back?, days_recent? }  — top-level days_* kept for backward compat.
 // Defaults to 'dar' when no workflow is given.
 //
@@ -20,6 +20,16 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   dar:      { file: 'qsrsoft-dar-pull.yml',  label: 'Daily Activity',    inputs: { days_back: '7',  days_recent: '1', force_full: '0', debug: '0' } },
   ebos:     { file: 'qsrsoft-ebos-pull.yml', label: 'eBOS Purchases',    inputs: { days_back: '30', days_recent: '2', force_full: '0', debug: '0' } },
   fob:      { file: 'qsrsoft-pull.yml',      label: 'FOB / P&L Cost',    inputs: { days_back: '30', days_recent: '2', debug: '0' } },
+  // Signals Live Ops's "⟳ Sync Now" button (src/views/signals.js's handleSync, via
+  // src/lib/supabase.js's triggerDarSync wrapper). It used to dispatch the 'dar' entry above
+  // (qsrsoft-dar-pull.yml), but that workflow has been schedule-paused since 2026-11-16 for
+  // compliance reasons (CLAUDE.md's QSRSoft Operator Security Notice) — the button was
+  // dispatching a pull that does nothing. qsr_daily_activity's own read path
+  // (loadDailyActivity, lib/supabase.js) already falls back to LifeLenz's DAR when QSRSoft's
+  // is empty (task #187), so the manual button now dispatches that SAME stand-in source
+  // instead of the dead one. Inputs mirror .github/workflows/lifelenz-dar-pull.yml's own
+  // workflow_dispatch.inputs exactly — keep both in sync.
+  lifelenz_dar: { file: 'lifelenz-dar-pull.yml', label: 'LifeLenz DAR', inputs: { lookback_hours: '6', start: '', end: '', debug: '0' } },
   // EOM Supervisor Rollup / EOM Dashboard "🔄 Refresh EOM Data" button (owner req 2026-11-02:
   // a Business Day Close finishing late left Product Net Sales/Cash +/- stale for several
   // stores until a manual workflow_dispatch of fob+ops caught them up). Empty days_back/
