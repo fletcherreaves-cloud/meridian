@@ -262,13 +262,30 @@ function computeStoreNorms(loc, ds){
   };
 }
 
+// Calendar-day difference between two dates, anchored to LOCAL MIDNIGHT on both sides before
+// diffing — immune to one side carrying a time-of-day the other doesn't. Needed because the
+// date-picker below sets a picked date to noon (`T12:00:00`) while row dates loaded from
+// Supabase/IDB are midnight-anchored; diffing the raw Date objects mixes the two and corrupts
+// a "within N calendar days" check (see `nearby`'s own fix comment).
+const _calDayDiff = (a, b) => Math.round(
+  (new Date(dKey(a) + 'T00:00:00') - new Date(dKey(b) + 'T00:00:00')) / 86400000
+);
+
 // ── Assemble one store's data for a target date ──────────────────────────────
 function assembleBriefStoreData(loc, targetDate, ds, darByLoc, managersByLoc){
   const locStr = String(loc);
   const dk = dKey(targetDate);
   const sameDay = r => String(r.loc)===locStr && dKey(r.date)===dk;
-  // Also allow ±1 day for data availability
-  const nearby = r => String(r.loc)===locStr && Math.abs(r.date-targetDate)<2*86400000;
+  // Also allow ±1 CALENDAR day for data availability (e.g. a manual upload landing a day late).
+  // ⚠️ Fixed 2026-11-21 (owner report: viewing "yesterday" in the brief showed actuals that were
+  // really from 2 days ago). The old check compared raw millisecond gaps
+  // (`Math.abs(r.date-targetDate)<2*86400000`) — despite this comment saying "±1 day," that
+  // admits a full 2 CALENDAR days: every date picked via the <input type=date> below is set to
+  // noon (`T12:00:00`), and a midnight-anchored row from 2 calendar days earlier sits only 36h
+  // (1.5 days) from that noon target — comfortably under the old `<2 days` cutoff, so it matched
+  // when it shouldn't have. `_calDayDiff` anchors both sides to local midnight first, making
+  // this a true, timezone-safe ±1 CALENDAR day — matching what the comment always claimed.
+  const nearby = r => String(r.loc)===locStr && Math.abs(_calDayDiff(r.date, targetDate))<=1;
 
   const labor  = (ds.laborRows||[]).find(sameDay) || (ds.laborRows||[]).find(nearby);
   const ctrl   = (ds.ctrlRows||[]).find(sameDay)  || (ds.ctrlRows||[]).find(nearby);
@@ -338,8 +355,10 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc, managersByLoc){
   const lyTarget = new Date(targetDate);
   lyTarget.setFullYear(lyTarget.getFullYear()-1);
   const lyDk = dKey(lyTarget);
+  // Same ±1-CALENDAR-day fallback as `nearby` above, same fix (was ±2 calendar days via raw ms
+  // arithmetic against a noon-anchored lyTarget) — this is the LY-side mirror of that bug.
   const lyLabor = (ds.laborRows||[]).find(r=>String(r.loc)===locStr&&dKey(r.date)===lyDk)
-               ||(ds.laborRows||[]).find(r=>String(r.loc)===locStr&&Math.abs(r.date-lyTarget)<2*86400000);
+               ||(ds.laborRows||[]).find(r=>String(r.loc)===locStr&&Math.abs(_calDayDiff(r.date, lyTarget))<=1);
   const dkTarget = dKey(targetDate);
   const { lyByDate: lySalesByDate } = autoFirstDaily(ds, loc, {s:targetDate,e:targetDate}, 'sales');
   const { lyByDate: lyGCByDate }    = autoFirstDaily(ds, loc, {s:targetDate,e:targetDate}, 'gc');
@@ -927,14 +946,35 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar,
   // collection, the Data Source Coverage strip's "3 Peaks" count) eventually sees real rows
   // instead of being permanently stuck on the pre-load empty array.
   uE(()=>{ ensureLazyFill('peaksSvcRows'); ensureLazyFill('peaksSalesRows'); },[]);
-  const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
+  const [briefDate, setBriefDateRaw] = uSt(()=>getLatestBriefDate(ds));
   const [expanded, setExpanded] = uSt(null);
   const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN
   const [supervisorFilter, setSupervisorFilter] = uSt('ALL');
   const [generating, setGenerating] = uSt(false);
 
-  // Re-sync date if ds changes
-  uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
+  // ⚠️ Fixed 2026-11-21 (owner report: "viewing yesterday's results is still showing 2 days ago
+  // actuals"). The "re-sync date if ds changes" effect below used to call plain `setBriefDate`
+  // UNCONDITIONALLY on every `ds` reference change — not just the first time `ds` populates
+  // after mount. `ds` is a brand-new object on nearly every `setDs(prev=>({...prev,...}))` call
+  // anywhere in App.js (background lazy-fills, auto-pull merges, other panels' writes), so any
+  // one of those firing while the user had the date picker set to "yesterday" would silently
+  // snap `briefDate` back to `getLatestBriefDate(ds)` — whichever date is the LATEST one with
+  // any real data across laborRows/ctrlRows/peaksSvcRows/qsrActSummaryRows, which lags behind
+  // "yesterday" whenever yesterday's own sync hasn't landed in those specific arrays yet. The
+  // user never touched anything; the panel just reverted their selection out from under them,
+  // header date included — reading exactly like "yesterday is still showing 2-days-ago." Fixed
+  // by only letting the auto-resync run until the user makes an explicit pick (`userPickedDate`
+  // ref below) — the SAME one-time "sync once real data arrives" behavior for the common case
+  // (ds starts null/empty before hydration, then populates), but never again overriding a
+  // choice the user actually made.
+  const userPickedDate = uR(false);
+  const setBriefDate = uCB(d => { userPickedDate.current = true; setBriefDateRaw(d); }, []);
+
+  // Re-sync date if ds changes — but never once the user has explicitly picked one themselves.
+  uE(()=>{
+    if (userPickedDate.current) return;
+    const ld=getLatestBriefDate(ds); if(ld) setBriefDateRaw(ld);
+  },[ds]);
 
   const darByLoc = useBriefDarByLoc(briefDate, darRows);
   const managersByLoc = useBriefManagersByLoc(briefDate);
