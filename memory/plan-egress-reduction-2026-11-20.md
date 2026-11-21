@@ -273,3 +273,44 @@ touched. Full suite + build both clean.
 current cache excludes, and both render on the default At-A-Glance home screen (unlike schedRows,
 which is mostly a Labor Tools/Projections dependency) — so a cache-first win there would be felt
 on every single login, not just on panels a user has to navigate into.
+
+## 11. Phase 1 pilot #2 shipped (2026-11-21, v5.840): qsrActSummaryRows cache-first render
+
+Owner: *"Keep going on the egress phases."* Picked `qsrActSummaryRows` (`qsr_daily_activity_rollup`)
+over `salesLedgerRows` as the higher-value next target — it's a **T1-tier** stream (`App.js`'s
+tiered startup loader `await`s `_stQsrsoftActSummary(60)` before calling the app "usable"),
+unlike schedRows which was T2/background. This is literally the stream the owner has said he
+watches load ("when that line popped up, the tiles populated" — Section 10's own T1 comment
+block), so a cache-first win here lands on the actual perceived-speed metric the whole Phase 1
+ask was about, not just a nice-to-have.
+
+**Same mechanism as pilot #1**, two differences:
+- `qsrActSummaryRows` rows carry a SECOND Date field (`refreshedAt`, used by At-A-Glance's Movers
+  strip via `r.refreshedAt.getTime()`) beyond the `date` field the shared `strip()`/`toRow()`
+  helpers already handle. Caught this BEFORE writing the cache code by grepping every real
+  `refreshedAt` consumer first (not after shipping and having it throw) — added a dedicated
+  `toQsrActRow` wrapper in `opfsLoad` just for this stream. Confirmed by test: reverting the
+  wrapper to a plain `toRow` reproduces the exact failure a shipped regression would have hit
+  (`refreshedAt` restored as a string, `.getTime is not a function` the moment Movers-strip code
+  touched a cached-but-not-yet-live-refreshed row).
+- OPFS blob bumped v4→v5 (additive, same backward-compat guarantee as v3→v4).
+
+**Mid-build tangent, resolved same session:** while this was in progress, the owner asked whether
+the in-progress change could be why Signals' LiveOps DAR tab looked empty. It can't be — not yet
+shipped, and that tab's `darRows` is a totally separate state (`refreshDar()`, a direct
+`qsr_daily_activity` query), never touched by this pilot or pilot #1. Measured the REAL cause
+live: `qsr_daily_activity` AND `qsr_daily_activity_rollup` are both frozen at **2026-11-17** —
+`.github/workflows/qsrsoft-dar-pull.yml`'s schedule has been commented out since 2026-11-16
+(QSRSoft compliance triage) and nothing has backfilled since. `lifelenz_dar` is fresh through
+**2026-11-20** and already feeds `metric-source.js`'s fallback chains (`sales`/`gc`/`oepe`/`kvst`/
+`r2p`/`laborPct`/`actHrs` all list `lifelenzDarDailyRows` after `qsrActSummaryRows`), but the
+LiveOps tab's own `refreshDar()` was never updated to fall back to it — a real, separate,
+**not-yet-fixed** gap, flagged to the owner, not fixed in this pass (kept this pilot scoped to
+what it was already doing). This also confirms pilot #2's caching is NOT making anything more
+stale than it already was: `qsr_daily_activity_rollup` has nothing past 2026-11-17 whether served
+from cache or from a fresh T1 fetch, so for any date after the pause, `metric-source.js`'s
+resolver already falls through to `lifelenzDarDailyRows` on its own, cache or no cache.
+
+**Next candidate, if the owner wants to keep going on cache-first pilots:** `salesLedgerRows`
+(Section 3/4's other named T1-adjacent candidate) — or, separately, actually fixing the LiveOps
+DAR→LifeLenz-fallback gap just found, which is unrelated to the egress plan but a real live bug.
