@@ -1540,7 +1540,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,qsrAct,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,qsrAct,weather,pmix,records,glimpse,cash,salesLedger,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -1570,7 +1570,10 @@ function App() {
           // fetch still runs and wins once it lands. See plan Section 3/4/10.
           qsrActSummaryRows:qsrAct||[],
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
-          glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
+          // salesLedgerRows joins glimpse/cash here (egress Phase 1 pilot #3, 2026-11-21) — the
+          // third of _stCloudEmailReport's T1 streams, same cloud-first cache treatment its two
+          // siblings already had.
+          glimpseRows:glimpse||[], cashRows:cash||[], salesLedgerRows:salesLedger||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, allYearlyTargets:{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           ...(_traceMark('bIdx+bLocIdx (all streams)', () => ({
             laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
@@ -1627,7 +1630,13 @@ function App() {
           // qsrActSummaryRows, the T1-tier stream behind At-A-Glance's home-screen tiles.
           qsrActSummaryRows:qsrAct||[],
           pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
-          glimpseRows:[], cashRows:[], exceptionRows:[],
+          // Cache-first pilot #3 (egress Phase 1, 2026-11-21): glimpse/cash/salesLedger were
+          // ALREADY part of the OPFS blob (added for the Dexie v7 "QSRSoft email report types"
+          // migration, long before the egress plan existed) but this specific branch — a user
+          // with no legacy manual-upload history at all — never actually seeded them from the
+          // cache; they were hardcoded to []. Same gap as schedRows/qsrActSummaryRows had, fixed
+          // the same way. See memory/plan-egress-reduction-2026-11-20.md Section 12.
+          glimpseRows:glimpse||[], cashRows:cash||[], salesLedgerRows:salesLedger||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
           smgVoicePerf:[], loaded:false,
           laborIdx:{}, opsIdx:{}, ctrlIdx:{},
@@ -2799,10 +2808,20 @@ function App() {
       try{
         const [glimpse,cash,ledger]=await Promise.all([loadGlimpse(60),loadCash(60),loadSalesLedger(60)]);
         if(glimpse.length||cash.length||ledger.length){
-          setDs(prev=>{if(!prev)return prev;return{...prev,
-            ...(glimpse.length?{glimpseRows:glimpse}:{}),
-            ...(cash.length?{cashRows:cash}:{}),
-            ...(ledger.length?{salesLedgerRows:ledger}:{})};});
+          setDs(prev=>{
+            if(!prev)return prev;
+            const next={...prev,
+              ...(glimpse.length?{glimpseRows:glimpse}:{}),
+              ...(cash.length?{cashRows:cash}:{}),
+              ...(ledger.length?{salesLedgerRows:ledger}:{})};
+            // Cache-first pilot #3 (egress Phase 1, 2026-11-21): glimpse/cash/salesLedger were
+            // ALREADY part of the OPFS snapshot (Dexie v7), but this live fetch never wrote back
+            // to it — only the manual-upload path did, so a user who never manually uploads has
+            // had an effectively permanently-empty cache for all three. Fire-and-forget, same
+            // pattern as _stLifelenz/_stQsrsoftActSummary.
+            opfsSave(next).catch(()=>{});
+            return next;
+          });
           console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
         }
       }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);} };

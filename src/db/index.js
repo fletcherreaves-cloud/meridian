@@ -303,9 +303,18 @@ async function opfsSave(ds) {
       // v5 (egress Phase 1, 2026-11-21): added `qsrAct` — the T1-tier stream (At-A-Glance's
       // Sales/vs-LY/Guest-Count/TPPH tiles, Scheduling's QSR labor columns), chosen because it's
       // on the critical "app usable" path the owner explicitly watches, not a background stage
-      // like schedRows was. Both additions are additive-only: a reader on an older version just
-      // gets `[]` for whichever field it doesn't recognize, not a breaking format change.
-      v: 5,
+      // like schedRows was.
+      // v6 (egress Phase 1 pilot #3, 2026-11-21): added `salesLedger`, the third of
+      // _stCloudEmailReport's T1 streams. `glimpse`/`cash` (below) were ALREADY in this blob
+      // (added for the Dexie v7 "QSRSoft email report types" migration, long before the egress
+      // plan existed) but — discovered while adding salesLedger — their live-fetch stage
+      // (App.js's _stCloudEmailReport) never actually wrote back into this cache; only the
+      // manual-upload path did. So a user who never does a manual upload has had an effectively
+      // permanently-empty glimpse/cash cache this whole time, same gap this plan has been closing
+      // stream-by-stream. Fixed in the same pass — see App.js's _stCloudEmailReport.
+      // All additions here are additive-only: a reader on an older version just gets `[]` for
+      // whichever field it doesn't recognize, not a breaking format change.
+      v: 6,
       labor:   (ds.laborRows   || []).map(strip),
       ops:     (ds.opsRows     || []).map(strip),
       ctrl:    (ds.ctrlRows    || []).map(strip),
@@ -328,6 +337,7 @@ async function opfsSave(ds) {
       records: ds.records || {},
       glimpse: (ds.glimpseRows || []).map(strip),
       cash:    (ds.cashRows    || []).map(strip),
+      salesLedger: (ds.salesLedgerRows || []).map(strip),
       exceptions:(ds.exceptionRows||[]).map(strip),
       monthlyTargets:     ds.monthlyTargets     || {},
       monthlyTargetsMeta: ds.monthlyTargetsMeta || null,
@@ -362,7 +372,7 @@ function opfsLoad() {
       setTimeout(() => {
         try {
           const raw = JSON.parse(new TextDecoder().decode(buf));
-          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5)) { resolve(null); return; }
+          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5 && raw.v !== 6)) { resolve(null); return; }
           const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
           // qsrAct rows carry a second Date field (refreshedAt) that toRow() above doesn't
           // know about — JSON round-trips a Date as an ISO string, so without this it would
@@ -398,6 +408,7 @@ function opfsLoad() {
             records:    restoreRecs(raw.records),
             glimpse:    (raw.glimpse   ||[]).map(toRow),
             cash:       (raw.cash      ||[]).map(toRow),
+            salesLedger:(raw.salesLedger||[]).map(toRow),
             exceptions: (raw.exceptions||[]).map(toRow),
             monthlyTargets:     raw.monthlyTargets     || {},
             monthlyTargetsMeta: raw.monthlyTargetsMeta || null,
@@ -473,6 +484,7 @@ async function loadDsFromIDB() {
       records:    opfs.records    || {},
       glimpse:    opfs.glimpse    || [],
       cash:       opfs.cash       || [],
+      salesLedger:opfs.salesLedger|| [],
       exceptions: opfs.exceptions || [],
       monthlyTargets:     opfs.monthlyTargets     || {},
       monthlyTargetsMeta: opfs.monthlyTargetsMeta || null,
