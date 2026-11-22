@@ -856,3 +856,37 @@ per Section 17's own scoping note that these fixes don't need a prerequisite PR.
   `lifelenz_employee_performance` / `lifelenz_payroll_readiness` (schedule_variance needs `seq`
   exposed too, same "fix in the same commit" pattern this pilot just used), then `hmeDt`/
   `squadle` once their own `updatedAt` exposure lands.
+
+## 20. Wave 1 delta-sync pilot #3 shipped (2026-11-22): lifelenz_schedule_variance, exposing
+`seq` in the same commit
+
+Closed the `lifelenz_schedule_variance` gap Section 17's original audit flagged —
+`loadLifeLenzScheduleVariance` never surfaced `seq` on its mapped return shape, even though
+`seq` is part of the table's real primary key `(loc, edited_by, occurred_at, seq)`
+(`supabase/schema-lifelenz-schedule-variance.sql:21-39`) and exists specifically because
+`occurred_at` is not unique per `(loc, edited_by)` when LifeLenz batches multiple field changes
+from one save action under the same timestamp. Added `seq: r.seq` to the loader's return in the
+same commit as the delta-sync build itself, per the same scoping note pilot #2 used for
+`lifelenz_job_hours`.
+
+- `loadLifeLenzScheduleVariance({ since })` — additive `since` param, `.gt('updated_at', since)`
+  when given.
+- `mergeLifelenzScheduleVarianceDelta(prevRows, deltaRows, { daysBack })` (`src/app/App.js`) —
+  merge-by-key on `loc + '|' + editedBy + '|' + occurredAt + '|' + seq`, all four reproduced
+  verbatim by the loader. Window-prune on `occurredAt` (a plain timestamp string, never a
+  `Date`) via string compare. Confirmed upsert-only (no `.delete(` against
+  `lifelenz_schedule_variance` anywhere in `src/` or `scripts/`).
+  `LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY = 'mf_lifelenz_schedule_variance_watermark'` in
+  `localStorage`.
+- `_stScheduleVariance` — same shape as the prior two pilots: reads the watermark, calls
+  `loadLifeLenzScheduleVariance({ since })`, early-returns on `since && !rows.length`, advances
+  the watermark, merges into `ds.scheduleVarianceRows`, recomputes `ds.scheduleVarianceDailyRows`
+  via `dailyScheduleVariance` on the MERGED rows (not just the delta, same reasoning as the DAR
+  pilot's daily rollup), `opfsSave`s the result.
+- 6 tests
+  (`src/__tests__/dispatch-egress-wave1-pilot3-lifelenz-schedulevariance-watermark-2026-11-22.test.js`),
+  including a dedicated case proving two same-instant, same-editor edits stay distinct rows via
+  `seq` rather than colliding into one.
+- Next per Section 17's ordering: `lifelenz_compliance_audit` / `lifelenz_employee_performance` /
+  `lifelenz_payroll_readiness` (all three already expose `updatedAt`, no additive field needed),
+  then `hmeDt`/`squadle` once their own `updatedAt` exposure lands.

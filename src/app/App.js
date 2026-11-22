@@ -939,6 +939,8 @@ export const LIFELENZ_SCHED_WATERMARK_KEY = 'mf_sched_watermark';
 export const LIFELENZ_DAR_WATERMARK_KEY = 'mf_lifelenz_dar_watermark';
 // Wave 1 pilot #2 (2026-11-22) — same reasoning again.
 export const LIFELENZ_JOB_HOURS_WATERMARK_KEY = 'mf_lifelenz_job_hours_watermark';
+// Wave 1 pilot #3 (2026-11-22) — same reasoning again.
+export const LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY = 'mf_lifelenz_schedule_variance_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1009,6 +1011,25 @@ export function mergeLifelenzJobHoursDelta(prevRows, deltaRows, { weeksBack = 60
   const startStr = winStart.toISOString().slice(0, 10);
   const endStr   = winEnd.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.weekStart >= startStr && r.weekStart <= endStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #3 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_schedule_variance's real PK is (loc, edited_by, occurred_at, seq)
+// (supabase/schema-lifelenz-schedule-variance.sql:21-39) — `occurred_at` alone is NOT unique per
+// (loc, edited_by) when LifeLenz batches multiple field changes from one save action under the
+// same timestamp, which is exactly why `seq` exists; loadLifeLenzScheduleVariance now surfaces
+// all four fields verbatim, so a merge key built from them matches the DB's own uniqueness.
+// `occurredAt` stays a plain string on these rows (never promoted to a Date), so the
+// window-prune below is a plain string compare. Confirmed upsert-only (no `.delete(` against
+// lifelenz_schedule_variance anywhere in src/ or scripts/).
+export function mergeLifelenzScheduleVarianceDelta(prevRows, deltaRows, { daysBack = 45 } = {}) {
+  const keyOf = r => r.loc + '|' + r.editedBy + '|' + r.occurredAt + '|' + r.seq;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.occurredAt >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2535,20 +2556,33 @@ function App() {
       try{
         // LifeLenz Data Explorer "Schedule Variance" — see
         // scripts/lifelenz-schedule-variance-pull.mjs / supabase/schema-lifelenz-schedule-variance.sql.
-        const svRows = await loadLifeLenzScheduleVariance();
-        if(svRows.length>0){
-          // scheduleVarianceDailyRows — per-(loc,date) aggregate (dailyScheduleVariance), the
-          // shape Signals' metric registry / stream-freshness actually read; raw svRows power
-          // the Schedule Discipline panel's drill-down table and per-editor breakdown.
-          const svDailyRows = dailyScheduleVariance(svRows);
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, scheduleVarianceRows: svRows, scheduleVarianceDailyRows: svDailyRows};
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${svRows.length} LifeLenz schedule-variance rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #3, 2026-11-22) — same shape as _stLifelenzDar/
+        // _stLifelenzJobHours: re-ask for only rows whose `updated_at` moved since the last
+        // sync, merge the delta into the cached array by (loc,editedBy,occurredAt,seq) — the
+        // table's real PK — instead of replacing it. See
+        // mergeLifelenzScheduleVarianceDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 20.
+        const since = localStorage.getItem(LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY) || null;
+        const svRows = await loadLifeLenzScheduleVariance({ since });
+        if (since && !svRows.length) return;
+        const newWatermark = maxUpdatedAt(svRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzScheduleVarianceDelta(prev.scheduleVarianceRows, svRows, {});
+          // scheduleVarianceDailyRows — per-(loc,date) aggregate (dailyScheduleVariance), the
+          // shape Signals' metric registry / stream-freshness actually read; raw rows power
+          // the Schedule Discipline panel's drill-down table and per-editor breakdown.
+          // Recomputed from the MERGED rows, not just the delta, so a no-op sync never drops an
+          // unchanged day from the daily rollup.
+          const svDailyRows = dailyScheduleVariance(merged);
+          const next = {...prev, scheduleVarianceRows: merged, scheduleVarianceDailyRows: svDailyRows};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${svRows.length} LifeLenz schedule-variance rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz schedule-variance load failed:',e);} };
       const _stComplianceAudit = async () => {
       try{
