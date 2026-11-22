@@ -701,3 +701,77 @@ both clean.
 all 9 of these streams. The actual Wave 1 delta-sync build itself (watermark-based `since` sync
 for the ~21 tables Section 13 classified as safe) has still not started — this pass only built
 the cache those future delta syncs will merge into, same scope boundary Section 15 drew.
+
+## 17. Wave 1 readiness audit for the 9 Phase-1.5-cached streams (2026-11-22) — one real write-path
+gap found, two loaders missing a field their own delta-sync would need
+
+Before picking the next delta-sync pilot, read every one of the 9 streams' actual pull-script
+write paths (not assumed from the "updated_at column exists" pattern CLAUDE.md already warns
+is never the hard part) and their client-side loader mapping in `src/lib/supabase.js` — the same
+"grep for `.update(`/`.upsert(` AND read what fields the row object actually carries" discipline
+Section 13/14's audit used.
+
+**6 of the 9 are Wave-1-ready as-is** — `updated_at` (or `pulled_at`) is set **unconditionally**
+inside the upserted row object (so it refreshes on every write, including a same-row re-pull with
+unchanged values — not just on first insert), confirmed by reading the literal line in each
+script:
+- `scripts/lifelenz-schedule-variance-pull.mjs:356`, `lifelenz-compliance-audit-pull.mjs:379`,
+  `lifelenz-employee-performance-pull.mjs:357`, `lifelenz-payroll-readiness-pull.mjs:404` —
+  `loc, updated_at: new Date().toISOString(), ...r` (identical pattern, all four).
+- `scripts/lifelenz-dar-pull.mjs:230` and `scripts/lifelenz-pull.mjs:1096` (job hours) — same
+  `updated_at: new Date().toISOString()` / `updated_at: now` pattern.
+- `scripts/hme-cloud-pull.mjs:85` and `scripts/squadle-pull.mjs:192` — same pattern
+  (`updated_at: new Date().toISOString(), ...r` / `...row`).
+No client-side `.delete(` call exists anywhere in `src/` against any of these 9 table names
+(grepped) — upsert-only, same as `lifelenz_schedule`'s own confirmed-safe write path (Section
+14), so a merge-only delta scheme can't miss a server-side delete for any of them.
+
+**1 real gap found: `lifelenz_attendance_summary`'s `pulled_at` is NOT a reliable watermark,
+despite looking identical to the other 6 at a glance.** `scripts/lifelenz-attendance-pull.mjs:214`
+upserts via `.upsert([row], { onConflict: 'loc,period_end' })` — but `row` never sets `pulled_at`
+at all; the schema (`supabase/schema-lifelenz-attendance.sql:36`) only gives it a column
+`default now()`. A Postgres column default fires on INSERT when the column is omitted from the
+statement, but an `ON CONFLICT DO UPDATE` only touches the columns the upsert call's own row
+object names — `pulled_at` isn't one of them, so **the column is set once on first insert and
+never refreshed on any subsequent re-pull of the same `(loc, period_end)` row**, even when the
+row's real content (`employeeCount`, `excusedAbsences`, etc.) changed. A delta-sync gated on
+`pulled_at > since` would silently miss every real update after the first. **This table is Wave
+2, not Wave 1** — same "write-path gap" category as the ~11 tables Section 15 already flagged
+(`ops_rows`/`ctrl_rows`/the `qsrsoft-ops-pull.mjs` family/etc.), not a new category. The fix is a
+one-line pull-script change (`pulled_at: new Date().toISOString()` explicit in the upserted row
+object, matching every other LifeLenz table's own pattern) — not attempted in this pass; flagging
+only.
+
+**2 of the 6 write-path-safe streams are missing a field their own loader would need before a
+delta-sync could actually be built against them — found by reading what the client gets back,
+not just what the DB has:**
+- **`lifelenz_schedule_variance`'s real primary key is `(loc, edited_by, occurred_at, seq)`** —
+  `seq` exists specifically because `occurred_at` is "not necessarily unique per (loc,
+  edited_by)... LifeLenz batches multiple field changes from one save action under the same
+  timestamp" (the schema file's own comment). `loadLifeLenzScheduleVariance`'s mapped return
+  shape does not surface `seq` at all today — a merge-by-key delta-sync keyed on anything less
+  than the real PK would silently collapse multiple same-instant edits by the same editor into
+  one. Needs one additive line (`seq: r.seq`) before a correct merge key can be built.
+- **`hme_dt_daily`/`squadle_checklist_records` both set `updated_at` reliably on write, but
+  neither `loadHmeDtRows` nor `loadSquadleChecklistRecords` surfaces `updatedAt` in its mapped
+  return shape.** The existing `maxUpdatedAt(rows, since)` helper (App.js, built for
+  `lifelenz_schedule`'s pilot) needs every delta row to carry `.updatedAt` to compute the next
+  watermark — without it, the watermark could never advance past its initial value, and every
+  "delta" fetch would silently re-request the same `since` floor forever (not wrong, just
+  pointless — the real-content merge would still work, but the whole POINT of delta-sync, not
+  re-asking for already-synced rows, would be defeated). Needs one additive line each
+  (`updatedAt: r.updated_at`) before either is delta-sync-ready.
+
+**Not a correctness bug in anything shipped — a scoping note for whoever builds the next pilot:**
+none of the four additive field-exposure fixes above change any existing behavior (nothing reads
+`seq`/`updatedAt` from these loaders today), so they're safe to land in the SAME commit as
+whichever table's delta-sync pilot needs them, not a prerequisite PR of their own.
+
+**Recommended next pilot, in order of readiness:** `lifelenz_job_hours` or `lifelenz_dar` (both
+already expose a usable `updatedAt`/no composite-key gap) are the cleanest "copy the
+`lifelenz_schedule` pilot's shape exactly" next steps. `lifelenz_schedule_variance`/
+`lifelenz_compliance_audit`/`lifelenz_employee_performance`/`lifelenz_payroll_readiness` already
+expose `updatedAt` too and need only the `seq` field (schedule_variance only) before the same
+treatment. `hmeDt`/`squadle` need their one-line `updatedAt` exposure fix first.
+`lifelenz_attendance_summary` needs its pull-script `pulled_at` fix first and is Wave 2, not
+Wave 1 — do not attempt a delta-sync pilot for it before that lands.
