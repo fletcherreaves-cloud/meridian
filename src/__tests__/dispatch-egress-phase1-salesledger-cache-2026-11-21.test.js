@@ -67,7 +67,9 @@ describe('egress Phase 1 pilot #3: salesLedgerRows joins the OPFS snapshot', () 
   it('opfsSave writes salesLedgerRows into the blob under `salesLedger`, stripped to _d like every other stream', async () => {
     await opfsSave({ laborRows: [], salesLedgerRows: [{ loc: '3708', date: ledgerDate, digitalSales: 456.78 }] });
     const raw = JSON.parse(fakeFiles.get('meridian-data.json'));
-    expect(raw.v).toBe(6);
+    // Not hardcoded to this pilot's own v6 — Phase 1.5 (v7) bumped the live write version again;
+    // the real thing this assertion guards is "opfsSave stamps a version number", not which one.
+    expect(raw.v).toBeGreaterThanOrEqual(6);
     expect(raw.salesLedger).toHaveLength(1);
     expect(raw.salesLedger[0]._d).toBe('2026-11-18');
     expect(raw.salesLedger[0].date).toBeUndefined();

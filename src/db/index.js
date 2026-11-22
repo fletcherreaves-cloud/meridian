@@ -312,9 +312,40 @@ async function opfsSave(ds) {
       // manual-upload path did. So a user who never does a manual upload has had an effectively
       // permanently-empty glimpse/cash cache this whole time, same gap this plan has been closing
       // stream-by-stream. Fixed in the same pass — see App.js's _stCloudEmailReport.
-      // All additions here are additive-only: a reader on an older version just gets `[]` for
-      // whichever field it doesn't recognize, not a breaking format change.
-      v: 6,
+      // v7 (egress Phase 1.5, 2026-11-22): added the 9 LifeLenz Data Explorer / HME / Squadle
+      // streams (jobHours/lifelenzAttendance/scheduleVariance/complianceAudit/
+      // employeePerformance/payrollReadiness/lifelenzDar/hmeDt/squadle) — App.js's 9 `_st*`
+      // startup stages for these previously did a bare `setDs` full-replace with NO write-back
+      // to this cache at all (found while scoping Wave 1 delta-sync — see
+      // memory/plan-egress-reduction-2026-11-20.md Section 15), so every login rendered these
+      // panels blank until the live T2 fetch landed, same gap sched/qsrAct/salesLedger already
+      // had before their own pilots. Deliberately NOT routed through `strip()` above: strip()
+      // assumes `date` is either a Date instance or (via `new Date(date)`) a value safe to
+      // re-derive via LOCAL Y/M/D components, but `lifelenzAttendanceRows.date` is a plain
+      // "YYYY-MM-DD" string (`r.period_end`) — feeding that through `new Date(date)` parses it
+      // as UTC midnight and reading local components back off it shifts the calendar day by one
+      // in any negative-UTC-offset timezone (America/Chicago included — the exact bug
+      // src/utils/date.js's own dKey() header comment warns about). Four of the nine
+      // (jobHours/scheduleVariance/complianceAudit/employeePerformance/payrollReadiness/
+      // lifelenzDar — six, not four) carry NO Date-object field at all (verified against each
+      // loader's real return shape in src/lib/supabase.js before writing this), so they are
+      // cached byte-for-byte: JSON round-trips plain strings/numbers without help. `hmeDt`/
+      // `squadle` DO carry real Date objects (`date`, plus `hmeDt`'s own `pulledAt`) —
+      // JSON.stringify already serializes those via Date.prototype.toJSON() (UTC ISO, no help
+      // needed on write); opfsLoad()'s read side reconstructs them back into real Date objects
+      // for exactly those two fields. All additions here are additive-only: a reader on an older
+      // version just gets `[]` for whichever field it doesn't recognize, not a breaking format
+      // change.
+      v: 7,
+      jobHours:            ds.jobHours               || [],
+      lifelenzAttendance:  ds.lifelenzAttendanceRows  || [],
+      scheduleVariance:    ds.scheduleVarianceRows    || [],
+      complianceAudit:     ds.complianceAuditRows     || [],
+      employeePerformance: ds.employeePerformanceRows || [],
+      payrollReadiness:    ds.payrollReadinessRows    || [],
+      lifelenzDar:         ds.lifelenzDarRows         || [],
+      hmeDt:               ds.hmeDtRows               || [],
+      squadle:             ds.squadleChecklistRows    || [],
       labor:   (ds.laborRows   || []).map(strip),
       ops:     (ds.opsRows     || []).map(strip),
       ctrl:    (ds.ctrlRows    || []).map(strip),
@@ -372,8 +403,15 @@ function opfsLoad() {
       setTimeout(() => {
         try {
           const raw = JSON.parse(new TextDecoder().decode(buf));
-          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5 && raw.v !== 6)) { resolve(null); return; }
+          if (!raw || (raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5 && raw.v !== 6 && raw.v !== 7)) { resolve(null); return; }
           const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
+          // v7 fields (hmeDt/squadle) were written WITHOUT strip() — see opfsSave()'s v7 comment
+          // for why — so their `date` (an ISO string, from Date.prototype.toJSON() during
+          // JSON.stringify) needs reconstructing into a real Date object here, same as
+          // qsrAct/refreshedAt below. The other seven v7 fields carry no Date-object field at
+          // all and round-trip through JSON untouched — no reconstruction helper needed.
+          const toDateIsoRow = r => ({ ...r, date: r.date ? new Date(r.date) : null });
+          const toHmeDtRow = r => ({ ...toDateIsoRow(r), pulledAt: r.pulledAt ? new Date(r.pulledAt) : null });
           // qsrAct rows carry a second Date field (refreshedAt) that toRow() above doesn't
           // know about — JSON round-trips a Date as an ISO string, so without this it would
           // stay a string on the cached copy, and at-a-glance.js's Movers strip calls
@@ -412,6 +450,17 @@ function opfsLoad() {
             exceptions: (raw.exceptions||[]).map(toRow),
             monthlyTargets:     raw.monthlyTargets     || {},
             monthlyTargetsMeta: raw.monthlyTargetsMeta || null,
+            // v7 (egress Phase 1.5, 2026-11-22) — see opfsSave()'s v7 comment for the per-field
+            // date-handling rationale.
+            jobHours:            raw.jobHours            || [],
+            lifelenzAttendance:  raw.lifelenzAttendance   || [],
+            scheduleVariance:    raw.scheduleVariance     || [],
+            complianceAudit:     raw.complianceAudit      || [],
+            employeePerformance: raw.employeePerformance  || [],
+            payrollReadiness:    raw.payrollReadiness     || [],
+            lifelenzDar:         raw.lifelenzDar          || [],
+            hmeDt:               (raw.hmeDt  || []).map(toHmeDtRow),
+            squadle:             (raw.squadle|| []).map(toDateIsoRow),
           });
         } catch { resolve(null); }
       }, 0);
@@ -490,6 +539,15 @@ async function loadDsFromIDB() {
       monthlyTargetsMeta: opfs.monthlyTargetsMeta || null,
       allMonthlyTargets:  opfs.allMonthlyTargets  || {},
       smgVoicePerf: opfs.smgVoicePerf || [],
+      jobHours:            opfs.jobHours            || [],
+      lifelenzAttendance:  opfs.lifelenzAttendance   || [],
+      scheduleVariance:    opfs.scheduleVariance     || [],
+      complianceAudit:     opfs.complianceAudit      || [],
+      employeePerformance: opfs.employeePerformance  || [],
+      payrollReadiness:    opfs.payrollReadiness     || [],
+      lifelenzDar:         opfs.lifelenzDar          || [],
+      hmeDt:               opfs.hmeDt                || [],
+      squadle:             opfs.squadle              || [],
     };
   }
 
