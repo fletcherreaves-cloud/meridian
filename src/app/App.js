@@ -1576,7 +1576,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,qsrAct,weather,pmix,records,glimpse,cash,salesLedger,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,sched,qsrAct,weather,pmix,records,glimpse,cash,salesLedger,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf,jobHours:_opfsJobHours,lifelenzAttendance:_opfsLLAttendance,scheduleVariance:_opfsScheduleVariance,complianceAudit:_opfsComplianceAudit,employeePerformance:_opfsEmployeePerformance,payrollReadiness:_opfsPayrollReadiness,lifelenzDar:_opfsLifelenzDar,hmeDt:_opfsHmeDt,squadle:_opfsSquadle} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -1610,6 +1610,21 @@ function App() {
           // third of _stCloudEmailReport's T1 streams, same cloud-first cache treatment its two
           // siblings already had.
           glimpseRows:glimpse||[], cashRows:cash||[], salesLedgerRows:salesLedger||[], exceptionRows:exceptions||[],
+          // Cache-first pilot #4 / Phase 1.5 (egress, 2026-11-22): the 9 LifeLenz Data Explorer /
+          // HME / Squadle startup stages never wrote back to OPFS at all until now — see
+          // db/index.js's opfsSave() v7 comment and memory/plan-egress-reduction-2026-11-20.md
+          // Section 15/16. Each live T2 stage below still runs and replaces this with fresh data;
+          // this just removes the "blank until the network call lands" gap, same as sched/qsrAct/
+          // salesLedger's own pilots. The two daily-aggregate derived fields (scheduleVariance/
+          // complianceAudit/lifelenzDar) are recomputed from the cached RAW rows here — cheap
+          // pure functions, and recomputing keeps this cache a single source of truth (raw rows
+          // only) instead of caching the same data twice.
+          jobHours:_opfsJobHours||[], lifelenzAttendanceRows:_opfsLLAttendance||[],
+          scheduleVarianceRows:_opfsScheduleVariance||[], scheduleVarianceDailyRows:dailyScheduleVariance(_opfsScheduleVariance||[]),
+          complianceAuditRows:_opfsComplianceAudit||[], complianceAuditDailyRows:dailyComplianceAudit(_opfsComplianceAudit||[]),
+          employeePerformanceRows:_opfsEmployeePerformance||[], payrollReadinessRows:_opfsPayrollReadiness||[],
+          lifelenzDarRows:_opfsLifelenzDar||[], lifelenzDarDailyRows:aggregateLifelenzDarDaily(_opfsLifelenzDar||[]),
+          hmeDtRows:_opfsHmeDt||[], squadleChecklistRows:_opfsSquadle||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, allYearlyTargets:{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           ...(_traceMark('bIdx+bLocIdx (all streams)', () => ({
             laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
@@ -1673,6 +1688,16 @@ function App() {
           // cache; they were hardcoded to []. Same gap as schedRows/qsrActSummaryRows had, fixed
           // the same way. See memory/plan-egress-reduction-2026-11-20.md Section 12.
           glimpseRows:glimpse||[], cashRows:cash||[], salesLedgerRows:salesLedger||[], exceptionRows:exceptions||[],
+          // Cache-first pilot #4 / Phase 1.5 (egress, 2026-11-22) — same reasoning as the
+          // glimpse/cash/salesLedger block just above: this branch (no legacy manual-upload
+          // history) never seeded these from the OPFS cache either. See db/index.js's
+          // opfsSave() v7 comment.
+          jobHours:_opfsJobHours||[], lifelenzAttendanceRows:_opfsLLAttendance||[],
+          scheduleVarianceRows:_opfsScheduleVariance||[], scheduleVarianceDailyRows:dailyScheduleVariance(_opfsScheduleVariance||[]),
+          complianceAuditRows:_opfsComplianceAudit||[], complianceAuditDailyRows:dailyComplianceAudit(_opfsComplianceAudit||[]),
+          employeePerformanceRows:_opfsEmployeePerformance||[], payrollReadinessRows:_opfsPayrollReadiness||[],
+          lifelenzDarRows:_opfsLifelenzDar||[], lifelenzDarDailyRows:aggregateLifelenzDarDaily(_opfsLifelenzDar||[]),
+          hmeDtRows:_opfsHmeDt||[], squadleChecklistRows:_opfsSquadle||[],
           targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
           smgVoicePerf:[], loaded:false,
           laborIdx:{}, opsIdx:{}, ctrlIdx:{},
@@ -2429,7 +2454,11 @@ function App() {
         if(jobRows.length>0){
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, jobHours: jobRows};
+            const next = {...prev, jobHours: jobRows};
+            // Cache-first pilot #4 / Phase 1.5 (egress, 2026-11-22) — see db/index.js's
+            // opfsSave() v7 comment / memory/plan-egress-reduction-2026-11-20.md Section 15/16.
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
         }
@@ -2442,7 +2471,9 @@ function App() {
         if(attRows.length>0){
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, lifelenzAttendanceRows: attRows};
+            const next = {...prev, lifelenzAttendanceRows: attRows};
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${attRows.length} LifeLenz attendance rows from Supabase`);
         }
@@ -2459,7 +2490,9 @@ function App() {
           const svDailyRows = dailyScheduleVariance(svRows);
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, scheduleVarianceRows: svRows, scheduleVarianceDailyRows: svDailyRows};
+            const next = {...prev, scheduleVarianceRows: svRows, scheduleVarianceDailyRows: svDailyRows};
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${svRows.length} LifeLenz schedule-variance rows from Supabase`);
         }
@@ -2476,7 +2509,9 @@ function App() {
           const caDailyRows = dailyComplianceAudit(caRows);
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, complianceAuditRows: caRows, complianceAuditDailyRows: caDailyRows};
+            const next = {...prev, complianceAuditRows: caRows, complianceAuditDailyRows: caDailyRows};
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${caRows.length} LifeLenz compliance-audit rows from Supabase`);
         }
@@ -2493,7 +2528,9 @@ function App() {
         if(epRows.length>0){
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, employeePerformanceRows: epRows};
+            const next = {...prev, employeePerformanceRows: epRows};
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${epRows.length} LifeLenz employee-performance rows from Supabase`);
         }
@@ -2508,7 +2545,9 @@ function App() {
         if(prRows.length>0){
           setDs(prev=>{
             if(!prev) return prev;
-            return {...prev, payrollReadinessRows: prRows};
+            const next = {...prev, payrollReadinessRows: prRows};
+            opfsSave(next).catch(()=>{});
+            return next;
           });
           console.log(`[Meridian] ✓ Loaded ${prRows.length} LifeLenz payroll-readiness rows from Supabase`);
         }
@@ -2529,7 +2568,7 @@ function App() {
         const ldRows = await loadLifeLenzDar();
         if(ldRows.length>0){
           const ldDaily = aggregateLifelenzDarDaily(ldRows);
-          setDs(prev=>{if(!prev)return prev;return {...prev, lifelenzDarRows: ldRows, lifelenzDarDailyRows: ldDaily};});
+          setDs(prev=>{if(!prev)return prev;const next={...prev, lifelenzDarRows: ldRows, lifelenzDarDailyRows: ldDaily};opfsSave(next).catch(()=>{});return next;});
           console.log(`[Meridian] ✓ Loaded ${ldRows.length} LifeLenz DAR rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz DAR load failed:',e);} };
@@ -2539,7 +2578,7 @@ function App() {
         // supabase/schema-hme-cloud-dt.sql. Surfaces in dt-speedofservice.js.
         const hmeRows = await loadHmeDtRows();
         if(hmeRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev, hmeDtRows: hmeRows};});
+          setDs(prev=>{if(!prev)return prev;const next={...prev, hmeDtRows: hmeRows};opfsSave(next).catch(()=>{});return next;});
           console.log(`[Meridian] ✓ Loaded ${hmeRows.length} HME Cloud DT rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] HME Cloud load failed:',e);} };
@@ -2551,7 +2590,7 @@ function App() {
         // stream-freshness.js can track it like every other watched stream.
         const sqRows = await loadSquadleChecklistRecords();
         if(sqRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev, squadleChecklistRows: sqRows};});
+          setDs(prev=>{if(!prev)return prev;const next={...prev, squadleChecklistRows: sqRows};opfsSave(next).catch(()=>{});return next;});
           console.log(`[Meridian] ✓ Loaded ${sqRows.length} Squadle checklist rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Squadle load failed:',e);} };

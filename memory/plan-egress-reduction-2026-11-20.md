@@ -628,13 +628,76 @@ claimed to be QSRSoft-specific) needed the swap. 3 tests
 (`src/__tests__/dispatch-liveops-sync-now-lifelenz-dar-2026-11-21.test.js`), same
 break-confirm-restore discipline.
 
-**Not yet started:** the actual Wave 1 delta-sync build for the ~21 tables Section 13 classified
-as safe, which (discovered this same pass) needs Phase-1-style OPFS cache-first-render added to
-each LifeLenz `_st*` startup stage FIRST — none of them currently persist to OPFS at all, they do
-a bare `setDs(prev=>({...prev, field: rows}))` full-replace with no `opfsSave` call. Delta-sync
+**Not yet started (as of Section 15):** the actual Wave 1 delta-sync build for the ~21 tables
+Section 13 classified as safe, which needs Phase-1-style OPFS cache-first-render added to each
+LifeLenz `_st*` startup stage FIRST — none of them currently persist to OPFS at all, they do a
+bare `setDs(prev=>({...prev, field: rows}))` full-replace with no `opfsSave` call. Delta-sync
 without a persisted cache to merge into doesn't reduce login-time egress, since a fresh page load
 starts from zero regardless of the watermark. Wave 2's ~11 tables (write-path gaps — `ops_rows`,
 `ctrl_rows`, the `qsrsoft-ops-pull.mjs` upsert family, `smg_voice_performance`/`smg_voice_daypart`,
 `qsr_employee_tenure`, `qsr_field_definitions`) still need their `updated_at`/timestamp set
 explicitly on write before they can be delta-synced at all. `staff_assignments`/`org_events`/
 `target_overrides` stay excluded (real delete paths, no alternative strategy designed).
+
+## 16. Phase 1.5 shipped (2026-11-22, v5.846): OPFS cache-first-render for the 9 LifeLenz/HME/
+Squadle streams — the Wave 1 prerequisite Section 15 identified
+
+Owner: "You can just pick up" (continuing the prior session's work with no further scoping).
+Closed Section 15's own "not yet started" prerequisite: `_stLifelenzJobHours`/
+`_stLifelenzAttendance`/`_stScheduleVariance`/`_stComplianceAudit`/`_stEmployeePerformance`/
+`_stPayrollReadiness`/`_stLifelenzDar`/`_stHmeDt`/`_stSquadle` now all write their fetched rows
+into the OPFS blob (`opfsSave(next)`, same fire-and-forget pattern as pilots #1-3), and
+`performFullIDBRestore()` renders the cached rows immediately on login — before the live T2 fetch
+even starts — instead of leaving these panels blank until the network call lands.
+
+**The real finding, surfaced by actually reading each loader's return shape before writing any
+caching code (not assumed from the existing `sched`/`qsrAct`/`salesLedger` pattern):** the shared
+`strip()`/`toRow()` pair every prior cached stream uses assumes a row's `date` field is either a
+real `Date` instance or a value safe to run through `new Date(date)` and then read back via LOCAL
+`getFullYear()`/`getMonth()`/`getDate()`. That assumption breaks for `lifelenzAttendanceRows`:
+its `date` field (`r.period_end`, confirmed by reading `loadLifeLenzAttendance` in
+`src/lib/supabase.js`) is a plain `"YYYY-MM-DD"` **string**, not a Date object. `new Date("2026-
+11-20")` parses as UTC midnight; reading its LOCAL calendar components back in any negative-
+UTC-offset timezone (America/Chicago, where this app actually runs, included) shifts the result
+back one calendar day — the exact bug `src/utils/date.js`'s own `dKey()` header comment already
+documents as a recurring trap in this codebase. Blindly reusing `strip()`/`toRow()` for this one
+field would have silently corrupted every cached attendance row's date by a day in production,
+while passing clean in a UTC CI runner — the kind of bug that never reproduces in the environment
+that would have caught it.
+
+**Fix: skip `strip()`/`toRow()` for all 9 new fields, cache verbatim, reconstruct only what
+actually needs it.** Checked every one of the 9 loaders' real mapped row shapes first: 7 of the 9
+(`jobHours`/`scheduleVariance`/`complianceAudit`/`employeePerformance`/`payrollReadiness`/
+`lifelenzDar`/`lifelenzAttendance`) carry **no Date-object field at all** — every date-like value
+on them (`weekStart`, `occurredAt`, `shiftDate`, `periodEnd`, `payPeriodStart`, `dt`, and
+`lifelenzAttendance`'s own `date`) is already a plain string straight from Supabase. These seven
+are cached byte-for-byte (`ds.X || []`, no mapping on write; `raw.X || []`, no mapping on read) —
+JSON round-trips plain strings/numbers unaided, so there is nothing to corrupt. The other two
+(`hmeDt`/`squadle`) DO carry real Date objects (`hmeDt` has two: `date` and `pulledAt`) —
+`JSON.stringify` already serializes those via `Date.prototype.toJSON()` on write with no help
+needed; `opfsLoad()`'s read side reconstructs them back into real Date objects via dedicated
+`toDateIsoRow`/`toHmeDtRow` helpers, mirroring the existing `qsrAct`/`refreshedAt` wrapper pilot
+#2 built for the identical reason (a stream with more than one Date-bearing field).
+
+**Format:** OPFS blob bumped to `v: 7` (additive-only, same convention as v4-v6 — a reader on an
+older cached file just gets `[]` for whichever of the 9 new fields it doesn't recognize, not a
+crash). The two daily-aggregate derived views each raw stream already has a sibling for
+(`scheduleVarianceDailyRows`/`complianceAuditDailyRows`/`lifelenzDarDailyRows`, computed by
+`dailyScheduleVariance`/`dailyComplianceAudit`/`aggregateLifelenzDarDaily`) are recomputed from
+the cached RAW rows at restore time rather than cached a second time — cheap pure functions
+already imported in App.js, and recomputing keeps the cache a single source of truth.
+
+**Verification:** 7 new tests
+(`src/__tests__/dispatch-egress-phase1.5-lifelenz-opfs-cache-2026-11-22.test.js`), including a
+direct check that `lifelenzAttendance.date` round-trips as the exact same string (never promoted
+to a Date, never shifted a day) and that `hmeDt`/`squadle` restore real Date objects with the
+exact original instant. Confirmed the `hmeDt` reconstruction test actually catches a regression:
+temporarily stripped `toHmeDtRow`'s Date reconstruction down to a passthrough, watched the test
+fail with the exact expected symptom (`date` restored as a plain ISO string, not a Date
+instance), restored, re-verified clean — same discipline as every prior pilot. Full suite + build
+both clean.
+
+**Status after this pass:** Wave 1 delta-sync's own prerequisite (Section 15) is now closed for
+all 9 of these streams. The actual Wave 1 delta-sync build itself (watermark-based `since` sync
+for the ~21 tables Section 13 classified as safe) has still not started — this pass only built
+the cache those future delta syncs will merge into, same scope boundary Section 15 drew.
