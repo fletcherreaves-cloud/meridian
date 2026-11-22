@@ -957,3 +957,44 @@ missed check.
   (`src/__tests__/dispatch-egress-wave1-pilot5-lifelenz-employeeperformance-watermark-2026-11-22.test.js`).
 - Next: `lifelenz_payroll_readiness` (read its schema file fully first, per the same standing
   lesson), then `hmeDt`/`squadle` once their own `updatedAt` exposure lands.
+
+## 23. Wave 1 delta-sync pilot #6 shipped (2026-11-22): lifelenz_payroll_readiness, closing the
+Wave 1 series (schedule_variance/compliance_audit/employee_performance/payroll_readiness)
+
+Read `supabase/schema-lifelenz-payroll-readiness.sql` fully before building, per the standing
+lesson from pilots #4/#5 — and this one had the biggest gap yet: `loadLifeLenzPayrollReadiness`
+exposed NO `payrollEntryId` field at all, even though `(loc, payroll_entry_id)` is the table's
+real primary key. This isn't a minor oversight — the schema file's own header explains that the
+table's ORIGINAL key, `(loc, geid, pay_period_start)`, was outright wrong: a live measurement
+(`schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql`) found one real employee/pay-period
+combination held 13 separate shift rows, meaning every production pull was discarding 86-99% of
+real rows to last-write-wins dedup before that migration re-keyed the table on the report's real
+per-row id. A delta-sync keyed on anything less than the corrected real PK would have
+reintroduced exactly that same silent-data-loss bug this repo already paid to fix once.
+
+- `loadLifeLenzPayrollReadiness({ since })` — additive `since` param, `.gt('updated_at', since)`
+  when given. Added `payrollEntryId: r.payroll_entry_id` to the mapped return in the same
+  commit.
+- `mergeLifelenzPayrollReadinessDelta(prevRows, deltaRows, { daysBack })` (`src/app/App.js`) —
+  merge-by-key on `loc + '|' + payrollEntryId`. Window-prune on `payPeriodStart` (a plain
+  `'YYYY-MM-DD'` string, never a `Date`) via string compare. The only `.delete(` against this
+  table anywhere in the repo is the one-time PK-migration script, not an ongoing operational
+  path — confirmed upsert-only for live writes.
+  `LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY = 'mf_lifelenz_payroll_readiness_watermark'` in
+  `localStorage`.
+- `_stPayrollReadiness` — same shape as the prior five pilots: reads the watermark, calls
+  `loadLifeLenzPayrollReadiness({ since })`, early-returns on `since && !rows.length`, advances
+  the watermark, merges into `ds.payrollReadinessRows`, `opfsSave`s the result.
+- 6 tests
+  (`src/__tests__/dispatch-egress-wave1-pilot6-lifelenz-payrollreadiness-watermark-2026-11-22.test.js`),
+  including a dedicated case proving multiple shift rows for the same employee/pay-period stay
+  distinct via `payrollEntryId` — the exact real-grain bug this pilot's loader fix had to get
+  right.
+
+**This closes the planned Wave 1 pilot series for `lifelenz_schedule_variance` /
+`lifelenz_compliance_audit` / `lifelenz_employee_performance` / `lifelenz_payroll_readiness`,
+alongside the earlier `lifelenz_dar` / `lifelenz_job_hours` pilots (#1/#2).** Remaining per
+Section 17's ordering: `hmeDt`/`squadle`, which still need their own `updatedAt` exposed on
+their loaders before a delta-sync can be built (one additive line each,
+`updatedAt: r.updated_at`) — not attempted in this pass. `lifelenz_attendance_summary` stays
+Wave 2 pending its own pull-script `pulled_at` write-path fix (Section 17).

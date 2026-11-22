@@ -945,6 +945,8 @@ export const LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY = 'mf_lifelenz_schedule_va
 export const LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY = 'mf_lifelenz_compliance_audit_watermark';
 // Wave 1 pilot #5 (2026-11-22) — same reasoning again.
 export const LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY = 'mf_lifelenz_employee_performance_watermark';
+// Wave 1 pilot #6 (2026-11-22) — same reasoning again.
+export const LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY = 'mf_lifelenz_payroll_readiness_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1072,6 +1074,27 @@ export function mergeLifelenzEmployeePerformanceDelta(prevRows, deltaRows, { day
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.periodEnd >= cutoffStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #6 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_payroll_readiness's real PK is (loc, payroll_entry_id)
+// (supabase/schema-lifelenz-payroll-readiness.sql:35-71) — one row per payroll entry/shift, NOT
+// per (geid, pay_period_start) as the table's original (wrong) key assumed before a live
+// measurement found one real pay period held 13 separate shift rows under the old key
+// (schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql). loadLifeLenzPayrollReadiness now
+// surfaces `payrollEntryId` verbatim, so a merge key built from it plus `loc` matches the DB's
+// own uniqueness. `payPeriodStart` stays a plain 'YYYY-MM-DD' string (never a Date), so the
+// window-prune below is a plain string compare. The only `.delete(` against this table anywhere
+// in the repo is the one-time PK-migration script, not an ongoing operational path — confirmed
+// upsert-only for live writes.
+export function mergeLifelenzPayrollReadinessDelta(prevRows, deltaRows, { daysBack = 14 } = {}) {
+  const keyOf = r => r.loc + '|' + r.payrollEntryId;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.payPeriodStart >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2691,16 +2714,26 @@ function App() {
         // scripts/lifelenz-payroll-readiness-pull.mjs / supabase/schema-lifelenz-payroll-
         // readiness.sql. Real per-row pay_period_start (not a synthesized window, unlike
         // Employee Performance) -- same "real event date" shape as Compliance Audit.
-        const prRows = await loadLifeLenzPayrollReadiness();
-        if(prRows.length>0){
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, payrollReadinessRows: prRows};
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${prRows.length} LifeLenz payroll-readiness rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #6, 2026-11-22) — same shape as the prior five
+        // pilots: re-ask for only rows whose `updated_at` moved since the last sync, merge the
+        // delta into the cached array by (loc,payrollEntryId) — the table's real PK — instead of
+        // replacing it. See mergeLifelenzPayrollReadinessDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 23.
+        const since = localStorage.getItem(LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY) || null;
+        const prRows = await loadLifeLenzPayrollReadiness({ since });
+        if (since && !prRows.length) return;
+        const newWatermark = maxUpdatedAt(prRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzPayrollReadinessDelta(prev.payrollReadinessRows, prRows, {});
+          const next = {...prev, payrollReadinessRows: merged};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${prRows.length} LifeLenz payroll-readiness rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz payroll-readiness load failed:',e);} };
       const _stLifelenzDar = async () => {
       try{

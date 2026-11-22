@@ -1635,7 +1635,19 @@ export async function loadLifeLenzEmployeePerformance({ start, end, locs, daysBa
 // the real feature built on this data eventually gets, the more this default is worth revisiting
 // — but today it is pure egress with no offsetting benefit. See
 // memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack = 14 } = {}) {
+// `since`/`payrollEntryId` (egress Wave 1 delta-sync pilot #6, 2026-11-22): `since` is an
+// optional ISO watermark (`.gt('updated_at', since)` when given). `payrollEntryId` is
+// additively exposed on the mapped return — it was NOT before this pilot, despite being the
+// table's real primary-key column alongside `loc` (`loc, payroll_entry_id` —
+// supabase/schema-lifelenz-payroll-readiness.sql:35-71, re-keyed from the original wrong
+// (loc,geid,pay_period_start) guess by schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql
+// after a live measurement showed one pay period held 13 separate shift rows). Nothing read
+// `payrollEntryId` from this loader before this pilot, so adding it is purely additive.
+// Verified safe to build a watermark on: scripts/lifelenz-payroll-readiness-pull.mjs's
+// upsertRows() sets `updated_at: new Date().toISOString()` unconditionally on every row, and the
+// only `.delete(` against this table anywhere in the repo is the one-time PK-migration script
+// (schema-fix-lifelenz-payroll-readiness-pk-2026-11-07.sql), not an ongoing operational path.
+export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack = 14, since } = {}) {
   if (!supabase) return [];
   if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
@@ -1643,6 +1655,7 @@ export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack 
     if (start) q = q.gte('pay_period_start', start);
     if (end) q = q.lte('pay_period_start', end);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    if (since) q = q.gt('updated_at', since);
     return q;
   }, 1000, 'lifelenz_payroll_readiness');
   return (data || []).map(r => ({
@@ -1680,6 +1693,7 @@ export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack 
     timeOffTypeName:         r.time_off_type_name,
     raw:                     r.raw,
     updatedAt:               r.updated_at,
+    payrollEntryId:          r.payroll_entry_id,
   }));
 }
 
