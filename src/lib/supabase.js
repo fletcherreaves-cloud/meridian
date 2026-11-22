@@ -1562,7 +1562,16 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack =
 // lowAttendanceEmployees, via latestPeriodRows()) only ever reads the MOST RECENT rolling period
 // per employee — 60 days is generous headroom over any realistic rolling-window cadence, not a
 // tight fit. See memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzEmployeePerformance({ start, end, locs, daysBack = 60 } = {}) {
+// `since` (egress Wave 1 delta-sync pilot #5, 2026-11-22): optional ISO watermark — when given,
+// adds `updated_at > since` so App.js's eager _stEmployeePerformance stage can re-ask for only
+// the rows that changed since its last sync instead of the full `daysBack` window every login.
+// Omitting it (every pre-existing call site) is byte-identical to today's behavior. Loader
+// already exposes the table's full real PK (loc, geid, periodEnd) verbatim, so no additive field
+// fix is needed here (unlike pilots #3/#4). Verified safe to build a watermark on:
+// scripts/lifelenz-employee-performance-pull.mjs's upsertRows() sets
+// `updated_at: new Date().toISOString()` unconditionally on every row, and the table has no
+// client-side `.delete(` anywhere.
+export async function loadLifeLenzEmployeePerformance({ start, end, locs, daysBack = 60, since } = {}) {
   if (!supabase) return [];
   if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
@@ -1570,6 +1579,7 @@ export async function loadLifeLenzEmployeePerformance({ start, end, locs, daysBa
     if (start) q = q.gte('period_end', start);
     if (end) q = q.lte('period_end', end);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    if (since) q = q.gt('updated_at', since);
     return q;
   }, 1000, 'lifelenz_employee_performance');
   return (data || []).map(r => ({

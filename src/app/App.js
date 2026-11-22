@@ -943,6 +943,8 @@ export const LIFELENZ_JOB_HOURS_WATERMARK_KEY = 'mf_lifelenz_job_hours_watermark
 export const LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY = 'mf_lifelenz_schedule_variance_watermark';
 // Wave 1 pilot #4 (2026-11-22) — same reasoning again.
 export const LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY = 'mf_lifelenz_compliance_audit_watermark';
+// Wave 1 pilot #5 (2026-11-22) — same reasoning again.
+export const LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY = 'mf_lifelenz_employee_performance_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1051,6 +1053,25 @@ export function mergeLifelenzComplianceAuditDelta(prevRows, deltaRows, { daysBac
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.shiftDate >= cutoffStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #5 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_employee_performance's real PK is (loc, geid, period_end)
+// (supabase/schema-lifelenz-employee-performance.sql:37-71) — a rolling-window scorecard, one
+// row per employee per daily pull, synthesized by the pull script's own request window
+// boundaries (same shape as lifelenz_attendance_summary's (loc,period_end), but per-employee).
+// loadLifeLenzEmployeePerformance already returns all three verbatim. `periodEnd` stays a plain
+// 'YYYY-MM-DD' string (never a Date), so the window-prune below is a plain string compare.
+// Confirmed upsert-only (no `.delete(` against lifelenz_employee_performance anywhere in src/
+// or scripts/).
+export function mergeLifelenzEmployeePerformanceDelta(prevRows, deltaRows, { daysBack = 60 } = {}) {
+  const keyOf = r => r.loc + '|' + r.geid + '|' + r.periodEnd;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.periodEnd >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2643,16 +2664,26 @@ function App() {
         // has no per-row date dimension at all, just a per-employee rolling-window scorecard
         // (see that schema file's header); src/engine/employee-performance.js filters to the
         // latest period_end itself wherever a "current" view is needed.
-        const epRows = await loadLifeLenzEmployeePerformance();
-        if(epRows.length>0){
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, employeePerformanceRows: epRows};
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${epRows.length} LifeLenz employee-performance rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #5, 2026-11-22) — same shape as the prior four
+        // pilots: re-ask for only rows whose `updated_at` moved since the last sync, merge the
+        // delta into the cached array by (loc,geid,periodEnd) — the table's real PK — instead of
+        // replacing it. See mergeLifelenzEmployeePerformanceDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 22.
+        const since = localStorage.getItem(LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY) || null;
+        const epRows = await loadLifeLenzEmployeePerformance({ since });
+        if (since && !epRows.length) return;
+        const newWatermark = maxUpdatedAt(epRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzEmployeePerformanceDelta(prev.employeePerformanceRows, epRows, {});
+          const next = {...prev, employeePerformanceRows: merged};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${epRows.length} LifeLenz employee-performance rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz employee-performance load failed:',e);} };
       const _stPayrollReadiness = async () => {
       try{
