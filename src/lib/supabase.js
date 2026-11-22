@@ -1501,7 +1501,19 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack 
 // `daysBack` — same unbounded-eager-fetch finding as loadLifeLenzScheduleVariance just above
 // (measured live: 9,727 rows fetched in full on every login). ComplianceAuditPanel's own window
 // selector also maxes at 30 days. See memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack = 45 } = {}) {
+// `since`/`seq` (egress Wave 1 delta-sync pilot #4, 2026-11-22): `since` is an optional ISO
+// watermark (`.gt('updated_at', since)` when given, byte-identical to before when omitted).
+// `seq` is additively exposed on the mapped return — it was NOT before this pilot. The schema
+// comment (supabase/schema-lifelenz-compliance-audit.sql:18-21) says `compliance_warning_id` is
+// the real natural per-row key and `seq` is "kept only as a defensive tie-breaker in case a
+// future report revision ever repeats an id within one pull" — but it IS part of the real
+// primary key (loc, compliance_warning_id, seq), so a merge-by-key delta-sync is built against
+// the full PK rather than assuming seq is always 0. Nothing read `seq` from this loader before
+// this pilot, so adding it is purely additive. Verified safe to build a watermark on:
+// scripts/lifelenz-compliance-audit-pull.mjs's upsertRows() sets
+// `updated_at: new Date().toISOString()` unconditionally on every row, and the table has no
+// client-side `.delete(` anywhere.
+export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack = 45, since } = {}) {
   if (!supabase) return [];
   if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
@@ -1509,6 +1521,7 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack =
     if (start) q = q.gte('shift_date', start);
     if (end) q = q.lte('shift_date', end);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    if (since) q = q.gt('updated_at', since);
     return q;
   }, 1000, 'lifelenz_compliance_audit');
   return (data || []).map(r => ({
@@ -1532,6 +1545,7 @@ export async function loadLifeLenzComplianceAudit({ start, end, locs, daysBack =
     dismissedOn:      r.dismissed_on,
     raw:              r.raw,
     updatedAt:        r.updated_at,
+    seq:              r.seq,
   }));
 }
 

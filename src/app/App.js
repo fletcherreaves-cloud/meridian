@@ -941,6 +941,8 @@ export const LIFELENZ_DAR_WATERMARK_KEY = 'mf_lifelenz_dar_watermark';
 export const LIFELENZ_JOB_HOURS_WATERMARK_KEY = 'mf_lifelenz_job_hours_watermark';
 // Wave 1 pilot #3 (2026-11-22) — same reasoning again.
 export const LIFELENZ_SCHEDULE_VARIANCE_WATERMARK_KEY = 'mf_lifelenz_schedule_variance_watermark';
+// Wave 1 pilot #4 (2026-11-22) — same reasoning again.
+export const LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY = 'mf_lifelenz_compliance_audit_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1030,6 +1032,25 @@ export function mergeLifelenzScheduleVarianceDelta(prevRows, deltaRows, { daysBa
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.occurredAt >= cutoffStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #4 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_compliance_audit's real PK is (loc, compliance_warning_id, seq)
+// (supabase/schema-lifelenz-compliance-audit.sql:22-44) — `compliance_warning_id` is the
+// violation's own confirmed-real id (the natural per-row key), `seq` a defensive tie-breaker in
+// case a future report revision ever repeats an id within one pull. loadLifeLenzComplianceAudit
+// now surfaces all three verbatim, so a merge key built from them matches the DB's own
+// uniqueness exactly. `shiftDate` stays a plain 'YYYY-MM-DD' string on these rows (never a
+// Date), so the window-prune below is a plain string compare. Confirmed upsert-only (no
+// `.delete(` against lifelenz_compliance_audit anywhere in src/ or scripts/).
+export function mergeLifelenzComplianceAuditDelta(prevRows, deltaRows, { daysBack = 45 } = {}) {
+  const keyOf = r => r.loc + '|' + r.complianceWarningId + '|' + r.seq;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.shiftDate >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2588,20 +2609,31 @@ function App() {
       try{
         // LifeLenz Data Explorer "Compliance Audit" — see
         // scripts/lifelenz-compliance-audit-pull.mjs / supabase/schema-lifelenz-compliance-audit.sql.
-        const caRows = await loadLifeLenzComplianceAudit();
-        if(caRows.length>0){
-          // complianceAuditDailyRows — per-(loc,date) aggregate (dailyComplianceAudit), the
-          // shape Signals' metric registry / stream-freshness actually read; raw caRows power
-          // the Compliance Audit panel's drill-down table, category and per-employee breakdowns.
-          const caDailyRows = dailyComplianceAudit(caRows);
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, complianceAuditRows: caRows, complianceAuditDailyRows: caDailyRows};
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${caRows.length} LifeLenz compliance-audit rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #4, 2026-11-22) — same shape as the prior three
+        // pilots: re-ask for only rows whose `updated_at` moved since the last sync, merge the
+        // delta into the cached array by (loc,complianceWarningId,seq) — the table's real PK —
+        // instead of replacing it. See mergeLifelenzComplianceAuditDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 21.
+        const since = localStorage.getItem(LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY) || null;
+        const caRows = await loadLifeLenzComplianceAudit({ since });
+        if (since && !caRows.length) return;
+        const newWatermark = maxUpdatedAt(caRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzComplianceAuditDelta(prev.complianceAuditRows, caRows, {});
+          // complianceAuditDailyRows — per-(loc,date) aggregate (dailyComplianceAudit), the
+          // shape Signals' metric registry / stream-freshness actually read; raw rows power
+          // the Compliance Audit panel's drill-down table, category and per-employee
+          // breakdowns. Recomputed from the MERGED rows, not just the delta.
+          const caDailyRows = dailyComplianceAudit(merged);
+          const next = {...prev, complianceAuditRows: merged, complianceAuditDailyRows: caDailyRows};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${caRows.length} LifeLenz compliance-audit rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz compliance-audit load failed:',e);} };
       const _stEmployeePerformance = async () => {
       try{
