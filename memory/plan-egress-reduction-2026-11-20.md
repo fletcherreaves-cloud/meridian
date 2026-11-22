@@ -890,3 +890,40 @@ same commit as the delta-sync build itself, per the same scoping note pilot #2 u
 - Next per Section 17's ordering: `lifelenz_compliance_audit` / `lifelenz_employee_performance` /
   `lifelenz_payroll_readiness` (all three already expose `updatedAt`, no additive field needed),
   then `hmeDt`/`squadle` once their own `updatedAt` exposure lands.
+
+## 21. Wave 1 delta-sync pilot #4 shipped (2026-11-22): lifelenz_compliance_audit, also exposing
+`seq`
+
+Started on the assumption `lifelenz_compliance_audit` needed no additive field (Section 17 only
+flagged `updatedAt`, already present) — but reading the schema file before building surfaced a
+second gap the original audit's grep-based pass missed: `seq` is part of the table's real
+primary key `(loc, compliance_warning_id, seq)`
+(`supabase/schema-lifelenz-compliance-audit.sql:22-44`), not just `lifelenz_schedule_variance`'s.
+The schema comment calls `compliance_warning_id` the natural per-row key and `seq` "a defensive
+tie-breaker in case a future report revision ever repeats an id within one pull" — meaning `seq`
+is expected to almost always be 0 today, but a correct delta-sync merge key is built against the
+full PK regardless, not an assumption that it always will be. Added `seq: r.seq` to the loader's
+return in the same commit as the delta-sync build, same scoping note as pilots #2/#3.
+
+- `loadLifeLenzComplianceAudit({ since })` — additive `since` param, `.gt('updated_at', since)`
+  when given.
+- `mergeLifelenzComplianceAuditDelta(prevRows, deltaRows, { daysBack })` (`src/app/App.js`) —
+  merge-by-key on `loc + '|' + complianceWarningId + '|' + seq`. Window-prune on `shiftDate` (a
+  plain `'YYYY-MM-DD'` string, never a `Date`) via string compare. Confirmed upsert-only (no
+  `.delete(` against `lifelenz_compliance_audit` anywhere in `src/` or `scripts/`).
+  `LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY = 'mf_lifelenz_compliance_audit_watermark'` in
+  `localStorage`.
+- `_stComplianceAudit` — same shape as the prior three pilots: reads the watermark, calls
+  `loadLifeLenzComplianceAudit({ since })`, early-returns on `since && !rows.length`, advances
+  the watermark, merges into `ds.complianceAuditRows`, recomputes `ds.complianceAuditDailyRows`
+  via `dailyComplianceAudit` on the MERGED rows, `opfsSave`s the result.
+- 6 tests
+  (`src/__tests__/dispatch-egress-wave1-pilot4-lifelenz-complianceaudit-watermark-2026-11-22.test.js`),
+  including a dedicated case proving two violations sharing one id stay distinct rows via `seq`.
+- **Lesson for the remaining two pilots (`lifelenz_employee_performance` /
+  `lifelenz_payroll_readiness`):** don't trust Section 17's "already exposes `updatedAt`, no
+  additive field needed" at face value — it was itself built by grepping loader code, not by
+  reading each table's schema file for its real PK. Read the schema file for each before
+  assuming the PK is just `(loc, <one date field>)`.
+- Next: `lifelenz_employee_performance` / `lifelenz_payroll_readiness`, then `hmeDt`/`squadle`
+  once their own `updatedAt` exposure lands.
