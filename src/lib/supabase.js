@@ -1641,7 +1641,16 @@ export async function loadLifeLenzPayrollReadiness({ start, end, locs, daysBack 
 // every login via App.js's _stLifelenzDar stage). The OTHER call site, App.js's refreshDar()
 // LiveOps fallback, already passes an explicit `{start,end}` for a single date and is unaffected
 // by this default. See memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzDar({ start, end, locs, daysBack = 45 } = {}) {
+// `since` (egress Wave 1 delta-sync pilot #1, 2026-11-22): optional ISO watermark — when given,
+// adds `updated_at > since` so App.js's eager _stLifelenzDar stage can re-ask for only the rows
+// that actually changed since its last sync instead of the full `daysBack` window every login.
+// Omitting it (every pre-existing call site) is byte-identical to today's behavior. Verified safe
+// to build a watermark on: scripts/lifelenz-dar-pull.mjs's upsertRows() sets
+// `updated_at: new Date().toISOString()` unconditionally on every upserted row (ahead of the `...r`
+// spread, so it's never shadowed), and the table has no client-side `.delete(` anywhere — upsert
+// only, same confirmed-safe write path as lifelenz_schedule's own pilot. See
+// memory/plan-egress-reduction-2026-11-20.md Section 17/18.
+export async function loadLifeLenzDar({ start, end, locs, daysBack = 45, since } = {}) {
   if (!supabase) return [];
   if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
@@ -1649,6 +1658,7 @@ export async function loadLifeLenzDar({ start, end, locs, daysBack = 45 } = {}) 
     if (start) q = q.gte('dt', start);
     if (end) q = q.lte('dt', end);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    if (since) q = q.gt('updated_at', since);
     return q;
   }, 1000, 'lifelenz_dar');
   return (data || []).map(r => ({

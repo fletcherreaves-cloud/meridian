@@ -775,3 +775,54 @@ expose `updatedAt` too and need only the `seq` field (schedule_variance only) be
 treatment. `hmeDt`/`squadle` need their one-line `updatedAt` exposure fix first.
 `lifelenz_attendance_summary` needs its pull-script `pulled_at` fix first and is Wave 2, not
 Wave 1 — do not attempt a delta-sync pilot for it before that lands.
+
+⚠️ **Correction (2026-11-22, same pass that built the pilot below) — `lifelenz_job_hours` was
+WRONGLY listed above as already exposing `updatedAt`.** Reading `loadLifeLenzJobHours`'s actual
+mapped return shape (`src/lib/supabase.js`) before building on it — not assuming it matches
+`lifelenz_dar`'s just because this section's own prior pass grouped them together — shows it
+returns `loc/weekStart/businessRoleId/name/category/code/hours/cost/regHours/otHours/nShifts`
+with **no `updatedAt` field anywhere**, even though the DB column exists and the pull script
+(`scripts/lifelenz-pull.mjs:1096`) sets it unconditionally on every upsert. This is the exact
+same "one additive line needed before delta-sync is buildable" category as `hmeDt`/`squadle`
+below, not the "ready now" category — the write path is fine, only the loader's exposure is
+missing (`updatedAt: r.updated_at`). Not attempted in this pass since `lifelenz_dar` alone was
+enough for a clean next pilot; flagging for whoever does `lifelenz_job_hours` next.
+
+## 18. Wave 1 delta-sync pilot #1 shipped (2026-11-22): lifelenz_dar
+
+Built the actual delta-sync `lifelenz_dar` was already confirmed ready for in Section 17 —
+copying `lifelenz_schedule`'s own pilot shape (Section 14) exactly, now that `_stLifelenzDar`
+has somewhere to cache into (Section 16's Phase 1.5 OPFS write-back).
+
+- `loadLifeLenzDar({ since })` (`src/lib/supabase.js`) — additive `since` param, adds
+  `.gt('updated_at', since)` when given. Every pre-existing call site (no `since`) is
+  byte-identical to before.
+- `mergeLifelenzDarDelta(prevRows, deltaRows, { daysBack })` (`src/app/App.js`) — merge-by-key on
+  `loc + '|' + startTime`, the table's real PK (`loc, start_time` — `supabase/schema-lifelenz-
+  dar.sql`) both fields reproduced verbatim by the loader, so a cached row's key and a fresh
+  delta row's key for the same hour always collide correctly. Window-prune on `dt` (a plain
+  `'YYYY-MM-DD'` string field on these rows, never promoted to a `Date` the way
+  `lifelenz_schedule`'s `date` field is) — a simple string compare, confirmed safe because ISO
+  date strings sort lexicographically the same as chronologically.
+  `LIFELENZ_DAR_WATERMARK_KEY = 'mf_lifelenz_dar_watermark'` in `localStorage`, same reasoning as
+  `LIFELENZ_SCHED_WATERMARK_KEY` (no closure/ordering guarantee between this stage's `useEffect`
+  and `performFullIDBRestore`'s).
+- `_stLifelenzDar` (App.js) — reads the watermark, calls `loadLifeLenzDar({ since })`, early-
+  returns on `since && !rows.length` (already current), advances the watermark via the existing
+  `maxUpdatedAt` helper, merges into `ds.lifelenzDarRows`, recomputes `ds.lifelenzDarDailyRows`
+  via `aggregateLifelenzDarDaily` on the MERGED rows (not just the delta — a daily rollup built
+  from only the delta would silently drop every hour that didn't change this sync), then
+  `opfsSave`s the result (Phase 1.5's cache-first write-back, already wired).
+- Confirmed upsert-only before building: grepped `src/` and `scripts/` for any `.delete(` against
+  `lifelenz_dar` — none exists, so "not in a delta response" only ever means "unchanged since the
+  watermark," never "deleted server-side."
+- 6 tests (`src/__tests__/dispatch-egress-wave1-pilot1-lifelenz-dar-watermark-2026-11-22.test.js`)
+  covering overwrite-by-key, add-new-key, empty-delta-is-a-no-op, window-prune-on-aged-out-rows,
+  and two distinct-keys-not-collapsed cases (same hour/different store; same store/different
+  hour) — same coverage shape as `lifelenz_schedule`'s own pilot test file.
+- `lifelenz_job_hours` is next per the corrected readiness note above, once its loader's
+  `updatedAt` exposure gap is closed in the same commit as its pilot (not a prerequisite PR of
+  its own, per Section 17's own scoping note). After that: `lifelenz_schedule_variance` /
+  `lifelenz_compliance_audit` / `lifelenz_employee_performance` / `lifelenz_payroll_readiness`
+  (schedule_variance needs `seq` exposed too), then `hmeDt`/`squadle` once their own `updatedAt`
+  exposure lands.
