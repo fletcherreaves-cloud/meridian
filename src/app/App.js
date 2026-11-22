@@ -951,6 +951,8 @@ export const LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY = 'mf_lifelenz_payroll_rea
 export const HME_DT_WATERMARK_KEY = 'mf_hme_dt_watermark';
 // Wave 1 pilot #8 (2026-11-22) — same reasoning again.
 export const SQUADLE_WATERMARK_KEY = 'mf_squadle_watermark';
+// Egress Wave 2 pilot #1 (2026-11-22) — same reasoning again.
+export const QSR_ACT_SUMMARY_WATERMARK_KEY = 'mf_qsr_act_summary_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1125,6 +1127,24 @@ export function mergeHmeDtDelta(prevRows, deltaRows, { daysBack = 90 } = {}) {
 // upsert-only (no `.delete(` against squadle_checklist_records anywhere in src/ or scripts/).
 export function mergeSquadleDelta(prevRows, deltaRows, { daysBack = 30 } = {}) {
   const keyOf = r => r.squadleLocationId + '|' + r.date.toISOString().slice(0, 10);
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack); cutoff.setHours(0,0,0,0);
+  return [...byKey.values()].filter(r => r.date >= cutoff);
+}
+
+// ── Watermark delta-sync merge, Egress Wave 2 pilot #1 (2026-11-22) ───────────────────────────
+// qsr_daily_activity_rollup's real PK is (loc, dt) (onConflict:'loc,dt' in
+// scripts/qsrsoft-dar-pull.mjs's refreshRollup()). loadQsrActSummary returns `date` as a real JS
+// Date object (same wrinkle as hmeDt's pilot), so the merge key below re-derives a plain
+// 'YYYY-MM-DD' string from it rather than trusting any pre-formatted field. This is the single
+// heaviest T1 load in the app (loadQsrActSummary's own comment: ~1,650 rows/60-day window, the
+// reason Sales/vs-LY/GC/TPPH tiles are the last to appear), so cutting it to a delta fetch after
+// first login is the highest-value remaining Phase 2 candidate. Confirmed upsert-only (no
+// `.delete(` against qsr_daily_activity_rollup anywhere in src/ or scripts/).
+export function mergeQsrActSummaryDelta(prevRows, deltaRows, { daysBack = 60 } = {}) {
+  const keyOf = r => r.loc + '|' + r.date.toISOString().slice(0, 10);
   const byKey = new Map();
   for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
   for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
@@ -3050,28 +3070,46 @@ function App() {
       // the days a manual report happened to cover.
       const _stQsrsoftActSummary = async (_days = 60) => {
       try{
-        const qsrActSummaryRows=await loadQsrActSummary(_days);
-        if(qsrActSummaryRows.length>0){
-          const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
-          setDs(prev=>{
-            if(!prev)return prev;
-            // Same DAR→laborRows sales supplement as the loadLaborRows effect, run here too
-            // since this can resolve AFTER labor_rows — whichever finishes last should still
-            // pick up both sources for ds.laborIdx (the DI Calibration / forecast engine's
-            // sales history index). See supplementLaborWithSched's comment for the rationale.
-            const supplemented=supplementLaborWithSched(prev.laborRows,qsrActSummaryRows);
-            const laborPatch=supplemented===prev.laborRows?{}:
-              {laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
-            const next={...prev,qsrActSummaryRows,...laborPatch};
-            // Cache-first pilot #2 (egress Phase 1, 2026-11-21): persist the freshly-fetched
-            // rollup rows to the OPFS snapshot so the NEXT login renders them immediately
-            // instead of waiting on this same T1 fetch again. Fire-and-forget, same as
-            // _stLifelenz's write-back.
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
+        // Watermark delta-sync, Egress Wave 2 pilot #1 (2026-11-22): re-ask for only rows whose
+        // `refreshed_at` moved since the last sync, merge the delta into the cached array by
+        // (loc,date) — the table's real PK — instead of replacing it wholesale every login. This
+        // was the single heaviest T1 load in the app (loadQsrActSummary's own comment: ~1,650
+        // rows/60-day window), so it's the highest-value remaining Phase 2 candidate. `refreshedAt`
+        // is a Date object (already consumed that way by the At-A-Glance Movers strip), not the
+        // plain ISO string `maxUpdatedAt` expects, so the watermark is computed inline here rather
+        // than reusing that shared helper. See mergeQsrActSummaryDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md.
+        const qsrActSince = localStorage.getItem(QSR_ACT_SUMMARY_WATERMARK_KEY) || null;
+        const qsrActDeltaRows = await loadQsrActSummary(_days, { since: qsrActSince });
+        if (qsrActSince && !qsrActDeltaRows.length) return;
+        let qsrActNewWatermark = qsrActSince || null;
+        for (const r of qsrActDeltaRows) {
+          const iso = r.refreshedAt ? r.refreshedAt.toISOString() : null;
+          if (iso && (!qsrActNewWatermark || iso > qsrActNewWatermark)) qsrActNewWatermark = iso;
         }
+        if (qsrActNewWatermark) {
+          try { localStorage.setItem(QSR_ACT_SUMMARY_WATERMARK_KEY, qsrActNewWatermark); } catch {}
+        }
+        const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+        setDs(prev=>{
+          if(!prev)return prev;
+          const qsrActSummaryRows = mergeQsrActSummaryDelta(prev.qsrActSummaryRows, qsrActDeltaRows, { daysBack: _days });
+          // Same DAR→laborRows sales supplement as the loadLaborRows effect, run here too
+          // since this can resolve AFTER labor_rows — whichever finishes last should still
+          // pick up both sources for ds.laborIdx (the DI Calibration / forecast engine's
+          // sales history index). See supplementLaborWithSched's comment for the rationale.
+          const supplemented=supplementLaborWithSched(prev.laborRows,qsrActSummaryRows);
+          const laborPatch=supplemented===prev.laborRows?{}:
+            {laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
+          const next={...prev,qsrActSummaryRows,...laborPatch};
+          // Cache-first pilot #2 (egress Phase 1, 2026-11-21): persist the freshly-fetched
+          // rollup rows to the OPFS snapshot so the NEXT login renders them immediately
+          // instead of waiting on this same T1 fetch again. Fire-and-forget, same as
+          // _stLifelenz's write-back.
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${qsrActSince ? 'Delta-synced' : 'Loaded'} ${qsrActDeltaRows.length} QSRSoft act summary rows${qsrActSince ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);} };
       // eBOS daily op-supplies purchases → ds.ebosRows. Auto-pulled cloud stream that
       // feeds the Perf-Review "Op Supplies vs Budget" actual (Notes 32 #4) — 400-day

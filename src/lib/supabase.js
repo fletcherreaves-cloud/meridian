@@ -3754,7 +3754,7 @@ function _qsrActFromSummed(loc, dt, v) {
 //
 // Falls back to the hourly path automatically when the table is unreachable, so the app works
 // identically before and after the SQL is run — deploying first is safe.
-export async function loadQsrActSummary(daysBack = 35) {
+export async function loadQsrActSummary(daysBack = 35, { since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysBack);
@@ -3786,10 +3786,18 @@ export async function loadQsrActSummary(daysBack = 35) {
     // same silent truncation this file has already shipped once.
     const PAGE = 1000, rows = [];
     for (let p = 0; p < 30; p++) {
-      const res = await _limited(() => supabase
-        .from('qsr_daily_activity_rollup').select('*').gte('dt', cutoffStr)
+      // Egress Wave 2 pilot #1 (2026-11-22): `refreshed_at` is set unconditionally on every
+      // write by scripts/qsrsoft-dar-pull.mjs's refreshRollup() (same "bumped on every upsert,
+      // not just insert" guarantee the Wave 1 pilots verified) — confirmed upsert-only (no
+      // `.delete(` against this table anywhere in src/ or scripts/), so `since` is safe to gate
+      // a delta fetch on. Only wired on this TABLE path; the rare hourly-fallback path below
+      // ignores `since` and returns a full window, which a merge-by-key handles correctly
+      // (every row gets replaced with fresh data) at the cost of not actually being a delta.
+      let q = supabase.from('qsr_daily_activity_rollup').select('*').gte('dt', cutoffStr)
         .order('dt', { ascending: false }).order('loc')
-        .range(p * PAGE, p * PAGE + PAGE - 1));
+        .range(p * PAGE, p * PAGE + PAGE - 1);
+      if (since) q = q.gt('refreshed_at', since);
+      const res = await _limited(() => q);
       if (!res || res.error) {
         _recordDataError('qsr act summary (rollup table)', 1, p + 1,
           res && res.error ? res.error.message : 'page failed');

@@ -1038,3 +1038,60 @@ which stays Wave 2 pending its own pull-script `pulled_at` write-path fix (the c
 once on first insert and never refreshed on a re-pull — Section 17's own finding). No further
 Wave 1 candidates remain; the next egress-reduction step is either that Wave 2 fix or a fresh
 audit of other eager-loaded tables not yet in this plan's scope.
+
+## 25. Wave 2 pilot #1 shipped (2026-11-22): qsrActSummaryRows (qsr_daily_activity_rollup)
+
+"Wave 2" here means the broader ~56-table universe Section 13's audit identified — not the
+9 Phase-1.5-cached streams Wave 1 just closed. Picked up the highest-value stream that already
+had Phase 1 cache-first-render (Section 11, 2026-11-21) but never got the actual delta-sync
+treatment: `qsrActSummaryRows`, the single heaviest T1 load in the app
+(`loadQsrActSummary`'s own comment: ~1,650 rows/60-day window via the rollup table, the reason
+the Sales/vs-LY/Guest-Count/TPPH tiles are the last to appear).
+
+**Write-path verification, same discipline as every prior pilot:** `scripts/qsrsoft-dar-pull.mjs`
+sets `refreshed_at: new Date().toISOString()` unconditionally on every row
+(`refreshRollup()`, line ~245) before `.upsert(rows, { onConflict: 'loc,dt' })` — bumped on every
+upsert, not just insert, same guarantee the Wave 1 pilots verified for their own tables. No
+`.delete(` against `qsr_daily_activity_rollup` anywhere in `src/` or `scripts/` — upsert-only.
+Real PK is `(loc, dt)`.
+
+**One wrinkle, same shape as the hmeDt/squadle pilots:** `loadQsrActSummary`'s mapped return
+already exposed the relevant timestamp as `refreshedAt` — added originally for the At-A-Glance
+Movers strip (owner req 2026-11-01), which reads it as `r.refreshedAt.getTime()` — but as a real
+`Date` object, not the plain ISO string `maxUpdatedAt` expects. Rather than bend that shared
+helper to accept either shape, the watermark is computed inline in `_stQsrsoftActSummary` with a
+three-line reduce; `maxUpdatedAt` itself is untouched. `mergeQsrActSummaryDelta` keys on
+`loc + '|' + date.toISOString().slice(0,10)` — `date` is also a Date object here — same
+re-derivation safety as `mergeHmeDtDelta`'s own key.
+
+**A second wrinkle unique to this loader, handled rather than ignored:** `loadQsrActSummary` has
+two code paths — the fast ROLLUP TABLE path (`qsr_daily_activity_rollup`, where `since` is now
+wired via `.gt('refreshed_at', since)`) and a rare HOURLY FALLBACK path
+(`qsr_daily_activity`, used only if the rollup table is ever unreachable) that has no
+`refreshed_at` column at all and aggregates multiple hourly rows per `(loc,dt)` — a shape
+incompatible with a since-filtered partial fetch. Left the fallback path doing a full refetch
+regardless of `since`; the merge-by-key still produces a correct result if that path is ever hit
+(every key gets replaced with fresh data), just not an actual delta that trip. Documented inline
+rather than built around, since the fallback is already a degraded/rare path by the loader's own
+design.
+
+**`_stQsrsoftActSummary`** — same shape as every prior pilot (watermark from `localStorage`,
+early-return on no new rows, merge into the cached array, `opfsSave`), with one addition specific
+to this stream: `supplementLaborWithSched(prev.laborRows, qsrActSummaryRows)` now runs against the
+MERGED array (not just the delta rows), since that supplement has to see every date in the
+window, not only the ones that changed this sync. `QSR_ACT_SUMMARY_WATERMARK_KEY =
+'mf_qsr_act_summary_watermark'`.
+
+6 tests (`dispatch-egress-wave2-pilot1-qsractsummary-watermark-2026-11-22.test.js`), same shape as
+every prior pilot's merge-function tests plus one confirming the 60-day default window. Full
+suite + build both clean.
+
+**Next candidates for Wave 2, in rough order of value:** `salesLedgerRows`/`glimpseRows`/
+`cashRows` (`sales_ledger_daily`/`daily_glimpse_daily`/`cash_sheet_daily`) — all three already
+Phase 1 cache-first-rendered (Section 12) via the shared `_stCloudEmailReport` stage, all three
+written by `scripts/qsrsoft-email-parse.mjs`'s emailed-report ingest, write-path not yet
+re-verified for this pilot's "bumped on every upsert" guarantee. `lifelenz_attendance_summary`
+(Wave 1's deferred item) still needs its own pull-script `pulled_at` fix first. Beyond those,
+Section 13's audit named `custom_signals`/`staff_assignments` as genuine DDL candidates (real
+`.update()` call sites, no bumped-on-every-write column at all) — not a delta-sync pilot until
+that DDL question goes to the owner.
