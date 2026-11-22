@@ -927,3 +927,33 @@ return in the same commit as the delta-sync build, same scoping note as pilots #
   assuming the PK is just `(loc, <one date field>)`.
 - Next: `lifelenz_employee_performance` / `lifelenz_payroll_readiness`, then `hmeDt`/`squadle`
   once their own `updatedAt` exposure lands.
+
+## 22. Wave 1 delta-sync pilot #5 shipped (2026-11-22): lifelenz_employee_performance, no
+additive field needed
+
+Read `supabase/schema-lifelenz-employee-performance.sql` fully before building — per pilot #4's
+own lesson, not trusting "already exposes `updatedAt`" at face value — and this one really did
+check out clean: the real PK is `(loc, geid, period_end)`, a simple three-field rolling-window
+key (one row per employee per daily pull, no per-row date/shift dimension, no `seq` tie-breaker
+like its two siblings), and `loadLifeLenzEmployeePerformance`'s mapped return already surfaced
+all three verbatim. No additive field fix needed this time — a genuine "clean" case, not a
+missed check.
+
+- `loadLifeLenzEmployeePerformance({ since })` — additive `since` param, `.gt('updated_at',
+  since)` when given.
+- `mergeLifelenzEmployeePerformanceDelta(prevRows, deltaRows, { daysBack })`
+  (`src/app/App.js`) — merge-by-key on `loc + '|' + geid + '|' + periodEnd`. Window-prune on
+  `periodEnd` (a plain `'YYYY-MM-DD'` string, never a `Date`) via string compare. Confirmed
+  upsert-only (no `.delete(` against `lifelenz_employee_performance` anywhere in `src/` or
+  `scripts/`).
+  `LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY = 'mf_lifelenz_employee_performance_watermark'`
+  in `localStorage`.
+- `_stEmployeePerformance` — same shape as the prior four pilots: reads the watermark, calls
+  `loadLifeLenzEmployeePerformance({ since })`, early-returns on `since && !rows.length`,
+  advances the watermark, merges into `ds.employeePerformanceRows`, `opfsSave`s the result. (No
+  daily-aggregate sibling to recompute — this report has no per-row date dimension at all, same
+  as before this pilot.)
+- 6 tests
+  (`src/__tests__/dispatch-egress-wave1-pilot5-lifelenz-employeeperformance-watermark-2026-11-22.test.js`).
+- Next: `lifelenz_payroll_readiness` (read its schema file fully first, per the same standing
+  lesson), then `hmeDt`/`squadle` once their own `updatedAt` exposure lands.
