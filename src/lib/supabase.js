@@ -1754,6 +1754,19 @@ export async function loadLifeLenzDar({ start, end, locs, daysBack = 45, since }
   }));
 }
 
+// Latest `updated_at` across lifelenz_dar — lets Signals' LiveOps "Sync Now" button (which
+// dispatches the lifelenz_dar GitHub Actions pull and then has to wait ~10 min for it to
+// actually land) poll for the dispatched pull actually landing, same freshness-check shape
+// DataManagerPanel's fetchStreamFreshness already uses for its own 4 "↻ Sync" streams (owner
+// report 2026-11-22: had to hard-refresh the page to see the synced data — nothing was
+// watching for it to land).
+export async function loadLifelenzDarFreshness() {
+  if (!supabase) return null;
+  const { data } = await supabase.from('lifelenz_dar').select('updated_at')
+    .order('updated_at', { ascending: false }).limit(1).single();
+  return data?.updated_at || null;
+}
+
 // Converts a loadLifeLenzDar() hourly row's UTC start_time into qsr_daily_activity's own
 // hour_slot convention (CLAUDE.md: hour_slot = endQtrHourTime, e.g. "06:00" = the 5am-6am block;
 // the business day runs 4am-4am, so a 0-3am wall-clock hour's slot runs 25-28, not 1-4 -- matches
