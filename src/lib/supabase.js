@@ -1448,7 +1448,19 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
 // selector. Defaulting `start` from `daysBack` when the caller doesn't supply one closes that gap
 // for every current and future no-bound caller; a caller that already passes an explicit `start`
 // is unaffected. See memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack = 45 } = {}) {
+// `since`/`seq` (egress Wave 1 delta-sync pilot #3, 2026-11-22): `since` is an optional ISO
+// watermark (`.gt('updated_at', since)` when given, byte-identical to before when omitted).
+// `seq` is additively exposed on the mapped return — it was NOT before this pilot, despite being
+// part of the table's real primary key (`loc, edited_by, occurred_at, seq` —
+// supabase/schema-lifelenz-schedule-variance.sql). `occurred_at` alone is not unique per
+// (loc, edited_by) when LifeLenz batches multiple field changes from one save action under the
+// same timestamp, so a merge-by-key delta-sync keyed on anything less than the full PK would
+// silently collapse distinct same-instant edits into one. Nothing read `seq` from this loader
+// before this pilot, so adding it is purely additive. Verified safe to build a watermark on:
+// scripts/lifelenz-schedule-variance-pull.mjs's upsertRows() sets
+// `updated_at: new Date().toISOString()` unconditionally on every row (ahead of the `...r`
+// spread), and the table has no client-side `.delete(` anywhere.
+export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack = 45, since } = {}) {
   if (!supabase) return [];
   if (!start) { const d = new Date(); d.setDate(d.getDate() - daysBack); start = d.toISOString().slice(0, 10); }
   const data = await fetchAll((from, to) => {
@@ -1456,6 +1468,7 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack 
     if (start) q = q.gte('occurred_at', start);
     if (end) q = q.lte('occurred_at', end);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    if (since) q = q.gt('updated_at', since);
     return q;
   }, 1000, 'lifelenz_schedule_variance');
   return (data || []).map(r => ({
@@ -1475,6 +1488,7 @@ export async function loadLifeLenzScheduleVariance({ start, end, locs, daysBack 
     hoursVariance:     r.hours_variance,
     costVariance:      r.cost_variance,
     updatedAt:         r.updated_at,
+    seq:               r.seq,
   }));
 }
 
