@@ -937,6 +937,8 @@ export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour })
 export const LIFELENZ_SCHED_WATERMARK_KEY = 'mf_sched_watermark';
 // Wave 1 pilot #1 (2026-11-22) — same localStorage-not-OPFS reasoning, same race avoided.
 export const LIFELENZ_DAR_WATERMARK_KEY = 'mf_lifelenz_dar_watermark';
+// Wave 1 pilot #2 (2026-11-22) — same reasoning again.
+export const LIFELENZ_JOB_HOURS_WATERMARK_KEY = 'mf_lifelenz_job_hours_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -988,6 +990,25 @@ export function mergeLifelenzDarDelta(prevRows, deltaRows, { daysBack = 45 } = {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.dt >= cutoffStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #2 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_job_hours's real PK is (loc, week_start, business_role_id)
+// (supabase/schema.sql:1023-1037) — loadLifeLenzJobHours returns all three verbatim as
+// `loc`/`weekStart`/`businessRoleId`, so a key built from them matches the DB's own uniqueness
+// exactly, same reasoning as mergeLifelenzDarDelta. `weekStart` stays a plain 'YYYY-MM-DD' string
+// on these rows (never promoted to a Date), so the window-prune below is a plain string compare.
+// Confirmed upsert-only (no `.delete(` against lifelenz_job_hours anywhere in src/ or scripts/).
+export function mergeLifelenzJobHoursDelta(prevRows, deltaRows, { weeksBack = 60, weeksFwd = 4 } = {}) {
+  const keyOf = r => r.loc + '|' + r.weekStart + '|' + r.businessRoleId;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const winStart = new Date(); winStart.setDate(winStart.getDate() - weeksBack * 7);
+  const winEnd   = new Date(); winEnd.setDate(winEnd.getDate() + weeksFwd * 7);
+  const startStr = winStart.toISOString().slice(0, 10);
+  const endStr   = winEnd.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.weekStart >= startStr && r.weekStart <= endStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2472,18 +2493,28 @@ function App() {
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);} };
       const _stLifelenzJobHours = async () => {
       try{
-        const jobRows = await loadLifeLenzJobHours();
-        if(jobRows.length>0){
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, jobHours: jobRows};
-            // Cache-first pilot #4 / Phase 1.5 (egress, 2026-11-22) — see db/index.js's
-            // opfsSave() v7 comment / memory/plan-egress-reduction-2026-11-20.md Section 15/16.
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #2, 2026-11-22) — same shape as _stLifelenzDar's
+        // lifelenz_dar pilot: re-ask for only rows whose `updated_at` moved since the last sync,
+        // merge the delta into the cached array by (loc,weekStart,businessRoleId) instead of
+        // replacing it. See mergeLifelenzJobHoursDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 19.
+        const since = localStorage.getItem(LIFELENZ_JOB_HOURS_WATERMARK_KEY) || null;
+        const jobRows = await loadLifeLenzJobHours({ since });
+        if (since && !jobRows.length) return;
+        const newWatermark = maxUpdatedAt(jobRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_JOB_HOURS_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzJobHoursDelta(prev.jobHours, jobRows, {});
+          const next = {...prev, jobHours: merged};
+          // Cache-first pilot #4 / Phase 1.5 (egress, 2026-11-22) — see db/index.js's
+          // opfsSave() v7 comment / memory/plan-egress-reduction-2026-11-20.md Section 15/16.
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${jobRows.length} LifeLenz per-job rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);} };
       const _stLifelenzAttendance = async () => {
       try{

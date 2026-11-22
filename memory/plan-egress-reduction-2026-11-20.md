@@ -826,3 +826,33 @@ has somewhere to cache into (Section 16's Phase 1.5 OPFS write-back).
   `lifelenz_compliance_audit` / `lifelenz_employee_performance` / `lifelenz_payroll_readiness`
   (schedule_variance needs `seq` exposed too), then `hmeDt`/`squadle` once their own `updatedAt`
   exposure lands.
+
+## 19. Wave 1 delta-sync pilot #2 shipped (2026-11-22): lifelenz_job_hours, fixing its loader
+gap in the same commit
+
+Closed the `lifelenz_job_hours` gap Section 18's correction flagged — `loadLifeLenzJobHours`
+never surfaced `updatedAt` on its mapped return shape, even though
+`scripts/lifelenz-pull.mjs`'s `jobRowsFor()` sets it unconditionally on every row before
+`upsertJobRows()` writes it. Added `updatedAt: r.updated_at` to the loader's return (purely
+additive — nothing read it before this pilot) in the same commit as the delta-sync build itself,
+per Section 17's own scoping note that these fixes don't need a prerequisite PR.
+
+- `loadLifeLenzJobHours({ since })` — additive `since` param, `.gt('updated_at', since)` when
+  given.
+- `mergeLifelenzJobHoursDelta(prevRows, deltaRows, { weeksBack, weeksFwd })` (`src/app/App.js`)
+  — merge-by-key on `loc + '|' + weekStart + '|' + businessRoleId`, the table's real PK
+  (`loc, week_start, business_role_id` — `supabase/schema.sql:1023-1037`), all three reproduced
+  verbatim by the loader. Window-prune on `weekStart` (a plain `'YYYY-MM-DD'` string, never a
+  `Date`) via string compare. Confirmed upsert-only (no `.delete(` against `lifelenz_job_hours`
+  anywhere in `src/` or `scripts/`).
+  `LIFELENZ_JOB_HOURS_WATERMARK_KEY = 'mf_lifelenz_job_hours_watermark'` in `localStorage`.
+- `_stLifelenzJobHours` — same shape as `_stLifelenzDar`: reads the watermark, calls
+  `loadLifeLenzJobHours({ since })`, early-returns on `since && !rows.length`, advances the
+  watermark, merges into `ds.jobHours`, `opfsSave`s the result.
+- 6 tests
+  (`src/__tests__/dispatch-egress-wave1-pilot2-lifelenz-jobhours-watermark-2026-11-22.test.js`),
+  same coverage shape as pilot #1's test file.
+- Next per Section 17's ordering: `lifelenz_schedule_variance` / `lifelenz_compliance_audit` /
+  `lifelenz_employee_performance` / `lifelenz_payroll_readiness` (schedule_variance needs `seq`
+  exposed too, same "fix in the same commit" pattern this pilot just used), then `hmeDt`/
+  `squadle` once their own `updatedAt` exposure lands.
