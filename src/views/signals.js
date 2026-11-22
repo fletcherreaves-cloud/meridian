@@ -3,7 +3,7 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS, pmixItemsIndex, pmixItemKey, isPmixItemKey } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadQsrStoreSettings, loadAuditRowsWindow } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadLifelenzDarFreshness, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadQsrStoreSettings, loadAuditRowsWindow } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
@@ -1149,6 +1149,16 @@ export function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }
   const [expanded, setExpanded] = uSt(null);
   const [syncing, setSyncing] = uSt(false);
   const [syncMsg, setSyncMsg] = uSt(null); // {type:'ok'|'err', text}
+  // Auto-refresh after a manual "↻ Sync Now" (owner report 2026-11-22: had to hard-refresh the
+  // page to see synced data — the dispatch below returns almost immediately but the real rows
+  // don't land in lifelenz_dar until the GitHub Actions pull finishes, ~10 min later, and
+  // nothing was watching for that). Same freshness-poll shape DataManagerPanel's own "↻ Sync"
+  // auto-refresh (owner request 2026-11-09) already uses for its 4 streams — polls
+  // lifelenz_dar's own `updated_at` until it moves past a pre-dispatch baseline, then reloads.
+  const pollTimerRef = React.useRef(null);
+  const pollAttemptsRef = React.useRef(0);
+  const stopDarPoll = () => { if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; } };
+  uE(() => stopDarPoll, []); // never let the interval outlive this tab
 
   // Use shared rows when viewing today; fetch own for historical dates
   const sharedMatch = date === todayStr && sharedDarRows && sharedDarRows.length > 0;
@@ -1180,15 +1190,45 @@ export function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }
 
   const handleSync = async () => {
     setSyncing(true); setSyncMsg(null);
+    stopDarPoll(); // a second click restarts the watch, never doubles it up
+    // Pre-dispatch baseline — same `needsBaseline` care DataManagerPanel's own poll takes: if
+    // this read itself fails (network blip), null doesn't necessarily mean "no data yet", so
+    // the first successful poll read below becomes the trusted baseline instead of a false
+    // "newer than nothing" detection on data that was already there before the sync started.
+    let baseline = null, needsBaseline = false;
+    try { baseline = await loadLifelenzDarFreshness(); if (baseline == null) needsBaseline = true; }
+    catch { needsBaseline = true; }
     const result = await triggerDarSync({ daysRecent: 1 });
     setSyncing(false);
     if (result?.error) {
       setSyncMsg({ type: 'err', text: result.error });
-    } else {
-      setSyncMsg({ type: 'ok', text: 'Sync started — fresh data arrives in ~10 min.' });
-      // Re-query Supabase now so any recently-written rows appear immediately
-      if (refreshDar) refreshDar(todayStr);
+      return;
     }
+    setSyncMsg({ type: 'ok', text: 'Sync started — watching for fresh data (usually lands within ~10 min)…' });
+    // Re-query Supabase now so any recently-written rows appear immediately
+    if (refreshDar) refreshDar(todayStr);
+    let attempts = 0;
+    pollTimerRef.current = setInterval(async () => {
+      attempts++;
+      pollAttemptsRef.current = attempts;
+      let fresh = null;
+      try { fresh = await loadLifelenzDarFreshness(); } catch (e) { console.warn('[Signals] LifeLenz DAR freshness poll failed:', e); }
+      if (needsBaseline) {
+        if (fresh !== null) { baseline = fresh; needsBaseline = false; }
+      } else {
+        const isNewer = !!fresh && (!baseline || new Date(fresh).getTime() > new Date(baseline).getTime());
+        if (isNewer) {
+          stopDarPoll();
+          if (refreshDar) refreshDar(todayStr);
+          setSyncMsg({ type: 'ok', text: '✓ Fresh DAR data loaded — no refresh needed.' });
+          return;
+        }
+      }
+      if (attempts >= 20) { // 20 * 45s = 15 min, same band DataManagerPanel's own poll uses
+        stopDarPoll();
+        setSyncMsg({ type: 'err', text: 'Still waiting on the sync after 15 min — click Reload or refresh the page.' });
+      }
+    }, 45000);
   };
 
   uE(() => { fetchRows(date); }, [date, sharedDarRows]);
