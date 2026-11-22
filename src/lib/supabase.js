@@ -1352,18 +1352,32 @@ export async function loadLifeLenzSchedule({ daysBack = 180, daysFwd = 30, since
 // Pre-aggregated server-side by scripts/lifelenz-pull.mjs (ShiftsForSchedulePeriod).
 // Default window covers ~1 year of weeks. Returns camelCase rows keyed for the
 // Weekly Schedule Summary panel; loc is left zero-padded (panel normalizes).
-export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}) {
+// `since` (egress Wave 1 delta-sync pilot #2, 2026-11-22): optional ISO watermark — when given,
+// adds `updated_at > since` so App.js's eager _stLifelenzJobHours stage can re-ask for only the
+// rows that changed since its last sync instead of the full `weeksBack`/`weeksFwd` window every
+// login. Omitting it (every pre-existing call site) is byte-identical to today's behavior.
+// Verified safe to build a watermark on: scripts/lifelenz-pull.mjs's jobRowsFor() sets
+// `updated_at: now` (captured once per pull run, before the map) explicitly on every row before
+// upsertJobRows() writes it, and the table has no client-side `.delete(` anywhere — upsert only.
+// `updatedAt` is also now surfaced on the mapped return shape below — it was NOT before this
+// pilot, despite the DB column being set correctly on every write; a prior pass of the Wave 1
+// readiness audit wrongly assumed this loader already exposed it (see
+// memory/plan-egress-reduction-2026-11-20.md Section 18's correction). Nothing reads `updatedAt`
+// from this loader today outside the new delta-sync stage, so adding it is purely additive.
+export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4, since } = {}) {
   if (!supabase) return [];
   const start = new Date(); start.setDate(start.getDate() - weeksBack * 7);
   const end   = new Date(); end.setDate(end.getDate() + weeksFwd * 7);
   const fmt  = d => d.toISOString().slice(0, 10);
-  const data = await fetchAll((lo, hi) => supabase
-    .from('lifelenz_job_hours')
-    .select('*')
-    .gte('week_start', fmt(start))
-    .lte('week_start', fmt(end))
-    .order('week_start', { ascending: false })
-    .range(lo, hi), 1000, 'lifelenz_job_hours');
+  const data = await fetchAll((lo, hi) => {
+    let q = supabase
+      .from('lifelenz_job_hours')
+      .select('*')
+      .gte('week_start', fmt(start))
+      .lte('week_start', fmt(end));
+    if (since) q = q.gt('updated_at', since);
+    return q.order('week_start', { ascending: false }).range(lo, hi);
+  }, 1000, 'lifelenz_job_hours');
   if (!data || !data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
@@ -1377,6 +1391,7 @@ export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}
     regHours:       r.reg_hours,
     otHours:        r.ot_hours,
     nShifts:        r.n_shifts,
+    updatedAt:      r.updated_at,
   }));
 }
 
