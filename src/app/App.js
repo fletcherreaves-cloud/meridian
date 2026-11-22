@@ -935,6 +935,8 @@ export function WorkflowGuidePanel({ userRole, orgRoles, onClose, onStartTour })
 // ── Watermark delta-sync merge (egress Phase 2 pilot #1, 2026-11-21) ──────────────────────────
 // localStorage, not the OPFS blob/React state — see _stLifelenz's own comment for why.
 export const LIFELENZ_SCHED_WATERMARK_KEY = 'mf_sched_watermark';
+// Wave 1 pilot #1 (2026-11-22) — same localStorage-not-OPFS reasoning, same race avoided.
+export const LIFELENZ_DAR_WATERMARK_KEY = 'mf_lifelenz_dar_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -966,6 +968,26 @@ export function maxUpdatedAt(rows, since) {
     if (r.updatedAt && (!max || r.updatedAt > max)) max = r.updatedAt;
   }
   return max;
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #1 (egress, 2026-11-22) ──────────────────────────
+// lifelenz_dar's real PK is (loc, start_time) (supabase/schema-lifelenz-dar.sql) — loadLifeLenzDar
+// returns both verbatim as `loc`/`startTime`, so a key built from them is collision-free and
+// matches the DB's own uniqueness exactly, same "re-derive the same key from either a cached row
+// or a fresh delta row" safety the lifelenz_schedule pilot established. `dt` (the derived
+// business-date string, 4am-Central cutover) stays a plain 'YYYY-MM-DD' string on these rows —
+// never promoted to a Date — so the window-prune below is a plain string compare, not a Date
+// re-anchor. Confirmed upsert-only (no `.delete(` against lifelenz_dar anywhere in src/ or
+// scripts/), so "not in this delta" only ever means "unchanged since the watermark," matching
+// mergeLifelenzScheduleDelta's own reasoning.
+export function mergeLifelenzDarDelta(prevRows, deltaRows, { daysBack = 45 } = {}) {
+  const keyOf = r => r.loc + '|' + r.startTime;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.dt >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2565,12 +2587,30 @@ function App() {
         // -0.04% aggregate across 28 stores/1 day — see the memory file's Phase 3 section).
         // transactions/labor hours are NOT wired into any metric chain yet — transactions alone
         // showed a real +1.9% gap in that same measurement, not clean enough to trust blind.
-        const ldRows = await loadLifeLenzDar();
-        if(ldRows.length>0){
-          const ldDaily = aggregateLifelenzDarDaily(ldRows);
-          setDs(prev=>{if(!prev)return prev;const next={...prev, lifelenzDarRows: ldRows, lifelenzDarDailyRows: ldDaily};opfsSave(next).catch(()=>{});return next;});
-          console.log(`[Meridian] ✓ Loaded ${ldRows.length} LifeLenz DAR rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #1, 2026-11-22) — same shape as _stLifelenz's
+        // lifelenz_schedule pilot: re-ask for only rows whose `updated_at` moved since the last
+        // sync, merge the delta into the cached array by (loc,start_time) instead of replacing
+        // it. See mergeLifelenzDarDelta's own comment / memory/plan-egress-reduction-2026-11-20.md
+        // Section 17/18.
+        const since = localStorage.getItem(LIFELENZ_DAR_WATERMARK_KEY) || null;
+        const ldRows = await loadLifeLenzDar({ since });
+        // `since && !rows.length` means a real prior sync found nothing new — cache is already
+        // current. A first-ever sync (`!since`) always proceeds, even with 0 rows, so the
+        // window-prune in the merge still runs against a stale cache.
+        if (since && !ldRows.length) return;
+        const newWatermark = maxUpdatedAt(ldRows, since);
+        if (newWatermark) {
+          try { localStorage.setItem(LIFELENZ_DAR_WATERMARK_KEY, newWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeLifelenzDarDelta(prev.lifelenzDarRows, ldRows, {});
+          const ldDaily = aggregateLifelenzDarDaily(merged);
+          const next={...prev, lifelenzDarRows: merged, lifelenzDarDailyRows: ldDaily};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${since ? 'Delta-synced' : 'Loaded'} ${ldRows.length} LifeLenz DAR rows from Supabase${since ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz DAR load failed:',e);} };
       const _stHmeDt = async () => {
       try{
