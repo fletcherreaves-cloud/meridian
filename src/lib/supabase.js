@@ -2734,15 +2734,25 @@ export async function saveDarRows(rows) {
 // Both tables exist and are live-pulled (scripts/hme-cloud-pull.mjs / squadle-pull.mjs); these
 // are the first client-side loaders for them (dsField names hmeDtRows/squadleChecklistRows
 // match stream-freshness.js's own STREAMS entries, written and commented out ahead of this).
-export async function loadHmeDtRows({ daysBack = 90 } = {}) {
+// `since` (egress Wave 1 delta-sync pilot #7, 2026-11-22): optional ISO watermark — when given,
+// adds `updated_at > since` so App.js's eager _stHmeDt stage can re-ask for only the rows that
+// changed since its last sync instead of the full `daysBack` window every login. Omitting it
+// (every pre-existing call site) is byte-identical to today's behavior. `updatedAt` is also now
+// surfaced on the mapped return shape below — it was NOT before this pilot (only `pulledAt`
+// was). Verified safe to build a watermark on: scripts/hme-cloud-pull.mjs's upsertRows() sets
+// `updated_at: new Date().toISOString()` unconditionally on every row (ahead of the `...r`
+// spread), and the table has no client-side `.delete(` anywhere — upsert only.
+export async function loadHmeDtRows({ daysBack = 90, since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase
-    .from('hme_dt_daily').select('*')
-    .gte('dt', cutoffStr)
-    .order('dt', { ascending: false })
-    .range(from, to), 1000, 'hme_dt_daily');
+  const data = await fetchAll((from, to) => {
+    let q = supabase
+      .from('hme_dt_daily').select('*')
+      .gte('dt', cutoffStr);
+    if (since) q = q.gt('updated_at', since);
+    return q.order('dt', { ascending: false }).range(from, to);
+  }, 1000, 'hme_dt_daily');
   if (!data.length) return [];
   return data.map(r => ({
     // Strip zero-padding ("0003708" → "3708") — hme_dt_daily stores loc zero-padded like every
@@ -2761,6 +2771,7 @@ export async function loadHmeDtRows({ daysBack = 90 } = {}) {
     goalC:      r.goal_c,
     goalD:      r.goal_d,
     pct:        r.pct,
+    updatedAt:  r.updated_at,
   }));
 }
 
@@ -2768,15 +2779,26 @@ export async function loadHmeDtRows({ daysBack = 90 } = {}) {
 // header — the real shape is deep/per-template, promoting fields to columns is deferred to a
 // real consuming engine). This loader stays equally raw — `data` is passed through untouched —
 // so parsing stays in one place (the engine that eventually reads it) rather than guessed here.
-export async function loadSquadleChecklistRecords({ daysBack = 30 } = {}) {
+// `since` (egress Wave 1 delta-sync pilot #8, 2026-11-22): optional ISO watermark — when given,
+// adds `updated_at > since` so App.js's eager _stSquadle stage can re-ask for only the rows that
+// changed since its last sync instead of the full `daysBack` window every login. Omitting it
+// (every pre-existing call site) is byte-identical to today's behavior. `updatedAt` is also now
+// surfaced on the mapped return shape below — it was NOT before this pilot. Verified safe to
+// build a watermark on: scripts/squadle-pull.mjs's upsertRecord() sets
+// `updated_at: new Date().toISOString()` unconditionally on every row, and the table has no
+// client-side `.delete(` anywhere — upsert only, onConflict 'squadle_location_id,dt' matching
+// the table's real PK.
+export async function loadSquadleChecklistRecords({ daysBack = 30, since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase
-    .from('squadle_checklist_records').select('*')
-    .gte('dt', cutoffStr)
-    .order('dt', { ascending: false })
-    .range(from, to), 1000, 'squadle_checklist_records');
+  const data = await fetchAll((from, to) => {
+    let q = supabase
+      .from('squadle_checklist_records').select('*')
+      .gte('dt', cutoffStr);
+    if (since) q = q.gt('updated_at', since);
+    return q.order('dt', { ascending: false }).range(from, to);
+  }, 1000, 'squadle_checklist_records');
   if (!data.length) return [];
   return data.map(r => ({
     // Strip zero-padding — same reasoning as loadHmeDtRows above and
@@ -2788,6 +2810,7 @@ export async function loadSquadleChecklistRecords({ daysBack = 30 } = {}) {
     shard:             r.shard,
     createdOn:         r.created_on,
     data:              r.data,
+    updatedAt:         r.updated_at,
   }));
 }
 
