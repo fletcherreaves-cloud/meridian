@@ -1,0 +1,68 @@
+// @vitest-environment happy-dom
+// @ts-nocheck
+// Egress Wave 1 delta-sync pilot #8 (2026-11-22) — watermark delta-sync for
+// squadle_checklist_records. Same shape as the prior pilots, now that
+// loadSquadleChecklistRecords's mapped return exposes `updatedAt` (it exposed nothing of the
+// sort before this pilot).
+//
+// Critically, this table's real PK is (squadle_location_id, dt), NOT (loc, dt) —
+// supabase/schema-squadle-checklist-records.sql's own header explains `loc` is derived from the
+// record's `tags` field rather than being an independently-guaranteed-unique identifier. These
+// tests exercise mergeSquadleDelta's merge key on `squadleLocationId`, not `loc`, to prove the
+// real PK is what's used. maxUpdatedAt itself is already covered by the lifelenz_schedule
+// pilot's own test file — not re-tested here.
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../lib/supabase.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, supabase: null }; // App.js's top-level code must not need a real client to import
+});
+
+const { mergeSquadleDelta } = await import('../app/App.js');
+
+const row = (loc, squadleLocationId, dateStr, extra = {}) => ({
+  loc, squadleLocationId, date: new Date(dateStr + 'T00:00:00'), ...extra,
+});
+
+describe('mergeSquadleDelta', () => {
+  it('a delta row overwrites the cached row with the same (squadleLocationId,date) key, not a duplicate', () => {
+    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'sqdl-prod-cd-001' })];
+    const delta = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'sqdl-prod-cd-002' })];
+    const merged = mergeSquadleDelta(prev, delta, { daysBack: 400 });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].shard).toBe('sqdl-prod-cd-002');
+  });
+
+  it('a delta row for a NEW squadleLocationId is added alongside the untouched cached rows', () => {
+    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10')];
+    const delta = [row('5183', '-M9xYz1pOVHSRQQbng5DI', '2026-11-11')];
+    const merged = mergeSquadleDelta(prev, delta, { daysBack: 400 });
+    expect(merged).toHaveLength(2);
+  });
+
+  it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
+    const prev = [
+      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10'),
+      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-11'),
+    ];
+    const merged = mergeSquadleDelta(prev, [], { daysBack: 400 });
+    expect(merged).toHaveLength(2);
+  });
+
+  it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
+    const farPast = row('3708', '-M8rkFa0NUGRQPamf4CH', '2020-01-01', { shard: 'old' }); // >30 days back
+    const recent  = row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'new' });
+    const merged = mergeSquadleDelta([farPast, recent], [], { daysBack: 30 });
+    expect(merged.some(r => r.shard === 'old')).toBe(false);
+    expect(merged.some(r => r.shard === 'new')).toBe(true);
+  });
+
+  it('two different squadleLocationIds that happen to share the same (synthetic) loc on the same date are distinct keys, not collapsed — the exact reason this table is keyed on squadleLocationId, not loc', () => {
+    const prev = [
+      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'a' }),
+      row('3708', '-M9xYz1pOVHSRQQbng5DI', '2026-11-10', { shard: 'b' }),
+    ];
+    const merged = mergeSquadleDelta(prev, [], { daysBack: 400 });
+    expect(merged).toHaveLength(2);
+  });
+});

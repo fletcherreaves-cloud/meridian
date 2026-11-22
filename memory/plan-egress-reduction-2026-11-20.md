@@ -998,3 +998,43 @@ Section 17's ordering: `hmeDt`/`squadle`, which still need their own `updatedAt`
 their loaders before a delta-sync can be built (one additive line each,
 `updatedAt: r.updated_at`) — not attempted in this pass. `lifelenz_attendance_summary` stays
 Wave 2 pending its own pull-script `pulled_at` write-path fix (Section 17).
+
+## 24. Wave 1 delta-sync pilots #7/#8 shipped (2026-11-22): hmeDt and squadle, closing all
+9 Phase-1.5-cached streams except lifelenz_attendance_summary (Wave 2)
+
+Both were the "just need `updatedAt` exposed" cases Section 17 flagged, built together since
+each is a small, independent additive change — but each had its own non-obvious wrinkle,
+confirmed by reading the actual schema file and pull script rather than assuming "one line,
+done":
+
+- **`hme_dt_daily`** — real PK is `(loc, dt)`, straightforward. The table already carries BOTH
+  `pulled_at` (already exposed as `pulledAt`) and a separate `updated_at` column — the loader
+  was reading the wrong one for watermark purposes (or rather, neither was wired to a
+  watermark). Added `updatedAt: r.updated_at` + `since` param to `loadHmeDtRows`.
+  `mergeHmeDtDelta` keys on `loc + '|' + date.toISOString().slice(0,10)` since `date` here is a
+  real Date object (unlike every LifeLenz pilot's plain-date-string rows) — same re-derivation
+  safety as `mergeLifelenzScheduleDelta`'s own key.
+- **`squadle_checklist_records`** — real PK is `(squadle_location_id, dt)`, **NOT** `(loc, dt)`.
+  The schema file's own header is explicit: `loc` is derived from the record's `tags` field
+  content, not an independently-guaranteed-unique identifier the way `squadle_location_id` is.
+  The loader already exposed `squadleLocationId` (no field-exposure gap, unlike the LifeLenz
+  pilots), so the only fix needed was adding `updatedAt: r.updated_at` + `since`.
+  `mergeSquadleDelta` keys on `squadleLocationId`, not `loc` — a dedicated test
+  (`dispatch-egress-wave1-pilot8-squadle-watermark-2026-11-22.test.js`) proves two rows sharing
+  one `loc` on the same date stay distinct, the exact scenario a `(loc,dt)` key would have
+  silently collapsed.
+- Both confirmed upsert-only (no `.delete(` against either table anywhere in `src/` or
+  `scripts/`) and both pull scripts set `updated_at` unconditionally on every upsert before this
+  pilot's changes were written.
+- `_stHmeDt`/`_stSquadle` (App.js) — same shape as every prior pilot: watermark from
+  `localStorage`, early-return on no new rows, merge into the cached array, `opfsSave`.
+  `HME_DT_WATERMARK_KEY = 'mf_hme_dt_watermark'` / `SQUADLE_WATERMARK_KEY = 'mf_squadle_watermark'`.
+- 10 tests total
+  (`dispatch-egress-wave1-pilot7-hmedt-watermark-2026-11-22.test.js`,
+  `dispatch-egress-wave1-pilot8-squadle-watermark-2026-11-22.test.js`).
+
+**This closes every Phase-1.5-cached stream (Section 16) except `lifelenz_attendance_summary`**,
+which stays Wave 2 pending its own pull-script `pulled_at` write-path fix (the column is set
+once on first insert and never refreshed on a re-pull — Section 17's own finding). No further
+Wave 1 candidates remain; the next egress-reduction step is either that Wave 2 fix or a fresh
+audit of other eager-loaded tables not yet in this plan's scope.

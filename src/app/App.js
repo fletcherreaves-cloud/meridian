@@ -947,6 +947,10 @@ export const LIFELENZ_COMPLIANCE_AUDIT_WATERMARK_KEY = 'mf_lifelenz_compliance_a
 export const LIFELENZ_EMPLOYEE_PERFORMANCE_WATERMARK_KEY = 'mf_lifelenz_employee_performance_watermark';
 // Wave 1 pilot #6 (2026-11-22) — same reasoning again.
 export const LIFELENZ_PAYROLL_READINESS_WATERMARK_KEY = 'mf_lifelenz_payroll_readiness_watermark';
+// Wave 1 pilot #7 (2026-11-22) — same reasoning again.
+export const HME_DT_WATERMARK_KEY = 'mf_hme_dt_watermark';
+// Wave 1 pilot #8 (2026-11-22) — same reasoning again.
+export const SQUADLE_WATERMARK_KEY = 'mf_squadle_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1095,6 +1099,37 @@ export function mergeLifelenzPayrollReadinessDelta(prevRows, deltaRows, { daysBa
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return [...byKey.values()].filter(r => r.payPeriodStart >= cutoffStr);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #7 (egress, 2026-11-22) ──────────────────────────
+// hme_dt_daily's real PK is (loc, dt) (supabase/schema-hme-cloud-dt.sql:17-33) — loadHmeDtRows
+// returns `loc` verbatim and `date` as a real Date object (`new Date(r.dt + 'T00:00:00')`), so
+// the merge key below re-derives the same calendar-day string from either a cached row or a
+// fresh delta row safely, same reasoning as mergeLifelenzScheduleDelta's own key. Confirmed
+// upsert-only (no `.delete(` against hme_dt_daily anywhere in src/ or scripts/).
+export function mergeHmeDtDelta(prevRows, deltaRows, { daysBack = 90 } = {}) {
+  const keyOf = r => r.loc + '|' + r.date.toISOString().slice(0, 10);
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack); cutoff.setHours(0,0,0,0);
+  return [...byKey.values()].filter(r => r.date >= cutoff);
+}
+
+// ── Watermark delta-sync merge, Wave 1 pilot #8 (egress, 2026-11-22) ──────────────────────────
+// squadle_checklist_records's real PK is (squadle_location_id, dt), NOT (loc, dt) — `loc` is
+// derived from the record's own `tags` field rather than being a guaranteed-unique identifier
+// (supabase/schema-squadle-checklist-records.sql:26-37's own header). loadSquadleChecklistRecords
+// already returns `squadleLocationId` verbatim and `date` as a real Date object, so the merge key
+// below matches the table's actual uniqueness, not an assumed (loc,dt) shortcut. Confirmed
+// upsert-only (no `.delete(` against squadle_checklist_records anywhere in src/ or scripts/).
+export function mergeSquadleDelta(prevRows, deltaRows, { daysBack = 30 } = {}) {
+  const keyOf = r => r.squadleLocationId + '|' + r.date.toISOString().slice(0, 10);
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack); cutoff.setHours(0,0,0,0);
+  return [...byKey.values()].filter(r => r.date >= cutoff);
 }
 
 export const STREAM_RELOADERS = {
@@ -2777,11 +2812,26 @@ function App() {
       try{
         // HME Cloud drive-thru timer (task #105 Phase 2) — see scripts/hme-cloud-pull.mjs /
         // supabase/schema-hme-cloud-dt.sql. Surfaces in dt-speedofservice.js.
-        const hmeRows = await loadHmeDtRows();
-        if(hmeRows.length>0){
-          setDs(prev=>{if(!prev)return prev;const next={...prev, hmeDtRows: hmeRows};opfsSave(next).catch(()=>{});return next;});
-          console.log(`[Meridian] ✓ Loaded ${hmeRows.length} HME Cloud DT rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #7, 2026-11-22) — same shape as the prior six
+        // pilots: re-ask for only rows whose `updated_at` moved since the last sync, merge the
+        // delta into the cached array by (loc,date) — the table's real PK — instead of
+        // replacing it. See mergeHmeDtDelta's own comment /
+        // memory/plan-egress-reduction-2026-11-20.md Section 24.
+        const hmeSince = localStorage.getItem(HME_DT_WATERMARK_KEY) || null;
+        const hmeRows = await loadHmeDtRows({ since: hmeSince });
+        if (hmeSince && !hmeRows.length) return;
+        const hmeNewWatermark = maxUpdatedAt(hmeRows, hmeSince);
+        if (hmeNewWatermark) {
+          try { localStorage.setItem(HME_DT_WATERMARK_KEY, hmeNewWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeHmeDtDelta(prev.hmeDtRows, hmeRows, {});
+          const next = {...prev, hmeDtRows: merged};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${hmeSince ? 'Delta-synced' : 'Loaded'} ${hmeRows.length} HME Cloud DT rows from Supabase${hmeSince ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] HME Cloud load failed:',e);} };
       const _stSquadle = async () => {
       try{
@@ -2789,11 +2839,25 @@ function App() {
         // schema-squadle-checklist-records.sql; no consuming engine/panel yet (deliberately —
         // see memory/finding-hme-squadle-integration-2026-11-06.md), loaded now purely so
         // stream-freshness.js can track it like every other watched stream.
-        const sqRows = await loadSquadleChecklistRecords();
-        if(sqRows.length>0){
-          setDs(prev=>{if(!prev)return prev;const next={...prev, squadleChecklistRows: sqRows};opfsSave(next).catch(()=>{});return next;});
-          console.log(`[Meridian] ✓ Loaded ${sqRows.length} Squadle checklist rows from Supabase`);
+        // Watermark delta-sync (Wave 1 pilot #8, 2026-11-22) — re-ask for only rows whose
+        // `updated_at` moved since the last sync, merge the delta into the cached array by
+        // (squadleLocationId,date) — the table's real PK — instead of replacing it. See
+        // mergeSquadleDelta's own comment / memory/plan-egress-reduction-2026-11-20.md Section 24.
+        const sqSince = localStorage.getItem(SQUADLE_WATERMARK_KEY) || null;
+        const sqRows = await loadSquadleChecklistRecords({ since: sqSince });
+        if (sqSince && !sqRows.length) return;
+        const sqNewWatermark = maxUpdatedAt(sqRows, sqSince);
+        if (sqNewWatermark) {
+          try { localStorage.setItem(SQUADLE_WATERMARK_KEY, sqNewWatermark); } catch {}
         }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const merged = mergeSquadleDelta(prev.squadleChecklistRows, sqRows, {});
+          const next = {...prev, squadleChecklistRows: merged};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${sqSince ? 'Delta-synced' : 'Loaded'} ${sqRows.length} Squadle checklist rows from Supabase${sqSince ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] Squadle load failed:',e);} };
       const _stGradedVisits = async () => {
       try{
