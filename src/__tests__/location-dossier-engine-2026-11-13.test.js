@@ -116,11 +116,17 @@ describe('primeCostPct ("Labor + FOB %") resolves instead of always reading null
 
 describe('dossierSparklineSeries', () => {
   it('returns an ascending, gap-free {date,value} series for a resolvable metric', () => {
+    // dossierSparklineSeries windows off the REAL lastClosedBusinessDay(new Date()) (see
+    // location-dossier.js) -- a fixture hardcoded to a fixed calendar date is a time bomb that
+    // rots once "now" moves far enough past it (found live 2026-11-23, 10 days after this file
+    // was written on 2026-11-13: series.length had gone to 0). Compute the fixture's dates
+    // relative to "now" instead, comfortably inside the 10-day window the test requests.
+    const dayKey = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
     const ds = {
       qsrActSummaryRows: [
-        { loc: '3708', date: '2026-11-10', sales: 1000 },
-        { loc: '3708', date: '2026-11-11', sales: 1100 },
-        { loc: '3708', date: '2026-11-12', sales: 1200 },
+        { loc: '3708', date: dayKey(4), sales: 1000 },
+        { loc: '3708', date: dayKey(3), sales: 1100 },
+        { loc: '3708', date: dayKey(2), sales: 1200 },
       ],
     };
     const spec = DOSSIER_METRICS.find(m => m.key === 'sales');

@@ -726,21 +726,17 @@ No client-side `.delete(` call exists anywhere in `src/` against any of these 9 
 (grepped) — upsert-only, same as `lifelenz_schedule`'s own confirmed-safe write path (Section
 14), so a merge-only delta scheme can't miss a server-side delete for any of them.
 
-**1 real gap found: `lifelenz_attendance_summary`'s `pulled_at` is NOT a reliable watermark,
-despite looking identical to the other 6 at a glance.** `scripts/lifelenz-attendance-pull.mjs:214`
-upserts via `.upsert([row], { onConflict: 'loc,period_end' })` — but `row` never sets `pulled_at`
-at all; the schema (`supabase/schema-lifelenz-attendance.sql:36`) only gives it a column
-`default now()`. A Postgres column default fires on INSERT when the column is omitted from the
-statement, but an `ON CONFLICT DO UPDATE` only touches the columns the upsert call's own row
-object names — `pulled_at` isn't one of them, so **the column is set once on first insert and
-never refreshed on any subsequent re-pull of the same `(loc, period_end)` row**, even when the
-row's real content (`employeeCount`, `excusedAbsences`, etc.) changed. A delta-sync gated on
-`pulled_at > since` would silently miss every real update after the first. **This table is Wave
-2, not Wave 1** — same "write-path gap" category as the ~11 tables Section 15 already flagged
-(`ops_rows`/`ctrl_rows`/the `qsrsoft-ops-pull.mjs` family/etc.), not a new category. The fix is a
-one-line pull-script change (`pulled_at: new Date().toISOString()` explicit in the upserted row
-object, matching every other LifeLenz table's own pattern) — not attempted in this pass; flagging
-only.
+**1 real gap found (at the time): `lifelenz_attendance_summary`'s `pulled_at` was NOT a reliable
+watermark,** despite looking identical to the other 6 at a glance — `row` never set `pulled_at`
+explicitly, only the schema's column `default now()` did, which an `ON CONFLICT DO UPDATE` never
+re-applies. **This table is Wave 2, not Wave 1** — same "write-path gap" category as the ~11
+tables Section 15 already flagged, not a new category. ⚠️ **CORRECTED 2026-11-23 (Wave 2 pilot
+#3) — this finding was already stale the day it was written.** `git blame` on
+`scripts/lifelenz-attendance-pull.mjs`'s upserted row object shows `pulled_at: new
+Date().toISOString()` was added explicitly 2026-11-16 (commit 5b56302) — **six days before** this
+very paragraph was written on 2026-11-22, and nobody re-verified the write path before writing
+it. Section 25's standing warning about this file going stale applies to its own earlier
+sections too, not just future readers. See Section 27 for the pilot this unblocked.
 
 **2 of the 6 write-path-safe streams are missing a field their own loader would need before a
 delta-sync could actually be built against them — found by reading what the client gets back,
@@ -1144,3 +1140,37 @@ bumped-on-every-write column at all) — not a delta-sync pilot until that DDL q
 owner. No other named, write-path-verified-ready candidate remains in this plan's own backlog; the
 next step is either that DDL conversation or a fresh pass over Section 13's full ~56-table list to
 find the next one worth auditing.
+
+## 27. Wave 2 pilot #3 shipped (2026-11-23): lifelenz_attendance_summary, closing Wave 1's
+deferred item — the write-path fix Section 17 called for was already done
+
+Re-read `scripts/lifelenz-attendance-pull.mjs` before starting the "needs a pull-script fix
+first" work Section 17/24 deferred, per this file's own standing discipline — and found the fix
+already shipped. `git blame` on the upserted row object's `pulled_at: new Date().toISOString()`
+line shows commit 5b56302, dated 2026-11-16, six days before Section 17 was written on 2026-11-22
+claiming the opposite. Section 17's own paragraph is corrected in place above rather than left to
+mislead a future reader, per the "a rule that describes code which no longer exists costs more
+than no rule" standing lesson (CLAUDE.md, promotion-is-one-field-flip entry) — the same trap,
+different file.
+
+**So this pilot needed no pull-script change at all** — only the loader's `since` option, same
+shape as every prior pilot. `loadLifeLenzAttendance` gained `since` (gated via `.gt('pulled_at',
+since)`); it already exposed the watermark field as `pulledAt` (plain ISO string, no Date-object
+wrinkle — unlike qsrActSummaryRows). Real PK is `(loc, period_end)` — one row per store per pull
+window, not per employee — confirmed via the upsert's own `onConflict: 'loc,period_end'`. No
+`.delete(` against `lifelenz_attendance_summary` anywhere in `src/` or `scripts/` — upsert-only.
+
+New `mergeLifelenzAttendanceDelta` keys on `loc + periodEnd` as plain strings (same shape as
+`mergeLifelenzEmployeePerformanceDelta`'s own key — this table's `date`/`periodEnd` fields are
+plain `'YYYY-MM-DD'` strings, not Date objects). `_stLifelenzAttendance` follows the standard
+shape: watermark from `localStorage`, early-return on no new rows, merge into the cached array,
+`opfsSave`. `LIFELENZ_ATTENDANCE_WATERMARK_KEY = 'mf_lifelenz_attendance_watermark'`.
+
+6 tests (`dispatch-egress-wave2-pilot3-lifelenz-attendance-watermark-2026-11-23.test.js`), same
+shape as every prior pilot's merge-function tests plus one confirming the 45-day default window.
+Full suite + build both clean.
+
+**This closes every named, write-path-ready Wave 1/Wave 2 candidate this plan has identified.**
+What remains: the `custom_signals`/`staff_assignments` DDL question (owner decision required —
+see Section 25's close), or a fresh audit pass over Section 13's full ~56-table universe to find
+tables not yet individually verified.
