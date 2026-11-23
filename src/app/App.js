@@ -958,6 +958,8 @@ export const QSR_ACT_SUMMARY_WATERMARK_KEY = 'mf_qsr_act_summary_watermark';
 export const GLIMPSE_WATERMARK_KEY = 'mf_glimpse_watermark';
 export const CASH_WATERMARK_KEY = 'mf_cash_watermark';
 export const SALES_LEDGER_WATERMARK_KEY = 'mf_sales_ledger_watermark';
+// Egress Wave 2 pilot #3 (2026-11-23) — same reasoning again.
+export const LIFELENZ_ATTENDANCE_WATERMARK_KEY = 'mf_lifelenz_attendance_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1179,6 +1181,27 @@ export function mergeEmailReportDelta(prevRows, deltaRows, { daysBack = 60 } = {
   for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack); cutoff.setHours(0,0,0,0);
   return [...byKey.values()].filter(r => r.date >= cutoff);
+}
+
+// ── Watermark delta-sync merge, Egress Wave 2 pilot #3 (2026-11-23) ───────────────────────────
+// lifelenz_attendance_summary's real PK is (loc, period_end) (onConflict in
+// scripts/lifelenz-attendance-pull.mjs's upsertSummary()) — one row per store per pull window,
+// not per employee/shift. loadLifeLenzAttendance returns `date`/`periodEnd` as a plain
+// 'YYYY-MM-DD' string (unlike the qsrActSummaryRows/hmeDt/squadle pilots' Date objects), so the
+// merge key and window-prune below use a plain string compare, same shape as
+// mergeLifelenzEmployeePerformanceDelta. The write-path gap the Section 17 readiness audit
+// (2026-11-22) flagged for this table — "pulled_at is never set on the upserted row" — was
+// already fixed 2026-11-16 (commit 5b56302), before that audit was written; this pilot needed
+// no pull-script change, only the loader's `since` option. Confirmed upsert-only (no `.delete(`
+// against lifelenz_attendance_summary anywhere in src/ or scripts/).
+export function mergeLifelenzAttendanceDelta(prevRows, deltaRows, { daysBack = 45 } = {}) {
+  const keyOf = r => r.loc + '|' + r.date;
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...byKey.values()].filter(r => r.date >= cutoffStr);
 }
 
 export const STREAM_RELOADERS = {
@@ -2690,16 +2713,32 @@ function App() {
       try{
         // Replaces scheduling.js's hand-transcribed TA_DATA (2026-09-06) — see
         // scripts/lifelenz-attendance-pull.mjs / supabase/schema-lifelenz-attendance.sql.
-        const attRows = await loadLifeLenzAttendance();
-        if(attRows.length>0){
-          setDs(prev=>{
-            if(!prev) return prev;
-            const next = {...prev, lifelenzAttendanceRows: attRows};
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded ${attRows.length} LifeLenz attendance rows from Supabase`);
+        // Watermark delta-sync (Egress Wave 2 pilot #3, 2026-11-23) — re-ask for only rows
+        // whose `pulled_at` moved since the last sync, merge the delta into the cached array
+        // by (loc,periodEnd) — the table's real PK — instead of replacing it. See
+        // mergeLifelenzAttendanceDelta's own comment / memory/plan-egress-reduction-2026-11-20.md.
+        const attSince = localStorage.getItem(LIFELENZ_ATTENDANCE_WATERMARK_KEY) || null;
+        const attDeltaRows = await loadLifeLenzAttendance({ since: attSince });
+        if (attSince && !attDeltaRows.length) return;
+        // This table's watermark field is named `pulledAt`, not `updatedAt`, so the max is
+        // computed inline here rather than reusing the shared maxUpdatedAt helper (which reads
+        // `.updatedAt` specifically) — same reasoning as qsrActSummaryRows's pilot, minus that
+        // one's Date-object wrinkle (pulledAt is already a plain ISO string here).
+        let attNewWatermark = attSince || null;
+        for (const r of attDeltaRows) {
+          if (r.pulledAt && (!attNewWatermark || r.pulledAt > attNewWatermark)) attNewWatermark = r.pulledAt;
         }
+        if (attNewWatermark) {
+          try { localStorage.setItem(LIFELENZ_ATTENDANCE_WATERMARK_KEY, attNewWatermark); } catch {}
+        }
+        setDs(prev=>{
+          if(!prev) return prev;
+          const lifelenzAttendanceRows = mergeLifelenzAttendanceDelta(prev.lifelenzAttendanceRows, attDeltaRows, {});
+          const next = {...prev, lifelenzAttendanceRows};
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${attSince ? 'Delta-synced' : 'Loaded'} ${attDeltaRows.length} LifeLenz attendance rows from Supabase${attSince ? ' (watermark sync)' : ''}`);
       }catch(e){console.warn('[Meridian] LifeLenz attendance load failed:',e);} };
       const _stScheduleVariance = async () => {
       try{

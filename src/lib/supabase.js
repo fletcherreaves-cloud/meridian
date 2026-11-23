@@ -1876,12 +1876,18 @@ export async function loadEmployeePayRateChanges({ locs } = {}) {
 // rows — a rolling 28-day rollup naturally caps its own growth rate), but the same bug class and
 // equally trivial to fix. 45 days covers one full 28-day rolling period with margin. See
 // memory/plan-egress-reduction-2026-11-20.md Section 15.
-export async function loadLifeLenzAttendance({ locs, daysBack = 45 } = {}) {
+export async function loadLifeLenzAttendance({ locs, daysBack = 45, since } = {}) {
   if (!supabase) return [];
   const start = (() => { const d = new Date(); d.setDate(d.getDate() - daysBack); return d.toISOString().slice(0, 10); })();
   const data = await fetchAll((from, to) => {
     let q = supabase.from('lifelenz_attendance_summary').select('*').gte('period_end', start).order('period_end', { ascending: false }).range(from, to);
     if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    // Egress Wave 2 pilot #3 (2026-11-23): `pulled_at` IS set unconditionally on every upsert
+    // (scripts/lifelenz-attendance-pull.mjs:249) — the Section 17 readiness audit (2026-11-22)
+    // claimed this row builder never set it at all, but that was already fixed 2026-11-16
+    // (commit 5b56302), six days before the audit was written and never re-verified. No
+    // write-path fix needed here; `since` is safe to gate a delta fetch on.
+    if (since) q = q.gt('pulled_at', since);
     return q;
   }, 1000, 'lifelenz_attendance_summary');
   return (data || []).map(r => ({

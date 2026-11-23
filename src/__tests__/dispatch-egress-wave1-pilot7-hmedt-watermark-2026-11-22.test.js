@@ -48,8 +48,13 @@ describe('mergeHmeDtDelta', () => {
   });
 
   it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
+    // `recent` must stay well inside the 90-day window on every run — see
+    // memory/plan-egress-reduction-2026-11-20.md's standing warning against hardcoded fixture
+    // dates in these window-prune tests. Compute it relative to now.
+    const d = new Date(); d.setDate(d.getDate() - 5);
+    const recentDate = d.toISOString().slice(0, 10);
     const farPast = row('3708', '2020-01-01', { cars: 1 }); // >90 days back
-    const recent  = row('3708', '2026-11-10', { cars: 2 });
+    const recent  = row('3708', recentDate, { cars: 2 });
     const merged = mergeHmeDtDelta([farPast, recent], [], { daysBack: 90 });
     expect(merged.some(r => r.cars === 1)).toBe(false);
     expect(merged.some(r => r.cars === 2)).toBe(true);

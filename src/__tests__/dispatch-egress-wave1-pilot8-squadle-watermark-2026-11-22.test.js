@@ -50,8 +50,13 @@ describe('mergeSquadleDelta', () => {
   });
 
   it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
+    // `recent` must stay well inside the 30-day window on every run — this is the tightest
+    // window of all the watermark pilots, so it was the first one due to rot. See
+    // memory/plan-egress-reduction-2026-11-20.md's standing warning. Compute it relative to now.
+    const d = new Date(); d.setDate(d.getDate() - 5);
+    const recentDate = d.toISOString().slice(0, 10);
     const farPast = row('3708', '-M8rkFa0NUGRQPamf4CH', '2020-01-01', { shard: 'old' }); // >30 days back
-    const recent  = row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'new' });
+    const recent  = row('3708', '-M8rkFa0NUGRQPamf4CH', recentDate, { shard: 'new' });
     const merged = mergeSquadleDelta([farPast, recent], [], { daysBack: 30 });
     expect(merged.some(r => r.shard === 'old')).toBe(false);
     expect(merged.some(r => r.shard === 'new')).toBe(true);
