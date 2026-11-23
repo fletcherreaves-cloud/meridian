@@ -4175,7 +4175,7 @@ export const loadOpsSalesMix = async (d = 45) => {
 };
 export const loadOpsPeaksSales   = (d = 45) => _loadOpsTable('qsr_peaks_sales', d);    // 3 Peaks daypart sales
 
-export async function loadGlimpse(daysBack = 45) {
+export async function loadGlimpse(daysBack = 45, { since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
@@ -4183,9 +4183,13 @@ export async function loadGlimpse(daysBack = 45) {
   // and if a page read is cut off (free-tier egress throttle), we must keep the RECENT days
   // these freshest-wins tiles need — ascending order silently dropped the newest days (the
   // "Service/Controls stuck at an old date" bug, even though email-parse writes them current).
-  const data = await _pagedParallel({ table: 'daily_glimpse_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'glimpse' });
+  // Egress Wave 2 pilot #2 (2026-11-23): `updated_at` is set unconditionally on every upsert by
+  // scripts/qsrsoft-email-parse.mjs's mapGlimpse() — same "bumped on every write" guarantee every
+  // prior pilot verified. Confirmed upsert-only (no `.delete(` against daily_glimpse_daily
+  // anywhere in src/ or scripts/), so `since` is safe to gate a delta fetch on.
+  const data = await _pagedParallel({ table: 'daily_glimpse_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'glimpse', extraFilter: since ? (q => q.gt('updated_at', since)) : undefined });
   return (data || []).map(r => ({
-    loc: r.loc, date: _mkDate(r.date),
+    loc: r.loc, date: _mkDate(r.date), updatedAt: r.updated_at,
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
     dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgCheck: r.dt_avg_check,
     gc: r.gc, avgCheck: r.avg_check, laborPct: r.labor_pct,
@@ -4205,13 +4209,16 @@ export async function loadGlimpse(daysBack = 45) {
   }));
 }
 
-export async function loadCash(daysBack = 45) {
+export async function loadCash(daysBack = 45, { since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await _pagedParallel({ table: 'cash_sheet_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'cash' });
+  // Egress Wave 2 pilot #2 (2026-11-23): same write-path guarantee as loadGlimpse above —
+  // scripts/qsrsoft-email-parse.mjs's mapCashSheet() sets `updated_at` unconditionally on every
+  // upsert, confirmed upsert-only against cash_sheet_daily.
+  const data = await _pagedParallel({ table: 'cash_sheet_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'cash', extraFilter: since ? (q => q.gt('updated_at', since)) : undefined });
   return (data || []).map(r => ({
-    loc: r.loc, date: _mkDate(r.date),
+    loc: r.loc, date: _mkDate(r.date), updatedAt: r.updated_at,
     allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
     doorDashSales: r.doordash_sales, doorDashGC: r.doordash_gc,
     uberEatsSales: r.ubereats_sales, uberEatsGC: r.ubereats_gc,
@@ -4228,13 +4235,16 @@ export async function loadCash(daysBack = 45) {
   }));
 }
 
-export async function loadSalesLedger(daysBack = 45) {
+export async function loadSalesLedger(daysBack = 45, { since } = {}) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await _pagedParallel({ table: 'sales_ledger_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'salesLedger' });
+  // Egress Wave 2 pilot #2 (2026-11-23): same write-path guarantee as loadGlimpse above —
+  // scripts/qsrsoft-email-parse.mjs's mapSalesLedger() sets `updated_at` unconditionally on
+  // every upsert, confirmed upsert-only against sales_ledger_daily.
+  const data = await _pagedParallel({ table: 'sales_ledger_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'salesLedger', extraFilter: since ? (q => q.gt('updated_at', since)) : undefined });
   return (data || []).map(r => ({
-    loc: r.loc, date: _mkDate(r.date),
+    loc: r.loc, date: _mkDate(r.date), updatedAt: r.updated_at,
     sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,
     gc: r.gc, avgCheck: r.avg_check,
     dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgChk: r.dt_avg_chk, dtPctTotal: r.dt_pct_total,

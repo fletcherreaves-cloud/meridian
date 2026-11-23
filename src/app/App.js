@@ -953,6 +953,11 @@ export const HME_DT_WATERMARK_KEY = 'mf_hme_dt_watermark';
 export const SQUADLE_WATERMARK_KEY = 'mf_squadle_watermark';
 // Egress Wave 2 pilot #1 (2026-11-22) — same reasoning again.
 export const QSR_ACT_SUMMARY_WATERMARK_KEY = 'mf_qsr_act_summary_watermark';
+// Egress Wave 2 pilot #2 (2026-11-23) — same reasoning again, one key per stream (each has its
+// own independent since-point even though they share mergeEmailReportDelta).
+export const GLIMPSE_WATERMARK_KEY = 'mf_glimpse_watermark';
+export const CASH_WATERMARK_KEY = 'mf_cash_watermark';
+export const SALES_LEDGER_WATERMARK_KEY = 'mf_sales_ledger_watermark';
 // Keyed by `loc|YYYY-MM-DD` (both already normalized the same way by loadLifeLenzSchedule — loc
 // unpadded, date always built as `new Date(r.date + 'T12:00:00')`, so re-deriving the same ISO
 // date string from either a cached row or a freshly-fetched delta row is safe and collision-free).
@@ -1144,6 +1149,30 @@ export function mergeSquadleDelta(prevRows, deltaRows, { daysBack = 30 } = {}) {
 // first login is the highest-value remaining Phase 2 candidate. Confirmed upsert-only (no
 // `.delete(` against qsr_daily_activity_rollup anywhere in src/ or scripts/).
 export function mergeQsrActSummaryDelta(prevRows, deltaRows, { daysBack = 60 } = {}) {
+  const keyOf = r => r.loc + '|' + r.date.toISOString().slice(0, 10);
+  const byKey = new Map();
+  for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
+  for (const r of (deltaRows || [])) byKey.set(keyOf(r), r);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack); cutoff.setHours(0,0,0,0);
+  return [...byKey.values()].filter(r => r.date >= cutoff);
+}
+
+// ── Watermark delta-sync merge, Egress Wave 2 pilot #2 (2026-11-23) ───────────────────────────
+// daily_glimpse_daily / cash_sheet_daily / sales_ledger_daily — the three emailed-report streams
+// (scripts/qsrsoft-email-parse.mjs), the next candidates Section 25 named. All three upsert with
+// the SAME default onConflict:'loc,date' (mapGlimpse/mapCashSheet/mapSalesLedger never override
+// it), so (loc,date) is each table's real PK, and all three set `updated_at` unconditionally on
+// every write — same guarantee every prior pilot verified. Confirmed upsert-only (no `.delete(`
+// against any of the three tables anywhere in src/ or scripts/). `loc` here is already the
+// UN-padded short form straight out of the DB (email-parse's own `normLoc()` stores it that way,
+// unlike the zero-padded NSN every QSRSoft-pulled table uses) — the loaders pass it through
+// verbatim, so the merge key below does too, rather than re-deriving a padding it was never in.
+// One merge function, shared by all three — they're structurally identical (same PK, same `date`
+// Date-object shape, same upsert-only write path) and nothing about the key or window-prune
+// differs per table, so three near-duplicate copies would be the premature-triplication CLAUDE.md
+// warns against. Each `_st*` stage still runs its own watermark/early-return per stream, since
+// each has its own localStorage key and independent since-point.
+export function mergeEmailReportDelta(prevRows, deltaRows, { daysBack = 60 } = {}) {
   const keyOf = r => r.loc + '|' + r.date.toISOString().slice(0, 10);
   const byKey = new Map();
   for (const r of (prevRows || [])) byKey.set(keyOf(r), r);
@@ -3207,24 +3236,48 @@ function App() {
       // the Supabase tables have data, so freshness follows the app on any device.
       const _stCloudEmailReport = async () => {
       try{
-        const [glimpse,cash,ledger]=await Promise.all([loadGlimpse(60),loadCash(60),loadSalesLedger(60)]);
-        if(glimpse.length||cash.length||ledger.length){
-          setDs(prev=>{
-            if(!prev)return prev;
-            const next={...prev,
-              ...(glimpse.length?{glimpseRows:glimpse}:{}),
-              ...(cash.length?{cashRows:cash}:{}),
-              ...(ledger.length?{salesLedgerRows:ledger}:{})};
-            // Cache-first pilot #3 (egress Phase 1, 2026-11-21): glimpse/cash/salesLedger were
-            // ALREADY part of the OPFS snapshot (Dexie v7), but this live fetch never wrote back
-            // to it — only the manual-upload path did, so a user who never manually uploads has
-            // had an effectively permanently-empty cache for all three. Fire-and-forget, same
-            // pattern as _stLifelenz/_stQsrsoftActSummary.
-            opfsSave(next).catch(()=>{});
-            return next;
-          });
-          console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
-        }
+        // Watermark delta-sync, Egress Wave 2 pilot #2 (2026-11-23): same shape as every prior
+        // pilot, run independently per stream since each has its own emailed-report schedule (one
+        // stream's report can arrive without another's). Re-ask for only rows whose `updated_at`
+        // moved since each stream's own last sync, merge the delta into the cached array by
+        // (loc,date) instead of replacing it wholesale every login. See mergeEmailReportDelta's
+        // own comment / memory/plan-egress-reduction-2026-11-20.md.
+        const glimpseSince = localStorage.getItem(GLIMPSE_WATERMARK_KEY) || null;
+        const cashSince = localStorage.getItem(CASH_WATERMARK_KEY) || null;
+        const ledgerSince = localStorage.getItem(SALES_LEDGER_WATERMARK_KEY) || null;
+        const [glimpse,cash,ledger]=await Promise.all([
+          loadGlimpse(60, { since: glimpseSince }),
+          loadCash(60, { since: cashSince }),
+          loadSalesLedger(60, { since: ledgerSince }),
+        ]);
+        // A real prior sync on EVERY stream that found nothing new anywhere — cache is already
+        // current for all three. A first-ever sync on any one stream (`!since`) always proceeds,
+        // even with 0 rows, so that stream's window-prune still runs against a stale cache.
+        if ((glimpseSince && !glimpse.length) && (cashSince && !cash.length) && (ledgerSince && !ledger.length)) return;
+        const glimpseNew = maxUpdatedAt(glimpse, glimpseSince);
+        const cashNew = maxUpdatedAt(cash, cashSince);
+        const ledgerNew = maxUpdatedAt(ledger, ledgerSince);
+        try {
+          if (glimpseNew) localStorage.setItem(GLIMPSE_WATERMARK_KEY, glimpseNew);
+          if (cashNew) localStorage.setItem(CASH_WATERMARK_KEY, cashNew);
+          if (ledgerNew) localStorage.setItem(SALES_LEDGER_WATERMARK_KEY, ledgerNew);
+        } catch {}
+        setDs(prev=>{
+          if(!prev)return prev;
+          const next={...prev,
+            glimpseRows: mergeEmailReportDelta(prev.glimpseRows, glimpse, {}),
+            cashRows: mergeEmailReportDelta(prev.cashRows, cash, {}),
+            salesLedgerRows: mergeEmailReportDelta(prev.salesLedgerRows, ledger, {}),
+          };
+          // Cache-first pilot #3 (egress Phase 1, 2026-11-21): glimpse/cash/salesLedger were
+          // ALREADY part of the OPFS snapshot (Dexie v7), but this live fetch never wrote back
+          // to it — only the manual-upload path did, so a user who never manually uploads has
+          // had an effectively permanently-empty cache for all three. Fire-and-forget, same
+          // pattern as _stLifelenz/_stQsrsoftActSummary.
+          opfsSave(next).catch(()=>{});
+          return next;
+        });
+        console.log(`[Meridian] ✓ ${(glimpseSince||cashSince||ledgerSince) ? 'Delta-synced' : 'Loaded'} cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
       }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);} };
       // Operations Report streams (#37) — Controls / Labor(OT) / Service / Sales-mix,
       // store-daily with LY, from the qsrsoft-ops-pull. Loaded into ds for the tile-wiring phase
