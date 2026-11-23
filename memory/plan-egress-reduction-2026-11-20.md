@@ -1086,12 +1086,61 @@ window, not only the ones that changed this sync. `QSR_ACT_SUMMARY_WATERMARK_KEY
 every prior pilot's merge-function tests plus one confirming the 60-day default window. Full
 suite + build both clean.
 
-**Next candidates for Wave 2, in rough order of value:** `salesLedgerRows`/`glimpseRows`/
-`cashRows` (`sales_ledger_daily`/`daily_glimpse_daily`/`cash_sheet_daily`) — all three already
-Phase 1 cache-first-rendered (Section 12) via the shared `_stCloudEmailReport` stage, all three
-written by `scripts/qsrsoft-email-parse.mjs`'s emailed-report ingest, write-path not yet
-re-verified for this pilot's "bumped on every upsert" guarantee. `lifelenz_attendance_summary`
-(Wave 1's deferred item) still needs its own pull-script `pulled_at` fix first. Beyond those,
-Section 13's audit named `custom_signals`/`staff_assignments` as genuine DDL candidates (real
-`.update()` call sites, no bumped-on-every-write column at all) — not a delta-sync pilot until
-that DDL question goes to the owner.
+## 26. Wave 2 pilot #2 shipped (2026-11-23): glimpseRows/cashRows/salesLedgerRows (the three
+emailed-report streams), one shared merge function
+
+The next-named candidate from Section 25: `daily_glimpse_daily`/`cash_sheet_daily`/
+`sales_ledger_daily`, all three already Phase 1 cache-first-rendered (Section 12) via the shared
+`_stCloudEmailReport` stage, none previously delta-synced.
+
+**Write-path verification, same discipline as every prior pilot:** `scripts/qsrsoft-email-parse.mjs`'s
+`mapGlimpse`/`mapCashSheet`/`mapSalesLedger` all set `updated_at: new Date().toISOString()`
+unconditionally on every mapped row, and `upsertRows()`'s default `onConflict = 'loc,date'` is
+never overridden by any of the three handlers (only `labor-exceptions`' detail rows use a
+different one) — so `(loc, date)` is each table's real PK, confirmed by reading the actual upsert
+call, not assumed from a naming convention. No `.delete(` against any of the three tables anywhere
+in `src/` or `scripts/` — upsert-only.
+
+**A wrinkle worth recording even though it needed no fix:** these three loaders' `loc` field is
+already the UN-padded short form straight out of the DB — `scripts/qsrsoft-email-parse.mjs`'s own
+`normLoc()` (`parseInt` round-trip) stores it that way at write time, unlike every QSRSoft-pulled
+table's zero-padded NSN. The loaders already pass it through verbatim (`loc: r.loc`, no
+`parseInt`/`padStart` anywhere), so the merge key below does the same rather than inventing a
+padding transform these rows never carried. Confirmed by reading the write-side `normLoc` function
+directly, not inferred from the read side alone — exactly the "measure it" discipline this file's
+own rule requires.
+
+**One merge function for all three, not three near-identical copies:** `mergeEmailReportDelta`
+(`src/app/App.js`) is shared across `glimpseRows`/`cashRows`/`salesLedgerRows` because all three
+are structurally identical for everything the merge touches — same `(loc,date)` PK, same `date`
+Date-object shape (via the shared `_mkDate` helper), same upsert-only write path. Three copies
+differing only in variable names would have been the premature-triplication CLAUDE.md's Dev Rules
+warn against ("check whether a helper exists before writing one"); each stream still gets its own
+`localStorage` watermark key and its own early-return check in `_stCloudEmailReport`, since each
+syncs independently (one emailed report can land for one stream without the others).
+`GLIMPSE_WATERMARK_KEY`/`CASH_WATERMARK_KEY`/`SALES_LEDGER_WATERMARK_KEY`.
+
+`loadGlimpse`/`loadCash`/`loadSalesLedger` each gained a `since` option (gated via the existing
+`_pagedParallel` helper's `extraFilter` parameter — `.gt('updated_at', since)` — no new pagination
+code needed) and now expose `updatedAt: r.updated_at` on their mapped return, so `maxUpdatedAt`
+works unmodified here (unlike the qsrActSummaryRows pilot, these three never had a Date-object
+wrinkle on the timestamp field itself).
+
+`_stCloudEmailReport`'s early-return is a three-way AND: it skips the whole stage only when EVERY
+stream already has a watermark AND came back with zero new rows — a first-ever sync on any single
+stream (no watermark yet) always proceeds, matching the single-stream pilots' own "a first sync
+always proceeds, even with 0 rows" rule, just generalized across three independent streams sharing
+one stage.
+
+6 tests (`dispatch-egress-wave2-pilot2-emailreports-watermark-2026-11-23.test.js`), including one
+confirming the shared merge function works correctly against each stream's own distinct field
+shape (it only ever touches `loc`/`date`, never a glimpse-only or cash-only field). Full suite +
+build both clean.
+
+**Next candidates for Wave 2:** `lifelenz_attendance_summary` (Wave 1's deferred item) still needs
+its own pull-script `pulled_at` fix first. Beyond that, Section 13's audit named
+`custom_signals`/`staff_assignments` as genuine DDL candidates (real `.update()` call sites, no
+bumped-on-every-write column at all) — not a delta-sync pilot until that DDL question goes to the
+owner. No other named, write-path-verified-ready candidate remains in this plan's own backlog; the
+next step is either that DDL conversation or a fresh pass over Section 13's full ~56-table list to
+find the next one worth auditing.
