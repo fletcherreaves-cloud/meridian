@@ -64,13 +64,12 @@ describe('mergeLifelenzPayrollReadinessDelta', () => {
   });
 
   it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
-    // `recent` must stay well inside the 14-day window on every run, not just the day this test
-    // was written — a hardcoded '2026-11-08' here (a 15-day-old date as of 2026-11-23) is exactly
-    // what made this test start failing the day after it shipped, found live by Wave 2 pilot #2's
-    // full-suite run (2026-11-23).
-    const recentDate = new Date(); recentDate.setDate(recentDate.getDate() - 2);
-    const farPast = row('3708', 'entry-001', '2020-01-01', { overtimeHours: 1 }); // >14 days back
-    const recent  = row('3708', 'entry-002', recentDate.toISOString().slice(0, 10), { overtimeHours: 2 });
+    // The merge's cutoff is computed from the real new Date() (App.js:1101), so "recent" must be
+    // computed relative to today too -- a hardcoded date one day short of the 14-day cutoff is a
+    // time bomb that flips the moment the suite runs a day later than the date it was written on.
+    const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+    const farPast = row('3708', 'entry-001', '2020-01-01', { overtimeHours: 1 }); // always >14 days back
+    const recent  = row('3708', 'entry-002', daysAgo(5), { overtimeHours: 2 }); // comfortably inside 14 days
     const merged = mergeLifelenzPayrollReadinessDelta([farPast, recent], [], { daysBack: 14 });
     expect(merged.some(r => r.overtimeHours === 1)).toBe(false);
     expect(merged.some(r => r.overtimeHours === 2)).toBe(true);
