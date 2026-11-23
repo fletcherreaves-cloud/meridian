@@ -46,8 +46,13 @@ describe('mergeLifelenzScheduleDelta', () => {
   });
 
   it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
+    // `recent` must stay well inside the 180-day window on every run, not just the day this test
+    // was written — a hardcoded date literal here is exactly what broke two sibling watermark
+    // test files on later dates (payroll-readiness 2026-11-22, dossier sparkline 2026-11-23); see
+    // memory/plan-egress-reduction-2026-11-20.md's standing warning. Compute it relative to now.
+    const recentDate = () => { const d = new Date(); d.setDate(d.getDate() - 5); return d.toISOString().slice(0, 10); };
     const farPast = row('3708', '2020-01-01', { sales: 1 }); // >400 days back from "today" in this test's frame
-    const recent  = row('3708', '2026-11-10', { sales: 2 });
+    const recent  = row('3708', recentDate(), { sales: 2 });
     const merged = mergeLifelenzScheduleDelta([farPast, recent], [], { daysBack: 180, daysFwd: 30 });
     expect(merged.some(r => r.sales === 1)).toBe(false);
     expect(merged.some(r => r.sales === 2)).toBe(true);

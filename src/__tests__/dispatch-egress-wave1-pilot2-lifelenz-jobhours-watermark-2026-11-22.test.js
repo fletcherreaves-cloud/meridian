@@ -54,8 +54,13 @@ describe('mergeLifelenzJobHoursDelta', () => {
   });
 
   it('a cached row that has aged out of the current window is pruned, even with an empty delta', () => {
+    // `recent` must stay well inside the 60-week window on every run — see
+    // memory/plan-egress-reduction-2026-11-20.md's standing warning against hardcoded fixture
+    // dates in these window-prune tests. Compute it relative to now.
+    const d = new Date(); d.setDate(d.getDate() - 7);
+    const recentWeek = d.toISOString().slice(0, 10);
     const farPast = row('3708', '2020-01-01', 'drive-thru', { hours: 1 }); // >60 weeks back
-    const recent  = row('3708', '2026-11-11', 'drive-thru', { hours: 2 });
+    const recent  = row('3708', recentWeek, 'drive-thru', { hours: 2 });
     const merged = mergeLifelenzJobHoursDelta([farPast, recent], [], { weeksBack: 60, weeksFwd: 4 });
     expect(merged.some(r => r.hours === 1)).toBe(false);
     expect(merged.some(r => r.hours === 2)).toBe(true);
