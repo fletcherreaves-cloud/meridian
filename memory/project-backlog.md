@@ -914,13 +914,22 @@ Monthly Targets) is in `plan-targets-system-2026-11-02.md`.
    independently.
 5. **Knowledge base/help refresh + role-based interactive Getting Started tool** — covering core
    usage, settings, and rearranging the AAG panel layout.
-6. **Bug: District View repeats the company rollup on every location's own page** — needs moving
-   to its own separate place, not shown per-location.
-7. **Bug: Home nav button doesn't work while a full-page panel is open** — has to be closed via
-   its own back arrow first. Owner called this "easy."
-8. **User setting for default landing panel** (Home, District View, or anything else).
-9. **AAG layout: move patch heat map + bullseye below the card tiles, above district
-   projections.**
+6. ✅ **DONE — re-verified live 2026-11-24, this line had gone stale.** `store-dash.js`'s own
+   2026-11-02 comment documents the fix directly: the district-wide content was moved out of
+   StoreDash (which renders once PER selected store, so the "allStores.length>1" gate was true on
+   every single store's own page) into `DistrictOverviewPanels`, now rendered once on the real
+   top-level District View (`DistrictGrid`) only.
+7. ✅ **DONE — re-verified live 2026-11-24, this line had gone stale.** `shell.js`'s Home nav item
+   already calls `goRoute?.(null)` (clears the open route panel) alongside `setView('command')` —
+   dated owner-report comment right at the fix confirms this was the exact bug. A related bug
+   found in the same pass (District View blank-screen after navigating away without using
+   StoreDash's own Back button) was fixed alongside it.
+8. ✅ **DONE — re-verified live 2026-11-24, this line had gone stale.** `constants.js`'s
+   `defaultLandingPanel` setting (Settings → Appearance) + `App.js`'s altitude-aware default-
+   landing redirect, both dated 2026-11-02 (the same day this brain-dump was logged).
+9. ✅ **DONE — re-verified live 2026-11-24, this line had gone stale.** `at-a-glance.js` already
+   renders the patch heatmap + bullseye tiles below the card tiles (own comment: "drop the patch
+   heat map and bullseye sections on AAG to below the card tiles").
 10. Continue exploring deeper Claude/MCP integration for SAGE — already tracked (task #60).
 11. **Multi-org/multi-user readiness + legal/IP protection**, ahead of "bringing on additional
     users and possibly a whole different organization":

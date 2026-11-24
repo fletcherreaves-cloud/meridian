@@ -3903,6 +3903,23 @@ function App() {
     [stores, aagAllowedLocs]
   );
 
+  // AtAGlance's own `stores` prop, further narrowed by the FL/OK locScope pill on top of
+  // scopedStores above (issue #369) -- was an unmemoized inline IIFE at the AtAGlance call site
+  // below, re-deriving the aagAllowedLocs filter a SECOND time instead of reusing scopedStores
+  // (exactly the duplication scopedStores' own comment asks every call site to avoid), and
+  // allocating a fresh array on every single App.js render regardless of whether anything it
+  // depends on changed. That fresh identity defeated every one of at-a-glance.js's own
+  // useMemo(...,[stores]) wrappers -- #369 already fixed those; this is the "moves the problem
+  // up one level" case that fix's own writeup explicitly warned could still exist at the parent.
+  // Filter order doesn't change the result (both are set-intersections), so this starts from
+  // scopedStores instead of re-filtering aagAllowedLocs again.
+  const aagStores = useMemo(
+    () => locScope==='ok' ? scopedStores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK')
+        : locScope==='fl' ? scopedStores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL')
+        : scopedStores,
+    [scopedStores, locScope]
+  );
+
   const goStore=(s,tab)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');setStoreDashInitialTab(tab||'overview');};
 
   // #208 — re-fetch coaching_cycles after a coaching modal saves (start OR record-follow-up),
@@ -5036,7 +5053,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:(()=>{const base=locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores;return aagAllowedLocs?base.filter(s=>aagAllowedLocs.has(unpadLoc(s.loc))):base;})(),viewAsAltitude,ds,settings,userEvents,lockedProjections,weeklyCommittedLocs,dateRange,darRows,
+      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:aagStores,viewAsAltitude,ds,settings,userEvents,lockedProjections,weeklyCommittedLocs,dateRange,darRows,
         onOpenStore:(s,tab)=>{goStore(s,tab);},
         onCoachingSaved:refreshCoachingCycles,
         onPayEventSaved:refreshPayEvents,
