@@ -20,8 +20,18 @@ behind the modeling choices below. This README covers only how to run and extend
 - **`Restaurant_Annual_Targets_Workbook_ORIGINAL_LAYOUT.xlsx`** (`build_b.py`) — the same metrics
   and math, laid out as a single "Table 1" sheet with several color-coded groups side by side,
   matching the owner's real original workbook's own convention.
+- **`Restaurant_Annual_Targets_Workbook_PER_LOCATION.xlsx`** (`build_location_sheets.py`) — one
+  tab per store (27 + a Read Me), every metric as its own row instead of its own column, grouped
+  by category (same groupings as `ORIGINAL_LAYOUT`'s "Table 1"). Built for a real target-change
+  conversation with one store's own GM/supervisor: each row carries 2026 Target (Original), 2026
+  Actual, Trend, a district-median peer-context column, the Stretch Applied, a live 2027 Proposed
+  Target formula, and three blank columns for an actual decision (Requested By / Reason for
+  Request / Your Requested Target) instead of a bare override with no record of who asked or why.
+  A summary line atop each store's tab counts how many of its real-2026-target metrics are already
+  at/ahead of target vs. behind. Same source data as the other two workbooks (reuses `build.py`'s
+  shared setup via `exec()`, same pattern `build_b.py` already uses) — no separate data pull.
 
-Both are `.gitignore`d here (`Restaurant_Annual_Targets_Workbook_*.xlsx`) — they're generated
+All three are `.gitignore`d here (`Restaurant_Annual_Targets_Workbook_*.xlsx`) — they're generated
 output, not source, and shouldn't be committed.
 
 Each metric is 7 columns, left to right: **2026 Target (Original) → 2026 Actual → Trend → Adj.
@@ -40,8 +50,9 @@ it's a second place to write down a different number, not a substitute wired int
 # extension under python3.13 in a standard sandbox -- 3.11/3.12 PIL installs are broken there.
 # If your environment's default python3 already has working PIL, that's fine too; just prove it
 # first (import PIL.Image) rather than assume.
-python3.13 build.py      # -> Restaurant_Annual_Targets_Workbook_RESTRUCTURED.xlsx
-python3.13 build_b.py    # -> Restaurant_Annual_Targets_Workbook_ORIGINAL_LAYOUT.xlsx (reuses build.py's setup via exec())
+python3.13 build.py                    # -> Restaurant_Annual_Targets_Workbook_RESTRUCTURED.xlsx
+python3.13 build_b.py                  # -> Restaurant_Annual_Targets_Workbook_ORIGINAL_LAYOUT.xlsx (reuses build.py's setup via exec())
+python3.13 build_location_sheets.py    # -> Restaurant_Annual_Targets_Workbook_PER_LOCATION.xlsx (reuses build.py's setup via exec())
 ```
 
 openpyxl writes formulas as strings with no cached values — **recalculate both files in
