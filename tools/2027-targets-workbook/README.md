@@ -46,14 +46,18 @@ python3.13 build_b.py    # -> Restaurant_Annual_Targets_Workbook_ORIGINAL_LAYOUT
 
 openpyxl writes formulas as strings with no cached values — **recalculate both files in
 LibreOffice headless before using them**, or every formula reads back as blank to pandas/anything
-else reading cached values:
+else reading cached values. This needs LibreOffice installed (`brew install --cask libreoffice`
+on Mac, or the installer from libreoffice.org on Windows/Linux) — not a Claude-specific tool,
+just the free office suite, for its `soffice` CLI:
 
 ```bash
 soffice --headless --convert-to xlsx:"Calc MS Excel 2007 XML" --outdir . Restaurant_Annual_Targets_Workbook_RESTRUCTURED.xlsx
 ```
 
-(If you have the Anthropic `xlsx` skill's `scripts/recalc.py` available, prefer that — it also
-reports formula-error counts, which this bare `soffice` command doesn't.)
+(A Claude Code session re-running this script has an internal recalc helper with better
+error-counting than the bare `soffice` command above -- that's a sandbox-only tool, not something
+to go install separately; running this yourself outside Claude, the `soffice` command above is
+the complete, correct path.)
 
 Both scripts are path-portable (`SCRIPT_DIR`/`DATA_DIR` resolve relative to the script's own
 location) — they run correctly from any checkout, not just the sandbox session that first built
