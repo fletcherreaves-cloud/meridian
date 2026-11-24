@@ -1,0 +1,245 @@
+{
+  "3708": {
+    "crewStaff": 59,
+    "shiftStaff": 8,
+    "gmDmStaff": 1,
+    "crewActive": 53,
+    "shiftActive": 8,
+    "rosterSize": 68,
+    "rosterActive": 62
+  },
+  "5183": {
+    "crewStaff": 67,
+    "shiftStaff": 10,
+    "gmDmStaff": 3,
+    "crewActive": 62,
+    "shiftActive": 10,
+    "rosterSize": 80,
+    "rosterActive": 75
+  },
+  "5985": {
+    "crewStaff": 73,
+    "shiftStaff": 13,
+    "gmDmStaff": 1,
+    "crewActive": 71,
+    "shiftActive": 12,
+    "rosterSize": 87,
+    "rosterActive": 84
+  },
+  "6178": {
+    "crewStaff": 36,
+    "shiftStaff": 5,
+    "gmDmStaff": 3,
+    "crewActive": 31,
+    "shiftActive": 5,
+    "rosterSize": 44,
+    "rosterActive": 39
+  },
+  "6838": {
+    "crewStaff": 37,
+    "shiftStaff": 7,
+    "gmDmStaff": 3,
+    "crewActive": 35,
+    "shiftActive": 7,
+    "rosterSize": 47,
+    "rosterActive": 45
+  },
+  "6972": {
+    "crewStaff": 71,
+    "shiftStaff": 13,
+    "gmDmStaff": 4,
+    "crewActive": 68,
+    "shiftActive": 12,
+    "rosterSize": 88,
+    "rosterActive": 84
+  },
+  "10034": {
+    "crewStaff": 34,
+    "shiftStaff": 8,
+    "gmDmStaff": 3,
+    "crewActive": 33,
+    "shiftActive": 8,
+    "rosterSize": 45,
+    "rosterActive": 44
+  },
+  "10422": {
+    "crewStaff": 51,
+    "shiftStaff": 10,
+    "gmDmStaff": 3,
+    "crewActive": 49,
+    "shiftActive": 8,
+    "rosterSize": 64,
+    "rosterActive": 60
+  },
+  "10915": {
+    "crewStaff": 43,
+    "shiftStaff": 17,
+    "gmDmStaff": 2,
+    "crewActive": 42,
+    "shiftActive": 17,
+    "rosterSize": 62,
+    "rosterActive": 61
+  },
+  "11657": {
+    "crewStaff": 36,
+    "shiftStaff": 14,
+    "gmDmStaff": 1,
+    "crewActive": 31,
+    "shiftActive": 13,
+    "rosterSize": 51,
+    "rosterActive": 45
+  },
+  "13113": {
+    "crewStaff": 33,
+    "shiftStaff": 8,
+    "gmDmStaff": 1,
+    "crewActive": 32,
+    "shiftActive": 8,
+    "rosterSize": 42,
+    "rosterActive": 41
+  },
+  "20475": {
+    "crewStaff": 38,
+    "shiftStaff": 11,
+    "gmDmStaff": 2,
+    "crewActive": 35,
+    "shiftActive": 11,
+    "rosterSize": 51,
+    "rosterActive": 48
+  },
+  "24471": {
+    "crewStaff": 41,
+    "shiftStaff": 9,
+    "gmDmStaff": 1,
+    "crewActive": 39,
+    "shiftActive": 9,
+    "rosterSize": 51,
+    "rosterActive": 49
+  },
+  "29760": {
+    "crewStaff": 69,
+    "shiftStaff": 20,
+    "gmDmStaff": 2,
+    "crewActive": 64,
+    "shiftActive": 19,
+    "rosterSize": 91,
+    "rosterActive": 85
+  },
+  "31357": {
+    "crewStaff": 33,
+    "shiftStaff": 14,
+    "gmDmStaff": 1,
+    "crewActive": 29,
+    "shiftActive": 14,
+    "rosterSize": 48,
+    "rosterActive": 44
+  },
+  "32525": {
+    "crewStaff": 27,
+    "shiftStaff": 8,
+    "gmDmStaff": 1,
+    "crewActive": 24,
+    "shiftActive": 8,
+    "rosterSize": 36,
+    "rosterActive": 33
+  },
+  "33109": {
+    "crewStaff": 34,
+    "shiftStaff": 5,
+    "gmDmStaff": 1,
+    "crewActive": 32,
+    "shiftActive": 5,
+    "rosterSize": 40,
+    "rosterActive": 38
+  },
+  "33222": {
+    "crewStaff": 40,
+    "shiftStaff": 10,
+    "gmDmStaff": 1,
+    "crewActive": 39,
+    "shiftActive": 10,
+    "rosterSize": 51,
+    "rosterActive": 50
+  },
+  "33704": {
+    "crewStaff": 37,
+    "shiftStaff": 9,
+    "gmDmStaff": 2,
+    "crewActive": 36,
+    "shiftActive": 9,
+    "rosterSize": 48,
+    "rosterActive": 47
+  },
+  "34222": {
+    "crewStaff": 32,
+    "shiftStaff": 9,
+    "gmDmStaff": 5,
+    "crewActive": 30,
+    "shiftActive": 9,
+    "rosterSize": 46,
+    "rosterActive": 44
+  },
+  "35064": {
+    "crewStaff": 37,
+    "shiftStaff": 7,
+    "gmDmStaff": 6,
+    "crewActive": 37,
+    "shiftActive": 5,
+    "rosterSize": 50,
+    "rosterActive": 48
+  },
+  "35242": {
+    "crewStaff": 37,
+    "shiftStaff": 9,
+    "gmDmStaff": 2,
+    "crewActive": 30,
+    "shiftActive": 9,
+    "rosterSize": 48,
+    "rosterActive": 41
+  },
+  "37566": {
+    "crewStaff": 47,
+    "shiftStaff": 4,
+    "gmDmStaff": 3,
+    "crewActive": 43,
+    "shiftActive": 4,
+    "rosterSize": 54,
+    "rosterActive": 50
+  },
+  "38609": {
+    "crewStaff": 34,
+    "shiftStaff": 7,
+    "gmDmStaff": 2,
+    "crewActive": 33,
+    "shiftActive": 6,
+    "rosterSize": 43,
+    "rosterActive": 41
+  },
+  "43380": {
+    "crewStaff": 25,
+    "shiftStaff": 8,
+    "gmDmStaff": 4,
+    "crewActive": 24,
+    "shiftActive": 7,
+    "rosterSize": 37,
+    "rosterActive": 35
+  },
+  "43701": {
+    "crewStaff": 32,
+    "shiftStaff": 4,
+    "gmDmStaff": 3,
+    "crewActive": 31,
+    "shiftActive": 4,
+    "rosterSize": 39,
+    "rosterActive": 38
+  },
+  "44689": {
+    "crewStaff": 36,
+    "shiftStaff": 8,
+    "gmDmStaff": 4,
+    "crewActive": 34,
+    "shiftActive": 8,
+    "rosterSize": 48,
+    "rosterActive": 46
+  }
+}
