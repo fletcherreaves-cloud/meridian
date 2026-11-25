@@ -76,24 +76,28 @@ them.
 
 ## `data/` — what's in here and how to refresh it
 
-Everything in `data/` is either (a) the owner's real original targets upload, used as-is, or (b)
-an already-aggregated/derived JSON extract built from a **point-in-time pull** of real data
-(Supabase + a batch of owner-supplied QSRSoft/SMG-VOICE/McDelivery exports, pulled 2026-11-23).
-None of it is live — re-running the scripts today reproduces the **same** 2026-11-23 numbers.
+Everything in `data/` is either (a) the owner's real targets upload, used as-is, or (b) an
+already-aggregated/derived JSON extract built from a **point-in-time pull** of real data
+(Supabase + a batch of owner-supplied QSRSoft/SMG-VOICE/McDelivery exports, pulled 2026-11-23,
+with a second pass 2026-11-25 fixing five sourcing bugs found by comparing this tool's output
+against the owner's own updated, richer upload — see "Known fixes" below).
+None of it is live — re-running the scripts today reproduces the **same** point-in-time numbers.
 To refresh with new data, the JSON files below need to be regenerated from a fresh pull/upload,
 not just re-run as-is.
 
 | File | Real source | Covers |
 |---|---|---|
-| `2027_Restaurant_Targets_Original_Upload.xlsx` | Owner's real original 2026/2027 targets workbook upload | The literal 2026 Target values `build.py` reads per store/metric (`_TARGET_2026_COLMAP`) |
+| `2027_Restaurant_Targets_Original_Upload.xlsx` | Owner's real targets workbook upload (replaced 2026-11-25 with his richer re-upload — 157 cols x 91 rows, including real "2026 YTD Results" columns, vs. the original 77x48) | The real 2026 Target `build.py` reads per store/metric (`_TARGET_2026_COLMAP`), AND now also the real 2026 YTD Actual (`YTD_2026_BY_KEY`) used as ground truth for the three metrics below whose own independent pull doesn't reconcile with it |
 | `master-data.json`, `ytd-data.json`, `ytd-files-data.json`, `gap-fill-data.json`, `smart-trend-data.json` | Supabase `qsr_daily_activity_rollup` (OEPE/KVS/R2P/Park/Healthy, Sales, GC, Act vs Sched/Needed) | Speed/Service, Sales & Traffic, Labor basis metrics |
 | `roster-current.json`, `hours-per-day.json` | QSRSoft Roster_Statistics export | People headcount targets, labor hours/day basis |
-| `turnover-ly.json` | Supabase `turnover_monthly` | Turnover TTM/3mo, prior-year baseline |
-| `osat-top2-fix.json`, `fullscale-report-fix.json` | SMG VOICE `FullScale_Report.xlsx` ("Data Only" sheet) | VOICE OSAT Top-2-Box, VOICE Execute As Designed |
+| `turnover-ly.json` | Supabase `turnover_monthly` — measured 2026-11-25 to run ~3-4x too high vs. the owner's real tracked turnover; `turnover_ttm` no longer uses it (see "Known fixes") but `turnover_3mo` still does, unverified | Turnover 3mo, prior-year baseline |
+| `osat-top2-fix.json`, `fullscale-report-fix.json` | SMG VOICE `FullScale_Report.xlsx` ("Data Only" sheet) | VOICE Execute As Designed (column "2", fixed 2026-11-25 — was reading column "1") |
+| `trendreport-osat-fix.json` | SMG VOICE `TrendReport_2026_Detailed.xlsx` / `TrendReport_2025_Detailed.xlsx`, "Overall Satisfaction" measure | VOICE OSAT (added 2026-11-25, replacing the FullScale Top-2-Box cut, which doesn't match what the owner's workbook tracks under this name) |
 | `trendreport-b2b-full-fix.json` | SMG VOICE `TrendReport_YYYY_Detailed.xlsx` (both years) | Overall Satisfaction B2B (LY + real monthly trend) |
 | `voice-ead-fix.json` | superseded by `fullscale-report-fix.json` for EAD; kept for reference | — |
-| `contacts-data.json` | SMG VOICE comment volume (1-800 Contacts proxy) | 1-800 Contacts |
-| `digital-gcrd.json`, `uploaded-files-extract.json` | QSRSoft `Digital_App` export | Digital App % of Sales, Digital App GC/R/D |
+| `contacts-data.json` | SMG VOICE comment volume (1-800 Contacts proxy) — measured 2026-11-25 to overcount vs. the owner's real tracked count; `contacts_1800` no longer uses it as primary (see "Known fixes") | 1-800 Contacts (fallback only) |
+| `digital-gcrd.json`, `uploaded-files-extract.json` | QSRSoft `Digital_App` export — measured 2026-11-25 to undercount `digital_pct` by ~10-13pp vs. the owner's real tracked "Total Digital % of Sales" (app channel only, missing whatever else that real figure includes); `digital_pct` no longer uses it as primary | Digital App % of Sales (fallback only), Digital App GC/R/D (unaffected, still primary) |
+| `peak-window-weights.json` | `3_Peaks_...xlsx` export's "Service" sheet, real per-day DT GC / KVS GC per peak window | Added 2026-11-25 — GC-volume weights for the "3 Peaks Combined" blend (see "Known fixes") |
 | `mcdelivery-3po-fix.json` | `MCDelivery_3PO_...xlsx` export, "Restaurant Time"/"CSAT" columns | McDelivery Wait Time, McDelivery Star Rating |
 | `mcdelivery-gcrd-combined-fix.json` | `McDelivery_...xlsx` / `GC_-R-D_McDelivery_...xlsx`, "All Vendors" sheet | McDelivery GC/R/D (real total across all 6 vendor/channel streams — see the trap this fixed in `memory/finding-voice-mcdelivery-export-field-mapping-2026-11-23.md`) |
 | `lindsay-18213-profile.json`, `lindsay-18213-ytd.json` | Backfill profile for loc 44689 (Lindsay, relocated 2026-11-09, ~8 real days of its own data) from its predecessor 18213 | Every rate metric for 44689 |
@@ -102,15 +106,53 @@ See `memory/finding-voice-mcdelivery-export-field-mapping-2026-11-23.md` in the 
 field-mapping traps (ambiguous columns, wrong-polarity guesses caught and fixed) behind the VOICE/
 McDelivery files specifically — read that before re-pulling any of those exports.
 
+## Known fixes (2026-11-25 — found by comparing this tool's output against the owner's own real targets workbook)
+
+The owner uploaded a newer, richer version of his own manual targets workbook and asked for a
+comparison against this tool's output. That comparison surfaced six real sourcing bugs — not
+stretch-percentage disagreements, but cases where this tool's independently-pulled Trailing
+Baseline didn't match what the owner is actually tracking for the same metric. Each is measured
+and fixed in `build.py`; see that file's own comments at each metric's definition for the exact
+before/after numbers.
+
+- **`turnover_ttm`** — Supabase `turnover_monthly`'s own `monthly_annual_turnover`/`ttm_turnover`
+  fields ran ~3-4x too high (e.g. 258% vs. the owner's real 70%) against every store checked.
+  Re-deriving from the table's own `terms`/`roster_size` reproduces the same wrong number, so the
+  bug is upstream in how that table was ingested, not in this tool's math — not fixable here
+  without a fresh QSRSoft Turnover-report pull. Now sources Trailing directly from the owner's own
+  tracked 2026 YTD Results instead (ground truth); `DISTRICT_MEDIAN_TURNOVER` re-sourced the same
+  way.
+- **"3 Peaks Combined"** (`oepe_peak_combined`/`kvs_peak_combined`/`r2p_peak_combined`/
+  `park_peak_combined`/`healthy_peak_combined`) — was flat-averaging the 3 peak periods' own
+  already-averaged values (owner: "you averaged averages!"). Now GC-volume-weighted using real
+  per-window DT GC / KVS GC totals (`peak-window-weights.json`); reproduces the owner's real
+  tracked YTD to within ~0.5-2 units across 27 stores on every one of the 5 metrics.
+- **`voice_ead`** — was reading FullScale_Report.xlsx's Pull-Forward column "1" as "the real Yes
+  rate" (a 2026-11-23 call later shown wrong); column "2" matches the owner's real tracked YTD
+  (mean 1.6pp vs. column 1's 34.0pp).
+- **`osat_pace`** — was reading FullScale's Top-2-Box (5+4 star) cut, which runs ~15pp high vs.
+  what the owner's workbook actually tracks under "Overall Satisfaction." Now sources from
+  TrendReport_2026_Detailed.xlsx's own "Overall Satisfaction" measure (mean 0.6pp off).
+- **`contacts_1800`** — the `smg_comments` proxy overcounts vs. the owner's real Propel-sourced
+  count (the real CRCP feed still isn't ingested — a known, pre-existing gap, now measured).
+  Sources Trailing from the owner's own tracked YTD where available; falls back to the proxy
+  (flagged as such) only where his upload has no value for that store.
+- **`digital_pct`** — the `Digital_App` export's app-only % undercounts the owner's real "Total
+  Digital % of Sales" by ~10-13pp; no combination of that export's other channels (MOP/Scanned
+  Offer/Loyalty) reconciled cleanly, so this likely needs the real "Digital Usage" report his
+  workbook names as its source, not yet pulled. Same ground-truth-passthrough treatment as
+  `contacts_1800` above.
+
 ## Known open items (deliberately left as-is, not bugs)
 
-- **Turnover / staffing forecasting is an open, deferred item (owner, 2026-11-23).** `turnover_ttm`
-  is sourced from the original upload's "TTM Shift Leader T/O" column, which may be a different
-  cohort (shift leads only, not all crew) from this metric's own definition — flagged in-cell via
-  comment, not resolved. `turnover_3mo` has no 2026 Target at all (the file's closest columns,
-  "0-90 Day Crew T/O" and "YTD Crew T/O", are each a different real-world measure). The owner may
-  end up doing this section manually against McDonald's PDW (People Data Warehouse) data instead —
-  don't guess a mapping here without a fresh conversation.
+- **Turnover / staffing forecasting is still a partially open, deferred item (owner, 2026-11-23;
+  `turnover_ttm` itself fixed 2026-11-25, see "Known fixes" above).** `turnover_3mo` has no 2026
+  Target at all (the file's closest columns, "0-90 Day Crew T/O" and "YTD Crew T/O", are each a
+  different real-world measure) and still sources from the same Supabase `turnover_monthly` table
+  whose `turnover_ttm` fields were just measured wrong — `turnover_3mo`'s own field was NOT
+  independently re-verified, so treat it with the same suspicion until a real comparison point
+  exists. The owner may end up doing this section manually against McDonald's PDW (People Data
+  Warehouse) data instead — don't guess a mapping here without a fresh conversation.
 - **McDelivery Wait Time / Star Rating 2026 Target reads `n/a`, not the universal threshold.** The
   original file's values there ("< 3 Minutes", ">4.5") are the identical number for every store,
   not an individualized per-store target (owner-confirmed 2026-11-23) — copying it into every row

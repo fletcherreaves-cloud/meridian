@@ -32,6 +32,8 @@ voice_ead_fix = json.load(open(f'{DATA_DIR}/voice-ead-fix.json'))
 mcd_gcrd_fix = json.load(open(f'{DATA_DIR}/mcdelivery-gcrd-combined-fix.json'))
 fullscale_fix = json.load(open(f'{DATA_DIR}/fullscale-report-fix.json'))
 trendb2b_full = json.load(open(f'{DATA_DIR}/trendreport-b2b-full-fix.json'))
+osat_trend_fix = json.load(open(f'{DATA_DIR}/trendreport-osat-fix.json'))
+_peak_weights = json.load(open(f'{DATA_DIR}/peak-window-weights.json'))
 master = json.load(open(f'{DATA_DIR}/master-data.json'))
 up = json.load(open(f'{DATA_DIR}/uploaded-files-extract.json'))
 gapfill = json.load(open(f'{DATA_DIR}/gap-fill-data.json'))
@@ -54,40 +56,56 @@ hours_per_day = json.load(open(f'{DATA_DIR}/hours-per-day.json'))
 # TARGET half of each pair is this store's real, individualized 2026 target (distinct from, and
 # not a copy of, row 4's single flat "Org. Target -->" reference number for that metric).
 _ORIG_PATH = os.path.join(DATA_DIR, '2027_Restaurant_Targets_Original_Upload.xlsx')
-# key -> (anchor column holding the store #, target column for that metric)
+# Replaced 2026-11-25 with the owner's richer re-upload (157 cols x 91 rows, vs the original
+# 77x48 analyzed 2026-11-23) -- same file identity ("Table 1" sheet, same per-store rows), just
+# far more populated: real "Maps To"/"Report Name" rows (5/6) documenting the owner's own actual
+# QSRSoft/SMG field + report per column, a 4th group of per-peak-period breakouts for
+# R2P/KVS/Healthy/Park (new, not yet target-populated), and -- the reason this block was
+# rewritten, not just re-pointed -- a real, populated "2026 YTD Results" column next to almost
+# every "2026 Target" column. That YTD column is ground truth the owner is actually tracking (not
+# a re-derivation), so it's now captured here too (_YTD26_COLMAP / YTD_2026_BY_KEY) alongside the
+# existing 2026 Target pull, for metrics whose own independently-pulled trailing figure was found
+# NOT to reconcile against it (see the per-key comments at each of those metrics' definitions
+# below) -- turnover_ttm, digital_pct, contacts_1800. Confirmed before relying on it: every target
+# this file's "2026 Target" column holds matches this tool's prior _TARGET_2026_COLMAP pull
+# (built from the OLDER file) to the exact float, on every metric/store sampled -- so the new
+# file's numbers are the same real data, just a superset.
+# key -> (anchor column holding the store #, 2026 Target column, 2026 YTD Results column or None)
 _TARGET_2026_COLMAP = {
-    'oepe_7_9': (6, 8), 'oepe_11_2': (6, 10), 'oepe_5_7': (6, 12),
-    'oepe_peak_combined': (15, 17), 'park_peak_combined': (15, 19),
-    'kvs_peak_combined': (15, 21), 'healthy_peak_combined': (15, 23), 'r2p_peak_combined': (15, 25),
-    'osat_pace': (28, 30), 'voice_ead': (28, 32), 'osat_b2b': (28, 34), 'contacts_1800': (28, 36),
-    'digital_pct': (39, 41), 'digital_gcrd': (39, 43), 'mcd_gcrd': (39, 45),
-    # mcd_wait/mcd_stars deliberately NOT mapped (owner-confirmed 2026-11-23): the original file's
-    # values at these columns ("< 3 Minutes", ">4.5") are the identical universal threshold for
-    # every store, not a real individualized per-store target -- copying that same number into
-    # every row would misrepresent it as one. 2026 Target reads n/a for these two; the 2027 Target
-    # formula is untouched and still proposes a real number off this store's own actual results
-    # (trailing + smart adjustment), same as every other metric. The owner will set the real
-    # per-store 2026/2027 number after meeting with operators, via the Override column.
-    'crew_staff_target': (53, 55), 'shift_leader_target': (53, 57),
-    'gmdm_target': (53, 59), 'headcount_target': (53, 61), 'turnover_ttm': (53, 63),
-    'tpph': (70, 71), 'labor_pct': (70, 74), 'fob_pct': (70, 77),
+    'oepe_7_9': (6, 7, 8), 'oepe_11_2': (6, 10, 11), 'oepe_5_7': (6, 13, 14),
+    'oepe_peak_combined': (18, 19, 20), 'park_peak_combined': (18, 22, 23),
+    'kvs_peak_combined': (18, 25, 26), 'healthy_peak_combined': (18, 28, 29), 'r2p_peak_combined': (18, 31, 32),
+    'osat_pace': (53, 54, 55), 'voice_ead': (53, 57, 58), 'osat_b2b': (53, 60, 61), 'contacts_1800': (53, 63, 64),
+    'digital_pct': (68, 69, 70), 'digital_gcrd': (68, 72, 73), 'mcd_gcrd': (68, 75, 76),
+    # mcd_wait/mcd_stars deliberately NOT mapped (owner-confirmed 2026-11-23, still true in the new
+    # upload): the values at these columns ("< 3 Minutes", ">4.5") are the identical universal
+    # threshold for every store, not a real individualized per-store target -- copying that same
+    # value into every row would misrepresent it as one. 2026 Target reads n/a for these two; the
+    # 2027 Target formula is untouched and still proposes a real number off this store's own
+    # actual results (trailing + smart adjustment), same as every other metric. The owner will set
+    # the real per-store 2026/2027 number after meeting with operators, via the Override column.
+    'crew_staff_target': (88, 89, 90),
+    'turnover_ttm': (88, 102, 103),
+    'tpph': (113, 114, 115), 'labor_pct': (113, 118, 119), 'fob_pct': (113, 122, 123),
+    # shift_leader_target/gmdm_target/headcount_target deliberately NOT mapped -- the new upload's
+    # People block (cols 92-101) has its own column-order quirk (GM/DM/Swing-Mgr Staffing's "2026
+    # YTD Results" sub-columns are split across two adjacent header groups, not a clean anchor+3
+    # triple like every other metric here) that needs a dedicated read, not this generic colmap;
+    # unmapped here reads as n/a same as before, not a regression.
 }
-# No 2026 target exists anywhere in the original file for these -- confirmed by reading its full
-# 77-column structure, not assumed: Sales $/Guest Counts aren't tracked there at all; the "total
-# day" OEPE/Park/KVS/Healthy/R2P blends and the per-peak breakouts for Park/KVS/Healthy/R2P don't
-# exist either -- only OEPE itself got split into 3 peak periods there, every other peak metric
-# was only ever tracked as one combined number (oepe_peak_combined etc., mapped above). Act vs.
-# Scheduled/Needed labor isn't in the file at all. mcd_wait/mcd_stars ARE in the file, but their
-# values are a universal threshold, not a per-store target (owner-confirmed 2026-11-23 -- see the
-# comment at their entry above, deliberately left out of the colmap). turnover_3mo is deliberately
-# left unmapped too, not missing by oversight: the file's closest-named columns ("0-90 Day Crew
-# T/O", a new-hire cohort metric, and "YTD Crew T/O", a Jan-1-to-date cumulative figure) are each a
-# different real-world measure from this metric's own trailing-3-calendar-month definition, and
-# guessing between two wrong-but-plausible mappings is worse than leaving it n/a. Per the owner
-# (2026-11-23), this -- along with turnover_ttm's own possible cohort mismatch against the file's
-# "TTM Shift Leader T/O" column -- is bundled into a larger open item (turnover AND staffing/
-# headcount forecasting both need review, possibly against McDonald's PDW data) the owner is
-# deliberately deferring to a later pass, not asking to be resolved now.
+# No 2026 Target exists anywhere in the upload for these -- confirmed by reading the new file's
+# full 157-column structure, not assumed: Sales $/Guest Counts aren't tracked there at all (owner-
+# confirmed, still in progress); the "Total Day" OEPE/Park/KVS/Healthy/R2P blends (cols 36-51) and
+# all 12 of the new per-peak-period breakouts for R2P/KVS/Healthy/Park (cols 127-157) have zero
+# "2027 Target" entries across all 27 stores (measured, not assumed) -- genuinely still in
+# progress, not a mapping gap on this end. Act vs. Scheduled/Needed labor isn't in the file at
+# all. turnover_3mo is deliberately left unmapped too, not missing by oversight: the file's
+# closest-named columns ("0-90 Day Crew T/O", a new-hire cohort metric, and "YTD Crew T/O", a
+# Jan-1-to-date cumulative figure) are each a different real-world measure from this metric's own
+# trailing-3-calendar-month definition, and guessing between two wrong-but-plausible mappings is
+# worse than leaving it n/a. Per the owner (2026-11-23), this is bundled into a larger open item
+# (turnover AND staffing/headcount forecasting both need review, possibly against McDonald's PDW
+# data) the owner is deliberately deferring to a later pass, not asking to be resolved now.
 _target2026_wb = openpyxl.load_workbook(_ORIG_PATH, data_only=True)
 _target2026_ws = _target2026_wb['Table 1']
 
@@ -106,18 +124,27 @@ def _target2026_value(raw):
     return raw
 
 TARGET_2026_BY_KEY = {}
-for _key, (_anchor_col, _target_col) in _TARGET_2026_COLMAP.items():
-    _by_loc = {}
-    for _r in range(5, 48):
+YTD_2026_BY_KEY = {}
+for _key, (_anchor_col, _target_col, _ytd_col) in _TARGET_2026_COLMAP.items():
+    _by_loc_t = {}
+    _by_loc_y = {}
+    for _r in range(9, 37):
         _loc_raw = _target2026_ws.cell(row=_r, column=_anchor_col).value
         if _loc_raw is None:
             continue
         _loc = str(_loc_raw).strip()
+        if _loc == '18213':
+            continue  # legacy Lindsay row, superseded by 44689 -- excluded everywhere else in this tool
         _v = _target2026_value(_target2026_ws.cell(row=_r, column=_target_col).value)
         if _v is not None:
-            _by_loc[_loc] = _v
-    TARGET_2026_BY_KEY[_key] = _by_loc
+            _by_loc_t[_loc] = _v
+        _vy = _target2026_value(_target2026_ws.cell(row=_r, column=_ytd_col).value)
+        if _vy is not None:
+            _by_loc_y[_loc] = _vy
+    TARGET_2026_BY_KEY[_key] = _by_loc_t
+    YTD_2026_BY_KEY[_key] = _by_loc_y
 print(f'2026 targets loaded from original upload: {sum(len(v) for v in TARGET_2026_BY_KEY.values())} store-metric values across {len(TARGET_2026_BY_KEY)} metrics')
+print(f'2026 YTD actuals loaded from original upload: {sum(len(v) for v in YTD_2026_BY_KEY.values())} store-metric values (ground truth for the trailing-source fixes below)')
 
 STORE_NAMES = {
  '3708':'Ardmore-Broadway','5183':'Chickasha-So 4th','5985':'Durant-US Hwy 70/22','6972':'Ada-Country Club',
@@ -303,25 +330,22 @@ def metrics_for(loc):
         'act_need':   {'ly': m.get('actVsNeedLY'), 'trailing': ytd['actVsNeedYTD'].get(loc), 'recent': m.get('actVsNeedT6W'), 'prior': m.get('actVsNeedLY'),
                         'direction':'variance', 'unit':'pct', 'source':'qsr_daily_activity_rollup, full YTD 2026',
                         'basis_hrs_per_day': hours_per_day['needHrsPerDay'].get(loc)},
-        # Fixed (was wrongly sourced from osat_avg, a 1-5 scale, alongside osat_b2b's real
-        # percentage -- showed as "4.39" next to "88.0%" and read as reversed/broken). VOICE OSAT
-        # is the real Top-2-Box % (smg_fullscale.osat_top2), matching CLAUDE.md's own "OSAT >=90%"
-        # convention and the same field already used for the presentation-slide figure. Re-pulled
-        # directly (osat-top2-fix.json): smg_fullscale's real data only runs through 2026-07 as of
-        # this pull -- 4 months stale, a data-freshness finding worth flagging on its own, separate
-        # from this fix. Note Top-2-Box typically reads a few points BELOW Overall Satisfaction
-        # B2B for the same store/month (measured directly, every sampled store) -- they're
-        # different cuts of the same survey, not duplicates, so OSAT isn't always the larger number.
-        # Trailing baseline upgraded again (owner-uploaded FullScale_Report.xlsx, 2026-11-23): a
-        # single Jan-Oct 2026 aggregate, 3 months fresher than the live smg_fullscale pull above
-        # (through July) and covering all 27 stores directly (cross-checked against the live pull:
-        # 3708 Top-2-Box 85.0% here vs 85.1% there -- same real number, just more current). Used for
-        # the Trailing Baseline LEVEL; Recent/Prior (T3M trend signal for the smart Adjustment
-        # default) still come from the monthly smg_fullscale pull, since this aggregate has no
-        # month-by-month breakdown to compute a trend from.
-        'osat_pace':  {'ly': osat_fix['osatTop2LY'].get(loc), 'trailing': fullscale_fix['osatTop2Full'].get(loc, osat_fix['osatTop2YTD'].get(loc)),
-                        'recent': osat_fix['osatTop2T3M'].get(loc), 'prior': osat_fix['osatTop2Prior3mo'].get(loc),
-                        'direction':'higher', 'unit':'pct', 'source':'FullScale_Report.xlsx (Overall Satisfaction, 5+4 star), full YTD 2026 through Oct'},
+        # REPLACED 2026-11-25 -- the FullScale_Report.xlsx "Overall Satisfaction" Top-2-Box (5+4
+        # star) cut this used to read (0.850 for 3708) is a real number, but it is NOT what the
+        # owner's own targets workbook tracks under "Overall Satisfaction": his real "2026 YTD
+        # Results" for that column reads 0.7228 for 3708 -- a 13-point gap that held in the same
+        # direction across every store sampled (mean +15.4 points, Top-2-Box always high). His own
+        # file's new "Maps To"/"Report Name" documentation names the real source directly: SMG
+        # TREND REPORT's own "Overall Satisfaction" measure (not FullScale, not a 5+4-star roll-
+        # up) -- and that measure, pulled from the owner-uploaded TrendReport_2026_Detailed.xlsx
+        # (simple mean of its real Jan-Oct 2026 monthly readings, same convention already proven
+        # for osat_b2b below), reconciles to a mean 0.6 points across 27 stores (3708: 0.7115 vs
+        # his 0.7228) -- see data/trendreport-osat-fix.json. LY = the real Nov-2025 single-month
+        # reading (12 months back), from TrendReport_2025_Detailed.xlsx. Recent/Prior = T3M/prior-
+        # 3mo simple means of the same real monthly data (Aug-Oct 2026 / May-Jul 2026).
+        'osat_pace':  {'ly': osat_trend_fix['osatLY2025Nov'].get(loc), 'trailing': osat_trend_fix['osatYTD2026'].get(loc),
+                        'recent': osat_trend_fix['osatT3M2026'].get(loc), 'prior': osat_trend_fix['osatPrior3mo2026'].get(loc),
+                        'direction':'higher', 'unit':'pct', 'source':'TrendReport_2026_Detailed.xlsx ("Overall Satisfaction"), real per-store monthly data, Jan-Oct 2026 -- verified against the owner\'s own tracked 2026 YTD Results (mean diff 0.6pp across 27 stores)'},
         # Reworked (owner-uploaded TrendReport.xlsx, 2026-11-23) -- the FullScale-only version
         # above was flagged as wrong: Freeport (38609) was hitting a hard MIN(...,100%) cap because
         # its stale Recent/Prior (old smg_fullscale pull) produced an oversized Adjustment on an
@@ -354,27 +378,58 @@ def metrics_for(loc):
         # through 2026-11. Only covers the 20 MCDOK stores -- the export has no FL rows at all (not
         # a bug on this end; FL is honestly 'n/a' below until a comparable FL export exists), and
         # no 44689 either.
-        # Replaced entirely (owner-confirmed field: "Pull Forward - Executed as Designed (Yes)",
-        # 2026-11-23) -- the earlier "Overall Sat %" composite is gone. Sourced from
-        # FullScale_Report.xlsx's per-store Jan-Oct 2026 aggregate, all 27 stores. Column choice
-        # was corrected, not assumed: the report gives two unlabeled sub-columns (1/2) under this
-        # header, and a SEPARATE TrendReport.xlsx (owner-uploaded) gives the same metric as one
-        # clearly-labeled "Score" per month -- its district-wide Jan 2026 Score (0.403) matches
-        # FullScale's column "1" (0.4037) almost exactly, not column "2" (0.596). So "1" is the
-        # real Yes rate; my first read of this metric (reported last turn as ~74% for 3708) had it
-        # backwards -- the real number is ~26%. No per-store trend available: every store's own
+        # Sourced from FullScale_Report.xlsx's per-store Jan-Oct 2026 aggregate, all 27 stores. The
+        # report gives two unlabeled sub-columns (1/2) under this header; column "1" was picked
+        # 2026-11-23 on a district-level match against TrendReport.xlsx's "Score" (both ~0.403 for
+        # Jan), reasoning it was "the real Yes rate" -- that was WRONG, caught 2026-11-25 by
+        # measuring against the owner's own real per-store tracked "2026 YTD Results" for this
+        # metric (his newer, richer targets-workbook upload): column "1" misses by a mean 34.0
+        # points absolute across 25 stores (e.g. 3708: col1=26.1% vs the owner's real 74.0%),
+        # while column "2" matches to a mean 1.6 points (3708: col2=73.9% vs 74.0%). So "2" is the
+        # real Yes rate after all -- the "(Yes)" label was the tell this fix should have weighted
+        # more than the district-level coincidence. No per-store trend available: every store's own
         # monthly reading is vendor-suppressed ('**', sample too small) in TrendReport.xlsx, so
         # Recent/Prior are left blank rather than faked -- smart_adj falls back to a flat, modest
         # default for this one metric instead of a trend it can't actually measure.
         'voice_ead':  {'ly': None, 'trailing': fullscale_fix['eadPullForward'].get(loc), 'recent': None, 'prior': None,
                         'direction':'higher', 'unit':'pct',
-                        'source': f"FullScale_Report.xlsx (\"Pull Forward - Executed as Designed\", column confirmed via TrendReport.xlsx), Jan-Oct 2026, n={fullscale_fix['eadPullForwardN'].get(loc)}"},
-        'contacts_1800': {'ly': None, 'trailing': ytd['contactsYTDPerMonth'].get(loc),
+                        'source': f"FullScale_Report.xlsx (\"Pull Forward - Executed as Designed\", column \"2\" -- verified against the owner's real tracked YTD, see comment above), Jan-Oct 2026, n={fullscale_fix['eadPullForwardN'].get(loc)}"},
+        # TRAILING re-sourced 2026-11-25: the smg_comments proxy below (contactsYTDPerMonth)
+        # overcounts vs. the owner's own real tracked "1-800 Complaints/100K GC" (Propel-sourced)
+        # 2026 YTD Results for 3 of 4 stores spot-checked (e.g. 6972: proxy 43.8/mo vs. his real
+        # 10.9/mo) -- confirms, with a measured magnitude, what the source note already warned:
+        # survey-comment volume is not the real CRCP complaint-email count. Until Propel is really
+        # ingested, use the owner's own tracked YTD as the trailing baseline (ground truth he is
+        # already reading off Propel directly) and fall back to the proxy only where his upload
+        # has no YTD value for this store/metric. Recent/Prior (trend sizing only, not the
+        # baseline level) are left on the proxy -- internally consistent with each other even
+        # though the proxy's absolute level is wrong.
+        'contacts_1800': {'ly': None,
+                           'trailing': YTD_2026_BY_KEY.get('contacts_1800', {}).get(loc, ytd['contactsYTDPerMonth'].get(loc)),
                            'recent': contacts['contactsRecentPerMonth'].get(loc), 'prior': None,
                            'direction':'lower', 'unit':'num',
-                           'source':"smg_comments, VOICE comment volume per month, full YTD 2026 -- re-checked the QSRSoft KB directly: the REAL 1-800 metric comes from a separate CRCP complaint-email feed into MyQSRSoft's 'Customer Feedback' page, which Meridian does not currently ingest at all. This is a real but imperfect proxy (survey comments, not literal 1-800 calls), and has no LY since smg_comments starts 2026-03-16."},
-        'digital_pct': {'ly': None, 'trailing': ytd_files['digitalPctYTD'].get(loc), 'recent': up['digitalAppPctSalesTrailing'].get(loc), 'prior': ytd_files['digitalPctYTD'].get(loc),
-                        'direction':'higher', 'unit':'pct', 'source':'Digital_App export, full YTD 2026'},
+                           'source':("Owner's real tracked 2026 YTD Results (Propel-sourced \"1-800 Complaints/100K GC\")"
+                                     if YTD_2026_BY_KEY.get('contacts_1800', {}).get(loc) is not None else
+                                     "smg_comments, VOICE comment volume per month, full YTD 2026 -- re-checked the QSRSoft KB directly: the REAL 1-800 metric comes from a separate CRCP complaint-email feed into MyQSRSoft's 'Customer Feedback' page, which Meridian does not currently ingest at all. This is a real but imperfect proxy (survey comments, not literal 1-800 calls), confirmed by measurement to overcount; no owner YTD value available for this store to fall back to.")},
+        # TRAILING re-sourced 2026-11-25: this export's "Digital App Percent of Sales" column
+        # (app channel only) reads a consistent ~10-13 points LOW against the owner's own tracked
+        # "Total Digital % of Sales" 2026 YTD Results, for every one of 27 stores (mean 12.6pp).
+        # Tried reconstructing the owner's broader total as App + other digital channels in the
+        # same export (MOP / Scanned Offer-Reward / Loyalty Self-ID) -- no combination of those
+        # four channels lands within even 5pp of his real number across the board (best
+        # combination tried, App+Scanned+Loyalty, still off by a mean 5.9pp; the full 4-channel sum
+        # overshoots by +14.9pp) -- so this isn't a channel-scope fix this tool can make correctly
+        # with the exports on hand, likely needs the real "Digital Usage" report his own file's
+        # "Report Name" column names as the source, which hasn't been pulled. Use his own tracked
+        # YTD as ground truth until that real source is ingested; Recent/Prior stay on the old
+        # (narrower, but internally self-consistent) Digital_App trend for stretch-sizing only.
+        'digital_pct': {'ly': None,
+                        'trailing': YTD_2026_BY_KEY.get('digital_pct', {}).get(loc, ytd_files['digitalPctYTD'].get(loc)),
+                        'recent': up['digitalAppPctSalesTrailing'].get(loc), 'prior': ytd_files['digitalPctYTD'].get(loc),
+                        'direction':'higher', 'unit':'pct',
+                        'source': ("Owner's real tracked 2026 YTD Results (\"Total Digital % of Sales\", Digital Usage report)"
+                                   if YTD_2026_BY_KEY.get('digital_pct', {}).get(loc) is not None else
+                                   'Digital_App export (Digital App channel only -- confirmed to undercount vs. the owner\'s real "Total Digital % of Sales"; no owner YTD value available for this store to fall back to), full YTD 2026')},
         'digital_gcrd': {'ly': None, 'trailing': ytd_files['digitalGcrdYTD'].get(loc), 'recent': digital_gcrd_data.get(loc), 'prior': ytd_files['digitalGcrdYTD'].get(loc),
                         'direction':'higher', 'unit':'num', 'source':'Digital_App export ("Digital App" sheet, GC/R/D column), full YTD 2026'},
         # Fixed (owner-uploaded GC/R/D McDelivery export, 2026-11-23): the old figure only read the
@@ -404,12 +459,42 @@ def metrics_for(loc):
         'mcd_stars':  {'ly': None, 'trailing': mcd3po_fix['mcdStarsYTD'].get(loc), 'recent': mcd3po_fix['mcdStarsT3M'].get(loc), 'prior': mcd3po_fix['mcdStarsPrior3mo'].get(loc),
                         'direction':'higher', 'unit':'num5',
                         'source':'MCDelivery 3PO export ("CSAT", a real 1-5 rating), full YTD 2026 -- MCDOK only, no FL rows in this export'},
-        'turnover_ttm': {'ly': turnover_ly.get(loc, {}).get('ttm'), 'trailing': ytd['turnoverYTD'].get(loc),
-                        'recent': m.get('turnoverTTM'), 'prior': turnover_ly.get(loc, {}).get('ttm'),
-                        'direction':'lower', 'unit':'pct', 'source':'turnover_monthly, average of each 2026 month\'s own annualized rate (monthly_annual_turnover) -- genuinely YTD 2026, not the smoothed trailing-12-month figure; LY = the real 2025-11 TTM reading (12 months back)'},
+        # REPLACED 2026-11-25 -- the Supabase turnover_monthly-derived figure this used to read
+        # (average of each 2026 month's own monthly_annual_turnover, or the table's own
+        # ttm_turnover field -- checked both live, they agree with each other) runs ~3-4x too high
+        # against the owner's own real tracked "Monthly Annual Turnover" (same QSRSoft Turnover
+        # report, confirmed by his new workbook's own "Maps To"/"Report Name" row) 2026 YTD
+        # Results: e.g. 3708 trailing=2.58 (258%, a physically-impossible annual rate) vs. his real
+        # 0.699 (70%); 6972 trailing=1.88 vs. his real 0.369 -- every one of 4 stores spot-checked
+        # off by 3.5-5x. terms/roster_size-based re-derivations (both annualized and raw monthly)
+        # reproduce the same ~258% figure from this table's own rows, so the mismatch is in how
+        # turnover_monthly's roster_size/terms were ingested, not in this tool's aggregation
+        # method -- not something fixable here without re-auditing that ingestion against a live
+        # QSRSoft Turnover report login, which this environment doesn't have. Use the owner's own
+        # tracked YTD as ground truth (it is literally what he's reading off the same real report)
+        # until that ingestion is re-audited. No reliable LY/trend exists on this same corrected
+        # scale (the Supabase LY and recent/prior figures are on the OLD, wrong scale, and the
+        # owner's workbook has no month-by-month breakdown to derive a trend from) -- Recent is
+        # set equal to Trailing so smart_adj's turnover-specific gap-to-district-median branch
+        # (which reads Recent as "today's level") compares like-for-like against
+        # DISTRICT_MEDIAN_TURNOVER, itself re-sourced the same way below; LY/Prior left blank
+        # rather than faking a trend this tool can't actually measure on the corrected scale.
+        'turnover_ttm': {'ly': None, 'trailing': YTD_2026_BY_KEY.get('turnover_ttm', {}).get(loc),
+                        'recent': YTD_2026_BY_KEY.get('turnover_ttm', {}).get(loc), 'prior': None,
+                        'direction':'lower', 'unit':'pct',
+                        'source': ("Owner's real tracked 2026 YTD Results (\"Monthly Annual Turnover\", Turnover report) -- see comment above for why the Supabase-derived figure this used to read is not trustworthy"
+                                   if YTD_2026_BY_KEY.get('turnover_ttm', {}).get(loc) is not None else
+                                   "No owner YTD value available for this store/metric, and the Supabase turnover_monthly-derived figure is known (see comment above) to run ~3-4x too high -- left n/a rather than show a number already measured wrong")},
+        # NOT independently re-measured against the owner's file (turnover_3mo has no 2026 Target
+        # mapped there -- see _TARGET_2026_COLMAP's comment -- so there's no ground truth to check
+        # this against yet). Flagged, not fixed: this reads from the SAME turnover_monthly table
+        # whose ttm/monthly_annual_turnover fields were just measured ~3-4x too high for
+        # turnover_ttm above, so this figure (three_month_turnover) is plausibly on the same wrong
+        # scale -- unverified, not confirmed either way. Treat with the same suspicion until a
+        # real comparison point exists.
         'turnover_3mo': {'ly': turnover_ly.get(loc, {}).get('threeMo'), 'trailing': m.get('turnover3Mo'),
                         'recent': m.get('turnover3Mo'), 'prior': turnover_ly.get(loc, {}).get('threeMo'),
-                        'direction':'lower', 'unit':'pct', 'source':'turnover_monthly, latest 3-month reading; LY = the real 2025-11 3-month reading (12 months back)'},
+                        'direction':'lower', 'unit':'pct', 'source':'turnover_monthly, latest 3-month reading; LY = the real 2025-11 3-month reading (12 months back) -- UNVERIFIED scale, see comment above'},
     }
 
     # People headcount targets -- real CURRENT counts from Roster_Statistics (actuals, not an
@@ -446,20 +531,40 @@ def metrics_for(loc):
     out['park_pct_7_9'], out['park_pct_11_2'], out['park_pct_5_7'] = _peak_metric('parkPctYTD', 'parkPctT3M', 'lower', 'pct')
     out['kvs_healthy_7_9'], out['kvs_healthy_11_2'], out['kvs_healthy_5_7'] = _peak_metric('kvsHealthyYTD', 'kvsHealthyT3M', 'higher', 'pct')
 
-    # "3 Peaks Combined" -- a single blended reading per metric, simple average across the 3 peak
-    # periods (distinct from the full-day "Service Total Day" metrics, which include off-peak hours).
-    def _blend(m79, m112, m57):
-        avg = lambda f: (sum(v for v in (m79.get(f), m112.get(f), m57.get(f)) if v is not None) /
-                          max(1, sum(1 for v in (m79.get(f), m112.get(f), m57.get(f)) if v is not None))) \
-                         if any(m.get(f) is not None for m in (m79, m112, m57)) else None
-        return {'ly': avg('ly'), 'trailing': avg('trailing'), 'recent': avg('recent'), 'prior': avg('prior'),
+    # "3 Peaks Combined" -- a single blended reading per metric across the 3 peak periods
+    # (distinct from the full-day "Service Total Day" metrics, which include off-peak hours).
+    # FIXED 2026-11-25 (owner caught it: "you averaged averages!") -- this used to flat-average
+    # the 3 peak periods' own already-averaged trailing values (each a mean of monthly readings),
+    # giving 7-9a/11-2p/5-7p an equal 1/3 share regardless of how much business each window
+    # actually does. Real volume differs a lot between them (lunch 11-2p typically carries the
+    # most DT GC of the three) -- a flat average overweights the lighter windows and distorts the
+    # single number meant to represent the whole peak period. Validated directly against the
+    # owner's own real "Peaks Combined" 2026 YTD Results (his new workbook) using real per-day
+    # GC-weighted aggregation from the 3_Peaks export's Service sheet: GC-weighted reproduces his
+    # real number to a mean 0.5-2.0 units across 27 stores on every one of the 5 metrics (OEPE/
+    # Park/R2P seconds, KVS seconds, KVS Healthy %), vs. 3.1+ units off with the old flat average
+    # -- see data/peak-window-weights.json. Weight is each window's own real GC volume (DT GC for
+    # OEPE/Park%/R2P; KVS GC for KVS pace/Healthy, since those are per-KVS-transaction metrics).
+    # Falls back to a flat 1/3 average only when a store has no weight data at all (44689, too new).
+    def _blend(m79, m112, m57, loc, weight_field='dtGC'):
+        slices = ('7am-9am', '11am-2pm', '5pm-7pm')
+        ms = (m79, m112, m57)
+        weights = _peak_weights.get(weight_field, {}).get(loc, {})
+        def wavg(f):
+            vals = [(m.get(f), weights.get(sl)) for m, sl in zip(ms, slices)]
+            weighted_pairs = [(v, w) for v, w in vals if v is not None and w]
+            if weighted_pairs and sum(w for _, w in weighted_pairs) > 0:
+                return sum(v * w for v, w in weighted_pairs) / sum(w for _, w in weighted_pairs)
+            present = [v for v, _ in vals if v is not None]
+            return sum(present) / len(present) if present else None
+        return {'ly': wavg('ly'), 'trailing': wavg('trailing'), 'recent': wavg('recent'), 'prior': wavg('prior'),
                 'direction': m79['direction'], 'unit': m79['unit'],
-                'source': 'Simple average of the 3 peak-period readings (7-9a / 11-2p / 5-7p)'}
-    out['oepe_peak_combined'] = _blend(out['oepe_7_9'], out['oepe_11_2'], out['oepe_5_7'])
-    out['kvs_peak_combined'] = _blend(out['kvs_pace_7_9'], out['kvs_pace_11_2'], out['kvs_pace_5_7'])
-    out['r2p_peak_combined'] = _blend(out['r2p_7_9'], out['r2p_11_2'], out['r2p_5_7'])
-    out['park_peak_combined'] = _blend(out['park_pct_7_9'], out['park_pct_11_2'], out['park_pct_5_7'])
-    out['healthy_peak_combined'] = _blend(out['kvs_healthy_7_9'], out['kvs_healthy_11_2'], out['kvs_healthy_5_7'])
+                'source': f'GC-volume-weighted blend of the 3 peak-period readings (7-9a / 11-2p / 5-7p), weighted by each window\'s own real {"KVS" if weight_field=="kvsGC" else "DT"} GC -- verified against the owner\'s own tracked 2026 YTD Results'}
+    out['oepe_peak_combined'] = _blend(out['oepe_7_9'], out['oepe_11_2'], out['oepe_5_7'], loc, 'dtGC')
+    out['kvs_peak_combined'] = _blend(out['kvs_pace_7_9'], out['kvs_pace_11_2'], out['kvs_pace_5_7'], loc, 'kvsGC')
+    out['r2p_peak_combined'] = _blend(out['r2p_7_9'], out['r2p_11_2'], out['r2p_5_7'], loc, 'dtGC')
+    out['park_peak_combined'] = _blend(out['park_pct_7_9'], out['park_pct_11_2'], out['park_pct_5_7'], loc, 'dtGC')
+    out['healthy_peak_combined'] = _blend(out['kvs_healthy_7_9'], out['kvs_healthy_11_2'], out['kvs_healthy_5_7'], loc, 'kvsGC')
 
     if is_lindsay_backfill:
         lbf = lindsay18213  # has real 2025 LY
@@ -469,8 +574,16 @@ def metrics_for(loc):
             'oepe_pace': ('oepeLY', 'oepeYTD', None), 'park_pct': ('parkLY', 'parkYTD', None), 'r2p_pace': ('r2pLY', 'r2pYTD', None),
             'kvs_pace': ('kvsPaceLY', 'kvsPaceYTD', None), 'kvs_healthy': ('kvsHealthyLY', 'kvsHealthyYTD', None),
             'tpph': ('tpphLY', 'tpphYTD', None), 'act_need': ('actVsNeedLY', 'actVsNeedYTD', None),
-            'turnover_ttm': (None, 'turnoverYTD', None), 'turnover_3mo': (None, None, None),
+            'turnover_3mo': (None, None, None),
             'labor_pct': (None, 'laborPctYTD', None),
+            # turnover_ttm deliberately NOT backfilled from 18213's lindsay_ytd here (removed
+            # 2026-11-25) -- that figure is the same Supabase turnover_monthly derivation just
+            # measured ~3-4x too high for every other store (see the metric's own comment above);
+            # backfilling 44689 from it would silently reintroduce the broken scale for exactly
+            # the one store this fix doesn't otherwise reach. Neither 44689 (too new) nor 18213
+            # (excluded from the owner's own tracked-YTD pull, same as everywhere else in this
+            # tool) has a real ground-truth YTD to fall back to either, so 44689's turnover_ttm is
+            # left n/a via the main metrics_for() path above -- honest, not a regression.
         }
         for key, (ly_key, ytd_key, sub) in backfill_map.items():
             # ALWAYS prefer 18213 over 44689's own reading for these rate metrics, even when 44689
@@ -485,14 +598,15 @@ def metrics_for(loc):
                 out[key]['recent'] = ytd_v
                 out[key]['prior'] = ly_v
                 out[key]['source'] = out[key]['source'].split(' [backfilled')[0] + bf_note
-        # osat_pace/osat_b2b handled separately (not in backfill_map above) since their real source
-        # is now osat_top2/FullScale_Report (osat_fix/fullscale_fix), not the old csatLY/csatYTD
-        # scale dicts the rest of this block uses. 18213 has real rows in both.
-        out['osat_pace']['ly'] = osat_fix['osatTop2LY'].get('18213')
-        out['osat_pace']['trailing'] = fullscale_fix['osatTop2Full'].get('18213', osat_fix['osatTop2YTD'].get('18213'))
-        out['osat_pace']['recent'] = osat_fix['osatTop2T3M'].get('18213')
-        out['osat_pace']['prior'] = osat_fix['osatTop2Prior3mo'].get('18213')
-        out['osat_pace']['source'] = out['osat_pace']['source'].split(' through Oct')[0] + bf_note
+        # osat_pace handled separately (not in backfill_map above) since its real source is now
+        # TrendReport_2026_Detailed.xlsx's "Overall Satisfaction" measure (osat_trend_fix, fixed
+        # 2026-11-25), not the old csatLY/csatYTD scale dicts the rest of this block uses. 18213
+        # has real rows there too (it traded most of 2026 before the 2026-11-09 relocation).
+        out['osat_pace']['ly'] = osat_trend_fix['osatLY2025Nov'].get('18213')
+        out['osat_pace']['trailing'] = osat_trend_fix['osatYTD2026'].get('18213')
+        out['osat_pace']['recent'] = osat_trend_fix['osatT3M2026'].get('18213')
+        out['osat_pace']['prior'] = osat_trend_fix['osatPrior3mo2026'].get('18213')
+        out['osat_pace']['source'] = out['osat_pace']['source'] + bf_note
         out['osat_b2b']['ly'] = trendb2b_full['b2bLY2025'].get('18213')
         out['osat_b2b']['trailing'] = trendb2b_full['b2bYTD2026'].get('18213')
         out['osat_b2b']['recent'] = trendb2b_full['b2bT3M2026'].get('18213')
@@ -546,8 +660,13 @@ FALLBACK_ADJ = {'lower': 0.02, 'higher': 0.02, 'variance': 0.0, 'total': 0.02}
 # District median TTM turnover, used to size each store's turnover ask to its actual gap rather
 # than a flat percentage -- the exact approach the methodology doc recommends. Computed once from
 # every real (non-backfilled) store's latest TTM reading.
-_turnover_ttms = sorted(v for v in (master.get(l, {}).get('turnoverTTM') for l in LOCS if l != '44689') if v is not None)
-DISTRICT_MEDIAN_TURNOVER = _turnover_ttms[len(_turnover_ttms) // 2] if _turnover_ttms else 1.5
+# Re-sourced 2026-11-25 from YTD_2026_BY_KEY (the owner's own real tracked turnover_ttm, now also
+# used for the metric's trailing/recent below) instead of master[...]['turnoverTTM'] -- that
+# Supabase-derived figure was measured to run ~3-4x too high district-wide (e.g. 3708: 2.58 there
+# vs the owner's real 0.70), so a median built from it would size every store's turnover ask off
+# a nonsense baseline. See the turnover_ttm metric definition's own comment for the full measurement.
+_turnover_ttms = sorted(v for v in (YTD_2026_BY_KEY.get('turnover_ttm', {}).get(l) for l in LOCS if l != '44689') if v is not None)
+DISTRICT_MEDIAN_TURNOVER = _turnover_ttms[len(_turnover_ttms) // 2] if _turnover_ttms else 0.3
 
 def smart_adj(key, mdef):
     """Data-driven default for the Adj. %/pts cell -- replaces a flat guess with each store's own
