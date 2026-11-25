@@ -26,18 +26,28 @@ const { mergeLifelenzJobHoursDelta } = await import('../app/App.js');
 
 const row = (loc, weekStart, businessRoleId, extra = {}) => ({ loc, weekStart, businessRoleId, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentWeek further down (a hardcoded
+// literal here is the identical time bomb, just with a longer fuse: these tests pass a generous
+// weeksBack/weeksFwd:400, so a literal would only start failing ~400 days after it was written,
+// exactly the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about).
+// Two distinct days so the "different keys" tests still exercise genuinely different weekStarts.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(3);
+
 describe('mergeLifelenzJobHoursDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,weekStart,businessRoleId) key, not a duplicate', () => {
-    const prev = [row('3708', '2026-11-11', 'drive-thru', { hours: 100 })];
-    const delta = [row('3708', '2026-11-11', 'drive-thru', { hours: 150 })];
+    const prev = [row('3708', DT1, 'drive-thru', { hours: 100 })];
+    const delta = [row('3708', DT1, 'drive-thru', { hours: 150 })];
     const merged = mergeLifelenzJobHoursDelta(prev, delta, { weeksBack: 400, weeksFwd: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].hours).toBe(150);
   });
 
   it('a delta row for a NEW key is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', '2026-11-11', 'drive-thru', { hours: 100 })];
-    const delta = [row('5183', '2026-11-18', 'front-counter', { hours: 200 })];
+    const prev = [row('3708', DT1, 'drive-thru', { hours: 100 })];
+    const delta = [row('5183', DT2, 'front-counter', { hours: 200 })];
     const merged = mergeLifelenzJobHoursDelta(prev, delta, { weeksBack: 400, weeksFwd: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').hours).toBe(100);
@@ -46,8 +56,8 @@ describe('mergeLifelenzJobHoursDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', '2026-11-11', 'drive-thru', { hours: 100 }),
-      row('3708', '2026-11-11', 'front-counter', { hours: 110 }),
+      row('3708', DT1, 'drive-thru', { hours: 100 }),
+      row('3708', DT1, 'front-counter', { hours: 110 }),
     ];
     const merged = mergeLifelenzJobHoursDelta(prev, [], { weeksBack: 400, weeksFwd: 400 });
     expect(merged).toHaveLength(2);
@@ -68,8 +78,8 @@ describe('mergeLifelenzJobHoursDelta', () => {
 
   it('two different roles in the same (loc,weekStart) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', '2026-11-11', 'drive-thru', { hours: 100 }),
-      row('3708', '2026-11-11', 'front-counter', { hours: 200 }),
+      row('3708', DT1, 'drive-thru', { hours: 100 }),
+      row('3708', DT1, 'front-counter', { hours: 200 }),
     ];
     const merged = mergeLifelenzJobHoursDelta(prev, [], { weeksBack: 400, weeksFwd: 400 });
     expect(merged).toHaveLength(2);
@@ -77,8 +87,8 @@ describe('mergeLifelenzJobHoursDelta', () => {
 
   it('different stores at the identical (weekStart,businessRoleId) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', '2026-11-11', 'drive-thru', { hours: 100 }),
-      row('5183', '2026-11-11', 'drive-thru', { hours: 200 }),
+      row('3708', DT1, 'drive-thru', { hours: 100 }),
+      row('5183', DT1, 'drive-thru', { hours: 200 }),
     ];
     const merged = mergeLifelenzJobHoursDelta(prev, [], { weeksBack: 400, weeksFwd: 400 });
     expect(merged).toHaveLength(2);

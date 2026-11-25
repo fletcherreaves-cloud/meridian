@@ -27,10 +27,20 @@ const { mergeLifelenzScheduleVarianceDelta } = await import('../app/App.js');
 
 const row = (loc, editedBy, occurredAt, seq, extra = {}) => ({ loc, editedBy, occurredAt, seq, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentOccurredAt further down (a
+// hardcoded literal here is the identical time bomb, just with a longer fuse: these tests pass a
+// generous daysBack:400, so a literal would only start failing ~400 days after it was written,
+// exactly the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about).
+// Two distinct days so the "different keys" tests still exercise genuinely different occurredAts.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10) + 'T14:00:00';
+const DT2 = _fixtureDt(9) + 'T09:00:00';
+
 describe('mergeLifelenzScheduleVarianceDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,editedBy,occurredAt,seq) key, not a duplicate', () => {
-    const prev = [row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 1 })];
-    const delta = [row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 2 })];
+    const prev = [row('3708', 'jsmith', DT1, 0, { hoursVariance: 1 })];
+    const delta = [row('3708', 'jsmith', DT1, 0, { hoursVariance: 2 })];
     const merged = mergeLifelenzScheduleVarianceDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].hoursVariance).toBe(2);
@@ -38,8 +48,8 @@ describe('mergeLifelenzScheduleVarianceDelta', () => {
 
   it('two edits by the same editor at the identical timestamp are distinct keys via seq, not collapsed', () => {
     const prev = [
-      row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 1 }),
-      row('3708', 'jsmith', '2026-11-10T14:00:00', 1, { hoursVariance: 2 }),
+      row('3708', 'jsmith', DT1, 0, { hoursVariance: 1 }),
+      row('3708', 'jsmith', DT1, 1, { hoursVariance: 2 }),
     ];
     const merged = mergeLifelenzScheduleVarianceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -48,8 +58,8 @@ describe('mergeLifelenzScheduleVarianceDelta', () => {
   });
 
   it('a delta row for a NEW key is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 1 })];
-    const delta = [row('5183', 'awilliams', '2026-11-11T09:00:00', 0, { hoursVariance: 3 })];
+    const prev = [row('3708', 'jsmith', DT1, 0, { hoursVariance: 1 })];
+    const delta = [row('5183', 'awilliams', DT2, 0, { hoursVariance: 3 })];
     const merged = mergeLifelenzScheduleVarianceDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').hoursVariance).toBe(1);
@@ -58,8 +68,8 @@ describe('mergeLifelenzScheduleVarianceDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 1 }),
-      row('3708', 'jsmith', '2026-11-11T09:00:00', 0, { hoursVariance: 2 }),
+      row('3708', 'jsmith', DT1, 0, { hoursVariance: 1 }),
+      row('3708', 'jsmith', DT2, 0, { hoursVariance: 2 }),
     ];
     const merged = mergeLifelenzScheduleVarianceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -80,8 +90,8 @@ describe('mergeLifelenzScheduleVarianceDelta', () => {
 
   it('different editors at the identical (loc,occurredAt,seq) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', 'jsmith', '2026-11-10T14:00:00', 0, { hoursVariance: 1 }),
-      row('3708', 'awilliams', '2026-11-10T14:00:00', 0, { hoursVariance: 2 }),
+      row('3708', 'jsmith', DT1, 0, { hoursVariance: 1 }),
+      row('3708', 'awilliams', DT1, 0, { hoursVariance: 2 }),
     ];
     const merged = mergeLifelenzScheduleVarianceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);

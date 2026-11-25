@@ -24,26 +24,36 @@ const row = (loc, squadleLocationId, dateStr, extra = {}) => ({
   loc, squadleLocationId, date: new Date(dateStr + 'T00:00:00'), ...extra,
 });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentDate further down (a hardcoded
+// literal here is the identical time bomb, just with a longer fuse: these tests pass a generous
+// daysBack:400, so a literal would only start failing ~400 days after it was written, exactly
+// the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about). Two
+// distinct days so the "different keys" tests still exercise genuinely different dates.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeSquadleDelta', () => {
   it('a delta row overwrites the cached row with the same (squadleLocationId,date) key, not a duplicate', () => {
-    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'sqdl-prod-cd-001' })];
-    const delta = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'sqdl-prod-cd-002' })];
+    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', DT1, { shard: 'sqdl-prod-cd-001' })];
+    const delta = [row('3708', '-M8rkFa0NUGRQPamf4CH', DT1, { shard: 'sqdl-prod-cd-002' })];
     const merged = mergeSquadleDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].shard).toBe('sqdl-prod-cd-002');
   });
 
   it('a delta row for a NEW squadleLocationId is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10')];
-    const delta = [row('5183', '-M9xYz1pOVHSRQQbng5DI', '2026-11-11')];
+    const prev = [row('3708', '-M8rkFa0NUGRQPamf4CH', DT1)];
+    const delta = [row('5183', '-M9xYz1pOVHSRQQbng5DI', DT2)];
     const merged = mergeSquadleDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
   });
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10'),
-      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-11'),
+      row('3708', '-M8rkFa0NUGRQPamf4CH', DT1),
+      row('3708', '-M8rkFa0NUGRQPamf4CH', DT2),
     ];
     const merged = mergeSquadleDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -64,8 +74,8 @@ describe('mergeSquadleDelta', () => {
 
   it('two different squadleLocationIds that happen to share the same (synthetic) loc on the same date are distinct keys, not collapsed — the exact reason this table is keyed on squadleLocationId, not loc', () => {
     const prev = [
-      row('3708', '-M8rkFa0NUGRQPamf4CH', '2026-11-10', { shard: 'a' }),
-      row('3708', '-M9xYz1pOVHSRQQbng5DI', '2026-11-10', { shard: 'b' }),
+      row('3708', '-M8rkFa0NUGRQPamf4CH', DT1, { shard: 'a' }),
+      row('3708', '-M9xYz1pOVHSRQQbng5DI', DT1, { shard: 'b' }),
     ];
     const merged = mergeSquadleDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);

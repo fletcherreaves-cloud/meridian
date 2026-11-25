@@ -23,10 +23,20 @@ const { mergeLifelenzComplianceAuditDelta } = await import('../app/App.js');
 
 const row = (loc, complianceWarningId, seq, extra = {}) => ({ loc, complianceWarningId, seq, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentShiftDate further down (a
+// hardcoded literal here is the identical time bomb, just with a longer fuse: these tests pass a
+// generous daysBack:400, so a literal would only start failing ~400 days after it was written,
+// exactly the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about).
+// Two distinct days so the "different keys" tests still exercise genuinely different shiftDates.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeLifelenzComplianceAuditDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,complianceWarningId,seq) key, not a duplicate', () => {
-    const prev = [row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 10 })];
-    const delta = [row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 15 })];
+    const prev = [row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 10 })];
+    const delta = [row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 15 })];
     const merged = mergeLifelenzComplianceAuditDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].costPenalty).toBe(15);
@@ -34,8 +44,8 @@ describe('mergeLifelenzComplianceAuditDelta', () => {
 
   it('two violations sharing an id are distinct keys via seq, not collapsed (the defensive tie-breaker case)', () => {
     const prev = [
-      row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 10 }),
-      row('3708', 'cw-001', 1, { shiftDate: '2026-11-10', costPenalty: 20 }),
+      row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 10 }),
+      row('3708', 'cw-001', 1, { shiftDate: DT1, costPenalty: 20 }),
     ];
     const merged = mergeLifelenzComplianceAuditDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -44,8 +54,8 @@ describe('mergeLifelenzComplianceAuditDelta', () => {
   });
 
   it('a delta row for a NEW key is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 10 })];
-    const delta = [row('5183', 'cw-002', 0, { shiftDate: '2026-11-11', costPenalty: 30 })];
+    const prev = [row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 10 })];
+    const delta = [row('5183', 'cw-002', 0, { shiftDate: DT2, costPenalty: 30 })];
     const merged = mergeLifelenzComplianceAuditDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').costPenalty).toBe(10);
@@ -54,8 +64,8 @@ describe('mergeLifelenzComplianceAuditDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 10 }),
-      row('3708', 'cw-002', 0, { shiftDate: '2026-11-11', costPenalty: 20 }),
+      row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 10 }),
+      row('3708', 'cw-002', 0, { shiftDate: DT2, costPenalty: 20 }),
     ];
     const merged = mergeLifelenzComplianceAuditDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -76,8 +86,8 @@ describe('mergeLifelenzComplianceAuditDelta', () => {
 
   it('different stores at the identical (complianceWarningId,seq) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 10 }),
-      row('5183', 'cw-001', 0, { shiftDate: '2026-11-10', costPenalty: 20 }),
+      row('3708', 'cw-001', 0, { shiftDate: DT1, costPenalty: 10 }),
+      row('5183', 'cw-001', 0, { shiftDate: DT1, costPenalty: 20 }),
     ];
     const merged = mergeLifelenzComplianceAuditDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
