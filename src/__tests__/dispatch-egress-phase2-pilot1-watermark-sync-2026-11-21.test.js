@@ -21,18 +21,31 @@ const { mergeLifelenzScheduleDelta, maxUpdatedAt } = await import('../app/App.js
 
 const row = (loc, dateStr, extra = {}) => ({ loc, date: new Date(dateStr + 'T12:00:00'), ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentDate() further down (a hardcoded
+// literal here is the identical time bomb, just with a longer fuse: these tests pass a generous
+// daysBack/daysFwd:400, so a literal would only start failing ~400 days after it was written,
+// exactly the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about).
+// Two distinct days so the "different keys" tests still exercise genuinely different dates. The
+// maxUpdatedAt tests below this describe block are NOT touched -- that function only compares
+// given updatedAt values against each other (no real-"now" window), so its literal timestamps
+// never go stale.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeLifelenzScheduleDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,date) key, not a duplicate', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 100 })];
-    const delta = [row('3708', '2026-11-10', { sales: 150 })];
+    const prev = [row('3708', DT1, { sales: 100 })];
+    const delta = [row('3708', DT1, { sales: 150 })];
     const merged = mergeLifelenzScheduleDelta(prev, delta, { daysBack: 400, daysFwd: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].sales).toBe(150);
   });
 
   it('a delta row for a NEW (loc,date) is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 100 })];
-    const delta = [row('5183', '2026-11-11', { sales: 200 })];
+    const prev = [row('3708', DT1, { sales: 100 })];
+    const delta = [row('5183', DT2, { sales: 200 })];
     const merged = mergeLifelenzScheduleDelta(prev, delta, { daysBack: 400, daysFwd: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').sales).toBe(100);
@@ -40,7 +53,7 @@ describe('mergeLifelenzScheduleDelta', () => {
   });
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 100 }), row('3708', '2026-11-11', { sales: 110 })];
+    const prev = [row('3708', DT1, { sales: 100 }), row('3708', DT2, { sales: 110 })];
     const merged = mergeLifelenzScheduleDelta(prev, [], { daysBack: 400, daysFwd: 400 });
     expect(merged).toHaveLength(2);
   });
@@ -59,7 +72,7 @@ describe('mergeLifelenzScheduleDelta', () => {
   });
 
   it('different stores on the same date are distinct keys, not collapsed into one row', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 100 }), row('5183', '2026-11-10', { sales: 200 })];
+    const prev = [row('3708', DT1, { sales: 100 }), row('5183', DT1, { sales: 200 })];
     const merged = mergeLifelenzScheduleDelta(prev, [], { daysBack: 400, daysFwd: 400 });
     expect(merged).toHaveLength(2);
   });

@@ -1174,3 +1174,36 @@ Full suite + build both clean.
 What remains: the `custom_signals`/`staff_assignments` DDL question (owner decision required —
 see Section 25's close), or a fresh audit pass over Section 13's full ~56-table universe to find
 tables not yet individually verified.
+
+## 28. Closed the "remaining" half of the hardcoded-fixture-date time bomb this plan already
+warned about (2026-11-25) — every Wave 1/Wave 2 merge-test file, not just the prune tests
+
+Every pilot's window-prune test already computed its "recent" fixture date relative to `new
+Date()` (Sections 14/17/24/27's own repeated warnings), because that part had already broken
+sibling files on later dates. What was never fixed: every OTHER test in the same 12 files
+(overwrite-by-key, new-row-added, empty-delta-noop, distinct-keys) still hardcoded a literal
+"recent" date (`'2026-11-10'` etc.) right next to the generous `{ daysBack: 400 }` /
+`{ weeksBack: 400, weeksFwd: 400 }` these tests pass. Same bug class, longer fuse — ~400 days
+after each literal was written (roughly Dec 2027) that date drifts outside the 400-day window
+and the assertion starts failing for no code reason.
+
+Fixed all 12 files (every Wave 1 pilot 1-8, Phase 2 pilot 1, Wave 2 pilots 1-3): each now derives
+its non-prune fixture dates from a small `_fixtureDt(daysAgo)` helper (relative to `new Date()`,
+same pattern as the existing prune-test helper) instead of a literal. Two distinct offsets per
+file so the "different keys are not collapsed" tests still exercise genuinely different dates.
+Left untouched, deliberately: the prune tests' own existing dynamic dates; the intentionally
+far-past `'2020-01-01'`/`'2026-01-01'` anchors (meant to always sit outside the window — they only
+get further in the past as real time advances, never a time bomb); and the Phase 2 pilot 1 file's
+separate `maxUpdatedAt` describe block, whose literal timestamps are safe because that function
+only compares given values against each other, with no real-"now" window at all.
+
+Also spot-checked (not an exhaustive sweep of the whole suite) a further ~13 files flagged by a
+generic text search for the same risk shape — all either a false positive (date comparisons fully
+parameterized by the caller, or dates compared only against each other, never real "now") or
+already fixed before this pass (one file's own comment documents a prior fix). No other genuine
+instance of this bug class found in that spot-check; the broader ~200-file universe the text
+search matched was not individually read file-by-file — most matches were "window" appearing in
+an unrelated sense (business-hours cutoffs taking an explicit Date argument, UI scroll windows,
+etc.), not a real literal-vs-real-now comparison.
+
+Full suite: 940/940 files, 8580/8580 tests, green.

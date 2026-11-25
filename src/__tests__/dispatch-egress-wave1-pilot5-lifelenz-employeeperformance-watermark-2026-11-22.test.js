@@ -22,18 +22,28 @@ const { mergeLifelenzEmployeePerformanceDelta } = await import('../app/App.js');
 
 const row = (loc, geid, periodEnd, extra = {}) => ({ loc, geid, periodEnd, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentPeriodEnd further down (a
+// hardcoded literal here is the identical time bomb, just with a longer fuse: these tests pass a
+// generous daysBack:400, so a literal would only start failing ~400 days after it was written,
+// exactly the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about).
+// Two distinct days so the "different keys" tests still exercise genuinely different periodEnds.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeLifelenzEmployeePerformanceDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,geid,periodEnd) key, not a duplicate', () => {
-    const prev = [row('3708', 'G12345', '2026-11-10', { attendanceRate: 90 })];
-    const delta = [row('3708', 'G12345', '2026-11-10', { attendanceRate: 95 })];
+    const prev = [row('3708', 'G12345', DT1, { attendanceRate: 90 })];
+    const delta = [row('3708', 'G12345', DT1, { attendanceRate: 95 })];
     const merged = mergeLifelenzEmployeePerformanceDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].attendanceRate).toBe(95);
   });
 
   it('a delta row for a NEW key is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', 'G12345', '2026-11-10', { attendanceRate: 90 })];
-    const delta = [row('5183', 'G67890', '2026-11-11', { attendanceRate: 80 })];
+    const prev = [row('3708', 'G12345', DT1, { attendanceRate: 90 })];
+    const delta = [row('5183', 'G67890', DT2, { attendanceRate: 80 })];
     const merged = mergeLifelenzEmployeePerformanceDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').attendanceRate).toBe(90);
@@ -42,8 +52,8 @@ describe('mergeLifelenzEmployeePerformanceDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', 'G12345', '2026-11-10', { attendanceRate: 90 }),
-      row('3708', 'G67890', '2026-11-10', { attendanceRate: 85 }),
+      row('3708', 'G12345', DT1, { attendanceRate: 90 }),
+      row('3708', 'G67890', DT1, { attendanceRate: 85 }),
     ];
     const merged = mergeLifelenzEmployeePerformanceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -64,8 +74,8 @@ describe('mergeLifelenzEmployeePerformanceDelta', () => {
 
   it('two employees at the same (loc,periodEnd) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', 'G12345', '2026-11-10', { attendanceRate: 90 }),
-      row('3708', 'G67890', '2026-11-10', { attendanceRate: 85 }),
+      row('3708', 'G12345', DT1, { attendanceRate: 90 }),
+      row('3708', 'G67890', DT1, { attendanceRate: 85 }),
     ];
     const merged = mergeLifelenzEmployeePerformanceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -73,8 +83,8 @@ describe('mergeLifelenzEmployeePerformanceDelta', () => {
 
   it('different stores for the same geid are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', 'G12345', '2026-11-10', { attendanceRate: 90 }),
-      row('5183', 'G12345', '2026-11-10', { attendanceRate: 80 }),
+      row('3708', 'G12345', DT1, { attendanceRate: 90 }),
+      row('5183', 'G12345', DT1, { attendanceRate: 80 }),
     ];
     const merged = mergeLifelenzEmployeePerformanceDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);

@@ -25,10 +25,20 @@ const { mergeLifelenzPayrollReadinessDelta } = await import('../app/App.js');
 
 const row = (loc, payrollEntryId, payPeriodStart, extra = {}) => ({ loc, payrollEntryId, payPeriodStart, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning the prune test below already states (the merge's cutoff is
+// computed from the real new Date(), so a hardcoded literal here is the identical time bomb,
+// just with a longer fuse: these tests pass a generous daysBack:400, so a literal would only
+// start failing ~400 days after it was written). Two distinct days so the "different keys" tests
+// still exercise genuinely different payPeriodStarts.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(3);
+
 describe('mergeLifelenzPayrollReadinessDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,payrollEntryId) key, not a duplicate', () => {
-    const prev = [row('3708', 'entry-001', '2026-11-01', { overtimeHours: 2 })];
-    const delta = [row('3708', 'entry-001', '2026-11-01', { overtimeHours: 4 })];
+    const prev = [row('3708', 'entry-001', DT1, { overtimeHours: 2 })];
+    const delta = [row('3708', 'entry-001', DT1, { overtimeHours: 4 })];
     const merged = mergeLifelenzPayrollReadinessDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].overtimeHours).toBe(4);
@@ -36,8 +46,8 @@ describe('mergeLifelenzPayrollReadinessDelta', () => {
 
   it('multiple shift rows for the same employee/pay-period are distinct keys via payrollEntryId, not collapsed (the real-grain fix this pilot depends on)', () => {
     const prev = [
-      row('3708', 'entry-001', '2026-11-01', { overtimeHours: 2 }),
-      row('3708', 'entry-002', '2026-11-01', { overtimeHours: 1 }),
+      row('3708', 'entry-001', DT1, { overtimeHours: 2 }),
+      row('3708', 'entry-002', DT1, { overtimeHours: 1 }),
     ];
     const merged = mergeLifelenzPayrollReadinessDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -46,8 +56,8 @@ describe('mergeLifelenzPayrollReadinessDelta', () => {
   });
 
   it('a delta row for a NEW key is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', 'entry-001', '2026-11-01', { overtimeHours: 2 })];
-    const delta = [row('5183', 'entry-900', '2026-11-08', { overtimeHours: 5 })];
+    const prev = [row('3708', 'entry-001', DT1, { overtimeHours: 2 })];
+    const delta = [row('5183', 'entry-900', DT2, { overtimeHours: 5 })];
     const merged = mergeLifelenzPayrollReadinessDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').overtimeHours).toBe(2);
@@ -56,8 +66,8 @@ describe('mergeLifelenzPayrollReadinessDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', 'entry-001', '2026-11-01', { overtimeHours: 2 }),
-      row('3708', 'entry-002', '2026-11-08', { overtimeHours: 1 }),
+      row('3708', 'entry-001', DT1, { overtimeHours: 2 }),
+      row('3708', 'entry-002', DT2, { overtimeHours: 1 }),
     ];
     const merged = mergeLifelenzPayrollReadinessDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -77,8 +87,8 @@ describe('mergeLifelenzPayrollReadinessDelta', () => {
 
   it('different stores at the identical payrollEntryId are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', 'entry-001', '2026-11-01', { overtimeHours: 2 }),
-      row('5183', 'entry-001', '2026-11-01', { overtimeHours: 3 }),
+      row('3708', 'entry-001', DT1, { overtimeHours: 2 }),
+      row('5183', 'entry-001', DT1, { overtimeHours: 3 }),
     ];
     const merged = mergeLifelenzPayrollReadinessDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);

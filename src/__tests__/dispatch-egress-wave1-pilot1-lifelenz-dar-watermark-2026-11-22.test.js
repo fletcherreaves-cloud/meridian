@@ -22,18 +22,28 @@ const { mergeLifelenzDarDelta } = await import('../app/App.js');
 
 const row = (loc, startTime, dt, extra = {}) => ({ loc, startTime, dt, ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentDt further down (a hardcoded
+// literal here is the identical time bomb, just with a longer fuse: these tests pass a generous
+// daysBack:400, so a literal would only start failing ~400 days after it was written, exactly
+// the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about). Two
+// distinct days so the "different keys" tests still exercise genuinely different dt values.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeLifelenzDarDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,startTime) key, not a duplicate', () => {
-    const prev = [row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 100 })];
-    const delta = [row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 150 })];
+    const prev = [row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 100 })];
+    const delta = [row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 150 })];
     const merged = mergeLifelenzDarDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].netSales).toBe(150);
   });
 
   it('a delta row for a NEW (loc,startTime) is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 100 })];
-    const delta = [row('5183', '2026-11-11T12:00:00.000Z', '2026-11-11', { netSales: 200 })];
+    const prev = [row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 100 })];
+    const delta = [row('5183', DT2 + 'T12:00:00.000Z', DT2, { netSales: 200 })];
     const merged = mergeLifelenzDarDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').netSales).toBe(100);
@@ -42,8 +52,8 @@ describe('mergeLifelenzDarDelta', () => {
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
     const prev = [
-      row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 100 }),
-      row('3708', '2026-11-10T12:00:00.000Z', '2026-11-10', { netSales: 110 }),
+      row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 100 }),
+      row('3708', DT1 + 'T12:00:00.000Z', DT1, { netSales: 110 }),
     ];
     const merged = mergeLifelenzDarDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -64,8 +74,8 @@ describe('mergeLifelenzDarDelta', () => {
 
   it('two different hours on the same (loc,dt) are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 100 }),
-      row('3708', '2026-11-10T12:00:00.000Z', '2026-11-10', { netSales: 200 }),
+      row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 100 }),
+      row('3708', DT1 + 'T12:00:00.000Z', DT1, { netSales: 200 }),
     ];
     const merged = mergeLifelenzDarDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
@@ -73,8 +83,8 @@ describe('mergeLifelenzDarDelta', () => {
 
   it('different stores at the identical startTime are distinct keys, not collapsed into one row', () => {
     const prev = [
-      row('3708', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 100 }),
-      row('5183', '2026-11-10T11:00:00.000Z', '2026-11-10', { netSales: 200 }),
+      row('3708', DT1 + 'T11:00:00.000Z', DT1, { netSales: 100 }),
+      row('5183', DT1 + 'T11:00:00.000Z', DT1, { netSales: 200 }),
     ];
     const merged = mergeLifelenzDarDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);

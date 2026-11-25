@@ -26,18 +26,30 @@ const { mergeQsrActSummaryDelta } = await import('../app/App.js');
 
 const row = (loc, dateStr, extra = {}) => ({ loc, date: new Date(dateStr + 'T00:00:00'), ...extra });
 
+// Fixture dates for the non-prune tests below, computed relative to "now" rather than hardcoded
+// literals -- the same reasoning as the prune test's own recentDate further down (a hardcoded
+// literal here is the identical time bomb, just with a longer fuse: these tests pass a generous
+// daysBack:400, so a literal would only start failing ~400 days after it was written, exactly
+// the kind of later-date rot memory/plan-egress-reduction-2026-11-20.md warns about). Two
+// distinct days so the "different keys" tests still exercise genuinely different dates. The
+// '2020-01-01'/'2026-01-01' far-past anchors below are NOT touched -- fixed points that only
+// ever get further in the past as real time advances, never a time bomb.
+const _fixtureDt = (daysAgo) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); };
+const DT1 = _fixtureDt(10);
+const DT2 = _fixtureDt(9);
+
 describe('mergeQsrActSummaryDelta', () => {
   it('a delta row overwrites the cached row with the same (loc,date) key, not a duplicate', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 1000 })];
-    const delta = [row('3708', '2026-11-10', { sales: 1250 })];
+    const prev = [row('3708', DT1, { sales: 1000 })];
+    const delta = [row('3708', DT1, { sales: 1250 })];
     const merged = mergeQsrActSummaryDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(1);
     expect(merged[0].sales).toBe(1250);
   });
 
   it('a delta row for a NEW (loc,date) is added alongside the untouched cached rows', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 1000 })];
-    const delta = [row('5183', '2026-11-11', { sales: 2000 })];
+    const prev = [row('3708', DT1, { sales: 1000 })];
+    const delta = [row('5183', DT2, { sales: 2000 })];
     const merged = mergeQsrActSummaryDelta(prev, delta, { daysBack: 400 });
     expect(merged).toHaveLength(2);
     expect(merged.find(r => r.loc === '3708').sales).toBe(1000);
@@ -45,7 +57,7 @@ describe('mergeQsrActSummaryDelta', () => {
   });
 
   it('an empty delta leaves every cached row untouched (the "nothing changed" case)', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 1000 }), row('3708', '2026-11-11', { sales: 1100 })];
+    const prev = [row('3708', DT1, { sales: 1000 }), row('3708', DT2, { sales: 1100 })];
     const merged = mergeQsrActSummaryDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
   });
@@ -64,7 +76,7 @@ describe('mergeQsrActSummaryDelta', () => {
   });
 
   it('different stores on the same date are distinct keys, not collapsed into one row', () => {
-    const prev = [row('3708', '2026-11-10', { sales: 1000 }), row('5183', '2026-11-10', { sales: 2000 })];
+    const prev = [row('3708', DT1, { sales: 1000 }), row('5183', DT1, { sales: 2000 })];
     const merged = mergeQsrActSummaryDelta(prev, [], { daysBack: 400 });
     expect(merged).toHaveLength(2);
   });
