@@ -26,6 +26,22 @@ the Table object. So this script edits the target worksheet's raw XML in place i
 zip archive and repackages every other part byte-for-byte identical -- verified after every
 run (see verify_roundtrip below).
 
+LifeLenz DAR backfill for the QSRSoft compliance-pause gap (added 2026-11-27)
+------------------------------------------------------------------------------
+`qsrsoft-dar-pull.yml` (which feeds `qsr_daily_activity_rollup`) has been schedule-paused since
+2026-11-16 (QSRSoft Operator Security Notice compliance triage -- CLAUDE.md). Rather than widen
+that exposure with a manual catch-up run of the same credential-login scraper, any trailing day
+missing from `qsr_daily_activity_rollup` for a store is filled from `lifelenz_dar` -- a separate,
+non-QSRSoft-credential vendor API that has stayed fresh through the pause and is already the
+app's own documented fallback for these fields (`memory/finding-lifelenz-dar-schema-2026-11-17.md`
+Phase 3/4). LifeLenz's `net_sales` is the SAME basis as QSRSoft's `product_sales` (measured
+28-store/1-day: -0.04% diff, essentially exact); `transactions` runs +1.86% high (measured, same
+source) -- both within the error bar this workbook already carries elsewhere. Only days with NO
+row at all in `qsr_daily_activity_rollup` are filled this way; a real QSRSoft row is never
+overridden. The LY (364-day-back) comparison leg for a backfilled day is NOT taken from LifeLenz
+(which has no history that far back) -- it's the store's own real `product_sales`/`transactions`
+from the matching date a year earlier, which predates the pause and is unaffected by it.
+
 Monthly comps use genuine calendar-to-calendar sums, not the `ly_` shadow fields
 ----------------------------------------------------------------------------------
 `ly_product_sales`/`ly_transactions` in qsr_daily_activity_rollup are 364-day-back (52-week,
@@ -101,13 +117,78 @@ def fetch_rollup_rows(base_url, key, since_iso):
     return rows
 
 
+def fetch_lifelenz_dar_rows(base_url, key, since_iso):
+    """All lifelenz_dar rows with dt >= since_iso, paginated. Hourly grain (one row per
+    (loc, start_time)) -- summed to daily per (loc, dt) by the caller, same straight-sum
+    methodology as the app's own aggregateLifelenzDarDaily() (src/engine/lifelenz-dar-daily.js)."""
+    rows = []
+    page = 0
+    page_size = 1000
+    fields = 'loc,dt,net_sales,transactions'
+    while True:
+        offset = page * page_size
+        url = (f"{base_url}/rest/v1/lifelenz_dar"
+               f"?select={fields}&dt=gte.{quote(since_iso)}"
+               f"&order=dt.asc&order=loc.asc&offset={offset}&limit={page_size}")
+        req = urllib.request.Request(url, headers={
+            'apikey': key, 'Authorization': f'Bearer {key}',
+        })
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+        rows.extend(data)
+        if len(data) < page_size:
+            break
+        page += 1
+    return rows
+
+
+def aggregate_lifelenz_daily(rows):
+    """{loc: {dt_str: {'product_sales': sum(net_sales), 'transactions': sum(transactions)}}} --
+    loc unpadded to match qsr_daily_activity_rollup's convention."""
+    out = {}
+    for r in rows:
+        loc = str(int(r['loc']))
+        dt_str = r['dt']
+        bucket = out.setdefault(loc, {}).setdefault(dt_str, {'product_sales': 0, 'transactions': 0})
+        bucket['product_sales'] += r['net_sales'] or 0
+        bucket['transactions'] += r['transactions'] or 0
+    return out
+
+
 # ── Date / aggregation math ─────────────────────────────────────────────────────────────────
 
 def add_days(d, n):
     return d + datetime.timedelta(days=n)
 
 
-def compute(rows, today, forecast_year, forecast_month):
+def backfill_from_lifelenz(by_loc_dt, lifelenz_daily):
+    """Fill any (loc, dt) that qsr_daily_activity_rollup has NO row for at all, using LifeLenz's
+    daily-aggregated net_sales/transactions as a same-basis stand-in for product_sales/
+    transactions (see module docstring). Never touches a (loc, dt) that already has a real
+    QSRSoft row. The LY (364-day-back) leg is read from the store's own REAL historical row
+    (by_loc_dt), not from LifeLenz, which has no data that far back -- that historical row
+    predates the compliance pause and is unaffected by it. Returns the sorted list of
+    (loc, dt_str) pairs actually filled, for logging/audit."""
+    filled = []
+    for loc, by_dt in lifelenz_daily.items():
+        real_days = by_loc_dt.get(loc, {})
+        for dt_str, agg in by_dt.items():
+            if dt_str in real_days:
+                continue  # a real QSRSoft row exists for this day -- never override it
+            d = datetime.date.fromisoformat(dt_str)
+            ly_row = real_days.get(add_days(d, -364).isoformat())
+            by_loc_dt.setdefault(loc, {})[dt_str] = {
+                'product_sales': agg['product_sales'],
+                'transactions': agg['transactions'],
+                'ly_product_sales': (ly_row or {}).get('product_sales'),
+                'ly_transactions': (ly_row or {}).get('transactions'),
+            }
+            filled.append((loc, dt_str))
+    filled.sort()
+    return filled
+
+
+def compute(rows, today, forecast_year, forecast_month, lifelenz_daily=None):
     for r in rows:
         r['loc'] = str(int(r['loc']))  # strip zero-padding
 
@@ -134,6 +215,16 @@ def compute(rows, today, forecast_year, forecast_month):
     by_loc_dt = {}
     for r in rows:
         by_loc_dt.setdefault(r['loc'], {})[r['dt']] = r
+
+    lifelenz_filled = backfill_from_lifelenz(by_loc_dt, lifelenz_daily or {})
+    if lifelenz_filled:
+        gap_locs = sorted({loc for loc, _ in lifelenz_filled}, key=int)
+        gap_lo = min(dt for _, dt in lifelenz_filled)
+        gap_hi = max(dt for _, dt in lifelenz_filled)
+        log(f"Backfilled {len(lifelenz_filled)} (loc,dt) gap(s) from LifeLenz DAR "
+            f"({gap_lo}..{gap_hi}, {len(gap_locs)} store(s)) -- product_sales/transactions only, "
+            f"approximated via LifeLenz net_sales/transactions (see module docstring for the "
+            f"measured ±bias). Not a QSRSoft row; no store/date left silently blank.")
 
     def week_sum(loc, week_end):
         start = add_days(week_end, -6)
@@ -480,7 +571,18 @@ def main():
     rows = fetch_rollup_rows(base_url, key, since.isoformat())
     log(f"Pulled {len(rows)} rows.")
 
-    data = compute(rows, today, fy, fm)
+    # LifeLenz DAR only needs to cover the trailing gap (qsr_daily_activity_rollup's pause started
+    # 2026-11-16; lifelenz_dar has no history before 2026-11-17 anyway), not the full ~2-year
+    # `since` window -- a short fixed lookback keeps this fetch cheap regardless of how far back
+    # `since` reaches for the monthly/LY comps above.
+    ll_since = add_days(today, -30)
+    log(f"Fetching lifelenz_dar from {ll_since.isoformat()} through {today.isoformat()} "
+        f"(gap-fill source, not a primary source)...")
+    lifelenz_rows = fetch_lifelenz_dar_rows(base_url, key, ll_since.isoformat())
+    lifelenz_daily = aggregate_lifelenz_daily(lifelenz_rows)
+    log(f"Pulled {len(lifelenz_rows)} lifelenz_dar rows ({sum(len(v) for v in lifelenz_daily.values())} store-days).")
+
+    data = compute(rows, today, fy, fm, lifelenz_daily)
 
     forecast_label = f"{MONTH_ABBR[fm-1]}-{fy}"
     log(f"Patching {args.input} -> {output} for forecast month {forecast_label}...")
