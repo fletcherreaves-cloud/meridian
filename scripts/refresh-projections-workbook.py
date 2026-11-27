@@ -252,11 +252,26 @@ def find_data_input_sheet_path(zin):
     return 'xl/' + m2.group(1)
 
 
-def resolve_block_starts(sheet_xml, shared_strings):
+def detect_loc_formula_col(sheet_xml):
+    """The per-store data rows in each Data Input block key off a column-A formula referencing
+    'Table 1 (2)' (its own store-number column) -- e.g. 'Table 1 (2)'!AJ3. That column letter is
+    NOT stable across workbook revisions: it shifted from AJ to AK between the workbook versions
+    seen 2026-09-11 and 2026-11-27 (the owner added/removed a column in 'Table 1 (2)' upstream of
+    it), which broke this script's old hardcoded 'AJ' match outright (ValueError, no silent wrong
+    data -- the fail-closed behavior is what caught this). Detect the real column letter from the
+    sheet itself instead of hardcoding one, so a future shift doesn't require another manual patch."""
+    m = re.search(r"<c r=\"A\d+\"[^>]*><f>'Table 1 \(2\)'!([A-Z]+)\d+</f>", sheet_xml)
+    if not m:
+        raise ValueError("no column-A formula referencing 'Table 1 (2)' found anywhere in the sheet "
+                          "-- the per-store row structure may have changed more than just the column letter")
+    return m.group(1)
+
+
+def resolve_block_starts(sheet_xml, shared_strings, loc_col):
     """Return {label: first_row_of_per-store_data} for the three Data Input blocks, found by
     matching each block's header text against sharedStrings, then finding the row containing
     that string index, then walking forward to the first row whose A-cell formula matches
-    'Table 1 (2)'!AJ<n> (the first per-store data row of that block)."""
+    'Table 1 (2)'!<loc_col><n> (the first per-store data row of that block)."""
     targets = {
         'block1': 'Block 1 — Weekly Comp % by Store',
         'block2': 'Block 2 — Monthly Comp % by Store',
@@ -275,9 +290,9 @@ def resolve_block_starts(sheet_xml, shared_strings):
         if not m:
             raise ValueError(f'no cell references shared string {idx} ({needle!r})')
         header_row = int(m.group(1))
-        # walk forward to the first `'Table 1 (2)'!AJ` formula row
+        # walk forward to the first `'Table 1 (2)'!<loc_col>` formula row
         for r in range(header_row + 1, header_row + 6):
-            if re.search(r'<row r="' + str(r) + r'"[^>]*><c r="A' + str(r) + r'"[^>]*><f>\'Table 1 \(2\)\'!AJ', sheet_xml):
+            if re.search(r'<row r="' + str(r) + r'"[^>]*><c r="A' + str(r) + r'"[^>]*><f>\'Table 1 \(2\)\'!' + loc_col, sheet_xml):
                 starts[key] = r
                 break
         if key not in starts:
@@ -285,13 +300,40 @@ def resolve_block_starts(sheet_xml, shared_strings):
     return starts
 
 
-def count_loc_rows(sheet_xml, first_row):
-    n = 0
+def read_block_rows(sheet_xml, first_row, loc_col):
+    """Return [(row, loc_or_None), ...] for every per-store row in a block, starting at
+    first_row, until a row whose A-cell has no 'Table 1 (2)' reference at all (the true end of
+    the block). A row is included with loc=None, not treated as the end, when its A-cell DOES
+    reference 'Table 1 (2)' but as a broken #REF! formula -- confirmed 2026-11-27: the workbook
+    keeps a placeholder row for 18213 (the relocated/superseded Lindsay store, replaced by
+    44689) at a fixed position in every block, and its 'Table 1 (2)' column got deleted at some
+    point, turning a once-valid 'Table 1 (2)'!<col><n> reference into '#REF!'. The OLD version of
+    this function (count_loc_rows, a simple count-while-matching loop) stopped dead the instant it
+    hit that one broken row, undercounting every block by however many real stores sat beyond it
+    (11 of 28 here) -- a silent, serious bug: it didn't crash, it just silently wrote live data
+    into the wrong rows for 16 real stores, matching the owner's live data list to the WRONG row
+    positions.
+    A row's real store number is read directly from its own cached <v> (e.g. 3708), not inferred
+    from position in a separately-sorted list of live locs -- this is what makes it fault-tolerant
+    to a gap like this one without needing to know in advance how many gaps exist or where."""
+    out = []
     r = first_row
-    while re.search(r'<row r="' + str(r) + r'"[^>]*><c r="A' + str(r) + r'"[^>]*><f>\'Table 1 \(2\)\'!AJ\d+</f>', sheet_xml):
-        n += 1
+    while True:
+        row_m = re.search(r'<row r="' + str(r) + r'"[^>]*><c r="A' + str(r) + r'"([^>]*)>(.*?)</c>', sheet_xml, re.DOTALL)
+        if not row_m:
+            break
+        a_attrs, a_body = row_m.group(1), row_m.group(2)
+        if f"'Table 1 (2)'!{loc_col}" in a_body:
+            v_m = re.search(r'<v>(\d+)</v>', a_body)
+            if not v_m:
+                raise ValueError(f"row {r}: found a valid 'Table 1 (2)'!{loc_col} formula but no cached numeric <v> to read the store number from")
+            out.append((r, v_m.group(1)))
+        elif "'Table 1 (2)'!#REF!" in a_body:
+            out.append((r, None))
+        else:
+            break
         r += 1
-    return n
+    return out
 
 
 def parse_shared_strings(zin):
@@ -311,16 +353,22 @@ def patch_workbook(input_path, output_path, data, forecast_label):
         sheet_path = find_data_input_sheet_path(zin)
         sheet_xml = zin.read(sheet_path).decode()
         shared_strings = parse_shared_strings(zin)
-        starts = resolve_block_starts(sheet_xml, shared_strings)
-        n_locs = count_loc_rows(sheet_xml, starts['block1'])
+        loc_col = detect_loc_formula_col(sheet_xml)
+        starts = resolve_block_starts(sheet_xml, shared_strings, loc_col)
+        block_rows = {key: read_block_rows(sheet_xml, starts[key], loc_col) for key in starts}
         log(f"Data Input sheet: {sheet_path}")
-        log(f"Block starts: {starts}  ({n_locs} store rows)")
+        log(f"'Table 1 (2)' loc-formula column: {loc_col}")
+        for key, rows in block_rows.items():
+            real = [loc for _, loc in rows if loc is not None]
+            placeholders = len(rows) - len(real)
+            log(f"{key}: starts row {starts[key]}, {len(rows)} total rows ({len(real)} real stores, "
+                f"{placeholders} placeholder/#REF! row(s) left untouched)")
 
-        if n_locs != len(data['locs']):
-            log(f"⚠️  NOTE: workbook has {n_locs} store rows but live data covered "
-                f"{len(data['locs'])} locs -- proceeding row-by-row in file order; a mismatch "
-                f"here means a store was added/removed and this script's row<->loc mapping "
-                f"should be double-checked against 'Table 1 (2)' column AJ.")
+        for key, rows in block_rows.items():
+            missing = [loc for _, loc in rows if loc is not None and loc not in data['locs']]
+            if missing:
+                log(f"⚠️  NOTE: {key} has real store row(s) for loc(s) {missing} with no matching "
+                    f"live data -- those rows will be left untouched, not zeroed out.")
 
         COL13 = list("BCDEFGHIJKLMN")
         COL12 = list("BCDEFGHIJKLM")
@@ -333,8 +381,9 @@ def patch_workbook(input_path, output_path, data, forecast_label):
             serial = (datetime.date(y, m, d) - EPOCH).days
             xml = set_numeric(xml, COL13[i] + '7', serial)
 
-        for i, loc in enumerate(data['locs'][:n_locs]):
-            row = starts['block1'] + i
+        for row, loc in block_rows['block1']:
+            if loc is None or loc not in data['weekly']:
+                continue
             for j, comp in enumerate(data['weekly'][loc]):
                 xml = set_numeric(xml, COL13[j] + str(row), comp)
 
@@ -342,13 +391,15 @@ def patch_workbook(input_path, output_path, data, forecast_label):
             label = f"{MONTH_ABBR[m-1]}-{str(y)[2:]}"
             xml = set_text(xml, COL12[i] + str(starts['block2'] - 2), label)  # header row = block2 start - 2
 
-        for i, loc in enumerate(data['locs'][:n_locs]):
-            row = starts['block2'] + i
+        for row, loc in block_rows['block2']:
+            if loc is None or loc not in data['monthly']:
+                continue
             for j, comp in enumerate(data['monthly'][loc]):
                 xml = set_numeric(xml, COL12[j] + str(row), comp)
 
-        for i, loc in enumerate(data['locs'][:n_locs]):
-            row = starts['block3'] + i
+        for row, loc in block_rows['block3']:
+            if loc is None or loc not in data['lyMonth']:
+                continue
             xml = set_numeric(xml, 'B' + str(row), data['lyMonth'][loc])
             xml = set_numeric(xml, 'C' + str(row), data['gcL6W'][loc])
             xml = set_numeric(xml, 'D' + str(row), data['gcL2W'][loc])
